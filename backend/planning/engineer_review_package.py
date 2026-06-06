@@ -24,6 +24,19 @@ DISCIPLINE_AREAS: Dict[str, Sequence[str]] = {
     "exports": ("deliverables", "cad_interop", "exports"),
 }
 
+MISSING_INPUT_GATES: Sequence[str] = (
+    "standards",
+    "existing_conditions",
+    "engine_depth",
+    "exports",
+    "calculations",
+    "manual_signoff",
+)
+
+SIGNOFF_SYSTEM_GENERATED = "system_generated_check"
+SIGNOFF_ENGINEER_MANUAL = "engineer_manual_review_required"
+SIGNOFF_EXTERNAL_SEAL = "external_seal_signature_required"
+
 
 def _generated_at() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -74,6 +87,102 @@ def _unique_records(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen.add(key)
         out.append(deepcopy(rec))
     return out
+
+
+def _discipline_for_text(*values: Any) -> str:
+    text = " ".join(safe_str(value).lower() for value in values if safe_str(value))
+    for discipline, areas in DISCIPLINE_AREAS.items():
+        if discipline in text or any(area in text for area in areas):
+            return discipline
+    return "general"
+
+
+def _matches_discipline(item: Any, discipline: str, areas: Sequence[str]) -> bool:
+    rec = safe_dict(item)
+    values = [
+        rec.get("discipline"),
+        rec.get("area"),
+        rec.get("field"),
+        rec.get("artifact_id"),
+        rec.get("id"),
+        rec.get("name"),
+        rec.get("source"),
+        rec.get("field_name"),
+        rec.get("system"),
+    ]
+    text = " ".join(safe_str(value).lower() for value in values if safe_str(value))
+    return discipline in text or any(area in text for area in areas)
+
+
+def _canonical_ids_from_value(value: Any) -> List[str]:
+    ids: List[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = safe_str(key).lower()
+            if key_text in {
+                "canonical_id",
+                "canonical_ids",
+                "canonical_model_id",
+                "canonical_model_hash",
+                "canonical_source_id",
+                "canonical_source_ids",
+                "source_object_id",
+                "source_object_ids",
+                "object_id",
+                "object_ids",
+                "pipe_id",
+                "pipe_ids",
+                "structure_id",
+                "structure_ids",
+                "surface_id",
+                "surface_ids",
+                "quantity_model_hash",
+                "cost_estimate_hash",
+                "price_book_hash",
+            }:
+                ids.extend(_canonical_ids_from_value(item))
+            elif isinstance(item, (dict, list)):
+                ids.extend(_canonical_ids_from_value(item))
+        return _dedupe_strings(ids)
+    if isinstance(value, list):
+        for item in value:
+            ids.extend(_canonical_ids_from_value(item))
+        return _dedupe_strings(ids)
+    text = safe_str(value)
+    return [text] if text else []
+
+
+def _dedupe_strings(values: Iterable[Any]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for value in values:
+        text = safe_str(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
+def _missing_inputs_by_gate(missing_inputs: Sequence[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    grouped: Dict[str, List[Dict[str, Any]]] = {gate: [] for gate in MISSING_INPUT_GATES}
+    aliases = {
+        "standards": "standards",
+        "existing_conditions": "existing_conditions",
+        "depth_validation": "engine_depth",
+        "engine_depth": "engine_depth",
+        "deliverables": "exports",
+        "exports": "exports",
+        "calculations": "calculations",
+        "manual_signoff": "manual_signoff",
+        "professional_review": "manual_signoff",
+    }
+    for item in missing_inputs:
+        rec = safe_dict(item)
+        area = safe_str(rec.get("area")).lower()
+        gate = aliases.get(area, area if area in grouped else "calculations")
+        grouped.setdefault(gate, []).append(deepcopy(rec))
+    return grouped
 
 
 def _gate_blockers(package: Dict[str, Any], *, area: str, field: str, status_key: str = "status") -> List[Dict[str, Any]]:
@@ -203,21 +312,71 @@ def _calculation_artifacts(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
         if value is None:
             continue
         rec = safe_dict(value)
+        trace = deepcopy(rec.get("explain") or rec.get("trace") or rec.get("canonical_id_traceability") or {})
         artifacts.append(
             {
                 "artifact_id": key,
+                "discipline": _discipline_for_text(key, rec.get("discipline"), rec.get("area")),
                 "present": True,
                 "success": rec.get("success"),
                 "status": safe_str(rec.get("status")),
                 "review_required": True,
-                "trace": deepcopy(rec.get("explain") or rec.get("trace") or rec.get("canonical_id_traceability") or {}),
+                "canonical_ids": _dedupe_strings(
+                    [
+                        rec.get("canonical_id"),
+                        rec.get("canonical_model_id"),
+                        rec.get("canonical_model_hash"),
+                        rec.get("canonical_source_id"),
+                    ]
+                    + _canonical_ids_from_value(trace)
+                ),
+                "trace": trace,
             }
         )
+        if key == "depth_validation":
+            for child_key, child_value in rec.items():
+                child = safe_dict(child_value)
+                if not child:
+                    continue
+                child_trace = deepcopy(child.get("explain") or child.get("trace") or child.get("canonical_id_traceability") or {})
+                artifacts.append(
+                    {
+                        "artifact_id": f"depth_validation.{child_key}",
+                        "discipline": _discipline_for_text(child_key),
+                        "present": True,
+                        "success": child.get("success"),
+                        "status": safe_str(child.get("status")),
+                        "review_required": True,
+                        "canonical_ids": _dedupe_strings(
+                            [
+                                child.get("canonical_id"),
+                                child.get("canonical_model_id"),
+                                child.get("canonical_model_hash"),
+                                child.get("canonical_source_id"),
+                            ]
+                            + _canonical_ids_from_value(child_trace)
+                            + _canonical_ids_from_value(child.get("blockers"))
+                        ),
+                        "trace": child_trace,
+                    }
+                )
     for item in safe_list(meta.get("calculation_artifacts")):
         rec = safe_dict(item)
         if rec:
             copied = deepcopy(rec)
             copied.setdefault("review_required", True)
+            copied.setdefault("discipline", _discipline_for_text(copied.get("artifact_id"), copied.get("area"), copied.get("discipline")))
+            copied["canonical_ids"] = _dedupe_strings(
+                safe_list(copied.get("canonical_ids"))
+                + [
+                    copied.get("canonical_id"),
+                    copied.get("canonical_model_id"),
+                    copied.get("canonical_model_hash"),
+                    copied.get("canonical_source_id"),
+                ]
+                + _canonical_ids_from_value(copied.get("trace"))
+                + _canonical_ids_from_value(copied.get("explain"))
+            )
             artifacts.append(copied)
     return artifacts
 
@@ -245,10 +404,12 @@ def _reviewer_comments(meta: Dict[str, Any], standards_summary: Dict[str, Any]) 
             comment = safe_str(rec.get("comment") or rec.get("message") or rec.get("reason") or item)
             if not comment:
                 continue
+            discipline = _discipline_for_text(rec.get("discipline"), rec.get("area"), rec.get("field"), comment)
             comments.append(
                 {
                     "source": source,
                     "comment_id": safe_str(rec.get("comment_id") or rec.get("id"), f"{source}_{index}"),
+                    "discipline": discipline,
                     "area": safe_str(rec.get("area")),
                     "field": safe_str(rec.get("field")),
                     "comment": comment,
@@ -260,31 +421,112 @@ def _reviewer_comments(meta: Dict[str, Any], standards_summary: Dict[str, Any]) 
     return comments
 
 
-def _discipline_sections(blockers: Sequence[Dict[str, Any]], calculations: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    calculation_ids = [safe_str(item.get("artifact_id")) for item in calculations if safe_str(item.get("artifact_id"))]
+def _comments_by_key(comments: Sequence[Dict[str, Any]], key: str) -> Dict[str, List[Dict[str, Any]]]:
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for item in comments:
+        rec = safe_dict(item)
+        group = safe_str(rec.get(key), "general")
+        grouped.setdefault(group, []).append(deepcopy(rec))
+    return grouped
+
+
+def _source_confidence_for_discipline(
+    discipline: str,
+    *,
+    standards_summary: Dict[str, Any],
+    existing_summary: Dict[str, Any],
+    engine_summary: Dict[str, Any],
+    export_summary: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "standards_status": safe_str(standards_summary.get("status"), "missing"),
+        "standards_production_usable": standards_summary.get("production_usable") is True,
+        "existing_conditions_status": safe_str(existing_summary.get("status"), "missing"),
+        "existing_conditions_production_ready": existing_summary.get("production_ready") is True,
+        "terrain_source_confidence": safe_str(existing_summary.get("terrain_source_confidence"), "missing")
+        if discipline in {"grading", "drainage", "storm", "roadway", "earthwork"}
+        else "",
+        "engine_depth_status": safe_str(engine_summary.get("engine_readiness_status"), "missing"),
+        "engine_depth_audit_present": engine_summary.get("engine_depth_audit_present") is True,
+        "export_review_ready": export_summary.get("review_ready") is True if discipline == "exports" else None,
+        "truth_label": "Source confidence summarizes package evidence for review; it is not professional signoff.",
+    }
+
+
+def _discipline_sections(
+    blockers: Sequence[Dict[str, Any]],
+    assumptions: Sequence[Any],
+    calculations: Sequence[Dict[str, Any]],
+    comments: Sequence[Dict[str, Any]],
+    *,
+    standards_summary: Dict[str, Any],
+    existing_summary: Dict[str, Any],
+    engine_summary: Dict[str, Any],
+    export_summary: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
     sections: Dict[str, Dict[str, Any]] = {}
     for discipline, areas in DISCIPLINE_AREAS.items():
         matched_blockers = [
             deepcopy(item)
             for item in blockers
-            if safe_str(item.get("area")).lower() in areas or safe_str(item.get("field")).lower() in areas
+            if _matches_discipline(item, discipline, areas)
         ]
-        matched_calcs = [item for item in calculation_ids if discipline in item or any(area in item for area in areas)]
+        matched_assumptions = [
+            deepcopy(item)
+            for item in assumptions
+            if _matches_discipline(item, discipline, areas)
+        ]
+        matched_calcs = [
+            deepcopy(item)
+            for item in calculations
+            if _matches_discipline(item, discipline, areas)
+        ]
+        matched_comments = [
+            deepcopy(item)
+            for item in comments
+            if _matches_discipline(item, discipline, areas)
+        ]
         sections[discipline] = {
             "status": "blocked" if matched_blockers else "ready_for_review",
             "required_engineer_review": True,
-            "calculation_artifacts": matched_calcs,
             "blockers": matched_blockers,
+            "assumptions": matched_assumptions,
+            "calculation_artifacts": matched_calcs,
+            "reviewer_comments": matched_comments,
+            "source_confidence": _source_confidence_for_discipline(
+                discipline,
+                standards_summary=standards_summary,
+                existing_summary=existing_summary,
+                engine_summary=engine_summary,
+                export_summary=export_summary,
+            ),
+            "canonical_ids": _dedupe_strings(
+                canonical_id
+                for artifact in matched_calcs
+                for canonical_id in safe_list(safe_dict(artifact).get("canonical_ids"))
+            ),
             "review_notes": [],
             "truth_label": "Discipline section is packaged for licensed engineer review; it is not signed off by Civora.",
         }
     return sections
 
 
-def _signoff_item(item_id: str, label: str, *, status: str, evidence: Any = None, external_manual: bool = False) -> Dict[str, Any]:
+def _signoff_item(
+    item_id: str,
+    label: str,
+    *,
+    status: str,
+    check_type: str,
+    evidence: Any = None,
+    external_manual: bool = False,
+) -> Dict[str, Any]:
     return {
         "item_id": item_id,
         "label": label,
+        "check_type": check_type,
+        "system_generated": check_type == SIGNOFF_SYSTEM_GENERATED,
+        "engineer_manual_review_required": check_type == SIGNOFF_ENGINEER_MANUAL,
+        "external_seal_signature_required": check_type == SIGNOFF_EXTERNAL_SEAL,
         "status": status,
         "complete": status == "complete",
         "required": True,
@@ -316,14 +558,14 @@ def _signoff_checklist(
     manual_signoff: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     return [
-        _signoff_item("standards_accepted", "standards accepted", status="complete" if standards_summary["production_usable"] else "blocked", evidence=standards_summary),
-        _signoff_item("survey_control_verified", "survey/control verified", status="complete" if existing_summary["production_ready"] and existing_summary["accepted"] else "blocked", evidence=existing_summary),
-        _signoff_item("terrain_verified", "terrain verified", status="complete" if existing_summary["terrain_source_confidence"] not in {"", "missing", "metadata_only"} else "blocked", evidence=existing_summary),
-        _signoff_item("calculations_reviewed", "calculations reviewed", status="manual_required", external_manual=True),
-        _signoff_item("conflicts_reviewed", "conflicts reviewed", status="blocked" if any(safe_str(item.get("area")) == "coordination" for item in blockers) else "manual_required", external_manual=True),
-        _signoff_item("exports_reviewed", "exports reviewed", status="complete" if export_summary["review_ready"] else "blocked", evidence=export_summary),
-        _signoff_item("assumptions_accepted", "assumptions accepted", status="manual_required" if assumptions else "complete", evidence=list(assumptions), external_manual=bool(assumptions)),
-        _signoff_item("engineer_seal_signature_external_manual", "engineer seal/signature external/manual", status="complete" if manual_signoff["complete"] else "manual_required", evidence=manual_signoff, external_manual=True),
+        _signoff_item("standards_accepted", "standards accepted", status="complete" if standards_summary["production_usable"] else "blocked", check_type=SIGNOFF_SYSTEM_GENERATED, evidence=standards_summary),
+        _signoff_item("survey_control_verified", "survey/control verified", status="complete" if existing_summary["production_ready"] and existing_summary["accepted"] else "blocked", check_type=SIGNOFF_SYSTEM_GENERATED, evidence=existing_summary),
+        _signoff_item("terrain_verified", "terrain verified", status="complete" if existing_summary["terrain_source_confidence"] not in {"", "missing", "metadata_only"} else "blocked", check_type=SIGNOFF_SYSTEM_GENERATED, evidence=existing_summary),
+        _signoff_item("calculations_reviewed", "calculations reviewed", status="manual_required", check_type=SIGNOFF_ENGINEER_MANUAL, external_manual=True),
+        _signoff_item("conflicts_reviewed", "conflicts reviewed", status="blocked" if any(safe_str(item.get("area")) == "coordination" for item in blockers) else "manual_required", check_type=SIGNOFF_ENGINEER_MANUAL, external_manual=True),
+        _signoff_item("exports_reviewed", "exports reviewed", status="complete" if export_summary["review_ready"] else "blocked", check_type=SIGNOFF_SYSTEM_GENERATED, evidence=export_summary),
+        _signoff_item("assumptions_accepted", "assumptions accepted", status="manual_required" if assumptions else "complete", check_type=SIGNOFF_ENGINEER_MANUAL if assumptions else SIGNOFF_SYSTEM_GENERATED, evidence=list(assumptions), external_manual=bool(assumptions)),
+        _signoff_item("engineer_seal_signature_external_manual", "engineer seal/signature external/manual", status="complete" if manual_signoff["complete"] else "manual_required", check_type=SIGNOFF_EXTERNAL_SEAL, evidence=manual_signoff, external_manual=True),
     ]
 
 
@@ -338,9 +580,35 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
 
     blockers: List[Dict[str, Any]] = []
     missing_inputs: List[Dict[str, Any]] = []
+    if not safe_dict(meta.get("standards_package")):
+        missing_inputs.append(
+            _missing_input(
+                "standards",
+                "standards_package",
+                "Standards package evidence is missing.",
+                next_action="Build standards_package from accepted official-source standards before engineer review.",
+            )
+        )
+    if not safe_dict(meta.get("existing_conditions_package")):
+        missing_inputs.append(
+            _missing_input(
+                "existing_conditions",
+                "existing_conditions_package",
+                "Existing-conditions package evidence is missing.",
+                next_action="Build existing_conditions_package from survey/GIS/terrain import validation before engineer review.",
+            )
+        )
     blockers.extend(_gate_blockers(safe_dict(meta.get("standards_package")), area="standards", field="standards_package"))
     blockers.extend(_gate_blockers(safe_dict(meta.get("existing_conditions_package")), area="existing_conditions", field="existing_conditions_package"))
     if not engine_summary["engine_depth_audit_present"] and not engine_summary["engine_readiness_present"] and not engine_summary["depth_validation_present"]:
+        missing_inputs.append(
+            _missing_input(
+                "engine_depth",
+                "engine_depth_evidence",
+                "Engine depth evidence is missing.",
+                next_action="Run engine readiness/depth validation before packaging engineer review.",
+            )
+        )
         blockers.append(
             _blocker(
                 "depth_validation",
@@ -350,6 +618,16 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
             )
         )
     elif engine_summary["depth_validation_blockers"]:
+        for discipline_key, items in safe_dict(engine_summary.get("depth_validation_blockers")).items():
+            for item in safe_list(items):
+                rec = safe_dict(item)
+                if rec:
+                    copied = deepcopy(rec)
+                    copied.setdefault("area", _discipline_for_text(discipline_key, rec.get("area"), rec.get("field")))
+                    copied.setdefault("field", safe_str(rec.get("field"), "depth_validation"))
+                    copied.setdefault("reason", safe_str(rec.get("reason") or rec.get("message") or rec.get("why_needed"), "Depth validation blocker requires engineer review."))
+                    copied.setdefault("severity", "blocker")
+                    blockers.append(copied)
         blockers.append(
             _blocker(
                 "depth_validation",
@@ -359,6 +637,14 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
             )
         )
     if not export_summary["present"] or not export_summary["review_ready"]:
+        missing_inputs.append(
+            _missing_input(
+                "exports",
+                "export_package",
+                "Review-ready export package evidence is missing or blocked.",
+                next_action="Generate review package manifest and export audit before engineer review.",
+            )
+        )
         blockers.append(
             _blocker(
                 "deliverables",
@@ -399,6 +685,30 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
     blockers = _unique_records(blockers)
     missing_inputs = _unique_records(missing_inputs)
     manual_signoff = _manual_signoff(meta)
+    if not manual_signoff["complete"]:
+        missing_inputs.append(
+            _missing_input(
+                "manual_signoff",
+                "engineer_seal_signature_external_manual",
+                "Licensed engineer seal/signature is external/manual and has not been completed.",
+                next_action="Have the responsible licensed engineer review and sign/seal the package outside Civora.",
+            )
+        )
+    missing_inputs = _unique_records(missing_inputs)
+    missing_inputs_by_gate = _missing_inputs_by_gate(missing_inputs)
+    automated_gate_status = {
+        "standards": not any(safe_str(item.get("area")) == "standards" for item in blockers)
+        and not any(safe_str(item.get("area")) == "standards" for item in missing_inputs),
+        "existing_conditions": not any(safe_str(item.get("area")) == "existing_conditions" for item in blockers)
+        and not any(safe_str(item.get("area")) == "existing_conditions" for item in missing_inputs),
+        "engine_depth": not any(safe_str(item.get("area")) in {"depth_validation", "engine_depth"} for item in blockers)
+        and not any(safe_str(item.get("area")) in {"depth_validation", "engine_depth"} for item in missing_inputs),
+        "exports": not any(safe_str(item.get("area")) in {"deliverables", "exports"} for item in blockers)
+        and not any(safe_str(item.get("area")) in {"deliverables", "exports"} for item in missing_inputs),
+        "calculations": not any(safe_str(item.get("area")) == "calculations" for item in blockers)
+        and not any(safe_str(item.get("area")) == "calculations" for item in missing_inputs),
+    }
+    automated_gates_review_ready = all(automated_gate_status.values())
     checklist = _signoff_checklist(
         standards_summary=standards_summary,
         existing_summary=existing_summary,
@@ -408,9 +718,12 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
         blockers=blockers,
         manual_signoff=manual_signoff,
     )
-    review_status = "blocked" if blockers else "needs_more_information" if missing_inputs else "ready_for_review"
+    non_manual_missing = [item for item in missing_inputs if safe_str(item.get("area")) != "manual_signoff"]
+    review_status = "blocked" if blockers else "needs_more_information" if non_manual_missing else "ready_for_review" if automated_gates_review_ready else "needs_more_information"
     construction_release_blocked = bool(blockers or missing_inputs or not manual_signoff["complete"])
     reviewer_comments = _reviewer_comments(meta, standards_summary)
+    reviewer_comments_by_severity = _comments_by_key(reviewer_comments, "severity")
+    reviewer_comments_by_discipline = _comments_by_key(reviewer_comments, "discipline")
 
     return {
         "version": REVIEW_PACKAGE_VERSION,
@@ -424,13 +737,27 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
         "existing_conditions_summary": existing_summary,
         "engine_depth_summary": engine_summary,
         "export_package_summary": export_summary,
+        "automated_gate_status": automated_gate_status,
+        "automated_gates_review_ready": automated_gates_review_ready,
         "assumptions": deepcopy(assumptions),
         "missing_inputs": missing_inputs,
+        "missing_inputs_by_gate": missing_inputs_by_gate,
         "blockers": blockers,
         "blocker_details": readiness_issue_explanations(blockers),
         "calculation_artifacts": calculation_artifacts,
         "reviewer_comments": reviewer_comments,
-        "discipline_sections": _discipline_sections(blockers, calculation_artifacts),
+        "reviewer_comments_by_severity": reviewer_comments_by_severity,
+        "reviewer_comments_by_discipline": reviewer_comments_by_discipline,
+        "discipline_sections": _discipline_sections(
+            blockers,
+            assumptions,
+            calculation_artifacts,
+            reviewer_comments,
+            standards_summary=standards_summary,
+            existing_summary=existing_summary,
+            engine_summary=engine_summary,
+            export_summary=export_summary,
+        ),
         "signoff_checklist": checklist,
         "manual_engineer_signoff": manual_signoff,
         "truth_label": (

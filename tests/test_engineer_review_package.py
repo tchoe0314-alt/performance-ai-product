@@ -113,16 +113,24 @@ class EngineerReviewPackageTests(unittest.TestCase):
 
         self.assertEqual(package["review_status"], "ready_for_review")
         self.assertFalse(package["blockers"])
-        self.assertFalse(package["missing_inputs"])
+        self.assertIn("manual_signoff", package["missing_inputs_by_gate"])
+        self.assertEqual(
+            package["missing_inputs_by_gate"]["manual_signoff"][0]["field"],
+            "engineer_seal_signature_external_manual",
+        )
+        self.assertTrue(package["automated_gates_review_ready"])
         self.assertTrue(package["required_engineer_review"])
         self.assertTrue(package["construction_release_blocked"])
         self.assertFalse(package["construction_release_allowed"])
         checklist = {item["item_id"]: item for item in package["signoff_checklist"]}
         self.assertEqual(checklist["standards_accepted"]["status"], "complete")
+        self.assertEqual(checklist["standards_accepted"]["check_type"], "system_generated_check")
         self.assertEqual(checklist["survey_control_verified"]["status"], "complete")
         self.assertEqual(checklist["terrain_verified"]["status"], "complete")
         self.assertEqual(checklist["calculations_reviewed"]["status"], "manual_required")
+        self.assertEqual(checklist["calculations_reviewed"]["check_type"], "engineer_manual_review_required")
         self.assertEqual(checklist["engineer_seal_signature_external_manual"]["status"], "manual_required")
+        self.assertEqual(checklist["engineer_seal_signature_external_manual"]["check_type"], "external_seal_signature_required")
         self.assertTrue(checklist["engineer_seal_signature_external_manual"]["external_manual"])
 
     def test_assumptions_and_blockers_are_preserved(self) -> None:
@@ -176,6 +184,8 @@ class EngineerReviewPackageTests(unittest.TestCase):
         self.assertGreaterEqual(len(comments), 2)
         self.assertTrue(all(comment["requires_engineer_review"] for comment in comments))
         self.assertIn("source", comments[0])
+        self.assertIn("review", package["reviewer_comments_by_severity"])
+        self.assertIn("storm", package["reviewer_comments_by_discipline"])
         self.assertIn(
             ("reviewer_comments", "qa-1", "storm", "pipe_capacity"),
             {
@@ -188,6 +198,81 @@ class EngineerReviewPackageTests(unittest.TestCase):
                 for comment in comments
             },
         )
+
+    def test_discipline_blockers_assumptions_calculations_and_source_confidence_are_preserved(self) -> None:
+        meta = _ready_meta()
+        meta["depth_validation"]["stormwater"] = {
+            "production_ready": False,
+            "canonical_model_id": "MODEL-FINAL-1",
+            "blockers": [
+                {
+                    "area": "storm",
+                    "field": "pipe_capacity",
+                    "reason": "Storm pipe capacity needs engineer review.",
+                }
+            ],
+        }
+        meta["assumptions"] = [
+            {
+                "discipline": "storm",
+                "field_name": "tailwater",
+                "assumed_value": "normal depth",
+                "reason": "Tailwater was not provided.",
+            }
+        ]
+        meta["calculation_artifacts"].append(
+            {
+                "artifact_id": "storm_pipe_capacity",
+                "discipline": "storm",
+                "status": "review_ready",
+                "canonical_model_id": "MODEL-FINAL-1",
+                "trace": {"source_object_ids": ["STM-100"], "pipe_ids": ["P-1"]},
+            }
+        )
+
+        package = build_engineer_review_package({"meta": meta})
+
+        storm = package["discipline_sections"]["storm"]
+        self.assertEqual(storm["status"], "blocked")
+        self.assertIn("pipe_capacity", {item["field"] for item in storm["blockers"]})
+        self.assertEqual(storm["assumptions"][0]["field_name"], "tailwater")
+        self.assertIn("storm_pipe_capacity", {item["artifact_id"] for item in storm["calculation_artifacts"]})
+        self.assertEqual(storm["source_confidence"]["terrain_source_confidence"], "survey_surface")
+        self.assertIn("MODEL-FINAL-1", storm["canonical_ids"])
+        self.assertIn("STM-100", storm["canonical_ids"])
+
+    def test_calculation_artifacts_include_canonical_ids(self) -> None:
+        meta = _ready_meta()
+        meta["storm_summary"] = {
+            "success": True,
+            "status": "ready",
+            "canonical_model_id": "MODEL-FINAL-1",
+            "explain": {"canonical_source_ids": ["STM-NET-1"], "pipe_ids": ["P-10"]},
+        }
+
+        package = build_engineer_review_package({"meta": meta})
+
+        artifacts = {item["artifact_id"]: item for item in package["calculation_artifacts"]}
+        self.assertIn("storm_summary", artifacts)
+        self.assertEqual(
+            artifacts["storm_summary"]["canonical_ids"],
+            ["MODEL-FINAL-1", "STM-NET-1", "P-10"],
+        )
+
+    def test_missing_inputs_are_grouped_by_gate(self) -> None:
+        package = build_engineer_review_package({"meta": {"project_id": "missing-gates"}})
+
+        grouped = package["missing_inputs_by_gate"]
+        self.assertEqual(
+            set(grouped),
+            {"standards", "existing_conditions", "engine_depth", "exports", "calculations", "manual_signoff"},
+        )
+        self.assertEqual(grouped["standards"][0]["field"], "standards_package")
+        self.assertEqual(grouped["existing_conditions"][0]["field"], "existing_conditions_package")
+        self.assertEqual(grouped["engine_depth"][0]["field"], "engine_depth_evidence")
+        self.assertEqual(grouped["exports"][0]["field"], "export_package")
+        self.assertEqual(grouped["calculations"][0]["field"], "calculation_artifacts")
+        self.assertEqual(grouped["manual_signoff"][0]["field"], "engineer_seal_signature_external_manual")
 
 
 if __name__ == "__main__":
