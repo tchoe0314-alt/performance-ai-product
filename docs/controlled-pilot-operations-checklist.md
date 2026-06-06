@@ -4,6 +4,8 @@ Use this checklist to launch and run a small, controlled Civora pilot. This is a
 
 Permanent responsibility rule: Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record. Only the licensed engineer or user can review, approve, stamp, seal, sign, submit, and take legal responsibility.
 
+For the business-operations packet covering access flow, roles, support, bug intake, data retention/deletion, confidential input, usage limits, billing readiness, and pilot terms, use [pilot-business-operations.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/pilot-business-operations.md).
+
 ## Pilot User List
 
 Maintain a private pilot roster before invites go out:
@@ -212,5 +214,8 @@ Run this at the start and end of each pilot day:
 - Hosted pilot monitoring cadence and owner.
 - Rollback owner for Vercel and Railway.
 - Decision on whether pilot users may use confidential project inputs.
-- Data retention and deletion policy for pilot uploads and artifacts.
+- Final data retention and deletion policy for pilot uploads and artifacts.
+- Final confidential input approval policy.
+- Final usage limits and charging rules.
+- Counsel-approved pilot terms, privacy language, and billing language.
 - Daily report archive location and naming convention.

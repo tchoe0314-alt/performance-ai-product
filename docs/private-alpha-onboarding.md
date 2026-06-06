@@ -76,6 +76,8 @@ The licensed engineer or user is responsible for:
 
 Pilot users should report issues in the shared pilot support channel or directly to the Civora team contact. If the issue affects safety, source trust, exports, or engineer-review boundaries, mark it as urgent and stop using the affected output until we respond.
 
+Before inviting pilot users, Civora operators should confirm the access, support, policy, limit, billing, and terms checklist in [pilot-business-operations.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/pilot-business-operations.md).
+
 ## What To Include In Bug Reports
 
 Please include:

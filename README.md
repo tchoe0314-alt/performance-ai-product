@@ -92,6 +92,7 @@ uvicorn backend.api.app:app --reload --port 8002
 5. Review assumptions, issues, and backend result output in the dashboard
 6. Follow the review-only onboarding guide in [docs/private-alpha-onboarding.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/private-alpha-onboarding.md)
 7. For controlled pilot launch operations, use [docs/controlled-pilot-operations-checklist.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/controlled-pilot-operations-checklist.md)
+8. Before inviting or charging pilot users, complete [docs/pilot-business-operations.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/pilot-business-operations.md)
 
 ## Current private alpha limits
 
