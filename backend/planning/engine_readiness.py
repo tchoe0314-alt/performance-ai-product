@@ -8,6 +8,7 @@ from core.civil_design import civil_design_readiness
 from .common import readiness_issue_explanations
 from .depth_validators import validate_profile_section_depth
 from .engine_contracts import EngineContract, engine_contracts
+from .reactive_model import validate_reactive_model_depth
 
 
 def _safe_dict(value: Any) -> Dict[str, Any]:
@@ -232,6 +233,8 @@ def _depth_validation_for_engine(engine_id: str, meta: Dict[str, Any]) -> Dict[s
         return _safe_dict(validations.get("roadway_corridor"))
     if engine_id == "profile_section":
         return _safe_dict(validations.get("profile_section")) or validate_profile_section_depth(meta)
+    if engine_id == "reactive_model":
+        return _safe_dict(validations.get("reactive_model")) or validate_reactive_model_depth(meta)
     return {}
 
 
@@ -244,6 +247,7 @@ def _depth_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[Dic
         "water": "water_depth",
         "roadway_corridor": "roadway_depth",
         "profile_section": "profile_section_depth",
+        "reactive_model": "reactive_model_depth",
     }.get(engine_id, "engine_depth")
     return [
         {

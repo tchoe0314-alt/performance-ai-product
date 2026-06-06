@@ -57,6 +57,84 @@ REACTIVE_HEAVY_STAGES = {
     "earthwork",
 }
 
+REACTIVE_ENGINE_ORDER = [
+    "geometry",
+    "terrain_surface",
+    "grading",
+    "drainage",
+    "storm_pipe",
+    "sanitary",
+    "water",
+    "utility_coordination",
+    "roadway_corridor",
+    "profile_section",
+    "structure",
+    "earthwork",
+    "hydrology",
+    "conflict_resolution",
+    "qa_validation",
+    "quantity",
+    "export_cad",
+    "gis_existing_conditions",
+    "ai_orchestration",
+    "reactive_model",
+]
+
+REACTIVE_OBJECT_CHANGE_RULES = {
+    "site": {
+        "dirty_engine_ids": [
+            "geometry",
+            "terrain_surface",
+            "grading",
+            "drainage",
+            "storm_pipe",
+            "sanitary",
+            "water",
+            "utility_coordination",
+            "roadway_corridor",
+            "profile_section",
+            "earthwork",
+            "hydrology",
+            "qa_validation",
+            "quantity",
+            "export_cad",
+        ],
+        "dirty_stages": [
+            "layout",
+            "grading",
+            "drainage",
+            "storm_pipes",
+            "sanitary",
+            "utility_network",
+            "coordination_resolution",
+            "earthwork",
+            "sheets",
+            "qa",
+        ],
+        "reason": "site_geometry_changed",
+    },
+    "building": {
+        "dirty_engine_ids": ["grading", "drainage", "water", "utility_coordination", "quantity"],
+        "dirty_stages": ["grading", "drainage", "utility_network", "coordination_resolution", "qa"],
+        "reason": "building_footprint_or_location_changed",
+    },
+    "basin": {
+        "dirty_engine_ids": ["drainage", "storm_pipe", "hydrology", "quantity"],
+        "dirty_stages": ["drainage", "storm_pipes", "qa"],
+        "reason": "drainage_basin_location_or_geometry_changed",
+    },
+    "road": {
+        "dirty_engine_ids": ["roadway_corridor", "grading", "drainage", "water", "utility_coordination", "profile_section", "quantity"],
+        "dirty_stages": ["layout", "grading", "drainage", "utility_network", "coordination_resolution", "sheets", "qa"],
+        "reason": "road_alignment_or_corridor_changed",
+    },
+    "utility": {
+        "dirty_engine_ids": ["water", "utility_coordination", "profile_section", "quantity"],
+        "dirty_stages": ["utility_network", "coordination_resolution", "sheets", "qa"],
+        "reason": "utility_alignment_or_depth_changed",
+    },
+}
+
 
 def _stage_index(stage_name: str) -> int:
     try:
@@ -73,6 +151,198 @@ def _target_stage(target: str) -> str:
 
 def _reactive_stage_cost(stage_names: Iterable[str]) -> int:
     return sum(REACTIVE_STAGE_COST.get(safe_str(stage_name), 3) for stage_name in set(stage_names))
+
+
+def _sort_engines(engine_ids: Iterable[str]) -> List[str]:
+    order = {engine_id: index for index, engine_id in enumerate(REACTIVE_ENGINE_ORDER)}
+    return sorted({safe_str(item) for item in engine_ids if safe_str(item)}, key=lambda item: (order.get(item, len(order)), item))
+
+
+def _all_stage_names() -> List[str]:
+    return list(PLANNER_STAGE_ORDER)
+
+
+def build_reactive_change_evidence(
+    *,
+    change_type: str,
+    changed_object_id: str = "",
+    actual_dirty_engine_ids: Iterable[str] = (),
+    actual_dirty_stages: Iterable[str] = (),
+    completed_stages: Iterable[str] = (),
+    canonical_revision_before: str = "",
+    canonical_revision_after: str = "",
+) -> Dict[str, Any]:
+    normalized_change = safe_str(change_type).lower()
+    rule = safe_dict(REACTIVE_OBJECT_CHANGE_RULES.get(normalized_change))
+    expected_engines = _sort_engines(rule.get("dirty_engine_ids") or [])
+    expected_stages = sorted({safe_str(item) for item in safe_list(rule.get("dirty_stages")) if safe_str(item)}, key=_stage_index)
+    actual_engines = _sort_engines(actual_dirty_engine_ids or expected_engines)
+    actual_stages = sorted({safe_str(item) for item in (actual_dirty_stages or expected_stages) if safe_str(item)}, key=_stage_index)
+    completed = sorted({safe_str(item) for item in completed_stages if safe_str(item)}, key=_stage_index)
+    skipped_engines = _sort_engines(set(REACTIVE_ENGINE_ORDER) - set(expected_engines) - {"reactive_model"})
+    skipped_stages = [stage_name for stage_name in _all_stage_names() if stage_name not in expected_stages]
+    stale_outputs = [stage_name for stage_name in expected_stages if stage_name not in completed]
+    affected_checks = [
+        {
+            "system": engine_id,
+            "expected": "dirty",
+            "actual": "dirty" if engine_id in actual_engines else "skipped",
+            "valid": engine_id in actual_engines,
+            "reason": safe_str(rule.get("reason"), f"{normalized_change}_changed"),
+        }
+        for engine_id in expected_engines
+    ]
+    skipped_checks = [
+        {
+            "system": engine_id,
+            "expected": "skipped",
+            "actual": "dirty" if engine_id in actual_engines else "skipped",
+            "valid": engine_id not in actual_engines,
+            "reason": f"not_downstream_of_{normalized_change}_change",
+        }
+        for engine_id in skipped_engines
+    ]
+    stage_checks = [
+        {
+            "stage": stage_name,
+            "expected": "dirty",
+            "actual": "dirty" if stage_name in actual_stages else "skipped",
+            "valid": stage_name in actual_stages,
+            "export_blocking_until_complete": stage_name not in completed,
+        }
+        for stage_name in expected_stages
+    ] + [
+        {
+            "stage": stage_name,
+            "expected": "skipped",
+            "actual": "dirty" if stage_name in actual_stages else "skipped",
+            "valid": stage_name not in actual_stages,
+            "export_blocking_until_complete": False,
+        }
+        for stage_name in skipped_stages
+    ]
+    canonical_revision_valid = bool(canonical_revision_before and canonical_revision_after and canonical_revision_before != canonical_revision_after)
+    production_ready = bool(rule) and canonical_revision_valid and not stale_outputs and all(
+        bool(row.get("valid")) for row in affected_checks + skipped_checks + stage_checks
+    )
+    blockers = []
+    if not rule:
+        blockers.append("reactive_change_type_unknown")
+    if not canonical_revision_valid:
+        blockers.append("canonical_revision_trace_missing")
+    if stale_outputs:
+        blockers.append("stale_outputs_block_export")
+    if any(not bool(row.get("valid")) for row in affected_checks):
+        blockers.append("affected_system_mismatch")
+    if any(not bool(row.get("valid")) for row in skipped_checks):
+        blockers.append("unrelated_system_rerun_detected")
+    if any(not bool(row.get("valid")) for row in stage_checks):
+        blockers.append("stage_dirty_state_mismatch")
+    return {
+        "version": "reactive_model_evidence_v1",
+        "change_type": normalized_change,
+        "changed_object_id": safe_str(changed_object_id),
+        "canonical_revision_before": safe_str(canonical_revision_before),
+        "canonical_revision_after": safe_str(canonical_revision_after),
+        "canonical_revision_valid": canonical_revision_valid,
+        "expected_dirty_engine_ids": expected_engines,
+        "actual_dirty_engine_ids": actual_engines,
+        "expected_dirty_stages": expected_stages,
+        "actual_dirty_stages": actual_stages,
+        "expected_skipped_engine_ids": skipped_engines,
+        "actual_skipped_engine_ids": _sort_engines(set(REACTIVE_ENGINE_ORDER) - set(actual_engines) - {"reactive_model"}),
+        "expected_skipped_stages": skipped_stages,
+        "actual_skipped_stages": [stage_name for stage_name in _all_stage_names() if stage_name not in actual_stages],
+        "affected_system_checks": affected_checks,
+        "skipped_system_checks": skipped_checks,
+        "stage_checks": stage_checks,
+        "completed_stages": completed,
+        "stale_outputs": stale_outputs,
+        "export_blocked": bool(stale_outputs),
+        "review_readiness_blocked": bool(blockers),
+        "production_ready": production_ready,
+        "blockers": blockers,
+        "run_policy": build_reactive_run_policy(impacted_stages=expected_stages, stale_outputs=stale_outputs),
+        "truth_label": "Reactive evidence compares deterministic expected dirty/skipped systems to actual dirty/skipped systems; stale outputs remain blocked.",
+    }
+
+
+def validate_reactive_model_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(plan_or_meta.get("meta")) if "meta" in plan_or_meta else safe_dict(plan_or_meta)
+    report = safe_dict(meta.get("reactive_model_evidence") or meta.get("reactive_update_report"))
+    checks: List[Dict[str, Any]] = []
+
+    def add_check(name: str, ok: bool, evidence: str, blocker: str) -> None:
+        checks.append(
+            {
+                "name": name,
+                "ok": bool(ok),
+                "evidence": evidence if ok else "",
+                "blocker": "" if ok else blocker,
+            }
+        )
+
+    if not report:
+        add_check("reactive_report", False, "reactive report", "Reactive model depth needs a dependency-aware reactive update report.")
+        add_check("affected_vs_skipped", False, "affected/skipped checks", "Reactive model depth needs deterministic affected-vs-skipped system checks.")
+        add_check("stale_output_blocking", False, "stale output blocking", "Reactive model depth needs stale-output export/review blocking evidence.")
+    else:
+        affected = [safe_dict(row) for row in safe_list(report.get("affected_system_checks"))]
+        skipped = [safe_dict(row) for row in safe_list(report.get("skipped_system_checks"))]
+        stages = [safe_dict(row) for row in safe_list(report.get("stage_checks") or report.get("post_rerun_stage_status"))]
+        add_check("reactive_report", safe_str(report.get("version")).startswith("reactive_model"), "reactive report", "Reactive model depth needs a versioned reactive report.")
+        add_check(
+            "canonical_revision_trace",
+            report.get("canonical_revision_valid") is True or bool(safe_str(report.get("canonical_model_id"))),
+            "canonical revision trace",
+            "Reactive model depth needs canonical revision/model trace evidence.",
+        )
+        add_check(
+            "affected_vs_skipped",
+            bool(affected and skipped) and all(row.get("valid") is True for row in affected + skipped),
+            "affected/skipped expected-actual checks",
+            "Reactive model depth needs passing affected-vs-skipped system checks.",
+        )
+        add_check(
+            "stage_dirty_checks",
+            bool(stages) and all(row.get("valid") is not False for row in stages),
+            "stage dirty expected-actual checks",
+            "Reactive model depth needs passing stage dirty/skipped checks.",
+        )
+        stale = safe_list(report.get("stale_outputs") or report.get("post_rerun_stale_outputs"))
+        export_blocked = report.get("export_blocked") is True or report.get("post_rerun_export_blocked") is True
+        no_stale_after = not stale and (report.get("export_blocked") is False or report.get("post_rerun_export_blocked") is False)
+        add_check(
+            "stale_output_blocking",
+            bool((stale and export_blocked) or no_stale_after),
+            "stale output blocking",
+            "Reactive model depth needs stale outputs blocked until affected reruns complete.",
+        )
+        add_check(
+            "reactive_evidence_complete",
+            report.get("production_ready") is True or (
+                report.get("post_rerun_export_blocked") is False and not safe_list(report.get("post_rerun_stale_outputs"))
+            ),
+            "completed affected reruns",
+            "Reactive model depth needs completed affected reruns before production-depth status.",
+        )
+        add_check(
+            "partial_rerun_policy",
+            report.get("partial_rerun_supported") is True or bool(safe_dict(report.get("run_policy"))),
+            "partial rerun policy",
+            "Reactive model depth needs partial-rerun policy evidence, not full-rerun-only behavior.",
+        )
+    blockers = [check["blocker"] for check in checks if not check["ok"] and check["blocker"]]
+    return {
+        "system": "reactive_model_depth",
+        "production_ready": not blockers,
+        "checks": checks,
+        "blockers": blockers,
+        "blocker_details": blocker_explanations(blockers),
+        "evidence": [check["evidence"] for check in checks if check["ok"] and check["evidence"]],
+        "reactive_report": deepcopy(report),
+        "truth_label": "Reactive depth validates dependency-aware rerun evidence only; it never approves construction release.",
+    }
 
 
 def build_reactive_run_policy(
@@ -510,8 +780,10 @@ def execute_reactive_rerun(
 
 __all__ = [
     "ENGINE_TO_STAGE",
+    "build_reactive_change_evidence",
     "build_reactive_run_policy",
     "build_reactive_update_report",
     "execute_reactive_rerun",
     "reactive_report_from_plan",
+    "validate_reactive_model_depth",
 ]

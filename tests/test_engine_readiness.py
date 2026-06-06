@@ -217,6 +217,17 @@ class EngineReadinessTests(unittest.TestCase):
         self.assertEqual(reactive["status"], "concept_ready_needs_production_depth")
         self.assertIn("post_rerun_release_blockers", {item["field"] for item in reactive["production_blockers"]})
 
+    def test_missing_reactive_depth_report_blocks_reactive_engine_readiness_at_review_depth(self) -> None:
+        meta = _complete_meta()
+        meta["stage_results"] = [{"stage_name": "grading", "success": True, "completeness": "complete"}]
+
+        readiness = evaluate_engine_readiness({"meta": meta})
+
+        reactive = readiness["engines"]["reactive_model"]
+        self.assertEqual(reactive["status"], "concept_ready_needs_production_depth")
+        self.assertIn("reactive_model_depth", {item["area"] for item in reactive["production_blockers"]})
+        self.assertIn("Reactive model depth needs a dependency-aware reactive update report.", {item["message"] for item in reactive["production_blockers"]})
+
     def test_structure_engine_is_not_applicable_without_structure_scope(self) -> None:
         readiness = evaluate_engine_readiness({"meta": _complete_meta()})
 

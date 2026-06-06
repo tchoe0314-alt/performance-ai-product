@@ -5,6 +5,7 @@ from backend.planning.standards_discovery import (
     build_standards_review_packet,
     standards_pack_from_acceptance,
 )
+from backend.planning.reactive_model import build_reactive_change_evidence
 from backend.planning.standards_package import build_standards_package
 import planner
 from core.civil_design import (
@@ -228,6 +229,13 @@ def _production_ready_meta() -> dict:
         "post_rerun_stale_outputs": [],
         "canonical_model_id": "MODEL-FINAL-1",
     }
+    meta["reactive_model_evidence"] = build_reactive_change_evidence(
+        change_type="road",
+        changed_object_id="ROAD-1",
+        canonical_revision_before="MODEL-DRAFT-1",
+        canonical_revision_after="MODEL-FINAL-1",
+        completed_stages=["layout", "grading", "drainage", "utility_network", "coordination_resolution", "sheets", "qa"],
+    )
     meta["export_audit"] = {
         "ready": True,
         "production_export_ready": True,

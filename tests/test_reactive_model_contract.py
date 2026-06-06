@@ -1,9 +1,133 @@
 import unittest
 
-from backend.planning.reactive_model import build_reactive_update_report, execute_reactive_rerun, reactive_report_from_plan
+from backend.planning.reactive_model import (
+    build_reactive_change_evidence,
+    build_reactive_update_report,
+    execute_reactive_rerun,
+    reactive_report_from_plan,
+    validate_reactive_model_depth,
+)
 
 
 class ReactiveModelContractTests(unittest.TestCase):
+    def test_site_change_marks_downstream_systems_dirty_with_no_stage_skips(self) -> None:
+        report = build_reactive_change_evidence(
+            change_type="site",
+            changed_object_id="SITE-1",
+            canonical_revision_before="REV-1",
+            canonical_revision_after="REV-2",
+        )
+
+        self.assertEqual(report["expected_dirty_stages"], [
+            "layout",
+            "grading",
+            "drainage",
+            "storm_pipes",
+            "sanitary",
+            "utility_network",
+            "coordination_resolution",
+            "earthwork",
+            "sheets",
+            "qa",
+        ])
+        self.assertEqual(report["expected_skipped_stages"], [])
+        self.assertTrue(report["export_blocked"])
+        self.assertIn("stale_outputs_block_export", report["blockers"])
+
+    def test_building_change_marks_expected_systems_and_skips_unrelated(self) -> None:
+        report = build_reactive_change_evidence(
+            change_type="building",
+            changed_object_id="BLDG-1",
+            canonical_revision_before="REV-1",
+            canonical_revision_after="REV-2",
+        )
+
+        self.assertEqual(report["expected_dirty_engine_ids"], ["grading", "drainage", "water", "utility_coordination", "quantity"])
+        self.assertEqual(report["expected_dirty_stages"], ["grading", "drainage", "utility_network", "coordination_resolution", "qa"])
+        self.assertIn("storm_pipe", report["expected_skipped_engine_ids"])
+        self.assertIn("profile_section", report["expected_skipped_engine_ids"])
+        self.assertNotIn("storm_pipes", report["actual_dirty_stages"])
+        skipped = {row["system"]: row for row in report["skipped_system_checks"]}
+        self.assertEqual(skipped["storm_pipe"]["expected"], "skipped")
+        self.assertTrue(skipped["storm_pipe"]["valid"])
+
+    def test_basin_change_marks_drainage_storm_and_quantity_only(self) -> None:
+        report = build_reactive_change_evidence(
+            change_type="basin",
+            changed_object_id="BASIN-1",
+            canonical_revision_before="REV-1",
+            canonical_revision_after="REV-2",
+        )
+
+        self.assertEqual(report["expected_dirty_engine_ids"], ["drainage", "storm_pipe", "hydrology", "quantity"])
+        self.assertEqual(report["expected_dirty_stages"], ["drainage", "storm_pipes", "qa"])
+        self.assertIn("grading", report["expected_skipped_engine_ids"])
+        self.assertIn("utility_network", report["expected_skipped_stages"])
+
+    def test_road_change_marks_corridor_profile_and_utility_chain(self) -> None:
+        report = build_reactive_change_evidence(
+            change_type="road",
+            changed_object_id="ROAD-1",
+            canonical_revision_before="REV-1",
+            canonical_revision_after="REV-2",
+        )
+
+        self.assertEqual(
+            report["expected_dirty_engine_ids"],
+            ["grading", "drainage", "water", "utility_coordination", "roadway_corridor", "profile_section", "quantity"],
+        )
+        self.assertEqual(
+            report["expected_dirty_stages"],
+            ["layout", "grading", "drainage", "utility_network", "coordination_resolution", "sheets", "qa"],
+        )
+        self.assertIn("storm_pipe", report["expected_skipped_engine_ids"])
+        self.assertIn("storm_pipes", report["expected_skipped_stages"])
+
+    def test_utility_change_marks_coordination_profiles_and_quantity(self) -> None:
+        report = build_reactive_change_evidence(
+            change_type="utility",
+            changed_object_id="W-1",
+            canonical_revision_before="REV-1",
+            canonical_revision_after="REV-2",
+        )
+
+        self.assertEqual(report["expected_dirty_engine_ids"], ["water", "utility_coordination", "profile_section", "quantity"])
+        self.assertEqual(report["expected_dirty_stages"], ["utility_network", "coordination_resolution", "sheets", "qa"])
+        self.assertIn("grading", report["expected_skipped_engine_ids"])
+        self.assertIn("drainage", report["expected_skipped_stages"])
+
+    def test_reactive_depth_passes_after_expected_partial_rerun_completion(self) -> None:
+        evidence = build_reactive_change_evidence(
+            change_type="road",
+            changed_object_id="ROAD-1",
+            canonical_revision_before="REV-1",
+            canonical_revision_after="REV-2",
+            completed_stages=["layout", "grading", "drainage", "utility_network", "coordination_resolution", "sheets", "qa"],
+        )
+
+        result = validate_reactive_model_depth({"meta": {"reactive_model_evidence": evidence}})
+
+        self.assertTrue(result["production_ready"])
+        self.assertEqual(evidence["stale_outputs"], [])
+        self.assertFalse(evidence["export_blocked"])
+        self.assertIn("affected/skipped expected-actual checks", result["evidence"])
+
+    def test_reactive_depth_blocks_missing_report_and_stale_outputs(self) -> None:
+        missing = validate_reactive_model_depth({"meta": {}})
+        stale = build_reactive_change_evidence(
+            change_type="basin",
+            changed_object_id="BASIN-1",
+            canonical_revision_before="REV-1",
+            canonical_revision_after="REV-2",
+        )
+        stale_result = validate_reactive_model_depth({"meta": {"reactive_model_evidence": stale}})
+
+        self.assertFalse(missing["production_ready"])
+        self.assertIn("Reactive model depth needs a dependency-aware reactive update report.", missing["blockers"])
+        self.assertFalse(stale_result["production_ready"])
+        self.assertIn("Reactive model depth needs completed affected reruns before production-depth status.", stale_result["blockers"])
+        self.assertIn("stale output blocking", stale_result["evidence"])
+
     def test_roadway_change_marks_downstream_engines_and_stages(self) -> None:
         report = build_reactive_update_report(changed_engine_ids=["roadway_corridor"])
 
