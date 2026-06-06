@@ -4,7 +4,6 @@ import csv
 import math
 import mimetypes
 import os
-import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
@@ -34,6 +33,97 @@ class AuthStoreProtocol(Protocol):
         ...
 
 
+MI_B = 1024 * 1024
+IMAGE_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "application/octet-stream"}
+SURVEY_ALLOWED_EXTENSIONS = {".csv"}
+SURVEY_ALLOWED_CONTENT_TYPES = {"text/csv", "application/csv", "application/vnd.ms-excel", "text/plain", "application/octet-stream"}
+EXISTING_CONDITIONS_ALLOWED_EXTENSIONS = {
+    ".csv",
+    ".geojson",
+    ".json",
+    ".dxf",
+    ".shp",
+    ".gpkg",
+    ".tif",
+    ".tiff",
+    ".las",
+    ".laz",
+    ".xml",
+    ".landxml",
+}
+EXISTING_CONDITIONS_ALLOWED_CONTENT_TYPES = {
+    "text/csv",
+    "application/csv",
+    "application/geo+json",
+    "application/json",
+    "application/dxf",
+    "application/octet-stream",
+    "application/xml",
+    "text/xml",
+    "image/tiff",
+}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        value = int(str(os.getenv(name) or "").strip())
+    except Exception:
+        return int(default)
+    return value if value > 0 else int(default)
+
+
+def _upload_limit_bytes(kind: str) -> int:
+    defaults = {
+        "image": 10 * MI_B,
+        "survey": 5 * MI_B,
+        "existing_conditions": 25 * MI_B,
+    }
+    return _env_int(f"CIVORA_MAX_{kind.upper()}_UPLOAD_BYTES", defaults[kind])
+
+
+def _validate_upload_metadata(
+    *,
+    file: UploadFile,
+    safe_name: str,
+    allowed_extensions: set[str],
+    allowed_content_types: set[str],
+) -> str:
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in allowed_extensions:
+        raise HTTPException(status_code=415, detail="Unsupported upload file type.")
+    content_type = str(getattr(file, "content_type", "") or "").split(";")[0].strip().lower()
+    if content_type and content_type not in allowed_content_types:
+        raise HTTPException(status_code=415, detail="Unsupported upload content type.")
+    return suffix
+
+
+def _copy_upload_with_limit(*, file: UploadFile, target: Path, max_bytes: int) -> int:
+    total = 0
+    try:
+        with target.open("wb") as buffer:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise HTTPException(status_code=413, detail="Uploaded file is too large.")
+                buffer.write(chunk)
+    except HTTPException:
+        try:
+            target.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            file.file.seek(0)
+        except Exception:
+            pass
+    return total
+
+
 def upload_image_file(
     *,
     upload_dir: Path,
@@ -43,11 +133,16 @@ def upload_image_file(
     filename = file.filename or "uploaded_image"
     safe_prefix = str(current_user["user_id"]).replace("/", "_")
     safe_name = Path(filename).name
+    _validate_upload_metadata(
+        file=file,
+        safe_name=safe_name,
+        allowed_extensions=IMAGE_ALLOWED_EXTENSIONS,
+        allowed_content_types=IMAGE_ALLOWED_CONTENT_TYPES,
+    )
     stored_name = f"{safe_prefix}_{safe_name}"
     target = upload_dir / stored_name
 
-    with target.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("image"))
 
     return {
         "success": True,
@@ -68,11 +163,16 @@ def upload_survey_file(
     filename = file.filename or "survey.csv"
     safe_prefix = str(current_user["user_id"]).replace("/", "_")
     safe_name = Path(filename).name
+    _validate_upload_metadata(
+        file=file,
+        safe_name=safe_name,
+        allowed_extensions=SURVEY_ALLOWED_EXTENSIONS,
+        allowed_content_types=SURVEY_ALLOWED_CONTENT_TYPES,
+    )
     stored_name = f"{safe_prefix}_{safe_name}"
     target = upload_dir / stored_name
 
-    with target.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("survey"))
 
     file_type = Path(safe_name).suffix.lower().lstrip(".")
     parse_success = False
@@ -132,11 +232,16 @@ def upload_existing_conditions_file(
     filename = file.filename or "existing_conditions"
     safe_prefix = str(current_user["user_id"]).replace("/", "_")
     safe_name = Path(filename).name
+    _validate_upload_metadata(
+        file=file,
+        safe_name=safe_name,
+        allowed_extensions=EXISTING_CONDITIONS_ALLOWED_EXTENSIONS,
+        allowed_content_types=EXISTING_CONDITIONS_ALLOWED_CONTENT_TYPES,
+    )
     stored_name = f"{safe_prefix}_{safe_name}"
     target = upload_dir / stored_name
 
-    with target.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("existing_conditions"))
 
     suffix = target.suffix.lower()
     imports = []

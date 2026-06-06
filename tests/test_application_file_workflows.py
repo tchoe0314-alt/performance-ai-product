@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 from backend.application.file_workflows import (
     download_artifact_response,
@@ -37,6 +37,33 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             )
             self.assertTrue(result["stored_filename"].startswith("u1_"))
             self.assertTrue((Path(tmpdir) / result["stored_filename"]).exists())
+
+    def test_upload_image_file_rejects_oversized_file_and_removes_partial(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            upload = UploadFile(filename="site.png", file=BytesIO(b"abc"))
+            with patch.dict("os.environ", {"CIVORA_MAX_IMAGE_UPLOAD_BYTES": "2"}):
+                with self.assertRaises(HTTPException) as ctx:
+                    upload_image_file(
+                        upload_dir=Path(tmpdir),
+                        file=upload,
+                        current_user={"user_id": "u1"},
+                    )
+
+            self.assertEqual(ctx.exception.status_code, 413)
+            self.assertFalse((Path(tmpdir) / "u1_site.png").exists())
+
+    def test_upload_image_file_rejects_unsupported_extension(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            upload = UploadFile(filename="site.exe", file=BytesIO(b"abc"))
+            with self.assertRaises(HTTPException) as ctx:
+                upload_image_file(
+                    upload_dir=Path(tmpdir),
+                    file=upload,
+                    current_user={"user_id": "u1"},
+                )
+
+            self.assertEqual(ctx.exception.status_code, 415)
+            self.assertFalse((Path(tmpdir) / "u1_site.exe").exists())
 
     def test_get_uploaded_image_response_validates_token_and_owner(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -81,6 +108,19 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             self.assertIn("existing_conditions_package", result)
             self.assertEqual(result["existing_conditions_package"]["status"], "blocked")
             self.assertIn("import_validation", result["existing_conditions_package"])
+
+    def test_upload_existing_conditions_rejects_unsupported_extension_before_storage(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            upload = UploadFile(filename="notes.txt", file=BytesIO(b"not source data"))
+            with self.assertRaises(HTTPException) as ctx:
+                upload_existing_conditions_file(
+                    upload_dir=Path(tmpdir),
+                    file=upload,
+                    current_user={"user_id": "u1"},
+                )
+
+            self.assertEqual(ctx.exception.status_code, 415)
+            self.assertFalse((Path(tmpdir) / "u1_notes.txt").exists())
 
     def test_upload_existing_conditions_reports_dependency_blocked_file_as_failed_source(self):
         with tempfile.TemporaryDirectory() as tmpdir:

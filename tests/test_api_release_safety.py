@@ -10,6 +10,8 @@ from backend.api.app import (
     ChatLearningCronPayload,
     ProfessionalReleasePayload,
     RegisterPayload,
+    _RATE_LIMIT_DEFAULTS,
+    _RATE_LIMIT_EVENTS,
     _cors_allow_origins,
     _runtime_debug_payload,
     app,
@@ -80,6 +82,22 @@ class ApiReleaseSafetyTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertIn("Public registration is disabled", str(ctx.exception.detail))
+
+    def test_auth_status_route_is_rate_limited(self) -> None:
+        client = TestClient(app)
+        previous = _RATE_LIMIT_DEFAULTS["auth"]
+        _RATE_LIMIT_EVENTS.clear()
+        _RATE_LIMIT_DEFAULTS["auth"] = (1, 60)
+        try:
+            first = client.get("/api/auth/status")
+            second = client.get("/api/auth/status")
+        finally:
+            _RATE_LIMIT_DEFAULTS["auth"] = previous
+            _RATE_LIMIT_EVENTS.clear()
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(second.json()["detail"], "Rate limit exceeded. Try again later.")
 
 
 if __name__ == "__main__":

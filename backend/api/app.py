@@ -7,9 +7,12 @@ import signal
 import time
 import uuid
 import urllib.parse
+from collections import deque
+import hashlib
+import threading
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -160,6 +163,70 @@ def _public_registration_allowed() -> bool:
     if PRODUCT_MODE in {"development", "local"}:
         return True
     return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
+
+
+_RATE_LIMIT_DEFAULTS: Dict[str, tuple[int, int]] = {
+    "auth": (30, 60),
+    "health": (120, 60),
+    "debug": (30, 60),
+    "geocode": (30, 60),
+    "upload": (20, 60),
+    "chat": (60, 60),
+    "planner": (20, 60),
+    "export": (60, 60),
+}
+_RATE_LIMIT_EVENTS: Dict[str, deque[float]] = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        value = int(str(os.getenv(name) or "").strip())
+    except Exception:
+        return int(default)
+    return value if value > 0 else int(default)
+
+
+def _rate_limit_config(bucket: str) -> tuple[int, int]:
+    default_limit, default_window = _RATE_LIMIT_DEFAULTS.get(bucket, (60, 60))
+    env_name = f"CIVORA_RATE_LIMIT_{bucket.upper()}_PER_MINUTE"
+    return _env_int(env_name, default_limit), default_window
+
+
+def _request_rate_limit_key(request: Request, authorization: Optional[str]) -> str:
+    forwarded = str(request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    client_host = forwarded or (request.client.host if request.client else "unknown")
+    token = _bearer_token(authorization)
+    if token:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+        return f"token:{token_hash}:{client_host}"
+    return f"ip:{client_host}"
+
+
+def _check_rate_limit(bucket: str, key: str, *, limit: int, window_seconds: int, now: Optional[float] = None) -> None:
+    current = float(now if now is not None else time.time())
+    state_key = f"{bucket}:{key}"
+    cutoff = current - float(window_seconds)
+    with _RATE_LIMIT_LOCK:
+        events = _RATE_LIMIT_EVENTS.setdefault(state_key, deque())
+        while events and events[0] <= cutoff:
+            events.popleft()
+        if len(events) >= limit:
+            raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
+        events.append(current)
+
+
+def rate_limit(bucket: str):
+    def dependency(request: Request, authorization: Optional[str] = Header(default=None)) -> None:
+        limit, window_seconds = _rate_limit_config(bucket)
+        _check_rate_limit(
+            bucket,
+            _request_rate_limit_key(request, authorization),
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+
+    return dependency
 
 
 DB = Database(DB_PATH)
@@ -746,7 +813,7 @@ def root() -> Dict[str, str]:
 
 
 @app.get("/api/health")
-def health() -> Dict[str, Any]:
+def health(_rate_limit: None = Depends(rate_limit("health"))) -> Dict[str, Any]:
     connection = DB.connect()
     try:
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
@@ -765,13 +832,16 @@ def health() -> Dict[str, Any]:
 
 
 @app.get("/api/debug/runtime")
-def debug_runtime(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def debug_runtime(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("debug")),
+) -> Dict[str, Any]:
     _ = current_user
     return _runtime_debug_payload()
 
 
 @app.get("/api/auth/status")
-def auth_status() -> Dict[str, Any]:
+def auth_status(_rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, Any]:
     connection = DB.connect()
     try:
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
@@ -781,7 +851,7 @@ def auth_status() -> Dict[str, Any]:
 
 
 @app.post("/api/auth/register")
-def register(payload: RegisterPayload) -> Dict[str, Any]:
+def register(payload: RegisterPayload, _rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, Any]:
     connection = DB.connect()
     try:
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
@@ -798,7 +868,7 @@ def register(payload: RegisterPayload) -> Dict[str, Any]:
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginPayload) -> Dict[str, Any]:
+def login(payload: LoginPayload, _rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, Any]:
     return application_login_user(
         auth_store=AUTH_STORE,
         email=payload.email,
@@ -807,12 +877,18 @@ def login(payload: LoginPayload) -> Dict[str, Any]:
 
 
 @app.get("/api/auth/me")
-def me(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def me(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
     return application_current_user_response(current_user=current_user)
 
 
 @app.post("/api/auth/logout")
-def logout(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def logout(
+    authorization: Optional[str] = Header(default=None),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
     return application_logout_user(
         auth_store=AUTH_STORE,
         token=_bearer_token(authorization),
@@ -823,6 +899,7 @@ def logout(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any
 async def upload_image(
     file: UploadFile = File(...),
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("upload")),
 ) -> Dict[str, Any]:
     return application_upload_image_file(
         upload_dir=UPLOAD_DIR,
@@ -835,6 +912,7 @@ async def upload_image(
 async def upload_survey(
     file: UploadFile = File(...),
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("upload")),
 ) -> Dict[str, Any]:
     return application_upload_survey_file(
         upload_dir=UPLOAD_DIR,
@@ -847,6 +925,7 @@ async def upload_survey(
 async def upload_existing_conditions(
     file: UploadFile = File(...),
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("upload")),
 ) -> Dict[str, Any]:
     return application_upload_existing_conditions_file(
         upload_dir=UPLOAD_DIR,
@@ -859,6 +938,7 @@ async def upload_existing_conditions(
 def existing_conditions_online_sources(
     payload: ExistingConditionsOnlineSourcesPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("geocode")),
 ) -> Dict[str, Any]:
     _ = current_user
     return application_existing_conditions_online_sources(
@@ -872,6 +952,7 @@ def existing_conditions_online_sources(
 def fetch_existing_conditions_online(
     payload: ExistingConditionsOnlineFetchPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("geocode")),
 ) -> Dict[str, Any]:
     _ = current_user
     return application_fetch_existing_conditions_online(
@@ -1174,6 +1255,7 @@ def detect_image_features(
 def geocode_address(
     payload: GeocodePayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("geocode")),
 ) -> GeocodeResponse:
     address = str(payload.address or "").strip()
     if not address:
@@ -1234,6 +1316,7 @@ def get_uploaded_image(
     filename: str,
     authorization: Optional[str] = Header(default=None),
     access_token: Optional[str] = Query(default=None),
+    _rate_limit: None = Depends(rate_limit("export")),
 ) -> FileResponse:
     token = str(access_token or "").strip() or _bearer_token(authorization)
     return application_get_uploaded_image_response(
@@ -1248,6 +1331,7 @@ def get_uploaded_image(
 def chat_decide(
     payload: ChatDecisionPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("chat")),
 ) -> Dict[str, Any]:
     try:
         return application_decide_chat(
@@ -1264,6 +1348,7 @@ def chat_decide(
 def chat_feedback(
     payload: ChatFeedbackPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("chat")),
 ) -> Dict[str, Any]:
     from backend.services.chat_learning_store import (
         append_chat_learning_event,
@@ -1390,6 +1475,7 @@ def chat_learning_report(
 def orchestrate(
     payload: OrchestratePayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
     return _run_orchestration(_orchestration_request_payload(payload), current_user=current_user)
 
@@ -1451,7 +1537,11 @@ def list_jobs(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[
 
 
 @app.post("/api/jobs/orchestrate")
-def queue_orchestrate_job(payload: QueueOrchestratePayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def queue_orchestrate_job(
+    payload: QueueOrchestratePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
     project_id, request_payload = _queue_request_payload_with_project(payload)
     return application_queue_orchestrate_job(
         project_store=PROJECT_STORE,
@@ -1463,7 +1553,11 @@ def queue_orchestrate_job(payload: QueueOrchestratePayload, current_user: Dict[s
 
 
 @app.post("/api/jobs/drainage")
-def queue_drainage_job(payload: QueueDrainagePayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def queue_drainage_job(
+    payload: QueueDrainagePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
     project_id, request_payload = _queue_request_payload_with_project(payload)
     return application_queue_drainage_job(
         project_store=PROJECT_STORE,
@@ -1478,6 +1572,7 @@ def queue_drainage_job(payload: QueueDrainagePayload, current_user: Dict[str, An
 def build_preview(
     payload: ArtifactPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
     try:
         result_data = _result_from_payload(current_user, payload)
@@ -1513,6 +1608,7 @@ def build_preview(
 def export_dxf(
     payload: ArtifactPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("export")),
 ) -> FileResponse:
     result_data = _result_from_payload(current_user, payload)
     path = application_export_dxf_artifact(
@@ -1534,6 +1630,7 @@ def export_dxf(
 def export_report(
     payload: ArtifactPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("export")),
 ) -> FileResponse:
     result_data = _result_from_payload(current_user, payload)
     path = application_export_report_artifact(
@@ -1560,7 +1657,11 @@ def get_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user
 
 
 @app.post("/api/jobs/{job_id}/cancel")
-def cancel_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def cancel_job(
+    job_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
     return application_cancel_existing_job(
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
@@ -1569,7 +1670,11 @@ def cancel_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_u
 
 
 @app.post("/api/jobs/{job_id}/continue")
-def continue_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def continue_job(
+    job_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
     return application_continue_existing_job(
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
@@ -1582,6 +1687,7 @@ def revise_job(
     job_id: str,
     payload: ReviseJobPayload = ReviseJobPayload(),
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
     return application_revise_existing_job(
         project_store=PROJECT_STORE,
@@ -1596,6 +1702,7 @@ def revise_job(
 def download_artifact(
     filename: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("export")),
 ) -> FileResponse:
     return application_download_artifact_response(
         artifact_dir=ARTIFACT_DIR,
