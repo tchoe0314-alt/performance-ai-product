@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 from core.professional_release import validate_professional_release
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
+from .production_evidence import build_production_evidence
 
 
 REVIEW_PACKAGE_VERSION = "engineer_review_package_v1"
@@ -258,6 +259,7 @@ def _existing_conditions_summary(meta: Dict[str, Any]) -> Dict[str, Any]:
 def _engine_depth_summary(meta: Dict[str, Any]) -> Dict[str, Any]:
     audit = safe_dict(meta.get("engine_depth_audit_report") or meta.get("engine_depth_audit"))
     readiness = safe_dict(meta.get("engine_readiness"))
+    production_evidence = safe_dict(meta.get("production_evidence")) or build_production_evidence(meta)
     alpha = safe_dict(safe_dict(readiness.get("summary")).get("alpha_readiness"))
     depth_validation = safe_dict(meta.get("depth_validation"))
     validation_blockers = {
@@ -275,6 +277,10 @@ def _engine_depth_summary(meta: Dict[str, Any]) -> Dict[str, Any]:
         "applicable_engine_count": alpha.get("applicable_engine_count"),
         "depth_validation_present": bool(depth_validation),
         "depth_validation_blockers": validation_blockers,
+        "canonical_evidence_version": safe_str(production_evidence.get("version")),
+        "canonical_evidence_present": bool(production_evidence),
+        "canonical_evidence_ready": production_evidence.get("production_evidence_ready") is True,
+        "canonical_evidence_blockers": deepcopy(safe_list(production_evidence.get("blockers"))),
         "truth_label": "Engine depth evidence supports engineer review; it does not replace professional calculation review.",
     }
 
@@ -328,11 +334,23 @@ def _calculation_artifacts(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
         "quantities",
         "cost_estimate",
         "depth_validation",
+        "production_evidence",
     ):
         value = meta.get(key)
         if value is None:
             continue
         rec = safe_dict(value)
+        if key == "production_evidence":
+            scoped = bool(
+                safe_dict(rec.get("accepted_surfaces")).get("scope_exists")
+                or safe_dict(rec.get("storm_hydraulics")).get("scope_exists")
+                or safe_dict(rec.get("profile_section")).get("scope_exists")
+                or safe_dict(rec.get("quantity_cost")).get("quantity_scope_exists")
+                or safe_list(safe_dict(rec.get("reactive_dirty_state")).get("dirty_state"))
+                or safe_list(rec.get("blockers"))
+            )
+            if not scoped:
+                continue
         trace = deepcopy(rec.get("explain") or rec.get("trace") or rec.get("canonical_id_traceability") or {})
         artifacts.append(
             {
@@ -615,6 +633,8 @@ def _approval_checklist(
 
 def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan_or_meta.get("meta")) if isinstance(plan_or_meta, dict) and "meta" in plan_or_meta else safe_dict(plan_or_meta)
+    production_evidence = safe_dict(meta.get("production_evidence")) or build_production_evidence(meta)
+    meta = {**meta, "production_evidence": production_evidence}
     standards_summary = _standards_summary(meta)
     existing_summary = _existing_conditions_summary(meta)
     engine_summary = _engine_depth_summary(meta)
@@ -680,6 +700,16 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
                 next_action="Resolve depth validation blockers or document why they remain review-only.",
             )
         )
+    for item in safe_list(engine_summary.get("canonical_evidence_blockers")):
+        rec = safe_dict(item)
+        if not rec:
+            continue
+        copied = deepcopy(rec)
+        copied.setdefault("area", safe_str(rec.get("area"), "engine_depth"))
+        copied.setdefault("field", safe_str(rec.get("field"), "production_evidence"))
+        copied.setdefault("reason", safe_str(rec.get("reason") or rec.get("message"), "Canonical production evidence blocker requires engineer review."))
+        copied.setdefault("severity", "blocker")
+        blockers.append(copied)
     if not export_summary["present"] or not export_summary["review_ready"]:
         missing_inputs.append(
             _missing_input(

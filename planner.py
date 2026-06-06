@@ -289,6 +289,8 @@ from backend.planning.standards_package import (
     build_standards_package as _build_standards_package,
 )
 from backend.planning.depth_validators import (
+    validate_grading_depth as _validate_grading_depth,
+    validate_profile_section_depth as _validate_profile_section_depth,
     validate_roadway_corridor_depth as _validate_roadway_corridor_depth,
     validate_stormwater_depth as _validate_stormwater_depth,
     validate_water_system_depth as _validate_water_system_depth,
@@ -298,8 +300,12 @@ from backend.planning.production_depth import (
     enrich_storm_production_depth as _enrich_storm_production_depth,
     enrich_water_production_depth as _enrich_water_production_depth,
 )
+from backend.planning.production_evidence import build_production_evidence as _build_production_evidence
 from backend.planning.existing_conditions import summarize_existing_conditions as _summarize_existing_conditions
-from backend.planning.reactive_model import reactive_report_from_plan as _reactive_report_from_plan
+from backend.planning.reactive_model import (
+    reactive_report_from_plan as _reactive_report_from_plan,
+    validate_reactive_model_depth as _validate_reactive_model_depth,
+)
 
 
 BASE_DIR = Path(__file__).parent
@@ -10705,7 +10711,11 @@ def finalize_plan(plan: Dict[str, Any], *, parsed: Dict[str, Any], route: Routin
         "stormwater": _validate_stormwater_depth(final),
         "water": _validate_water_system_depth(final),
         "roadway_corridor": _validate_roadway_corridor_depth(final),
+        "grading": _validate_grading_depth(final),
+        "profile_section": _validate_profile_section_depth(final),
+        "reactive_model": _validate_reactive_model_depth(final),
     }
+    final["meta"]["production_evidence"] = _build_production_evidence(final)
     _attach_final_model_trace(final)
     final["meta"]["civil_design_readiness"] = civil_design_readiness(final)
     final["meta"]["standards_package"] = _build_standards_package(final)

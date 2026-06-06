@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Sequence
 
 from .common import blocker_explanations, safe_dict, safe_list, safe_str
+from .production_evidence import build_production_evidence
 from .production_depth import build_cad_interop_metadata
 from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
 
@@ -184,6 +185,13 @@ def _canonical_ids(meta: Dict[str, Any]) -> List[str]:
     for key in ("profiles", "cross_sections", "alignments"):
         for row in safe_list(meta.get(key)):
             ids.extend(_ids_from_record(safe_dict(row)))
+    evidence = safe_dict(meta.get("production_evidence"))
+    for row in safe_list(safe_dict(evidence.get("profile_section")).get("profiles")):
+        ids.extend(_ids_from_record(safe_dict(row)))
+    for row in safe_list(safe_dict(evidence.get("profile_section")).get("cross_sections")):
+        ids.extend(_ids_from_record(safe_dict(row)))
+    for row in safe_list(safe_dict(evidence.get("quantity_cost")).get("quantity_line_items")):
+        ids.extend(_ids_from_record(safe_dict(row)))
     return _unique(ids)
 
 
@@ -366,6 +374,8 @@ def build_export_package_report_v1(
     generated_at: str | None = None,
 ) -> Dict[str, Any]:
     meta = safe_dict(plan.get("meta"))
+    production_evidence = safe_dict(meta.get("production_evidence")) or build_production_evidence(plan)
+    evidence_meta = {**meta, "production_evidence": production_evidence}
     cad_interop = safe_dict(meta.get("cad_interop")) or build_cad_interop_metadata(plan)
     export_audit = safe_dict(meta.get("export_audit"))
     construction_readiness = safe_dict(meta.get("construction_readiness"))
@@ -385,8 +395,11 @@ def build_export_package_report_v1(
         missing_inputs.append("production_ready_engine_depth")
     if not export_audit:
         missing_inputs.append("export_audit")
-    if not _canonical_ids(meta):
+    if not _canonical_ids(evidence_meta):
         missing_inputs.append("canonical_id_traceability")
+    evidence_blockers = safe_list(production_evidence.get("blockers"))
+    if evidence_blockers:
+        missing_inputs.append("canonical_production_evidence")
 
     construction_blockers = construction_release_blockers_from_meta(
         meta,
@@ -404,7 +417,7 @@ def build_export_package_report_v1(
         if export_audit.get("production_export_ready") is True
         else "review_only_unverified"
     )
-    canonical_ids = _canonical_ids(meta)
+    canonical_ids = _canonical_ids(evidence_meta)
     return {
         "source": "export_package_report_v1",
         "export_type": safe_str(export_type),
@@ -416,6 +429,9 @@ def build_export_package_report_v1(
         "excluded_systems": _excluded_systems(included, meta),
         "stale_outputs_detected": stale,
         "missing_inputs": _unique(missing_inputs),
+        "canonical_evidence_version": safe_str(production_evidence.get("version")),
+        "canonical_evidence": deepcopy(production_evidence),
+        "canonical_evidence_blockers": deepcopy(evidence_blockers),
         "standards_status": standards_status,
         "existing_conditions_status": existing_status,
         "engine_depth_status": depth_status,

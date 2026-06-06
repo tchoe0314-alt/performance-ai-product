@@ -10,6 +10,7 @@ from .engine_contracts import EngineContract, engine_contracts
 from .engine_readiness import evaluate_engine_readiness
 from .golden_runner import run_golden_scenario
 from .golden_scenarios import GoldenScenario, get_golden_scenario, golden_scenarios
+from .production_evidence import build_production_evidence
 
 
 BuildPlanFn = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -357,6 +358,32 @@ def _scenario_payload(scenario: GoldenScenario, payload_overrides: Optional[Dict
     return payload
 
 
+def _production_evidence_summary(plan: Dict[str, Any]) -> Dict[str, Any]:
+    evidence = safe_dict(safe_dict(plan.get("meta")).get("production_evidence")) or build_production_evidence(plan)
+    accepted = safe_dict(evidence.get("accepted_surfaces"))
+    storm = safe_dict(evidence.get("storm_hydraulics"))
+    profile = safe_dict(evidence.get("profile_section"))
+    reactive = safe_dict(evidence.get("reactive_dirty_state"))
+    quantity = safe_dict(evidence.get("quantity_cost"))
+    return {
+        "version": safe_str(evidence.get("version")),
+        "production_evidence_ready": evidence.get("production_evidence_ready") is True,
+        "blocker_count": len(safe_list(evidence.get("blockers"))),
+        "accepted_surface_ready": accepted.get("ready") is True,
+        "accepted_existing_surface_id": safe_str(accepted.get("existing_surface_id")),
+        "accepted_proposed_surface_id": safe_str(accepted.get("proposed_surface_id")),
+        "storm_hgl_row_count": storm.get("hgl_row_count", 0),
+        "storm_egl_row_count": storm.get("egl_row_count", 0),
+        "missing_required_hydraulic_inputs": safe_list(storm.get("missing_required_hydraulic_inputs")),
+        "profile_count": profile.get("profile_count", 0),
+        "cross_section_count": profile.get("cross_section_count", 0),
+        "reactive_dirty_count": len(safe_list(reactive.get("dirty_state"))),
+        "quantity_line_item_count": quantity.get("quantity_line_item_count", 0),
+        "approved_cost_source": quantity.get("approved_cost_source") is True,
+        "truth_label": "Audit summary references canonical production evidence and blockers without turning them into construction approval.",
+    }
+
+
 def run_engine_depth_audit_scenario(
     scenario_id: str,
     *,
@@ -367,6 +394,7 @@ def run_engine_depth_audit_scenario(
     runner = build_plan_fn or _default_build_plan
     payload = _scenario_payload(scenario, payload_overrides)
     plan = runner(payload)
+    evidence_summary = _production_evidence_summary(plan)
     readiness = evaluate_engine_readiness(plan)
     golden_result = run_golden_scenario(
         scenario_id,
@@ -409,6 +437,7 @@ def run_engine_depth_audit_scenario(
         "required_engine_ids": sorted(scenario.required_engine_ids),
         "required_engine_results": required_engine_results,
         "deterministic_checks": checks,
+        "production_evidence_summary": evidence_summary,
         "failed_check_ids": [safe_str(item.get("check_id")) for item in checks if not bool(item.get("passed"))],
         "blockers": blockers,
         "blocker_details": readiness_issue_explanations(blockers),

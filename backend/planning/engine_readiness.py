@@ -8,6 +8,7 @@ from core.civil_design import civil_design_readiness
 from .common import readiness_issue_explanations
 from .depth_validators import validate_grading_depth, validate_profile_section_depth, validate_roadway_corridor_depth, validate_stormwater_depth
 from .engine_contracts import EngineContract, engine_contracts
+from .production_evidence import build_production_evidence
 from .reactive_model import validate_reactive_model_depth
 
 
@@ -306,6 +307,8 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
             )
     elif engine_id == "quantity":
         quantities = _safe_dict(meta.get("quantities"))
+        production_evidence = _safe_dict(meta.get("production_evidence")) or build_production_evidence(meta)
+        quantity_cost = _safe_dict(production_evidence.get("quantity_cost"))
         explain = _safe_dict(quantities.get("explain"))
         meta_summary = _safe_dict(explain.get("meta_summary"))
         cost = _safe_dict(meta.get("cost_estimate"))
@@ -383,6 +386,15 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                     "severity": "blocker",
                 }
             )
+        if quantities and quantity_cost.get("quantity_scope_exists") is True and quantity_cost.get("approved_cost_source") is not True:
+            blockers.append(
+                {
+                    "area": "quantity",
+                    "field": "approved_cost_source",
+                    "message": "Production cost readiness is blocked because no approved unit-price source covers the current quantities.",
+                    "severity": "blocker",
+                }
+            )
     elif engine_id == "export_cad":
         export_audit = _safe_dict(meta.get("export_audit"))
         if export_audit and (export_audit.get("ready") is False or export_audit.get("production_export_ready") is False or export_audit.get("export_blocked") is True):
@@ -405,6 +417,11 @@ def _explicit_blockers_for_engine(engine_id: str, meta: Dict[str, Any]) -> List[
                 }
             )
     elif engine_id == "reactive_model":
+        production_evidence = _safe_dict(meta.get("production_evidence")) or build_production_evidence(meta)
+        for row in _safe_list(_safe_dict(production_evidence.get("reactive_dirty_state")).get("blockers")):
+            rec = _safe_dict(row)
+            if rec:
+                blockers.append(deepcopy(rec))
         reactive = _safe_dict(meta.get("reactive_update_report"))
         if reactive and (reactive.get("export_blocked") is True or _safe_list(reactive.get("post_rerun_stale_outputs"))):
             blockers.append(
