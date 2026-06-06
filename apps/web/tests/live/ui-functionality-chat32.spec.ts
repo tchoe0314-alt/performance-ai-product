@@ -20,16 +20,24 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(canvas.getByRole("button", { name: "Export DXF" })).toBeDisabled();
     await expect(canvas.getByRole("button", { name: "Export Report" })).toBeDisabled();
     await expect(canvas).toContainText("Export blocked: sign in with a backend session before exporting review packages");
+    const initialObjectOverlayCount = await page.locator("[data-object-overlay]").count();
+    expect(initialObjectOverlayCount).toBeGreaterThan(0);
 
     await canvas.getByTestId("preview-quality-high").click();
     await expect(canvas).toContainText("High Quality");
+    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(
+      "Visual preview only — canonical geometry unchanged.",
+    );
+    expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
     await canvas.getByTestId("preview-quality-standard").click();
     await expect(canvas).toContainText("Standard");
+    expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
 
     await canvas.getByTestId("preview-mode-3d").click();
     await expect(canvas).toContainText("3D");
     await canvas.getByTestId("preview-mode-2d").click();
     await expect(canvas).toContainText("2D");
+    expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
 
     await canvas.getByTestId("preview-interaction-edit").click();
     await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
