@@ -83,20 +83,22 @@ uvicorn backend.api.app:app --reload --port 8002
 - The large root planner/core/engine files are still the source of truth for now.
 - `backend_api_main.py` remains as a compatibility wrapper so older commands do not break.
 
-## Beta flow
+## Private alpha flow
 
 1. Run `./start.sh`
 2. Open `http://localhost:3000`
 3. Create a beta account on the auth screen
 4. Build a request, save it as a project, or queue a planner job
 5. Review assumptions, issues, and backend result output in the dashboard
+6. Follow the review-only onboarding guide in [docs/private-alpha-onboarding.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/private-alpha-onboarding.md)
 
-## Current beta limits
+## Current private alpha limits
 
 - Auth is local to this app instance and is not yet production-grade identity.
 - Storage is SQLite and the job worker runs in-process, which is fine for a private beta but not a multi-instance deployment.
 - Prompt-based orchestration can run with `CIVORA_AI_PROVIDER=openai`, `ollama`/`local`, or `none`; the `none` path uses deterministic Civora fallbacks instead of an external LLM.
 - Frontend build verification still depends on having `node` and `npm` installed on the machine running the app.
+- Civora prepares engineer-review-ready evidence only. It never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record.
 
 ## Deploy online
 

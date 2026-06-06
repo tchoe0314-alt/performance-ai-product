@@ -18,6 +18,9 @@ Users should be able to describe a site, upload a rough sketch, leave unknowns b
 - clear assumptions
 - flagged issues and confidence gaps
 - one or more candidate site-planning options
+- an engineer-review-required evidence package when exports are available
+
+Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. The product can prepare review-ready evidence, but only the licensed engineer or user can review, approve, stamp, seal, sign, submit, and take legal responsibility.
 
 ## MVP scope
 
@@ -43,3 +46,4 @@ This product should feel like an AI copilot for early civil layout and feasibili
 - traceable assumptions
 - editable structured inputs
 - faster concept iteration
+- review-only outputs until external licensed engineer approval exists
