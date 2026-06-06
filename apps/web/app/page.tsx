@@ -14813,7 +14813,7 @@ function PerformanceAIDashboardView({
           </main>
           <div
             data-testid="floating-command-bar"
-            className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"
+            className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl lg:hidden"
           >
             <button
               type="button"
