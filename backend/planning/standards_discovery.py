@@ -823,25 +823,37 @@ def accept_standards_rules(
     accepted_rule_ids: Iterable[str],
     edits: Optional[Dict[str, Dict[str, Any]]] = None,
     *,
-    accepted_by: str = "user",
+    accepted_by: str = "",
 ) -> Dict[str, Any]:
     accepted = {safe_str(item) for item in accepted_rule_ids if safe_str(item)}
     edit_map = safe_dict(edits)
     candidates = [safe_dict(item) for item in safe_list(review_packet.get("candidate_rules"))]
     accepted_rules: List[Dict[str, Any]] = []
     rejected_rules: List[Dict[str, Any]] = []
+    pending_rules: List[Dict[str, Any]] = []
+    action_errors: List[Dict[str, Any]] = []
+    reviewer = safe_str(accepted_by)
     for rule in candidates:
         rule_id = safe_str(rule.get("rule_id"))
         edited = dict(rule)
         if rule_id in edit_map:
             edited.update(safe_dict(edit_map[rule_id]))
         if rule_id in accepted:
-            edited["status"] = "accepted"
-            edited["acceptance_status"] = "accepted"
-            edited["accepted_date"] = _today()
-            edited["accepted_by"] = safe_str(accepted_by, "user")
-            edited["needs_human_confirmation"] = False
-            accepted_rules.append(edited)
+            if reviewer:
+                edited["status"] = "accepted"
+                edited["acceptance_status"] = "accepted"
+                edited["accepted_date"] = _today()
+                edited["accepted_at"] = _today()
+                edited["accepted_by"] = reviewer
+                edited["needs_human_confirmation"] = False
+                accepted_rules.append(edited)
+            else:
+                edited["status"] = "pending"
+                edited["acceptance_status"] = "candidate"
+                edited["requires_user_acceptance"] = True
+                edited["pending_reason"] = "Acceptance requires reviewer identity or approval metadata."
+                pending_rules.append(edited)
+                action_errors.append({"rule_id": rule_id, "action": "accepted", "reason": edited["pending_reason"]})
         else:
             edited["status"] = "not_accepted"
             edited["acceptance_status"] = "unaccepted"
@@ -861,12 +873,14 @@ def accept_standards_rules(
         "accepted_rule_count": len(accepted_rules),
         "accepted_rules": accepted_rules,
         "rejected_rules": rejected_rules,
+        "pending_rules": pending_rules,
         "source_urls": source_urls,
         "source_registry": deepcopy_source_registry_for_acceptance(review_packet, accepted_rules),
         "official_source_count": official_source_count,
         "needs_source_review": bool(accepted_rules and official_source_count <= 0),
         "accepted_for_qa": bool(accepted_rules),
-        "truth_label": "Only accepted rules are eligible for production QA; baseline rules remain concept-only unless explicitly accepted.",
+        "action_errors": action_errors,
+        "truth_label": "Only explicitly accepted rules with reviewer identity are eligible for production QA; baseline rules remain concept-only unless explicitly accepted.",
     }
     validation = validate_standards_acceptance_for_production(result)
     result["production_validation"] = validation

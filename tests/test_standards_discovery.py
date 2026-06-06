@@ -42,7 +42,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
         packet = build_standards_review_packet()
         first_rule = packet["candidate_rules"][0]["rule_id"]
 
-        accepted = accept_standards_rules(packet, [first_rule], edits={first_rule: {"candidate_value": "Accepted edited value"}})
+        accepted = accept_standards_rules(packet, [first_rule], edits={first_rule: {"candidate_value": "Accepted edited value"}}, accepted_by="u1")
         pack = standards_pack_from_acceptance(accepted)
 
         self.assertTrue(accepted["accepted_for_qa"])
@@ -83,7 +83,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
     def test_civil_readiness_can_use_accepted_standards_without_fake_jurisdiction(self) -> None:
         packet = build_standards_review_packet()
         first_rule = packet["candidate_rules"][0]["rule_id"]
-        accepted = accept_standards_rules(packet, [first_rule])
+        accepted = accept_standards_rules(packet, [first_rule], accepted_by="u1")
 
         readiness = civil_design_readiness({"meta": {"standards_acceptance": accepted}})
         standards = readiness["systems"]["standards"]
@@ -236,7 +236,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
                 }
             ]
         )
-        accepted = accept_standards_rules(packet, ["city_cover"])
+        accepted = accept_standards_rules(packet, ["city_cover"], accepted_by="u1")
         pack = standards_pack_from_acceptance(accepted)
 
         validation = validate_standards_acceptance_for_production(pack)
@@ -257,7 +257,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
                 }
             ]
         )
-        accepted = accept_standards_rules(packet, ["city_cover"])
+        accepted = accept_standards_rules(packet, ["city_cover"], accepted_by="u1")
         accepted["accepted_rules"][0].pop("accepted_by")
 
         validation = validate_standards_acceptance_for_production(accepted)
@@ -270,6 +270,28 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual(blockers["rule_metadata"]["rules"][0]["missing"], ["accepted_by"])
         detail = next(item for item in validation["blocker_details"] if item["field"] == "rule_metadata")
         self.assertTrue(detail["next_action"])
+
+    def test_legacy_acceptance_without_reviewer_identity_remains_pending(self) -> None:
+        packet = build_standards_review_packet(
+            extracted_rules=[
+                {
+                    "rule_id": "city_cover",
+                    "discipline": "utilities",
+                    "topic": "minimum cover",
+                    "candidate_value": "Minimum cover shall be 4 feet.",
+                    "source_url": "https://city.example.gov/manual",
+                    "source_section": "Section 5.1",
+                }
+            ]
+        )
+
+        accepted = accept_standards_rules(packet, ["city_cover"])
+
+        self.assertEqual(accepted["accepted_rule_count"], 0)
+        self.assertFalse(accepted["accepted_for_qa"])
+        self.assertIn("city_cover", {rule["rule_id"] for rule in accepted["pending_rules"]})
+        self.assertTrue(accepted["action_errors"])
+        self.assertIn("accepted_rules", {item["field"] for item in accepted["production_validation"]["blockers"]})
 
     def test_civil_readiness_blocks_standards_without_acceptance_signoff(self) -> None:
         packet = build_standards_review_packet(
@@ -286,7 +308,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
                 }
             ],
         )
-        accepted = accept_standards_rules(packet, ["city_cover"])
+        accepted = accept_standards_rules(packet, ["city_cover"], accepted_by="u1")
         accepted["accepted_rules"][0].pop("accepted_by")
         evidence = standards_project_evidence_from_acceptance(
             accepted,
@@ -315,7 +337,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
                 }
             ],
         )
-        accepted = accept_standards_rules(packet, ["city_cover"])
+        accepted = accept_standards_rules(packet, ["city_cover"], accepted_by="u1")
 
         evidence = standards_project_evidence_from_acceptance(
             accepted,
@@ -343,7 +365,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
                 }
             ],
         )
-        accepted = accept_standards_rules(packet, ["city_cover"])
+        accepted = accept_standards_rules(packet, ["city_cover"], accepted_by="u1")
 
         evidence = standards_project_evidence_from_acceptance(accepted, review_packet=packet)
 
@@ -366,7 +388,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
                 }
             ],
         )
-        accepted = accept_standards_rules(packet, ["city_cover"])
+        accepted = accept_standards_rules(packet, ["city_cover"], accepted_by="u1")
         evidence = standards_project_evidence_from_acceptance(accepted, review_packet=packet)
 
         readiness = civil_design_readiness({"meta": evidence})
@@ -378,7 +400,7 @@ class StandardsDiscoveryTests(unittest.TestCase):
     def test_baseline_or_search_sources_are_not_production_authority(self) -> None:
         packet = build_standards_review_packet()
         baseline = packet["candidate_rules"][0]["rule_id"]
-        accepted = accept_standards_rules(packet, [baseline])
+        accepted = accept_standards_rules(packet, [baseline], accepted_by="u1")
 
         validation = validate_standards_acceptance_for_production(accepted)
 

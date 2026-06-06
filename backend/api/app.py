@@ -292,6 +292,7 @@ class StandardsAcceptancePayload(BaseModel):
     accepted_rule_ids: List[str] = Field(default_factory=list)
     edits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     company_standards: Dict[str, Any] = Field(default_factory=dict)
+    accepted_by: str = ""
 
 
 class StandardsExtractPayload(BaseModel):
@@ -869,12 +870,13 @@ def accept_standards(
     payload: StandardsAcceptancePayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    _ = current_user
+    accepted_by = payload.accepted_by or str(current_user.get("user_id") or current_user.get("email") or "")
     return application_accept_standards_response(
         review_packet=payload.review_packet,
         accepted_rule_ids=payload.accepted_rule_ids,
         edits=payload.edits,
         company_standards=payload.company_standards,
+        accepted_by=accepted_by,
     )
 
 

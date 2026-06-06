@@ -122,7 +122,7 @@ def _production_ready_meta() -> dict:
             },
         ]
     )
-    accepted = accept_standards_rules(packet, ["city_storm_capacity", "city_utility_cover"])
+    accepted = accept_standards_rules(packet, ["city_storm_capacity", "city_utility_cover"], accepted_by="u1")
     meta["standards_acceptance"] = accepted
     meta["design_standards"] = standards_pack_from_acceptance(accepted)
     meta["jurisdiction_standards"] = {

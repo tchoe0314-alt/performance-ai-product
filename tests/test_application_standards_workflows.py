@@ -17,9 +17,11 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
 
         self.assertTrue(discovery["success"])
         self.assertTrue(packet["candidate_rules"])
-        self.assertTrue(accepted["success"])
+        self.assertFalse(accepted["success"])
         self.assertFalse(accepted["design_standards"]["production_usable"])
-        self.assertTrue(accepted["design_standards"]["accepted_for_qa"])
+        self.assertFalse(accepted["design_standards"]["accepted_for_qa"])
+        self.assertEqual(accepted["standards_acceptance"]["accepted_rule_count"], 0)
+        self.assertTrue(accepted["standards_acceptance"]["pending_rules"])
         self.assertTrue(accepted["design_standards"]["production_validation"]["blockers"])
         self.assertIn("jurisdiction_standards", accepted)
         self.assertEqual(accepted["jurisdiction_standards"]["city"], "Austin")
@@ -48,6 +50,7 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
             review_packet=packet,
             accepted_rule_ids=["austin_cover"],
             company_standards={"source": "company_manual", "cad_layers": "CIVORA", "production_usable": True},
+            accepted_by="engineer-1",
         )
 
         self.assertTrue(accepted["success"])
@@ -59,7 +62,7 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
         self.assertEqual(accepted["standards_package"]["standards_acceptance_report"]["qa_status"], "ready")
         self.assertTrue(accepted["standards_package"]["selected_standards_source"]["explicitly_selected"])
         self.assertFalse(accepted["standards_package"]["construction_release_blocked"])
-        self.assertEqual(accepted["standards_acceptance"]["accepted_rules"][0]["accepted_by"], "user")
+        self.assertEqual(accepted["standards_acceptance"]["accepted_rules"][0]["accepted_by"], "engineer-1")
         self.assertEqual(accepted["company_standards"]["cad_layers"], "CIVORA")
         self.assertIn("official rules", accepted["truth_label"])
 
