@@ -1036,7 +1036,7 @@ class ChatIntentParserTest(unittest.TestCase):
         result = _decide("generate drainage", {"has_plan": True, "lot_width": "500", "lot_height": "400"})
         self.assertEqual(result["intent"], "conversation")
         self.assertTrue(result["needs_clarification"])
-        self.assertIn("detention basin or outfall", result["assistant_message"])
+        self.assertIn("basin or outfall target", result["assistant_message"])
         self.assertEqual(result["response_metadata"]["intent"], "drainage_command")
         self.assertIn("detention basin or outfall target", result["required_missing_inputs"])
 

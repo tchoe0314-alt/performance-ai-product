@@ -1192,7 +1192,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     deliverables = context.get("produced_deliverables") or []
     convergence = context.get("convergence_summary") or {}
     fix_summary = convergence.get("fix_summary") or {}
-    export_audit = context.get("export_audit") or {}
+    export_audit = context.get("export_audit") or context.get("current_export_audit") or {}
     blocked_exports = list(convergence.get("blocked_exports") or [])
     blocked_reasons = list(convergence.get("blocked_reasons") or [])
     for blocker in explicit_blockers:
@@ -2751,7 +2751,12 @@ def _compose_specific_response(decision: Dict[str, Any], context: Dict[str, Any]
     action_taken = str(metadata.get("action_taken") or updated.get("action_taken") or "")
     action_blocked_reason = str(metadata.get("action_blocked_reason") or updated.get("action_blocked_reason") or "")
     missing = [str(item) for item in list(metadata.get("required_missing_inputs") or updated.get("required_missing_inputs") or []) if str(item)]
-    blockers = [str(item) for item in list(metadata.get("blockers") or []) if str(item)]
+    blockers: List[str] = []
+    for item in list(metadata.get("blockers") or []):
+        for part in str(item).split(";"):
+            text = part.strip()
+            if text:
+                blockers.append(text)
     if action_blocked_reason and action_blocked_reason not in blockers:
         blockers.append(action_blocked_reason)
     if metadata.get("blocker") and str(metadata["blocker"]) not in blockers:
@@ -2778,14 +2783,19 @@ def _compose_specific_response(decision: Dict[str, Any], context: Dict[str, Any]
     assistant_message = str(updated.get("assistant_message") or "").strip()
 
     if command_intent == "drainage_command" and "detention basin or outfall target" in missing:
+        drainage_target_label = (
+            "a detention basin or outfall target"
+            if "generate" in _normalized_chat_text(message)
+            else "a basin or outfall target"
+        )
         assistant_message = (
-            "I can’t run drainage yet because I need a basin or outfall target. "
+            f"I can’t run drainage yet because I need {drainage_target_label}. "
             "Select/draw one, or say ‘add a draft basin in the low corner’."
         )
         next_best_action = "Select/draw a basin or outfall target, or say 'add a draft basin in the low corner'."
     elif command_intent == "export_readiness" and (blockers or action_blocked_reason):
         reason = "; ".join(blockers[:3]) or "export review evidence is not ready"
-        assistant_message = f"Before export, clear {reason}. Open Deliver after those blockers are cleared."
+        assistant_message = f"Before export, clear this exact blocker: {reason}. Open Deliver after those blockers are cleared."
         next_best_action = next_best_action or "Clear the listed export blockers, then open Deliver."
     elif command_intent == "unsupported_or_not_understood":
         understood = str(metadata.get("action_planning", {}).get("user_goal") or message).strip()
@@ -2809,7 +2819,13 @@ def _compose_specific_response(decision: Dict[str, Any], context: Dict[str, Any]
     metadata["blocked_actions"] = blocked_actions
     metadata["exact_missing_inputs"] = exact_missing
     metadata["missing_inputs"] = list(dict.fromkeys([*list(metadata.get("missing_inputs") or []), *missing]))
-    metadata["blockers"] = list(dict.fromkeys(blockers))
+    split_blockers: List[str] = []
+    for blocker in blockers:
+        for part in str(blocker).split(";"):
+            clean = part.strip()
+            if clean:
+                split_blockers.append(clean)
+    metadata["blockers"] = list(dict.fromkeys(split_blockers))
     metadata["next_best_action"] = next_best_action
     metadata["suggested_user_replies"] = _suggested_replies_for_decision(metadata)
     metadata["can_execute_now"] = can_execute_now
@@ -2858,7 +2874,7 @@ def _context_blockers(context: Dict[str, Any]) -> List[str]:
             text = str(item).strip()
             if text and text not in blockers:
                 blockers.append(text)
-    export_audit = context.get("export_audit") or {}
+    export_audit = context.get("export_audit") or context.get("current_export_audit") or {}
     if isinstance(export_audit, dict):
         for item in list(export_audit.get("blocked_reasons") or []):
             text = str(item).strip()
