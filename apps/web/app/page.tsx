@@ -4,28 +4,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
-  BookOpen,
   Box,
   ClipboardCheck,
   CheckCircle2,
   Circle,
   Database,
-  Droplets,
-  FileText,
-  FolderOpen,
   Gauge,
-  HardHat,
-  Library,
   Layers,
   MapPinned,
-  MessageSquare,
-  Mountain,
-  PlayCircle,
   Route,
   Settings,
-  Sprout,
   SquareStack,
-  Wrench,
 } from "lucide-react";
 
 import { deleteJson, getJson, postBinary, postForm, postJson } from "../lib/api";
@@ -114,11 +103,22 @@ type SidePanelKey =
   | "system_roadway"
   | "system_utilities"
   | "system_landscape";
+type WorkspaceMode =
+  | "dashboard"
+  | "canvas"
+  | "layers"
+  | "sections"
+  | "three_d"
+  | "reports"
+  | "quantities"
+  | "sheets"
+  | "data"
+  | "settings";
 type SidebarStatus = "ok" | "review" | "block" | "idle";
 type SidebarNavItem = {
   label: string;
   caption: string;
-  target: SidePanelKey;
+  target: WorkspaceMode;
   icon: typeof Gauge;
   status: SidebarStatus;
 };
@@ -778,7 +778,8 @@ function PerformanceAIDashboardView({
   const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || demoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("objects");
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("dashboard");
+  const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("dashboard");
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -978,6 +979,7 @@ function PerformanceAIDashboardView({
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
+  const [snapAssistEnabled, setSnapAssistEnabled] = useState(true);
   const [objectOutlineColor, setObjectOutlineColor] = useState("#1f2937");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRefreshNote, setPreviewRefreshNote] = useState<string | null>(null);
@@ -9266,7 +9268,7 @@ function PerformanceAIDashboardView({
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     dashboard: { title: "Dashboard", desc: "Review project readiness, health, and active work." },
-    model: { title: "Canvas / Preview Controls", desc: "Control 2D/3D mode, quality, overlays, and viewport behavior." },
+    model: { title: "Canvas", desc: "Design, prompt-create, generate systems, and open contextual discipline controls." },
     site_existing: { title: "Site & Existing", desc: "Review site boundary, existing conditions, and constraints." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
     objects: { title: "Objects", desc: "Add, size, and place model objects." },
@@ -9278,16 +9280,16 @@ function PerformanceAIDashboardView({
     utilities: { title: "Utility Controls", desc: "Control utility generation and coordination assumptions." },
     roadway: { title: "Roadway Controls", desc: "Control roads, parking, and corridor behavior." },
     landscape: { title: "Landscape Controls", desc: "Place open space and landscape-related site objects." },
-    details: { title: "Details", desc: "Inspect selected objects, locks, and engineering metadata." },
+    details: { title: "Sections", desc: "Review profiles, cross sections, selected objects, locks, and engineering metadata." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
     analysis: { title: "Review & QA", desc: "Review model issues, access checks, blockers, and QA signals." },
-    reports: { title: "Reports", desc: "Open readable engineering summaries." },
+    reports: { title: "Reports", desc: "Review engineering health, QA, assumptions, conflicts, standards, and system readiness." },
     quantities: { title: "Quantities", desc: "Review takeoff totals and cost inputs." },
-    deliverables: { title: "Deliverables / Exports", desc: "Export plans, reports, and production files." },
+    deliverables: { title: "Sheets", desc: "Review plan sheets, profiles, sections, export audit, and package readiness." },
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
     standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
-    data: { title: "Data", desc: "Configure site, survey, map, and existing conditions." },
+    data: { title: "Data", desc: "Configure survey, terrain, GIS, parcels, standards sources, imported utilities, and confidence labels." },
     settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
     chat: { title: "Civora AI", desc: "Conversation and assisted workflow control." },
     system_grading: { title: "Grading Health", desc: "Review what grading needs before it can be trusted." },
@@ -9310,9 +9312,57 @@ function PerformanceAIDashboardView({
     };
     setActiveSidePanel(target[step]);
   }, []);
+  const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
+    projects: "dashboard",
+    dashboard: "dashboard",
+    model: "canvas",
+    site_existing: "data",
+    import_survey: "data",
+    objects: "canvas",
+    generate: "canvas",
+    grading: "canvas",
+    drainage: "canvas",
+    sanitary: "canvas",
+    water: "canvas",
+    utilities: "canvas",
+    roadway: "canvas",
+    landscape: "canvas",
+    details: "sections",
+    layers: "layers",
+    analysis: "reports",
+    reports: "reports",
+    quantities: "quantities",
+    deliverables: "sheets",
+    files: "data",
+    standards: "data",
+    libraries: "data",
+    data: "data",
+    settings: "settings",
+    chat: "canvas",
+    system_grading: "reports",
+    system_storm: "reports",
+    system_sanitary: "reports",
+    system_water: "reports",
+    system_roadway: "reports",
+    system_utilities: "reports",
+    system_landscape: "reports",
+  };
+  const workspacePanelByMode: Record<WorkspaceMode, SidePanelKey> = {
+    dashboard: "dashboard",
+    canvas: "model",
+    layers: "layers",
+    sections: "details",
+    three_d: "model",
+    reports: "reports",
+    quantities: "quantities",
+    sheets: "deliverables",
+    data: "data",
+    settings: "settings",
+  };
   const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
     setActiveSidePanel(panel);
     if (!panel) return;
+    setActiveWorkspaceMode(workspaceModeByPanel[panel]);
     const workflowByPanel: Partial<Record<SidePanelKey, CivoraWorkflowStep>> = {
       dashboard: "Review",
       model: "Concept",
@@ -9349,27 +9399,14 @@ function PerformanceAIDashboardView({
     const nextStep = workflowByPanel[panel];
     if (nextStep) setActiveWorkflowStep(nextStep);
   }, []);
+  const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
+    if (mode === "three_d") {
+      setPreviewMode("3d");
+    }
+    handleOpenSidePanel(workspacePanelByMode[mode]);
+    setActiveWorkspaceMode(mode);
+  }, [handleOpenSidePanel]);
   const controlsHealthStatus = Object.values(systemStatuses).some((value) => value === "fresh") ? "ok" : "review";
-  const systemHealthStatus = (target: SidePanelKey): SidebarStatus => {
-    if (target === "system_grading") {
-      return siteTooLargeForGrading ? "block" : systemStatuses.grading === "fresh" ? "ok" : "review";
-    }
-    if (target === "system_storm") {
-      return hasHardSystemBlock ? "block" : systemStatuses.drainage === "fresh" ? "ok" : "review";
-    }
-    if (target === "system_sanitary" || target === "system_water" || target === "system_utilities") {
-      return hasHardSystemBlock ? "block" : systemStatuses.utilities === "fresh" ? "ok" : "review";
-    }
-    if (target === "system_roadway") {
-      return systemStatuses.roads === "fresh" ? "ok" : "review";
-    }
-    if (target === "system_landscape") {
-      return buildingPlacements.some((value) => ["open_space", "amenity", "pool"].includes(value.type ?? ""))
-        ? "ok"
-        : "idle";
-    }
-    return "idle";
-  };
   const panelStatus = (target: SidePanelKey): SidebarStatus => {
     if (target === "dashboard" || target === "analysis") {
       return issues.length || analysisIssues.length || hasHardSystemBlock ? "review" : backendResult ? "ok" : "idle";
@@ -9419,69 +9456,29 @@ function PerformanceAIDashboardView({
     }
     return "idle";
   };
-  const sidebarSections: Array<{ label: string; items: SidebarNavItem[] }> = [
-    {
-      label: "Project",
-      items: [
-        { label: "Projects", caption: "Open and manage", target: "projects", icon: FolderOpen, status: panelStatus("projects") },
-        { label: "Dashboard", caption: "Readiness overview", target: "dashboard", icon: Gauge, status: panelStatus("dashboard") },
-        { label: "Site & Existing", caption: "Boundary and context", target: "site_existing", icon: MapPinned, status: panelStatus("site_existing") },
-        { label: "Import & Survey", caption: "Survey and terrain", target: "import_survey", icon: FolderOpen, status: panelStatus("import_survey") },
-        { label: "Objects", caption: "Add and edit objects", target: "objects", icon: Box, status: panelStatus("objects") },
-      ],
-    },
-    {
-      label: "Canvas",
-      items: [
-        { label: "Canvas / Preview", caption: "2D, 3D, quality", target: "model", icon: Gauge, status: panelStatus("model") },
-        { label: "Layers", caption: "Visibility and labels", target: "layers", icon: Layers, status: panelStatus("layers") },
-        { label: "Chat", caption: "Assistant workflow", target: "chat", icon: MessageSquare, status: panelStatus("chat") },
-      ],
-    },
-    {
-      label: "Discipline Controls",
-      items: [
-        { label: "Generate Systems", caption: "Run engines", target: "generate", icon: PlayCircle, status: panelStatus("generate") },
-        { label: "Grading Controls", caption: "Rules and terrain", target: "grading", icon: Mountain, status: panelStatus("grading") },
-        { label: "Drainage Controls", caption: "Storm source rules", target: "drainage", icon: Droplets, status: panelStatus("drainage") },
-        { label: "Sanitary Controls", caption: "Sewer assumptions", target: "sanitary", icon: HardHat, status: panelStatus("sanitary") },
-        { label: "Water Controls", caption: "Hydrants and loops", target: "water", icon: Droplets, status: panelStatus("water") },
-        { label: "Utility Controls", caption: "Coordination rules", target: "utilities", icon: Wrench, status: panelStatus("utilities") },
-        { label: "Roadway Controls", caption: "Roads and parking", target: "roadway", icon: Route, status: panelStatus("roadway") },
-        { label: "Landscape Controls", caption: "Open space objects", target: "landscape", icon: Sprout, status: panelStatus("landscape") },
-      ],
-    },
-    {
-      label: "System Health",
-      items: [
-        { label: "Grading Health", caption: "Readiness only", target: "system_grading", icon: Mountain, status: systemHealthStatus("system_grading") },
-        { label: "Storm Drainage Health", caption: "Readiness only", target: "system_storm", icon: Droplets, status: systemHealthStatus("system_storm") },
-        { label: "Sanitary Sewer Health", caption: "Readiness only", target: "system_sanitary", icon: HardHat, status: systemHealthStatus("system_sanitary") },
-        { label: "Water Health", caption: "Readiness only", target: "system_water", icon: Droplets, status: systemHealthStatus("system_water") },
-        { label: "Roadway Health", caption: "Readiness only", target: "system_roadway", icon: Route, status: systemHealthStatus("system_roadway") },
-        { label: "Utilities Health", caption: "Readiness only", target: "system_utilities", icon: Wrench, status: systemHealthStatus("system_utilities") },
-        { label: "Landscape Health", caption: "Readiness only", target: "system_landscape", icon: Sprout, status: systemHealthStatus("system_landscape") },
-      ],
-    },
-    {
-      label: "Review & Output",
-      items: [
-        { label: "Review & QA", caption: "Issues and blockers", target: "analysis", icon: ClipboardCheck, status: panelStatus("analysis") },
-        { label: "Reports", caption: "Readable summaries", target: "reports", icon: FileText, status: panelStatus("reports") },
-        { label: "Quantities", caption: "Takeoffs and totals", target: "quantities", icon: Database, status: panelStatus("quantities") },
-        { label: "Deliverables / Exports", caption: "DXF and report files", target: "deliverables", icon: SquareStack, status: panelStatus("deliverables") },
-      ],
-    },
-    {
-      label: "Data & Admin",
-      items: [
-        { label: "Data", caption: "Site and map inputs", target: "data", icon: MapPinned, status: panelStatus("data") },
-        { label: "Files", caption: "Inputs and outputs", target: "files", icon: FolderOpen, status: panelStatus("files") },
-        { label: "Standards", caption: "Criteria packs", target: "standards", icon: BookOpen, status: panelStatus("standards") },
-        { label: "Libraries", caption: "Reusable objects", target: "libraries", icon: Library, status: panelStatus("libraries") },
-        { label: "Settings", caption: "Defaults and toggles", target: "settings", icon: Settings, status: panelStatus("settings") },
-      ],
-    },
+  const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus => {
+    if (mode === "dashboard") return panelStatus("dashboard");
+    if (mode === "canvas" || mode === "three_d") return panelStatus("model");
+    if (mode === "layers") return panelStatus("layers");
+    if (mode === "sections") return placedObjectCount > 0 || roads || utilities ? "review" : "idle";
+    if (mode === "reports") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : panelStatus("reports");
+    if (mode === "quantities") return panelStatus("quantities");
+    if (mode === "sheets") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "block" : panelStatus("deliverables");
+    if (mode === "data") return panelStatus("data");
+    if (mode === "settings") return panelStatus("settings");
+    return "idle";
+  };
+  const sidebarModes: SidebarNavItem[] = [
+    { label: "Dashboard", caption: "Project status", target: "dashboard", icon: Gauge, status: sidebarModeStatus("dashboard") },
+    { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
+    { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
+    { label: "Sections", caption: "Profiles and cuts", target: "sections", icon: Route, status: sidebarModeStatus("sections") },
+    { label: "3D", caption: "Engineering review", target: "three_d", icon: Box, status: sidebarModeStatus("three_d") },
+    { label: "Reports", caption: "Health and QA", target: "reports", icon: ClipboardCheck, status: sidebarModeStatus("reports") },
+    { label: "Quantities", caption: "Live takeoffs", target: "quantities", icon: Database, status: sidebarModeStatus("quantities") },
+    { label: "Sheets", caption: "Plans and exports", target: "sheets", icon: SquareStack, status: sidebarModeStatus("sheets") },
+    { label: "Data", caption: "Survey and sources", target: "data", icon: MapPinned, status: sidebarModeStatus("data") },
+    { label: "Settings", caption: "Workspace defaults", target: "settings", icon: Settings, status: sidebarModeStatus("settings") },
   ];
   const sidebarStaleSystems = (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
     .filter(([, status]) => status === "stale")
@@ -9529,6 +9526,18 @@ function PerformanceAIDashboardView({
       status: typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80 ? "ok" : "review",
     },
   ] as const;
+  const activePanelTitle =
+    activeWorkspaceMode === "three_d" && activeSidePanel === "model"
+      ? "3D"
+      : activeSidePanel
+        ? sidePanelCopy[activeSidePanel].title
+        : "";
+  const activePanelDescription =
+    activeWorkspaceMode === "three_d" && activeSidePanel === "model"
+      ? "Cinematic engineering visualization and review with the same truthful readiness gates."
+      : activeSidePanel
+        ? sidePanelCopy[activeSidePanel].desc
+        : "";
 
   if (!effectiveUser) {
     return (
@@ -9574,7 +9583,7 @@ function PerformanceAIDashboardView({
           >
             <button
               type="button"
-              onClick={() => handleOpenSidePanel("projects")}
+              onClick={() => handleOpenWorkspaceMode("dashboard")}
               className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
             >
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Project</p>
@@ -9617,66 +9626,63 @@ function PerformanceAIDashboardView({
                 ))}
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-              {sidebarSections.map((section) => (
-                <div key={section.label}>
-                  <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    {section.label}
-                  </p>
-                  <div className="flex flex-col gap-1">
-                    {section.items.map((item) => {
-                      const target = item.target;
-                      const isActive = activeSidePanel === target;
-                      const status = item.status;
-                      const Icon = item.icon;
-                      const StatusIcon = status === "ok" ? CheckCircle2 : status === "block" ? AlertCircle : status === "review" ? AlertCircle : Circle;
-                      return (
-                        <button
-                          key={`${section.label}-${item.label}`}
-                          type="button"
-                          onClick={() => handleOpenSidePanel(target)}
-                          className={`flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${
-                            isActive
-                              ? "bg-slate-950 text-white"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                          }`}
-                        >
-                          <span className="flex min-w-0 items-center gap-3">
-                            <Icon className="h-4 w-4 shrink-0" />
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-semibold">{item.label}</span>
-                              <span className={`block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                isActive ? "text-white/55" : "text-slate-400"
-                              }`}>
-                                {item.caption}
-                              </span>
-                            </span>
-                          </span>
-                          <StatusIcon
-                            className={`h-3.5 w-3.5 shrink-0 ${
-                              isActive
-                                ? "text-white/80"
-                                : status === "ok"
-                                  ? "text-emerald-500"
-                                  : status === "block"
-                                    ? "text-red-500"
-                                    : status === "review"
-                                      ? "text-amber-500"
-                                      : "text-slate-300"
-                            }`}
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+            <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
+              <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Workspace
+              </p>
+              {sidebarModes.map((item) => {
+                const isActive = activeWorkspaceMode === item.target;
+                const status = item.status;
+                const Icon = item.icon;
+                const StatusIcon = status === "ok" ? CheckCircle2 : status === "block" ? AlertCircle : status === "review" ? AlertCircle : Circle;
+                return (
+                  <button
+                    key={item.target}
+                    type="button"
+                    onClick={() => handleOpenWorkspaceMode(item.target)}
+                    className={`flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${
+                      isActive
+                        ? "bg-slate-950 text-white"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">{item.label}</span>
+                        <span className={`block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                          isActive ? "text-white/55" : "text-slate-400"
+                        }`}>
+                          {item.caption}
+                        </span>
+                      </span>
+                    </span>
+                    <StatusIcon
+                      className={`h-3.5 w-3.5 shrink-0 ${
+                        isActive
+                          ? "text-white/80"
+                          : status === "ok"
+                            ? "text-slate-700"
+                            : status === "block"
+                              ? "text-red-500"
+                              : status === "review"
+                                ? "text-amber-500"
+                                : "text-slate-300"
+                      }`}
+                    />
+                  </button>
+                );
+              })}
             </div>
             <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3 text-left text-slate-900">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Civora AI</p>
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-sm font-semibold">Online</span>
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Command</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => handleOpenSidePanel("chat")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                  Chat
+                </button>
+                <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                  Generate
+                </button>
               </div>
             </div>
           </aside>
@@ -9685,9 +9691,9 @@ function PerformanceAIDashboardView({
             <aside className="order-3 m-3 flex min-h-0 w-auto shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/96 shadow-[var(--civora-shadow-panel)] backdrop-blur-xl lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:w-[372px]">
               <div className="flex items-center justify-between border-b border-[var(--civora-border)] px-4 py-4">
                 <div>
-                  <p className="civora-muted-label">{sidePanelCopy[activeSidePanel].title}</p>
+                  <p className="civora-muted-label">{activePanelTitle}</p>
                   <p className="mt-1 text-sm text-[var(--civora-text-muted)]">
-                    {sidePanelCopy[activeSidePanel].desc}
+                    {activePanelDescription}
                   </p>
                 </div>
                 <button
@@ -9769,14 +9775,14 @@ function PerformanceAIDashboardView({
                             {fileName || "No file name"} · {lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "Site not locked"}
                           </p>
                         </div>
-                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
                           hasHardSystemBlock
                             ? "bg-red-50 text-red-600"
                             : backendResult
-                              ? "bg-emerald-50 text-emerald-600"
+                              ? "bg-slate-100 text-slate-700"
                               : "bg-amber-50 text-amber-600"
                         }`}>
-                          {hasHardSystemBlock ? "Blocked" : backendResult ? "Ready" : "Setup"}
+                          {hasHardSystemBlock ? "Blocked" : backendResult ? "Review output" : "Setup"}
                         </span>
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
@@ -10179,6 +10185,40 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "data" ? (
                   <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Source hub</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {([
+                          ["site_existing", "Existing Conditions"],
+                          ["import_survey", "Survey / Terrain"],
+                          ["files", "Files"],
+                          ["standards", "Standards Sources"],
+                          ["libraries", "Libraries"],
+                        ] as Array<[SidePanelKey, string]>).map(([panel, label]) => (
+                          <button
+                            key={panel}
+                            type="button"
+                            onClick={() => handleOpenSidePanel(panel)}
+                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          ["CRS / datum", (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "Not set"],
+                          ["Terrain", hasTerrainSource ? "Provided" : "Missing"],
+                          ["GIS", mapAnalysis?.success ? "Analyzed" : "Not analyzed"],
+                          ["Confidence", sidebarTrustScore],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                            <p className="mt-1 truncate font-semibold text-slate-800">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     <div>
                       <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Site address
@@ -10545,6 +10585,27 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "model" ? (
                   <div className="space-y-4">
+                    {activeWorkspaceMode === "three_d" ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">3D engineering review</p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          Use the canvas toolbar for 2D/3D and quality. Review geometry, grading surface, annotations, and blocked systems before export.
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          {[
+                            ["Mode", previewMode.toUpperCase()],
+                            ["Quality", previewQuality],
+                            ["Surface", hasGradingSurface ? "Grading surface" : "No grading surface"],
+                            ["Blocked", hasHardSystemBlock ? "Review required" : "None recorded"],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                              <p className="mt-1 font-semibold text-slate-800">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Canvas
@@ -10561,35 +10622,51 @@ function PerformanceAIDashboardView({
                       </div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Canvas controls</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Create and engineer</p>
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        {(["2d", "3d"] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setPreviewMode(mode)}
-                            className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
-                              previewMode === mode
-                                ? "border-slate-950 bg-slate-950 text-white"
-                                : "border-slate-200 bg-white text-slate-700"
-                            }`}
-                          >
-                            {mode}
-                          </button>
-                        ))}
-                        {(["standard", "high"] as const).map((quality) => (
-                          <button
-                            key={quality}
-                            type="button"
-                            onClick={() => setPreviewQuality(quality)}
-                            className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
-                              previewQuality === quality
-                                ? "border-slate-950 bg-slate-950 text-white"
-                                : "border-slate-200 bg-white text-slate-700"
-                            }`}
-                          >
-                            {quality}
-                          </button>
+                        <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white">
+                          Objects
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Prompt and object controls</span>
+                        </button>
+                        <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800">
+                          Generate Systems
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">Run engines with gates</span>
+                        </button>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Discipline panels</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {([
+                            ["grading", "Grading"],
+                            ["drainage", "Drainage"],
+                            ["utilities", "Utilities"],
+                            ["roadway", "Roadway"],
+                            ["landscape", "Landscape"],
+                            ["details", "Selected Details"],
+                          ] as Array<[SidePanelKey, string]>).map(([panel, label]) => (
+                            <button
+                              key={panel}
+                              type="button"
+                              onClick={() => handleOpenSidePanel(panel)}
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Canvas controls</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          ["View", previewMode.toUpperCase()],
+                          ["Quality", previewQuality],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                            <p className="mt-1 font-semibold text-slate-800">{value}</p>
+                          </div>
                         ))}
                       </div>
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -11431,6 +11508,22 @@ function PerformanceAIDashboardView({
                 {activeSidePanel === "details" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Profiles and cross sections</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          ["Road profiles", roads ? "Review" : "No generated roads"],
+                          ["Pipe profiles", utilities ? "Review" : "No generated pipes"],
+                          ["Basin sections", hasBasinPlaced ? "Available" : "Needs basin"],
+                          ["ADA paths", buildingPlacements.some((item) => item.type === "sidewalk") ? "Review" : "Needs paths"],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                            <p className="mt-1 font-semibold text-slate-800">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Selected object</p>
                       {selectedBuilding ? (
                         <div className="mt-3 space-y-2 text-sm text-slate-700">
@@ -11713,6 +11806,28 @@ function PerformanceAIDashboardView({
                 {activeSidePanel === "settings" ? (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Workspace settings</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        {[
+                          ["Appearance", previewQuality],
+                          ["Layout", leftSidebarOpen ? "Sidebar on" : "Sidebar off"],
+                          ["AI behavior", assistedEnabled ? "Assisted" : "Manual"],
+                          ["Exports", sidebarReleaseStatus === "ready" ? "Audit ready" : sidebarReleaseStatus],
+                          ["Shortcuts", "Default"],
+                          ["Standards", panelStatus("standards")],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-slate-400">{label}</p>
+                            <p className="mt-1 text-slate-800">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => handleOpenSidePanel("standards")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Standards</button>
+                        <button type="button" onClick={() => handleOpenSidePanel("deliverables")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export settings</button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Run defaults</p>
                       <div className="mt-3 space-y-2">
                         {disciplineToggles.map((toggle) => (
@@ -11967,9 +12082,75 @@ function PerformanceAIDashboardView({
 
                 {activeSidePanel === "reports" || activeSidePanel === "quantities" || activeSidePanel === "deliverables" ? (
                   <div className="space-y-3">
+                    {activeSidePanel === "reports" ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            ["QA items", issues.length + analysisIssues.length],
+                            ["Missing", sidebarMissingInputs.length],
+                            ["Assumptions", sidebarAssumptions.length],
+                            ["Blocked", systemHealthItems.filter((item) => item.state === "blocked").length],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                              <p className="mt-1 text-lg font-semibold text-slate-900">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Engineering health</p>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            {([
+                              ["system_grading", "Grading"],
+                              ["system_storm", "Storm"],
+                              ["system_sanitary", "Sanitary"],
+                              ["system_water", "Water"],
+                              ["system_roadway", "Roadway"],
+                              ["system_utilities", "Utilities"],
+                              ["system_landscape", "Landscape"],
+                              ["analysis", "Review & QA"],
+                            ] as Array<[SidePanelKey, string]>).map(([panel, label]) => (
+                              <button
+                                key={panel}
+                                type="button"
+                                onClick={() => handleOpenSidePanel(panel)}
+                                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Truth gates</p>
+                          <div className="mt-3 space-y-2">
+                            {sidebarTruthItems.map((item) => (
+                              <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                                <span className="font-semibold text-slate-700">{item.label}</span>
+                                <span className={`text-xs font-semibold uppercase tracking-[0.12em] ${
+                                  item.status === "block" ? "text-red-600" : item.status === "review" ? "text-amber-600" : "text-slate-500"
+                                }`}>
+                                  {item.value}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
                     {activeSidePanel === "quantities" ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quantity takeoff</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quantity takeoff</p>
+                            <p className="mt-1 text-xs text-slate-500">Canonical state with stale and confidence labels.</p>
+                          </div>
+                          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                            sidebarStaleSystems.length ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {sidebarStaleSystems.length ? "Stale" : sidebarTrustScore}
+                          </span>
+                        </div>
                         <div className="mt-3 space-y-2 text-sm text-slate-700">
                           {quantityRows.slice(0, 8).map((row) => (
                             <div key={row.label} className="flex items-center justify-between gap-3">
@@ -11982,10 +12163,40 @@ function PerformanceAIDashboardView({
                       </div>
                     ) : null}
                     {activeSidePanel === "deliverables" ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <button type="button" onClick={handleExportDxf} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export DXF</button>
-                        <button type="button" onClick={handleExportReport} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export Report</button>
-                      </div>
+                      <>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Package gate</p>
+                              <p className="mt-1 text-sm font-semibold text-slate-900">
+                                {sidebarReleaseStatus === "ready" ? "Export review available" : sidebarReleaseStatus === "blocked" ? "Construction package blocked" : "Review-only package"}
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              sidebarReleaseStatus === "blocked" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
+                            }`}>
+                              {sidebarReleaseStatus === "ready" ? "Audit" : sidebarReleaseStatus === "blocked" ? "Blocked" : "Review"}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            {[
+                              ["Plan sheets", backendResult ? "Available" : "Needs run"],
+                              ["Profiles", roads || utilities ? "Review" : "Not generated"],
+                              ["Sections", placedObjectCount ? "Available" : "Needs objects"],
+                              ["Export audit", sidebarTrustScore],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={handleExportDxf} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export DXF</button>
+                          <button type="button" onClick={handleExportReport} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export Report</button>
+                        </div>
+                      </>
                     ) : null}
                     {sortedProjects.length ? (
                       sortedProjects.map((projectSummary) => (
@@ -12062,6 +12273,76 @@ function PerformanceAIDashboardView({
           ) : null}
           <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
             <div className="flex w-full flex-1 flex-col gap-4 px-4 py-4 md:px-5">
+              <div
+                data-testid="canvas-workflow-toolbar"
+                className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm"
+              >
+                {[
+                  {
+                    label: "Select",
+                    active: !placementModeEnabled,
+                    action: () => {
+                      setPlacementModeEnabled(false);
+                      setActivePlacementId(null);
+                    },
+                  },
+                  {
+                    label: "Draw",
+                    active: placementModeEnabled,
+                    action: () => handleOpenSidePanel("objects"),
+                  },
+                  {
+                    label: "Modify",
+                    active: activeSidePanel === "details" || activeSidePanel === "objects",
+                    action: () => handleOpenSidePanel(activePlacementId ? "details" : "objects"),
+                  },
+                  {
+                    label: "Measure",
+                    active: showMeasurements,
+                    action: () => setShowMeasurements((value) => !value),
+                  },
+                  {
+                    label: "Prompt Create",
+                    active: activeSidePanel === "objects",
+                    action: () => handleOpenSidePanel("objects"),
+                  },
+                  {
+                    label: "Snaps",
+                    active: snapAssistEnabled,
+                    action: () => setSnapAssistEnabled((value) => !value),
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={item.action}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+                      item.active
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="toolbar-generate-systems"
+                    onClick={() => handleOpenSidePanel("generate")}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Generate Systems
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSidePanel("deliverables")}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Export Review
+                  </button>
+                </div>
+              </div>
               <div className="flex w-full flex-col">
                 <div
                   data-testid="workspace-canvas-shell"
@@ -13275,6 +13556,32 @@ function PerformanceAIDashboardView({
               </div>
             </div>
           </main>
+          <div
+            data-testid="floating-command-bar"
+            className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl"
+          >
+            <button
+              type="button"
+              onClick={() => handleOpenSidePanel("chat")}
+              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-white"
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenSidePanel("objects")}
+              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-white"
+            >
+              Prompt Create
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenSidePanel("generate")}
+              className="flex-1 rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+            >
+              Generate
+            </button>
+          </div>
         </div>
       </div>
     </div>
