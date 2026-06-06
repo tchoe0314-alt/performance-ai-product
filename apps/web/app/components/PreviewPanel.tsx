@@ -2953,7 +2953,7 @@ export default function PreviewPanel({
                 data-testid="high-quality-preview-only-label"
                 className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
               >
-                Visual preview only — canonical geometry unchanged.
+                Visual preview only — canonical geometry unchanged. Not engineering evidence.
               </span>
             ) : null}
             <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -2967,8 +2967,9 @@ export default function PreviewPanel({
             </span>
           </div>
           <p className="max-w-3xl text-xs text-slate-500">
-            Visual anchoring keeps objects consistent in the model view. Civora does not stamp, seal, sign, certify,
-            approve construction, submit construction documents, or act as engineer of record.
+            Visual anchoring keeps objects consistent in the model view. High Quality visuals are communication
+            previews only and never construction evidence. Civora does not stamp, seal, sign, certify, approve
+            construction, submit construction documents, or act as engineer of record.
           </p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
             <div className="inline-flex max-w-3xl items-start rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
