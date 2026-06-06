@@ -3,8 +3,10 @@ import unittest
 from fastapi import HTTPException
 
 from backend.application.job_workflows import (
+    build_artifact_export_job_runner,
     build_orchestrate_job_runner,
     cancel_existing_job,
+    queue_artifact_export_job,
     revise_existing_job,
     queue_orchestrate_job,
 )
@@ -227,6 +229,81 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             store.saved_payload["project_input"]["manual_fields"]["building_width"],
             110,
         )
+
+    def test_queue_artifact_export_job_submits_review_only_report_job(self):
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Export Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {},
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+        queue = FakeJobQueue()
+
+        response = queue_artifact_export_job(
+            project_store=store,
+            job_queue=queue,
+            user_id="u1",
+            project_id="p1",
+            request_payload={"filename_stem": "export-demo"},
+            export_kind="report",
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(queue.submitted["job_type"], "export_report")
+        self.assertEqual(queue.submitted["payload"]["export_kind"], "report")
+        self.assertFalse(response["operational_summary"]["construction_release_allowed"])
+        self.assertTrue(response["operational_summary"]["review_only"])
+
+    def test_build_artifact_export_job_runner_returns_download_metadata(self):
+        updates = []
+
+        def update_progress(job_id, *, stage, detail, progress):
+            updates.append({"job_id": job_id, "stage": stage, "detail": detail, "progress": progress})
+
+        def result_from_payload(**kwargs):
+            return {"final_plan": {"project_name": "Export Demo", "meta": {}}}
+
+        class ArtifactService:
+            pass
+
+        class PathLike:
+            name = "export-demo.json"
+
+        def export_report_artifact(**kwargs):
+            return PathLike()
+
+        runner = build_artifact_export_job_runner(
+            artifact_service=ArtifactService(),
+            project_store=FakeProjectStore(),
+            update_job_progress=update_progress,
+            result_from_payload=result_from_payload,
+            export_dxf_artifact=lambda **kwargs: PathLike(),
+            export_report_artifact=export_report_artifact,
+            export_kind="report",
+        )
+
+        result = runner(
+            {
+                "job_id": "job_export",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"filename_stem": "export-demo"},
+            }
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["artifact"]["download_path"], "/api/artifacts/export-demo.json")
+        self.assertFalse(result["artifact"]["construction_release_allowed"])
+        self.assertEqual(result["job_progress"]["progress"], 100)
+        self.assertGreaterEqual(len(updates), 3)
 
     def test_revise_existing_job_requeues_current_phase_with_saved_project_input(self):
         store = FakeProjectStore(

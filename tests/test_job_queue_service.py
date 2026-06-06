@@ -42,6 +42,25 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(jobs[0]["project_id"], "p1")
         self.assertEqual(jobs[0]["status"], "queued")
 
+    def test_submit_job_reuses_matching_active_job(self):
+        first = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "demo", "meta": {"requested_system": "grading"}},
+            project_id=None,
+        )
+        second = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"meta": {"requested_system": "grading"}, "prompt_text": "demo"},
+            project_id=None,
+        )
+
+        self.assertEqual(second["job_id"], first["job_id"])
+        self.assertTrue(second["deduplicated"])
+        self.assertEqual(second["duplicate_of"], first["job_id"])
+        self.assertEqual(len(self.queue.list_jobs(user_id=self.user_id)), 1)
+
     def test_job_summary_tolerates_bad_progress_shape(self):
         connection = self.db.connect()
         try:
@@ -262,6 +281,73 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(monitoring["stale_job_count"], 1)
         self.assertEqual(monitoring["stale_jobs"][0]["job_id"], "job_stale")
         self.assertIn("stale_or_timed_out_jobs_present", monitoring["warnings"])
+
+    def test_get_job_detail_marks_timed_out_job_failed_with_exact_blocker(self):
+        old_time = time.time() - 2000.0
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_timeout",
+                    self.user_id,
+                    "orchestrate",
+                    "running",
+                    old_time,
+                    old_time,
+                    None,
+                    "Grading",
+                    "Building proposed surface",
+                    52,
+                    "{}",
+                    '{"job_progress":{"stage":"Grading","detail":"Building proposed surface","progress":52}}',
+                    None,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        self.queue._job_timeout_seconds = 60.0
+        job = self.queue.get_job_detail(user_id=self.user_id, job_id="job_timeout")
+
+        self.assertIsNotNone(job)
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("timed out after 60 seconds", job["error"])
+        self.assertIn("Last stage: Grading", job["error"])
+        self.assertEqual(job["stage"], "Timed Out")
+        self.assertEqual(job["result"]["error_details"]["code"], "job_timeout")
+
+    def test_runner_failure_preserves_stage_and_exact_error(self):
+        def runner(_job):
+            raise RuntimeError("grading surface missing terrain triangles")
+
+        self.queue.register_handler("orchestrate", runner)
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "grading"},
+        )
+
+        deadline = time.time() + 3.0
+        record = None
+        while time.time() < deadline:
+            record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "failed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "failed")
+        self.assertIn("Job failed during Preparing", record["error"])
+        self.assertIn("grading surface missing terrain triangles", record["error"])
+        self.assertEqual(record["result"]["error_details"]["code"], "job_runner_failed")
 
     def test_job_result_serializes_dataclass_objects(self):
         self.queue.register_handler(

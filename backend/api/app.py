@@ -67,11 +67,13 @@ from backend.application.memory_logging import (
 )
 from backend.planning.alpha_monitoring import build_alpha_monitoring_report
 from backend.application.job_workflows import (
+    build_artifact_export_job_runner as application_build_artifact_export_job_runner,
     build_drainage_job_runner as application_build_drainage_job_runner,
     build_orchestrate_job_runner as application_build_orchestrate_job_runner,
     cancel_existing_job as application_cancel_existing_job,
     continue_existing_job as application_continue_existing_job,
     queue_drainage_job as application_queue_drainage_job,
+    queue_artifact_export_job as application_queue_artifact_export_job,
     queue_orchestrate_job as application_queue_orchestrate_job,
     revise_existing_job as application_revise_existing_job,
 )
@@ -351,6 +353,10 @@ class ArtifactPayload(BaseModel):
     preview_mode: Optional[str] = None
 
 
+class QueueArtifactExportPayload(ArtifactPayload):
+    pass
+
+
 class ChatDecisionPayload(BaseModel):
     message: str
     context: Dict[str, Any] = Field(default_factory=dict)
@@ -620,6 +626,22 @@ def _result_from_payload(current_user: Dict[str, Any], payload: ArtifactPayload)
     )
 
 
+def _result_from_job_payload(
+    *,
+    user_id: str,
+    project_id: Optional[str],
+    result: Dict[str, Any],
+    final_plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    return application_result_from_payload(
+        project_store=PROJECT_STORE,
+        user_id=user_id,
+        project_id=project_id,
+        result=dict(result or {}),
+        final_plan=dict(final_plan or {}),
+    )
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         if value is None:
@@ -816,6 +838,30 @@ def _register_job_handlers() -> None:
         application_build_drainage_job_runner(
             project_store=PROJECT_STORE,
             update_job_progress=JOB_QUEUE.update_job_progress,
+        ),
+    )
+    JOB_QUEUE.register_handler(
+        "export_dxf",
+        application_build_artifact_export_job_runner(
+            artifact_service=ARTIFACTS,
+            project_store=PROJECT_STORE,
+            update_job_progress=JOB_QUEUE.update_job_progress,
+            result_from_payload=_result_from_job_payload,
+            export_dxf_artifact=application_export_dxf_artifact,
+            export_report_artifact=application_export_report_artifact,
+            export_kind="dxf",
+        ),
+    )
+    JOB_QUEUE.register_handler(
+        "export_report",
+        application_build_artifact_export_job_runner(
+            artifact_service=ARTIFACTS,
+            project_store=PROJECT_STORE,
+            update_job_progress=JOB_QUEUE.update_job_progress,
+            result_from_payload=_result_from_job_payload,
+            export_dxf_artifact=application_export_dxf_artifact,
+            export_report_artifact=application_export_report_artifact,
+            export_kind="report",
         ),
     )
     log_memory("startup_complete")
@@ -1667,6 +1713,38 @@ def queue_drainage_job(
         user_id=current_user["user_id"],
         project_id=project_id,
         request_payload=request_payload,
+    )
+
+
+@app.post("/api/jobs/export/dxf")
+def queue_export_dxf_job(
+    payload: QueueArtifactExportPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("export")),
+) -> Dict[str, Any]:
+    return application_queue_artifact_export_job(
+        project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        project_id=payload.project_id,
+        request_payload=_model_to_dict(payload),
+        export_kind="dxf",
+    )
+
+
+@app.post("/api/jobs/export/report")
+def queue_export_report_job(
+    payload: QueueArtifactExportPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("export")),
+) -> Dict[str, Any]:
+    return application_queue_artifact_export_job(
+        project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        project_id=payload.project_id,
+        request_payload=_model_to_dict(payload),
+        export_kind="report",
     )
 
 

@@ -79,6 +79,14 @@ class ProjectStoreProtocol(Protocol):
         ...
 
 
+class ArtifactServiceProtocol(Protocol):
+    def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: str, prefinalized: bool = False) -> Any:
+        ...
+
+    def export_report_json(self, *, user_id: str, result_data: Dict[str, Any], stem: str) -> Any:
+        ...
+
+
 class FinalPlanBuilderProtocol(Protocol):
     def __call__(
         self,
@@ -87,6 +95,24 @@ class FinalPlanBuilderProtocol(Protocol):
         enforce_export_guards: bool = True,
         ) -> Dict[str, Any]:
         ...
+
+
+def _artifact_job_summary(job: Dict[str, Any], *, project_id: Optional[str], job_type: str) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "job": job,
+        "operational_summary": {
+            "status": str(job.get("status") or "queued"),
+            "job_type": str(job.get("job_type") or job_type),
+            "job_bound": bool(job.get("job_id")),
+            "project_bound": bool(project_id),
+            "project_id": project_id,
+            "job_id": job.get("job_id"),
+            "retryable": True,
+            "review_only": True,
+            "construction_release_allowed": False,
+        },
+    }
 
 
 def _load_project_latest_result(
@@ -219,6 +245,34 @@ def queue_drainage_job(
             "retryable": True,
         },
     }
+
+
+def queue_artifact_export_job(
+    *,
+    project_store: ProjectStoreProtocol,
+    job_queue: JobQueueProtocol,
+    user_id: str,
+    project_id: Optional[str],
+    request_payload: Dict[str, Any],
+    export_kind: str,
+) -> Dict[str, Any]:
+    kind = safe_str(export_kind).lower()
+    if kind not in {"dxf", "report"}:
+        raise HTTPException(status_code=400, detail="Unsupported export job type.")
+    if project_id:
+        existing = project_store.get_project(user_id=user_id, project_id=project_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    job_type = f"export_{kind}"
+    payload = dict(request_payload or {})
+    payload["export_kind"] = kind
+    job = job_queue.submit_job(
+        user_id=user_id,
+        job_type=job_type,
+        payload=payload,
+        project_id=project_id,
+    )
+    return _artifact_job_summary(job, project_id=project_id, job_type=job_type)
 
 
 def cancel_existing_job(
@@ -2567,3 +2621,87 @@ def build_drainage_job_runner(
         return result
 
     return drainage_runner
+
+
+def build_artifact_export_job_runner(
+    *,
+    artifact_service: ArtifactServiceProtocol,
+    project_store: ProjectStoreProtocol,
+    update_job_progress: Callable[..., None],
+    result_from_payload: Callable[..., Dict[str, Any]],
+    export_dxf_artifact: Callable[..., Any],
+    export_report_artifact: Callable[..., Any],
+    export_kind: str,
+) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    kind = safe_str(export_kind).lower()
+    if kind not in {"dxf", "report"}:
+        raise ValueError("Unsupported artifact export kind.")
+
+    def export_runner(job: Dict[str, Any]) -> Dict[str, Any]:
+        payload = dict(job.get("payload") or {})
+        job_id = safe_str(job.get("job_id"))
+        user_id = safe_str(job.get("user_id"))
+        project_id = safe_str(job.get("project_id")) or payload.get("project_id")
+        filename_stem = payload.get("filename_stem")
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage=f"{kind.upper()} Export Queued",
+                detail="Loading the latest review model and export blockers before generating the artifact.",
+                progress=30,
+            )
+        result_data = result_from_payload(
+            user_id=user_id,
+            project_id=project_id,
+            result=safe_dict(payload.get("result")),
+            final_plan=safe_dict(payload.get("final_plan")),
+        )
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage=f"Generating {kind.upper()}",
+                detail="Building the review-only export package. This does not approve construction readiness.",
+                progress=62,
+            )
+        if kind == "dxf":
+            path = export_dxf_artifact(
+                artifact_service=artifact_service,
+                project_store=project_store,
+                user_id=user_id,
+                project_id=project_id,
+                result_data=result_data,
+                filename_stem=filename_stem,
+            )
+        else:
+            path = export_report_artifact(
+                artifact_service=artifact_service,
+                project_store=project_store,
+                user_id=user_id,
+                project_id=project_id,
+                result_data=result_data,
+                filename_stem=filename_stem,
+            )
+        if job_id:
+            update_job_progress(
+                job_id,
+                stage=f"{kind.upper()} Export Ready",
+                detail="Review artifact generated. Construction release remains blocked without licensed engineer approval.",
+                progress=96,
+            )
+        return {
+            "success": True,
+            "artifact": {
+                "kind": kind,
+                "filename": path.name,
+                "download_path": f"/api/artifacts/{path.name}",
+                "review_only": True,
+                "construction_release_allowed": False,
+            },
+            "job_progress": {
+                "stage": f"{kind.upper()} Export Ready",
+                "detail": "Review artifact generated. Construction release remains blocked without licensed engineer approval.",
+                "progress": 100,
+            },
+        }
+
+    return export_runner

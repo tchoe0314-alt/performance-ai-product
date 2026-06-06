@@ -53,7 +53,7 @@ def _json_safe(value: Any) -> Any:
 
 
 def _json_dumps(value: Any) -> str:
-    return json.dumps(_json_safe(value if value is not None else {}))
+    return json.dumps(_json_safe(value if value is not None else {}), sort_keys=True)
 
 
 def _json_loads(value: Any, default: Any) -> Any:
@@ -245,6 +245,17 @@ class JobQueueService:
         project_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         self._ensure_workers_alive()
+        existing = self._find_matching_active_job(
+            user_id=user_id,
+            job_type=job_type,
+            payload=payload,
+            project_id=project_id,
+        )
+        if existing is not None:
+            summary = self._job_summary(existing)
+            summary["deduplicated"] = True
+            summary["duplicate_of"] = existing["job_id"]
+            return summary
         now = _now()
         record = {
             "job_id": _new_id("job"),
@@ -294,8 +305,60 @@ class JobQueueService:
             self._queue.put(record["job_id"])
         return self._job_summary(record)
 
+    def fail_timed_out_jobs(self) -> int:
+        now = _now()
+        timeout_seconds = max(1.0, float(self._job_timeout_seconds or 900.0))
+        cutoff = now - timeout_seconds
+        connection = self.db.connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM jobs
+                WHERE status IN ('queued', 'running', 'cancelling')
+                  AND updated_at <= ?
+                  AND updated_at >= 1000000000
+                ORDER BY updated_at ASC
+                """,
+                (cutoff,),
+            ).fetchall()
+        finally:
+            connection.close()
+
+        failed_count = 0
+        for row in rows:
+            record = self._row_to_record(row)
+            stage = str(record.get("stage") or "Unknown stage")
+            detail = str(record.get("stage_detail") or "No progress detail was recorded.")
+            progress = _coerce_progress(record.get("progress"))
+            error = (
+                f"Job timed out after {int(timeout_seconds)} seconds without fresh backend progress. "
+                f"Last stage: {stage}. Last detail: {detail}"
+            )
+            result = dict(record.get("result") or {})
+            result.update(
+                _job_progress_payload(
+                    "Timed Out",
+                    error,
+                    progress,
+                )
+            )
+            result["error_details"] = {
+                "code": "job_timeout",
+                "message": error,
+                "last_stage": stage,
+                "last_detail": detail,
+                "timeout_seconds": timeout_seconds,
+                "review_only": True,
+                "construction_release_allowed": False,
+            }
+            self._update_job_state(str(record["job_id"]), status="failed", result=result, error=error)
+            failed_count += 1
+        return failed_count
+
     def list_jobs(self, *, user_id: str) -> List[Dict[str, Any]]:
         self._ensure_workers_alive()
+        self.fail_timed_out_jobs()
         connection = self.db.connect()
         try:
             rows = connection.execute(
@@ -317,6 +380,7 @@ class JobQueueService:
 
     def get_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         self._ensure_workers_alive()
+        self.fail_timed_out_jobs()
         connection = self.db.connect()
         try:
             row = connection.execute(
@@ -332,6 +396,7 @@ class JobQueueService:
             connection.close()
 
     def get_job_detail(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        self.fail_timed_out_jobs()
         connection = self.db.connect()
         try:
             row = connection.execute(
@@ -538,6 +603,47 @@ class JobQueueService:
             return str(row["job_id"])
         finally:
             connection.close()
+
+    def _find_matching_active_job(
+        self,
+        *,
+        user_id: str,
+        job_type: str,
+        payload: Dict[str, Any],
+        project_id: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        target_payload = _json_safe(payload or {})
+        connection = self.db.connect()
+        try:
+            if project_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM jobs
+                    WHERE user_id = ? AND job_type = ? AND project_id IS NULL
+                      AND status IN ('queued', 'running', 'cancelling', 'awaiting_approval')
+                    ORDER BY created_at ASC
+                    """,
+                    (user_id, job_type),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM jobs
+                    WHERE user_id = ? AND job_type = ? AND project_id = ?
+                      AND status IN ('queued', 'running', 'cancelling', 'awaiting_approval')
+                    ORDER BY created_at ASC
+                    """,
+                    (user_id, job_type, project_id),
+                ).fetchall()
+        finally:
+            connection.close()
+        for row in rows:
+            record = self._row_to_record(row)
+            if _json_safe(record.get("payload") or {}) == target_payload:
+                return record
+        return None
 
     def _update_job_state(self, job_id: str, *, status: str, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None) -> None:
         job_progress = dict((result or {}).get("job_progress") or {})
@@ -802,7 +908,29 @@ class JobQueueService:
                 )
                 self._update_job_state(job_id, status="cancelled", result=cancelled_result, error="Cancelled by user.")
             except Exception as exc:
-                self._update_job_state(job_id, status="failed", result={}, error=str(exc))
+                current = self._get_job_for_worker(job_id)
+                previous_result = dict((current or {}).get("result") or {})
+                previous_progress = dict(previous_result.get("job_progress") or {})
+                stage = str(previous_progress.get("stage") or (current or {}).get("stage") or "Job Failed")
+                detail = str(previous_progress.get("detail") or (current or {}).get("stage_detail") or "")
+                error_text = f"Job failed during {stage}: {str(exc)}"
+                failed_result = dict(previous_result)
+                failed_result.update(
+                    _job_progress_payload(
+                        "Failed",
+                        error_text,
+                        _coerce_progress(previous_progress.get("progress") or (current or {}).get("progress")),
+                    )
+                )
+                failed_result["error_details"] = {
+                    "code": "job_runner_failed",
+                    "message": str(exc),
+                    "failed_stage": stage,
+                    "last_detail": detail,
+                    "review_only": True,
+                    "construction_release_allowed": False,
+                }
+                self._update_job_state(job_id, status="failed", result=failed_result, error=error_text)
             finally:
                 heartbeat_stop.set()
                 heartbeat_thread.join(timeout=1.0)
