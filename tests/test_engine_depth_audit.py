@@ -5,6 +5,7 @@ from pathlib import Path
 
 from backend.planning.engine_depth_audit import (
     CLASS_CONCEPT,
+    CLASS_PRODUCTION_DEPTH,
     CLASS_REVIEW,
     REPORT_VERSION,
     run_engine_depth_audit,
@@ -14,6 +15,7 @@ from backend.planning.engine_depth_audit import (
 from backend.planning.engine_readiness import evaluate_engine_readiness
 from backend.planning.engine_contracts import engine_contracts
 from backend.planning.golden_runner import run_golden_scenario
+from backend.planning.production_depth import enrich_storm_production_depth
 from core.civil_design import civil_design_readiness
 from tests.test_civil_design_readiness import _complete_meta
 
@@ -71,6 +73,102 @@ def _review_depth_plan(payload: dict) -> dict:
                 "canonical_source_id": "site-1",
                 "width": 220.0,
                 "height": 160.0,
+            }
+        ],
+        "meta": meta,
+    }
+    meta["civil_design_readiness"] = civil_design_readiness(plan)
+    meta["engine_readiness"] = evaluate_engine_readiness(plan)
+    return plan
+
+
+def _complete_storm_hgl_fixture() -> tuple:
+    slope = 0.01
+    mannings_n = 0.013
+    design_flow = 1.0
+    storm = {
+        "success": True,
+        "source": "storm_network_engine",
+        "segments": [
+            {
+                "id": "STM-HGL-1",
+                "pipe": "STM-HGL-1",
+                "from": "CB-HGL-1",
+                "to": "OUT-HGL-1",
+                "path": [[0.0, 0.0], [100.0, 0.0]],
+                "length_ft": 100.0,
+                "diameter_in": 24.0,
+                "flow_cfs": design_flow,
+                "slope_ft_ft": slope,
+                "mannings_n": mannings_n,
+                "start_invert_ft": 100.0,
+                "end_invert_ft": 99.0,
+                "tributary_area_sf": 12000.0,
+            }
+        ],
+        "target_outfall": {"name": "OUT-HGL-1", "target_name": "OUT-HGL-1", "x": 100.0, "y": 0.0, "z": 98.5},
+        "graph_validation": {"valid": True},
+        "hydraulic_validation": {"valid": True},
+        "missing_data_segments": [],
+    }
+    drainage = {
+        "success": True,
+        "source": "drainage_engine",
+        "coordination": {"preferred_outfall": {"name": "OUT-HGL-1", "target_name": "OUT-HGL-1", "x": 100.0, "y": 0.0, "z": 98.5}},
+        "surface_controls": {"primary_low_point": {"x": 100.0, "y": 0.0, "z": 98.5}},
+        "surface_guidance": {"surface_source": "terrain", "surface_from_grading": True},
+        "catchments": [{"name": "C-HGL-1", "runoff_c": 0.8, "runoff_coefficient": 0.8}],
+        "stats": {
+            "total_basin_runoff_cfs": design_flow,
+            "total_estimated_inlet_flow_cfs": design_flow,
+            "total_contributing_area_sf": 12000.0,
+        },
+        "structures": [{"name": "CB-HGL-1", "x": 0.0, "y": 0.0, "estimated_flow_cfs": design_flow, "capacity_cfs": 20.0, "gutter_spread_limit_ft": 9.0}],
+        "basins": [{"name": "B-HGL-1", "target_name": "OUT-HGL-1"}],
+        "low_points": [{"name": "LP-HGL-1", "x": 100.0, "y": 0.0, "z": 98.5}],
+        "flow_paths": [{"from": "CB-HGL-1", "to": "OUT-HGL-1", "points": [[0.0, 0.0], [100.0, 0.0]]}],
+        "detention_routing": [
+            {
+                "basin": "B-HGL-1",
+                "routing_source": "hydrograph_engine",
+                "routing_method": "stage_storage_hydrograph",
+                "required_storage_cf": 4200.0,
+                "provided_storage_cf": 5000.0,
+                "release_cfs": 1.0,
+                "outlet": {"type": "orifice", "release_cfs": 1.0, "source": "approved_outlet_fixture"},
+                "drawdown_hours": 18.0,
+                "stage_storage": [
+                    {"elevation_ft": 96.0, "storage_cf": 0.0},
+                    {"elevation_ft": 98.0, "storage_cf": 2500.0},
+                    {"elevation_ft": 99.0, "storage_cf": 5000.0},
+                ],
+            }
+        ],
+        "overflow_paths": [
+            {"name": "OF-HGL-1", "capacity_valid": True, "capacity_cfs": 5.0, "required_capacity_cfs": 4.0, "source": "approved_spillway_fixture"}
+        ],
+        "overflow_analysis": {"valid": True, "production_valid": True},
+    }
+    return storm, drainage
+
+
+def _hgl_egl_depth_plan(payload: dict) -> dict:
+    meta = _review_depth_meta()
+    meta["lot"] = payload.get("lot") or meta["lot"]
+    storm, drainage = _complete_storm_hgl_fixture()
+    meta["drainage"] = drainage
+    meta["storm_pipes"] = enrich_storm_production_depth(storm, drainage)
+    meta["quantities"]["totals"]["pipe_length_ft"] = 100.0
+    meta["quantities"]["explain"]["quantity_audit"]["pipe_length_ft"] = {"source_object_ids": ["STM-HGL-1"]}
+    plan = {
+        "project_name": payload.get("project_name"),
+        "actions": [
+            {
+                "task": "polyline",
+                "layer": "STORM",
+                "canonical_source_type": "storm_pipe_segment",
+                "canonical_source_id": "STM-HGL-1",
+                "points": [[0.0, 0.0], [100.0, 0.0]],
             }
         ],
         "meta": meta,
@@ -185,6 +283,42 @@ class EngineDepthAuditTests(unittest.TestCase):
         self.assertEqual(row["score"], 70.0)
         self.assertEqual(row["first_failing_layer"], "depth_validation")
         self.assertIn("reactive_model_depth", {item["area"] for item in row["blockers"]})
+
+    def test_complete_storm_hgl_egl_fixture_proves_storm_and_hydrology_depth(self) -> None:
+        report = run_engine_depth_audit(scenario_ids=["sloped_detention_site"], build_plan_fn=_hgl_egl_depth_plan)
+
+        storm = report["engine_results"]["storm_pipe"]
+        hydrology = report["engine_results"]["hydrology"]
+        self.assertEqual(storm["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
+        self.assertEqual(hydrology["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
+        self.assertEqual(storm["score"], 100.0)
+        self.assertEqual(hydrology["score"], 100.0)
+        self.assertEqual(storm["first_failing_layer"], "")
+        self.assertEqual(hydrology["first_failing_layer"], "")
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertEqual(report["summary"]["construction_gate_recommendation"], "block_construction_not_production_depth")
+
+    def test_storm_hgl_egl_fixture_missing_inputs_remain_blocked(self) -> None:
+        storm, drainage = _complete_storm_hgl_fixture()
+        storm["target_outfall"].pop("z", None)
+        drainage["coordination"]["preferred_outfall"].pop("z", None)
+        segment = storm["segments"][0]
+        segment.pop("end_invert_ft")
+        segment["velocity_fps"] = 0.0
+
+        enriched = enrich_storm_production_depth(storm, drainage)
+        plan = {"meta": {"storm_pipes": enriched, "drainage": drainage}}
+        readiness = evaluate_engine_readiness(plan)
+        storm_row = readiness["engines"]["storm_pipe"]
+
+        self.assertEqual(storm_row["status"], "concept_ready_needs_production_depth")
+        self.assertIn("missing_tailwater", enriched["hydraulic_profile_evidence"]["labels"])
+        missing = enriched["hydraulic_profile_evidence"]["missing_profile_inputs"][0]["missing_fields"]
+        self.assertIn("segment.end_invert_ft", missing)
+        self.assertIn("segment.velocity_fps", missing)
+        messages = {item["message"] for item in storm_row["production_blockers"] if item.get("area") == "storm_depth"}
+        self.assertIn("Storm depth needs HGL and EGL profiles from production hydraulic evidence.", messages)
+        self.assertIn("Storm depth needs tailwater/backwater evidence.", messages)
 
     def test_audit_writes_report_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
