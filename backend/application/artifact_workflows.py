@@ -1095,9 +1095,24 @@ def export_dxf_artifact(
                     + ", ".join(construction_blockers)
                 ),
             )
-    from output.dxf_exporter import finalize_export_metadata
+    from backend.services.artifact_service import HeavyExportBlockedError
+    from output.dxf_exporter import HeavyExportTimeoutError, finalize_export_metadata
 
-    export_metadata = finalize_export_metadata(final_plan)
+    heavy_export_timeout = getattr(artifact_service, "heavy_export_timeout_seconds", None)
+    try:
+        export_metadata = finalize_export_metadata(final_plan, timeout_seconds=heavy_export_timeout)
+    except HeavyExportTimeoutError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "heavy_export_timeout",
+                "message": str(exc),
+                "review_only": True,
+                "construction_release_allowed": False,
+                "recommended_path": "async_queue_heavy_export",
+                "export_performance": dict((final_plan.get("meta") or {}).get("export_performance") or {}),
+            },
+        ) from exc
     export_audit = dict(export_metadata.get("export_audit") or dict(final_plan.get("meta") or {}).get("export_audit") or {})
     if bool(export_audit.get("export_blocked")):
         blocked_reasons = [
@@ -1113,11 +1128,25 @@ def export_dxf_artifact(
             ),
         )
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
-    path = artifact_service.export_dxf(
-        user_id=user_id,
-        final_plan=final_plan,
-        stem=stem,
-    )
+    try:
+        path = artifact_service.export_dxf(
+            user_id=user_id,
+            final_plan=final_plan,
+            stem=stem,
+            prefinalized=True,
+        )
+    except HeavyExportBlockedError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": exc.code,
+                "message": exc.detail,
+                "review_only": True,
+                "construction_release_allowed": False,
+                "recommended_path": "async_queue_heavy_export",
+                "export_performance": dict(exc.metadata.get("export_performance") or {}),
+            },
+        ) from exc
     if project_id:
         save_project_workflow_update(
             project_store=project_store,

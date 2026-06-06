@@ -8,6 +8,7 @@ from backend.application.artifact_workflows import (
     export_report_artifact,
 )
 from backend.application.design_workflows import final_plan_from_result
+from backend.services.artifact_service import HeavyExportBlockedError
 from fastapi import HTTPException
 
 
@@ -21,8 +22,14 @@ class FakeArtifactService:
         self.preview_plan = dict(final_plan)
         return b"png-bytes"
 
-    def export_dxf(self, *, user_id, final_plan, stem=None):
-        self.dxf_export = {"user_id": user_id, "final_plan": dict(final_plan), "stem": stem}
+    def export_dxf(self, *, user_id, final_plan, stem=None, prefinalized=False, timeout_seconds=None):
+        self.dxf_export = {
+            "user_id": user_id,
+            "final_plan": dict(final_plan),
+            "stem": stem,
+            "prefinalized": prefinalized,
+            "timeout_seconds": timeout_seconds,
+        }
         path = Path(tempfile.gettempdir()) / "unit-plan.dxf"
         path.write_text("dxf")
         return path
@@ -32,6 +39,21 @@ class FakeArtifactService:
         path = Path(tempfile.gettempdir()) / "unit-report.json"
         path.write_text("{}")
         return path
+
+
+class TimeoutArtifactService(FakeArtifactService):
+    def export_dxf(self, *, user_id, final_plan, stem=None, prefinalized=False, timeout_seconds=None):
+        raise HeavyExportBlockedError(
+            code="heavy_export_timeout",
+            detail="heavy_export_timeout: use async/queue heavy export",
+            metadata={
+                "export_performance": {
+                    "source": "dxf_export_performance_v1",
+                    "status": "blocked",
+                    "blocker": "heavy_export_timeout",
+                }
+            },
+        )
 
 
 class FakeProjectStore:
@@ -1763,10 +1785,38 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(path.name, "unit-plan.dxf")
         self.assertEqual(service.dxf_export["stem"], "demo-plan")
+        self.assertTrue(service.dxf_export["prefinalized"])
         self.assertEqual(
             store.saved_payload["metadata"]["workflow"]["artifacts"][0]["kind"],
             "dxf",
         )
+
+    def test_export_dxf_artifact_heavy_timeout_returns_review_only_blocker(self):
+        service = TimeoutArtifactService()
+        store = FakeProjectStore()
+        result_data = {
+            "final_plan": {
+                "project_name": "DXF Timeout",
+                "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [1, 0], [1, 1], [0, 1]]}],
+            }
+        }
+
+        with self.assertRaises(HTTPException) as ctx:
+            export_dxf_artifact(
+                artifact_service=service,
+                project_store=store,
+                user_id="u1",
+                project_id="p1",
+                result_data=result_data,
+                filename_stem="timeout-plan",
+            )
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(ctx.exception.detail["code"], "heavy_export_timeout")
+        self.assertTrue(ctx.exception.detail["review_only"])
+        self.assertFalse(ctx.exception.detail["construction_release_allowed"])
+        self.assertEqual(ctx.exception.detail["recommended_path"], "async_queue_heavy_export")
+        self.assertIsNone(store.saved_payload)
 
     def test_export_dxf_artifact_blocks_required_construction_release_without_readiness(self):
         service = FakeArtifactService()

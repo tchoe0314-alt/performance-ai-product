@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.services.artifact_service import ArtifactService
+from backend.services.artifact_service import ArtifactService, HeavyExportBlockedError
+from output.dxf_exporter import mark_heavy_export_timeout
 
 
 class ArtifactServiceTest(unittest.TestCase):
@@ -106,6 +107,89 @@ class ArtifactServiceTest(unittest.TestCase):
             self.assertFalse(sidecar["external_artifact_verification"]["externally_verified"])
             self.assertEqual(sidecar["quantity_line_items"][0]["canonical_ids"], ["storm-line-1"])
             self.assertEqual(final_plan["meta"]["artifact_sidecars"][0]["sidecar_metadata_path"], str(sidecar_path))
+
+    def test_heavy_dxf_export_timeout_returns_blocker_without_fake_artifact(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir), heavy_export_timeout_seconds=0.000001)
+            final_plan = {
+                "project_name": "Timeout Demo",
+                "units": "ft",
+                "actions": [
+                    {
+                        "task": "polyline",
+                        "layer": "PIPE",
+                        "points": [[0.0, 0.0], [25.0, 0.0]],
+                        "canonical_source_id": "storm-timeout-1",
+                    }
+                ],
+                "meta": {},
+            }
+
+            with self.assertRaises(HeavyExportBlockedError) as ctx:
+                service.export_dxf(user_id="user-1", final_plan=final_plan, stem="timeout")
+
+            self.assertEqual(ctx.exception.code, "heavy_export_timeout")
+            self.assertTrue(ctx.exception.metadata["review_only"])
+            self.assertFalse(ctx.exception.metadata["construction_release_allowed"])
+            self.assertEqual(ctx.exception.metadata["recommended_path"], "async_queue_heavy_export")
+            self.assertIn("heavy_export_timeout", final_plan["meta"]["export_audit"]["blocked_reasons"])
+            self.assertFalse(final_plan["meta"]["export_package_report_v1"]["construction_release_allowed"])
+            self.assertFalse(final_plan["meta"]["export_package_report_v1"]["supported_deliverables"]["dxf"]["review_ready"])
+            self.assertFalse(list((Path(tmpdir) / "user-1").glob("*.dxf")))
+
+    def test_skipped_heavy_export_report_remains_review_only_without_dxf_success(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir))
+            final_plan = {
+                "project_id": "skip-project",
+                "project_name": "Skipped Heavy Export",
+                "units": "ft",
+                "actions": [
+                    {
+                        "task": "polyline",
+                        "layer": "PIPE",
+                        "points": [[0.0, 0.0], [50.0, 0.0]],
+                        "canonical_source_id": "storm-skip-1",
+                    }
+                ],
+                "meta": {
+                    "project_id": "skip-project",
+                    "cad_interop": {
+                        "compatibility_checks": [
+                            {
+                                "format": "dxf",
+                                "available": True,
+                                "review_ready": True,
+                                "construction_ready": False,
+                                "status": "ready",
+                            }
+                        ]
+                    },
+                },
+            }
+            mark_heavy_export_timeout(
+                final_plan,
+                stage="test.skip",
+                timeout_seconds=0.01,
+                elapsed_seconds=0.02,
+            )
+
+            artifact_path = service.export_report_json(
+                user_id="user-1",
+                result_data={"final_plan": final_plan, "metadata": {}, "assumptions": [], "warnings": [], "errors": []},
+                stem="skipped-heavy-export",
+            )
+            report = json.loads(artifact_path.read_text(encoding="utf-8"))
+            package = report["export_package_report_v1"]
+
+            self.assertEqual(package["export_type"], "report")
+            self.assertFalse(package["construction_release_allowed"])
+            self.assertIn("heavy_export_timeout", package["construction_release_blockers"])
+            self.assertEqual(package["deliverable_confidence"], "construction_blocked")
+            self.assertFalse(package["supported_deliverables"]["dxf"]["review_ready"])
+            self.assertTrue(package["engineer_review_required"])
+            self.assertFalse(package["civora_signoff_allowed"])
+            self.assertFalse(list((Path(tmpdir) / "user-1").glob("*.dxf")))
 
     def test_export_report_json_writes_sidecar_and_report_references(self):
         with tempfile.TemporaryDirectory() as tmpdir:

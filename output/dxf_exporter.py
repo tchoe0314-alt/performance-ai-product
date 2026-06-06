@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime
 import math
 import re
+import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ezdxf
@@ -240,6 +241,82 @@ LEGACY_LAYER_COLORS = {
     "ANNO": 7,
 }
 USE_STANDARD_DXF_LAYER_NAMES = False
+
+
+class HeavyExportTimeoutError(TimeoutError):
+    """Raised when the synchronous heavy CAD/DXF path exceeds its review timeout."""
+
+
+def _export_performance_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
+    meta = plan.setdefault("meta", {})
+    perf = safe_dict(meta.get("export_performance"))
+    perf.setdefault("source", "dxf_export_performance_v1")
+    perf.setdefault("format", "dxf")
+    perf.setdefault("stages", [])
+    perf.setdefault("construction_release_allowed", False)
+    perf.setdefault("review_only", True)
+    meta["export_performance"] = perf
+    return perf
+
+
+def _record_export_stage(plan: Dict[str, Any], stage: str, started_at: float, **extra: Any) -> None:
+    perf = _export_performance_meta(plan)
+    stages = safe_list(perf.get("stages"))
+    stages.append(
+        {
+            "stage": stage,
+            "elapsed_seconds": round(max(time.perf_counter() - started_at, 0.0), 6),
+            **extra,
+        }
+    )
+    perf["stages"] = stages
+
+
+def mark_heavy_export_timeout(
+    plan: Dict[str, Any],
+    *,
+    stage: str,
+    timeout_seconds: Optional[float],
+    elapsed_seconds: float,
+) -> Dict[str, Any]:
+    meta = plan.setdefault("meta", {})
+    blocker = "heavy_export_timeout"
+    perf = _export_performance_meta(plan)
+    perf.update(
+        {
+            "status": "blocked",
+            "blocked": True,
+            "blocker": blocker,
+            "timeout_stage": stage,
+            "timeout_seconds": timeout_seconds,
+            "elapsed_seconds": round(max(elapsed_seconds, 0.0), 6),
+            "recommended_path": "async_queue_heavy_export",
+            "truth_label": "Heavy CAD/DXF export exceeded the synchronous review timeout; no DXF export success is claimed.",
+        }
+    )
+    audit = safe_dict(meta.get("export_audit"))
+    blocked_reasons = [str(item) for item in safe_list(audit.get("blocked_reasons")) if str(item)]
+    if blocker not in blocked_reasons:
+        blocked_reasons.append(blocker)
+    audit.update(
+        {
+            "source": audit.get("source") or "dxf_export_audit_v1",
+            "export_blocked": True,
+            "production_export_ready": False,
+            "construction_release_allowed": False,
+            "review_only": True,
+            "blocked_reasons": blocked_reasons,
+            "heavy_export_timeout": {
+                "stage": stage,
+                "timeout_seconds": timeout_seconds,
+                "elapsed_seconds": round(max(elapsed_seconds, 0.0), 6),
+                "recommended_path": "async_queue_heavy_export",
+            },
+        }
+    )
+    meta["export_audit"] = audit
+    meta["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="dxf")
+    return audit
 
 
 PAGE_WIDTH_MM = 420.0
@@ -4138,7 +4215,34 @@ def _export_sheet_context(plan: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], L
     return profiles, sections, section_groups, sheet_registry
 
 
-def finalize_export_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
+def _timeout_checker(
+    plan: Dict[str, Any],
+    *,
+    started_at: float,
+    timeout_seconds: Optional[float],
+):
+    timeout = float(timeout_seconds) if timeout_seconds is not None else 0.0
+
+    def check(stage: str) -> None:
+        if timeout <= 0.0:
+            return
+        elapsed = time.perf_counter() - started_at
+        if elapsed > timeout:
+            mark_heavy_export_timeout(
+                plan,
+                stage=stage,
+                timeout_seconds=timeout,
+                elapsed_seconds=elapsed,
+            )
+            raise HeavyExportTimeoutError(
+                f"heavy_export_timeout: DXF export exceeded {timeout:.3f}s during {stage}; "
+                "use async/queue heavy export and keep this package review-only."
+            )
+
+    return check
+
+
+def finalize_export_metadata(plan: Dict[str, Any], *, timeout_seconds: Optional[float] = None) -> Dict[str, Any]:
     """Attach the same sheet/export metadata that DXF export will use.
 
     This is intentionally a dry-run metadata finalizer: it creates the export
@@ -4146,28 +4250,46 @@ def finalize_export_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
     a DXF file is written.
     """
 
+    export_started = time.perf_counter()
+    check_timeout = _timeout_checker(plan, started_at=export_started, timeout_seconds=timeout_seconds)
+    perf = _export_performance_meta(plan)
+    perf.update({"status": "running", "timeout_seconds": timeout_seconds, "started_stage": "finalize_export_metadata"})
+
     actions = safe_list(plan.get("actions"))
     if not actions:
         raise ValueError("No actions found in plan.")
 
+    stage_started = time.perf_counter()
     profiles, _sections, section_groups, sheet_registry = _export_sheet_context(plan)
+    _record_export_stage(plan, "finalize.sheet_context", stage_started, profile_count=len(profiles), section_sheet_count=len(section_groups), sheet_count=len(sheet_registry))
+    check_timeout("finalize.sheet_context")
     meta = plan.setdefault("meta", {})
     meta["sheet_registry"] = [deepcopy(safe_dict(item)) for item in sheet_registry]
 
+    stage_started = time.perf_counter()
     doc = ezdxf.new("R2010")
     ensure_layers(doc)
     ensure_text_styles(doc)
     ensure_blocks(doc)
+    _record_export_stage(plan, "finalize.doc_setup", stage_started)
+    check_timeout("finalize.doc_setup")
+
+    stage_started = time.perf_counter()
     site_sheet = next((safe_dict(item) for item in sheet_registry if safe_text(item.get("sheet_kind")) == "site_plan"), {})
     _add_site_plan_layout(doc, plan, actions, site_sheet)
     _add_profile_layouts(doc, plan, profiles, sheet_registry)
     _add_cross_section_layouts(doc, plan, section_groups, sheet_registry)
     _prune_default_layouts(doc)
+    _record_export_stage(plan, "finalize.layouts", stage_started, sheet_count=len(sheet_registry))
+    check_timeout("finalize.layouts")
 
+    stage_started = time.perf_counter()
     modelspace_actions = _prepare_modelspace_actions(plan, actions)
     meta["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
     meta["cad_interop"] = build_cad_interop_metadata(plan)
     meta["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="dxf")
+    _record_export_stage(plan, "finalize.audit_report", stage_started, modelspace_action_count=len(modelspace_actions))
+    perf.update({"status": "metadata_finalized", "elapsed_seconds": round(time.perf_counter() - export_started, 6)})
     return {
         "sheet_registry": deepcopy(meta["sheet_registry"]),
         "export_audit": deepcopy(meta["export_audit"]),
@@ -4176,7 +4298,17 @@ def finalize_export_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
+def save_dxf(
+    plan: Dict[str, Any],
+    filename: str | None = None,
+    *,
+    timeout_seconds: Optional[float] = None,
+    finalize_metadata: bool = True,
+) -> str:
+    export_started = time.perf_counter()
+    check_timeout = _timeout_checker(plan, started_at=export_started, timeout_seconds=timeout_seconds)
+    perf = _export_performance_meta(plan)
+    perf.update({"status": "running", "timeout_seconds": timeout_seconds, "started_stage": "save_dxf"})
     actions = safe_list(plan.get("actions"))
     if not actions:
         raise ValueError("No actions found in plan.")
@@ -4184,13 +4316,23 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     if filename is None:
         filename = timestamped_filename("output", "dxf")
 
-    finalize_export_metadata(plan)
+    if finalize_metadata:
+        stage_started = time.perf_counter()
+        finalize_export_metadata(plan, timeout_seconds=timeout_seconds)
+        _record_export_stage(plan, "save.prefinalize_metadata", stage_started)
+        check_timeout("save.prefinalize_metadata")
+    else:
+        _record_export_stage(plan, "save.prefinalize_metadata", time.perf_counter(), reused=True)
 
+    stage_started = time.perf_counter()
     doc = ezdxf.new("R2010")
     ensure_layers(doc)
     ensure_text_styles(doc)
     ensure_blocks(doc)
+    _record_export_stage(plan, "save.doc_setup", stage_started)
+    check_timeout("save.doc_setup")
 
+    stage_started = time.perf_counter()
     modelspace_actions = _prepare_modelspace_actions(plan, actions)
     modelspace_layers = {
         get_layer(safe_dict(action), "SITE")
@@ -4201,23 +4343,39 @@ def save_dxf(plan: Dict[str, Any], filename: str | None = None) -> str:
     msp = doc.modelspace()
     for action in modelspace_actions:
         _draw_action_to_modelspace(msp, safe_dict(action))
+        check_timeout("save.draw_modelspace")
     if not layout_first_modelspace:
         _draw_plan_pipe_annotations(msp, plan)
         _draw_basin_annotations(msp, plan)
+    _record_export_stage(plan, "save.modelspace", stage_started, modelspace_action_count=len(modelspace_actions))
+    check_timeout("save.modelspace")
 
+    stage_started = time.perf_counter()
     profiles, _sections, section_groups, sheet_registry = _export_sheet_context(plan)
     plan.setdefault("meta", {})
     plan["meta"]["sheet_registry"] = [deepcopy(safe_dict(item)) for item in sheet_registry]
+    _record_export_stage(plan, "save.sheet_context", stage_started, profile_count=len(profiles), section_sheet_count=len(section_groups), sheet_count=len(sheet_registry))
+    check_timeout("save.sheet_context")
 
+    stage_started = time.perf_counter()
     site_sheet = next((safe_dict(item) for item in sheet_registry if safe_text(item.get("sheet_kind")) == "site_plan"), {})
     _add_site_plan_layout(doc, plan, actions, site_sheet)
     _add_profile_layouts(doc, plan, profiles, sheet_registry)
     _add_cross_section_layouts(doc, plan, section_groups, sheet_registry)
     _prune_default_layouts(doc)
+    _record_export_stage(plan, "save.layouts", stage_started, sheet_count=len(sheet_registry))
+    check_timeout("save.layouts")
+
+    stage_started = time.perf_counter()
     plan["meta"]["export_audit"] = _build_export_audit(doc, plan, modelspace_actions, profiles, section_groups, sheet_registry)
     plan["meta"]["cad_interop"] = build_cad_interop_metadata(plan)
     plan["meta"]["export_package_report_v1"] = build_export_package_report_v1(plan, export_type="dxf")
     _remap_doc_layers(doc)
+    _record_export_stage(plan, "save.audit_report_layer_remap", stage_started)
+    check_timeout("save.audit_report_layer_remap")
 
+    stage_started = time.perf_counter()
     doc.saveas(filename)
+    _record_export_stage(plan, "save.write_file", stage_started)
+    perf.update({"status": "completed", "elapsed_seconds": round(time.perf_counter() - export_started, 6), "artifact_path": filename})
     return filename

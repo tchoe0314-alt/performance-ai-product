@@ -18,7 +18,15 @@ class ArtifactServiceProtocol(Protocol):
     ) -> bytes:
         ...
 
-    def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None) -> Path:
+    def export_dxf(
+        self,
+        *,
+        user_id: str,
+        final_plan: Dict[str, Any],
+        stem: Optional[str] = None,
+        prefinalized: bool = False,
+        timeout_seconds: Optional[float] = None,
+    ) -> Path:
         ...
 
     def export_report_json(

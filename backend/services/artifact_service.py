@@ -11,6 +11,15 @@ import uuid
 import shutil
 
 PREVIEW_RENDER_VERSION = "2026-04-17-preview-modes-v1"
+DEFAULT_HEAVY_EXPORT_TIMEOUT_SECONDS = 30.0
+
+
+class HeavyExportBlockedError(RuntimeError):
+    def __init__(self, *, code: str, detail: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+        self.metadata = dict(metadata or {})
 
 
 def render_plan_preview_png(final_plan: Dict[str, Any], **kwargs: Any) -> bytes:
@@ -26,12 +35,13 @@ def _slugify(value: str, default: str = "artifact") -> str:
 
 
 class ArtifactService:
-    def __init__(self, root_dir: Path) -> None:
+    def __init__(self, root_dir: Path, *, heavy_export_timeout_seconds: float = DEFAULT_HEAVY_EXPORT_TIMEOUT_SECONDS) -> None:
         self.root_dir = root_dir
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.preview_cache_dir = self.root_dir / "_preview_cache"
         self.preview_cache_dir.mkdir(parents=True, exist_ok=True)
         self.preview_cache_version = PREVIEW_RENDER_VERSION
+        self.heavy_export_timeout_seconds = float(heavy_export_timeout_seconds)
 
     def _user_dir(self, user_id: str) -> Path:
         target = self.root_dir / str(user_id)
@@ -258,11 +268,45 @@ class ArtifactService:
             pass
         return png_bytes
 
-    def export_dxf(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None) -> Path:
-        from output.dxf_exporter import save_dxf
+    def export_dxf(
+        self,
+        *,
+        user_id: str,
+        final_plan: Dict[str, Any],
+        stem: Optional[str] = None,
+        prefinalized: bool = False,
+        timeout_seconds: Optional[float] = None,
+    ) -> Path:
+        from output.dxf_exporter import HeavyExportTimeoutError, save_dxf
 
         path = self._user_dir(user_id) / self._artifact_name(stem, "dxf")
-        save_dxf(final_plan, filename=str(path))
+        timeout = self.heavy_export_timeout_seconds if timeout_seconds is None else timeout_seconds
+        export_started = time.perf_counter()
+        try:
+            save_dxf(
+                final_plan,
+                filename=str(path),
+                timeout_seconds=timeout,
+                finalize_metadata=not prefinalized,
+            )
+        except HeavyExportTimeoutError as exc:
+            if path.exists():
+                try:
+                    path.unlink()
+                except Exception:
+                    pass
+            raise HeavyExportBlockedError(
+                code="heavy_export_timeout",
+                detail=str(exc),
+                metadata={
+                    "export_performance": dict((final_plan.get("meta") or {}).get("export_performance") or {}),
+                    "elapsed_seconds": round(time.perf_counter() - export_started, 6),
+                    "timeout_seconds": timeout,
+                    "review_only": True,
+                    "construction_release_allowed": False,
+                    "recommended_path": "async_queue_heavy_export",
+                },
+            ) from exc
         self._write_export_sidecar(artifact_path=path, export_type="dxf", final_plan=final_plan)
         return path
 

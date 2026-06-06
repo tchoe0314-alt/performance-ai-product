@@ -364,6 +364,10 @@ def _format_matrix(cad_interop: Dict[str, Any], export_audit_ready: bool) -> Dic
     formats["dwg"]["available"] = False
     formats["dwg"]["review_ready"] = False
     formats["dwg"]["status"] = "unsupported_no_writer"
+    if not export_audit_ready:
+        formats["dxf"]["review_ready"] = False
+        if formats["dxf"]["status"] in {"", "ready", "review_ready", "available"}:
+            formats["dxf"]["status"] = "blocked_by_export_audit"
     return formats
 
 
