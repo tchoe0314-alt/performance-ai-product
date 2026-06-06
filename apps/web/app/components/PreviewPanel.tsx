@@ -90,6 +90,7 @@ type PreviewPanelProps = {
     label?: string;
   }) => void;
   onCreateSiteBoundary?: (payload: { points: Array<[number, number]> }) => void;
+  onUnlockSite?: () => void;
   buildingPlacements: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
   selectedBuildingId: string | null;
@@ -199,6 +200,7 @@ export default function PreviewPanel({
   onPlaceObject,
   onCreateCustomGeometry,
   onCreateSiteBoundary,
+  onUnlockSite,
   buildingPlacements,
   suggestedPlacements,
   selectedBuildingId,
@@ -1245,10 +1247,10 @@ export default function PreviewPanel({
     { mode: "pan", label: "Pan", icon: Hand },
     {
       mode: "site",
-      label: siteLocked ? "Site Locked" : "Draw Site Boundary",
+      label: "Draw Site Boundary",
       icon: Pentagon,
       disabled: Boolean(siteLocked),
-      disabledLabel: "Unlock site to change boundary",
+      disabledLabel: "Change site boundary before drawing a new boundary",
     },
     {
       mode: "polyline",
@@ -3259,6 +3261,23 @@ export default function PreviewPanel({
                     </button>
                   );
                 })}
+                {siteLocked && onUnlockSite ? (
+                  <button
+                    type="button"
+                    title="Unlock the site boundary for editing"
+                    aria-label="Change Site Boundary"
+                    onClick={() => {
+                      onUnlockSite();
+                      clearDraftGeometry();
+                      setDrawMode("select");
+                      onSetPreviewInteraction("edit");
+                    }}
+                    className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-600 transition hover:bg-slate-50"
+                  >
+                    <Unlock className="h-4 w-4" />
+                    <span className="text-[10px] leading-none">Change Site Boundary</span>
+                  </button>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">

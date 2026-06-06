@@ -17,7 +17,10 @@ async function openBlankWorkspace(page: Page) {
   await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
   await expect(page.getByText("Detention Basin A")).toHaveCount(0);
   await expect(page.getByText("Multifamily Building A")).toHaveCount(0);
-  await page.getByRole("button", { name: "Close" }).click();
+  const close = page.getByRole("button", { name: "Close" });
+  if (await close.isVisible().catch(() => false)) {
+    await close.click();
+  }
 }
 
 test.describe("drawn site boundary Finish workflow", () => {
@@ -36,11 +39,28 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     await expect(canvas).toContainText("Locked canonical site");
+    await expect(canvas.getByRole("button", { name: "Draw Site Boundary" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Change Site Boundary" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
     await expect(canvas.getByRole("button", { name: "Add Area" })).toBeEnabled();
     await expect(canvas.getByRole("button", { name: "Add Box" })).toBeEnabled();
     await expect(canvas.getByRole("button", { name: "Add Point" })).toBeEnabled();
 
+    await canvas.getByRole("button", { name: "Change Site Boundary" }).click();
+    await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
+    await page.getByRole("button", { name: "Setup Site and boundary" }).click();
+    await page.getByRole("button", { name: "Lock current site boundary for engineer review" }).click();
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+    const relockClose = page.getByRole("button", { name: "Close" });
+    if (await relockClose.isVisible().catch(() => false)) {
+      await relockClose.click();
+    }
+    await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "Add Area" })).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "Add Box" })).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "Add Point" })).toBeEnabled();
+
+    const beforeObjects = await page.locator("[data-object-overlay]").count();
     await canvas.getByRole("button", { name: "Add Box" }).click();
     await clickSurfaceAt(surface, 0.28, 0.5);
     await clickSurfaceAt(surface, 0.44, 0.66);
@@ -52,6 +72,15 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickSurfaceAt(surface, 0.58, 0.72);
     await canvas.getByRole("button", { name: "Finish" }).click();
     await expect(page.getByText("Custom Area 2").first()).toBeVisible();
+
+    await canvas.getByRole("button", { name: "Add Line" }).click();
+    await clickSurfaceAt(surface, 0.24, 0.74);
+    await clickSurfaceAt(surface, 0.5, 0.82);
+    await canvas.getByRole("button", { name: "Finish" }).click();
+
+    await canvas.getByRole("button", { name: "Add Point" }).click();
+    await clickSurfaceAt(surface, 0.78, 0.72);
+    await expect.poll(async () => (await page.locator("[data-object-overlay]").count()) - beforeObjects).toBeGreaterThanOrEqual(4);
 
     await page.getByRole("button", { name: "Open chat from sidebar command" }).click();
     await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("make this a basin");
@@ -68,5 +97,18 @@ test.describe("drawn site boundary Finish workflow", () => {
         hasText: "Canonical geometry · Draft review required",
       }),
     ).toBeVisible();
+  });
+
+  test("mobile keeps draw controls reachable", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundaryMobile=1", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Draw Site Boundary" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add Line" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add Area" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add Box" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add Point" })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
   });
 });

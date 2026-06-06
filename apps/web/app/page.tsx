@@ -7804,6 +7804,13 @@ function PerformanceAIDashboardView({
         ...nextProjectInput,
       },
     });
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setLeftSidebarOpen(false);
+    }
     setStatusMessage("Blank site started. Set dimensions, draw the boundary, then lock it for review.");
   }, [
     autoFitSite,
@@ -8005,6 +8012,13 @@ function PerformanceAIDashboardView({
       },
     });
     setSiteSelectionMode(false);
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setLeftSidebarOpen(false);
+    }
     setStatusMessage("Site applied and locked.");
     lastAppliedSiteRef.current = {
       w: width,
@@ -14231,6 +14245,7 @@ function PerformanceAIDashboardView({
               onPlaceObject={handlePlaceObject}
               onCreateCustomGeometry={handleCreateCustomGeometry}
               onCreateSiteBoundary={handleCreateSiteBoundary}
+              onUnlockSite={handleUnlockSite}
               buildingPlacements={buildingPlacements}
               suggestedPlacements={filteredDetectedPlacements}
               selectedBuildingId={activePlacementId}
