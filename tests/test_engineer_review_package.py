@@ -125,6 +125,13 @@ class EngineerReviewPackageTests(unittest.TestCase):
         self.assertTrue(package["engineer_approval_required"])
         self.assertFalse(package["civora_signoff_allowed"])
         self.assertFalse(package["civora_engineer_of_record"])
+        self.assertFalse(package["civora_approval_authority"])
+        self.assertFalse(package["construction_release_allowed_by_civora"])
+        self.assertFalse(package["simulated_seal_allowed"])
+        self.assertFalse(package["simulated_signature_allowed"])
+        self.assertEqual(package["ready_language"], "ready_for_engineer_review")
+        self.assertIn("review handoff", package["truth_label"])
+        self.assertIn("simulated seal/signature", package["truth_label"])
         self.assertTrue(package["construction_release_blocked"])
         self.assertFalse(package["construction_release_allowed"])
         checklist = {item["item_id"]: item for item in package["approval_checklist"]}
@@ -135,10 +142,28 @@ class EngineerReviewPackageTests(unittest.TestCase):
         self.assertEqual(checklist["calculations_reviewed"]["status"], "manual_required")
         self.assertEqual(checklist["calculations_reviewed"]["check_type"], "engineer_manual_review_required")
         self.assertEqual(checklist["exports_ready_for_engineer_review"]["status"], "manual_required")
+        self.assertEqual(checklist["assumptions_accepted"]["status"], "manual_required")
+        self.assertEqual(checklist["assumptions_accepted"]["check_type"], "engineer_manual_review_required")
+        self.assertTrue(checklist["assumptions_accepted"]["external_manual"])
         self.assertEqual(checklist["external_engineer_approval_record"]["status"], "manual_required")
         self.assertEqual(checklist["external_engineer_approval_record"]["check_type"], "external_engineer_approval_record_required")
         self.assertTrue(checklist["external_engineer_approval_record"]["external_manual"])
         self.assertTrue(all(not item["civora_signoff_allowed"] for item in checklist.values()))
+        self.assertTrue(all(item["required_engineer_review"] for item in checklist.values()))
+        self.assertTrue(all(item["engineer_approval_required"] for item in checklist.values()))
+        self.assertTrue(all(not item["simulated_seal_allowed"] for item in checklist.values()))
+        self.assertTrue(all(not item["simulated_signature_allowed"] for item in checklist.values()))
+        self.assertTrue(all(item["ready_language"] == "ready_for_engineer_review" for item in checklist.values()))
+
+        export_summary = package["export_package_summary"]
+        self.assertTrue(export_summary["review_package_only"])
+        self.assertTrue(export_summary["external_engineer_approval_record_required"])
+        self.assertFalse(export_summary["construction_release_allowed"])
+        self.assertTrue(export_summary["construction_release_blocked"])
+        self.assertFalse(export_summary["construction_release_allowed_by_civora"])
+        self.assertFalse(export_summary["simulated_seal_allowed"])
+        self.assertFalse(export_summary["simulated_signature_allowed"])
+        self.assertEqual(export_summary["ready_language"], "ready_for_engineer_review")
 
     def test_assumptions_and_blockers_are_preserved(self) -> None:
         meta = _ready_meta()
@@ -308,6 +333,41 @@ class EngineerReviewPackageTests(unittest.TestCase):
         self.assertTrue(package["construction_release_blocked"])
         self.assertFalse(package["ready_for_construction"])
         self.assertTrue(package["export_package_summary"]["review_package_only"])
+        self.assertFalse(package["external_engineer_approval"]["civora_signoff_allowed"])
+        self.assertFalse(package["external_engineer_approval"]["construction_release_allowed_by_civora"])
+        self.assertFalse(package["external_engineer_approval"]["simulated_seal_allowed"])
+        self.assertFalse(package["external_engineer_approval"]["simulated_signature_allowed"])
+        self.assertEqual(package["external_engineer_approval"]["ready_language"], "ready_for_engineer_review")
+        self.assertIn("external", package["external_engineer_approval"]["truth_label"])
+        self.assertIn("simulate a seal/signature", package["external_engineer_approval"]["truth_label"])
+
+    def test_professional_review_without_external_record_cannot_complete_approval(self) -> None:
+        meta = _ready_meta()
+        meta["professional_review"] = {
+            "engineer_name": "Licensed Reviewer",
+            "license_number": "PE-12345",
+            "license_jurisdiction": "TX",
+            "jurisdiction": "TX",
+            "discipline": "civil",
+            "status": "released_for_construction",
+            "sealed": True,
+            "review_date": "2026-06-01",
+            "scope": ["civil review package"],
+            "canonical_model_id": "MODEL-FINAL-1",
+        }
+
+        package = build_engineer_review_package({"meta": meta})
+
+        self.assertEqual(package["review_status"], "ready_for_engineer_review")
+        self.assertFalse(package["external_engineer_approval"]["complete"])
+        self.assertEqual(package["external_engineer_approval"]["approval_source"], "external_record")
+        self.assertIn("engineer_approval", package["missing_inputs_by_gate"])
+        self.assertFalse(package["construction_release_allowed"])
+        self.assertTrue(package["construction_release_blocked"])
+        self.assertFalse(package["ready_for_construction"])
+        self.assertFalse(package["civora_signoff_allowed"])
+        self.assertFalse(package["simulated_seal_allowed"])
+        self.assertFalse(package["simulated_signature_allowed"])
 
 
 if __name__ == "__main__":

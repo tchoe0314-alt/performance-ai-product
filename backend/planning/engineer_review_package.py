@@ -36,6 +36,11 @@ MISSING_INPUT_GATES: Sequence[str] = (
 APPROVAL_SYSTEM_GENERATED = "system_generated_check"
 APPROVAL_ENGINEER_MANUAL = "engineer_manual_review_required"
 APPROVAL_EXTERNAL_RECORD = "external_engineer_approval_record_required"
+READY_LANGUAGE = "ready_for_engineer_review"
+RESPONSIBILITY_TRUTH_LABEL = (
+    "Civora provides a licensed-engineer/user review handoff only. Civora never signs off, certifies, seals, "
+    "approves construction, provides a simulated seal/signature, or acts as engineer of record."
+)
 
 
 def _generated_at() -> str:
@@ -278,6 +283,11 @@ def _export_package_summary(meta: Dict[str, Any]) -> Dict[str, Any]:
     review_manifest = safe_dict(meta.get("review_package_manifest"))
     construction_manifest = safe_dict(meta.get("construction_package_manifest"))
     export_audit = safe_dict(meta.get("export_audit"))
+    external_record_present = bool(
+        safe_dict(meta.get("engineer_approval_record"))
+        or safe_dict(meta.get("manual_engineer_approval"))
+        or safe_dict(meta.get("professional_review"))
+    )
     return {
         "present": bool(review_manifest or construction_manifest or export_audit),
         "review_manifest_status": "ready" if review_manifest.get("review_ready") is True else "blocked" if review_manifest else "missing",
@@ -290,12 +300,17 @@ def _export_package_summary(meta: Dict[str, Any]) -> Dict[str, Any]:
         "construction_release_allowed": False,
         "construction_release_blocked": True,
         "review_package_only": True,
-        "external_engineer_approval_record_present": bool(
-            safe_dict(meta.get("engineer_approval_record"))
-            or safe_dict(meta.get("manual_engineer_approval"))
-            or safe_dict(meta.get("professional_review"))
-        ),
-        "truth_label": "Exports are review packages only unless a separate external licensed-engineer approval record is provided; Civora does not authorize construction release.",
+        "export_package_type": "external_engineer_review_record_attached" if external_record_present else "engineer_review_package",
+        "external_engineer_approval_record_present": external_record_present,
+        "external_engineer_approval_record_required": True,
+        "required_engineer_review": True,
+        "engineer_approval_required": True,
+        "civora_signoff_allowed": False,
+        "construction_release_allowed_by_civora": False,
+        "simulated_seal_allowed": False,
+        "simulated_signature_allowed": False,
+        "ready_language": READY_LANGUAGE,
+        "truth_label": "Exports are review packages unless a separate external licensed-engineer approval record is attached; Civora never signs, seals, certifies, approves, or authorizes construction release.",
     }
 
 
@@ -537,7 +552,13 @@ def _approval_item(
         "complete": status == "complete",
         "required": True,
         "external_manual": external_manual,
+        "required_engineer_review": True,
+        "engineer_approval_required": True,
         "civora_signoff_allowed": False,
+        "construction_release_allowed_by_civora": False,
+        "simulated_seal_allowed": False,
+        "simulated_signature_allowed": False,
+        "ready_language": READY_LANGUAGE,
         "evidence": deepcopy(evidence),
     }
 
@@ -560,8 +581,13 @@ def _external_engineer_approval(meta: Dict[str, Any]) -> Dict[str, Any]:
         "engineer_approval_required": True,
         "civora_signoff_allowed": False,
         "construction_release_allowed_by_civora": False,
+        "simulated_seal_allowed": False,
+        "simulated_signature_allowed": False,
+        "ready_language": READY_LANGUAGE,
+        "approval_source": "external_record" if professional else "missing_external_record",
+        "civora_engineer_of_record": False,
         "validation": validation,
-        "truth_label": "Engineer approval is an external licensed-engineer/user responsibility; Civora does not sign, certify, seal, approve, or take engineering responsibility.",
+        "truth_label": "Engineer approval is an external licensed-engineer/user responsibility; Civora does not sign, certify, seal, approve, simulate a seal/signature, or take engineering responsibility.",
     }
 
 
@@ -576,13 +602,13 @@ def _approval_checklist(
     external_engineer_approval: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     return [
-        _approval_item("standards_ready_for_engineer_review", "standards ready for engineer/user acceptance", status="manual_required" if standards_summary["production_usable"] else "blocked", check_type=APPROVAL_ENGINEER_MANUAL, evidence=standards_summary, external_manual=True),
+        _approval_item("standards_ready_for_engineer_review", "standards require engineer/user acceptance", status="manual_required" if standards_summary["production_usable"] else "blocked", check_type=APPROVAL_ENGINEER_MANUAL, evidence=standards_summary, external_manual=True),
         _approval_item("survey_control_verified", "survey/control verified", status="complete" if existing_summary["production_ready"] and existing_summary["accepted"] else "blocked", check_type=APPROVAL_SYSTEM_GENERATED, evidence=existing_summary),
         _approval_item("terrain_verified", "terrain verified", status="complete" if existing_summary["terrain_source_confidence"] not in {"", "missing", "metadata_only"} else "blocked", check_type=APPROVAL_SYSTEM_GENERATED, evidence=existing_summary),
         _approval_item("calculations_reviewed", "calculations reviewed", status="manual_required", check_type=APPROVAL_ENGINEER_MANUAL, external_manual=True),
         _approval_item("conflicts_reviewed", "conflicts reviewed", status="blocked" if any(safe_str(item.get("area")) == "coordination" for item in blockers) else "manual_required", check_type=APPROVAL_ENGINEER_MANUAL, external_manual=True),
         _approval_item("exports_ready_for_engineer_review", "exports ready for engineer review", status="manual_required" if export_summary["review_ready"] else "blocked", check_type=APPROVAL_ENGINEER_MANUAL, evidence=export_summary, external_manual=True),
-        _approval_item("assumptions_accepted", "assumptions accepted", status="manual_required" if assumptions else "complete", check_type=APPROVAL_ENGINEER_MANUAL if assumptions else APPROVAL_SYSTEM_GENERATED, evidence=list(assumptions), external_manual=bool(assumptions)),
+        _approval_item("assumptions_accepted", "assumptions require engineer/user acceptance", status="manual_required", check_type=APPROVAL_ENGINEER_MANUAL, evidence=list(assumptions), external_manual=True),
         _approval_item("external_engineer_approval_record", "external engineer/user approval record", status="complete" if external_engineer_approval["complete"] else "manual_required", check_type=APPROVAL_EXTERNAL_RECORD, evidence=external_engineer_approval, external_manual=True),
     ]
 
@@ -755,7 +781,13 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
         "required_engineer_review": True,
         "engineer_approval_required": True,
         "civora_signoff_allowed": False,
+        "construction_release_allowed_by_civora": False,
         "civora_engineer_of_record": False,
+        "civora_approval_authority": False,
+        "simulated_seal_allowed": False,
+        "simulated_signature_allowed": False,
+        "ready_language": READY_LANGUAGE,
+        "responsible_party": "licensed_engineer_or_user",
         "standards_acceptance_summary": standards_summary,
         "existing_conditions_summary": existing_summary,
         "engine_depth_summary": engine_summary,
@@ -783,10 +815,7 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
         ),
         "approval_checklist": checklist,
         "external_engineer_approval": external_engineer_approval,
-        "truth_label": (
-            "This package is a licensed-engineer/user review handoff. Civora never signs off, certifies, seals, "
-            "approves construction, or acts as engineer of record; inferred, missing, stale, and review-only evidence remains explicit."
-        ),
+        "truth_label": f"{RESPONSIBILITY_TRUTH_LABEL} Inferred, missing, stale, and review-only evidence remains explicit.",
     }
 
 
