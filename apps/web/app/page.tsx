@@ -1154,6 +1154,8 @@ function PerformanceAIDashboardView({
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
   const [bottomPanelContentVisible, setBottomPanelContentVisible] = useState(true);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
+  const [issueReportMessage, setIssueReportMessage] = useState("");
+  const [issueReportCopied, setIssueReportCopied] = useState(false);
   const [imageName, setImageName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -10724,9 +10726,12 @@ function PerformanceAIDashboardView({
     }, 180);
   }, []);
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
-    handleOpenSidePanel(workspacePanelByMode[mode]);
+    const nextPanel = workspacePanelByMode[mode];
+    handleOpenSidePanel(nextPanel);
     setActiveWorkspaceMode(mode);
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setRenderedSidePanel(nextPanel);
+      setSidePanelVisible(true);
       setLeftSidebarOpen(false);
     }
   }, [handleOpenSidePanel]);
@@ -10942,35 +10947,88 @@ function PerformanceAIDashboardView({
       status: "review",
     },
   ] as const;
-  const setupChecklistItems = [
+  const setupChecklistItems: Array<{
+    label: string;
+    status: "done" | "missing" | "blocked";
+    panel: SidePanelKey;
+    action: string;
+    detail: string;
+  }> = [
     {
-      label: "Address / map",
-      value: siteAddress.trim() || uploadedImageApiUrl || uploadedImagePreviewUrl ? "Set" : "Missing",
-      status: siteAddress.trim() || uploadedImageApiUrl || uploadedImagePreviewUrl ? "review" : "block",
+      label: "Project name",
+      status: siteName.trim() || currentProject?.name ? "done" : "missing",
+      panel: "dashboard",
+      action: "Enter a project name and save project identity.",
+      detail: siteName.trim() || currentProject?.name || "Missing",
     },
     {
-      label: "Site size",
-      value: siteSizeSet
+      label: "Address / location",
+      status: hasLocationEvidence || siteAddress.trim() ? "done" : "missing",
+      panel: "site_existing",
+      action: "Enter an address, pick a suggestion if shown, then apply it.",
+      detail: siteAddress.trim() || (hasLocationEvidence ? "Applied" : "Missing"),
+    },
+    {
+      label: "Site size or drawn boundary",
+      status: siteSizeSet || buildingPlacements.some((item) => item.type === "site") ? "done" : "missing",
+      panel: "site_existing",
+      action: "Set width/depth, choose acreage, or draw the site boundary.",
+      detail: siteSizeSet
         ? `${parsePositiveNumber(lotWidth)?.toFixed(0)} ft x ${parsePositiveNumber(lotHeight)?.toFixed(0)} ft`
-        : "Missing",
-      status: siteSizeSet ? "review" : "block",
+        : buildingPlacements.some((item) => item.type === "site")
+          ? "Boundary drawn"
+          : "Missing",
     },
     {
-      label: "Site boundary",
-      value: siteScaleLocked ? "Locked" : buildingPlacements.some((item) => item.type === "site") ? "Drawn / unlocked" : "Unlocked",
-      status: siteScaleLocked ? "review" : "block",
+      label: "Lock site",
+      status: siteScaleLocked ? "done" : siteSizeSet || buildingPlacements.some((item) => item.type === "site") ? "missing" : "blocked",
+      panel: "site_existing",
+      action: "Review the boundary and lock the site before generating systems.",
+      detail: siteScaleLocked ? "Locked" : "Not locked",
     },
     {
-      label: "Existing conditions",
-      value: hasTerrainSource || uploadedImageApiUrl || uploadedImagePreviewUrl ? "Imported" : "Missing",
-      status: hasTerrainSource || uploadedImageApiUrl || uploadedImagePreviewUrl ? "review" : "block",
+      label: "Add / draw objects",
+      status: placedObjectCount > 1 ? "done" : siteScaleLocked ? "missing" : "blocked",
+      panel: "objects",
+      action: "Add buildings, roads, parking, basin/outfall, and utility points or lines.",
+      detail: placedObjectCount > 1 ? `${placedObjectCount} objects` : "Needs site objects",
     },
     {
-      label: "Standards",
-      value: panelStatus("standards") === "ok" ? "Selected / needs acceptance" : "Missing",
-      status: panelStatus("standards") === "ok" ? "review" : "block",
+      label: "Upload survey / GIS / terrain",
+      status: hasTerrainSource || surveyFileName || uploadedImageApiUrl || uploadedImagePreviewUrl ? "done" : "missing",
+      panel: "import_survey",
+      action: "Upload survey, topo, GIS, terrain, or a map snapshot when available.",
+      detail: hasTerrainSource ? "Terrain available" : surveyFileName || uploadedImageApiUrl || uploadedImagePreviewUrl ? "Source uploaded" : "Optional but recommended",
     },
-  ] as const;
+    {
+      label: "Review standards",
+      status: panelStatus("standards") === "ok" ? "done" : "missing",
+      panel: "standards",
+      action: "Review criteria and accepted standards sources before relying on outputs.",
+      detail: panelStatus("standards") === "ok" ? "Criteria entered" : "Needs review",
+    },
+    {
+      label: "Run systems",
+      status: Object.values(systemStatuses).some((status) => status === "fresh") ? "done" : siteScaleLocked && placedObjectCount > 1 ? "missing" : "blocked",
+      panel: "generate",
+      action: "Run one discipline or a full system run after setup is complete.",
+      detail: Object.values(systemStatuses).some((status) => status === "fresh") ? "Run evidence exists" : "Not run",
+    },
+    {
+      label: "Review blockers",
+      status: hasHardSystemBlock || previewBlockedReasons.length ? "blocked" : backendResult ? "done" : "missing",
+      panel: "analysis",
+      action: "Open Issues or Review to inspect blockers, assumptions, and missing inputs.",
+      detail: hasHardSystemBlock || previewBlockedReasons.length ? "Blockers visible" : backendResult ? "No blockers recorded" : "Needs run",
+    },
+    {
+      label: "Generate review package",
+      status: backendResult && !getExportBlockReason() ? "done" : backendResult ? "blocked" : "missing",
+      panel: "deliverables",
+      action: "Open Deliver and export the review package when gates allow it.",
+      detail: backendResult && !getExportBlockReason() ? "Available" : getExportBlockReason() || "Needs run",
+    },
+  ];
   const nextSetupAction = !siteAddress.trim() && !uploadedImageApiUrl && !uploadedImagePreviewUrl
     ? "Start from address/map or choose blank site."
     : !siteSizeSet
@@ -10992,6 +11050,35 @@ function PerformanceAIDashboardView({
     ...issues.map((issue) => issue.message),
     ...analysisIssues.map((issue) => issue.message),
   ].filter(Boolean);
+  const visibleStatusSummary = bottomBlockerItems.length
+    ? bottomBlockerItems.slice(0, 6).join("; ")
+    : hasHardSystemBlock
+      ? "Hard system blocker recorded."
+      : backendResult
+        ? "No visible blockers recorded."
+        : "No run output yet.";
+  const issueDiagnosticSummary = [
+    "Civora pilot issue report",
+    `Project ID: ${currentProject?.project_id || projectId || "draft / unavailable"}`,
+    `Project name: ${siteName || currentProject?.name || "Untitled Project"}`,
+    `Panel / workflow step: ${sidePanelForRender ? sidePanelCopy[sidePanelForRender].title : activeWorkspaceMode}`,
+    `Visible status: ${visibleStatusSummary}`,
+    `Site: ${siteScaleLocked ? "locked" : "not locked"}; ${lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "size unavailable"}`,
+    `Systems: ${Object.entries(systemStatuses).map(([key, value]) => `${key}=${value}`).join(", ")}`,
+    `User message: ${issueReportMessage.trim() || "(add details before sending)"}`,
+    "",
+    "Reminder: outputs are engineer-review-required review materials only. External licensed engineer approval is required before any construction reliance.",
+  ].join("\n");
+  const handleCopyIssueDiagnostic = async () => {
+    try {
+      await navigator.clipboard.writeText(issueDiagnosticSummary);
+      setIssueReportCopied(true);
+      setStatusMessage("Issue diagnostic summary copied.");
+      window.setTimeout(() => setIssueReportCopied(false), 2000);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not copy issue summary.");
+    }
+  };
   const bottomPanelTabs: Array<{ key: BottomPanelTab; label: string; panel: SidePanelKey }> = [
     { key: "model_review", label: "Model Review", panel: "reports" },
     { key: "systems", label: "Systems", panel: "generate" },
@@ -11178,6 +11265,9 @@ function PerformanceAIDashboardView({
                 </button>
                 <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
                   Generate
+                </button>
+                <button type="button" onClick={() => handleOpenSidePanel("dashboard")} className="col-span-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                  Report issue
                 </button>
               </div>
             </div>
@@ -11367,6 +11457,104 @@ function PerformanceAIDashboardView({
                           <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
                         </div>
                       ))}
+                    </div>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" open>
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Onboarding checklist
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        {setupChecklistItems.map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            onClick={() => handleOpenSidePanel(item.panel)}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:bg-white"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <span className="text-sm font-semibold text-slate-800">{item.label}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                item.status === "done"
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : item.status === "blocked"
+                                    ? "bg-red-50 text-red-600"
+                                    : "bg-amber-50 text-amber-700"
+                              }`}>
+                                {item.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">{item.action}</p>
+                            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{item.detail}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        What do statuses mean?
+                      </summary>
+                      <div className="mt-3 space-y-2 text-sm text-slate-600">
+                        {[
+                          ["Ready", "Enough current, traceable evidence exists for review; this does not mean externally approved."],
+                          ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
+                          ["Blocked", "Missing evidence, stale output, unsupported export, or unresolved conflict prevents the next review step."],
+                          ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
+                          ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
+                          ["Visual preview only", "The view is a visual aid and is not construction evidence by itself."],
+                          ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
+                          ["Construction release blocked", "Construction reliance remains blocked unless approved outside Civora by the responsible licensed engineer."],
+                        ].map(([label, desc]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold text-slate-800">{label}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{desc}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Report issue
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        <textarea
+                          value={issueReportMessage}
+                          onChange={(event) => setIssueReportMessage(event.target.value)}
+                          placeholder="What happened? Include the expected result and the action that triggered it."
+                          className="min-h-24 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
+                        />
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                            Diagnostic summary
+                          </p>
+                          <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-600">
+                            {issueDiagnosticSummary}
+                          </pre>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleCopyIssueDiagnostic}
+                          className="w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                        >
+                          {issueReportCopied ? "Copied" : "Copy diagnostic summary"}
+                        </button>
+                      </div>
+                    </details>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pilot docs</p>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {[
+                          ["/pilot#onboarding", "Onboarding"],
+                          ["/pilot#operations", "Pilot operations"],
+                          ["/pilot#responsibility", "Responsibility"],
+                        ].map(([href, label]) => (
+                          <a
+                            key={href}
+                            href={href}
+                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+                          >
+                            {label}
+                          </a>
+                        ))}
+                      </div>
                     </div>
                     {workflowReviewDashboard ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -11685,6 +11873,35 @@ function PerformanceAIDashboardView({
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next required step</p>
                         <p className="mt-1 text-sm font-semibold text-amber-900">{nextSetupAction}</p>
                       </div>
+                      <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3" open>
+                        <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Setup checklist
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          {setupChecklistItems.map((item) => (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={() => handleOpenSidePanel(item.panel)}
+                              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-white"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-sm font-semibold text-slate-800">{item.label}</span>
+                                <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  item.status === "done"
+                                    ? "text-emerald-700"
+                                    : item.status === "blocked"
+                                      ? "text-red-600"
+                                      : "text-amber-700"
+                                }`}>
+                                  {item.status}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">{item.action}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </details>
                       <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Existing conditions evidence</p>
                         <div className="mt-2 space-y-2">
@@ -12356,9 +12573,9 @@ function PerformanceAIDashboardView({
                             <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white/80 px-3 py-2 text-sm">
                               <span className="font-semibold text-slate-700">{item.label}</span>
                               <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
-                                item.status === "block" ? "text-red-600" : "text-amber-700"
+                                item.status === "blocked" ? "text-red-600" : item.status === "done" ? "text-emerald-700" : "text-amber-700"
                               }`}>
-                                {item.value}
+                                {item.status}
                               </span>
                             </div>
                           ))}
@@ -13945,6 +14162,30 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" || sidePanelForRender === "deliverables" ? (
                   <div className="space-y-3">
+                    {(sidePanelForRender === "reports" || sidePanelForRender === "deliverables") ? (
+                      <details className="rounded-2xl border border-slate-200 bg-white p-4" open={sidePanelForRender === "deliverables"}>
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          What is the review package?
+                        </summary>
+                        <div className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+                          <p>
+                            The review package collects current project inputs,
+                            assumptions, visible blockers, generated outputs,
+                            quantities, and export evidence so a qualified user
+                            or external licensed engineer can review the work.
+                          </p>
+                          <p className="font-semibold text-slate-800">
+                            It is not a construction release, permit submission,
+                            or professional approval. Exports remain review
+                            packages unless externally approved outside Civora.
+                          </p>
+                          <p>
+                            External licensed engineer approval is required
+                            before any construction reliance or release.
+                          </p>
+                        </div>
+                      </details>
+                    ) : null}
                     {sidePanelForRender === "reports" ? (
                       <>
                         <div className="grid grid-cols-2 gap-2">
