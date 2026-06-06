@@ -1000,6 +1000,15 @@ def run_layout_stage(
             for item in safe_list(execution_payload.get("buildings"))
             if isinstance(item, dict)
         ]
+
+        def _coerce_float_optional(value: Any) -> float | None:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
         for pond in safe_list(execution_payload.get("ponds")):
             pond_rec = safe_dict(pond)
             if not pond_rec:
@@ -1083,14 +1092,6 @@ def run_layout_stage(
             if access_id:
                 access_kwargs["id"] = access_id
             project.add_object(EngineeringObject(**access_kwargs))
-
-        def _coerce_float_optional(value: Any) -> float | None:
-            try:
-                if value is None:
-                    return None
-                return float(value)
-            except Exception:
-                return None
 
         user_positioned_buildings = [
             rec
