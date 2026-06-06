@@ -250,6 +250,7 @@ const SITE_OBJECT_CATALOG: Record<
   utility_corridor: { label: "Utility Corridor", category: "advanced", defaultW: 140, defaultD: 24 },
   lot_block: { label: "Lot / Subdivision Block", category: "advanced", defaultW: 160, defaultD: 120 },
   bridge: { label: "Bridge", category: "advanced", defaultW: 80, defaultD: 24 },
+  custom: { label: "Custom Geometry", category: "advanced", defaultW: 40, defaultD: 40 },
 };
 
 const clampValue = (value: number, min: number, max: number) =>
@@ -1249,6 +1250,9 @@ function PerformanceAIDashboardView({
         locked: placement.locked,
         source: placement.source,
         generated: placement.generated,
+        geometry_type: placement.geometryType,
+        geometry: placement.geometry,
+        meta: placement.meta,
         systemDependencies: placement.systemDependencies,
       }));
     const basinOverrides = placementOverrides.filter((placement) => placement.type === "basin");
@@ -1328,6 +1332,28 @@ function PerformanceAIDashboardView({
 
     if (resolvedParkingCount !== null) {
       manualFields.site_plan = { parking_count: resolvedParkingCount };
+    }
+
+    if (placementOverrides.length) {
+      manualFields.site_objects = placementOverrides.map((placement) => ({
+        id: placement.id,
+        name: placement.label,
+        label: placement.label,
+        type: placement.type,
+        x: placement.x,
+        y: placement.y,
+        w: placement.w,
+        d: placement.d,
+        height_ft: placement.height_ft,
+        rotation: placement.rotation,
+        locked: placement.locked,
+        source: placement.source,
+        generated: placement.generated,
+        geometry_type: placement.geometry_type,
+        geometry: placement.geometry,
+        meta: placement.meta,
+        systemDependencies: placement.systemDependencies,
+      }));
     }
 
     if (minSlopeValue !== null) {
@@ -2240,6 +2266,18 @@ function PerformanceAIDashboardView({
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
         const placed = Number.isFinite(x) && Number.isFinite(y);
+        const geometryType =
+          rec.geometry_type === "polygon" ||
+          rec.geometry_type === "polyline" ||
+          rec.geometry_type === "rect" ||
+          rec.geometry_type === "point"
+            ? rec.geometry_type
+            : undefined;
+        const geometry = Array.isArray(rec.geometry)
+          ? rec.geometry
+              .map((pt) => (Array.isArray(pt) ? [Number(pt[0]), Number(pt[1])] as [number, number] : null))
+              .filter((pt): pt is [number, number] => pt !== null && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
+          : undefined;
         return {
           id: typeof rec.id === "string" ? rec.id : `building-${Date.now()}-${idx}`,
           label:
@@ -2257,6 +2295,20 @@ function PerformanceAIDashboardView({
           use: typeof rec.use === "string" ? rec.use : undefined,
           locked: Boolean(rec.locked),
           placed,
+          source:
+            rec.source === "generated" ||
+            rec.source === "inferred" ||
+            rec.source === "detected_from_image" ||
+            rec.source === "user_confirmed"
+              ? rec.source
+              : "user",
+          generated: Boolean(rec.generated),
+          geometryType,
+          geometry: geometry?.length ? geometry : undefined,
+          meta: rec.meta && typeof rec.meta === "object" ? (rec.meta as Record<string, unknown>) : undefined,
+          systemDependencies: Array.isArray(rec.systemDependencies)
+            ? (rec.systemDependencies as BuildingPlacement["systemDependencies"])
+            : undefined,
         } as BuildingPlacement;
       })
       .filter(Boolean) as BuildingPlacement[];
@@ -2335,7 +2387,70 @@ function PerformanceAIDashboardView({
       })
       .filter(Boolean) as BuildingPlacement[];
 
-    const mergedPlacements = [...parsedPlacements, ...pondPlacements, ...inletPlacements];
+    const siteObjectPlacements = (Array.isArray(manualFields.site_objects) ? manualFields.site_objects : [])
+      .map((raw, idx) => {
+        if (!raw || typeof raw !== "object") return null;
+        const rec = raw as Record<string, unknown>;
+        const rawX = rec.x;
+        const rawY = rec.y;
+        const x = typeof rawX === "number" ? rawX : rawX !== undefined ? Number(rawX) : NaN;
+        const y = typeof rawY === "number" ? rawY : rawY !== undefined ? Number(rawY) : NaN;
+        const rawW = rec.w ?? 10;
+        const rawD = rec.d ?? 10;
+        const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
+        const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
+        if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
+        const placed = Number.isFinite(x) && Number.isFinite(y);
+        const geometryType =
+          rec.geometry_type === "polygon" ||
+          rec.geometry_type === "polyline" ||
+          rec.geometry_type === "rect" ||
+          rec.geometry_type === "point"
+            ? rec.geometry_type
+            : undefined;
+        const geometry = Array.isArray(rec.geometry)
+          ? rec.geometry
+              .map((pt) => (Array.isArray(pt) ? [Number(pt[0]), Number(pt[1])] as [number, number] : null))
+              .filter((pt): pt is [number, number] => pt !== null && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
+          : undefined;
+        return {
+          id: typeof rec.id === "string" ? rec.id : `site-object-${Date.now()}-${idx}`,
+          label:
+            typeof rec.label === "string"
+              ? rec.label
+              : typeof rec.name === "string"
+                ? rec.name
+                : `Object ${idx + 1}`,
+          type: (typeof rec.type === "string" ? rec.type : "custom") as SiteObjectType,
+          x: placed ? x : undefined,
+          y: placed ? y : undefined,
+          w,
+          d,
+          h: typeof rec.height_ft === "number" ? rec.height_ft : undefined,
+          rotation: typeof rec.rotation === "number" ? rec.rotation : undefined,
+          locked: Boolean(rec.locked),
+          placed,
+          source:
+            rec.source === "generated" ||
+            rec.source === "inferred" ||
+            rec.source === "detected_from_image" ||
+            rec.source === "user_confirmed"
+              ? rec.source
+              : "user",
+          generated: Boolean(rec.generated),
+          geometryType,
+          geometry: geometry?.length ? geometry : undefined,
+          meta: rec.meta && typeof rec.meta === "object" ? (rec.meta as Record<string, unknown>) : undefined,
+          systemDependencies: Array.isArray(rec.systemDependencies)
+            ? (rec.systemDependencies as BuildingPlacement["systemDependencies"])
+            : ["roads", "parking", "grading", "drainage", "utilities"],
+        } as BuildingPlacement;
+      })
+      .filter(Boolean) as BuildingPlacement[];
+
+    const mergedPlacements = siteObjectPlacements.length
+      ? siteObjectPlacements
+      : [...parsedPlacements, ...pondPlacements, ...inletPlacements];
     setBuildingPlacements(mergedPlacements);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
@@ -3368,6 +3483,114 @@ function PerformanceAIDashboardView({
         .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
     [buildDefaultPolyline, buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds, systemsImpactedByPlacement],
+  );
+
+  const handleCreateCustomGeometry = useCallback(
+    (payload: {
+      mode: "polyline" | "polygon" | "rect" | "point";
+      points: Array<[number, number]>;
+      label?: string;
+    }) => {
+      clearGeneratedPreview();
+      const lot = resolveLotBounds();
+      if (!lot.w || !lot.h) {
+        const ok = ensureSiteBoundary("Draw the geometry again after confirming the site boundary.");
+        if (!ok) {
+          setStatusMessage("Set the site width and height before drawing geometry.");
+        }
+        return;
+      }
+      const validPoints = payload.points
+        .map(([x, y]) => [
+          Math.min(Math.max(x, 0), lot.w),
+          Math.min(Math.max(y, 0), lot.h),
+        ] as [number, number])
+        .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+      const minRequired = payload.mode === "point" ? 1 : payload.mode === "rect" ? 2 : payload.mode === "polygon" ? 3 : 2;
+      if (validPoints.length < minRequired) {
+        setStatusMessage("Drawn geometry needs more points before it can be added.");
+        return;
+      }
+      const geometry =
+        payload.mode === "rect"
+          ? (() => {
+              const [a, b] = validPoints;
+              const minX = Math.min(a[0], b[0]);
+              const maxX = Math.max(a[0], b[0]);
+              const minY = Math.min(a[1], b[1]);
+              const maxY = Math.max(a[1], b[1]);
+              return [
+                [minX, minY],
+                [maxX, minY],
+                [maxX, maxY],
+                [minX, maxY],
+              ] as Array<[number, number]>;
+            })()
+          : validPoints;
+      const xs = geometry.map((pt) => pt[0]);
+      const ys = geometry.map((pt) => pt[1]);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const isLine = payload.mode === "polyline";
+      const isPoint = payload.mode === "point";
+      const existingCustomCount =
+        buildingPlacements.filter((item) => item.type === "custom").length + 1;
+      const nextPlacement: BuildingPlacement = {
+        id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: payload.label ?? `Custom ${payload.mode === "polyline" ? "Line" : payload.mode === "polygon" ? "Area" : payload.mode === "rect" ? "Rectangle" : "Point"} ${existingCustomCount}`,
+        type: "custom",
+        x: isPoint ? geometry[0][0] - 5 : minX,
+        y: isPoint ? geometry[0][1] - 5 : minY,
+        w: isPoint ? 10 : Math.max(5, maxX - minX),
+        d: isPoint ? 10 : Math.max(5, maxY - minY),
+        rotation: 0,
+        locked: false,
+        placed: true,
+        source: "user",
+        generated: false,
+        geometryType: payload.mode,
+        geometry,
+        capabilities: {
+          movable: true,
+          resizable: payload.mode === "rect" || payload.mode === "point",
+          rotatable: payload.mode === "rect",
+          deletable: true,
+        },
+        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+        meta: {
+          category: "advanced",
+          custom_geometry: true,
+          engineering_status: "draft_user_geometry",
+          canonical_note: "Stored as user-authored project geometry. Engineering generation only uses it where existing systems support the object type.",
+        },
+      };
+      if (isLine) {
+        nextPlacement.capabilities = {
+          movable: true,
+          resizable: false,
+          rotatable: false,
+          deletable: true,
+        };
+      }
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setActivePlacementId(nextPlacement.id);
+      setPlacementModeEnabled(false);
+      setPreviewMode("2d");
+      setPreviewInteraction("edit");
+      markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+      setStatusMessage("Custom geometry added as user-authored project geometry. Regenerate systems only after reviewing impacts.");
+      void ensureProjectDraftRef.current()
+        .then(() => saveProjectRef.current({ silent: true }))
+        .then(() => {
+          previewRefreshIntentRef.current = {
+            reason: "Refreshing preview after custom geometry draw...",
+            track: true,
+          };
+        });
+    },
+    [buildingPlacements, clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, resolveLotBounds],
   );
 
   const handleTogglePlacementMode = useCallback(() => {
@@ -6164,6 +6387,7 @@ function PerformanceAIDashboardView({
         utility_corridor: "Detected Utility Corridor",
         lot_block: "Detected Lot Block",
         bridge: "Detected Bridge",
+        custom: "Detected Custom Geometry",
       };
       return {
         id: `detected_${Math.random().toString(36).slice(2, 9)}`,
@@ -11627,7 +11851,11 @@ function PerformanceAIDashboardView({
                           buildingPlacements.map((item) => (
                             <button key={item.id} type="button" onClick={() => setActivePlacementId(item.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${activePlacementId === item.id ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"}`}>
                               {item.label}
-                              <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-70">{item.placed ? "Placed" : "Not placed"} · {item.locked ? "Locked" : "Editable"}</span>
+                              <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-70">
+                                {item.type === "custom"
+                                  ? "Canonical geometry · Engineering review draft"
+                                  : `${item.placed ? "Placed" : "Not placed"} · ${item.locked ? "Locked" : "Editable"}`}
+                              </span>
                             </button>
                           ))
                         ) : (
@@ -12004,6 +12232,11 @@ function PerformanceAIDashboardView({
                                     {SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object"} ·{" "}
                                     {item.placed ? "Placed" : "Unplaced"}
                                   </p>
+                                  {item.type === "custom" ? (
+                                    <p className="mt-1 uppercase tracking-[0.12em] text-slate-500">
+                                      Canonical geometry · Engineering review draft
+                                    </p>
+                                  ) : null}
                                 </div>
                                 {item.type !== "site" ? (
                                   <button
@@ -12379,6 +12612,7 @@ function PerformanceAIDashboardView({
                 externalRectUndo={externalRectUndo}
               onPlaceBuilding={handlePlaceBuilding}
               onPlaceObject={handlePlaceObject}
+              onCreateCustomGeometry={handleCreateCustomGeometry}
               buildingPlacements={buildingPlacements}
               suggestedPlacements={filteredDetectedPlacements}
               selectedBuildingId={activePlacementId}
@@ -12914,6 +13148,11 @@ function PerformanceAIDashboardView({
                                 <span>•</span>
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
+                              {item.type === "custom" ? (
+                                <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                                  Canonical geometry · Engineering review draft
+                                </div>
+                              ) : null}
                               {item.type !== "site" ? (
                                 <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
                                   <label className="flex flex-col gap-1">
@@ -13335,6 +13574,11 @@ function PerformanceAIDashboardView({
                                 <span>•</span>
                                 <span>{item.w} ft x {item.d} ft</span>
                               </div>
+                              {item.type === "custom" ? (
+                                <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                                  Canonical geometry · Engineering review draft
+                                </div>
+                              ) : null}
                               {typeof item.x === "number" && typeof item.y === "number" ? (
                                 <div className="mt-1 text-[11px] text-slate-500">
                                   X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
