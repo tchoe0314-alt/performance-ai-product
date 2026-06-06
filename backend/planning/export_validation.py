@@ -592,6 +592,7 @@ def utility_export_validation(
         "ready": not reasons,
         "reasons": reasons,
         "route_count": safe_int(utilities.get("route_count"), 0),
+        "segment_count": len([item for item in segments if safe_dict(item)]),
         "shallow_segment_count": safe_int(utilities.get("shallow_segment_count"), 0),
         "gravity_slope_issue_count": safe_int(
             utilities.get("gravity_slope_issue_count"), 0

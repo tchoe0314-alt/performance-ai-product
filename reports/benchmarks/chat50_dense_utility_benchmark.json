@@ -1,0 +1,122 @@
+{
+  "benchmark": "chat50_dense_utility_benchmark",
+  "benchmark_design": {
+    "crossings_and_conflicts": 14,
+    "sanitary_segments": 28,
+    "storm_segments": 36,
+    "supported_structures": {
+      "inlets": 36,
+      "sanitary_manholes": 28
+    },
+    "unsupported_structures": {
+      "water_hydrants": 8
+    },
+    "water_segments": 32
+  },
+  "blockers": [
+    "Water hydrants are accepted in the dense input fixture but are not yet represented by canonical_utility_actions; benchmark reports them as unsupported instead of counting them as a pass."
+  ],
+  "dropped_missing_objects": {
+    "inlets": [],
+    "sanitary_manholes": [],
+    "sanitary_segments": [],
+    "storm_segments": [],
+    "water_segments": []
+  },
+  "engine_scale_limit": {
+    "supported_dense_scale_verified": "36 storm segments, 28 sanitary segments, 32 water segments, 36 inlets, 28 sanitary manholes",
+    "unsupported_at_this_scale": "8 water hydrants lack canonical output support"
+  },
+  "input_object_counts": {
+    "inlets": 36,
+    "sanitary_manholes": 28,
+    "sanitary_segments": 28,
+    "storm_segments": 36,
+    "water_hydrants_unsupported": 8,
+    "water_segments": 32
+  },
+  "memory_mb": {
+    "delta": 0.75,
+    "ru_maxrss_after": 19.578,
+    "ru_maxrss_before": 18.828
+  },
+  "output_object_counts": {
+    "inlets": 36,
+    "sanitary_manholes": 28,
+    "sanitary_segments": 28,
+    "storm_segments": 36,
+    "water_segments": 32
+  },
+  "runtime_ms": 6.978,
+  "unexpected_output_objects": {
+    "inlets": [],
+    "sanitary_manholes": [],
+    "sanitary_segments": [],
+    "storm_segments": [],
+    "water_segments": []
+  },
+  "validation": {
+    "coordination_resolved_conflict_count": 14,
+    "coordination_unresolved_conflict_count": 0,
+    "drainage": {
+      "flow_path_count": 0,
+      "grading_export_ready": true,
+      "inadequate_basin_count": 0,
+      "low_point_count": 0,
+      "primary_basin_count": 1,
+      "primary_basin_ids": [
+        "basin-primary-001"
+      ],
+      "ready": true,
+      "reasons": [],
+      "selected_basin_name": "PRIMARY DETENTION",
+      "storm_pipe_count": 36,
+      "surface_alignment": {
+        "drainage_low_point_count": 0,
+        "grading_flow_sample_count": 0,
+        "grading_low_point_count": 0,
+        "matched_low_points": 0,
+        "min_low_point_distance_ft": null,
+        "sampled_drainage_low_point_count": 0,
+        "sampled_grading_low_point_count": 0,
+        "threshold_ft": 40.0
+      },
+      "surface_controls": {
+        "has_primary_drainage_direction": true,
+        "primary_low_point": {
+          "id": "lp-1",
+          "x": 180.0,
+          "y": 155.0
+        }
+      },
+      "total_basin_runoff_cfs": 0.0,
+      "total_contributing_area_sf": 0.0,
+      "total_estimated_inlet_flow_cfs": 0.0,
+      "validation_basin_count": 1,
+      "weak_geometry_basin_count": 0
+    },
+    "export_trace_contains_all_supported_ids": true,
+    "quantities_success": true,
+    "quantity_trace_contains_all_segment_ids": {
+      "sanitary": true,
+      "storm": true,
+      "water": true
+    },
+    "quantity_traceability_complete": true,
+    "storm": {
+      "ready": true,
+      "reasons": [],
+      "segment_count": 36
+    },
+    "utility": {
+      "gravity_slope_issue_count": 0,
+      "post_validation_valid": true,
+      "ready": true,
+      "reasons": [],
+      "route_count": 32,
+      "segment_count": 32,
+      "shallow_segment_count": 0,
+      "utility_related_unresolved_conflict_count": 0
+    }
+  }
+}
