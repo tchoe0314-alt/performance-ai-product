@@ -297,7 +297,7 @@ def _terrain_source_confidence(rec: Dict[str, Any]) -> Dict[str, Any]:
     has_points = safe_int(survey.get("point_count"), len(safe_list(survey.get("points")))) >= 3
     has_survey_surface = any(item in source_types for item in {"survey_csv", "surface_xyz_csv", "dxf_existing_conditions", "landxml"})
     has_dem_surface = any(item in source_types for item in {"geotiff_surface", "las_point_cloud"})
-    if has_points or has_survey_surface:
+    if has_survey_surface or (has_points and not has_dem_surface):
         label = "survey-backed"
     elif has_dem_surface:
         label = "DEM-backed"

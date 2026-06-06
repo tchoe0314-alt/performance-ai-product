@@ -575,6 +575,8 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertIn("lidar_point_cloud", imported["canonical_import"]["canonical_targets"])
             self.assertEqual(model["survey"]["point_count"], 4)
             self.assertFalse(model["survey"]["metadata_only"])
+            self.assertEqual(model["terrain"]["source_confidence"], "DEM-backed")
+            self.assertEqual(merged["import_validation"]["terrain_source_confidence"]["label"], "DEM-backed")
 
 
 if __name__ == "__main__":
