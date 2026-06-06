@@ -87,6 +87,7 @@ def run_private_alpha_backend_readiness_audit(
     thresholds: Optional[Dict[str, Any]] = None,
     readiness_mode: str = "private_alpha_review",
     async_jobs_enabled: bool = True,
+    runtime_bearer_token: str = "",
 ) -> Dict[str, Any]:
     """Run the backend-only private-alpha evidence audit.
 
@@ -102,6 +103,7 @@ def run_private_alpha_backend_readiness_audit(
         thresholds=thresholds,
         readiness_mode=readiness_mode,
         async_jobs_enabled=async_jobs_enabled,
+        runtime_bearer_token=runtime_bearer_token,
     )
     golden = run_golden_scenarios(scenario_ids=scenario_ids, build_plan_fn=build_plan_fn)
     blockers = [

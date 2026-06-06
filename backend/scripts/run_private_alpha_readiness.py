@@ -10,6 +10,7 @@ from backend.application.private_alpha_readiness_audit import run_private_alpha_
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Civora backend-only private-alpha readiness evidence audit.")
     parser.add_argument("--base-url", default="", help="Backend URL to sample, e.g. http://127.0.0.1:8000. If omitted, local process monitoring is used and queue evidence remains blocked.")
+    parser.add_argument("--runtime-bearer-token", default="", help="Optional Bearer token for authenticated /api/debug/runtime sampling. Prefer env config in shell history.")
     parser.add_argument("--iterations", type=int, default=3)
     parser.add_argument("--interval-seconds", type=float, default=0.0)
     parser.add_argument("--readiness-mode", default="private_alpha_review", choices=["local_dev", "private_alpha_review", "production"])
@@ -42,6 +43,7 @@ def main() -> None:
         thresholds=thresholds or None,
         readiness_mode=args.readiness_mode,
         async_jobs_enabled=args.async_jobs_enabled,
+        runtime_bearer_token=args.runtime_bearer_token,
     )
     print(
         json.dumps(

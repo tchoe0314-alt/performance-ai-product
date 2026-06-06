@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from backend.application.memory_logging import runtime_monitoring_snapshot, runtime_process_monitoring_snapshot
@@ -16,6 +18,7 @@ RuntimeSampleFn = Callable[[], Dict[str, Any]]
 
 _LOCAL_PATH_FIELDS = {"state_file", "storage_dir"}
 _SENSITIVE_PREFIX_FIELDS = {"mapbox_token_prefix"}
+_RUNTIME_AUDIT_TOKEN_ENV = ("CIVORA_READINESS_AUDIT_BEARER_TOKEN", "CIVORA_RUNTIME_DEBUG_BEARER_TOKEN")
 
 
 def _status_rank(value: Any) -> int:
@@ -142,14 +145,70 @@ def _local_runtime_sample(*, state_dir: Path | None = None, start_time: float | 
     }
 
 
-def fetch_runtime_debug_sample(base_url: str, *, timeout_seconds: float = 10.0) -> Dict[str, Any]:
+def _configured_runtime_audit_token(explicit_token: str = "") -> str:
+    token = safe_str(explicit_token).strip()
+    if token:
+        return token
+    for env_name in _RUNTIME_AUDIT_TOKEN_ENV:
+        token = safe_str(os.getenv(env_name)).strip()
+        if token:
+            return token
+    return ""
+
+
+def fetch_runtime_debug_sample(base_url: str, *, timeout_seconds: float = 10.0, bearer_token: str = "") -> Dict[str, Any]:
     normalized = safe_str(base_url).rstrip("/")
     if not normalized:
         raise ValueError("base_url is required for runtime debug sampling.")
-    request = Request(f"{normalized}/api/debug/runtime", headers={"Accept": "application/json"})
-    with urlopen(request, timeout=max(1.0, timeout_seconds)) as response:
+    token = _configured_runtime_audit_token(bearer_token)
+    if not token:
+        raise RuntimeError(
+            "auth_missing: configure CIVORA_READINESS_AUDIT_BEARER_TOKEN or "
+            "CIVORA_RUNTIME_DEBUG_BEARER_TOKEN before sampling /api/debug/runtime."
+        )
+    request = Request(
+        f"{normalized}/api/debug/runtime",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+    )
+    try:
+        response_ctx = urlopen(request, timeout=max(1.0, timeout_seconds))
+    except HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise RuntimeError(f"auth_unauthorized: /api/debug/runtime rejected configured bearer token with HTTP {exc.code}.") from exc
+        raise
+    with response_ctx as response:
         payload = json.loads(response.read().decode("utf-8"))
     return payload if isinstance(payload, dict) else {}
+
+
+def _sample_failure_blockers(sample_failures: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    blockers: List[Dict[str, Any]] = []
+    errors = [safe_str(item.get("error")) for item in sample_failures]
+    if any(error.startswith("auth_missing:") for error in errors):
+        blockers.append(
+            {
+                "area": "monitoring",
+                "field": "auth_missing",
+                "reason": "Runtime debug sampling requires an explicitly configured audit bearer token.",
+                "message": "Runtime debug sampling requires an explicitly configured audit bearer token.",
+                "why_needed": "/api/debug/runtime remains auth-required; queue evidence cannot be sampled without a valid Bearer token.",
+                "suggested_next_action": "Set CIVORA_READINESS_AUDIT_BEARER_TOKEN or CIVORA_RUNTIME_DEBUG_BEARER_TOKEN to a valid backend auth token and rerun the readiness audit.",
+                "severity": "blocker",
+            }
+        )
+    if any(error.startswith("auth_unauthorized:") or "HTTP Error 401" in error or "HTTP Error 403" in error for error in errors):
+        blockers.append(
+            {
+                "area": "monitoring",
+                "field": "runtime_auth_unauthorized",
+                "reason": "Runtime debug sampling was rejected by /api/debug/runtime authentication.",
+                "message": "Runtime debug sampling was rejected by /api/debug/runtime authentication.",
+                "why_needed": "Queue evidence is accepted only from successful authenticated runtime samples.",
+                "suggested_next_action": "Use a valid Bearer token for an authenticated backend user and rerun the readiness audit.",
+                "severity": "blocker",
+            }
+        )
+    return blockers
 
 
 def sanitize_alpha_smoke_soak_report(report: Dict[str, Any]) -> Dict[str, Any]:
@@ -193,12 +252,13 @@ def run_alpha_smoke_soak(
     thresholds: Optional[Dict[str, Any]] = None,
     readiness_mode: str = "private_alpha_review",
     async_jobs_enabled: bool = True,
+    runtime_bearer_token: str = "",
 ) -> Dict[str, Any]:
     count = max(1, int(iterations))
     start = time.time()
     sampler = sample_runtime
     if sampler is None and safe_str(base_url):
-        sampler = lambda: fetch_runtime_debug_sample(base_url)
+        sampler = lambda: fetch_runtime_debug_sample(base_url, bearer_token=runtime_bearer_token)
     if sampler is None:
         sampler = lambda: _local_runtime_sample(state_dir=state_dir, start_time=start)
 
@@ -226,6 +286,7 @@ def run_alpha_smoke_soak(
     )
     if sample_failures:
         alpha_report = deepcopy(alpha_report)
+        alpha_report.setdefault("blockers", []).extend(_sample_failure_blockers(sample_failures))
         alpha_report.setdefault("blockers", []).append(
             {
                 "area": "monitoring",

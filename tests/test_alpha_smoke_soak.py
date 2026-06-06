@@ -1,9 +1,12 @@
 import json
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError
+from unittest.mock import patch
 
-from backend.application.alpha_smoke_soak import run_alpha_smoke_soak
+from backend.application.alpha_smoke_soak import fetch_runtime_debug_sample, run_alpha_smoke_soak
 
 
 def _healthy_sample() -> dict:
@@ -32,6 +35,20 @@ def _healthy_sample() -> dict:
         "storage_dir": "/Users/tommychoe/Documents/Playground/Civora AI/data",
         "mapbox_token_prefix": "pk.secret-prefix",
     }
+
+
+class _FakeRuntimeResponse:
+    def __init__(self, payload: dict):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class AlphaSmokeSoakTests(unittest.TestCase):
@@ -116,6 +133,80 @@ class AlphaSmokeSoakTests(unittest.TestCase):
         self.assertEqual(report["sample_failure_count"], 1)
         fields = {item["field"] for item in report["alpha_monitoring_report"]["blockers"]}
         self.assertIn("sample_failures", fields)
+
+    def test_authenticated_runtime_sampler_sends_bearer_and_accepts_queue_counts(self) -> None:
+        captured = {}
+
+        def fake_urlopen(request, timeout=0):
+            captured["authorization"] = request.headers.get("Authorization")
+            captured["timeout"] = timeout
+            return _FakeRuntimeResponse(_healthy_sample())
+
+        with patch("backend.application.alpha_smoke_soak.urlopen", side_effect=fake_urlopen):
+            report = run_alpha_smoke_soak(
+                iterations=1,
+                base_url="http://runtime.local",
+                runtime_bearer_token="runtime-token",
+            )
+
+        self.assertEqual(captured["authorization"], "Bearer runtime-token")
+        self.assertTrue(report["success"])
+        evidence = report["aggregate_runtime_monitoring"]["job_queue_monitoring_evidence"]
+        self.assertTrue(evidence["alpha_ready"])
+        self.assertEqual(evidence["pending_count"], 0)
+        self.assertEqual(evidence["failed_count"], 0)
+        self.assertEqual(evidence["timeout_count"], 0)
+
+    def test_runtime_sampler_without_token_blocks_with_auth_missing(self) -> None:
+        with patch.dict("os.environ", {"CIVORA_READINESS_AUDIT_BEARER_TOKEN": "", "CIVORA_RUNTIME_DEBUG_BEARER_TOKEN": ""}, clear=False):
+            with patch("backend.application.alpha_smoke_soak.urlopen") as mocked_urlopen:
+                report = run_alpha_smoke_soak(iterations=1, base_url="http://runtime.local")
+
+        mocked_urlopen.assert_not_called()
+        self.assertFalse(report["success"])
+        self.assertEqual(report["sample_count"], 0)
+        fields = {item["field"] for item in report["alpha_monitoring_report"]["blockers"]}
+        self.assertIn("auth_missing", fields)
+        self.assertIn("sample_failures", fields)
+        evidence = report["aggregate_runtime_monitoring"]["job_queue_monitoring_evidence"]
+        self.assertFalse(evidence["queue_system_present"])
+        self.assertIsNone(evidence["pending_count"])
+
+    def test_runtime_sampler_wrong_token_blocks_without_queue_counts(self) -> None:
+        unauthorized = HTTPError(
+            "http://runtime.local/api/debug/runtime",
+            401,
+            "Unauthorized",
+            hdrs=None,
+            fp=BytesIO(b'{"detail":"Authentication required."}'),
+        )
+        with patch("backend.application.alpha_smoke_soak.urlopen", side_effect=unauthorized):
+            report = run_alpha_smoke_soak(
+                iterations=1,
+                base_url="http://runtime.local",
+                runtime_bearer_token="wrong-token",
+            )
+
+        self.assertFalse(report["success"])
+        fields = {item["field"] for item in report["alpha_monitoring_report"]["blockers"]}
+        self.assertIn("runtime_auth_unauthorized", fields)
+        evidence = report["aggregate_runtime_monitoring"]["job_queue_monitoring_evidence"]
+        self.assertFalse(evidence["queue_system_present"])
+        self.assertIsNone(evidence["pending_count"])
+
+    def test_fetch_runtime_debug_sample_uses_env_token_without_exposing_value(self) -> None:
+        captured = {}
+
+        def fake_urlopen(request, timeout=0):
+            captured["authorization"] = request.headers.get("Authorization")
+            return _FakeRuntimeResponse(_healthy_sample())
+
+        with patch.dict("os.environ", {"CIVORA_READINESS_AUDIT_BEARER_TOKEN": "env-runtime-token"}):
+            with patch("backend.application.alpha_smoke_soak.urlopen", side_effect=fake_urlopen):
+                sample = fetch_runtime_debug_sample("http://runtime.local")
+
+        self.assertEqual(captured["authorization"], "Bearer env-runtime-token")
+        self.assertEqual(sample["monitoring"]["job_queue"]["queued_count"], 0)
 
     def test_smoke_soak_writes_report_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
