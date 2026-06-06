@@ -16,7 +16,7 @@ import {
   Settings,
 } from "lucide-react";
 
-import { deleteJson, getJson, postBinary, postForm, postJson } from "../lib/api";
+import { deleteJson, getJson, postForm, postJson, toApiUrl } from "../lib/api";
 
 import type {
   Assumption,
@@ -977,6 +977,26 @@ function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
 }
 
 type ApprovalState = "idle" | "approving" | "starting";
+
+type ArtifactJobResult = {
+  artifact?: {
+    kind?: string;
+    filename?: string;
+    download_path?: string;
+    review_only?: boolean;
+    construction_release_allowed?: boolean;
+  };
+};
+
+function isArtifactExportJob(job: JobSummary): boolean {
+  return String(job.job_type || "").startsWith("export_");
+}
+
+function artifactFromJob(job: JobSummary): ArtifactJobResult["artifact"] | null {
+  const result = (job.result ?? {}) as ArtifactJobResult;
+  const artifact = result.artifact;
+  return artifact && artifact.download_path ? artifact : null;
+}
 
 function buildThinkingState({
   busy,
@@ -4636,6 +4656,7 @@ function PerformanceAIDashboardView({
     signal,
     timeoutMs,
     allowQueueFallback = true,
+    forceQueue = false,
   }: {
     mode: PlanToolMode;
     requestPayload: PlanRequestPayload;
@@ -4645,6 +4666,7 @@ function PerformanceAIDashboardView({
     signal?: AbortSignal;
     timeoutMs?: number;
     allowQueueFallback?: boolean;
+    forceQueue?: boolean;
   }) => {
     setBusy(true);
     setActivePlanTool(mode);
@@ -4655,7 +4677,7 @@ function PerformanceAIDashboardView({
           ? "Civora AI is starting the improvement run."
           : "Civora AI is starting the engineering run.",
     );
-    const shouldQueueStagedRun = Boolean(requestPayload?.full_design_mode && token);
+    const shouldQueueStagedRun = Boolean((forceQueue || requestPayload?.full_design_mode) && token);
     if (shouldQueueStagedRun) {
       try {
         const queued = await postJson<{ job: JobSummary }>(
@@ -4670,11 +4692,14 @@ function PerformanceAIDashboardView({
           { token },
         );
         setActiveJobId(queued.job.job_id);
+        const queuedDetail = forceQueue
+          ? `I queued this long-running engineering workflow as ${queued.job.job_id} so progress stays visible while the backend works.`
+          : `I queued the full staged design workflow as ${queued.job.job_id} so each phase can save, pause for approval, and continue on the same project.`;
         appendChatMessage(
           "assistant",
           [
             assistantPrefix,
-            `I queued the full staged design workflow as ${queued.job.job_id} so each phase can save, pause for approval, and continue on the same project.`,
+            queuedDetail,
           ]
             .filter(Boolean)
             .join(" "),
@@ -6673,6 +6698,31 @@ function PerformanceAIDashboardView({
         }
       }
       if (job.status === "completed" && job.result) {
+        if (isArtifactExportJob(job)) {
+          const artifact = artifactFromJob(job);
+          if (artifact?.download_path) {
+            await downloadArtifactPath(
+              artifact.download_path,
+              artifact.filename || (artifact.kind === "dxf" ? "civora-ai-plan.dxf" : "civora-ai-report.json"),
+            );
+            appendChatMessage(
+              "assistant",
+              `${toReadableLabel(String(artifact.kind || "export"))} review export is ready and downloaded. Construction release remains blocked unless a licensed engineer approval record exists.`,
+              "status",
+            );
+            setStatusMessage("Review export downloaded. Construction release remains blocked.");
+          } else {
+            setStatusMessage("Export job completed but did not return a download path.");
+          }
+          setActiveJobId("");
+          if (activeTrackedProjectId) {
+            loadProjectResultInBackground({
+              project_id: activeTrackedProjectId,
+              name: currentProject?.name || siteName || "Untitled Project",
+            } as ProjectRecord);
+          }
+          return;
+        }
         applyBackendResult(job.result);
         requestPreviewInBackground(
           {
@@ -8745,25 +8795,12 @@ function PerformanceAIDashboardView({
           );
           const jobId = queued.job.job_id;
           setActiveJobId(jobId);
-          const deadline = Date.now() + 120_000;
-          while (Date.now() < deadline) {
-            const jobState = await getJson<{ job: JobSummary }>(
-              `/api/jobs/${jobId}`,
-              { token },
-            );
-            const status = String(jobState.job?.status || "");
-            if (status === "completed") break;
-            if (status === "failed" || status === "cancelled") {
-              throw new Error(jobState.job?.error || "Drainage job failed.");
-            }
-            await new Promise((resolve) => window.setTimeout(resolve, 2000));
-          }
-          if (targetProjectId) {
-            loadProjectResultInBackground({
-              project_id: targetProjectId,
-              name: currentProject?.name || siteName || "Untitled Project",
-            } as ProjectRecord);
-          }
+          appendChatMessage(
+            "assistant",
+            `Queued drainage autofix as ${jobId}. Civora will show queued/running progress here and refresh the review state when it completes.`,
+            "status",
+          );
+          setStatusMessage(`Drainage autofix queued as ${jobId}.`);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Drainage autofix failed.";
           appendChatMessage("assistant", message, "status");
@@ -8887,7 +8924,7 @@ function PerformanceAIDashboardView({
       }
 
       const systemLabel = target === "full" ? "full site systems" : target;
-      const directRun = target === "grading";
+      const queueLongRun = target === "grading" || target === "drainage" || target === "utilities" || target === "full";
       if (
         target !== "full" &&
         reactiveValidation.requiresConfirmation &&
@@ -8904,7 +8941,7 @@ function PerformanceAIDashboardView({
       const systemRequestPayload = withReactiveRerunContext(
         {
           ...requestPayload,
-          full_design_mode: directRun ? false : requestPayload.full_design_mode,
+          full_design_mode: target === "full" ? true : requestPayload.full_design_mode,
           manual_fields: nextManualFields,
           meta: {
             ...(requestPayload.meta ?? {}),
@@ -8918,19 +8955,14 @@ function PerformanceAIDashboardView({
         mode: "run",
         requestPayload: systemRequestPayload,
         assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
-        timeoutMs: directRun ? 90_000 : undefined,
-        allowQueueFallback: !directRun,
+        timeoutMs: queueLongRun ? undefined : 20_000,
+        allowQueueFallback: true,
+        forceQueue: queueLongRun,
       });
+      if (queueLongRun) {
+        return;
+      }
       setSystemStatuses((prev) => {
-        if (target === "full") {
-          return {
-            roads: "fresh",
-            parking: "fresh",
-            grading: "fresh",
-            drainage: "fresh",
-            utilities: "fresh",
-          };
-        }
         return {
           ...prev,
           [target]: "fresh",
@@ -9442,21 +9474,52 @@ function PerformanceAIDashboardView({
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const downloadArtifactPath = async (downloadPath: string, fallbackFilename: string) => {
+    const response = await fetch(toApiUrl(downloadPath), {
+      method: "GET",
+      cache: "no-store",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const detail =
+        typeof payload?.detail === "string"
+          ? payload.detail
+          : typeof payload?.message === "string"
+            ? payload.message
+            : `Artifact download failed with status ${response.status}`;
+      throw new Error(detail);
+    }
+    const disposition = response.headers.get("content-disposition");
+    const filenameMatch = disposition?.match(/filename="?([^"]+)"?/i);
+    const filename = filenameMatch?.[1] || fallbackFilename;
+    downloadBlob(await response.blob(), filename);
+  };
+
   const handleExportDxf = async () => {
     const blockReason = getExportBlockReason();
     if (blockReason) {
       setStatusMessage(`Export blocked: ${blockReason}`);
       return;
     }
+    if (visibleActiveJob) {
+      setStatusMessage("An export or generation job is already running. Wait for it to finish before starting another export.");
+      return;
+    }
     setBusy(true);
     try {
-      const { blob, filename } = await postBinary(
-        "/api/export/dxf",
+      const queued = await postJson<{ job: JobSummary }>(
+        "/api/jobs/export/dxf",
         artifactPayload,
         { token },
       );
-      downloadBlob(blob, filename ?? "civora-ai-plan.dxf");
-      setStatusMessage("DXF review export downloaded. Engineer review required; construction release remains blocked.");
+      setActiveJobId(queued.job.job_id);
+      setStatusMessage(`DXF review export queued as ${queued.job.job_id}.`);
+      appendChatMessage(
+        "assistant",
+        `Queued DXF review export as ${queued.job.job_id}. Progress will stay visible here; this does not approve construction readiness.`,
+        "status",
+      );
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "DXF export failed.",
@@ -9472,15 +9535,24 @@ function PerformanceAIDashboardView({
       setStatusMessage(`Export blocked: ${blockReason}`);
       return;
     }
+    if (visibleActiveJob) {
+      setStatusMessage("An export or generation job is already running. Wait for it to finish before starting another export.");
+      return;
+    }
     setBusy(true);
     try {
-      const { blob, filename } = await postBinary(
-        "/api/export/report",
+      const queued = await postJson<{ job: JobSummary }>(
+        "/api/jobs/export/report",
         artifactPayload,
         { token },
       );
-      downloadBlob(blob, filename ?? "civora-ai-report.json");
-      setStatusMessage("Engineer-review report downloaded. Construction release remains blocked.");
+      setActiveJobId(queued.job.job_id);
+      setStatusMessage(`Engineer-review report queued as ${queued.job.job_id}.`);
+      appendChatMessage(
+        "assistant",
+        `Queued engineer-review report export as ${queued.job.job_id}. Progress will stay visible here; construction release remains blocked.`,
+        "status",
+      );
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Report export failed.",
