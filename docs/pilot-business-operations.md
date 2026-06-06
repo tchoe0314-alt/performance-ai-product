@@ -221,6 +221,188 @@ Do not charge until these are complete.
 - Receipts, invoices, and billing records stored outside engineering logs.
 - Billing status does not change engineering truth labels, review-only state, blockers, or responsibility boundaries.
 
+## Paid Pilot Terms Checklist
+
+Before a paid pilot starts, owner and counsel must decide and record:
+
+| Term area | Decision required before charging |
+| --- | --- |
+| Customer identity | Legal customer name, account owner, billing owner, authorized users, and notice contacts |
+| Pilot scope | Whether paid use is test-only, internal feasibility, real client work, or another approved scope |
+| Deliverable status | Written statement that all outputs remain draft/review packages unless externally approved by the responsible licensed engineer |
+| Responsibility acceptance | User/account acceptance that Civora is not engineer of record and does not stamp, seal, sign, certify, approve, submit, or release construction documents |
+| Term length | Start date, end date, renewal path, conversion path, and termination rights |
+| Fees | Price, currency, billing cadence, due date, late-payment treatment, and taxes |
+| Limits | Seats, projects, upload volume, run volume, exports, support scope, and any overage handling |
+| Support | No-SLA or SLA language, response expectations, support hours, escalation path, and excluded support |
+| Data | Retention, deletion, backup, support access, confidentiality, and incident notification commitments |
+| Changes | Right to modify pilot features, pause access, disable risky workflows, and correct output language |
+| End of pilot | Data export, deletion request path, unpaid-balance handling, and access removal |
+
+Paid pilot agreements must not imply that payment changes engineering responsibility, review-only labels, source-trust blockers, safety blockers, or the permanent responsibility rule.
+
+## Privacy Policy Gaps Checklist
+
+Do not expand access or charge until the privacy posture clearly explains:
+
+- What data Civora collects: account records, prompts, uploaded files, project data, generated outputs, artifacts, logs, usage events, support messages, payment metadata, and billing records.
+- Why data is processed: account operation, project generation, support, debugging, safety review, security, billing, legal compliance, and product improvement if allowed.
+- Who can access customer data internally and for what operational reasons.
+- Which vendors or processors may receive data, including hosting, storage, AI providers, maps/geocoding, analytics, support, and payment providers.
+- Whether prompts, uploads, generated outputs, or support materials may be used for product improvement, model improvement, evaluation, examples, marketing, or demos.
+- Whether customers can opt out of product-improvement use.
+- How deletion, export, correction, and account closure requests are submitted and approved.
+- Retention periods for each data category, including logs, backups, billing records, support records, and incident evidence.
+- Security limitations of the pilot environment and what types of confidential or regulated data are not accepted.
+- Incident notification process for suspected unauthorized access, exposure, or loss.
+- Jurisdiction-specific notices, consumer rights, and business-customer roles if applicable.
+
+Owner must decide whether Civora is positioned as a service provider/processor for customer project data and whether any customer data processing agreement is required before paid pilots.
+
+## Data Retention And Deletion Finalization
+
+Before charging, replace draft retention periods with owner-approved values.
+
+| Question | Owner decision required |
+| --- | --- |
+| Default retention | How long account, project, upload, artifact, job, and support records stay after pilot end |
+| Backups | Whether deletion includes backups, delayed backup expiry, or backup exclusion language |
+| Deletion SLA | How many business days Civora has to complete approved deletion requests |
+| Authorization | Who can request deletion for company-owned project data |
+| Legal holds | When Civora may preserve records for billing, tax, security, abuse, legal, or safety reasons |
+| Anonymized data | Whether Civora may retain aggregated or anonymized usage/product data |
+| Support copies | How support attachments, screenshots, recordings, and repro files are deleted or redacted |
+| Incident evidence | Minimum evidence retained after data exposure, safety, billing, or responsibility incidents |
+
+Deletion requests should be tracked with requestor, account owner approval, affected project IDs, data categories, completion date, exceptions, and retained evidence rationale.
+
+## Confidential Input Acceptance Policy
+
+Before accepting confidential project inputs, owner must approve the account and record:
+
+- account owner authorization that the customer has rights to provide the files to Civora
+- allowed confidential data types and prohibited data types
+- named internal Civora users who may access the data
+- approved support channel for confidential issues
+- whether third-party AI, map, hosting, storage, support, or payment providers may process related data
+- retention and deletion handling for confidential uploads, generated artifacts, logs, and support records
+- incident notification contact
+
+Confidential input remains blocked when:
+
+- the customer requires security terms Civora has not accepted in writing
+- the file contains regulated personal data that is unnecessary for civil site review
+- the customer expects Civora to approve, stamp, seal, certify, submit, or release construction work
+- support or debugging would require sharing data through an unapproved channel or vendor
+
+## Support SLA Or No-SLA Language
+
+Before charging, choose one support posture.
+
+| Option | Required language |
+| --- | --- |
+| No SLA | State that support is business-hours/best-effort, response targets are operational goals only, and Civora may pause affected use while investigating |
+| Limited SLA | Define covered users, support hours, response targets, exclusions, remedies if any, and emergency escalation |
+
+Regardless of support posture, P0/P1 issues involving data exposure, source trust, safety, responsibility boundaries, or likely reliance on invalid output require same-business-day internal escalation when seen.
+
+## Refund, Cancellation, Tax, And Payment Provider Checklist
+
+Owner must decide before charging:
+
+- payment provider and account owner
+- payment methods accepted
+- invoice or self-serve checkout flow
+- sales tax/VAT responsibility and tax calculation provider if needed
+- refund policy for flat pilot fees, monthly fees, failed runs, support outages, early cancellation, and non-use
+- cancellation notice period and effective date
+- account suspension path for failed payment or non-payment
+- chargeback/dispute owner
+- where receipts, invoices, tax records, and payment provider events are stored
+- who may access billing records
+
+Billing records must stay separate from engineering logs and project records. Payment status must never alter engineering warnings, source-trust status, review-only labels, blockers, or engineer responsibility language.
+
+## Engineer Responsibility Acceptance Record
+
+Before charging or broadening pilot access, every account must have a recorded acceptance that:
+
+- Civora is not the engineer of record.
+- Civora does not stamp, seal, sign, certify, approve, submit, or release construction documents.
+- Civora outputs are draft, candidate, or review-package materials unless externally reviewed and approved by the responsible licensed engineer outside Civora.
+- The user and their licensed reviewer remain responsible for source verification, professional judgment, jurisdictional requirements, client requirements, construction release, and legal responsibility.
+- Payment for Civora does not transfer professional engineering responsibility to Civora.
+
+Record acceptance date, accepting person, account/company, authorized users covered, terms version, privacy version, and any exceptions.
+
+## External Approval And Stamp Record Disclaimer
+
+If a customer records external approval, stamp, seal, or submission status, the record must be treated as customer-provided metadata only.
+
+Required disclaimer:
+
+```text
+Approval, stamp, seal, signature, submission, permit, and construction-release records are provided by the customer or responsible licensed professional outside Civora. Civora does not verify, grant, certify, or replace that approval and does not act as engineer of record.
+```
+
+Before adding or exposing any approval/stamp record flow, owner must decide who can enter the record, what evidence is attached, whether Civora stores a copy, how disputes are handled, and how records are deleted at pilot end.
+
+## Incident Response Checklist
+
+Open an incident record for suspected data exposure, unauthorized access, confidentiality violation, source-trust failure, wrong responsibility boundary, billing error, or likely reliance on invalid output.
+
+Minimum incident record:
+
+- incident ID, date/time, reporter, severity, owner, and affected accounts
+- data categories, project IDs, uploads, artifacts, logs, and support channels involved
+- whether confidential input, billing data, personal data, or external approval/stamp metadata is involved
+- immediate containment action
+- user reliance guidance
+- preservation steps for logs, screenshots, artifacts, and reproduction data
+- customer notification decision and owner
+- legal/counsel escalation decision
+- root cause, fix, rollback/disable action, and re-enable criteria
+- final customer communication and post-incident follow-up
+
+Containment options include pausing affected users, disabling features, rotating credentials, revoking access, rolling back deployment, stopping the backend, removing exposed support attachments, or suspending billing actions until corrected.
+
+## Security And Confidential Data Handling Checklist
+
+Before charging, owner must confirm:
+
+- production/pilot secrets are not shared in screenshots, docs, logs, support tickets, or browser recordings
+- CORS is restricted to intended frontend origins
+- temporary local QA access flags are disabled after testing
+- persistent storage is configured for deployed pilot environments
+- billing records are held in the payment provider or finance system, not engineering logs
+- support staff know the confidential input policy and approved channels
+- customer files are not copied to public repos, public issue trackers, public AI tools, or marketing materials
+- access to customer project data is limited to named admins/support owners with a need to know
+- account removal, password/token rotation, and deployment rollback paths are documented
+- security incidents have an owner and notification path
+
+## Billing Activation Checklist
+
+Charging is blocked until every item is complete.
+
+| Activation item | Required evidence |
+| --- | --- |
+| Legal terms | Counsel-approved pilot or paid-pilot terms version |
+| Privacy | Counsel-approved privacy posture and data processing position |
+| Responsibility acceptance | Signed or recorded account/user acceptance of permanent responsibility rule |
+| Account ownership | Account owner, billing owner, support owner, and authorized users recorded |
+| Scope | Allowed project/use scope and confidential input status recorded |
+| Retention/deletion | Final retention periods, deletion SLA, backup posture, and exceptions approved |
+| Support | No-SLA or SLA language approved and support channel ready |
+| Incident response | Incident owner, escalation path, notification process, and evidence handling ready |
+| Payment provider | Provider configured, tax handling decided, receipts/invoices working |
+| Refund/cancellation | Refund, cancellation, non-payment, and dispute process approved |
+| Security | Confidential data handling checklist completed |
+| Operational rollback | Access pause/removal and deployment rollback owners named |
+| Billing isolation | Billing status cannot affect engineering output status or responsibility boundaries |
+
+After activation, preserve a billing-start record with account, plan, limits, terms version, privacy version, acceptance record, billing owner, support owner, activation date, and approving owner.
+
 ## Pilot Terms Checklist
 
 The owner and counsel should ensure pilot terms cover:
@@ -253,6 +435,13 @@ The owner and counsel should ensure pilot terms cover:
 - Pricing, billing provider, refund/cancellation policy, and taxes.
 - Final pilot terms and privacy language after legal review.
 - Whether any additional security controls are required before charging.
+- Whether paid pilot terms permit real client work or only internal/testing use.
+- Whether Civora will offer no-SLA support or a limited SLA.
+- Whether customer data may be used for product improvement, and whether opt-out is available.
+- Whether a customer data processing agreement is required.
+- Who signs off on billing activation for each account.
+- What exact records prove engineer responsibility acceptance.
+- Whether external approval, stamp, seal, submission, or permit records may be stored as customer-provided metadata.
 
 ## Remaining Business And Legal Gaps
 
@@ -265,3 +454,31 @@ The owner and counsel should ensure pilot terms cover:
 - Company/account-level authorization model.
 - Data export path at pilot end.
 - Customer consent process for using feedback, screenshots, or anonymized examples.
+
+## Blocks Charging
+
+Charging must not start until these are complete:
+
+- counsel-approved paid pilot terms or customer agreement
+- counsel-approved privacy posture, retention/deletion policy, and confidentiality language
+- recorded engineer responsibility acceptance for the account or each user
+- final paid scope, usage limits, support posture, and known limitations
+- named account owner, billing owner, support owner, and authorized users
+- final refund, cancellation, non-payment, tax, invoice/receipt, and payment provider process
+- confidential input decision for the account
+- incident response owner and notification path
+- billing activation record and owner approval
+
+## Can Wait Until Broader Pilot
+
+These can wait for broader pilot if the paid pilot remains manual, invite-only, and owner-approved:
+
+- fully automated self-serve billing
+- automated role-based administration beyond manual roster controls
+- formal customer admin dashboard
+- broad public privacy center or self-serve deletion portal
+- automated usage metering and overage billing
+- multi-tier SLA program
+- public status page
+- automated external approval/stamp metadata workflow
+- formal enterprise security questionnaire package, unless a paid customer requires it
