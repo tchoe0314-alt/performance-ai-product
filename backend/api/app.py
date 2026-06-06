@@ -106,7 +106,7 @@ from backend.services.auth_store import AuthStore
 from backend.services.database import Database
 from backend.services.job_queue import JobQueueService
 from backend.services.project_store import ProjectStore
-from backend.planning.map_feature_detection import build_map_feature_detection_report
+from backend.planning.map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
 
 try:
     from core.config import ALPHA_REVIEW_ONLY, APP_NAME, APP_VERSION, CONSTRUCTION_RELEASES_ENABLED, PRODUCT_MODE
@@ -261,6 +261,9 @@ class GeocodeResponse(BaseModel):
     name: str = ""
     formatted_address: str = ""
     place_name: str = ""
+    normalized_address: str = ""
+    crs: Dict[str, Any] = Field(default_factory=dict)
+    location_context: Dict[str, Any] = Field(default_factory=dict)
 
 
 class LoginPayload(BaseModel):
@@ -1304,6 +1307,21 @@ def geocode_address(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Invalid geocode response: {exc}") from exc
     display_name = str(first.get("place_name") or address) if isinstance(first, dict) else address
+    geocode_record = {
+        "success": True,
+        "status": "ready",
+        "lat": lat,
+        "lng": lng,
+        "display_name": display_name,
+        "formatted_address": display_name,
+        "matched_address": display_name,
+        "normalized_address": display_name,
+        "provider": "mapbox",
+        "source_type": "mapbox_geocoder",
+        "source": "https://api.mapbox.com/geocoding/v5/mapbox.places",
+        "crs": {"epsg": "EPSG:4326", "name": "WGS 84 geographic coordinates", "units": "degrees", "source": "mapbox_geocoder"},
+    }
+    location_context = location_context_from_geocode(address=address, geocode=geocode_record)
     return GeocodeResponse(
         lat=lat,
         lng=lng,
@@ -1312,6 +1330,9 @@ def geocode_address(
         confidence=None,
         formatted_address=display_name,
         place_name=display_name,
+        normalized_address=display_name,
+        crs=geocode_record["crs"],
+        location_context=location_context,
     )
 
 

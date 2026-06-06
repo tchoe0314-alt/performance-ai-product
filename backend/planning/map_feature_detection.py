@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from .common import safe_dict, safe_float, safe_list, safe_str
@@ -19,12 +20,31 @@ FEATURE_TYPES = {
     "constraint_area",
 }
 
-SOURCE_TYPES = {"official_gis", "map_imagery_detected", "inferred", "user_drawn", "unavailable"}
+SOURCE_TYPES = {
+    "official_gis",
+    "image_detected_candidate",
+    "user_drawn",
+    "unavailable",
+}
+
+SOURCE_TYPES_REQUIRED = {
+    "parcels": {"label": "parcel/site boundary", "candidate_type": "parcel_or_site_boundary"},
+    "roads_row": {"label": "roads/right-of-way", "candidate_type": "road_or_drive"},
+    "building_footprints": {"label": "building footprints", "candidate_type": "building_footprint"},
+    "easements": {"label": "easements", "candidate_type": "constraint_area"},
+    "floodplain": {"label": "floodplain", "candidate_type": "constraint_area"},
+    "wetlands": {"label": "wetlands", "candidate_type": "constraint_area"},
+    "zoning": {"label": "zoning", "candidate_type": "constraint_area"},
+    "existing_utilities": {"label": "existing utilities", "candidate_type": "utility"},
+}
 
 GIS_LAYER_FEATURE_TYPES = {
     "building_footprints": "building_footprint",
     "buildings": "building_footprint",
     "roads": "road_or_drive",
+    "roadways": "road_or_drive",
+    "roads_row": "road_or_drive",
+    "right_of_way": "road_or_drive",
     "driveways": "road_or_drive",
     "parking": "parking_area",
     "parking_areas": "parking_area",
@@ -42,6 +62,8 @@ GIS_LAYER_FEATURE_TYPES = {
     "floodplain": "constraint_area",
     "wetlands": "constraint_area",
     "existing_utilities": "constraint_area",
+    "utilities": "constraint_area",
+    "zoning": "constraint_area",
     "constraints": "constraint_area",
 }
 
@@ -69,6 +91,7 @@ DRAFT_OBJECT_TYPES = {
     "water/pond/basin": "basin",
     "vegetation/tree_area": "open_space",
     "constraint_area": "constraint_area",
+    "utility": "existing_utility",
 }
 
 
@@ -76,17 +99,41 @@ def location_context_from_geocode(*, address: str = "", geocode: Optional[Dict[s
     rec = safe_dict(geocode)
     lat = rec.get("lat")
     lng = rec.get("lng")
+    matched = safe_str(rec.get("matched_address") or rec.get("display_name") or rec.get("place_name"))
+    normalized = safe_str(rec.get("normalized_address") or rec.get("formatted_address") or matched or address)
+    crs = safe_dict(rec.get("crs") or rec.get("coordinate_system")) or {
+        "epsg": safe_str(rec.get("epsg"), "EPSG:4326" if lat not in (None, "") and lng not in (None, "") else ""),
+        "name": safe_str(rec.get("crs_name"), "WGS 84 geographic coordinates" if lat not in (None, "") and lng not in (None, "") else ""),
+        "units": safe_str(rec.get("units"), "degrees" if lat not in (None, "") and lng not in (None, "") else ""),
+        "source": safe_str(rec.get("source") or rec.get("source_type") or rec.get("provider")),
+    }
     return {
-        "address": safe_str(address or rec.get("address") or rec.get("display_name") or rec.get("matched_address")),
-        "matched_address": safe_str(rec.get("matched_address") or rec.get("display_name") or rec.get("place_name")),
+        "address": safe_str(address or rec.get("address") or normalized),
+        "normalized_address": normalized,
+        "matched_address": matched,
+        "coordinates": {
+            "lat": safe_float(lat) if lat not in (None, "") else None,
+            "lng": safe_float(lng) if lng not in (None, "") else None,
+        },
+        "crs": crs,
         "geocode": {
             "lat": safe_float(lat) if lat not in (None, "") else None,
             "lng": safe_float(lng) if lng not in (None, "") else None,
             "provider": safe_str(rec.get("provider") or rec.get("source_type")),
             "source": safe_str(rec.get("source")),
             "confidence": rec.get("confidence"),
+            "status": safe_str(rec.get("status")),
         },
+        "confidence": rec.get("confidence"),
         "evidence_source": safe_str(rec.get("source") or rec.get("source_type") or rec.get("provider"), "address_geocode"),
+        "evidence": [
+            {
+                "source_type": safe_str(rec.get("source_type") or rec.get("provider"), "address_geocode"),
+                "source_url": safe_str(rec.get("source")),
+                "status": safe_str(rec.get("status"), "unknown"),
+                "confidence": rec.get("confidence"),
+            }
+        ],
         "truth_label": "Address/geocode is location context only; it is not a site boundary, survey, control, or construction approval.",
     }
 
@@ -98,9 +145,11 @@ def build_map_feature_detection_report(
     image_detections: Optional[List[Dict[str, Any]]] = None,
     inferred_candidates: Optional[List[Dict[str, Any]]] = None,
     source_results: Optional[Dict[str, Any]] = None,
+    configured_sources: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     candidates: List[Dict[str, Any]] = []
     blockers: List[Dict[str, Any]] = []
+    source_discovery = build_source_discovery(source_results=source_results, configured_sources=configured_sources, gis_layers=gis_layers)
     layers = safe_dict(gis_layers)
     for layer_name, raw_layer in layers.items():
         feature_type = GIS_LAYER_FEATURE_TYPES.get(safe_str(layer_name))
@@ -108,7 +157,8 @@ def build_map_feature_detection_report(
             continue
         for idx, feature in enumerate(_layer_features(raw_layer)):
             rec = safe_dict(feature)
-            source = safe_str(rec.get("source") or safe_dict(raw_layer).get("source"), f"gis_layer:{layer_name}")
+            source = safe_str(rec.get("source_url") or rec.get("source") or safe_dict(raw_layer).get("source_url") or safe_dict(raw_layer).get("source"), "")
+            source_name = safe_str(rec.get("source_name") or rec.get("source_type") or safe_dict(raw_layer).get("source_name") or safe_dict(raw_layer).get("source_type"), f"gis_layer:{layer_name}")
             accepted = _official_source_accepted(rec) or _official_source_accepted(safe_dict(raw_layer))
             candidates.append(
                 _candidate(
@@ -116,10 +166,12 @@ def build_map_feature_detection_report(
                     source_type="official_gis",
                     geometry=rec.get("geometry"),
                     confidence=0.95 if accepted else 0.88,
-                    evidence_source=source,
+                    source_url=source,
+                    source_name=source_name,
                     blockers=[] if accepted else ["Official GIS source is candidate evidence until the user/licensed engineer accepts the source for this project."],
-                    needs_user_confirmation=not accepted,
-                    seed=f"gis:{layer_name}:{idx}:{source}:{rec.get('id')}",
+                    review_required=True,
+                    acceptance_status="accepted" if accepted else "pending",
+                    seed=f"gis:{layer_name}:{idx}:{source or source_name}:{rec.get('id')}",
                     source_feature_id=safe_str(rec.get("id")),
                     properties=safe_dict(rec.get("properties")),
                 )
@@ -135,40 +187,38 @@ def build_map_feature_detection_report(
         candidates.append(
             _candidate(
                 feature_type=feature_type,
-                source_type="map_imagery_detected",
+                source_type="image_detected_candidate",
                 geometry=rec.get("geometry") or rec.get("bbox"),
                 confidence=confidence,
-                evidence_source=safe_str(rec.get("evidence_source") or rec.get("source") or rec.get("image_path"), "map_image_detection"),
+                source_url=safe_str(rec.get("source_url") or rec.get("image_url")),
+                source_name=safe_str(rec.get("evidence_source") or rec.get("source") or rec.get("image_path"), "uploaded_map_snapshot"),
                 blockers=["Map imagery detection is approximate and must be confirmed/classified before it can affect engineering objects."],
-                needs_user_confirmation=True,
+                review_required=True,
+                acceptance_status="pending",
                 seed=f"image:{idx}:{kind}:{rec.get('bbox')}:{rec.get('geometry')}",
             )
         )
 
-    for idx, item in enumerate(safe_list(inferred_candidates)):
-        rec = safe_dict(item)
-        feature_type = safe_str(rec.get("feature_type"))
-        if feature_type not in FEATURE_TYPES:
-            continue
-        candidates.append(
-            _candidate(
-                feature_type=feature_type,
-                source_type="inferred",
-                geometry=rec.get("geometry"),
-                confidence=min(max(safe_float(rec.get("confidence"), 0.3), 0.05), 0.55),
-                evidence_source=safe_str(rec.get("evidence_source"), "inference_without_official_source"),
-                blockers=["Inferred feature candidate is not trusted engineering geometry until user confirmation and source review."],
-                needs_user_confirmation=True,
-                seed=f"inferred:{idx}:{feature_type}:{rec.get('geometry')}",
-            )
-        )
+    _ = inferred_candidates
 
     if not candidates:
         blockers.append(
             {
                 "code": "no_gis_or_imagery_feature_source",
-                "message": "No official GIS layer, map imagery detection result, or user-drawn/imported feature source is available.",
+                "message": "No official GIS layer, map imagery detection result, or user-drawn/imported feature source is available. Civora will not infer buildings, roads, parcels, utilities, or terrain from an address alone.",
                 "next_action": "Upload a map image, configure/import GIS sources, or draw existing features manually.",
+            }
+        )
+    for key, source in source_discovery.items():
+        rec = safe_dict(source)
+        if rec.get("configured"):
+            continue
+        blockers.append(
+            {
+                "code": f"missing_{key}_source",
+                "source_type": key,
+                "message": f"No configured {rec.get('label') or key} source is available.",
+                "next_action": safe_str(rec.get("next_action"), "Configure/import this source before asking Civora to detect this feature type."),
             }
         )
     for key, result in safe_dict(source_results).items():
@@ -186,6 +236,7 @@ def build_map_feature_detection_report(
         "version": REPORT_VERSION,
         "status": "candidates_found" if candidates else "blocked_no_feature_source",
         "location_context": safe_dict(location_context),
+        "source_discovery": source_discovery,
         "feature_candidates": candidates,
         "candidate_count": len(candidates),
         "blockers": blockers,
@@ -194,9 +245,9 @@ def build_map_feature_detection_report(
         "construction_release_blocked": True,
         "engineer_review_required": True,
         "truth_label": (
-            "Feature candidates are evidence for engineer/user review. Civora does not stamp, seal, sign, certify, approve "
-            "construction, submit construction documents, or act as engineer of record."
+            "Feature candidates are evidence for engineer/user review only. Civora prepares traceable review packages and does not act as engineer of record."
         ),
+        "chat_panel_summary": _chat_panel_summary(candidates, blockers),
     }
 
 
@@ -214,14 +265,82 @@ def accept_feature_candidate_as_draft_object(candidate: Dict[str, Any], *, accep
         "feature_type": feature_type,
         "geometry": rec.get("geometry"),
         "source_type": safe_str(rec.get("source_type")),
+        "source_url": safe_str(rec.get("source_url")),
+        "source_name": safe_str(rec.get("source_name") or rec.get("evidence_source")),
         "confidence": safe_float(rec.get("confidence")),
         "status": "draft_review_required",
+        "review_required": True,
+        "acceptance_status": "accepted",
         "trusted_canonical": False,
         "needs_engineer_review": True,
         "accepted_by": safe_str(accepted_by, "user"),
         "construction_release_allowed": False,
-        "truth_label": "Accepted candidate became a draft/review-required object only; it is not construction-ready or sealed engineering truth.",
+        "audit_trail": [
+            {
+                "action": "accepted_candidate_as_draft",
+                "candidate_id": safe_str(rec.get("candidate_id")),
+                "accepted_by": safe_str(accepted_by, "user"),
+                "result_status": "draft_review_required",
+            }
+        ],
+        "truth_label": "Accepted candidate became a draft/review-required object only; licensed engineer/user review remains required.",
     }
+
+
+def reject_feature_candidate(candidate: Dict[str, Any], *, rejected_by: str = "user", reason: str = "") -> Dict[str, Any]:
+    rec = deepcopy(safe_dict(candidate))
+    audit_entry = {
+        "action": "rejected_candidate",
+        "candidate_id": safe_str(rec.get("candidate_id")),
+        "rejected_by": safe_str(rejected_by, "user"),
+        "reason": safe_str(reason, "Rejected by user/reviewer."),
+    }
+    audit = safe_list(rec.get("audit_trail"))
+    audit.append(audit_entry)
+    rec["acceptance_status"] = "rejected"
+    rec["review_required"] = True
+    rec["audit_trail"] = audit
+    return rec
+
+
+def build_source_discovery(
+    *,
+    source_results: Optional[Dict[str, Any]] = None,
+    configured_sources: Optional[Dict[str, Any]] = None,
+    gis_layers: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    configured = safe_dict(configured_sources)
+    results = safe_dict(source_results)
+    layers = safe_dict(gis_layers)
+    discovery: Dict[str, Dict[str, Any]] = {}
+    aliases = {
+        "roads_row": ("roads_row", "roads", "roadways", "row", "right_of_way"),
+        "building_footprints": ("building_footprints", "buildings"),
+    }
+    for source_type, spec in SOURCE_TYPES_REQUIRED.items():
+        keys = aliases.get(source_type, (source_type,))
+        layer_has_features = any(bool(_layer_features(layers.get(key))) for key in keys)
+        configured_rec = _first_source_record(configured, keys)
+        result_rec = _first_source_record(results, keys)
+        result_status = safe_str(result_rec.get("status"))
+        source_url = safe_str(configured_rec.get("source_url") or configured_rec.get("url") or configured_rec.get("service_url") or result_rec.get("source"))
+        source_name = safe_str(configured_rec.get("source_name") or configured_rec.get("name") or (result_rec.get("source_type") if result_status not in {"unconfigured", "skipped"} else ""))
+        result_success = bool(result_rec.get("success")) and result_status not in {"unconfigured", "skipped"}
+        is_configured = layer_has_features or result_success or bool(source_url or source_name or configured_rec.get("configured") is True)
+        status = "ready" if layer_has_features else "configured_no_features" if is_configured else "missing_source"
+        discovery[source_type] = {
+            "source_type": source_type,
+            "label": spec["label"],
+            "configured": is_configured,
+            "status": status,
+            "feature_count": sum(len(_layer_features(layers.get(key))) for key in keys),
+            "source_url": source_url,
+            "source_name": source_name,
+            "candidate_type": spec["candidate_type"],
+            "blocker": "" if is_configured else f"No configured {spec['label']} source is available.",
+            "next_action": "" if is_configured else f"Configure/import a {spec['label']} GIS source before detecting {spec['label']} features.",
+        }
+    return discovery
 
 
 def _candidate(
@@ -230,24 +349,33 @@ def _candidate(
     source_type: str,
     geometry: Any,
     confidence: float,
-    evidence_source: str,
+    source_url: str,
+    source_name: str,
     blockers: List[str],
-    needs_user_confirmation: bool,
+    review_required: bool,
+    acceptance_status: str,
     seed: str,
     source_feature_id: str = "",
     properties: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    source = source_url or source_name or "unavailable"
     return {
         "candidate_id": f"mfd_{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:12]}",
         "feature_type": feature_type if feature_type in FEATURE_TYPES else "constraint_area",
         "geometry": geometry if geometry not in ("", {}, []) else None,
         "source_type": source_type if source_type in SOURCE_TYPES else "unavailable",
+        "source_url": source_url,
+        "source_name": source_name,
         "confidence": round(min(max(safe_float(confidence), 0.0), 1.0), 3),
-        "needs_user_confirmation": bool(needs_user_confirmation),
-        "evidence_source": evidence_source or "unavailable",
+        "review_required": bool(review_required),
+        "needs_user_confirmation": bool(review_required and acceptance_status != "accepted"),
+        "acceptance_status": acceptance_status if acceptance_status in {"pending", "accepted", "rejected"} else "pending",
+        "evidence_source": source,
         "blockers": [safe_str(item) for item in blockers if safe_str(item)],
         "source_feature_id": source_feature_id,
         "properties": safe_dict(properties),
+        "canonical_object_allowed": False,
+        "draft_object_allowed_after_acceptance": True,
     }
 
 
@@ -274,9 +402,40 @@ def _official_source_accepted(rec: Dict[str, Any]) -> bool:
     return value is True
 
 
+def _first_source_record(mapping: Dict[str, Any], keys: tuple[str, ...]) -> Dict[str, Any]:
+    for key in keys:
+        rec = safe_dict(mapping.get(key))
+        if rec:
+            return rec
+    return {}
+
+
+def _chat_panel_summary(candidates: List[Dict[str, Any]], blockers: List[Dict[str, Any]]) -> Dict[str, Any]:
+    counts: Dict[str, int] = {}
+    for candidate in candidates:
+        key = safe_str(candidate.get("feature_type"), "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    if candidates:
+        first_type = next(iter(counts))
+        return {
+            "status": "candidates_found",
+            "message": f"I found {len(candidates)} map/GIS feature candidate(s). Review them before use.",
+            "candidate_counts": counts,
+            "primary_feature_type": first_type,
+        }
+    blocker = safe_dict(blockers[0]) if blockers else {}
+    return {
+        "status": "blocked",
+        "message": safe_str(blocker.get("message"), "I cannot detect features because no supported source is configured."),
+        "candidate_counts": {},
+    }
+
+
 __all__ = [
     "REPORT_VERSION",
     "accept_feature_candidate_as_draft_object",
+    "build_source_discovery",
     "build_map_feature_detection_report",
     "location_context_from_geocode",
+    "reject_feature_candidate",
 ]

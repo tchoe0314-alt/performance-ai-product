@@ -388,7 +388,12 @@ export type SiteInputs = {
     lng?: number;
     display_name?: string;
     provider?: string;
+    source?: string;
+    confidence?: number | string | null;
+    crs?: Record<string, unknown>;
+    location_context?: Record<string, unknown>;
   };
+  location_context?: Record<string, unknown>;
   viewport_bounds?: {
     north?: number;
     south?: number;

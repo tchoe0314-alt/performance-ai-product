@@ -12,6 +12,7 @@ from backend.planning.ai_orchestration_evidence import (
     attach_ai_orchestration_evidence_to_decision,
     attach_ai_orchestration_evidence_to_plan,
 )
+from backend.planning.map_feature_detection import build_map_feature_detection_report
 from parsers.chat_intent_parser import build_chat_memory_summary
 
 
@@ -404,6 +405,7 @@ def _apply_chat_command_execution(
                 "status": "address_unverified_geocode_required",
             }
             meta["location_context"] = location_context
+            meta["map_feature_detection_report_v1"] = build_map_feature_detection_report(location_context=location_context)
             changed_fields.extend(["project_input.meta.site_inputs.address", "final_plan.meta.location_context"])
         project_meta = _safe_dict(project_input.get("meta"))
         if site_inputs:

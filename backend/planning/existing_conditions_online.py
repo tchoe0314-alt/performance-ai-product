@@ -43,9 +43,12 @@ def geocode_address_census(address: str, *, session: Any = requests) -> Dict[str
         "source_type": "census_geocoder",
         "status": "ready",
         "address": text,
+        "normalized_address": safe_str(first.get("matchedAddress")) or text,
         "matched_address": safe_str(first.get("matchedAddress")),
         "lat": safe_float(coords.get("y")),
         "lng": safe_float(coords.get("x")),
+        "confidence": "address_match",
+        "crs": {"epsg": "EPSG:4326", "name": "WGS 84 geographic coordinates", "units": "degrees", "source": CENSUS_GEOCODER_URL},
         "truth_label": "Public geocode for source discovery; verify against survey/site control before production.",
     }
 
@@ -172,6 +175,15 @@ def fetch_configured_parcels(
     )
 
 
+def fetch_unconfigured_gis_source(*, source_type: str, label: str) -> Dict[str, Any]:
+    return {
+        "success": False,
+        "source_type": source_type,
+        "status": "unconfigured",
+        "warnings": [f"No {label} GIS source is configured. Configure/import an official source before detection."],
+    }
+
+
 def bbox_around_point(lat: float, lng: float, *, buffer_deg: float = 0.002) -> Dict[str, float]:
     buffer = max(0.00001, safe_float(buffer_deg, 0.002))
     return {
@@ -192,6 +204,9 @@ def bbox_center(bbox: Dict[str, Any]) -> Tuple[float, float]:
 
 def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
     layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
+    layers.setdefault("building_footprints", [])
+    layers.setdefault("roads", [])
+    layers.setdefault("zoning", [])
     warnings: List[str] = []
     sources: List[Dict[str, Any]] = []
     for item in imports:
@@ -203,7 +218,19 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
         if not rec.get("success"):
             continue
         layer_name = safe_str(rec.get("layer_name"))
-        target = "floodplain" if layer_name == "floodplain" else "wetlands" if layer_name == "wetlands" else "parcels" if layer_name == "parcels" else ""
+        target_map = {
+            "floodplain": "floodplain",
+            "wetlands": "wetlands",
+            "parcels": "parcels",
+            "building_footprints": "building_footprints",
+            "roads": "roads",
+            "roads_row": "roads",
+            "zoning": "zoning",
+            "existing_utilities": "existing_utilities",
+            "easements": "easements",
+            "row": "row",
+        }
+        target = target_map.get(layer_name, "")
         if not target:
             continue
         for feature in safe_list(safe_dict(rec.get("geojson")).get("features")):
@@ -232,9 +259,24 @@ def fetch_online_existing_conditions(
     bbox: Optional[Dict[str, Any]] = None,
     parcel_service_url: str = "",
     parcel_layer_id: int = 0,
+    building_footprints_service_url: str = "",
+    building_footprints_layer_id: int = 0,
+    roads_service_url: str = "",
+    roads_layer_id: int = 0,
+    easements_service_url: str = "",
+    easements_layer_id: int = 0,
+    zoning_service_url: str = "",
+    zoning_layer_id: int = 0,
+    utilities_service_url: str = "",
+    utilities_layer_id: int = 0,
     include_floodplain: bool = True,
     include_wetlands: bool = True,
     include_parcels: bool = True,
+    include_building_footprints: bool = True,
+    include_roads: bool = True,
+    include_easements: bool = True,
+    include_zoning: bool = True,
+    include_utilities: bool = True,
     include_elevation: bool = True,
     session: Any = requests,
 ) -> Dict[str, Any]:
@@ -301,6 +343,76 @@ def fetch_online_existing_conditions(
         )
         source_results["parcels"] = parcels
         layer_imports.append(parcels)
+    if include_building_footprints:
+        if safe_str(building_footprints_service_url):
+            buildings = fetch_arcgis_layer_geojson(
+                service_url=building_footprints_service_url,
+                layer_id=building_footprints_layer_id,
+                bbox=working_bbox,
+                source_type="configured_building_footprints_arcgis",
+                layer_name="building_footprints",
+                session=session,
+            )
+        else:
+            buildings = fetch_unconfigured_gis_source(source_type="configured_building_footprints_arcgis", label="building footprint")
+        source_results["building_footprints"] = buildings
+        layer_imports.append(buildings)
+    if include_roads:
+        if safe_str(roads_service_url):
+            roads = fetch_arcgis_layer_geojson(
+                service_url=roads_service_url,
+                layer_id=roads_layer_id,
+                bbox=working_bbox,
+                source_type="configured_roads_row_arcgis",
+                layer_name="roads",
+                session=session,
+            )
+        else:
+            roads = fetch_unconfigured_gis_source(source_type="configured_roads_row_arcgis", label="roads/right-of-way")
+        source_results["roads_row"] = roads
+        layer_imports.append(roads)
+    if include_easements:
+        if safe_str(easements_service_url):
+            easements = fetch_arcgis_layer_geojson(
+                service_url=easements_service_url,
+                layer_id=easements_layer_id,
+                bbox=working_bbox,
+                source_type="configured_easements_arcgis",
+                layer_name="easements",
+                session=session,
+            )
+        else:
+            easements = fetch_unconfigured_gis_source(source_type="configured_easements_arcgis", label="easement")
+        source_results["easements"] = easements
+        layer_imports.append(easements)
+    if include_zoning:
+        if safe_str(zoning_service_url):
+            zoning = fetch_arcgis_layer_geojson(
+                service_url=zoning_service_url,
+                layer_id=zoning_layer_id,
+                bbox=working_bbox,
+                source_type="configured_zoning_arcgis",
+                layer_name="zoning",
+                session=session,
+            )
+        else:
+            zoning = fetch_unconfigured_gis_source(source_type="configured_zoning_arcgis", label="zoning")
+        source_results["zoning"] = zoning
+        layer_imports.append(zoning)
+    if include_utilities:
+        if safe_str(utilities_service_url):
+            utilities = fetch_arcgis_layer_geojson(
+                service_url=utilities_service_url,
+                layer_id=utilities_layer_id,
+                bbox=working_bbox,
+                source_type="configured_existing_utilities_arcgis",
+                layer_name="existing_utilities",
+                session=session,
+            )
+        else:
+            utilities = fetch_unconfigured_gis_source(source_type="configured_existing_utilities_arcgis", label="existing utilities")
+        source_results["existing_utilities"] = utilities
+        layer_imports.append(utilities)
 
     online_layers = online_import_to_gis_layers(*layer_imports)
     warnings.extend(safe_list(online_layers.get("warnings")))
@@ -355,6 +467,11 @@ def build_online_source_urls(address: str = "", bbox: Optional[Dict[str, Any]] =
         "fema_nfhl": FEMA_NFHL_MAPSERVER_URL,
         "usfws_wetlands": USFWS_WETLANDS_MAPSERVER_URL,
         "parcel_service": safe_str(parcel_service_url) or "unconfigured_county_specific_source",
+        "building_footprints_service": "unconfigured_local_or_county_source",
+        "roads_row_service": "unconfigured_local_or_county_source",
+        "easements_service": "unconfigured_local_or_county_source",
+        "zoning_service": "unconfigured_jurisdiction_source",
+        "existing_utilities_service": "unconfigured_utility_owner_or_record_source",
         "bbox_required": bool(bbox is None),
     }
 
@@ -369,6 +486,7 @@ __all__ = [
     "bbox_center",
     "fetch_arcgis_layer_geojson",
     "fetch_configured_parcels",
+    "fetch_unconfigured_gis_source",
     "fetch_fema_floodplain",
     "fetch_online_existing_conditions",
     "fetch_usfws_wetlands",

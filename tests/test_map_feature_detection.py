@@ -5,6 +5,7 @@ from backend.planning.map_feature_detection import (
     accept_feature_candidate_as_draft_object,
     build_map_feature_detection_report,
     location_context_from_geocode,
+    reject_feature_candidate,
 )
 
 
@@ -53,6 +54,7 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertEqual(report["trusted_canonical_object_count"], 0)
         self.assertNotIn("site_boundary", result["canonical_existing_conditions"])
         self.assertFalse(report["construction_release_allowed"])
+        self.assertEqual(report["source_discovery"]["building_footprints"]["status"], "missing_source")
 
     def test_official_gis_building_candidate_is_high_confidence_but_review_required(self) -> None:
         report = build_map_feature_detection_report(
@@ -62,7 +64,8 @@ class MapFeatureDetectionTests(unittest.TestCase):
                     {
                         "id": "BLDG-1",
                         "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [10, 0], [10, 10], [0, 0]]]},
-                        "source": "county_building_footprints",
+                        "source_url": "https://county.example/gis/buildings",
+                        "source_name": "county_building_footprints",
                     }
                 ]
             },
@@ -72,10 +75,32 @@ class MapFeatureDetectionTests(unittest.TestCase):
 
         self.assertEqual(candidate["feature_type"], "building_footprint")
         self.assertEqual(candidate["source_type"], "official_gis")
+        self.assertEqual(candidate["source_url"], "https://county.example/gis/buildings")
+        self.assertEqual(candidate["acceptance_status"], "pending")
         self.assertGreaterEqual(candidate["confidence"], 0.85)
-        self.assertTrue(candidate["needs_user_confirmation"])
+        self.assertTrue(candidate["review_required"])
         self.assertIn("candidate evidence", candidate["blockers"][0])
         self.assertFalse(report["construction_release_allowed"])
+
+    def test_official_gis_parcel_source_creates_site_boundary_candidate(self) -> None:
+        report = build_map_feature_detection_report(
+            gis_layers={
+                "parcels": [
+                    {
+                        "id": "PARCEL-1",
+                        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [20, 0], [20, 20], [0, 0]]]},
+                        "source_name": "county_parcels",
+                    }
+                ]
+            }
+        )
+
+        candidate = report["feature_candidates"][0]
+
+        self.assertEqual(candidate["feature_type"], "parcel_or_site_boundary")
+        self.assertEqual(candidate["source_type"], "official_gis")
+        self.assertEqual(candidate["acceptance_status"], "pending")
+        self.assertTrue(candidate["review_required"])
 
     def test_accepted_official_source_can_clear_user_confirmation_but_not_engineer_review(self) -> None:
         report = build_map_feature_detection_report(
@@ -95,6 +120,7 @@ class MapFeatureDetectionTests(unittest.TestCase):
 
         self.assertFalse(candidate["needs_user_confirmation"])
         self.assertEqual(candidate["blockers"], [])
+        self.assertEqual(candidate["acceptance_status"], "accepted")
         self.assertTrue(report["engineer_review_required"])
         self.assertFalse(report["construction_release_allowed"])
 
@@ -103,17 +129,14 @@ class MapFeatureDetectionTests(unittest.TestCase):
             image_detections=[
                 {"kind": "building", "bbox": [10, 20, 40, 50], "confidence": 0.92, "image_path": "/tmp/map.png"},
             ],
-            inferred_candidates=[
-                {"feature_type": "road_or_drive", "geometry": {"type": "LineString", "coordinates": []}, "confidence": 0.62},
-            ],
         )
 
         by_source = {candidate["source_type"]: candidate for candidate in report["feature_candidates"]}
 
-        self.assertLessEqual(by_source["map_imagery_detected"]["confidence"], 0.7)
-        self.assertTrue(by_source["map_imagery_detected"]["needs_user_confirmation"])
-        self.assertLessEqual(by_source["inferred"]["confidence"], 0.55)
-        self.assertTrue(by_source["inferred"]["needs_user_confirmation"])
+        self.assertLessEqual(by_source["image_detected_candidate"]["confidence"], 0.7)
+        self.assertEqual(by_source["image_detected_candidate"]["acceptance_status"], "pending")
+        self.assertTrue(by_source["image_detected_candidate"]["needs_user_confirmation"])
+        self.assertTrue(by_source["image_detected_candidate"]["review_required"])
 
     def test_missing_gis_and_imagery_returns_exact_blocker(self) -> None:
         report = build_map_feature_detection_report(
@@ -123,6 +146,9 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertEqual(report["status"], "blocked_no_feature_source")
         self.assertEqual(report["blockers"][0]["code"], "no_gis_or_imagery_feature_source")
         self.assertIn("Upload a map image", report["blockers"][0]["next_action"])
+        blocker_codes = {item["code"] for item in report["blockers"]}
+        self.assertIn("missing_building_footprints_source", blocker_codes)
+        self.assertIn("missing_roads_row_source", blocker_codes)
 
     def test_confirmed_candidate_becomes_draft_review_required_object_only(self) -> None:
         report = build_map_feature_detection_report(
@@ -135,9 +161,42 @@ class MapFeatureDetectionTests(unittest.TestCase):
 
         self.assertEqual(draft["object_type"], "building")
         self.assertEqual(draft["status"], "draft_review_required")
+        self.assertEqual(draft["acceptance_status"], "accepted")
         self.assertFalse(draft["trusted_canonical"])
         self.assertTrue(draft["needs_engineer_review"])
         self.assertFalse(draft["construction_release_allowed"])
+        self.assertEqual(draft["audit_trail"][0]["action"], "accepted_candidate_as_draft")
+
+    def test_rejected_candidate_is_preserved_with_audit_trail(self) -> None:
+        report = build_map_feature_detection_report(
+            gis_layers={
+                "parcels": [
+                    {
+                        "id": "PARCEL-REJECT",
+                        "geometry": {"type": "Polygon", "coordinates": []},
+                        "source_name": "county_parcels",
+                    }
+                ]
+            }
+        )
+
+        rejected = reject_feature_candidate(report["feature_candidates"][0], rejected_by="user-1", reason="Wrong parcel.")
+
+        self.assertEqual(rejected["acceptance_status"], "rejected")
+        self.assertEqual(rejected["audit_trail"][0]["action"], "rejected_candidate")
+        self.assertEqual(rejected["audit_trail"][0]["reason"], "Wrong parcel.")
+
+    def test_detection_report_does_not_use_readiness_or_professional_responsibility_words(self) -> None:
+        report = build_map_feature_detection_report(
+            image_detections=[
+                {"kind": "building", "bbox": [10, 20, 40, 50], "confidence": 0.45, "image_path": "/tmp/map.png"},
+            ]
+        )
+
+        rendered_values = str(report).lower()
+
+        for blocked_word in ["construction-ready", "stamp", "seal", "approval"]:
+            self.assertNotIn(blocked_word, rendered_values)
 
 
 if __name__ == "__main__":

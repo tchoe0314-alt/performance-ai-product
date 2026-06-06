@@ -7893,6 +7893,9 @@ function PerformanceAIDashboardView({
           lng: number;
           display_name: string;
           provider?: string;
+          confidence?: number | string | null;
+          crs?: Record<string, unknown>;
+          location_context?: Record<string, unknown>;
         }>("/api/geocode", { address: trimmed }, { token });
       }
       if (!geocode?.lat || !geocode?.lng) {
@@ -7906,7 +7909,20 @@ function PerformanceAIDashboardView({
         lng: geocode.lng,
         display_name: geocode.display_name,
         provider: geocode.provider ?? "nominatim",
+        confidence: geocode.confidence ?? null,
+        crs: geocode.crs ?? { epsg: "EPSG:4326", units: "degrees" },
+        location_context: geocode.location_context ?? undefined,
       };
+      nextSiteInputs.location_context =
+        geocode.location_context ?? {
+          address: geocode.display_name,
+          normalized_address: geocode.display_name,
+          coordinates: { lat: geocode.lat, lng: geocode.lng },
+          crs: geocode.crs ?? { epsg: "EPSG:4326", units: "degrees" },
+          evidence_source: geocode.provider ?? "geocoder",
+          truth_label:
+            "Address/geocode is location context only; it is not a site boundary, survey, control, or construction approval.",
+        };
       nextSiteInputs.site_alignment_locked = false;
       setAddressSuggestions([]);
       setActiveWorkspaceMode("setup");
