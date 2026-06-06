@@ -67,14 +67,14 @@ def _storm_hydraulic_request_from_summary(storm: Dict[str, Any], segments: Seque
     pipes: List[StormPipe] = []
     nodes_by_name: Dict[str, StormNode] = {}
 
-    def _ensure_node(name: str, point: Sequence[float], invert: float, rim: float) -> None:
+    def _ensure_node(name: str, point: Sequence[float], invert: Optional[float], rim: Optional[float]) -> None:
         if not name or name in nodes_by_name:
             return
         nodes_by_name[name] = StormNode(
             name=name,
-            point=StormPoint(safe_float(point[0], 0.0), safe_float(point[1], 0.0), rim),
-            rim_elev_ft=round(rim, 3),
-            invert_elev_ft=round(invert, 3),
+            point=StormPoint(safe_float(point[0], 0.0), safe_float(point[1], 0.0), round(rim, 3) if rim is not None else None),
+            rim_elev_ft=round(rim, 3) if rim is not None else None,
+            invert_elev_ft=round(invert, 3) if invert is not None else None,
         )
 
     for raw_node in safe_list(storm.get("nodes")) + safe_list(storm.get("structures")) + safe_list(storm.get("inlets")):
@@ -86,8 +86,8 @@ def _storm_hydraulic_request_from_summary(storm: Dict[str, Any], segments: Seque
             safe_float(node.get("x"), 0.0),
             safe_float(node.get("y"), 0.0),
         )
-        invert = safe_float(node.get("invert_elev_ft") or node.get("invert_ft"), safe_float(node.get("z"), 0.0) - 4.0)
-        rim = safe_float(node.get("rim_elev_ft") or node.get("rim_ft") or node.get("z"), invert + 4.0)
+        invert = _first_finite(node.get("invert_elev_ft"), node.get("invert_ft"))
+        rim = _first_finite(node.get("rim_elev_ft"), node.get("rim_ft"), node.get("z"))
         _ensure_node(name, point, invert, rim)
 
     for index, segment in enumerate(segments, start=1):
@@ -96,29 +96,38 @@ def _storm_hydraulic_request_from_summary(storm: Dict[str, Any], segments: Seque
         if len(path) < 2:
             continue
         length = max(1.0, safe_float(segment.get("length_ft"), polyline_length(path)))
-        start_inv = safe_float(segment.get("start_invert_ft"), safe_float(segment.get("start_invert"), 0.0))
-        end_inv = safe_float(segment.get("end_invert_ft"), safe_float(segment.get("end_invert"), start_inv - 0.003 * length))
-        slope = safe_float(segment.get("slope_ft_ft"), safe_float(segment.get("slope"), 0.0))
+        start_inv = _first_finite(segment.get("start_invert_ft"), segment.get("start_invert"), segment.get("upstream_invert_ft"))
+        end_inv = _first_finite(segment.get("end_invert_ft"), segment.get("end_invert"), segment.get("downstream_invert_ft"))
+        diameter_in = _first_finite(segment.get("diameter_in"))
+        if diameter_in is None:
+            diameter_ft = _first_finite(segment.get("diameter_ft"))
+            diameter_in = diameter_ft * 12.0 if diameter_ft is not None else None
+        flow_cfs = _first_finite(segment.get("flow_cfs"), segment.get("governing_flow_cfs"), segment.get("assigned_runoff_cfs"))
+        upstream = _node_name_from_segment(segment, "from", "")
+        downstream = _node_name_from_segment(segment, "to", "")
+        if start_inv is None or end_inv is None or diameter_in is None or flow_cfs is None or not upstream or not downstream:
+            continue
+        slope = _first_finite(segment.get("slope_ft_ft"), segment.get("slope"))
+        if slope is None or slope <= 0.0:
+            slope = (start_inv - end_inv) / max(length, 1e-9)
         if slope <= 0.0:
-            slope = max((start_inv - end_inv) / max(length, 1e-9), 0.0001)
-        upstream = _node_name_from_segment(segment, "from", f"{name}-UP")
-        downstream = _node_name_from_segment(segment, "to", f"{name}-DN")
-        _ensure_node(upstream, path[0], start_inv, safe_float(segment.get("start_rim_ft"), start_inv + 5.0))
-        _ensure_node(downstream, path[-1], end_inv, safe_float(segment.get("end_rim_ft"), end_inv + 5.0))
+            continue
+        _ensure_node(upstream, path[0], start_inv, _first_finite(segment.get("start_rim_ft"), segment.get("rim_start_ft")))
+        _ensure_node(downstream, path[-1], end_inv, _first_finite(segment.get("end_rim_ft"), segment.get("rim_end_ft")))
         pipes.append(
             StormPipe(
                 name=name,
                 pipe_type=safe_str(segment.get("pipe_type"), safe_str(segment.get("segment_role"), "main")),
                 upstream_node_name=upstream,
                 downstream_node_name=downstream,
-                diameter_in=max(1.0, safe_float(segment.get("diameter_in"), safe_float(segment.get("diameter_ft"), 1.0) * 12.0)),
+                diameter_in=max(1.0, diameter_in),
                 length_ft=length,
-                slope=max(slope, 0.0001),
+                slope=slope,
                 mannings_n=max(0.001, safe_float(segment.get("mannings_n"), safe_float(segment.get("n"), 0.013))),
                 upstream_invert_ft=start_inv,
                 downstream_invert_ft=end_inv,
                 route_points=[(safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)) for pt in path],
-                assigned_runoff_cfs=max(0.0, safe_float(segment.get("flow_cfs"), safe_float(segment.get("governing_flow_cfs"), 0.0))),
+                assigned_runoff_cfs=max(0.0, flow_cfs),
                 meta={
                     "tributary_area_sf": max(
                         0.0,
@@ -140,6 +149,170 @@ def _storm_hydraulic_request_from_summary(storm: Dict[str, Any], segments: Seque
         allow_partial_flow=True,
         meta={"source": "storm_summary_recompute"},
     )
+
+
+def _storm_profile_evidence_from_segments(storm: Dict[str, Any], segments: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    hgl_profile: List[Dict[str, Any]] = []
+    egl_profile: List[Dict[str, Any]] = []
+    segment_hydraulics: List[Dict[str, Any]] = []
+    missing_by_segment: List[Dict[str, Any]] = []
+    labels = ["review_required"]
+    station = 0.0
+
+    for index, segment in enumerate(segments, start=1):
+        rec = safe_dict(segment)
+        name = _segment_name(rec, index)
+        points = _path_points(rec)
+        length = _first_finite(rec.get("length_ft"))
+        if length is None and len(points) >= 2:
+            length = polyline_length(points)
+        start_node = _node_name_from_segment(rec, "from", "")
+        end_node = _node_name_from_segment(rec, "to", "")
+        start_inv = _first_finite(rec.get("start_invert_ft"), rec.get("start_invert"), rec.get("upstream_invert_ft"))
+        end_inv = _first_finite(rec.get("end_invert_ft"), rec.get("end_invert"), rec.get("downstream_invert_ft"))
+        hgl_start = _first_finite(rec.get("hgl_start_ft"), rec.get("hgl_start"), rec.get("hgl_upstream_ft"))
+        hgl_end = _first_finite(rec.get("hgl_end_ft"), rec.get("hgl_end"), rec.get("hgl_downstream_ft"))
+        egl_start = _first_finite(rec.get("egl_start_ft"), rec.get("egl_start"), rec.get("egl_upstream_ft"))
+        egl_end = _first_finite(rec.get("egl_end_ft"), rec.get("egl_end"), rec.get("egl_downstream_ft"))
+        velocity = _first_finite(rec.get("velocity_fps"))
+        missing: List[str] = []
+        if not start_node:
+            missing.append("segment.from")
+        if not end_node:
+            missing.append("segment.to")
+        if length is None or length <= 0.0:
+            missing.append("segment.length_ft_or_path")
+        if start_inv is None:
+            missing.append("segment.start_invert_ft")
+        if end_inv is None:
+            missing.append("segment.end_invert_ft")
+        if hgl_start is None:
+            missing.append("segment.hgl_start_ft")
+        if hgl_end is None:
+            missing.append("segment.hgl_end_ft")
+        if egl_start is None:
+            missing.append("segment.egl_start_ft")
+        if egl_end is None:
+            missing.append("segment.egl_end_ft")
+        if velocity is None or velocity <= 0.0:
+            missing.append("segment.velocity_fps")
+            if "missing_velocity" not in labels:
+                labels.append("missing_velocity")
+        if missing:
+            missing_by_segment.append({"segment": name, "missing_fields": sorted(set(missing))})
+
+        if length is not None and length > 0.0 and start_node and end_node and start_inv is not None and end_inv is not None and hgl_start is not None and hgl_end is not None:
+            source = "calculated_from_available_network"
+            hgl_profile.extend(
+                [
+                    {
+                        "profile_id": f"HGL-{name}-{start_node}",
+                        "station_ft": round(station, 3),
+                        "hgl_ft": round(hgl_start, 3),
+                        "segment": name,
+                        "segment_id": name,
+                        "node_id": start_node,
+                        "node_role": "upstream",
+                        "invert_ft": round(start_inv, 3),
+                        "source": source,
+                        "profile_source": source,
+                        "hydraulic_depth_source": safe_str(rec.get("hydraulic_depth_source"), source),
+                        "confidence": source,
+                        "review_required": True,
+                    },
+                    {
+                        "profile_id": f"HGL-{name}-{end_node}",
+                        "station_ft": round(station + length, 3),
+                        "hgl_ft": round(hgl_end, 3),
+                        "segment": name,
+                        "segment_id": name,
+                        "node_id": end_node,
+                        "node_role": "downstream",
+                        "invert_ft": round(end_inv, 3),
+                        "source": source,
+                        "profile_source": source,
+                        "hydraulic_depth_source": safe_str(rec.get("hydraulic_depth_source"), source),
+                        "confidence": source,
+                        "review_required": True,
+                    },
+                ]
+            )
+            segment_hydraulics.append(
+                {
+                    "segment": name,
+                    "station_start_ft": station,
+                    "station_end_ft": station + length,
+                    "hgl_start_ft": hgl_start,
+                    "hgl_end_ft": hgl_end,
+                    "crown_start_ft": start_inv + max(0.0, safe_float(rec.get("diameter_in"), 0.0)) / 12.0,
+                    "crown_end_ft": end_inv + max(0.0, safe_float(rec.get("diameter_in"), 0.0)) / 12.0,
+                }
+            )
+        if (
+            length is not None
+            and length > 0.0
+            and start_node
+            and end_node
+            and start_inv is not None
+            and end_inv is not None
+            and egl_start is not None
+            and egl_end is not None
+            and velocity is not None
+            and velocity > 0.0
+        ):
+            source = "calculated_from_available_network"
+            egl_profile.extend(
+                [
+                    {
+                        "profile_id": f"EGL-{name}-{start_node}",
+                        "station_ft": round(station, 3),
+                        "egl_ft": round(egl_start, 3),
+                        "velocity_fps": round(velocity, 3),
+                        "segment": name,
+                        "segment_id": name,
+                        "node_id": start_node,
+                        "node_role": "upstream",
+                        "invert_ft": round(start_inv, 3),
+                        "source": source,
+                        "profile_source": source,
+                        "hydraulic_depth_source": safe_str(rec.get("hydraulic_depth_source"), source),
+                        "confidence": source,
+                        "review_required": True,
+                    },
+                    {
+                        "profile_id": f"EGL-{name}-{end_node}",
+                        "station_ft": round(station + length, 3),
+                        "egl_ft": round(egl_end, 3),
+                        "velocity_fps": round(velocity, 3),
+                        "segment": name,
+                        "segment_id": name,
+                        "node_id": end_node,
+                        "node_role": "downstream",
+                        "invert_ft": round(end_inv, 3),
+                        "source": source,
+                        "profile_source": source,
+                        "hydraulic_depth_source": safe_str(rec.get("hydraulic_depth_source"), source),
+                        "confidence": source,
+                        "review_required": True,
+                    },
+                ]
+            )
+        station += max(length or 0.0, 0.0)
+
+    if hgl_profile and egl_profile and "calculated_from_available_network" not in labels:
+        labels.insert(0, "calculated_from_available_network")
+    if storm.get("tailwater_elev_ft") in (None, "", [], {}) and "missing_tailwater" not in labels:
+        labels.append("missing_tailwater")
+    return {
+        "hgl_profile": hgl_profile,
+        "egl_profile": egl_profile,
+        "segment_hydraulics": segment_hydraulics,
+        "missing_profile_inputs": missing_by_segment,
+        "confidence": "calculated_from_available_network" if hgl_profile and egl_profile and not missing_by_segment else "review_required",
+        "labels": labels,
+        "review_required": True,
+        "truth_label": "HGL/EGL rows are generated only from available storm segment/node hydraulic evidence; missing fields remain blockers.",
+    }
 
 
 def _stage_storage_rows(basin: Dict[str, Any], design: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -539,75 +712,42 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
             }
             enriched["hydraulic_source"] = "engine"
             enriched["segments"] = segments
-    hgl_profile: List[Dict[str, Any]] = []
-    egl_profile: List[Dict[str, Any]] = []
-    station = 0.0
     max_ratio = 0.0
     controlling = safe_str(enriched.get("controlling_segment"))
     total_flow = 0.0
     total_capacity = 0.0
     total_area_sf = 0.0
-    segment_hydraulics: List[Dict[str, Any]] = []
     for index, segment in enumerate(segments, start=1):
         name = _segment_name(segment, index)
-        points = _path_points(segment)
         length = max(
             1.0,
             safe_float(segment.get("length_ft"), 0.0),
-            polyline_length(points) if len(points) >= 2 else 0.0,
         )
-        diameter_ft = max(0.5, safe_float(segment.get("diameter_ft"), safe_float(segment.get("diameter_in"), 12.0) / 12.0))
         flow = max(0.0, safe_float(segment.get("flow_cfs"), safe_float(segment.get("governing_flow_cfs"), 0.0)))
         capacity = max(0.0, safe_float(segment.get("capacity_cfs"), 0.0))
         ratio = safe_float(segment.get("capacity_ratio"), flow / capacity if capacity > 0.0 else 0.0)
-        velocity = max(0.0, safe_float(segment.get("velocity_fps"), 0.0))
-        start_inv = safe_float(segment.get("start_invert_ft"), safe_float(segment.get("start_invert"), 0.0))
-        end_inv = safe_float(segment.get("end_invert_ft"), safe_float(segment.get("end_invert"), start_inv - 0.01 * length))
-        depth_fraction = max(0.15, min(1.0, ratio if ratio > 0.0 else 0.35))
-        hgl_start = safe_float(segment.get("hgl_start"), start_inv + diameter_ft * depth_fraction)
-        hgl_end = safe_float(segment.get("hgl_end"), end_inv + diameter_ft * depth_fraction)
-        velocity_head = (velocity * velocity) / (2.0 * 32.2) if velocity > 0.0 else 0.05
-        egl_start = safe_float(segment.get("egl_start"), hgl_start + velocity_head)
-        egl_end = safe_float(segment.get("egl_end"), hgl_end + velocity_head)
-        hgl_profile.extend(
-            [
-                {"station_ft": round(station, 3), "hgl_ft": round(hgl_start, 3), "segment": name},
-                {"station_ft": round(station + length, 3), "hgl_ft": round(hgl_end, 3), "segment": name},
-            ]
-        )
-        egl_profile.extend(
-            [
-                {"station_ft": round(station, 3), "egl_ft": round(egl_start, 3), "segment": name},
-                {"station_ft": round(station + length, 3), "egl_ft": round(egl_end, 3), "segment": name},
-            ]
-        )
-        segment["hgl_start_ft"] = round(hgl_start, 3)
-        segment["hgl_end_ft"] = round(hgl_end, 3)
-        segment["egl_start_ft"] = round(egl_start, 3)
-        segment["egl_end_ft"] = round(egl_end, 3)
-        segment_hydraulics.append(
-            {
-                "segment": name,
-                "station_start_ft": station,
-                "station_end_ft": station + length,
-                "hgl_start_ft": hgl_start,
-                "hgl_end_ft": hgl_end,
-                "crown_start_ft": start_inv + diameter_ft,
-                "crown_end_ft": end_inv + diameter_ft,
-            }
-        )
-        segment.setdefault("hydraulic_depth_source", "hydraulic_engine" if safe_str(enriched.get("hydraulic_source")) == "engine" else "concept_hgl_egl_proxy")
         max_ratio = max(max_ratio, ratio)
         if not controlling or ratio >= safe_float(safe_dict(next((seg for seg in segments if _segment_name(seg) == controlling), {})).get("capacity_ratio"), -1.0):
             controlling = name
         total_flow += flow
         total_capacity += capacity
         total_area_sf += max(0.0, safe_float(segment.get("tributary_area_sf"), safe_float(segment.get("upstream_cumulative_area_sf"), 0.0)))
-        station += length
+    target = safe_dict(enriched.get("target_outfall")) or safe_dict(enriched.get("outfall_target_metadata")) or safe_dict(drainage_meta.get("coordination", {}).get("preferred_outfall"))
+    tailwater = safe_float(target.get("z"), float("nan")) if target.get("z") is not None else float("nan")
+    if math.isfinite(tailwater):
+        enriched["tailwater_elev_ft"] = round(tailwater, 3)
+        enriched["tailwater_source"] = "selected_outfall_elevation"
+    profile_evidence = _storm_profile_evidence_from_segments(enriched, segments)
+    hgl_profile = profile_evidence["hgl_profile"]
+    egl_profile = profile_evidence["egl_profile"]
+    segment_hydraulics = profile_evidence["segment_hydraulics"]
+    enriched["hydraulic_profile_evidence"] = profile_evidence
     if segments:
         enriched["segments"] = segments
-        enriched.setdefault("hgl_profile", hgl_profile)
-        enriched.setdefault("egl_profile", egl_profile)
+        if hgl_profile and not safe_list(enriched.get("hgl_profile")):
+            enriched["hgl_profile"] = hgl_profile
+        if egl_profile and not safe_list(enriched.get("egl_profile")):
+            enriched["egl_profile"] = egl_profile
         segment_sources = {
             safe_str(segment.get("hydraulic_depth_source"))
             for segment in segments
@@ -617,13 +757,7 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
             enriched["hydraulic_depth_source"] = "storm_hydraulic_engine"
         else:
             enriched.setdefault("hydraulic_depth_source", "storm_hydraulic_engine_or_concept_proxy")
-    target = safe_dict(enriched.get("target_outfall")) or safe_dict(enriched.get("outfall_target_metadata")) or safe_dict(drainage_meta.get("coordination", {}).get("preferred_outfall"))
-    tailwater = safe_float(target.get("z"), float("nan")) if target.get("z") is not None else float("nan")
-    if not math.isfinite(tailwater) and hgl_profile:
-        tailwater = safe_float(hgl_profile[-1].get("hgl_ft"), 0.0) - 0.25
     if math.isfinite(tailwater):
-        enriched["tailwater_elev_ft"] = round(tailwater, 3)
-        enriched["tailwater_source"] = "selected_outfall_or_terminal_hgl"
         terminal_hgl = safe_float(hgl_profile[-1].get("hgl_ft"), tailwater) if hgl_profile else tailwater
         surcharge = max(tailwater - terminal_hgl, 0.0)
         total_station = max((safe_float(row.get("station_ft"), 0.0) for row in hgl_profile), default=0.0)
@@ -662,6 +796,12 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
             "surcharged_segments": surcharged_segments,
             "profile": backwater_rows,
             "truth_label": "Tailwater/backwater check compares terminal HGL against pipe crown using supplied or selected outfall elevation.",
+        }
+    else:
+        enriched["backwater_validation"] = {
+            "valid": False,
+            "missing_inputs": ["tailwater_elev_ft"],
+            "truth_label": "Backwater validation requires explicit tailwater/outfall elevation; terminal HGL is not used as a substitute.",
         }
     inlet_checks: List[Dict[str, Any]] = []
     structures = safe_list(drainage_meta.get("structures")) or safe_list(drainage_meta.get("inlets"))

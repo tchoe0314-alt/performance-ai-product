@@ -1,3 +1,4 @@
+import math
 import unittest
 from types import SimpleNamespace
 
@@ -10,6 +11,7 @@ from backend.planning.production_depth import (
     enrich_storm_production_depth,
     enrich_water_production_depth,
 )
+from backend.planning.depth_validators import validate_stormwater_depth
 from core.civil_design import civil_design_readiness
 
 
@@ -106,6 +108,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
             "segments": [
                 {
                     "pipe": "P-1",
+                    "from": "INLET-1",
+                    "to": "BASIN-1",
                     "path": [[0.0, 0.0], [80.0, 0.0]],
                     "diameter_in": 18.0,
                     "flow_cfs": 1.4,
@@ -197,7 +201,90 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(segment["hydraulic_depth_source"], "storm_hydraulic_engine")
         self.assertGreater(segment["capacity_cfs"], 0.0)
         self.assertGreater(segment["velocity_fps"], 0.0)
+        self.assertIn("missing_tailwater", enriched["hydraulic_profile_evidence"]["labels"])
+        self.assertNotIn("tailwater_elev_ft", enriched)
+        self.assertFalse(enriched["backwater_validation"]["valid"])
         self.assertTrue(enriched["hydraulic_engine_summary"]["truth_label"])
+
+    def test_storm_depth_generates_traceable_hgl_egl_from_complete_network(self) -> None:
+        diameter_ft = 2.0
+        slope = 0.01
+        mannings_n = 0.013
+        full_capacity = (1.486 / mannings_n) * (math.pi * diameter_ft**2 / 4.0) * (0.5 ** (2.0 / 3.0)) * (slope**0.5)
+        design_flow = full_capacity / 2.0
+        flow_area = math.pi * diameter_ft**2 / 8.0
+        velocity = design_flow / flow_area
+        velocity_head = (velocity * velocity) / (2.0 * 32.2)
+        minor_loss = 0.2 * velocity_head
+        expected_hgl_start = 100.0 + 1.0 + minor_loss
+        expected_hgl_end = 99.0 + 1.0
+        expected_egl_start = expected_hgl_start + velocity_head
+        expected_egl_end = expected_hgl_end + velocity_head
+        storm = {
+            "success": True,
+            "segments": [
+                {
+                    "pipe": "P-HGL",
+                    "from": "IN-1",
+                    "to": "OUT-1",
+                    "path": [[0.0, 0.0], [100.0, 0.0]],
+                    "diameter_in": 24.0,
+                    "flow_cfs": design_flow,
+                    "slope_ft_ft": slope,
+                    "mannings_n": mannings_n,
+                    "start_invert_ft": 100.0,
+                    "end_invert_ft": 99.0,
+                    "tributary_area_sf": 12000.0,
+                }
+            ],
+            "target_outfall": {"name": "OUT-1", "z": 98.5},
+        }
+        drainage = {
+            "coordination": {"preferred_outfall": {"name": "OUT-1", "x": 100.0, "y": 0.0, "z": 98.5}},
+            "surface_controls": {"primary_low_point": {"x": 100.0, "y": 0.0}},
+            "catchments": [{"name": "C-1", "runoff_c": 0.8}],
+            "structures": [{"name": "IN-1", "estimated_flow_cfs": design_flow}],
+            "detention_routing": [
+                {
+                    "basin": "B-1",
+                    "routing_source": "hydrograph_engine",
+                    "routing_method": "stage_storage_hydrograph",
+                    "provided_storage_cf": 5000.0,
+                    "release_cfs": 1.0,
+                    "drawdown_hours": 18.0,
+                    "stage_storage": [
+                        {"elevation_ft": 96.0, "storage_cf": 0.0},
+                        {"elevation_ft": 99.0, "storage_cf": 5000.0},
+                    ],
+                }
+            ],
+            "overflow_paths": [
+                {"name": "OF-1", "capacity_valid": True, "capacity_cfs": 5.0, "required_capacity_cfs": 4.0, "source": "approved_spillway_fixture"}
+            ],
+            "overflow_analysis": {"valid": True, "production_valid": True},
+        }
+
+        enriched = enrich_storm_production_depth(storm, drainage)
+        evidence = enriched["hydraulic_profile_evidence"]
+        hgl = enriched["hgl_profile"]
+        egl = enriched["egl_profile"]
+
+        self.assertEqual(evidence["confidence"], "calculated_from_available_network")
+        self.assertEqual(evidence["missing_profile_inputs"], [])
+        self.assertNotIn("missing_tailwater", evidence["labels"])
+        self.assertEqual(hgl[0]["segment_id"], "P-HGL")
+        self.assertEqual(hgl[0]["node_id"], "IN-1")
+        self.assertEqual(hgl[1]["node_id"], "OUT-1")
+        self.assertAlmostEqual(hgl[0]["hgl_ft"], round(expected_hgl_start, 3), places=3)
+        self.assertAlmostEqual(hgl[1]["hgl_ft"], round(expected_hgl_end, 3), places=3)
+        self.assertAlmostEqual(egl[0]["egl_ft"], round(expected_egl_start, 3), places=3)
+        self.assertAlmostEqual(egl[1]["egl_ft"], round(expected_egl_end, 3), places=3)
+
+        validation = validate_stormwater_depth({"meta": {"storm_pipes": enriched, "drainage": drainage}})
+        self.assertEqual(validation["hgl_egl_trace"]["actual_hgl_count"], 2)
+        self.assertEqual(validation["hgl_egl_trace"]["actual_egl_count"], 2)
+        self.assertEqual(validation["hgl_egl_trace"]["confidence"], "calculated_from_available_network")
+        self.assertTrue(validation["hgl_egl_trace"]["valid"])
 
     def test_storm_backwater_validation_blocks_tailwater_surcharged_pipe(self) -> None:
         storm = {
@@ -206,6 +293,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
             "segments": [
                 {
                     "pipe": "P-BACKWATER",
+                    "from": "INLET-1",
+                    "to": "BASIN-1",
                     "path": [[0.0, 0.0], [80.0, 0.0]],
                     "diameter_in": 12.0,
                     "flow_cfs": 1.0,

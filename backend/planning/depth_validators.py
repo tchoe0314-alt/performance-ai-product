@@ -520,12 +520,16 @@ def _has_valid_drainage_target(storm: Dict[str, Any], drainage: Dict[str, Any]) 
 
 
 def _storm_hgl_egl_expected_actual(storm: Dict[str, Any], hgl_rows: List[Dict[str, Any]], egl_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    profile_evidence = safe_dict(storm.get("hydraulic_profile_evidence"))
     valid = bool(hgl_rows and egl_rows and ((_has_production_rows(hgl_rows) and _has_production_rows(egl_rows)) or storm.get("hydraulic_source") == "engine"))
     return {
         "expected": "production_hgl_and_egl_profile_rows",
         "actual_hgl_count": len(hgl_rows),
         "actual_egl_count": len(egl_rows),
         "hydraulic_source": safe_str(storm.get("hydraulic_source")),
+        "confidence": safe_str(profile_evidence.get("confidence")),
+        "confidence_labels": safe_list(profile_evidence.get("labels")),
+        "missing_profile_inputs": safe_list(profile_evidence.get("missing_profile_inputs")),
         "valid": valid,
     }
 
