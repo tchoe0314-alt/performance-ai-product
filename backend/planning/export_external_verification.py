@@ -266,7 +266,7 @@ def build_supported_limited_unsupported_matrix(report: Dict[str, Any]) -> Dict[s
     for format_id in ("dxf", "landxml", "civil3d", "dwg"):
         row = safe_dict(deliverables.get(format_id))
         status = safe_str(row.get("status"))
-        if format_id == "dxf" and row.get("available") is True and row.get("review_ready") is True:
+        if format_id == "dxf" and row.get("available") is True and status in {"audited_review_ready", "review_ready", "ready", "available"}:
             supported.append(format_id)
         elif row.get("available") is True or format_id == "landxml":
             limited.append(format_id)
