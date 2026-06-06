@@ -1164,6 +1164,17 @@ export default function PreviewPanel({
     onCreateSiteBoundary,
   ]);
 
+  const draftPointCount = draftPoints.length + (draftPreviewPoint ? 1 : 0);
+  const finishDraftMinPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
+  const finishDraftBlockedReason =
+    draftPoints.length && drawMode !== "rect" && draftPointCount < finishDraftMinPoints
+      ? drawMode === "site"
+        ? "Blocked: draw at least three boundary points before Finish."
+        : drawMode === "polygon"
+          ? "Blocked: draw at least three area points before Finish."
+          : "Blocked: draw at least two line points before Finish."
+      : null;
+
   const handleDrawPointer = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
@@ -3326,17 +3337,17 @@ export default function PreviewPanel({
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
-                        disabled={
-                          drawMode === "polygon"
-                            ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
-                            : drawMode === "site"
-                            ? draftPoints.length + (draftPreviewPoint ? 1 : 0) < 3
-                            : draftPoints.length + (draftPreviewPoint ? 1 : 0) < 2
-                        }
+                        disabled={draftPointCount < finishDraftMinPoints}
+                        title={finishDraftBlockedReason ?? "Finish drawn geometry"}
                         className="inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         Finish
                       </button>
+                    ) : null}
+                    {finishDraftBlockedReason ? (
+                      <span className="max-w-56 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                        {finishDraftBlockedReason}
+                      </span>
                     ) : null}
                     <button
                       type="button"
@@ -3400,6 +3411,7 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
+              data-testid="preview-drawing-surface"
               className={`relative flex w-full flex-1 min-h-[320px] items-center justify-center rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewFullscreenOpen && showMap
                   ? "fixed inset-0 z-[120] rounded-none bg-slate-950 p-0"

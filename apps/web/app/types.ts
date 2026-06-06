@@ -434,6 +434,15 @@ export type SiteInputs = {
   site_boundary_source?: "manual_drawn" | "dimensions" | "map_viewport" | "imported";
   site_boundary_state?: "draft_editable" | "locked_canonical";
   site_boundary_acres?: number;
+  site_boundary_geometry?: {
+    type: "polygon";
+    source: "manual_drawn";
+    units: string;
+    engineering_status: "review_required";
+    construction_release_allowed: false;
+    vertices: Array<{ x: number; y: number; units: string }>;
+    bounds: { x: number; y: number; w: number; h: number };
+  };
   site_rotation_deg?: number;
   drainage_source_override?: "civora" | "user";
 };

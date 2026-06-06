@@ -4039,6 +4039,20 @@ function PerformanceAIDashboardView({
       ];
       const nextLotWidth = String(nextSite.w);
       const nextLotHeight = String(nextSite.d);
+      const siteBoundaryGeometry: NonNullable<SiteInputs["site_boundary_geometry"]> = {
+        type: "polygon",
+        source: "manual_drawn",
+        units: units || "ft",
+        engineering_status: "review_required",
+        construction_release_allowed: false,
+        vertices: normalizedGeometry.map(([x, y]) => ({ x, y, units: units || "ft" })),
+        bounds: {
+          x: 0,
+          y: 0,
+          w: nextSite.w,
+          h: nextSite.d,
+        },
+      };
       setLotWidth(nextLotWidth);
       setLotHeight(nextLotHeight);
       setSiteScaleLocked(true);
@@ -4073,27 +4087,39 @@ function PerformanceAIDashboardView({
         nextUtilities: utilities,
         placementsOverride: nextPlacements,
       });
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        manual_fields: nextManualFields,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: {
+            ...(currentInput?.meta?.site_inputs ?? {}),
+            site_alignment_locked: true,
+            site_boundary_source: "manual_drawn",
+            site_boundary_state: "locked_canonical",
+            site_boundary_acres: Number(acres.toFixed(3)),
+            site_boundary_geometry: siteBoundaryGeometry,
+          },
+        },
+      };
+      setCurrentProject((project) =>
+        project
+          ? {
+              ...project,
+              project_input: nextProjectInput,
+              has_result: false,
+              latest_result: undefined,
+            }
+          : project,
+      );
       void ensureProjectDraftRef.current()
         .then(() =>
           saveProjectRef.current({
             silent: true,
-            projectInputOverride: {
-              ...currentInput,
-              input_mode: "user",
-              strict_mode: false,
-              allow_ai_fill_for_blanks: false,
-              manual_fields: nextManualFields,
-              meta: {
-                ...(currentInput?.meta ?? {}),
-                site_inputs: {
-                  ...(currentInput?.meta?.site_inputs ?? {}),
-                  site_alignment_locked: true,
-                  site_boundary_source: "manual_drawn",
-                  site_boundary_state: "locked_canonical",
-                  site_boundary_acres: Number(acres.toFixed(3)),
-                },
-              },
-            },
+            projectInputOverride: nextProjectInput,
           }),
         )
         .then(() => {
@@ -5398,7 +5424,7 @@ function PerformanceAIDashboardView({
     if (/(what should i do next|what next|next step|where should i start|what do i do next)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        `${nextSetupAction} Everything remains engineer-review-required; Civora does not stamp, seal, sign, submit, approve construction, or act as engineer of record.`,
+        `${nextSetupAction} Everything remains review-required; Civora does not stamp, seal, sign, submit, approve construction, or act as engineer of record.`,
         "status",
       );
       return true;
@@ -5422,7 +5448,7 @@ function PerformanceAIDashboardView({
     if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "Civora cannot stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can prepare engineer-review-ready evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for a licensed engineer or the user to review.",
+        "Civora cannot stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for a licensed engineer or the user to review.",
         "status",
       );
       return true;
@@ -5672,7 +5698,7 @@ function PerformanceAIDashboardView({
         handleOpenSidePanel(targetPanel);
         appendChatMessage(
           "assistant",
-          `Next fix: ${nextHint} I opened the ${sidePanelCopy[targetPanel].title} panel. Civora can prepare engineer-review-ready evidence only; external engineer approval remains required.`,
+          `Next fix: ${nextHint} I opened the ${sidePanelCopy[targetPanel].title} panel. Civora can prepare review evidence only; external engineer approval remains required.`,
           "status",
         );
         return true;
@@ -12714,14 +12740,18 @@ function PerformanceAIDashboardView({
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Constructability controls</p>
                         <div className="mt-2 space-y-2 text-sm font-semibold text-slate-700">
-                          <label className="flex items-center justify-between gap-3">
+                          <div className="flex items-center justify-between gap-3">
                             <span>Drain away from pads</span>
-                            <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
-                          </label>
-                          <label className="flex items-center justify-between gap-3">
+                            <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                              Reviewed in grading run
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
                             <span>Respect ADA paths</span>
-                            <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
-                          </label>
+                            <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                              Review required
+                            </span>
+                          </div>
                           <label className="flex items-center justify-between gap-3">
                             <span>Repair local low points</span>
                             <input type="checkbox" checked={drainageAllowSlopeAdjust} onChange={(event) => setDrainageAllowSlopeAdjust(event.target.checked)} className="h-4 w-4 accent-slate-950" />
@@ -12867,10 +12897,12 @@ function PerformanceAIDashboardView({
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Coordination rules</p>
                         <div className="mt-2 space-y-2 text-sm font-semibold text-slate-700">
                           {["Maintain crossing clearance", "Prefer shared corridors", "Avoid building footprints", "Reroute around conflicts"].map((label) => (
-                            <label key={label} className="flex items-center justify-between gap-3">
+                            <div key={label} className="flex items-center justify-between gap-3">
                               <span>{label}</span>
-                              <input type="checkbox" checked readOnly className="h-4 w-4 accent-slate-950" />
-                            </label>
+                              <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                                Checked during utility run
+                              </span>
+                            </div>
                           ))}
                         </div>
                       </div>
