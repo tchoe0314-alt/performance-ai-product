@@ -355,7 +355,6 @@ def apply_native_engine_input_guards(plan: Dict[str, Any], parsed: Dict[str, Any
             output["engineer_review_required"] = True
             output["production_usable"] = False
             if guard["blocked"]:
-                output["success"] = False
                 output["review_status"] = "blocked_missing_inputs"
             meta[meta_key] = output
 
