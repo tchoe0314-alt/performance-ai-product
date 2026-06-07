@@ -3710,6 +3710,61 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             ),
         )
 
+    water_fire_flow_request = any(
+        phrase in lowered
+        for phrase in [
+            "why is water blocked",
+            "why are water blocked",
+            "why is fire flow blocked",
+            "show fire flow",
+            "show me fire flow",
+            "are hydrants spaced correctly",
+            "hydrants spaced correctly",
+            "where is pressure low",
+            "where are pressures low",
+            "what do i need for fire flow",
+            "what do i need for water",
+        ]
+    )
+    if water_fire_flow_request:
+        reply = (
+            "Open Water to review canonical hydrants, pressure zones, hydrant spacing, loop/dead-end status, "
+            "fire-flow residual checks, water-main velocity/pressure rows, and exact missing evidence. "
+            "Anything not evidenced stays marked for engineer review."
+        )
+        metadata = _metadata_for_decision(
+            command_intent="water_fire_flow_review",
+            action_taken="routed_water_fire_flow_review",
+            affected_systems=["water", "utilities", "review"],
+            next_best_action="Open the Water panel and review missing hydrant, pressure, demand, residual, loop, or main-sizing evidence.",
+            command_payload={
+                "requested_ui_mode": "canvas",
+                "ui_navigation_target": "water",
+                "requested_review_scope": "water_fire_flow",
+            },
+            outcome="understood_and_answered",
+            confidence=0.94,
+            state_changed=False,
+        )
+        metadata.update(
+            {
+                "ui_navigation_target": "water",
+                "requested_ui_mode": "canvas",
+                "requested_review_scope": "water_fire_flow",
+            }
+        )
+        return _base_decision(
+            intent="conversation",
+            assistant_message=reply,
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            reason="Routed water/fire-flow review question",
+            confidence=0.94,
+            control_overrides=overrides,
+            response_metadata=metadata,
+        )
+
     if any(
         phrase in lowered
         for phrase in [

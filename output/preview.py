@@ -3145,8 +3145,9 @@ def build_preview_annotations(
             actions,
             preview_actions,
         )
+    water_fire_flow = _build_water_fire_flow_annotations(safe_dict(plan.get("meta")))
     if not preview_actions or not selected_bounds:
-        return {"profile": engineering_profile, "labels": [], "audit": audit}
+        return {"profile": engineering_profile, "labels": [], "audit": audit, "water_fire_flow": water_fire_flow}
     min_x, min_y, max_x, max_y = selected_bounds
     span_x = max(max_x - min_x, 1e-6)
     span_y = max(max_y - min_y, 1e-6)
@@ -3255,7 +3256,265 @@ def build_preview_annotations(
                 },
             }
         )
-    return {"profile": engineering_profile, "labels": labels, "audit": audit}
+    return {"profile": engineering_profile, "labels": labels, "audit": audit, "water_fire_flow": water_fire_flow}
+
+
+def _first_present_dict(*values: Any) -> Dict[str, Any]:
+    for value in values:
+        rec = safe_dict(value)
+        if rec:
+            return rec
+    return {}
+
+
+def _water_point_xy(value: Any) -> Optional[tuple[float, float]]:
+    rec = safe_dict(value)
+    origin = rec.get("origin")
+    if isinstance(origin, (list, tuple)) and len(origin) >= 2:
+        x = safe_num(origin[0])
+        y = safe_num(origin[1])
+        if x is not None and y is not None:
+            return float(x), float(y)
+    point = rec.get("point")
+    if isinstance(point, (list, tuple)) and len(point) >= 2:
+        x = safe_num(point[0])
+        y = safe_num(point[1])
+        if x is not None and y is not None:
+            return float(x), float(y)
+    x = safe_num(rec.get("x"))
+    y = safe_num(rec.get("y"))
+    if x is not None and y is not None:
+        return float(x), float(y)
+    return None
+
+
+def _water_path_points(value: Any) -> List[List[float]]:
+    rec = safe_dict(value)
+    for key in ("geometry", "route_points", "path", "points"):
+        raw = rec.get(key)
+        points = safe_points({"points": raw}) if key != "points" else safe_points(rec)
+        if points:
+            return [[round(float(x), 3), round(float(y), 3)] for x, y in points]
+        if isinstance(raw, list):
+            cleaned: List[List[float]] = []
+            for item in raw:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    x = safe_num(item[0])
+                    y = safe_num(item[1])
+                    if x is not None and y is not None:
+                        cleaned.append([round(float(x), 3), round(float(y), 3)])
+                elif isinstance(item, dict):
+                    x = safe_num(item.get("x"))
+                    y = safe_num(item.get("y"))
+                    if x is not None and y is not None:
+                        cleaned.append([round(float(x), 3), round(float(y), 3)])
+            if cleaned:
+                return cleaned
+    return []
+
+
+def _water_status(valid: Any, missing: Optional[List[Any]] = None) -> str:
+    if valid is True:
+        return "pass"
+    if valid is False and not missing:
+        return "fail"
+    return "review"
+
+
+def _build_water_fire_flow_annotations(meta: Dict[str, Any]) -> Dict[str, Any]:
+    water = _first_present_dict(meta.get("water_summary"), meta.get("water"), meta.get("utilities"), meta.get("utility_summary"))
+    smart = safe_dict(meta.get("smart_fix_recommendations_v1"))
+    if not water:
+        return {
+            "hydrants": [],
+            "pressure_zones": [],
+            "network_segments": [],
+            "scenario_runs": [],
+            "spacing_checks": [],
+            "velocity_checks": [],
+            "blocker_cards": _water_blocker_cards(water, smart),
+            "readiness": {"status": "not_evidenced", "engineer_review_required": True},
+        }
+
+    pressure = safe_dict(water.get("pressure_validation"))
+    fire = safe_dict(water.get("fire_flow_validation"))
+    spacing = safe_dict(water.get("hydrant_spacing_validation"))
+    dead_end = safe_dict(water.get("dead_end_validation"))
+    looping = safe_dict(water.get("looping_validation"))
+
+    hydrants: List[Dict[str, Any]] = []
+    hydrant_nodes = {safe_text(fire.get("fire_flow_node"), "")}
+    for index, raw in enumerate(safe_list(water.get("hydrants") or water.get("fire_hydrants")), start=1):
+        xy = _water_point_xy(raw)
+        if xy is None:
+            continue
+        rec = safe_dict(raw)
+        hid = safe_text(rec.get("id") or rec.get("name"), f"HYD-{index}")
+        hydrant_nodes.add(hid)
+        hydrants.append(
+            {
+                "id": hid,
+                "label": safe_text(rec.get("label") or rec.get("name"), hid),
+                "x": round(xy[0], 3),
+                "y": round(xy[1], 3),
+                "zone_id": safe_text(rec.get("zone_id") or rec.get("pressure_zone_id"), ""),
+                "static_pressure_psi": safe_num(rec.get("static_pressure_psi") or rec.get("pressure_psi")),
+                "residual_pressure_psi": safe_num(rec.get("residual_pressure_psi")),
+                "available_flow_gpm": safe_num(rec.get("available_fire_flow_gpm") or rec.get("available_flow_gpm")),
+                "status": _water_status(fire.get("valid"), safe_list(fire.get("missing_inputs"))) if hid == safe_text(fire.get("fire_flow_node"), "") else "review",
+                "engineer_review_required": True,
+            }
+        )
+
+    pressure_zones: List[Dict[str, Any]] = []
+    for index, raw in enumerate(safe_list(water.get("pressure_zones")), start=1):
+        rec = safe_dict(raw)
+        geometry = _water_path_points(rec)
+        zone_id = safe_text(rec.get("id") or rec.get("name"), f"PZ-{index}")
+        pressure_zones.append(
+            {
+                "id": zone_id,
+                "label": safe_text(rec.get("label") or rec.get("name"), zone_id),
+                "min_pressure_psi": safe_num(rec.get("min_pressure_psi") or pressure.get("min_pressure_psi")),
+                "max_pressure_psi": safe_num(rec.get("max_pressure_psi")),
+                "residual_target_psi": safe_num(rec.get("residual_target_psi") or pressure.get("min_required_pressure_psi") or fire.get("min_required_residual_pressure_psi")),
+                "source_pressure_psi": safe_num(rec.get("source_pressure_psi") or pressure.get("source_pressure_psi")),
+                "source_node": safe_text(rec.get("source_node") or pressure.get("source_node"), ""),
+                "geometry": geometry,
+                "engineer_review_required": True,
+            }
+        )
+
+    network_segments: List[Dict[str, Any]] = []
+    dead_nodes = set(str(item) for item in safe_list(dead_end.get("unresolved_dead_end_nodes") or dead_end.get("dead_end_nodes")))
+    conflict_hooks = safe_dict(water.get("conflict_hooks"))
+    raw_segments = (
+        safe_list(water.get("water_segments"))
+        or safe_list(water.get("segments"))
+        or safe_list(conflict_hooks.get("utility_segments"))
+    )
+    for index, raw in enumerate(raw_segments, start=1):
+        rec = safe_dict(raw)
+        geometry = _water_path_points(rec)
+        name = safe_text(rec.get("name") or rec.get("id"), f"W-{index}")
+        start = safe_text(rec.get("start_node") or rec.get("from_node") or rec.get("start_name"), "")
+        end = safe_text(rec.get("end_node") or rec.get("to_node") or rec.get("end_name"), "")
+        network_type = "dead_end" if start in dead_nodes or end in dead_nodes else ("loop" if looping.get("valid") is True or water.get("looped") is True else "dead_end")
+        network_segments.append(
+            {
+                "id": name,
+                "label": name,
+                "from_hydrant_id": start if start in hydrant_nodes else "",
+                "to_hydrant_id": end if end in hydrant_nodes else "",
+                "from_node": start,
+                "to_node": end,
+                "network_type": network_type,
+                "diameter_in": safe_num(rec.get("diameter_in")),
+                "length_ft": safe_num(rec.get("length_ft") or rec.get("length")),
+                "flow_gpm": safe_num(rec.get("flow_gpm") or rec.get("assigned_flow_gpm")),
+                "velocity_fps": safe_num(rec.get("velocity_fps")),
+                "start_pressure_psi": safe_num(rec.get("start_pressure_psi")),
+                "end_pressure_psi": safe_num(rec.get("end_pressure_psi")),
+                "status": "review" if safe_list(rec.get("missing_fields")) else "pass",
+                "geometry": geometry,
+                "engineer_review_required": True,
+            }
+        )
+
+    scenario_runs: List[Dict[str, Any]] = []
+    has_fire_evidence = any(
+        fire.get(key) not in (None, "", [], {})
+        for key in ("required_fire_flow_gpm", "available_fire_flow_gpm", "residual_pressure_psi", "fire_flow_node", "missing_inputs")
+    )
+    if has_fire_evidence:
+        hydrant_id = safe_text(fire.get("fire_flow_node"), "")
+        scenario_runs.append(
+            {
+                "id": "fire-flow-review",
+                "label": "Fire-flow residual review",
+                "hydrant_id": hydrant_id,
+                "required_flow_gpm": safe_num(fire.get("required_fire_flow_gpm")),
+                "available_flow_gpm": safe_num(fire.get("available_fire_flow_gpm")),
+                "static_pressure_psi": safe_num(pressure.get("source_pressure_psi")),
+                "residual_pressure_psi": safe_num(fire.get("residual_pressure_psi")),
+                "residual_target_psi": safe_num(fire.get("min_required_residual_pressure_psi") or pressure.get("min_required_pressure_psi")),
+                "status": _water_status(fire.get("valid"), safe_list(fire.get("missing_inputs"))),
+                "missing_inputs": safe_list(fire.get("missing_inputs")),
+                "path_segment_ids": safe_list(fire.get("fire_flow_path")),
+                "engineer_review_required": True,
+            }
+        )
+
+    spacing_checks = [
+        {
+            **safe_dict(row),
+            "valid": safe_num(safe_dict(row).get("spacing_ft")) is not None
+            and safe_num(spacing.get("limit_ft")) is not None
+            and float(safe_num(safe_dict(row).get("spacing_ft")) or 0.0) <= float(safe_num(spacing.get("limit_ft")) or 0.0),
+            "limit_ft": safe_num(spacing.get("limit_ft")),
+            "engineer_review_required": True,
+        }
+        for row in safe_list(spacing.get("spacing_rows"))
+    ]
+
+    return {
+        "hydrants": hydrants,
+        "pressure_zones": pressure_zones,
+        "network_segments": network_segments,
+        "scenario_runs": scenario_runs,
+        "spacing_checks": spacing_checks,
+        "velocity_checks": safe_list(water.get("velocity_checks")),
+        "blocker_cards": _water_blocker_cards(water, smart),
+        "readiness": {
+            "status": safe_text(water.get("water_depth_status"), "not_evidenced"),
+            "blockers": safe_list(water.get("water_depth_blockers")),
+            "pressure_valid": pressure.get("valid") is True,
+            "fire_flow_valid": fire.get("valid") is True,
+            "hydrant_spacing_valid": spacing.get("valid") is True,
+            "looping_valid": looping.get("valid") is True,
+            "dead_end_valid": dead_end.get("valid") is True,
+            "engineer_review_required": True,
+            "truth_label": safe_text(water.get("truth_label"), "Water/fire-flow evidence is for engineer review only."),
+        },
+    }
+
+
+def _water_blocker_cards(water: Dict[str, Any], smart: Dict[str, Any]) -> List[Dict[str, Any]]:
+    cards: List[Dict[str, Any]] = []
+    for detail in safe_list(water.get("water_depth_blocker_details")):
+        rec = safe_dict(detail)
+        code = safe_text(rec.get("code") or rec.get("blocker_code"), "")
+        if not code:
+            continue
+        cards.append(
+            {
+                "id": code,
+                "source": "water_depth",
+                "title": safe_text(rec.get("what_failed") or rec.get("message"), code.replace("_", " ")),
+                "next_action": safe_text(rec.get("next_action") or rec.get("suggested_next_action"), "Provide accepted water evidence and rerun water review."),
+                "severity": safe_text(rec.get("severity"), "review"),
+                "engineer_review_required": True,
+            }
+        )
+    for item in safe_list(smart.get("recommendations")):
+        rec = safe_dict(item)
+        text = " ".join(
+            safe_text(rec.get(key), "")
+            for key in ("blocker_code", "category", "what_is_wrong", "one_action_needed_next")
+        ).lower()
+        if not any(token in text for token in ("water", "hydrant", "fire", "pressure", "utility")):
+            continue
+        cards.append(
+            {
+                "id": safe_text(rec.get("id") or rec.get("blocker_code"), f"smart-water-{len(cards)+1}"),
+                "source": "smart_fix",
+                "title": safe_text(rec.get("what_is_wrong"), "Water/utility Smart Fix item"),
+                "next_action": safe_text(rec.get("one_action_needed_next"), "Review Smart Fix recommendation."),
+                "severity": safe_text(rec.get("severity"), "review"),
+                "engineer_review_required": True,
+            }
+        )
+    return cards
 
 
 def preview_plan(plan):

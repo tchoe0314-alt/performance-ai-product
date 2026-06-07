@@ -1167,6 +1167,26 @@ class ChatIntentParserTest(unittest.TestCase):
                 self.assertEqual(metadata["requested_ui_mode"], mode)
                 self.assertFalse(metadata["state_changed"])
 
+    def test_chat_routes_water_fire_flow_questions_to_water_workbench(self):
+        cases = [
+            "why is water blocked?",
+            "show fire flow",
+            "are hydrants spaced correctly?",
+            "where is pressure low?",
+            "what do I need for fire flow?",
+        ]
+        for message in cases:
+            with self.subTest(message=message):
+                result = _decide(message, {"has_plan": True})
+                metadata = result["response_metadata"]
+                self.assertEqual(result["intent"], "conversation")
+                self.assertEqual(result["run_mode"], "none")
+                self.assertEqual(result["action_taken"], "routed_water_fire_flow_review")
+                self.assertEqual(metadata["ui_navigation_target"], "water")
+                self.assertEqual(metadata["requested_ui_mode"], "canvas")
+                self.assertEqual(metadata["requested_review_scope"], "water_fire_flow")
+                self.assertIn("engineer review", result["assistant_message"].lower())
+
     def test_chat_can_request_canvas_mode_and_quality(self):
         result = _decide("switch the canvas to 3D high quality", {"has_preview": True})
         metadata = result["response_metadata"]

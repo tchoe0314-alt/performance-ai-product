@@ -95,10 +95,16 @@ type WaterNetworkSegmentView = {
   label: string;
   fromHydrantId?: string;
   toHydrantId?: string;
+  fromNode?: string;
+  toNode?: string;
   networkType: "loop" | "dead_end";
   diameterIn: number | null;
   lengthFt: number | null;
   flowGpm: number | null;
+  velocityFps: number | null;
+  startPressurePsi: number | null;
+  endPressurePsi: number | null;
+  status: "pass" | "review" | "fail";
   geometry: Array<[number, number]>;
 };
 
@@ -106,13 +112,14 @@ type FireScenarioView = {
   id: string;
   label: string;
   hydrantId: string;
-  requiredFlowGpm: number;
-  availableFlowGpm: number;
-  staticPressurePsi: number;
-  residualPressurePsi: number;
-  residualTargetPsi: number;
+  requiredFlowGpm: number | null;
+  availableFlowGpm: number | null;
+  staticPressurePsi: number | null;
+  residualPressurePsi: number | null;
+  residualTargetPsi: number | null;
   status: "pass" | "review" | "fail";
   networkType: "loop" | "dead_end";
+  missingInputs: string[];
 };
 
 type CoordinationSeverity = "clear" | "watch" | "conflict";
@@ -855,25 +862,7 @@ export default function PreviewPanel({
           geometry,
         };
       });
-    const fallbackZone: WaterPressureZoneView | null =
-      !annotationZones.length && lotWidth > 0 && lotHeight > 0
-        ? {
-            id: "zone-a",
-            label: "Zone A",
-            minPressurePsi: 45,
-            maxPressurePsi: 80,
-            residualTargetPsi: 20,
-            color: "#0ea5e9",
-            geometry: [
-              [0, 0],
-              [lotWidth, 0],
-              [lotWidth, lotHeight],
-              [0, lotHeight],
-              [0, 0],
-            ],
-          }
-        : null;
-    const pressureZones = fallbackZone ? [fallbackZone] : annotationZones;
+    const pressureZones = annotationZones;
     const defaultZone = pressureZones[0];
     const annotatedHydrants: WaterHydrantView[] = (annotations?.hydrants ?? [])
       .map((hydrant, idx) => {
@@ -938,10 +927,16 @@ export default function PreviewPanel({
         label: segment.label || `W-${idx + 1}`,
         fromHydrantId: segment.from_hydrant_id,
         toHydrantId: segment.to_hydrant_id,
+        fromNode: segment.from_node,
+        toNode: segment.to_node,
         networkType: String(segment.network_type || "").toLowerCase().includes("dead") ? "dead_end" : "loop",
         diameterIn: toFiniteNumber(segment.diameter_in),
         lengthFt: toFiniteNumber(segment.length_ft),
         flowGpm: toFiniteNumber(segment.flow_gpm),
+        velocityFps: toFiniteNumber(segment.velocity_fps),
+        startPressurePsi: toFiniteNumber(segment.start_pressure_psi),
+        endPressurePsi: toFiniteNumber(segment.end_pressure_psi),
+        status: normalizeFlowStatus(segment.status),
         geometry: Array.isArray(segment.geometry) ? segment.geometry : [],
       }));
     const objectSegments: WaterNetworkSegmentView[] = waterLineObjects
@@ -959,38 +954,14 @@ export default function PreviewPanel({
           diameterIn: readMetaNumber(meta, ["diameter_in", "diameterIn"]),
           lengthFt: readMetaNumber(meta, ["length_ft", "lengthFt"]),
           flowGpm: readMetaNumber(meta, ["flow_gpm", "flowGpm"]),
+          velocityFps: readMetaNumber(meta, ["velocity_fps", "velocityFps"]),
+          startPressurePsi: readMetaNumber(meta, ["start_pressure_psi", "startPressurePsi"]),
+          endPressurePsi: readMetaNumber(meta, ["end_pressure_psi", "endPressurePsi"]),
+          status: normalizeFlowStatus(meta?.status),
           geometry,
         };
       });
-    const inferredSegments: WaterNetworkSegmentView[] =
-      !annotatedSegments.length && !objectSegments.length && hydrants.length > 1
-        ? hydrants.slice(0, -1).map((hydrant, idx) => {
-            const next = hydrants[idx + 1];
-            const loopCandidate =
-              hydrants.length > 2 && idx === hydrants.length - 2
-                ? [
-                    [hydrant.x, hydrant.y],
-                    [next.x, next.y],
-                    [hydrants[0].x, hydrants[0].y],
-                  ]
-                : [
-                    [hydrant.x, hydrant.y],
-                    [next.x, next.y],
-                  ];
-            return {
-              id: `hydrant-link-${idx + 1}`,
-              label: `${hydrant.label} to ${next.label}`,
-              fromHydrantId: hydrant.id,
-              toHydrantId: next.id,
-              networkType: hydrants.length > 2 ? "loop" : "dead_end",
-              diameterIn: 8,
-              lengthFt: Math.hypot(hydrant.x - next.x, hydrant.y - next.y),
-              flowGpm: null,
-              geometry: loopCandidate as Array<[number, number]>,
-            };
-          })
-        : [];
-    const networkSegments = [...annotatedSegments, ...objectSegments, ...inferredSegments];
+    const networkSegments = [...annotatedSegments, ...objectSegments];
     const zoneById = new Map(pressureZones.map((zone) => [zone.id, zone]));
     const networkByHydrant = new Map<string, "loop" | "dead_end">();
     networkSegments.forEach((segment) => {
@@ -1001,14 +972,11 @@ export default function PreviewPanel({
       .map((scenario, idx) => {
         const hydrant = hydrants.find((item) => item.id === scenario.hydrant_id) ?? hydrants[idx] ?? hydrants[0];
         const zone = hydrant ? zoneById.get(hydrant.zoneId) : defaultZone;
-        const requiredFlowGpm = toFiniteNumber(scenario.required_flow_gpm) ?? 1500;
-        const availableFlowGpm = toFiniteNumber(scenario.available_flow_gpm) ?? hydrant?.availableFlowGpm ?? 0;
-        const staticPressurePsi = toFiniteNumber(scenario.static_pressure_psi) ?? hydrant?.staticPressurePsi ?? 0;
-        const residualTargetPsi = toFiniteNumber(scenario.residual_target_psi) ?? zone?.residualTargetPsi ?? 20;
-        const residualPressurePsi =
-          toFiniteNumber(scenario.residual_pressure_psi) ??
-          hydrant?.residualPressurePsi ??
-          Math.max(0, staticPressurePsi - requiredFlowGpm / 90);
+        const requiredFlowGpm = toFiniteNumber(scenario.required_flow_gpm);
+        const availableFlowGpm = toFiniteNumber(scenario.available_flow_gpm) ?? hydrant?.availableFlowGpm ?? null;
+        const staticPressurePsi = toFiniteNumber(scenario.static_pressure_psi) ?? hydrant?.staticPressurePsi ?? null;
+        const residualTargetPsi = toFiniteNumber(scenario.residual_target_psi) ?? zone?.residualTargetPsi ?? null;
+        const residualPressurePsi = toFiniteNumber(scenario.residual_pressure_psi) ?? hydrant?.residualPressurePsi ?? null;
         return {
           id: scenario.id || `fire-flow-${idx + 1}`,
           label: scenario.label || `${hydrant?.label || "Hydrant"} fire-flow`,
@@ -1018,45 +986,32 @@ export default function PreviewPanel({
           staticPressurePsi,
           residualPressurePsi,
           residualTargetPsi,
-          status: normalizeFlowStatus(scenario.status || (availableFlowGpm >= requiredFlowGpm && residualPressurePsi >= residualTargetPsi ? "pass" : "fail")),
+          status: normalizeFlowStatus(scenario.status),
           networkType: hydrant ? networkByHydrant.get(hydrant.id) ?? "dead_end" : "dead_end",
+          missingInputs: Array.isArray(scenario.missing_inputs) ? scenario.missing_inputs : [],
         };
       });
-    const derivedScenarios: FireScenarioView[] =
-      annotatedScenarios.length || !hydrants.length
-        ? []
-        : hydrants.map((hydrant) => {
-            const zone = zoneById.get(hydrant.zoneId) ?? defaultZone;
-            const networkType = networkByHydrant.get(hydrant.id) ?? (networkSegments.length ? "loop" : "dead_end");
-            const staticPressurePsi = hydrant.staticPressurePsi ?? 62;
-            const requiredFlowGpm = 1500;
-            const availableFlowGpm = hydrant.availableFlowGpm ?? Math.max(500, staticPressurePsi * (networkType === "loop" ? 34 : 26));
-            const residualTargetPsi = zone?.residualTargetPsi ?? 20;
-            const residualPressurePsi =
-              hydrant.residualPressurePsi ??
-              Math.max(0, staticPressurePsi - requiredFlowGpm / (networkType === "loop" ? 105 : 82));
-            return {
-              id: `derived-${hydrant.id}`,
-              label: `${hydrant.label} fire-flow`,
-              hydrantId: hydrant.id,
-              requiredFlowGpm,
-              availableFlowGpm,
-              staticPressurePsi,
-              residualPressurePsi,
-              residualTargetPsi,
-              status: availableFlowGpm >= requiredFlowGpm && residualPressurePsi >= residualTargetPsi ? "pass" : "fail",
-              networkType,
-            };
-          });
-    const scenarios = annotatedScenarios.length ? annotatedScenarios : derivedScenarios;
+    const scenarios = annotatedScenarios;
     const selectedScenario =
       scenarios.find((scenario) => scenario.id === selectedFireScenarioId) ?? scenarios[0] ?? null;
     const selectedHydrant = selectedScenario
       ? hydrants.find((hydrant) => hydrant.id === selectedScenario.hydrantId) ?? null
       : null;
-    const hasData = hydrants.length > 0 || networkSegments.length > 0 || pressureZones.length > 0;
-    return { hydrants, pressureZones, networkSegments, scenarios, selectedScenario, selectedHydrant, hasData };
-  }, [buildingPlacements, lotHeight, lotWidth, planPreviewAnnotations?.water_fire_flow, selectedFireScenarioId, suggestedPlacements]);
+    const readiness = annotations?.readiness ?? null;
+    const spacingChecks = annotations?.spacing_checks ?? [];
+    const velocityChecks = annotations?.velocity_checks ?? [];
+    const blockerCards = annotations?.blocker_cards ?? [];
+    const hasData =
+      hydrants.length > 0 ||
+      networkSegments.length > 0 ||
+      pressureZones.length > 0 ||
+      scenarios.length > 0 ||
+      spacingChecks.length > 0 ||
+      velocityChecks.length > 0 ||
+      blockerCards.length > 0 ||
+      Boolean(readiness);
+    return { hydrants, pressureZones, networkSegments, scenarios, selectedScenario, selectedHydrant, spacingChecks, velocityChecks, blockerCards, readiness, hasData };
+  }, [buildingPlacements, planPreviewAnnotations?.water_fire_flow, selectedFireScenarioId, suggestedPlacements]);
 
   useEffect(() => {
     if (!activeAnnotation?.meta) {
@@ -5785,10 +5740,16 @@ export default function PreviewPanel({
                                 </td>
                                 <td className="px-2 py-1.5 capitalize">{scenario.networkType.replace("_", " ")}</td>
                                 <td className="px-2 py-1.5">
-                                  {Math.round(scenario.availableFlowGpm)}/{Math.round(scenario.requiredFlowGpm)} gpm
+                                  {formatFlowValue(scenario.availableFlowGpm, "gpm", 0)}/
+                                  {formatFlowValue(scenario.requiredFlowGpm, "gpm", 0)}
                                 </td>
                                 <td className="px-2 py-1.5">
                                   {formatFlowValue(scenario.residualPressurePsi, "psi", 1)}
+                                  {scenario.missingInputs.length ? (
+                                    <div className="mt-0.5 text-[10px] font-semibold text-amber-700">
+                                      Missing: {scenario.missingInputs.slice(0, 2).join(", ")}
+                                    </div>
+                                  ) : null}
                                 </td>
                                 <td
                                   className={`px-2 py-1.5 font-semibold uppercase ${
@@ -5824,8 +5785,15 @@ export default function PreviewPanel({
                       Dead-end
                     </span>
                     <span>
-                      Target residual:{" "}
-                      {formatFlowValue(waterFireFlow.selectedScenario?.residualTargetPsi ?? 20, "psi", 0)}
+                      Target residual: {formatFlowValue(waterFireFlow.selectedScenario?.residualTargetPsi ?? null, "psi", 0)}
+                    </span>
+                    {waterFireFlow.blockerCards.length ? (
+                      <span className="font-semibold text-amber-700">
+                        {waterFireFlow.blockerCards.length} blocker cards
+                      </span>
+                    ) : null}
+                    <span className="font-semibold text-slate-600">
+                      Engineer review required
                     </span>
                   </div>
                 </div>

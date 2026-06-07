@@ -1298,8 +1298,11 @@ export type WaterPressureZone = {
   min_pressure_psi?: number | null;
   max_pressure_psi?: number | null;
   residual_target_psi?: number | null;
+  source_pressure_psi?: number | null;
+  source_node?: string;
   color?: string;
   geometry?: Array<[number, number]>;
+  engineer_review_required?: boolean;
 };
 
 export type WaterNetworkSegment = {
@@ -1307,11 +1310,18 @@ export type WaterNetworkSegment = {
   label?: string;
   from_hydrant_id?: string;
   to_hydrant_id?: string;
+  from_node?: string;
+  to_node?: string;
   network_type?: "loop" | "dead_end" | string;
   diameter_in?: number | null;
   length_ft?: number | null;
   flow_gpm?: number | null;
+  velocity_fps?: number | null;
+  start_pressure_psi?: number | null;
+  end_pressure_psi?: number | null;
+  status?: "pass" | "review" | "fail" | string;
   geometry?: Array<[number, number]>;
+  engineer_review_required?: boolean;
 };
 
 export type FireFlowScenarioRun = {
@@ -1324,6 +1334,9 @@ export type FireFlowScenarioRun = {
   residual_pressure_psi?: number | null;
   residual_target_psi?: number | null;
   status?: "pass" | "review" | "fail" | string;
+  missing_inputs?: string[];
+  path_segment_ids?: string[];
+  engineer_review_required?: boolean;
 };
 
 export type WaterFireFlowAnnotations = {
@@ -1331,6 +1344,34 @@ export type WaterFireFlowAnnotations = {
   pressure_zones?: WaterPressureZone[];
   network_segments?: WaterNetworkSegment[];
   scenario_runs?: FireFlowScenarioRun[];
+  spacing_checks?: Array<{
+    from?: string;
+    to?: string;
+    spacing_ft?: number | null;
+    limit_ft?: number | null;
+    valid?: boolean;
+    engineer_review_required?: boolean;
+  }>;
+  velocity_checks?: Array<Record<string, unknown>>;
+  blocker_cards?: Array<{
+    id?: string;
+    source?: string;
+    title?: string;
+    next_action?: string;
+    severity?: string;
+    engineer_review_required?: boolean;
+  }>;
+  readiness?: {
+    status?: string;
+    blockers?: string[];
+    pressure_valid?: boolean;
+    fire_flow_valid?: boolean;
+    hydrant_spacing_valid?: boolean;
+    looping_valid?: boolean;
+    dead_end_valid?: boolean;
+    engineer_review_required?: boolean;
+    truth_label?: string;
+  };
 };
 
 export type AuthStatus = {
