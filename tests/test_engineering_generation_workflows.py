@@ -73,6 +73,9 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         self.assertIn("grading", _system(plan, "drainage")["stale_or_reactive_status"]["upstream_blocked_systems"])
         self.assertEqual(plan["meta"]["grading"]["workflow_review"]["status"], "blocked_missing_inputs")
         self.assertFalse(review["success"])
+        native = plan["meta"]["grading"]["native_engine_guard"]
+        self.assertEqual(native["status"], "blocked_missing_inputs")
+        self.assertEqual(native["blockers"][0]["blocker_origin"], "discipline_native_engine")
 
     def test_missing_basin_or_outfall_blocks_drainage_and_storm_exactly(self) -> None:
         payload = _supported_minimal_payload()
@@ -85,6 +88,8 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         self.assertIn("basin_outfall", _blocker_inputs(plan, "storm"))
         self.assertEqual(plan["meta"]["drainage"]["workflow_review"]["status"], "blocked_missing_inputs")
         self.assertEqual(plan["meta"]["storm_pipes"]["workflow_review"]["status"], "blocked_missing_inputs")
+        self.assertIn("basin_outfall", {item["input"] for item in plan["meta"]["drainage"]["engine_blockers"]})
+        self.assertIn("basin_outfall", {item["input"] for item in plan["meta"]["storm_pipes"]["engine_blockers"]})
 
     def test_missing_standards_blocks_engineering_review_outputs(self) -> None:
         payload = _supported_minimal_payload()
@@ -106,6 +111,9 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         for system in ("roadway", "quantities", "qa_review"):
             self.assertIn("survey_control", _blocker_inputs(plan, system), system)
         self.assertEqual(plan["meta"]["quantities"]["workflow_review"]["status"], "blocked_missing_inputs")
+        self.assertIn("survey_control", {item["input"] for item in plan["meta"]["roadway"]["engine_blockers"]})
+        self.assertIn("survey_control", {item["input"] for item in plan["meta"]["quantities"]["engine_blockers"]})
+        self.assertIn("survey_control", {item["input"] for item in plan["meta"]["qa"]["engine_blockers"]})
 
     def test_missing_utility_service_blocks_sanitary_water_and_utilities(self) -> None:
         payload = _supported_minimal_payload()
@@ -117,6 +125,25 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         for system in ("sanitary", "water", "utilities"):
             self.assertIn("utility_service", _blocker_inputs(plan, system), system)
         self.assertEqual(plan["meta"]["utilities"]["workflow_review"]["status"], "blocked_missing_inputs")
+        self.assertIn("utility_service", {item["input"] for item in plan["meta"]["utilities"]["engine_blockers"]})
+
+    def test_native_engine_guard_summary_tracks_discipline_blockers(self) -> None:
+        payload = _supported_minimal_payload()
+        payload.pop("terrain")
+        payload["ponds"] = []
+        payload.pop("standards")
+        payload.pop("survey_control")
+        payload.pop("coordinate_system")
+
+        plan = planner.build_plan(payload)
+        native = plan["meta"]["discipline_native_engine_guards"]
+
+        for engine in ("grading", "drainage", "storm", "roadway", "utilities", "quantities", "qa_review"):
+            self.assertIn(engine, native["blocked_engines"])
+            self.assertEqual(native["guards"][engine]["status"], "blocked_missing_inputs")
+        self.assertTrue(
+            all(item["blocker_origin"] == "discipline_native_engine" for item in native["blockers"])
+        )
 
     def test_incomplete_bad_input_blocks_with_exact_lot_geometry_fields(self) -> None:
         payload = _supported_minimal_payload()

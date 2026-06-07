@@ -76,6 +76,7 @@ from backend.application.job_workflows import (
     queue_artifact_export_job as application_queue_artifact_export_job,
     queue_orchestrate_job as application_queue_orchestrate_job,
     revise_existing_job as application_revise_existing_job,
+    retry_existing_job as application_retry_existing_job,
 )
 from backend.application.project_workflows import (
     artifact_summary as application_artifact_summary,
@@ -1900,6 +1901,19 @@ def continue_job(
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
     return application_continue_existing_job(
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        job_id=job_id,
+    )
+
+
+@app.post("/api/jobs/{job_id}/retry")
+def retry_job(
+    job_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    return application_retry_existing_job(
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
         job_id=job_id,

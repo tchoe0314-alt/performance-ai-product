@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 from .engine_contracts import EngineContract, engine_contracts
+from .engine_depth_dashboard import build_engine_depth_dashboard
 from .engine_readiness import evaluate_engine_readiness
 from .golden_runner import run_golden_scenario
 from .golden_scenarios import GoldenScenario, get_golden_scenario, golden_scenarios
@@ -664,6 +665,7 @@ def run_engine_depth_audit(
             "It does not modify UI, import standards, deepen engines, or authorize construction release."
         ),
     }
+    report["engine_depth_dashboard_v1"] = build_engine_depth_dashboard(report)
     if output_path is not None:
         write_engine_depth_audit_report(Path(output_path), report)
     return report

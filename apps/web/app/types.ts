@@ -55,6 +55,7 @@ export type JobSummary = {
   status: string;
   job_type?: string;
   project_id?: string | null;
+  created_at?: number;
   updated_at?: number;
   error?: string | null;
   result?: PlanResponse | null;
@@ -64,6 +65,21 @@ export type JobSummary = {
   queue_position?: number | null;
   queued_count?: number;
   running_count?: number;
+  can_cancel?: boolean;
+  can_retry?: boolean;
+  can_resume?: boolean;
+  resume_feasible?: boolean;
+  retry_of_job_id?: string | null;
+  payload?: Record<string, unknown>;
+  timeline?: Array<{
+    id?: string;
+    label?: string;
+    status?: string;
+    timestamp?: number;
+    detail?: string;
+    progress?: number;
+  }>;
+  artifact_history?: WorkflowArtifact[];
 };
 
 export type WorkflowRunSummary = {
@@ -165,11 +181,160 @@ export type IterationRecord = Record<string, unknown> & {
 export type MetricValue = number | { value?: number } | null;
 export type ManagerMetrics = Record<string, MetricValue>;
 export type QuantityTotals = Record<string, number | null | undefined>;
+export type QuantityAuditEntry = {
+  source_object_ids?: string[];
+  canonical_object_ids?: string[];
+  canonical_ids?: string[];
+  source_ids?: string[];
+  source_stage?: string;
+  source_layer?: string;
+  source?: string;
+  formula?: string;
+  method?: string;
+  confidence?: string;
+  trace_complete?: boolean;
+  delta?: number;
+  previous_quantity?: number;
+  current_quantity?: number;
+  before?: number;
+  after?: number;
+};
+export type QuantityExplain = {
+  quantity_audit?: Record<string, QuantityAuditEntry>;
+  trace_gaps?: Record<string, unknown>;
+  quantity_model_reference?: Record<string, unknown>;
+};
+export type CostLineItem = {
+  metric?: string;
+  item?: string;
+  category?: string;
+  quantity?: number;
+  unit?: string;
+  unit_cost?: number;
+  amount?: number;
+  currency?: string;
+  source_object_ids?: string[];
+  trace_complete?: boolean;
+  pricing_source?: string;
+  unit_price_source?: {
+    source_name?: string;
+    source_type?: string;
+    source_item_id?: string;
+    effective_date?: string;
+    accepted_by?: string;
+    confidence?: string;
+  };
+  unit_price_source_item_id?: string;
+  production_price?: boolean;
+};
+export type CostEstimate = {
+  success?: boolean;
+  message?: string;
+  totals?: Record<string, unknown>;
+  line_items?: CostLineItem[];
+  category_subtotals?: Record<string, number>;
+  warnings?: string[];
+  assumptions?: string[];
+  explain?: {
+    traceability_complete?: boolean;
+    trace_gaps?: Record<string, unknown>;
+    pricing_coverage_complete?: boolean;
+    pricing_coverage_gaps?: Record<string, unknown>;
+    pricing?: Record<string, unknown>;
+    quantity_model_reference?: Record<string, unknown>;
+    cost_estimate_reference?: Record<string, unknown>;
+  };
+};
 
 export type PipeSegment = {
+  id?: string;
+  pipe?: string;
+  name?: string;
+  from?: string;
+  to?: string;
+  start_name?: string;
+  end_name?: string;
   length_ft?: number;
   slope_pct?: number;
   slope_ft_ft?: number;
+  diameter_in?: number;
+  flow_cfs?: number;
+  capacity_cfs?: number;
+  capacity_ratio?: number;
+  velocity_fps?: number;
+  start_invert?: number;
+  end_invert?: number;
+  start_invert_ft?: number;
+  end_invert_ft?: number;
+  hgl_upstream_ft?: number;
+  hgl_downstream_ft?: number;
+  egl_upstream_ft?: number;
+  egl_downstream_ft?: number;
+  path?: Array<[number, number]> | number[][];
+  route_points?: Array<[number, number]> | number[][];
+  warnings?: string[];
+};
+
+export type StormProfilePoint = {
+  segment_id?: string;
+  pipe?: string;
+  station_ft?: number;
+  invert_ft?: number;
+  ground_ft?: number;
+  rim_ft?: number;
+  hgl_ft?: number;
+  egl_ft?: number;
+  cover_ft?: number;
+  node?: string;
+};
+
+export type InletSpreadCheck = {
+  inlet_id?: string;
+  name?: string;
+  spread_ft?: number;
+  allowable_spread_ft?: number;
+  depth_ft?: number;
+  capture_efficiency?: number;
+  bypass_cfs?: number;
+  intercepted_cfs?: number;
+  x?: number;
+  y?: number;
+  status?: string;
+  warnings?: string[];
+};
+
+export type DetentionRoutingPoint = {
+  time_min?: number;
+  stage_ft?: number;
+  elevation_ft?: number;
+  inflow_cfs?: number;
+  outflow_cfs?: number;
+  storage_cf?: number;
+  water_surface_area_sf?: number;
+};
+
+export type OverflowPathCheck = {
+  id?: string;
+  name?: string;
+  capacity_valid?: boolean;
+  capacity_cfs?: number;
+  required_capacity_cfs?: number;
+  freeboard_ft?: number;
+  source?: string;
+  path?: Array<[number, number]> | number[][];
+  route_points?: Array<[number, number]> | number[][];
+  warnings?: string[];
+};
+
+export type StormBlockerFix = {
+  code?: string;
+  blocker_code?: string;
+  message?: string;
+  what_is_wrong?: string;
+  exact_fix?: string;
+  one_action_needed_next?: string;
+  missing_inputs?: string[];
+  can_civora_fix?: boolean;
 };
 
 export type StormSummary = {
@@ -178,6 +343,22 @@ export type StormSummary = {
   storm_pipe_segments?: PipeSegment[];
   total_system_flow_cfs?: number;
   total_system_capacity_cfs?: number;
+  hgl_profile?: StormProfilePoint[];
+  egl_profile?: StormProfilePoint[];
+  hydraulic_profile?: StormProfilePoint[];
+  inlet_capacity_checks?: InletSpreadCheck[];
+  inlet_spread_checks?: InletSpreadCheck[];
+  detention_routing?: DetentionRoutingPoint[] | { routing_points?: DetentionRoutingPoint[] };
+  overflow_analysis?: {
+    paths?: OverflowPathCheck[];
+    overflow_paths?: OverflowPathCheck[];
+    blockers?: string[];
+    missing_inputs?: string[];
+  };
+  storm_depth_blockers?: string[];
+  storm_depth_blocker_details?: StormBlockerFix[];
+  blockers?: string[];
+  missing_inputs?: string[];
 };
 
 export type PlanExplanation = {
@@ -348,6 +529,69 @@ export type ReactiveUpdateReport = {
   changed_stages?: string[];
   impacted_engine_ids?: string[];
   impacted_stages?: string[];
+  skipped_stages?: string[];
+  dependency_graph?: {
+    nodes?: Array<{
+      id?: string;
+      label?: string;
+      state?: "affected" | "skipped" | string;
+      changed?: boolean;
+    }>;
+    edges?: Array<{
+      from?: string;
+      to?: string;
+      impacted?: boolean;
+      why?: string;
+    }>;
+  };
+  impact_matrix?: Array<{
+    stage?: string;
+    changed?: boolean;
+    stale_before_rerun?: boolean;
+    heavy?: boolean;
+    reason_codes?: string[];
+    why?: string;
+    export_blocking_until_complete?: boolean;
+  }>;
+  affected_system_report?: {
+    changed_systems?: Array<{
+      system?: string;
+      kind?: string;
+      why?: string;
+    }>;
+    affected_stages?: Array<{
+      stage?: string;
+      why?: string;
+      reason_codes?: string[];
+      rerun_required?: boolean;
+    }>;
+    skipped_stages?: Array<{
+      stage?: string;
+      why?: string;
+      rerun_required?: boolean;
+    }>;
+    changed_stages?: string[];
+    impacted_stages?: string[];
+    completed_stages?: string[];
+    stale_after_rerun?: string[];
+    unaffected_stages?: string[];
+  };
+  before_after_comparison?: Array<{
+    stage?: string;
+    before?: string;
+    after?: string;
+    changed?: boolean;
+    rerun_required?: boolean;
+    skipped?: boolean;
+  }>;
+  post_rerun_stage_status?: Array<{
+    stage?: string;
+    before?: string;
+    after?: string;
+    completed?: boolean;
+    stale_after_rerun?: boolean;
+    export_blocking?: boolean;
+  }>;
   execution_mode?: string;
   partial_rerun_executed?: boolean;
   partial_rerun_supported?: boolean;
@@ -355,6 +599,7 @@ export type ReactiveUpdateReport = {
   stale_outputs?: string[];
   export_blocked?: boolean;
   run_policy?: ReactiveRunPolicy;
+  post_rerun_completed_stages?: string[];
   post_rerun_stale_outputs?: string[];
   post_rerun_export_blocked?: boolean;
   post_rerun_production_ready?: boolean;
@@ -519,9 +764,90 @@ export type SmartFixRecommendationsV1 = {
   truth_label?: string;
 };
 
+export type EngineDepthDashboard = {
+  version?: "engine_depth_dashboard_v1" | string;
+  status?: string;
+  overall_depth_score?: number;
+  engine_count?: number;
+  scenario_count?: number;
+  failed_check_count?: number;
+  blocker_count?: number;
+  per_engine_scores?: Array<{
+    engine_id?: string;
+    name?: string;
+    score?: number;
+    classification?: string;
+    required_scenario_ids?: string[];
+    scenario_coverage_count?: number;
+    failed_check_count?: number;
+    blocker_count?: number;
+    launch_gate?: string;
+    confidence?: number;
+    first_failing_layer?: string;
+    fix_link?: {
+      label?: string;
+      target_panel?: string;
+      blocker_anchor?: string;
+      suggested_next_action?: string;
+    };
+  }>;
+  scenario_coverage?: Array<{
+    scenario_id?: string;
+    name?: string;
+    status?: string;
+    depth_score?: number;
+    required_engine_count?: number;
+    covered_engine_count?: number;
+    coverage_percent?: number;
+    failed_check_ids?: string[];
+    blocker_count?: number;
+    blocker_link?: {
+      label?: string;
+      target_panel?: string;
+      blocker_anchor?: string;
+    };
+  }>;
+  missing_proof_checklist?: Array<{
+    id?: string;
+    engine_id?: string;
+    scenario_id?: string;
+    label?: string;
+    status?: string;
+    severity?: string;
+    why_needed?: string;
+    suggested_next_action?: string;
+    target_panel?: string;
+    blocker_anchor?: string;
+  }>;
+  trend_history?: Array<{
+    index?: number;
+    status?: string;
+    overall_depth_score?: number;
+    scenario_count?: number;
+    blocker_count?: number;
+    failed_check_count?: number;
+  }>;
+  fix_links?: Array<{
+    label?: string;
+    target_panel?: string;
+    blocker_anchor?: string;
+    suggested_next_action?: string;
+  }>;
+  construction_release_allowed?: boolean;
+  truth_label?: string;
+};
+
 export type PlanMeta = {
   setup_wizard_state_v1?: SetupWizardStateV1;
   progress_timeline_v1?: ProgressTimelineV1;
+  engine_depth_dashboard_v1?: EngineDepthDashboard;
+  engine_depth_audit_report_v1?: Record<string, unknown> & {
+    engine_depth_dashboard_v1?: EngineDepthDashboard;
+  };
+  engine_depth_audit?: Record<string, unknown> & {
+    engine_depth_dashboard_v1?: EngineDepthDashboard;
+  };
+  engine_readiness?: Record<string, unknown>;
   explanation?: PlanExplanation;
   convergence_summary?: ConvergenceSummary;
   deliverables?: {
@@ -546,8 +872,12 @@ export type PlanMeta = {
     metrics?: ManagerMetrics;
   };
   quantities?: {
+    success?: boolean;
     totals?: QuantityTotals;
+    explain?: QuantityExplain;
   };
+  cost_estimate?: CostEstimate;
+  cost_package_status?: Record<string, unknown>;
   storm_pipes?: StormSummary;
   drainage?: Record<string, unknown>;
   grading?: Record<string, unknown>;
@@ -950,6 +1280,59 @@ export type PhaseStats = {
   coordination_validation: PhaseMetric[];
 };
 
+export type WaterFireFlowHydrant = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  zone_id?: string;
+  static_pressure_psi?: number | null;
+  residual_pressure_psi?: number | null;
+  available_flow_gpm?: number | null;
+  status?: "pass" | "review" | "fail" | string;
+};
+
+export type WaterPressureZone = {
+  id: string;
+  label: string;
+  min_pressure_psi?: number | null;
+  max_pressure_psi?: number | null;
+  residual_target_psi?: number | null;
+  color?: string;
+  geometry?: Array<[number, number]>;
+};
+
+export type WaterNetworkSegment = {
+  id: string;
+  label?: string;
+  from_hydrant_id?: string;
+  to_hydrant_id?: string;
+  network_type?: "loop" | "dead_end" | string;
+  diameter_in?: number | null;
+  length_ft?: number | null;
+  flow_gpm?: number | null;
+  geometry?: Array<[number, number]>;
+};
+
+export type FireFlowScenarioRun = {
+  id: string;
+  label: string;
+  hydrant_id?: string;
+  required_flow_gpm?: number | null;
+  available_flow_gpm?: number | null;
+  static_pressure_psi?: number | null;
+  residual_pressure_psi?: number | null;
+  residual_target_psi?: number | null;
+  status?: "pass" | "review" | "fail" | string;
+};
+
+export type WaterFireFlowAnnotations = {
+  hydrants?: WaterFireFlowHydrant[];
+  pressure_zones?: WaterPressureZone[];
+  network_segments?: WaterNetworkSegment[];
+  scenario_runs?: FireFlowScenarioRun[];
+};
+
 export type AuthStatus = {
   auth_enabled: boolean;
   user_count: number;
@@ -1017,6 +1400,7 @@ export type PreviewResponse = {
         invert_end_ft?: number | null;
       };
     }[];
+    water_fire_flow?: WaterFireFlowAnnotations;
   };
   summary?: {
     project_name?: string;
@@ -1346,4 +1730,46 @@ export type Preview3DItem = {
   color: string;
   label: string;
   layer: string;
+};
+
+export type GradingEarthworkUx = {
+  heatmapCells: Array<{
+    id: string;
+    xPct: number;
+    yPct: number;
+    wPct: number;
+    hPct: number;
+    mode: "cut" | "fill" | "balanced";
+    deltaFt: number;
+  }>;
+  surfaceComparison: {
+    existing: string;
+    proposed: string;
+    deltaLabel: string;
+    confidence: string;
+  };
+  padTieIns: Array<{
+    id: string;
+    label: string;
+    xPct: number;
+    yPct: number;
+    wPct: number;
+    hPct: number;
+    status: "ok" | "review" | "blocked";
+    slopePct: number | null;
+  }>;
+  retainingWall: {
+    triggered: boolean;
+    label: string;
+    tradeoff: string;
+    risk: "low" | "medium" | "high";
+  };
+  haulBalance: {
+    netCf: number | null;
+    cutCf: number | null;
+    fillCf: number | null;
+    balancePct: number;
+    direction: "export" | "import" | "balanced" | "unknown";
+    label: string;
+  };
 };

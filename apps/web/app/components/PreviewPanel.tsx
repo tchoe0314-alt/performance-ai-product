@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { Download, FileText, Hand, Lock, MapPin, Maximize2, MousePointer2, Pentagon, PencilLine, RefreshCw, RotateCcw, Square, Trash2, Unlock, X } from "lucide-react";
+import { AlertTriangle, Download, Droplets, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Pentagon, PencilLine, RefreshCw, RotateCcw, Route, ShieldCheck, Square, Table2, Trash2, Unlock, X } from "lucide-react";
 
 import type {
   Preview3DItem,
   PreviewResponse,
   PreviewReview,
   BuildingPlacement,
+  GradingEarthworkUx,
 } from "../types";
 import { formatCount, formatMetric } from "../utils/formatting";
 import {
@@ -35,6 +36,22 @@ type EngineeringSystemStatuses = Record<
   EngineeringSystemStatus
 >;
 type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
+type StormHydrologyOverlay = {
+  inletChecks?: Array<{
+    id: string;
+    x: number | null;
+    y: number | null;
+    spreadFt: number | null;
+    allowableSpreadFt: number | null;
+    status: string;
+  }>;
+  overflowPaths?: Array<{
+    id: string;
+    name: string;
+    capacityValid: boolean;
+    path: Array<{ x: number; y: number }>;
+  }>;
+};
 
 type ParkingParams = {
   stallWidth?: number;
@@ -49,6 +66,117 @@ type ParkingParams = {
   useMixedAngles?: boolean;
   compactZone?: boolean;
 };
+
+type WaterHydrantView = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  zoneId: string;
+  staticPressurePsi: number | null;
+  residualPressurePsi: number | null;
+  availableFlowGpm: number | null;
+  status: "pass" | "review" | "fail";
+  source: "annotation" | "canonical";
+};
+
+type WaterPressureZoneView = {
+  id: string;
+  label: string;
+  minPressurePsi: number | null;
+  maxPressurePsi: number | null;
+  residualTargetPsi: number;
+  color: string;
+  geometry: Array<[number, number]>;
+};
+
+type WaterNetworkSegmentView = {
+  id: string;
+  label: string;
+  fromHydrantId?: string;
+  toHydrantId?: string;
+  networkType: "loop" | "dead_end";
+  diameterIn: number | null;
+  lengthFt: number | null;
+  flowGpm: number | null;
+  geometry: Array<[number, number]>;
+};
+
+type FireScenarioView = {
+  id: string;
+  label: string;
+  hydrantId: string;
+  requiredFlowGpm: number;
+  availableFlowGpm: number;
+  staticPressurePsi: number;
+  residualPressurePsi: number;
+  residualTargetPsi: number;
+  status: "pass" | "review" | "fail";
+  networkType: "loop" | "dead_end";
+};
+
+type CoordinationSeverity = "clear" | "watch" | "conflict";
+
+type UtilityCoordinationRow = {
+  id: string;
+  label: string;
+  systemA: string;
+  systemB: string;
+  crossingType: "vertical" | "horizontal" | "unknown";
+  clearanceFt: number | null;
+  requiredFt: number | null;
+  status: CoordinationSeverity;
+  x: number;
+  y: number;
+  source: string;
+  rerouteOptions: string[];
+  constructabilityScore: number;
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const readMetaNumber = (meta: Record<string, unknown> | undefined, keys: string[]): number | null => {
+  if (!meta) return null;
+  for (const key of keys) {
+    const value = toFiniteNumber(meta[key]);
+    if (value !== null) return value;
+  }
+  return null;
+};
+
+const normalizeFlowStatus = (value: unknown): "pass" | "review" | "fail" => {
+  const status = String(value || "").toLowerCase();
+  if (status.includes("fail") || status.includes("block")) return "fail";
+  if (status.includes("pass") || status.includes("ok") || status.includes("ready")) return "pass";
+  return "review";
+};
+
+const formatFlowValue = (value: number | null | undefined, unit: string, decimals = 0) =>
+  value === null || value === undefined || Number.isNaN(value) ? "--" : `${value.toFixed(decimals)} ${unit}`;
+
+const normalizeSystemLabel = (value: unknown) => {
+  const raw = String(value || "").toLowerCase();
+  if (raw.includes("storm") || raw.includes("drain")) return "Storm";
+  if (raw.includes("sanitary") || raw.includes("sewer")) return "Sanitary";
+  if (raw.includes("water") || raw.includes("hydrant")) return "Water";
+  if (raw.includes("gas")) return "Gas";
+  if (raw.includes("electric") || raw.includes("power")) return "Electric";
+  if (raw.includes("telecom") || raw.includes("fiber")) return "Telecom";
+  if (raw.includes("road")) return "Road";
+  if (raw.includes("building")) return "Building";
+  if (raw.includes("utility")) return "Utility";
+  return String(value || "Utility").replace(/_/g, " ");
+};
+
+const formatClearance = (value: number | null | undefined) =>
+  value === null || value === undefined || Number.isNaN(value) ? "Needs source" : `${value.toFixed(1)} ft`;
 
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
@@ -131,6 +259,7 @@ type PreviewPanelProps = {
   showCalculations: boolean;
   measurementOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
   calculationOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
+  gradingEarthworkUx?: GradingEarthworkUx | null;
   geocode?: { lat?: number; lng?: number } | null;
   siteRotationDeg?: number | null;
   showSiteBounds?: boolean;
@@ -163,6 +292,7 @@ type PreviewPanelProps = {
     suggestedFixZone: { x: number; y: number; w: number; h: number } | null;
     approximate?: boolean;
   } | null;
+  stormHydrologyOverlay?: StormHydrologyOverlay;
   debugStats?: {
     enabled: boolean;
     projectId: string;
@@ -175,6 +305,7 @@ type PreviewPanelProps = {
 };
 
 export default function PreviewPanel({
+  previewReview,
   previewTotalPhaseCount,
   previewCompletedPhaseCount,
   previewRunningPhase,
@@ -187,6 +318,7 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   previewQuality,
+  systemStatuses,
   hasGeneratedPlan,
   onSetPreviewMode,
   onSetPreviewInteraction,
@@ -233,6 +365,7 @@ export default function PreviewPanel({
   showCalculations,
   measurementOverlayStats,
   calculationOverlayStats,
+  gradingEarthworkUx,
   geocode,
   siteRotationDeg,
   showSiteBounds = false,
@@ -248,12 +381,137 @@ export default function PreviewPanel({
   onViewportFootprint,
   siteLocked,
   gradingBlocker,
+  stormHydrologyOverlay,
   debugStats,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
     [planPreviewAnnotations],
   );
+  const utilityCoordinationRows = useMemo<UtilityCoordinationRow[]>(() => {
+    const explicit = (planPreviewAnnotations as Record<string, unknown> | null | undefined)?.utility_coordination;
+    const explicitRows = Array.isArray(explicit)
+      ? explicit
+      : Array.isArray((explicit as { rows?: unknown[] } | undefined)?.rows)
+        ? (explicit as { rows: unknown[] }).rows
+        : [];
+    const fromExplicit = explicitRows
+      .map((item, index) => {
+        const row = item as Record<string, unknown>;
+        const clearance = readMetaNumber(row, ["clearance_ft", "clearance", "vertical_clearance_ft", "horizontal_clearance_ft"]);
+        const required = readMetaNumber(row, ["required_clearance_ft", "minimum_clearance_ft", "min_clearance_ft"]);
+        const score = toFiniteNumber(row.constructability_score) ?? (clearance !== null && required !== null ? Math.round(Math.min(Math.max((clearance / Math.max(required, 0.1)) * 82, 20), 96)) : 58);
+        const status: CoordinationSeverity =
+          String(row.status || row.severity || "").toLowerCase().includes("conflict") ||
+          (clearance !== null && required !== null && clearance < required)
+            ? "conflict"
+            : clearance !== null && required !== null && clearance < required + 1
+              ? "watch"
+              : "clear";
+        const crossingType: UtilityCoordinationRow["crossingType"] =
+          String(row.crossing_type || row.clearance_type || "").toLowerCase().includes("horizontal")
+            ? "horizontal"
+            : String(row.crossing_type || row.clearance_type || "").toLowerCase().includes("vertical")
+              ? "vertical"
+              : "unknown";
+        return {
+          id: String(row.id || row.crossing_id || `coord-explicit-${index}`),
+          label: String(row.label || row.name || `Crossing ${index + 1}`),
+          systemA: normalizeSystemLabel(row.system_a || row.systemA || row.primary_system),
+          systemB: normalizeSystemLabel(row.system_b || row.systemB || row.secondary_system),
+          crossingType,
+          clearanceFt: clearance,
+          requiredFt: required,
+          status,
+          x: Math.min(Math.max(toFiniteNumber(row.x) ?? toFiniteNumber(row.relative_x) ?? 0.5, 0), 1),
+          y: Math.min(Math.max(toFiniteNumber(row.y) ?? toFiniteNumber(row.relative_y) ?? 0.5, 0), 1),
+          source: String(row.source || "coordination payload"),
+          rerouteOptions: Array.isArray(row.reroute_options)
+            ? row.reroute_options.map((value) => String(value)).slice(0, 3)
+            : [],
+          constructabilityScore: Math.round(Math.min(Math.max(score, 0), 100)),
+        };
+      });
+    if (fromExplicit.length) return fromExplicit;
+
+    const coordinationLabels = previewLabels.filter((item) => {
+      const text = `${item.label} ${item.layer} ${item.meta?.system || ""} ${item.meta?.source_stage || ""}`.toLowerCase();
+      return (
+        text.includes("conflict") ||
+        text.includes("crossing") ||
+        text.includes("clearance") ||
+        text.includes("utility") ||
+        text.includes("storm") ||
+        text.includes("sanitary") ||
+        text.includes("water")
+      );
+    });
+    const utilityLike = coordinationLabels.filter((item) => {
+      const text = `${item.label} ${item.layer} ${item.meta?.system || ""}`.toLowerCase();
+      return text.includes("utility") || text.includes("storm") || text.includes("sanitary") || text.includes("water");
+    });
+    const sourceRows = coordinationLabels.length ? coordinationLabels : utilityLike;
+    return sourceRows.slice(0, 8).map((item, index) => {
+      const meta = item.meta as Record<string, unknown> | undefined;
+      const text = `${item.label} ${item.layer} ${meta?.system || ""}`.toLowerCase();
+      const clearance = readMetaNumber(meta, [
+        "clearance_ft",
+        "vertical_clearance_ft",
+        "horizontal_clearance_ft",
+        "separation_ft",
+      ]);
+      const required = readMetaNumber(meta, ["required_clearance_ft", "minimum_clearance_ft", "min_clearance_ft"]);
+      const isConflict = text.includes("conflict") || (clearance !== null && required !== null && clearance < required);
+      const isWatch = text.includes("review") || text.includes("clearance") || (clearance !== null && required !== null && clearance < required + 1);
+      const primary = normalizeSystemLabel(meta?.system || meta?.source_type || item.layer);
+      const secondary = text.includes("storm")
+        ? "Utility"
+        : text.includes("sanitary")
+          ? "Storm"
+          : text.includes("water")
+            ? "Storm"
+            : "Drainage";
+      const scoreBase = isConflict ? 42 : isWatch ? 68 : 84;
+      const score = clearance !== null && required !== null
+        ? Math.round(Math.min(Math.max((clearance / Math.max(required, 0.1)) * 78, 24), 94))
+        : scoreBase;
+      return {
+        id: String(meta?.entity_id || `${item.layer}-${item.label}-${index}`),
+        label: item.label || `Coordination item ${index + 1}`,
+        systemA: primary,
+        systemB: normalizeSystemLabel(secondary),
+        crossingType: text.includes("horizontal") ? "horizontal" : text.includes("vertical") || text.includes("crossing") ? "vertical" : "unknown",
+        clearanceFt: clearance,
+        requiredFt: required,
+        status: isConflict ? "conflict" : isWatch ? "watch" : "clear",
+        x: Math.min(Math.max(item.x, 0), 1),
+        y: Math.min(Math.max(item.y, 0), 1),
+        source: String(meta?.source_stage || meta?.canonical_source_type || "preview annotation"),
+        rerouteOptions: isConflict
+          ? ["Shift laterally", "Raise/flatten crossing", "Split run around constraint"]
+          : isWatch
+            ? ["Verify invert", "Add survey-control check", "Hold route for engineer review"]
+            : ["Keep route", "Document clearance"],
+        constructabilityScore: score,
+      };
+    });
+  }, [planPreviewAnnotations, previewLabels]);
+  const utilityCoordinationSummary = useMemo(() => {
+    const conflictCount = utilityCoordinationRows.filter((row) => row.status === "conflict").length;
+    const watchCount = utilityCoordinationRows.filter((row) => row.status === "watch").length;
+    const avgScore = utilityCoordinationRows.length
+      ? Math.round(utilityCoordinationRows.reduce((sum, row) => sum + row.constructabilityScore, 0) / utilityCoordinationRows.length)
+      : previewReview?.unresolved_conflict_count
+        ? 48
+        : 76;
+    return {
+      crossingCount: utilityCoordinationRows.length,
+      conflictCount,
+      watchCount,
+      avgScore,
+      status: conflictCount > 0 ? "conflict" : watchCount > 0 ? "watch" : "clear" as CoordinationSeverity,
+    };
+  }, [previewReview?.unresolved_conflict_count, utilityCoordinationRows]);
   const issueHighlightBounds = useMemo(() => {
     if (!selectedIssueLabel || !previewLabels.length) return null;
     const target = previewLabels.find(
@@ -274,6 +532,7 @@ export default function PreviewPanel({
   const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
+  const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
@@ -557,6 +816,20 @@ export default function PreviewPanel({
   );
   const selectedDeletableObject =
     selectedObject && !selectedObject.locked ? selectedObject : null;
+  const showEarthworkUx =
+    previewMode === "2d" &&
+    Boolean(gradingEarthworkUx) &&
+    (hasGradingSurface || systemStatuses.grading === "fresh" || previewQuality === "high");
+  const heatmapFill = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
+    if (mode === "cut") return "rgba(239, 68, 68, 0.2)";
+    if (mode === "fill") return "rgba(14, 165, 233, 0.2)";
+    return "rgba(34, 197, 94, 0.14)";
+  };
+  const heatmapStroke = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
+    if (mode === "cut") return "rgba(220, 38, 38, 0.34)";
+    if (mode === "fill") return "rgba(2, 132, 199, 0.34)";
+    return "rgba(22, 163, 74, 0.3)";
+  };
   const accessPointsForParking = useMemo(
     () =>
       buildingPlacements
@@ -564,6 +837,226 @@ export default function PreviewPanel({
         .map((item) => ({ x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 })),
     [buildingPlacements],
   );
+  const waterFireFlow = useMemo(() => {
+    const annotations = planPreviewAnnotations?.water_fire_flow;
+    const placedObjects = [...buildingPlacements, ...suggestedPlacements].filter(
+      (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
+    );
+    const annotationZones: WaterPressureZoneView[] = (annotations?.pressure_zones ?? [])
+      .map((zone, idx) => {
+        const geometry = Array.isArray(zone.geometry) ? zone.geometry : [];
+        return {
+          id: zone.id || `pressure-zone-${idx + 1}`,
+          label: zone.label || `Pressure Zone ${idx + 1}`,
+          minPressurePsi: toFiniteNumber(zone.min_pressure_psi),
+          maxPressurePsi: toFiniteNumber(zone.max_pressure_psi),
+          residualTargetPsi: toFiniteNumber(zone.residual_target_psi) ?? 20,
+          color: zone.color || (idx % 2 === 0 ? "#0ea5e9" : "#14b8a6"),
+          geometry,
+        };
+      });
+    const fallbackZone: WaterPressureZoneView | null =
+      !annotationZones.length && lotWidth > 0 && lotHeight > 0
+        ? {
+            id: "zone-a",
+            label: "Zone A",
+            minPressurePsi: 45,
+            maxPressurePsi: 80,
+            residualTargetPsi: 20,
+            color: "#0ea5e9",
+            geometry: [
+              [0, 0],
+              [lotWidth, 0],
+              [lotWidth, lotHeight],
+              [0, lotHeight],
+              [0, 0],
+            ],
+          }
+        : null;
+    const pressureZones = fallbackZone ? [fallbackZone] : annotationZones;
+    const defaultZone = pressureZones[0];
+    const annotatedHydrants: WaterHydrantView[] = (annotations?.hydrants ?? [])
+      .map((hydrant, idx) => {
+        const staticPressurePsi = toFiniteNumber(hydrant.static_pressure_psi);
+        const availableFlowGpm = toFiniteNumber(hydrant.available_flow_gpm);
+        const residualPressurePsi = toFiniteNumber(hydrant.residual_pressure_psi);
+        const row: WaterHydrantView = {
+          id: hydrant.id || `hydrant-ann-${idx + 1}`,
+          label: hydrant.label || `H-${idx + 1}`,
+          x: toFiniteNumber(hydrant.x) ?? 0,
+          y: toFiniteNumber(hydrant.y) ?? 0,
+          zoneId: hydrant.zone_id || defaultZone?.id || "zone-a",
+          staticPressurePsi,
+          residualPressurePsi,
+          availableFlowGpm,
+          status: normalizeFlowStatus(hydrant.status),
+          source: "annotation" as const,
+        };
+        return row;
+      })
+      .filter((hydrant) => Number.isFinite(hydrant.x) && Number.isFinite(hydrant.y));
+    const canonicalHydrants: WaterHydrantView[] = placedObjects
+      .filter((item) => item.type === "hydrant" || String(item.label || "").toLowerCase().includes("hydrant"))
+      .map((item, idx) => {
+        const meta = item.meta as Record<string, unknown> | undefined;
+        const staticPressurePsi = readMetaNumber(meta, ["static_pressure_psi", "pressure_psi", "staticPressurePsi"]);
+        const residualPressurePsi = readMetaNumber(meta, ["residual_pressure_psi", "residualPressurePsi"]);
+        const availableFlowGpm = readMetaNumber(meta, ["available_flow_gpm", "flow_gpm", "availableFlowGpm"]);
+        return {
+          id: item.id || `hydrant-${idx + 1}`,
+          label: item.label || `H-${idx + 1}`,
+          x: (item.x ?? 0) + item.w / 2,
+          y: (item.y ?? 0) + item.d / 2,
+          zoneId: String(meta?.zone_id || meta?.pressure_zone_id || defaultZone?.id || "zone-a"),
+          staticPressurePsi,
+          residualPressurePsi,
+          availableFlowGpm,
+          status: normalizeFlowStatus(meta?.status),
+          source: "canonical" as const,
+        };
+      });
+    const hydrantsById = new Map<string, WaterHydrantView>();
+    [...annotatedHydrants, ...canonicalHydrants].forEach((hydrant) => {
+      if (!hydrantsById.has(hydrant.id)) hydrantsById.set(hydrant.id, hydrant);
+    });
+    const hydrants = Array.from(hydrantsById.values());
+    const waterLineObjects = placedObjects.filter((item) => {
+      const label = String(item.label || "").toLowerCase();
+      const meta = item.meta as Record<string, unknown> | undefined;
+      const system = String(meta?.system || meta?.discipline || "").toLowerCase();
+      return (
+        item.type === "utility_corridor" ||
+        label.includes("water") ||
+        label.includes("main") ||
+        label.includes("fire") ||
+        system.includes("water")
+      );
+    });
+    const annotatedSegments: WaterNetworkSegmentView[] = (annotations?.network_segments ?? [])
+      .map((segment, idx) => ({
+        id: segment.id || `water-segment-ann-${idx + 1}`,
+        label: segment.label || `W-${idx + 1}`,
+        fromHydrantId: segment.from_hydrant_id,
+        toHydrantId: segment.to_hydrant_id,
+        networkType: String(segment.network_type || "").toLowerCase().includes("dead") ? "dead_end" : "loop",
+        diameterIn: toFiniteNumber(segment.diameter_in),
+        lengthFt: toFiniteNumber(segment.length_ft),
+        flowGpm: toFiniteNumber(segment.flow_gpm),
+        geometry: Array.isArray(segment.geometry) ? segment.geometry : [],
+      }));
+    const objectSegments: WaterNetworkSegmentView[] = waterLineObjects
+      .filter((item) => item.geometryType === "polyline" && Array.isArray(item.geometry) && item.geometry.length > 1)
+      .map((item, idx) => {
+        const meta = item.meta as Record<string, unknown> | undefined;
+        const geometry = item.geometry ?? [];
+        const first = geometry[0];
+        const last = geometry[geometry.length - 1];
+        const closed = Boolean(first && last && Math.hypot(first[0] - last[0], first[1] - last[1]) < 5);
+        return {
+          id: item.id || `water-segment-${idx + 1}`,
+          label: item.label || `Water Main ${idx + 1}`,
+          networkType: closed ? "loop" : "dead_end",
+          diameterIn: readMetaNumber(meta, ["diameter_in", "diameterIn"]),
+          lengthFt: readMetaNumber(meta, ["length_ft", "lengthFt"]),
+          flowGpm: readMetaNumber(meta, ["flow_gpm", "flowGpm"]),
+          geometry,
+        };
+      });
+    const inferredSegments: WaterNetworkSegmentView[] =
+      !annotatedSegments.length && !objectSegments.length && hydrants.length > 1
+        ? hydrants.slice(0, -1).map((hydrant, idx) => {
+            const next = hydrants[idx + 1];
+            const loopCandidate =
+              hydrants.length > 2 && idx === hydrants.length - 2
+                ? [
+                    [hydrant.x, hydrant.y],
+                    [next.x, next.y],
+                    [hydrants[0].x, hydrants[0].y],
+                  ]
+                : [
+                    [hydrant.x, hydrant.y],
+                    [next.x, next.y],
+                  ];
+            return {
+              id: `hydrant-link-${idx + 1}`,
+              label: `${hydrant.label} to ${next.label}`,
+              fromHydrantId: hydrant.id,
+              toHydrantId: next.id,
+              networkType: hydrants.length > 2 ? "loop" : "dead_end",
+              diameterIn: 8,
+              lengthFt: Math.hypot(hydrant.x - next.x, hydrant.y - next.y),
+              flowGpm: null,
+              geometry: loopCandidate as Array<[number, number]>,
+            };
+          })
+        : [];
+    const networkSegments = [...annotatedSegments, ...objectSegments, ...inferredSegments];
+    const zoneById = new Map(pressureZones.map((zone) => [zone.id, zone]));
+    const networkByHydrant = new Map<string, "loop" | "dead_end">();
+    networkSegments.forEach((segment) => {
+      if (segment.fromHydrantId) networkByHydrant.set(segment.fromHydrantId, segment.networkType);
+      if (segment.toHydrantId) networkByHydrant.set(segment.toHydrantId, segment.networkType);
+    });
+    const annotatedScenarios: FireScenarioView[] = (annotations?.scenario_runs ?? [])
+      .map((scenario, idx) => {
+        const hydrant = hydrants.find((item) => item.id === scenario.hydrant_id) ?? hydrants[idx] ?? hydrants[0];
+        const zone = hydrant ? zoneById.get(hydrant.zoneId) : defaultZone;
+        const requiredFlowGpm = toFiniteNumber(scenario.required_flow_gpm) ?? 1500;
+        const availableFlowGpm = toFiniteNumber(scenario.available_flow_gpm) ?? hydrant?.availableFlowGpm ?? 0;
+        const staticPressurePsi = toFiniteNumber(scenario.static_pressure_psi) ?? hydrant?.staticPressurePsi ?? 0;
+        const residualTargetPsi = toFiniteNumber(scenario.residual_target_psi) ?? zone?.residualTargetPsi ?? 20;
+        const residualPressurePsi =
+          toFiniteNumber(scenario.residual_pressure_psi) ??
+          hydrant?.residualPressurePsi ??
+          Math.max(0, staticPressurePsi - requiredFlowGpm / 90);
+        return {
+          id: scenario.id || `fire-flow-${idx + 1}`,
+          label: scenario.label || `${hydrant?.label || "Hydrant"} fire-flow`,
+          hydrantId: hydrant?.id || scenario.hydrant_id || "",
+          requiredFlowGpm,
+          availableFlowGpm,
+          staticPressurePsi,
+          residualPressurePsi,
+          residualTargetPsi,
+          status: normalizeFlowStatus(scenario.status || (availableFlowGpm >= requiredFlowGpm && residualPressurePsi >= residualTargetPsi ? "pass" : "fail")),
+          networkType: hydrant ? networkByHydrant.get(hydrant.id) ?? "dead_end" : "dead_end",
+        };
+      });
+    const derivedScenarios: FireScenarioView[] =
+      annotatedScenarios.length || !hydrants.length
+        ? []
+        : hydrants.map((hydrant) => {
+            const zone = zoneById.get(hydrant.zoneId) ?? defaultZone;
+            const networkType = networkByHydrant.get(hydrant.id) ?? (networkSegments.length ? "loop" : "dead_end");
+            const staticPressurePsi = hydrant.staticPressurePsi ?? 62;
+            const requiredFlowGpm = 1500;
+            const availableFlowGpm = hydrant.availableFlowGpm ?? Math.max(500, staticPressurePsi * (networkType === "loop" ? 34 : 26));
+            const residualTargetPsi = zone?.residualTargetPsi ?? 20;
+            const residualPressurePsi =
+              hydrant.residualPressurePsi ??
+              Math.max(0, staticPressurePsi - requiredFlowGpm / (networkType === "loop" ? 105 : 82));
+            return {
+              id: `derived-${hydrant.id}`,
+              label: `${hydrant.label} fire-flow`,
+              hydrantId: hydrant.id,
+              requiredFlowGpm,
+              availableFlowGpm,
+              staticPressurePsi,
+              residualPressurePsi,
+              residualTargetPsi,
+              status: availableFlowGpm >= requiredFlowGpm && residualPressurePsi >= residualTargetPsi ? "pass" : "fail",
+              networkType,
+            };
+          });
+    const scenarios = annotatedScenarios.length ? annotatedScenarios : derivedScenarios;
+    const selectedScenario =
+      scenarios.find((scenario) => scenario.id === selectedFireScenarioId) ?? scenarios[0] ?? null;
+    const selectedHydrant = selectedScenario
+      ? hydrants.find((hydrant) => hydrant.id === selectedScenario.hydrantId) ?? null
+      : null;
+    const hasData = hydrants.length > 0 || networkSegments.length > 0 || pressureZones.length > 0;
+    return { hydrants, pressureZones, networkSegments, scenarios, selectedScenario, selectedHydrant, hasData };
+  }, [buildingPlacements, lotHeight, lotWidth, planPreviewAnnotations?.water_fire_flow, selectedFireScenarioId, suggestedPlacements]);
 
   useEffect(() => {
     if (!activeAnnotation?.meta) {
@@ -1542,7 +2035,7 @@ export default function PreviewPanel({
   useEffect(() => {
     if (!debugStats?.enabled) return;
     if (renderedCanonicalCount > 0 && !overlayBoundsResolved) {
-      console.warn("[debug-preview] render-missing-overlay", {
+      console.debug("[debug-preview] overlay-bounds-pending", {
         renderedCanonicalCount,
         lotWidth,
         lotHeight,
@@ -2559,6 +3052,68 @@ export default function PreviewPanel({
           .filter(Boolean),
       });
       ensureSource("civora-basins", toFeatureCollection(basins, "Polygon"));
+      ensureSource("civora-pressure-zones", {
+        type: "FeatureCollection",
+        features: waterFireFlow.pressureZones
+          .filter((zone) => zone.geometry.length > 2)
+          .map((zone) => {
+            const coords = zone.geometry
+              .map((pt) => siteToLatLng(pt[0], pt[1]))
+              .filter(Boolean) as Array<[number, number]>;
+            if (coords.length < 4) return null;
+            return {
+              type: "Feature",
+              geometry: { type: "Polygon", coordinates: [coords] },
+              properties: {
+                id: zone.id,
+                label: zone.label,
+                color: zone.color,
+              },
+            };
+          })
+          .filter(Boolean),
+      });
+      ensureSource("civora-water-segments", {
+        type: "FeatureCollection",
+        features: waterFireFlow.networkSegments
+          .filter((segment) => segment.geometry.length > 1)
+          .map((segment) => {
+            const coords = segment.geometry
+              .map((pt) => siteToLatLng(pt[0], pt[1]))
+              .filter(Boolean) as Array<[number, number]>;
+            if (coords.length < 2) return null;
+            return {
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: coords },
+              properties: {
+                id: segment.id,
+                label: segment.label,
+                networkType: segment.networkType,
+                diameter: segment.diameterIn,
+              },
+            };
+          })
+          .filter(Boolean),
+      });
+      ensureSource("civora-hydrants", {
+        type: "FeatureCollection",
+        features: waterFireFlow.hydrants
+          .map((hydrant) => {
+            const coord = siteToLatLng(hydrant.x, hydrant.y);
+            if (!coord) return null;
+            return {
+              type: "Feature",
+              geometry: { type: "Point", coordinates: coord },
+              properties: {
+                id: hydrant.id,
+                label: hydrant.label,
+                status: hydrant.status,
+                selected: waterFireFlow.selectedHydrant?.id === hydrant.id,
+              },
+            };
+          })
+          .filter(Boolean),
+      });
       ensureSource("civora-custom-areas", toFeatureCollection(customAreas, "Polygon"));
       ensureSource("civora-custom-lines", toFeatureCollection(customLines, "LineString"));
       ensureSource("civora-custom-points", {
@@ -2678,6 +3233,38 @@ export default function PreviewPanel({
         "fill-color": "#0ea5e9",
         "fill-opacity": 0.28,
       });
+      ensureLayer("civora-pressure-zones-fill", "civora-pressure-zones", "fill", {
+        "fill-color": ["coalesce", ["get", "color"], "#0ea5e9"],
+        "fill-opacity": 0.12,
+      });
+      ensureLayer("civora-pressure-zones-line", "civora-pressure-zones", "line", {
+        "line-color": ["coalesce", ["get", "color"], "#0ea5e9"],
+        "line-width": 1.6,
+        "line-dasharray": [2, 1],
+      });
+      ensureLayer("civora-water-segments-line", "civora-water-segments", "line", {
+        "line-color": [
+          "case",
+          ["==", ["get", "networkType"], "loop"],
+          "#0284c7",
+          "#f97316",
+        ],
+        "line-width": ["case", ["==", ["get", "networkType"], "loop"], 3, 2.4],
+        "line-dasharray": ["case", ["==", ["get", "networkType"], "loop"], ["literal", [1, 0]], ["literal", [2, 1]]],
+      });
+      ensureLayer("civora-hydrants-circle", "civora-hydrants", "circle", {
+        "circle-color": [
+          "case",
+          ["==", ["get", "status"], "pass"],
+          "#16a34a",
+          ["==", ["get", "status"], "fail"],
+          "#dc2626",
+          "#f97316",
+        ],
+        "circle-radius": ["case", ["==", ["get", "selected"], true], 7, 5],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 2,
+      });
       ensureLayer("civora-custom-areas-fill", "civora-custom-areas", "fill", {
         "fill-color": [
           "case",
@@ -2758,6 +3345,7 @@ export default function PreviewPanel({
     showSiteBounds,
     suggestedPlacements.length,
     surveyPoints,
+    waterFireFlow,
   ]);
 
   useEffect(() => {
@@ -3382,6 +3970,120 @@ export default function PreviewPanel({
               </div>
             </div>
           ) : null}
+          <div className="mb-3 grid gap-3 xl:grid-cols-[1.1fr_1.4fr_1fr]">
+            <section className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm" data-testid="utility-conflict-viewer">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Conflict Viewer</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {utilityCoordinationSummary.conflictCount
+                      ? `${utilityCoordinationSummary.conflictCount} conflicts need review`
+                      : utilityCoordinationSummary.watchCount
+                        ? `${utilityCoordinationSummary.watchCount} clearance items need review`
+                        : "No utility conflicts flagged"}
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                    utilityCoordinationSummary.status === "conflict"
+                      ? "bg-red-50 text-red-700"
+                      : utilityCoordinationSummary.status === "watch"
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {utilityCoordinationSummary.status}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {[
+                  ["Crossings", utilityCoordinationSummary.crossingCount],
+                  ["Conflicts", utilityCoordinationSummary.conflictCount],
+                  ["Watch", utilityCoordinationSummary.watchCount],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                Coordination evidence is review-only. Clearance and reroute guidance do not approve construction or replace the responsible engineer.
+              </p>
+            </section>
+
+            <section className="min-w-0 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm" data-testid="utility-crossing-table">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Crossing Table</p>
+                <Table2 className="h-4 w-4 text-slate-400" />
+              </div>
+              <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+                <div className="grid grid-cols-[1.2fr_0.7fr_0.7fr_0.7fr] bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  <span>Pair</span>
+                  <span>Type</span>
+                  <span>Clearance</span>
+                  <span>Score</span>
+                </div>
+                <div className="max-h-36 overflow-auto">
+                  {utilityCoordinationRows.length ? (
+                    utilityCoordinationRows.map((row) => (
+                      <div key={row.id} className="grid grid-cols-[1.2fr_0.7fr_0.7fr_0.7fr] border-t border-slate-100 px-3 py-2 text-xs">
+                        <span className="min-w-0 truncate font-semibold text-slate-800">{row.systemA} / {row.systemB}</span>
+                        <span className="capitalize text-slate-500">{row.crossingType}</span>
+                        <span className={row.status === "conflict" ? "font-semibold text-red-700" : row.status === "watch" ? "font-semibold text-amber-700" : "font-semibold text-emerald-700"}>
+                          {formatClearance(row.clearanceFt)}
+                        </span>
+                        <span className="font-semibold text-slate-800">{row.constructabilityScore}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-3 py-4 text-sm text-slate-500">No crossing evidence has been generated yet.</div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm" data-testid="utility-constructability-scoring">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Constructability</p>
+                <ShieldCheck className="h-4 w-4 text-slate-400" />
+              </div>
+              <div className="mt-3">
+                <div className="flex items-end justify-between gap-3">
+                  <span className="text-3xl font-semibold text-slate-900">{utilityCoordinationSummary.avgScore}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">review score</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={`h-full rounded-full ${
+                      utilityCoordinationSummary.avgScore < 55
+                        ? "bg-red-500"
+                        : utilityCoordinationSummary.avgScore < 75
+                          ? "bg-amber-500"
+                          : "bg-emerald-500"
+                    }`}
+                    style={{ width: `${Math.min(Math.max(utilityCoordinationSummary.avgScore, 4), 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" data-testid="utility-clearance-view">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Vertical / Horizontal Clearance</p>
+                <p className="mt-1 text-xs font-semibold text-slate-700">
+                  {utilityCoordinationRows.filter((row) => row.crossingType === "vertical").length} vertical · {utilityCoordinationRows.filter((row) => row.crossingType === "horizontal").length} horizontal
+                </p>
+              </div>
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" data-testid="utility-reroute-options">
+                <div className="flex items-center gap-2">
+                  <Route className="h-3.5 w-3.5 text-slate-400" />
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Reroute Options</p>
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs font-medium text-slate-700">
+                  {(utilityCoordinationRows.find((row) => row.status === "conflict") ?? utilityCoordinationRows[0])?.rerouteOptions.join(" · ") || "Generate utilities to see reroute options."}
+                </p>
+              </div>
+            </section>
+          </div>
           {show3D ? (
             preview3DEffectiveItems.length ? (
               <div
@@ -3758,6 +4460,70 @@ export default function PreviewPanel({
                         preserveAspectRatio="none"
                         style={viewportTransformStyle}
                       >
+                        {showEarthworkUx && gradingEarthworkUx ? (
+                          <g data-testid="earthwork-ux-overlay">
+                            {gradingEarthworkUx.heatmapCells.map((cell) => (
+                              <rect
+                                key={cell.id}
+                                x={cell.xPct}
+                                y={cell.yPct}
+                                width={cell.wPct}
+                                height={cell.hPct}
+                                fill={heatmapFill(cell.mode)}
+                                stroke={heatmapStroke(cell.mode)}
+                                strokeWidth={0.12}
+                              />
+                            ))}
+                            {gradingEarthworkUx.padTieIns.map((pad) => {
+                              const stroke =
+                                pad.status === "blocked"
+                                  ? "#ef4444"
+                                  : pad.status === "review"
+                                    ? "#f59e0b"
+                                    : "#10b981";
+                              return (
+                                <g key={pad.id}>
+                                  <rect
+                                    x={pad.xPct}
+                                    y={pad.yPct}
+                                    width={pad.wPct}
+                                    height={pad.hPct}
+                                    fill="none"
+                                    stroke={stroke}
+                                    strokeWidth={0.52}
+                                    strokeDasharray={pad.status === "ok" ? undefined : "1.4 1"}
+                                  />
+                                  <line
+                                    x1={pad.xPct}
+                                    y1={pad.yPct + pad.hPct}
+                                    x2={pad.xPct + pad.wPct}
+                                    y2={pad.yPct}
+                                    stroke={stroke}
+                                    strokeWidth={0.26}
+                                    opacity={0.72}
+                                  />
+                                </g>
+                              );
+                            })}
+                            {gradingEarthworkUx.retainingWall.triggered ? (
+                              <line
+                                x1={8}
+                                y1={88}
+                                x2={92}
+                                y2={76}
+                                stroke={
+                                  gradingEarthworkUx.retainingWall.risk === "high"
+                                    ? "#ef4444"
+                                    : gradingEarthworkUx.retainingWall.risk === "medium"
+                                      ? "#f97316"
+                                      : "#64748b"
+                                }
+                                strokeWidth={0.62}
+                                strokeDasharray="2 1.4"
+                              />
+                            ) : null}
+                          </g>
+                        ) : null}
                         {gradingBlocker ? (
                           (() => {
                             const toPct = (pt: { x: number; y: number }) => ({
@@ -3815,6 +4581,121 @@ export default function PreviewPanel({
                               </g>
                             );
                           })()
+                        ) : null}
+                        {stormHydrologyOverlay?.overflowPaths?.length ? (
+                          <g>
+                            {stormHydrologyOverlay.overflowPaths.map((path) => {
+                              const points = path.path
+                                .map((pt) => {
+                                  const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
+                                  return `${x},${y}`;
+                                })
+                                .join(" ");
+                              if (!points) return null;
+                              const labelPoint = path.path[Math.floor(path.path.length / 2)] ?? path.path[0];
+                              const [labelX, labelY] = siteTupleToPercent([labelPoint.x, labelPoint.y], currentSiteSize);
+                              return (
+                                <g key={`overflow-${path.id}`}>
+                                  <polyline
+                                    points={points}
+                                    fill="none"
+                                    stroke={path.capacityValid ? "#0f766e" : "#dc2626"}
+                                    strokeWidth={0.7}
+                                    strokeDasharray="2.5 1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                  <text
+                                    x={labelX}
+                                    y={labelY}
+                                    fontSize="2.8"
+                                    fill={path.capacityValid ? "#0f766e" : "#dc2626"}
+                                    textAnchor="middle"
+                                  >
+                                    {path.name}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </g>
+                        ) : null}
+                        {stormHydrologyOverlay?.inletChecks?.length ? (
+                          <g>
+                            {stormHydrologyOverlay.inletChecks.map((inlet) => {
+                              if (inlet.x === null || inlet.y === null) return null;
+                              const [x, y] = siteTupleToPercent([inlet.x, inlet.y], currentSiteSize);
+                              const spreadRadius = Math.max(
+                                1.1,
+                                Math.min(
+                                  5.5,
+                                  ((inlet.spreadFt ?? inlet.allowableSpreadFt ?? 6) /
+                                    Math.max(currentSiteSize.width, currentSiteSize.height, 1)) *
+                                    100,
+                                ),
+                              );
+                              const overTarget =
+                                inlet.spreadFt !== null &&
+                                inlet.allowableSpreadFt !== null &&
+                                inlet.spreadFt > inlet.allowableSpreadFt;
+                              return (
+                                <g key={`inlet-spread-${inlet.id}`}>
+                                  <circle
+                                    cx={x}
+                                    cy={y}
+                                    r={spreadRadius}
+                                    fill={overTarget ? "rgba(248,113,113,0.2)" : "rgba(14,165,233,0.2)"}
+                                    stroke={overTarget ? "#dc2626" : "#0284c7"}
+                                    strokeWidth={0.42}
+                                  />
+                                  <circle cx={x} cy={y} r={0.7} fill={overTarget ? "#dc2626" : "#0284c7"} />
+                                  <text
+                                    x={x}
+                                    y={Math.max(y - spreadRadius - 1, 2)}
+                                    fontSize="2.6"
+                                    fill={overTarget ? "#b91c1c" : "#0369a1"}
+                                    textAnchor="middle"
+                                  >
+                                    {inlet.id}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </g>
+                        ) : null}
+                        {utilityCoordinationRows.length ? (
+                          <g>
+                            {utilityCoordinationRows.map((row, index) => {
+                              const fill =
+                                row.status === "conflict"
+                                  ? "#dc2626"
+                                  : row.status === "watch"
+                                    ? "#d97706"
+                                    : "#059669";
+                              const ring =
+                                row.status === "conflict"
+                                  ? "rgba(220,38,38,0.18)"
+                                  : row.status === "watch"
+                                    ? "rgba(217,119,6,0.18)"
+                                    : "rgba(5,150,105,0.14)";
+                              const x = row.x * 100;
+                              const y = row.y * 100;
+                              return (
+                                <g key={`utility-coordination-${row.id}`}>
+                                  <circle cx={x} cy={y} r={2.6} fill={ring} stroke={fill} strokeWidth={0.42} />
+                                  <circle cx={x} cy={y} r={0.9} fill={fill} />
+                                  <text
+                                    x={Math.min(x + 2.4, 96)}
+                                    y={Math.max(y - 2.2, 3)}
+                                    fontSize="2.45"
+                                    fill={fill}
+                                    fontWeight={700}
+                                  >
+                                    C{index + 1}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </g>
                         ) : null}
                         {buildingPlacements
                           .filter((item) => item.geometryType === "polyline" && Array.isArray(item.geometry))
@@ -3981,6 +4862,76 @@ export default function PreviewPanel({
                               />
                             );
                           })}
+                        {waterFireFlow.hasData ? (
+                          <g>
+                            {waterFireFlow.pressureZones.map((zone) => {
+                              if (zone.geometry.length < 3) return null;
+                              const points = zone.geometry
+                                .map((pt) => siteTupleToPercent(pt, currentSiteSize).join(","))
+                                .join(" ");
+                              return (
+                                <polygon
+                                  key={`water-zone-${zone.id}`}
+                                  points={points}
+                                  fill={zone.color}
+                                  opacity={0.1}
+                                  stroke={zone.color}
+                                  strokeWidth={0.45}
+                                  strokeDasharray="2 1"
+                                />
+                              );
+                            })}
+                            {waterFireFlow.networkSegments.map((segment) => {
+                              if (segment.geometry.length < 2) return null;
+                              const points = segment.geometry
+                                .map((pt) => siteTupleToPercent(pt, currentSiteSize).join(","))
+                                .join(" ");
+                              return (
+                                <polyline
+                                  key={`water-segment-${segment.id}`}
+                                  points={points}
+                                  fill="none"
+                                  stroke={segment.networkType === "loop" ? "#0284c7" : "#f97316"}
+                                  strokeWidth={segment.networkType === "loop" ? 0.72 : 0.58}
+                                  strokeDasharray={segment.networkType === "loop" ? undefined : "1.5 1"}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              );
+                            })}
+                            {waterFireFlow.hydrants.map((hydrant) => {
+                              const [x, y] = siteTupleToPercent([hydrant.x, hydrant.y], currentSiteSize);
+                              const selected = waterFireFlow.selectedHydrant?.id === hydrant.id;
+                              const statusColor =
+                                hydrant.status === "pass"
+                                  ? "#16a34a"
+                                  : hydrant.status === "fail"
+                                    ? "#dc2626"
+                                    : "#f97316";
+                              return (
+                                <g key={`hydrant-marker-${hydrant.id}`}>
+                                  <circle
+                                    cx={x}
+                                    cy={y}
+                                    r={selected ? 1.25 : 0.92}
+                                    fill={statusColor}
+                                    stroke="#ffffff"
+                                    strokeWidth={0.32}
+                                  />
+                                  <text
+                                    x={x + 1.3}
+                                    y={y - 1.2}
+                                    fontSize="2.4"
+                                    fill="#0f172a"
+                                    fontWeight={700}
+                                  >
+                                    {hydrant.label}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </g>
+                        ) : null}
                         {(surveyPoints ?? []).length
                           ? (surveyPoints ?? []).slice(0, 1500).map((pt, idx) => {
                               const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
@@ -4094,6 +5045,82 @@ export default function PreviewPanel({
                         ) : null}
                       </svg>
                     ) : null}
+                    {showEarthworkUx && gradingEarthworkUx ? (
+                      <div
+                        data-testid="grading-earthwork-panel"
+                        className="pointer-events-none absolute bottom-4 left-4 z-[24] w-[min(360px,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.85)] backdrop-blur"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              Grading / earthwork
+                            </p>
+                            <p className="mt-1 font-semibold text-slate-900">
+                              {gradingEarthworkUx.surfaceComparison.deltaLabel}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              gradingEarthworkUx.haulBalance.direction === "export"
+                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                : gradingEarthworkUx.haulBalance.direction === "import"
+                                  ? "border-sky-200 bg-sky-50 text-sky-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            }`}
+                          >
+                            {gradingEarthworkUx.haulBalance.label}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {[
+                            ["Cut", gradingEarthworkUx.haulBalance.cutCf, "cf"],
+                            ["Fill", gradingEarthworkUx.haulBalance.fillCf, "cf"],
+                            ["Net", gradingEarthworkUx.haulBalance.netCf, "cf"],
+                          ].map(([label, value, unit]) => (
+                            <div key={label as string} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                {label as string}
+                              </p>
+                              <p className="mt-0.5 font-semibold text-slate-800">
+                                {typeof value === "number" ? formatMetric(value, unit as string) : "Pending"}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Surface comparison
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-700">
+                              {gradingEarthworkUx.surfaceComparison.existing} to {gradingEarthworkUx.surfaceComparison.proposed}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Wall trigger
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-700">
+                              {gradingEarthworkUx.retainingWall.label}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                          <span className="inline-flex items-center gap-1 text-rose-700">
+                            <span className="h-2 w-2 rounded-sm bg-rose-500/70" />
+                            Cut
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-sky-700">
+                            <span className="h-2 w-2 rounded-sm bg-sky-500/70" />
+                            Fill
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-emerald-700">
+                            <span className="h-2 w-2 rounded-sm bg-emerald-500/70" />
+                            Balanced
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
                     <div
                       className={`${overlayPointerEvents} absolute inset-0 z-[30]`}
                       style={{
@@ -4127,6 +5154,30 @@ export default function PreviewPanel({
                         onClearHighlights?.();
                       }}
                     >
+                      {waterFireFlow.hydrants.map((hydrant) => {
+                        const [left, top] = siteTupleToPercent([hydrant.x, hydrant.y], currentSiteSize);
+                        const scenario = waterFireFlow.scenarios.find((item) => item.hydrantId === hydrant.id);
+                        const selected = waterFireFlow.selectedHydrant?.id === hydrant.id;
+                        return (
+                          <button
+                            key={`hydrant-hit-${hydrant.id}`}
+                            type="button"
+                            data-object-overlay
+                            aria-label={`Select ${hydrant.label} fire-flow scenario`}
+                            title={`${hydrant.label}: ${formatFlowValue(hydrant.availableFlowGpm, "gpm")}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (scenario) setSelectedFireScenarioId(scenario.id);
+                            }}
+                            className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white/20 transition ${
+                              selected
+                                ? "border-slate-950 shadow-[0_0_0_4px_rgba(14,165,233,0.18)]"
+                                : "border-white/80 hover:border-slate-950"
+                            }`}
+                            style={{ left: `${left}%`, top: `${top}%` }}
+                          />
+                        );
+                      })}
                       {buildingPlacements
                       .filter(
                         (item) =>
@@ -4652,6 +5703,131 @@ export default function PreviewPanel({
                   className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block"
                 >
                   Hover geometry for details
+                </div>
+              ) : null}
+              {waterFireFlow.hasData ? (
+                <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-40 rounded-lg border border-slate-200/80 bg-white/94 p-3 text-xs text-slate-700 shadow-[0_18px_55px_-32px_rgba(15,23,42,0.6)] backdrop-blur sm:left-auto sm:bottom-6 sm:right-6 sm:w-[380px] sm:max-w-[calc(100%-3rem)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <Flame className="h-3.5 w-3.5 text-orange-500" />
+                        Water / Fire Flow
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-950">
+                        {waterFireFlow.selectedScenario?.label || "Hydrant scenarios"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                      <Table2 className="h-3.5 w-3.5" />
+                      {waterFireFlow.scenarios.length || waterFireFlow.hydrants.length} rows
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-slate-500">
+                        <Droplets className="h-3.5 w-3.5 text-sky-600" />
+                        Hydrants
+                      </div>
+                      <p className="mt-1 text-lg font-semibold text-slate-950">{waterFireFlow.hydrants.length}</p>
+                    </div>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-slate-500">
+                        <GitBranch className="h-3.5 w-3.5 text-sky-600" />
+                        Loops
+                      </div>
+                      <p className="mt-1 text-lg font-semibold text-slate-950">
+                        {waterFireFlow.networkSegments.filter((item) => item.networkType === "loop").length}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                      <div className="text-[11px] font-semibold uppercase text-slate-500">Residual</div>
+                      <p
+                        className={`mt-1 text-lg font-semibold ${
+                          waterFireFlow.selectedScenario?.status === "pass"
+                            ? "text-emerald-700"
+                            : waterFireFlow.selectedScenario?.status === "fail"
+                              ? "text-rose-700"
+                              : "text-amber-700"
+                        }`}
+                      >
+                        {waterFireFlow.selectedScenario
+                          ? formatFlowValue(waterFireFlow.selectedScenario.residualPressurePsi, "psi", 1)
+                          : "Review"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 max-h-[156px] overflow-auto rounded-md border border-slate-200">
+                    <table className="w-full border-collapse text-left text-[11px]">
+                      <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-2 py-1.5 font-semibold">Hydrant</th>
+                          <th className="px-2 py-1.5 font-semibold">Network</th>
+                          <th className="px-2 py-1.5 font-semibold">Flow</th>
+                          <th className="px-2 py-1.5 font-semibold">Residual</th>
+                          <th className="px-2 py-1.5 font-semibold">Check</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {waterFireFlow.scenarios.length ? (
+                          waterFireFlow.scenarios.map((scenario) => {
+                            const hydrant = waterFireFlow.hydrants.find((item) => item.id === scenario.hydrantId);
+                            const selected = waterFireFlow.selectedScenario?.id === scenario.id;
+                            return (
+                              <tr
+                                key={scenario.id}
+                                className={`cursor-pointer border-t border-slate-100 ${
+                                  selected ? "bg-sky-50" : "hover:bg-slate-50"
+                                }`}
+                                onClick={() => setSelectedFireScenarioId(scenario.id)}
+                              >
+                                <td className="px-2 py-1.5 font-semibold text-slate-900">
+                                  {hydrant?.label || scenario.hydrantId || "Hydrant"}
+                                </td>
+                                <td className="px-2 py-1.5 capitalize">{scenario.networkType.replace("_", " ")}</td>
+                                <td className="px-2 py-1.5">
+                                  {Math.round(scenario.availableFlowGpm)}/{Math.round(scenario.requiredFlowGpm)} gpm
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  {formatFlowValue(scenario.residualPressurePsi, "psi", 1)}
+                                </td>
+                                <td
+                                  className={`px-2 py-1.5 font-semibold uppercase ${
+                                    scenario.status === "pass"
+                                      ? "text-emerald-700"
+                                      : scenario.status === "fail"
+                                        ? "text-rose-700"
+                                        : "text-amber-700"
+                                  }`}
+                                >
+                                  {scenario.status}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td className="px-2 py-4 text-slate-500" colSpan={5}>
+                              Canonical hydrants found. Add pressure/flow data to run checks.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-5 rounded-full bg-sky-600" />
+                      Loop
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-5 rounded-full border border-orange-400 border-dashed" />
+                      Dead-end
+                    </span>
+                    <span>
+                      Target residual:{" "}
+                      {formatFlowValue(waterFireFlow.selectedScenario?.residualTargetPsi ?? 20, "psi", 0)}
+                    </span>
+                  </div>
                 </div>
               ) : null}
               {/* Status panel removed: keep preview visually clean. */}

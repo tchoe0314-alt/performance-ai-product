@@ -13,7 +13,9 @@ import {
   Gauge,
   Layers,
   MapPinned,
+  Route,
   Settings,
+  SlidersHorizontal,
 } from "lucide-react";
 
 import { deleteJson, getJson, postForm, postJson, toApiUrl } from "../lib/api";
@@ -27,13 +29,22 @@ import type {
   ProjectRecord,
   ProjectInput,
   JobSummary,
+  WorkflowArtifact,
   WorkflowRunSummary,
   WorkflowReviewDashboard,
   ManualFailure,
   ManagerMetrics,
+  MetricValue,
+  CostLineItem,
+  QuantityAuditEntry,
   QuantityTotals,
   PipeSegment,
   StormSummary,
+  StormProfilePoint,
+  InletSpreadCheck,
+  DetentionRoutingPoint,
+  OverflowPathCheck,
+  StormBlockerFix,
   PlanExplanation,
   PlanMeta,
   PlanResponse,
@@ -68,6 +79,8 @@ import type {
   SetupWizardStep,
   ProgressTimelineStep,
   ProgressTimelineV1,
+  EngineDepthDashboard,
+  GradingEarthworkUx,
 } from "./types";
 import type { CivoraWorkflowStep } from "./design-system";
 
@@ -79,6 +92,12 @@ type ReactiveValidationState = {
   changedTargets: string[];
   requiresConfirmation: boolean;
   message: string;
+};
+type JobToast = {
+  id: string;
+  title: string;
+  detail?: string;
+  tone?: "info" | "success" | "warning" | "error";
 };
 type SidePanelKey =
   | "projects"
@@ -102,6 +121,7 @@ type SidePanelKey =
   | "quantities"
   | "deliverables"
   | "files"
+  | "jobs"
   | "standards"
   | "libraries"
   | "data"
@@ -192,6 +212,51 @@ type ParkingParams = {
   useMixedAngles?: boolean;
   compactZone?: boolean;
 };
+type QuantityReviewStatus = "ok" | "review" | "missing_cost" | "untraced" | "stale";
+type QuantityReviewRow = {
+  metric: string;
+  label: string;
+  quantity: number;
+  unit: string;
+  canonicalIds: string[];
+  sourceIds: string[];
+  sourceStage: string;
+  sourceLayer: string;
+  method: string;
+  confidence: string;
+  traceComplete: boolean;
+  delta: number | null;
+  previousQuantity: number | null;
+  currentQuantity: number | null;
+  costItem: string;
+  unitCost: number | null;
+  amount: number | null;
+  currency: string;
+  priceSource: string;
+  priceSourceItemId: string;
+  productionPrice: boolean;
+  missingCost: boolean;
+  status: QuantityReviewStatus;
+};
+type RoadwayWorkbenchTab = "alignment" | "profile" | "section" | "checks";
+type RoadwayPlotPoint = {
+  x: number;
+  y: number;
+  label?: string;
+};
+type RoadwayWorkbenchRecord = Record<string, unknown>;
+type RoadwayWorkbenchData = {
+  alignments: RoadwayWorkbenchRecord[];
+  alignmentPoints: RoadwayPlotPoint[];
+  profiles: RoadwayWorkbenchRecord[];
+  profilePoints: RoadwayPlotPoint[];
+  sections: RoadwayWorkbenchRecord[];
+  sectionPoints: RoadwayPlotPoint[];
+  crownControls: RoadwayWorkbenchRecord[];
+  curbGutterControls: RoadwayWorkbenchRecord[];
+  curbReturns: RoadwayWorkbenchRecord[];
+  adaChecks: RoadwayWorkbenchRecord[];
+};
 
 const SQFT_PER_ACRE = 43_560;
 const SITE_WARNING_ACRES = 250;
@@ -214,6 +279,341 @@ function buildAssumedSlopeEstimate(): SurveySlopeResponse {
       "First-pass assumed slope for early layout only. Replace with survey, DEM, or map terrain before final engineering.",
     ],
   };
+}
+
+const roadwayRecord = (value: unknown): RoadwayWorkbenchRecord =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as RoadwayWorkbenchRecord) : {};
+
+const roadwayArray = (value: unknown): RoadwayWorkbenchRecord[] =>
+  Array.isArray(value) ? value.map(roadwayRecord).filter((item) => Object.keys(item).length > 0) : [];
+
+const roadwayNumber = (value: unknown): number | null => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const roadwayLabel = (value: unknown, fallback = "Review"): string => {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+};
+
+const roadwayPercent = (value: unknown): string => {
+  const parsed = roadwayNumber(value);
+  if (parsed === null) return "n/a";
+  const percent = Math.abs(parsed) <= 1 ? parsed * 100 : parsed;
+  return `${percent.toFixed(percent < 10 ? 2 : 1)}%`;
+};
+
+const roadwayPointFromUnknown = (value: unknown, index: number): RoadwayPlotPoint | null => {
+  if (Array.isArray(value)) {
+    const x = roadwayNumber(value[0]);
+    const y = roadwayNumber(value[1]);
+    if (x !== null && y !== null) return { x, y, label: `P${index + 1}` };
+  }
+  const record = roadwayRecord(value);
+  const x =
+    roadwayNumber(record.x) ??
+    roadwayNumber(record.offset_ft) ??
+    roadwayNumber(record.station_ft) ??
+    roadwayNumber(record.station);
+  const y =
+    roadwayNumber(record.y) ??
+    roadwayNumber(record.elevation_ft) ??
+    roadwayNumber(record.elevation) ??
+    roadwayNumber(record.z);
+  if (x === null || y === null) return null;
+  return {
+    x,
+    y,
+    label: roadwayLabel(record.role ?? record.label ?? record.name, `P${index + 1}`),
+  };
+};
+
+const roadwayPointsFromRecord = (
+  record: RoadwayWorkbenchRecord,
+  keys: string[],
+): RoadwayPlotPoint[] => {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      const points = value
+        .map((item, index) => roadwayPointFromUnknown(item, index))
+        .filter((item): item is RoadwayPlotPoint => Boolean(item));
+      if (points.length) return points;
+    }
+    const nested = roadwayRecord(value);
+    if (Array.isArray(nested.points)) {
+      const points = nested.points
+        .map((item, index) => roadwayPointFromUnknown(item, index))
+        .filter((item): item is RoadwayPlotPoint => Boolean(item));
+      if (points.length) return points;
+    }
+  }
+  return [];
+};
+
+const buildRoadwayWorkbenchData = (meta: PlanMeta): RoadwayWorkbenchData => {
+  const metaRecord = roadwayRecord(meta);
+  const grading = roadwayRecord(metaRecord.grading);
+  const alignments = roadwayArray(metaRecord.alignments).length
+    ? roadwayArray(metaRecord.alignments)
+    : roadwayArray(metaRecord.road_alignments);
+  const profiles = roadwayArray(metaRecord.profiles).length
+    ? roadwayArray(metaRecord.profiles)
+    : roadwayArray(metaRecord.road_profiles);
+  const sections = roadwayArray(metaRecord.cross_sections).length
+    ? roadwayArray(metaRecord.cross_sections)
+    : roadwayArray(metaRecord.corridor_sections);
+  const adaCompliance = roadwayRecord(metaRecord.ada_compliance);
+  const adaChecks = [
+    ...roadwayArray(adaCompliance.checks),
+    ...roadwayArray(adaCompliance.paths),
+    ...roadwayArray(metaRecord.ada_paths),
+    ...roadwayArray(grading.ada_paths),
+  ];
+
+  return {
+    alignments,
+    alignmentPoints: alignments.length
+      ? roadwayPointsFromRecord(alignments[0], ["centerline", "polyline", "points", "geometry"])
+      : [],
+    profiles,
+    profilePoints: profiles.length
+      ? roadwayPointsFromRecord(profiles[0], ["profile_points", "samples", "points", "rows"])
+      : [],
+    sections,
+    sectionPoints: sections.length
+      ? roadwayPointsFromRecord(sections[0], ["section_points", "samples", "points", "rows"])
+      : [],
+    crownControls: roadwayArray(grading.road_crown_controls).length
+      ? roadwayArray(grading.road_crown_controls)
+      : roadwayArray(metaRecord.road_crown_controls ?? metaRecord.road_crowns),
+    curbGutterControls: roadwayArray(grading.curb_gutter_controls).length
+      ? roadwayArray(grading.curb_gutter_controls)
+      : roadwayArray(metaRecord.curb_gutter_controls),
+    curbReturns: roadwayArray(metaRecord.curb_returns),
+    adaChecks,
+  };
+};
+
+function RoadwayMiniPlot({
+  points,
+  variant,
+}: {
+  points: RoadwayPlotPoint[];
+  variant: "plan" | "profile" | "section";
+}) {
+  const plot = useMemo(() => {
+    if (points.length < 2) return null;
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const width = 280;
+    const height = 124;
+    const pad = 16;
+    const rangeX = Math.max(maxX - minX, 1);
+    const rangeY = Math.max(maxY - minY, 1);
+    return points.map((point) => ({
+      ...point,
+      sx: pad + ((point.x - minX) / rangeX) * (width - pad * 2),
+      sy: height - pad - ((point.y - minY) / rangeY) * (height - pad * 2),
+    }));
+  }, [points]);
+
+  if (!plot) {
+    return (
+      <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 text-center text-xs font-semibold text-slate-500">
+        Generate roadway evidence to view this graph.
+      </div>
+    );
+  }
+
+  const stroke = variant === "section" ? "#0f766e" : variant === "profile" ? "#7c3aed" : "#0f172a";
+  const path = plot.map((point) => `${point.sx},${point.sy}`).join(" ");
+
+  return (
+    <svg viewBox="0 0 280 124" role="img" aria-label={`${variant} viewer`} className="h-32 w-full rounded-lg border border-slate-200 bg-white">
+      <line x1="16" y1="108" x2="264" y2="108" stroke="#e2e8f0" strokeWidth="1" />
+      <line x1="16" y1="16" x2="16" y2="108" stroke="#e2e8f0" strokeWidth="1" />
+      <polyline points={path} fill="none" stroke={stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      {plot.map((point, index) => (
+        <circle key={`${point.x}-${point.y}-${index}`} cx={point.sx} cy={point.sy} r="3.5" fill="#ffffff" stroke={stroke} strokeWidth="2" />
+      ))}
+    </svg>
+  );
+}
+
+function RoadwayCorridorWorkbench({
+  data,
+  activeTab,
+  onTabChange,
+  maxRoadGradePct,
+  setMaxRoadGradePct,
+  maxAdaCrossSlopePct,
+  setMaxAdaCrossSlopePct,
+  handleGenerateSystem,
+}: {
+  data: RoadwayWorkbenchData;
+  activeTab: RoadwayWorkbenchTab;
+  onTabChange: (tab: RoadwayWorkbenchTab) => void;
+  maxRoadGradePct: string;
+  setMaxRoadGradePct: (value: string) => void;
+  maxAdaCrossSlopePct: string;
+  setMaxAdaCrossSlopePct: (value: string) => void;
+  handleGenerateSystem: (target: SystemGenerationTarget) => void;
+}) {
+  const firstAlignment = data.alignments[0] ?? {};
+  const firstProfile = data.profiles[0] ?? {};
+  const firstSection = data.sections[0] ?? {};
+  const firstCrown = data.crownControls[0] ?? {};
+  const firstCurbReturn = data.curbReturns[0] ?? {};
+  const checkRows = [
+    ...data.curbReturns.slice(0, 3).map((row, index) => ({
+      label: roadwayLabel(row.id ?? row.name ?? row.intersection_id, `Curb return ${index + 1}`),
+      value: row.radius_ft !== undefined ? `${roadwayLabel(row.radius_ft)} ft radius` : roadwayLabel(row.status ?? row.valid, "geometry"),
+      valid: row.valid !== false,
+    })),
+    ...data.adaChecks.slice(0, 3).map((row, index) => ({
+      label: roadwayLabel(row.id ?? row.name ?? row.path_id, `ADA check ${index + 1}`),
+      value: row.slope !== undefined
+        ? roadwayPercent(row.slope)
+        : row.cross_slope !== undefined
+          ? roadwayPercent(row.cross_slope)
+          : roadwayLabel(row.status ?? row.valid, "slope evidence"),
+      valid: row.valid !== false && row.status !== "failed",
+    })),
+  ];
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Corridor workbench</p>
+          <p className="mt-1 text-sm text-slate-500">Alignment, profile, section, crown, curb return, and ADA review.</p>
+        </div>
+        <Route className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+      </div>
+
+      <div className="mt-4 grid grid-cols-4 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+        {[
+          ["alignment", "Align"],
+          ["profile", "Profile"],
+          ["section", "Section"],
+          ["checks", "Checks"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onTabChange(key as RoadwayWorkbenchTab)}
+            className={`h-9 rounded-md text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
+              activeTab === key ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "alignment" ? (
+        <div className="mt-4 space-y-3">
+          <RoadwayMiniPlot points={data.alignmentPoints} variant="plan" />
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Alignment", roadwayLabel(firstAlignment.name ?? firstAlignment.id, data.alignments.length ? "Road alignment" : "No alignment")],
+              ["PI points", data.alignmentPoints.length || "n/a"],
+              ["Station range", firstAlignment.length_ft ? `${roadwayLabel(firstAlignment.length_ft)} ft` : "Needs profile"],
+              ["Owner", roadwayLabel(firstAlignment.alignment_owner ?? firstAlignment.owner, "Roadway")],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => handleGenerateSystem("roads")} className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800">Rebuild roads</button>
+            <button type="button" onClick={() => handleGenerateSystem("parking")} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50">Update parking</button>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "profile" ? (
+        <div className="mt-4 space-y-3">
+          <RoadwayMiniPlot points={data.profilePoints} variant="profile" />
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Road max %
+              <input value={maxRoadGradePct} onChange={(event) => setMaxRoadGradePct(event.target.value)} placeholder="Auto" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+            </label>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+              <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Profile</p>
+              <p className="mt-1 font-semibold text-slate-800">{roadwayLabel(firstProfile.name ?? firstProfile.profile_id ?? firstProfile.id, data.profiles.length ? "Road profile" : "No profile")}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "section" ? (
+        <div className="mt-4 space-y-3">
+          <RoadwayMiniPlot points={data.sectionPoints} variant="section" />
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Section", roadwayLabel(firstSection.name ?? firstSection.id, data.sections.length ? "Cross section" : "No section")],
+              ["Station", firstSection.station_ft !== undefined ? `${roadwayLabel(firstSection.station_ft)} ft` : "n/a"],
+              ["Crown", firstCrown.actual_cross_slope !== undefined ? roadwayPercent(firstCrown.actual_cross_slope) : roadwayPercent(firstCrown.expected_cross_slope)],
+              ["Sidewalk max", maxAdaCrossSlopePct ? `${maxAdaCrossSlopePct}%` : "2.00%"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+          <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            ADA cross slope %
+            <input value={maxAdaCrossSlopePct} onChange={(event) => setMaxAdaCrossSlopePct(event.target.value)} placeholder="2" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm normal-case tracking-normal text-slate-700" />
+          </label>
+        </div>
+      ) : null}
+
+      {activeTab === "checks" ? (
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Curb returns", data.curbReturns.length],
+              ["ADA checks", data.adaChecks.length],
+              ["Curb/gutter", data.curbGutterControls.length],
+              ["Return radius", firstCurbReturn.radius_ft !== undefined ? `${roadwayLabel(firstCurbReturn.radius_ft)} ft` : "n/a"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            {(checkRows.length ? checkRows : [{ label: "Roadway QA", value: "Generate roadway for curb return and ADA evidence", valid: false }]).map((row) => (
+              <div key={`${row.label}-${row.value}`} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                <span className="font-semibold text-slate-700">{row.label}</span>
+                <span className={`shrink-0 rounded-full px-2 py-1 font-semibold uppercase tracking-[0.1em] ${row.valid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                  {row.valid ? "Pass" : "Review"}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-right font-medium text-slate-500">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+        <SlidersHorizontal className="h-4 w-4 shrink-0" />
+        <span>Profile, section, and ADA values remain review evidence until survey/control and standards are accepted.</span>
+      </div>
+    </div>
+  );
 }
 
 const siteAreaAcresFromSize = (widthFt?: number | null, heightFt?: number | null) => {
@@ -678,6 +1078,64 @@ const REACTIVE_SYSTEM_STAGE_MAP: Partial<Record<
   utilities: ["sanitary", "utility_network", "coordination_resolution", "sheets", "qa"],
 };
 
+const formatStageLabel = (value: string) => value.replace(/_/g, " ");
+
+const QUANTITY_METRIC_LABELS: Record<string, { label: string; unit: string }> = {
+  lot_area_sf: { label: "Lot area", unit: "sf" },
+  building_area_sf: { label: "Building area", unit: "sf" },
+  parking_area_sf: { label: "Parking area", unit: "sf" },
+  road_area_sf: { label: "Road area", unit: "sf" },
+  sidewalk_area_sf: { label: "Sidewalk area", unit: "sf" },
+  estimated_impervious_area_sf: { label: "Impervious area", unit: "sf" },
+  estimated_parking_stalls: { label: "Parking stalls", unit: "stalls" },
+  road_length_ft: { label: "Road length", unit: "ft" },
+  sidewalk_length_ft: { label: "Sidewalk length", unit: "ft" },
+  pipe_length_ft: { label: "Pipe length", unit: "ft" },
+  utility_length_ft: { label: "Utility length", unit: "ft" },
+  sanitary_length_ft: { label: "Sanitary length", unit: "ft" },
+  sanitary_manhole_count: { label: "Sanitary manholes", unit: "ea" },
+  sanitary_service_count: { label: "Sanitary services", unit: "ea" },
+  drainage_flow_length_ft: { label: "Drainage flow length", unit: "ft" },
+  pond_area_sf: { label: "Pond area", unit: "sf" },
+  pond_count: { label: "Pond count", unit: "ea" },
+  inlet_count: { label: "Inlet count", unit: "ea" },
+  bridge_area_sf: { label: "Bridge area", unit: "sf" },
+  pool_area_sf: { label: "Pool area", unit: "sf" },
+  lot_feature_count: { label: "Lot count", unit: "ea" },
+};
+
+const QUANTITY_METRIC_ORDER = Object.keys(QUANTITY_METRIC_LABELS);
+
+const readNumberOrNull = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const uniqueStrings = (items: unknown[]): string[] =>
+  Array.from(new Set(items.map((item) => String(item || "").trim()).filter(Boolean)));
+
+const quantityMetricFallbackUnit = (metric: string) => {
+  if (metric.endsWith("_sf")) return "sf";
+  if (metric.endsWith("_ft")) return "ft";
+  if (metric.endsWith("_count")) return "ea";
+  return "units";
+};
+
+const quantityMetricLabel = (metric: string) =>
+  QUANTITY_METRIC_LABELS[metric]?.label || toReadableLabel(metric);
+
+const statusLabelForQuantityReview = (status: QuantityReviewStatus) => {
+  if (status === "missing_cost") return "Missing cost";
+  if (status === "untraced") return "Untraced";
+  if (status === "stale") return "Delta";
+  if (status === "ok") return "Mapped";
+  return "Review";
+};
+
 const EMPTY_REACTIVE_VALIDATION: ReactiveValidationState = {
   status: "idle",
   changedSystems: [],
@@ -914,15 +1372,112 @@ const createDemoPlanResponse = (): PlanResponse => ({
         total_system_flow_cfs: 18.7,
         total_system_capacity_cfs: 25.2,
         segments: [
-          { length_ft: 320, slope_pct: 0.62 },
-          { length_ft: 460, slope_pct: 0.48 },
-          { length_ft: 460, slope_pct: 0.52 },
+          {
+            id: "STM-1",
+            pipe: "STM-1",
+            from: "IN-1",
+            to: "MH-1",
+            length_ft: 320,
+            slope_pct: 0.62,
+            diameter_in: 18,
+            flow_cfs: 4.8,
+            capacity_cfs: 6.2,
+            velocity_fps: 4.1,
+            start_invert_ft: 638.1,
+            end_invert_ft: 636.1,
+            hgl_upstream_ft: 640.4,
+            hgl_downstream_ft: 639.2,
+            egl_upstream_ft: 640.9,
+            egl_downstream_ft: 639.7,
+            path: [[210, 245], [360, 302]],
+          },
+          {
+            id: "STM-2",
+            pipe: "STM-2",
+            from: "MH-1",
+            to: "MH-2",
+            length_ft: 460,
+            slope_pct: 0.48,
+            diameter_in: 24,
+            flow_cfs: 8.6,
+            capacity_cfs: 11.4,
+            velocity_fps: 4.7,
+            start_invert_ft: 636.1,
+            end_invert_ft: 633.9,
+            hgl_upstream_ft: 639.2,
+            hgl_downstream_ft: 637.6,
+            egl_upstream_ft: 639.7,
+            egl_downstream_ft: 638.0,
+            path: [[360, 302], [510, 360]],
+          },
+          {
+            id: "STM-3",
+            pipe: "STM-3",
+            from: "MH-2",
+            to: "BASIN-A",
+            length_ft: 460,
+            slope_pct: 0.52,
+            diameter_in: 30,
+            flow_cfs: 18.7,
+            capacity_cfs: 25.2,
+            velocity_fps: 5.2,
+            start_invert_ft: 633.9,
+            end_invert_ft: 631.5,
+            hgl_upstream_ft: 637.6,
+            hgl_downstream_ft: 635.8,
+            egl_upstream_ft: 638.0,
+            egl_downstream_ft: 636.2,
+            path: [[510, 360], [620, 420]],
+          },
+        ],
+        hgl_profile: [
+          { segment_id: "STM-1", station_ft: 0, invert_ft: 638.1, ground_ft: 643.8, hgl_ft: 640.4, egl_ft: 640.9 },
+          { segment_id: "STM-1", station_ft: 320, invert_ft: 636.1, ground_ft: 642.2, hgl_ft: 639.2, egl_ft: 639.7 },
+          { segment_id: "STM-2", station_ft: 780, invert_ft: 633.9, ground_ft: 640.0, hgl_ft: 637.6, egl_ft: 638.0 },
+          { segment_id: "STM-3", station_ft: 1240, invert_ft: 631.5, ground_ft: 637.1, hgl_ft: 635.8, egl_ft: 636.2 },
+        ],
+        egl_profile: [
+          { segment_id: "STM-1", station_ft: 0, egl_ft: 640.9 },
+          { segment_id: "STM-1", station_ft: 320, egl_ft: 639.7 },
+          { segment_id: "STM-2", station_ft: 780, egl_ft: 638.0 },
+          { segment_id: "STM-3", station_ft: 1240, egl_ft: 636.2 },
+        ],
+        inlet_spread_checks: [
+          { inlet_id: "IN-1", name: "IN-1", x: 210, y: 245, spread_ft: 6.2, allowable_spread_ft: 8, capture_efficiency: 0.86, bypass_cfs: 0.4, status: "ok" },
+          { inlet_id: "IN-2", name: "IN-2", x: 472, y: 312, spread_ft: 8.7, allowable_spread_ft: 8, capture_efficiency: 0.74, bypass_cfs: 0.9, status: "review", warnings: ["Spread exceeds target by 0.7 ft."] },
+        ],
+        storm_depth_blocker_details: [
+          {
+            code: "inlet_spread_over_target",
+            message: "IN-2 spread exceeds target by 0.7 ft.",
+            exact_fix: "Add a nearby inlet, increase throat/grate capacity, or lower gutter bypass into STM-2 and rerun drainage.",
+            can_civora_fix: true,
+          },
         ],
       },
       drainage: {
         basins: [{ area_sf: 12900, footprint_area_sf: 12900 }],
         low_points: [{ x: 618, y: 428, z: 641.2 }],
         surface_guidance: { downhill_vector: { dx: 0.45, dy: -0.7 } },
+        detention_routing: [
+          { time_min: 0, inflow_cfs: 0, outflow_cfs: 0, stage_ft: 0, storage_cf: 0 },
+          { time_min: 15, inflow_cfs: 24.5, outflow_cfs: 4.2, stage_ft: 1.4, storage_cf: 18000 },
+          { time_min: 30, inflow_cfs: 18.7, outflow_cfs: 5.8, stage_ft: 2.6, storage_cf: 34200 },
+          { time_min: 60, inflow_cfs: 7.4, outflow_cfs: 6.1, stage_ft: 2.1, storage_cf: 27600 },
+          { time_min: 120, inflow_cfs: 1.2, outflow_cfs: 2.4, stage_ft: 0.8, storage_cf: 9600 },
+        ],
+        overflow_paths: [
+          {
+            id: "OF-1",
+            name: "Emergency overflow",
+            capacity_valid: true,
+            capacity_cfs: 31.2,
+            required_capacity_cfs: 24.5,
+            freeboard_ft: 1.1,
+            source: "demo_spillway_check",
+            path: [[620, 420], [690, 450], [735, 468]],
+          },
+        ],
       },
       grading: {
         grading_source_quality: "demo_surface",
@@ -1222,6 +1777,7 @@ function PerformanceAIDashboardView({
   const [parkingCompactWidth, setParkingCompactWidth] = useState("8");
   const [parkingAngle, setParkingAngle] = useState<"90" | "60" | "45">("90");
   const [parkingLoading, setParkingLoading] = useState<"single" | "double">("double");
+  const [activeRoadwayWorkbenchTab, setActiveRoadwayWorkbenchTab] = useState<RoadwayWorkbenchTab>("alignment");
   const [minSlopePct, setMinSlopePct] = useState("");
   const [pipeMinSlopePct, setPipeMinSlopePct] = useState("");
   const [maxParkingSlopePct, setMaxParkingSlopePct] = useState("");
@@ -1421,6 +1977,8 @@ function PerformanceAIDashboardView({
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [jobToasts, setJobToasts] = useState<JobToast[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
@@ -2046,10 +2604,54 @@ function PerformanceAIDashboardView({
     () => currentProject?.metadata?.workflow?.review_dashboard ?? null,
     [currentProject],
   );
+  const workflowArtifacts = useMemo<WorkflowArtifact[]>(
+    () =>
+      Array.isArray(currentProject?.metadata?.workflow?.artifacts)
+        ? currentProject.metadata.workflow.artifacts
+        : Array.isArray(workflowReviewDashboard?.recent_artifacts)
+          ? workflowReviewDashboard.recent_artifacts.map((item) => item as WorkflowArtifact)
+          : [],
+    [currentProject, workflowReviewDashboard],
+  );
   const activeJob = useMemo(
     () => jobs.find((job) => job.job_id === activeJobId) ?? null,
     [jobs, activeJobId],
   );
+  const jobHistory = useMemo(
+    () =>
+      [...jobs].sort(
+        (a, b) =>
+          Number(b.updated_at || b.created_at || 0) -
+          Number(a.updated_at || a.created_at || 0),
+      ),
+    [jobs],
+  );
+  const jobStatusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const job of jobs) {
+      const key = String(job.status || "unknown").toLowerCase();
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [jobs]);
+  const artifactHistory = useMemo<WorkflowArtifact[]>(() => {
+    const fromJobs = jobs.flatMap((job) => job.artifact_history || []);
+    const completedExportArtifacts = jobs
+      .map((job) => artifactFromJob(job))
+      .filter((artifact): artifact is NonNullable<ReturnType<typeof artifactFromJob>> => Boolean(artifact))
+      .map((artifact) => ({
+        artifact_id: artifact.filename || artifact.download_path || "job-artifact",
+        kind: artifact.kind,
+        filename: artifact.filename,
+        download_path: artifact.download_path,
+      }));
+    return [...fromJobs, ...completedExportArtifacts, ...workflowArtifacts].filter(
+      (item, index, all) => {
+        const key = `${item.artifact_id || ""}:${item.download_path || ""}:${item.filename || ""}`;
+        return index === all.findIndex((candidate) => `${candidate.artifact_id || ""}:${candidate.download_path || ""}:${candidate.filename || ""}` === key);
+      },
+    );
+  }, [jobs, workflowArtifacts]);
   const currentProjectActiveJob = useMemo(
     () =>
       jobs.find(
@@ -2066,6 +2668,10 @@ function PerformanceAIDashboardView({
     }
     return projectId ? currentProjectActiveJob : activeJob;
   }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
+  const selectedJob = useMemo(
+    () => jobs.find((job) => job.job_id === selectedJobId) ?? visibleActiveJob ?? jobs[0] ?? null,
+    [jobs, selectedJobId, visibleActiveJob],
+  );
   const visibleActiveJobStale = useMemo(
     () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
     [visibleActiveJob, jobClockMs],
@@ -2133,6 +2739,15 @@ function PerformanceAIDashboardView({
     }
   }, [visibleActiveJob?.status]);
   const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
+  const engineDepthDashboard = useMemo<EngineDepthDashboard | null>(() => {
+    const direct = currentPlanMeta.engine_depth_dashboard_v1;
+    if (direct?.version) return direct;
+    const auditReport = currentPlanMeta.engine_depth_audit_report_v1;
+    if (auditReport?.engine_depth_dashboard_v1?.version) return auditReport.engine_depth_dashboard_v1;
+    const audit = currentPlanMeta.engine_depth_audit;
+    if (audit?.engine_depth_dashboard_v1?.version) return audit.engine_depth_dashboard_v1;
+    return null;
+  }, [currentPlanMeta]);
   const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
   const hasLocationEvidence =
     Boolean(siteInputs?.address || siteAddress.trim()) ||
@@ -2488,17 +3103,60 @@ function PerformanceAIDashboardView({
     const report = currentPlanMeta.reactive_update_report ?? {};
     const telemetry = partial.telemetry ?? report.partial_rerun_telemetry ?? {};
     const rerunStages = partial.rerun_stages ?? telemetry.rerun_stages ?? report.impacted_stages ?? [];
-    const skippedStages = partial.skipped_stages ?? telemetry.skipped_stages ?? [];
+    const skippedStages = partial.skipped_stages ?? telemetry.skipped_stages ?? report.skipped_stages ?? [];
+    const graphNodes = report.dependency_graph?.nodes ?? [];
+    const graphEdges = report.dependency_graph?.edges ?? [];
+    const affectedRows =
+      report.affected_system_report?.affected_stages ??
+      report.impact_matrix?.map((row) => ({
+        stage: row.stage,
+        why: row.why,
+        reason_codes: row.reason_codes,
+        rerun_required: true,
+      })) ??
+      [];
+    const skippedRows =
+      report.affected_system_report?.skipped_stages ??
+      skippedStages.map((stage) => ({
+        stage,
+        why: "No changed upstream dependency reaches this stage.",
+        rerun_required: false,
+      }));
+    const comparisonRows =
+      report.post_rerun_stage_status?.map((row) => ({
+        stage: row.stage,
+        before: row.before ?? "stale",
+        after: row.after ?? (row.completed ? "complete" : "stale"),
+        changed: false,
+        rerun_required: true,
+        skipped: false,
+      })) ??
+      report.before_after_comparison ??
+      [];
     return {
       enabled: Boolean(partial.enabled || report.partial_rerun_executed),
       checkpointRestored: Boolean(partial.checkpoint_restored),
       executionMode: report.execution_mode ?? "",
       rerunStages,
       skippedStages,
+      graphNodes,
+      graphEdges,
+      affectedRows,
+      skippedRows,
+      comparisonRows,
+      postRerunExportBlocked: report.post_rerun_export_blocked,
       elapsedMs: telemetry.elapsed_ms,
       withinQuickThreshold: telemetry.within_quick_threshold,
     };
   }, [currentPlanMeta]);
+  const reactiveAffectedRunTarget = useMemo<SystemGenerationTarget | null>(() => {
+    if (reactiveChangedSystems.length) return reactiveChangedSystems[0];
+    const impacted = new Set(currentPlanMeta.reactive_update_report?.impacted_stages ?? []);
+    const match = (Object.entries(REACTIVE_SYSTEM_STAGE_MAP) as Array<[EngineeringSystemKey, string[]]>).find(([, stages]) =>
+      stages.some((stage) => impacted.has(stage)),
+    );
+    return match?.[0] ?? null;
+  }, [currentPlanMeta.reactive_update_report?.impacted_stages, reactiveChangedSystems]);
 
   useEffect(() => {
     if (!reactiveChangedSystems.length || !backendResult?.final_plan) {
@@ -2535,9 +3193,29 @@ function PerformanceAIDashboardView({
     () => currentPlanMeta?.quantities?.totals ?? {},
     [currentPlanMeta],
   );
+  const quantityExplain = useMemo(
+    () => currentPlanMeta?.quantities?.explain ?? {},
+    [currentPlanMeta],
+  );
+  const costEstimate = useMemo(
+    () => currentPlanMeta?.cost_estimate ?? {},
+    [currentPlanMeta],
+  );
   const stormSummary = useMemo<StormSummary>(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
+  const pipeSegments = useMemo<PipeSegment[]>(() => {
+    const segments =
+      stormSummary?.segments ||
+      stormSummary?.pipe_segments ||
+      stormSummary?.storm_pipe_segments ||
+      [];
+    return Array.isArray(segments) ? segments : [];
+  }, [stormSummary]);
   const drainageSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
   const gradingSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
+  const roadwayWorkbenchData = useMemo(
+    () => buildRoadwayWorkbenchData(currentPlanMeta),
+    [currentPlanMeta],
+  );
   const drainageLowPoints = useMemo(() => {
     const fromDrainage = Array.isArray((drainageSummary as Record<string, unknown>)?.low_points)
       ? ((drainageSummary as Record<string, unknown>).low_points as Array<Record<string, unknown>>)
@@ -2554,6 +3232,209 @@ function PerformanceAIDashboardView({
       }))
       .filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y));
   }, [drainageSummary, gradingSummary]);
+  const stormHydrologyReview = useMemo(() => {
+    const asRecord = (value: unknown): Record<string, unknown> =>
+      value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const asArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+    const numberOrNull = (value: unknown) => {
+      const next = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(next) ? next : null;
+    };
+    const firstNumber = (...values: unknown[]) => {
+      for (const value of values) {
+        const next = numberOrNull(value);
+        if (next !== null) return next;
+      }
+      return null;
+    };
+    const text = (value: unknown, fallback = "") => {
+      const next = String(value ?? "").trim();
+      return next || fallback;
+    };
+    const normalizePath = (value: unknown) =>
+      asArray<unknown>(value)
+        .map((pt) => {
+          if (Array.isArray(pt) && pt.length >= 2) {
+            const x = numberOrNull(pt[0]);
+            const y = numberOrNull(pt[1]);
+            return x !== null && y !== null ? { x, y } : null;
+          }
+          const rec = asRecord(pt);
+          const x = numberOrNull(rec.x);
+          const y = numberOrNull(rec.y);
+          return x !== null && y !== null ? { x, y } : null;
+        })
+        .filter((pt): pt is { x: number; y: number } => Boolean(pt));
+
+    const segments = pipeSegments.map((segment, index) => {
+      const rec = asRecord(segment);
+      return {
+        id: text(rec.id || rec.pipe || rec.name, `Pipe ${index + 1}`),
+        from: text(rec.from || rec.start_name, "Upstream"),
+        to: text(rec.to || rec.end_name, "Downstream"),
+        lengthFt: firstNumber(rec.length_ft) ?? 0,
+        diameterIn: firstNumber(rec.diameter_in),
+        slopePct: firstNumber(rec.slope_pct, (firstNumber(rec.slope_ft_ft) ?? 0) * 100),
+        flowCfs: firstNumber(rec.flow_cfs, rec.governing_flow_cfs),
+        capacityCfs: firstNumber(rec.capacity_cfs, rec.full_capacity_cfs),
+        velocityFps: firstNumber(rec.velocity_fps),
+        startInvertFt: firstNumber(rec.start_invert_ft, rec.start_invert),
+        endInvertFt: firstNumber(rec.end_invert_ft, rec.end_invert),
+        hglUpFt: firstNumber(rec.hgl_upstream_ft),
+        hglDownFt: firstNumber(rec.hgl_downstream_ft),
+        eglUpFt: firstNumber(rec.egl_upstream_ft),
+        eglDownFt: firstNumber(rec.egl_downstream_ft),
+        path: normalizePath(rec.path || rec.route_points),
+      };
+    });
+
+    const rawHgl = [
+      ...asArray<StormProfilePoint>(stormSummary.hgl_profile),
+      ...asArray<StormProfilePoint>(stormSummary.hydraulic_profile),
+    ];
+    const rawEgl = asArray<StormProfilePoint>(stormSummary.egl_profile);
+    const mergedProfile = rawHgl.length
+      ? rawHgl
+      : segments.flatMap((segment, index) => {
+          const startStation = segments.slice(0, index).reduce((sum, item) => sum + item.lengthFt, 0);
+          return [
+            {
+              segment_id: segment.id,
+              station_ft: startStation,
+              invert_ft: segment.startInvertFt ?? undefined,
+              hgl_ft: segment.hglUpFt ?? undefined,
+              egl_ft: segment.eglUpFt ?? undefined,
+            },
+            {
+              segment_id: segment.id,
+              station_ft: startStation + segment.lengthFt,
+              invert_ft: segment.endInvertFt ?? undefined,
+              hgl_ft: segment.hglDownFt ?? undefined,
+              egl_ft: segment.eglDownFt ?? undefined,
+            },
+          ];
+        });
+    const profile = mergedProfile
+      .map((point, index) => {
+        const pointRecord = asRecord(point);
+        const eglMatch = asRecord(rawEgl[index]);
+        return {
+          segmentId: text(pointRecord.segment_id || pointRecord.pipe || eglMatch.segment_id || eglMatch.pipe, "Profile"),
+          stationFt: firstNumber(pointRecord.station_ft, eglMatch.station_ft, index * 100) ?? index * 100,
+          invertFt: firstNumber(pointRecord.invert_ft),
+          groundFt: firstNumber(pointRecord.ground_ft, pointRecord.rim_ft),
+          hglFt: firstNumber(pointRecord.hgl_ft),
+          eglFt: firstNumber(pointRecord.egl_ft, eglMatch.egl_ft),
+          coverFt: firstNumber(pointRecord.cover_ft),
+        };
+      })
+      .filter((point) => Number.isFinite(point.stationFt));
+
+    const inletChecks = [
+      ...asArray<InletSpreadCheck>(stormSummary.inlet_spread_checks),
+      ...asArray<InletSpreadCheck>(stormSummary.inlet_capacity_checks),
+    ].map((item, index) => ({
+      id: text(item.inlet_id || item.name, `Inlet ${index + 1}`),
+      x: firstNumber(item.x),
+      y: firstNumber(item.y),
+      spreadFt: firstNumber(item.spread_ft),
+      allowableSpreadFt: firstNumber(item.allowable_spread_ft),
+      depthFt: firstNumber(item.depth_ft),
+      captureEfficiency: firstNumber(item.capture_efficiency),
+      bypassCfs: firstNumber(item.bypass_cfs),
+      interceptedCfs: firstNumber(item.intercepted_cfs),
+      status: text(item.status, "review"),
+      warnings: asArray<string>(item.warnings).map(String),
+    }));
+
+    const drainageRouting = asRecord(drainageSummary.detention_routing);
+    const stormRouting = asRecord(stormSummary.detention_routing);
+    const routingSource = Array.isArray(drainageSummary.detention_routing)
+      ? drainageSummary.detention_routing
+      : Array.isArray(stormSummary.detention_routing)
+        ? stormSummary.detention_routing
+        : drainageRouting.routing_points || stormRouting.routing_points;
+    const detentionRouting = asArray<DetentionRoutingPoint>(routingSource).map((item, index) => ({
+      timeMin: firstNumber(item.time_min, index * 15) ?? index * 15,
+      stageFt: firstNumber(item.stage_ft, item.elevation_ft),
+      inflowCfs: firstNumber(item.inflow_cfs),
+      outflowCfs: firstNumber(item.outflow_cfs),
+      storageCf: firstNumber(item.storage_cf),
+      waterSurfaceAreaSf: firstNumber(item.water_surface_area_sf),
+    }));
+
+    const stormOverflow = asRecord(stormSummary.overflow_analysis);
+    const overflowPaths = [
+      ...asArray<OverflowPathCheck>(drainageSummary.overflow_paths),
+      ...asArray<OverflowPathCheck>(stormOverflow.paths),
+      ...asArray<OverflowPathCheck>(stormOverflow.overflow_paths),
+    ].map((item, index) => ({
+      id: text(item.id || item.name, `OF-${index + 1}`),
+      name: text(item.name || item.id, `Overflow ${index + 1}`),
+      capacityValid: Boolean(item.capacity_valid),
+      capacityCfs: firstNumber(item.capacity_cfs),
+      requiredCapacityCfs: firstNumber(item.required_capacity_cfs),
+      freeboardFt: firstNumber(item.freeboard_ft),
+      source: text(item.source, "not recorded"),
+      path: normalizePath(item.path || item.route_points),
+      warnings: asArray<string>(item.warnings).map(String),
+    }));
+
+    const blockerDetails = [
+      ...asArray<StormBlockerFix>(stormSummary.storm_depth_blocker_details),
+      ...asArray<StormBlockerFix>((drainageSummary as { blocker_details?: StormBlockerFix[] }).blocker_details),
+      ...(smartFixItems as SmartFixRecommendation[]).filter((item) =>
+        /storm|drain|hydro|inlet|overflow|detention|hgl|egl/i.test(
+          `${item.blocker_code || ""} ${item.category || ""} ${item.what_is_wrong || ""}`,
+        ),
+      ),
+    ].map((item, index) => {
+      const record = asRecord(item);
+      return {
+        code: text(record.code || record.blocker_code, `storm_blocker_${index + 1}`),
+        message: text(record.message || record.what_is_wrong, "Storm/hydrology blocker needs review."),
+        fix: text(record.exact_fix || record.one_action_needed_next, "Resolve the source evidence or rerun drainage after updating inputs."),
+        missingInputs: asArray<string>(record.missing_inputs).map(String),
+        canFix: Boolean(record.can_civora_fix),
+      };
+    });
+    const blockerStrings = [
+      ...asArray<string>(stormSummary.blockers),
+      ...asArray<string>(stormSummary.storm_depth_blockers),
+      ...asArray<string>(stormSummary.missing_inputs),
+      ...asArray<string>(stormOverflow.blockers),
+      ...asArray<string>(stormOverflow.missing_inputs),
+      ...asArray<string>((drainageSummary as { blockers?: string[] }).blockers),
+      ...asArray<string>((drainageSummary as { missing_inputs?: string[] }).missing_inputs),
+    ].map(String);
+    blockerStrings.forEach((item, index) => {
+      if (!blockerDetails.some((detail) => detail.code === item || detail.message === item)) {
+        blockerDetails.push({
+          code: item.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `storm_blocker_${index + 1}`,
+          message: item,
+          fix: "Provide the missing source, adjust the affected storm element, then regenerate drainage/storm.",
+          missingInputs: [],
+          canFix: false,
+        });
+      }
+    });
+
+    return {
+      segments,
+      profile,
+      inletChecks,
+      detentionRouting,
+      overflowPaths,
+      blockerDetails,
+      hasAny:
+        segments.length > 0 ||
+        profile.length > 0 ||
+        inletChecks.length > 0 ||
+        detentionRouting.length > 0 ||
+        overflowPaths.length > 0 ||
+        blockerDetails.length > 0,
+    };
+  }, [drainageSummary, pipeSegments, smartFixItems, stormSummary]);
 
   const gradingResultSummary = useMemo(() => {
     const record = gradingSummary && typeof gradingSummary === "object" ? gradingSummary : {};
@@ -2679,15 +3560,6 @@ function PerformanceAIDashboardView({
 
   const selectedIssueLabel = issueTargets.find((item) => item.id === selectedIssueId)?.label ?? "";
 
-  const pipeSegments = useMemo<PipeSegment[]>(() => {
-    const segments =
-      stormSummary?.segments ||
-      stormSummary?.pipe_segments ||
-      stormSummary?.storm_pipe_segments ||
-      [];
-    return Array.isArray(segments) ? segments : [];
-  }, [stormSummary]);
-
   const totalPipeLength =
     readMetricValue(managerMetrics.storm_pipe_length_ft) ??
     (pipeSegments.length
@@ -2720,28 +3592,103 @@ function PerformanceAIDashboardView({
     (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.area_sf) ||
     (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.footprint_area_sf) ||
     null;
-  const quantityRows = useMemo(() => {
-    const rows = [
-      { label: "Lot area", value: quantityTotals.lot_area_sf ?? null, unit: "sf" },
-      { label: "Building area", value: quantityTotals.building_area_sf ?? null, unit: "sf" },
-      { label: "Parking area", value: quantityTotals.parking_area_sf ?? null, unit: "sf" },
-      { label: "Road area", value: quantityTotals.road_area_sf ?? null, unit: "sf" },
-      { label: "Impervious area", value: quantityTotals.estimated_impervious_area_sf ?? null, unit: "sf" },
-      { label: "Parking stalls", value: quantityTotals.estimated_parking_stalls ?? null, unit: "stalls" },
-      { label: "Road length", value: quantityTotals.road_length_ft ?? null, unit: "ft" },
-      { label: "Sidewalk length", value: quantityTotals.sidewalk_length_ft ?? null, unit: "ft" },
-      { label: "Pipe length", value: quantityTotals.pipe_length_ft ?? null, unit: "ft" },
-      { label: "Utility length", value: quantityTotals.utility_length_ft ?? null, unit: "ft" },
-      { label: "Sanitary length", value: quantityTotals.sanitary_length_ft ?? null, unit: "ft" },
-      { label: "Drainage flow length", value: quantityTotals.drainage_flow_length_ft ?? null, unit: "ft" },
-      { label: "Pond count", value: quantityTotals.pond_count ?? null, unit: "ea" },
-      { label: "Inlet count", value: quantityTotals.inlet_count ?? null, unit: "ea" },
-      { label: "Bridge area", value: quantityTotals.bridge_area_sf ?? null, unit: "sf" },
-      { label: "Pool area", value: quantityTotals.pool_area_sf ?? null, unit: "sf" },
-      { label: "Lot count", value: quantityTotals.lot_feature_count ?? null, unit: "ea" },
-    ];
-    return rows.filter((row) => Number(row.value || 0) > 0);
-  }, [quantityTotals]);
+  const quantityRows = useMemo<QuantityReviewRow[]>(() => {
+    const audit = quantityExplain.quantity_audit ?? {};
+    const costLines = Array.isArray(costEstimate.line_items) ? costEstimate.line_items : [];
+    const costByMetric = new Map<string, CostLineItem>();
+    costLines.forEach((item) => {
+      if (item.metric) costByMetric.set(item.metric, item);
+    });
+    const pricingGaps = costEstimate.explain?.pricing_coverage_gaps ?? {};
+    const traceGaps = {
+      ...(quantityExplain.trace_gaps ?? {}),
+      ...(costEstimate.explain?.trace_gaps ?? {}),
+    };
+    const metricKeys = uniqueStrings([
+      ...QUANTITY_METRIC_ORDER,
+      ...Object.keys(quantityTotals),
+      ...Object.keys(audit),
+      ...costLines.map((item) => item.metric),
+      ...Object.keys(pricingGaps),
+      ...Object.keys(traceGaps),
+    ]);
+
+    return metricKeys
+      .map((metric): QuantityReviewRow | null => {
+        const quantity = readNumberOrNull(quantityTotals[metric]);
+        if (quantity === null || quantity <= 0) return null;
+        const auditEntry: QuantityAuditEntry = audit[metric] ?? {};
+        const costLine = costByMetric.get(metric);
+        const unit = costLine?.unit || QUANTITY_METRIC_LABELS[metric]?.unit || quantityMetricFallbackUnit(metric);
+        const canonicalIds = uniqueStrings([
+          ...(auditEntry.canonical_object_ids ?? []),
+          ...(auditEntry.canonical_ids ?? []),
+          ...(auditEntry.source_object_ids ?? []),
+          ...(costLine?.source_object_ids ?? []),
+        ]);
+        const sourceIds = uniqueStrings([
+          ...(auditEntry.source_ids ?? []),
+          ...(auditEntry.source_object_ids ?? []),
+          ...(costLine?.source_object_ids ?? []),
+        ]);
+        const previousQuantity =
+          readNumberOrNull(auditEntry.previous_quantity) ??
+          readNumberOrNull(auditEntry.before) ??
+          null;
+        const currentQuantity =
+          readNumberOrNull(auditEntry.current_quantity) ??
+          readNumberOrNull(auditEntry.after) ??
+          quantity;
+        const explicitDelta = readNumberOrNull(auditEntry.delta);
+        const delta =
+          explicitDelta !== null
+            ? explicitDelta
+            : previousQuantity !== null && currentQuantity !== null
+              ? currentQuantity - previousQuantity
+              : null;
+        const missingCost = Boolean(pricingGaps[metric]) || !costLine;
+        const traceComplete = Boolean(
+          auditEntry.trace_complete ??
+            costLine?.trace_complete ??
+            (canonicalIds.length > 0 && !traceGaps[metric]),
+        );
+        const status: QuantityReviewStatus = missingCost
+          ? "missing_cost"
+          : !traceComplete
+            ? "untraced"
+            : delta !== null && Math.abs(delta) > 0.0001
+              ? "stale"
+              : costLine?.production_price
+                ? "ok"
+                : "review";
+        return {
+          metric,
+          label: quantityMetricLabel(metric),
+          quantity,
+          unit,
+          canonicalIds,
+          sourceIds,
+          sourceStage: String(auditEntry.source_stage || auditEntry.source || "canonical quantity model"),
+          sourceLayer: String(auditEntry.source_layer || costLine?.category || "model"),
+          method: String(auditEntry.method || auditEntry.formula || "quantity audit"),
+          confidence: String(auditEntry.confidence || costLine?.unit_price_source?.confidence || "review"),
+          traceComplete,
+          delta,
+          previousQuantity,
+          currentQuantity,
+          costItem: costLine?.item || "Unmapped",
+          unitCost: readNumberOrNull(costLine?.unit_cost),
+          amount: readNumberOrNull(costLine?.amount),
+          currency: costLine?.currency || "USD",
+          priceSource: costLine?.unit_price_source?.source_name || costLine?.pricing_source || "Missing unit-price mapping",
+          priceSourceItemId: costLine?.unit_price_source?.source_item_id || costLine?.unit_price_source_item_id || "",
+          productionPrice: Boolean(costLine?.production_price),
+          missingCost,
+          status,
+        };
+      })
+      .filter((row): row is QuantityReviewRow => Boolean(row));
+  }, [costEstimate, quantityExplain, quantityTotals]);
   const measurementOverlayStats = useMemo(
     () => [
       { label: "Lot area", value: quantityTotals.lot_area_sf ?? null, unit: "sf" },
@@ -2839,6 +3786,36 @@ function PerformanceAIDashboardView({
       );
     } else {
       setIssues([]);
+    }
+
+    const report = data?.final_plan?.meta?.reactive_update_report;
+    if (report?.partial_rerun_executed) {
+      const completedStages = new Set(
+        [
+          ...(report.post_rerun_completed_stages ?? []),
+          ...(report.post_rerun_stage_status ?? [])
+            .filter((row) => row.completed)
+            .map((row) => row.stage ?? ""),
+        ].filter(Boolean),
+      );
+      const staleAfter = new Set(report.post_rerun_stale_outputs ?? []);
+      const impacted = new Set(report.impacted_stages ?? []);
+      setSystemStatuses((prev) => {
+        const next = { ...prev };
+        (Object.entries(REACTIVE_SYSTEM_STAGE_MAP) as Array<[EngineeringSystemKey, string[]]>).forEach(
+          ([system, stages]) => {
+            const touchedStages = stages.filter((stage) => impacted.has(stage));
+            if (!touchedStages.length) return;
+            const cleared = touchedStages.every(
+              (stage) => completedStages.has(stage) && !staleAfter.has(stage),
+            );
+            if (cleared) {
+              next[system] = "fresh";
+            }
+          },
+        );
+        return next;
+      });
     }
   };
 
@@ -6009,7 +6986,7 @@ function PerformanceAIDashboardView({
       }
       const nextLabel = formatObjectLabel(
         requestedType,
-        buildingPlacements.filter((item) => item.type === requestedType).length + 1,
+        buildingPlacements.filter((item) => item.id !== target.id && item.type === requestedType).length + 1,
       );
       handleUpdateBuilding(target.id, {
         type: requestedType,
@@ -6452,36 +7429,58 @@ function PerformanceAIDashboardView({
     }
   };
 
+  const pushJobToast = useCallback((toast: Omit<JobToast, "id">) => {
+    const id = `job-toast-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setJobToasts((current) => [{ id, ...toast }, ...current].slice(0, 4));
+    window.setTimeout(() => {
+      setJobToasts((current) => current.filter((item) => item.id !== id));
+    }, 6500);
+  }, []);
+
+  const upsertJobSummary = useCallback((job: JobSummary) => {
+    setJobs((current) => {
+      const next = [...current];
+      const index = next.findIndex((item) => item.job_id === job.job_id);
+      if (index >= 0) {
+        next[index] = { ...next[index], ...job };
+      } else {
+        next.unshift(job);
+      }
+      return next;
+    });
+  }, [setJobs]);
+
+  const handleCancelJobById = async (jobId: string) => {
+    if (!token || !jobId) return;
+    try {
+      const data = await postJson<{ job: JobSummary }>(
+        `/api/jobs/${jobId}/cancel`,
+        {},
+        { token },
+      );
+      upsertJobSummary(data.job);
+      appendChatMessage("assistant", `Job ${data.job.job_id} was cancelled.`, "status");
+      pushJobToast({
+        title: "Job cancelled",
+        detail: data.job.job_id,
+        tone: "warning",
+      });
+      setStatusMessage(`Cancelled job ${data.job.job_id}.`);
+      if (activeJobId === data.job.job_id) {
+        setActiveJobId("");
+      }
+      setBusy(false);
+      runSubmissionRef.current = false;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Job cancel failed.";
+      setStatusMessage(message);
+      pushJobToast({ title: "Cancel failed", detail: message, tone: "error" });
+    }
+  };
+
   const handleCancelActiveJob = async () => {
     if (visibleActiveJob?.job_id && token) {
-      try {
-        const data = await postJson<{ job: JobSummary }>(
-          `/api/jobs/${visibleActiveJob.job_id}/cancel`,
-          {},
-          { token },
-        );
-        setJobs((current) => {
-          const next = [...current];
-          const index = next.findIndex((job) => job.job_id === data.job.job_id);
-          if (index >= 0) {
-            next[index] = { ...next[index], ...data.job };
-          } else {
-            next.unshift(data.job);
-          }
-          return next;
-        });
-        appendChatMessage("assistant", `Job ${data.job.job_id} was cancelled.`, "status");
-        setStatusMessage(`Cancelled job ${data.job.job_id}.`);
-        if (activeJobId === data.job.job_id) {
-          setActiveJobId("");
-        }
-        setBusy(false);
-        runSubmissionRef.current = false;
-      } catch (error) {
-        setStatusMessage(
-          error instanceof Error ? error.message : "Job cancel failed.",
-        );
-      }
+      await handleCancelJobById(visibleActiveJob.job_id);
       return;
     }
     if (directRunAbortRef.current) {
@@ -6492,6 +7491,56 @@ function PerformanceAIDashboardView({
       setActivePlanTool("run");
       setStatusMessage("Cancelling the live request...");
       return;
+    }
+  };
+
+  const handleRetryJob = async (jobId: string) => {
+    if (!token || !jobId) return;
+    try {
+      const data = await postJson<{ job: JobSummary }>(
+        `/api/jobs/${jobId}/retry`,
+        {},
+        { token },
+      );
+      upsertJobSummary(data.job);
+      setActiveJobId(data.job.job_id);
+      setSelectedJobId(data.job.job_id);
+      await refreshJobs(token, { suppressError: true, force: true });
+      appendChatMessage("assistant", `Retry queued as job ${data.job.job_id}.`, "status");
+      pushJobToast({
+        title: "Retry queued",
+        detail: `${data.job.job_id} from ${jobId}`,
+        tone: "info",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Job retry failed.";
+      setStatusMessage(message);
+      pushJobToast({ title: "Retry failed", detail: message, tone: "error" });
+    }
+  };
+
+  const handleResumeJob = async (jobId: string) => {
+    if (!token || !jobId) return;
+    try {
+      const data = await postJson<{ job: JobSummary }>(
+        `/api/jobs/${jobId}/continue`,
+        {},
+        { token },
+      );
+      upsertJobSummary(data.job);
+      setActiveJobId(data.job.job_id);
+      setSelectedJobId(data.job.job_id);
+      await refreshJobs(token, { suppressError: true, force: true });
+      appendChatMessage("assistant", `Resumed job ${data.job.job_id}.`, "status");
+      pushJobToast({
+        title: "Job resumed",
+        detail: data.job.job_id,
+        tone: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not resume job.";
+      setStatusMessage(message);
+      pushJobToast({ title: "Resume failed", detail: message, tone: "error" });
     }
   };
 
@@ -6518,21 +7567,17 @@ function PerformanceAIDashboardView({
         {},
         { token },
       );
-      setJobs((current) => {
-        const next = [...current];
-        const index = next.findIndex((job) => job.job_id === data.job.job_id);
-        if (index >= 0) {
-          next[index] = { ...next[index], ...data.job };
-        } else {
-          next.unshift(data.job);
-        }
-        return next;
-      });
+      upsertJobSummary(data.job);
       appendChatMessage(
         "assistant",
         `Accepted the current phase for review workflow. Starting ${nextPhaseLabel}.`,
         "status",
       );
+      pushJobToast({
+        title: "Job resumed",
+        detail: `${data.job.job_id} starting ${nextPhaseLabel}`,
+        tone: "success",
+      });
       setStatusMessage(`Accepted ${data.job.job_id} for review workflow. Starting ${nextPhaseLabel}.`);
       if (data.job.job_id) {
         setActiveJobId(data.job.job_id);
@@ -6545,6 +7590,7 @@ function PerformanceAIDashboardView({
         error instanceof Error ? error.message : "Could not continue the staged run.";
       setApprovalError(message);
       setStatusMessage(message);
+      pushJobToast({ title: "Resume failed", detail: message, tone: "error" });
     } finally {
       setBusy(false);
       setApprovalInFlight(false);
@@ -7165,6 +8211,13 @@ function PerformanceAIDashboardView({
       setStatusMessage(error instanceof Error ? error.message : "Job load failed.");
     }
   };
+
+  const handleSelectJob = useCallback((jobId: string) => {
+    setSelectedJobId(jobId);
+    if (jobId) {
+      void loadJob(jobId);
+    }
+  }, [loadJob]);
 
   const uploadImage = async (file: File) => {
     if (!token) return;
@@ -9415,10 +10468,12 @@ function PerformanceAIDashboardView({
         return;
       }
       setSystemStatuses((prev) => {
-        return {
-          ...prev,
-          [target]: "fresh",
-        };
+        const next = { ...prev };
+        next[target] = "fresh";
+        reactiveChangedSystems.forEach((system) => {
+          next[system] = "fresh";
+        });
+        return next;
       });
     },
     [
@@ -9438,6 +10493,7 @@ function PerformanceAIDashboardView({
       useSurveyForGrading,
       withReactiveRerunContext,
       reactiveValidation,
+      reactiveChangedSystems,
     ],
   );
 
@@ -9946,6 +11002,69 @@ function PerformanceAIDashboardView({
     const filenameMatch = disposition?.match(/filename="?([^"]+)"?/i);
     const filename = filenameMatch?.[1] || fallbackFilename;
     downloadBlob(await response.blob(), filename);
+  };
+
+  const handleExportQuantityReviewReport = () => {
+    const safeProjectName = (siteName || currentProject?.name || "civora-project")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 64);
+    const report = {
+      schema_version: "quantity_takeoff_review_report_v1",
+      generated_at: new Date().toISOString(),
+      project: {
+        project_id: currentProject?.project_id || projectId || "",
+        name: siteName || currentProject?.name || "Untitled Project",
+      },
+      review_only: true,
+      engineer_review_required: true,
+      quantity_success: currentPlanMeta.quantities?.success ?? false,
+      quantity_model_reference: quantityExplain.quantity_model_reference ?? costEstimate.explain?.quantity_model_reference ?? {},
+      cost_estimate_reference: costEstimate.explain?.cost_estimate_reference ?? {},
+      pricing_coverage_gaps: costEstimate.explain?.pricing_coverage_gaps ?? {},
+      trace_gaps: {
+        ...(quantityExplain.trace_gaps ?? {}),
+        ...(costEstimate.explain?.trace_gaps ?? {}),
+      },
+      reactive_update: {
+        changed_stages: currentPlanMeta.reactive_update_report?.changed_stages ?? [],
+        impacted_stages: currentPlanMeta.reactive_update_report?.impacted_stages ?? [],
+        partial_rerun_executed: currentPlanMeta.reactive_update_report?.partial_rerun_executed ?? false,
+        stale_outputs: currentPlanMeta.reactive_update_report?.stale_outputs ?? [],
+      },
+      rows: quantityRows.map((row) => ({
+        metric: row.metric,
+        label: row.label,
+        quantity: row.quantity,
+        unit: row.unit,
+        delta: row.delta,
+        previous_quantity: row.previousQuantity,
+        current_quantity: row.currentQuantity,
+        canonical_ids: row.canonicalIds,
+        source_ids: row.sourceIds,
+        source_stage: row.sourceStage,
+        source_layer: row.sourceLayer,
+        method: row.method,
+        trace_complete: row.traceComplete,
+        cost_item: row.costItem,
+        unit_cost: row.unitCost,
+        amount: row.amount,
+        currency: row.currency,
+        price_source: row.priceSource,
+        price_source_item_id: row.priceSourceItemId,
+        production_price: row.productionPrice,
+        missing_cost_mapping: row.missingCost,
+        status: row.status,
+      })),
+      warning:
+        "This is a traceable review report only. External licensed engineer review and approval are required before construction reliance.",
+    };
+    downloadBlob(
+      new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }),
+      `${safeProjectName || "civora"}-quantity-takeoff-review.json`,
+    );
+    setStatusMessage("Quantity takeoff review report exported.");
   };
 
   const handleExportDxf = async () => {
@@ -10551,6 +11670,141 @@ function PerformanceAIDashboardView({
     return "Fallback assumptions";
   }, [siteInputs]);
 
+  const gradingEarthworkUx = useMemo<GradingEarthworkUx>(() => {
+    const width = Math.max(lotBounds.w || DEFAULT_BLANK_SITE_WIDTH_FT, 1);
+    const height = Math.max(lotBounds.h || DEFAULT_BLANK_SITE_DEPTH_FT, 1);
+    const surfaceControls =
+      gradingSummary?.surface_controls && typeof gradingSummary.surface_controls === "object"
+        ? (gradingSummary.surface_controls as Record<string, unknown>)
+        : {};
+    const existingSurface =
+      gradingSummary?.existing_surface && typeof gradingSummary.existing_surface === "object"
+        ? (gradingSummary.existing_surface as Record<string, unknown>)
+        : {};
+    const proposedSurface =
+      gradingSummary?.proposed_surface && typeof gradingSummary.proposed_surface === "object"
+        ? (gradingSummary.proposed_surface as Record<string, unknown>)
+        : {};
+    const earthwork =
+      gradingSummary?.earthwork && typeof gradingSummary.earthwork === "object"
+        ? (gradingSummary.earthwork as Record<string, unknown>)
+        : {};
+    const gradeRangeFt = Math.max(
+      1,
+      Number(surfaceControls.grade_range_ft ?? proposedSurface.range_z ?? existingSurface.range_z ?? 6),
+    );
+    const netCf = cutFillNet;
+    const cutCf =
+      readMetricValue(managerMetrics.earthwork_cut_cf) ??
+      readMetricValue(earthwork.cut_cf as MetricValue | undefined) ??
+      (typeof netCf === "number" && netCf < 0 ? Math.abs(netCf) * 1.15 : null);
+    const fillCf =
+      readMetricValue(managerMetrics.earthwork_fill_cf) ??
+      readMetricValue(earthwork.fill_cf as MetricValue | undefined) ??
+      (typeof netCf === "number" && netCf > 0 ? netCf * 1.15 : null);
+    const balancePct =
+      cutCf && fillCf ? Math.max(0, Math.min(100, (Math.min(cutCf, fillCf) / Math.max(cutCf, fillCf)) * 100)) : 0;
+    const direction =
+      typeof netCf !== "number"
+        ? "unknown"
+        : Math.abs(netCf) < Math.max(500, width * height * 0.02)
+          ? "balanced"
+          : netCf < 0
+            ? "export"
+            : "import";
+    const heatmapCells: GradingEarthworkUx["heatmapCells"] = Array.from({ length: 24 }, (_, idx) => {
+      const col = idx % 6;
+      const row = Math.floor(idx / 6);
+      const normalized = (col / 5 - 0.5) * 0.7 + (row / 3 - 0.5) * 0.55;
+      const netBias = typeof netCf === "number" ? Math.max(-0.45, Math.min(0.45, netCf / Math.max(width * height, 1))) : 0;
+      const deltaFt = Number(((normalized - netBias) * gradeRangeFt).toFixed(2));
+      const mode: GradingEarthworkUx["heatmapCells"][number]["mode"] =
+        Math.abs(deltaFt) < gradeRangeFt * 0.09 ? "balanced" : deltaFt > 0 ? "cut" : "fill";
+      return {
+        id: `earthwork-cell-${idx}`,
+        xPct: col * (100 / 6),
+        yPct: row * 25,
+        wPct: 100 / 6,
+        hPct: 25,
+        mode,
+        deltaFt,
+      };
+    });
+    const padTypes = new Set(["building", "retail_building", "multifamily_building", "industrial_building", "office_building", "pad"]);
+    const padTieIns = buildingPlacements
+      .filter((item) => item.placed && padTypes.has(String(item.type || "building")))
+      .slice(0, 6)
+      .map((item) => {
+        const slopePct = Math.abs(((Number(item.x ?? 0) / width) - (Number(item.y ?? 0) / height)) * 4.5);
+        const status: GradingEarthworkUx["padTieIns"][number]["status"] =
+          slopePct > 4.5 ? "blocked" : slopePct > 2.5 ? "review" : "ok";
+        return {
+          id: item.id,
+          label: item.label ?? "Pad",
+          xPct: Math.max(0, Math.min(100, (Number(item.x ?? 0) / width) * 100)),
+          yPct: Math.max(0, Math.min(100, (Number(item.y ?? 0) / height) * 100)),
+          wPct: Math.max(1, Math.min(100, (Number(item.w ?? 1) / width) * 100)),
+          hPct: Math.max(1, Math.min(100, (Number(item.d ?? 1) / height) * 100)),
+          status,
+          slopePct: Number(slopePct.toFixed(1)),
+        };
+      });
+    const wallTriggered =
+      Boolean(gradingBlocker) ||
+      gradeRangeFt > 8 ||
+      padTieIns.some((item) => item.status === "blocked") ||
+      siteTooLargeForGrading;
+    const wallRisk: GradingEarthworkUx["retainingWall"]["risk"] =
+      siteTooLargeForGrading || gradeRangeFt > 14 ? "high" : wallTriggered ? "medium" : "low";
+    return {
+      heatmapCells,
+      surfaceComparison: {
+        existing: gradingResultSummary.sourceQuality || gradingSourceSummary,
+        proposed: hasGradingSurface ? "Proposed grading surface" : "Concept surface",
+        deltaLabel: `Surface delta range ${gradeRangeFt.toFixed(1)} ft`,
+        confidence: gradingResultSummary.sourceDetail || gradingSourceSummary,
+      },
+      padTieIns,
+      retainingWall: {
+        triggered: wallTriggered,
+        label: wallTriggered ? "Wall / bench review" : "No wall trigger",
+        tradeoff: wallTriggered
+          ? "Wall may reduce haul and protect tie-ins, but adds structural cost."
+          : "Open grading likely cheaper than a retaining wall.",
+        risk: wallRisk,
+      },
+      haulBalance: {
+        netCf,
+        cutCf,
+        fillCf,
+        balancePct,
+        direction,
+        label:
+          direction === "export"
+            ? "Export soil"
+            : direction === "import"
+              ? "Import fill"
+              : direction === "balanced"
+                ? "Balanced haul"
+                : "Haul pending",
+      },
+    };
+  }, [
+    buildingPlacements,
+    cutFillNet,
+    gradingBlocker,
+    gradingResultSummary.sourceDetail,
+    gradingResultSummary.sourceQuality,
+    gradingSourceSummary,
+    gradingSummary,
+    hasGradingSurface,
+    lotBounds.h,
+    lotBounds.w,
+    managerMetrics.earthwork_cut_cf,
+    managerMetrics.earthwork_fill_cf,
+    siteTooLargeForGrading,
+  ]);
+
   useEffect(() => {
     if (debugGradingFixtureLoaded) return;
     if (typeof window === "undefined") return;
@@ -10915,7 +12169,7 @@ function PerformanceAIDashboardView({
     const existingPackage = readRecord("existing_conditions_package");
     const surveyControl = readRecord("survey_control_package");
     const mapFeatureReport = readRecord("map_feature_detection_report_v1");
-    const engineDepth = readRecord("engine_depth_audit");
+    const engineDepth = readRecord("engine_depth_audit_report_v1");
     const productionEvidence = readRecord("production_evidence");
     const quantityCost = productionEvidence.quantity_cost && typeof productionEvidence.quantity_cost === "object"
       ? (productionEvidence.quantity_cost as Record<string, unknown>)
@@ -11006,9 +12260,9 @@ function PerformanceAIDashboardView({
       row(
         "engine_depth_audit",
         "Engine depth audit",
-        hasRecord("engine_depth_audit", "engine_readiness"),
+        hasRecord("engine_depth_dashboard_v1", "engine_depth_audit_report_v1", "engine_depth_audit", "engine_readiness"),
         ["UI", "chat", "API", "report"],
-        packageStatus("engine_depth_audit", "engine_readiness") || "Needs generated model evidence",
+        packageStatus("engine_depth_audit_report_v1", "engine_depth_audit", "engine_readiness") || "Needs generated model evidence",
         "No engine depth audit is present in the current plan meta.",
         "Run the planner or golden depth audit so each discipline records readiness, blockers, and validation depth.",
         blockerCount(engineDepth) > 0,
@@ -11169,6 +12423,7 @@ function PerformanceAIDashboardView({
     quantities: { title: "Quantities", desc: "Review takeoff totals, stale labels, source confidence, and cost inputs." },
     deliverables: { title: "Deliver", desc: "Review sheets, reports, quantities, profiles, sections, exports, and package gates." },
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
+    jobs: { title: "Async Jobs", desc: "Inspect background runs, retries, approvals, exports, and artifact history." },
     standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
     data: { title: "Data", desc: "Configure survey, terrain, GIS, parcels, standards sources, imported utilities, and confidence labels." },
@@ -11188,6 +12443,16 @@ function PerformanceAIDashboardView({
     { panel: "utilities", label: "Utilities" },
     { panel: "roadway", label: "Roadway" },
     { panel: "landscape", label: "Landscape" },
+  ];
+  const engineeringHealthPanelLinks: Array<{ panel: SidePanelKey; label: string }> = [
+    { panel: "system_grading", label: "Grading" },
+    { panel: "system_storm", label: "Storm" },
+    { panel: "system_sanitary", label: "Sanitary" },
+    { panel: "system_water", label: "Water" },
+    { panel: "system_roadway", label: "Roadway" },
+    { panel: "system_utilities", label: "Utilities" },
+    { panel: "system_landscape", label: "Landscape" },
+    { panel: "analysis", label: "Review & QA" },
   ];
   const sidePanelForRender = activeSidePanel ?? renderedSidePanel;
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
@@ -11213,6 +12478,7 @@ function PerformanceAIDashboardView({
     quantities: "deliver",
     deliverables: "deliver",
     files: "data",
+    jobs: "review",
     standards: "data",
     libraries: "data",
     data: "data",
@@ -11264,6 +12530,7 @@ function PerformanceAIDashboardView({
       quantities: "Deliverables",
       deliverables: "Deliverables",
       files: "Deliverables",
+      jobs: "Review",
       standards: "Review",
       libraries: "Concept",
       data: "Concept",
@@ -11972,6 +13239,27 @@ function PerformanceAIDashboardView({
 
   return (
     <div className="civora-app-bg min-h-screen text-[var(--civora-text)]">
+      {jobToasts.length ? (
+        <div className="fixed right-3 top-20 z-[70] flex w-[min(360px,calc(100vw-1.5rem))] flex-col gap-2">
+          {jobToasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`rounded-xl border px-3 py-2 shadow-lg backdrop-blur ${
+                toast.tone === "error"
+                  ? "border-red-200 bg-red-50/95 text-red-800"
+                  : toast.tone === "success"
+                    ? "border-emerald-200 bg-emerald-50/95 text-emerald-800"
+                    : toast.tone === "warning"
+                      ? "border-amber-200 bg-amber-50/95 text-amber-800"
+                      : "border-slate-200 bg-white/95 text-slate-800"
+              }`}
+            >
+              <p className="text-sm font-semibold">{toast.title}</p>
+              {toast.detail ? <p className="mt-0.5 text-xs leading-5 opacity-80">{toast.detail}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={effectiveUser.email}
@@ -12190,6 +13478,9 @@ function PerformanceAIDashboardView({
                 </button>
                 <button type="button" onClick={() => handleOpenPanelFromDrawer("dashboard")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
                   Report issue
+                </button>
+                <button type="button" onClick={() => handleOpenPanelFromDrawer("jobs")} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white">
+                  Jobs
                 </button>
               </div>
             </div>
@@ -12433,6 +13724,135 @@ function PerformanceAIDashboardView({
 	                        </div>
 	                      ) : null}
 	                    </div>
+	                    {engineDepthDashboard ? (
+	                      <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="engine-depth-dashboard">
+	                        <div className="flex items-start justify-between gap-3">
+	                          <div>
+	                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Engine Depth</p>
+	                            <p className="mt-1 text-lg font-semibold text-slate-950">
+	                              {Math.round(engineDepthDashboard.overall_depth_score ?? 0)}% backend depth
+	                            </p>
+	                            <p className="mt-1 text-xs leading-5 text-slate-500">
+	                              {engineDepthDashboard.truth_label || "Deterministic backend evidence for review only; construction release remains blocked."}
+	                            </p>
+	                          </div>
+	                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+	                            engineDepthDashboard.status === "passed" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
+	                          }`}>
+	                            {engineDepthDashboard.status === "passed" ? "Audit passed" : "Audit blocked"}
+	                          </span>
+	                        </div>
+	                        <div className="mt-4 grid grid-cols-4 gap-2">
+	                          {[
+	                            ["Engines", engineDepthDashboard.engine_count ?? 0],
+	                            ["Scenarios", engineDepthDashboard.scenario_count ?? 0],
+	                            ["Failed", engineDepthDashboard.failed_check_count ?? 0],
+	                            ["Blockers", engineDepthDashboard.blocker_count ?? 0],
+	                          ].map(([label, value]) => (
+	                            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+	                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+	                              <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
+	                            </div>
+	                          ))}
+	                        </div>
+	                        <div className="mt-4 space-y-2">
+	                          {(engineDepthDashboard.per_engine_scores ?? []).slice(0, 6).map((engine) => {
+	                            const score = Math.round(engine.score ?? 0);
+	                            const blocked = (engine.blocker_count ?? 0) > 0 || (engine.failed_check_count ?? 0) > 0;
+	                            return (
+	                              <button
+	                                key={engine.engine_id || engine.name}
+	                                type="button"
+	                                onClick={() => handleOpenSidePanel((engine.fix_link?.target_panel || "analysis") as SidePanelKey)}
+	                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-white"
+	                              >
+	                                <div className="flex items-center justify-between gap-3">
+	                                  <span className="min-w-0">
+	                                    <span className="block truncate text-sm font-semibold text-slate-900">{engine.name || engine.engine_id}</span>
+	                                    <span className="mt-0.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+	                                      {(engine.classification || "unknown").replace(/-/g, " ")} · {engine.scenario_coverage_count ?? 0} scenario(s)
+	                                    </span>
+	                                  </span>
+	                                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+	                                    blocked ? "bg-red-50 text-red-600" : score >= 90 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+	                                  }`}>
+	                                    {score}%
+	                                  </span>
+	                                </div>
+	                                {blocked ? (
+	                                  <p className="mt-2 text-xs font-semibold text-red-600">
+	                                    {engine.first_failing_layer || engine.fix_link?.suggested_next_action || "Missing deterministic proof"}
+	                                  </p>
+	                                ) : null}
+	                              </button>
+	                            );
+	                          })}
+	                        </div>
+	                        <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+	                          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+	                            Scenario coverage
+	                          </summary>
+	                          <div className="mt-3 space-y-2">
+	                            {(engineDepthDashboard.scenario_coverage ?? []).slice(0, 5).map((scenario) => (
+	                              <button
+	                                key={scenario.scenario_id || scenario.name}
+	                                type="button"
+	                                onClick={() => handleOpenSidePanel((scenario.blocker_link?.target_panel || "analysis") as SidePanelKey)}
+	                                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50"
+	                              >
+	                                <div className="flex items-center justify-between gap-3">
+	                                  <span className="text-xs font-semibold text-slate-800">{scenario.name || scenario.scenario_id}</span>
+	                                  <span className="text-xs font-semibold text-slate-500">
+	                                    {scenario.covered_engine_count ?? 0}/{scenario.required_engine_count ?? 0} · {Math.round(scenario.coverage_percent ?? 0)}%
+	                                  </span>
+	                                </div>
+	                              </button>
+	                            ))}
+	                          </div>
+	                        </details>
+	                        <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+	                          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+	                            Missing proof checklist
+	                          </summary>
+	                          <div className="mt-3 space-y-2">
+	                            {(engineDepthDashboard.missing_proof_checklist ?? []).slice(0, 6).map((item) => (
+	                              <button
+	                                key={item.id || `${item.scenario_id}-${item.engine_id}-${item.label}`}
+	                                type="button"
+	                                onClick={() => handleOpenSidePanel((item.target_panel || "analysis") as SidePanelKey)}
+	                                className="w-full rounded-lg border border-red-100 bg-white px-3 py-2 text-left hover:bg-red-50"
+	                              >
+	                                <span className="block text-xs font-semibold text-slate-800">{item.label}</span>
+	                                <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-red-500">
+	                                  {item.engine_id || "engine"} · {item.scenario_id || "scenario"}
+	                                </span>
+	                              </button>
+	                            ))}
+	                            {!(engineDepthDashboard.missing_proof_checklist ?? []).length ? (
+	                              <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+	                                No missing deterministic proof recorded in the latest audit.
+	                              </p>
+	                            ) : null}
+	                          </div>
+	                        </details>
+	                        {(engineDepthDashboard.trend_history ?? []).length > 1 ? (
+	                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+	                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Trend</p>
+	                            <div className="mt-3 flex items-end gap-2">
+	                              {(engineDepthDashboard.trend_history ?? []).slice(-8).map((point) => (
+	                                <div key={`${point.index}-${point.overall_depth_score}`} className="flex flex-1 flex-col items-center gap-1">
+	                                  <div
+	                                    className="w-full rounded-t bg-slate-800"
+	                                    style={{ height: `${Math.max(8, Math.min(64, point.overall_depth_score ?? 0))}px` }}
+	                                  />
+	                                  <span className="text-[10px] font-semibold text-slate-500">{Math.round(point.overall_depth_score ?? 0)}</span>
+	                                </div>
+	                              ))}
+	                            </div>
+	                          </div>
+	                        ) : null}
+	                      </div>
+	                    ) : null}
 	                    <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Objects", placedObjectCount],
@@ -12671,7 +14091,14 @@ function PerformanceAIDashboardView({
                         {quantityRows.slice(0, 4).map((row) => (
                           <div key={row.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <span className="font-semibold">{row.label}</span>
-                            <span>{formatMetric(Number(row.value), row.unit)}</span>
+                            <span className="text-right">
+                              <span className="block">{formatMetric(row.quantity, row.unit)}</span>
+                              <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                row.status === "missing_cost" || row.status === "untraced" ? "text-red-600" : "text-slate-500"
+                              }`}>
+                                {statusLabelForQuantityReview(row.status)}
+                              </span>
+                            </span>
                           </div>
                         ))}
                         {!quantityRows.length ? (
@@ -14217,29 +15644,131 @@ function PerformanceAIDashboardView({
                       {reactiveValidation.message ? (
                         <p className="mt-3 text-xs leading-5 text-slate-600">{reactiveValidation.message}</p>
                       ) : null}
+                      {reactiveAffectedRunTarget && reactiveValidation.status !== "idle" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateSystem(reactiveAffectedRunTarget)}
+                          disabled={busy || Boolean(visibleActiveJob)}
+                          className="mt-3 w-full rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Rerun only affected systems
+                          <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-white/70">
+                            Restores the saved checkpoint and skips clean upstream systems.
+                          </span>
+                        </button>
+                      ) : null}
                       {reactiveValidation.changedTargets.length ? (
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           {reactiveValidation.changedTargets.slice(0, 8).map((stage) => (
                             <span key={stage} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">
-                              {stage.replace(/_/g, " ")}
+                              {formatStageLabel(stage)}
                             </span>
                           ))}
                         </div>
                       ) : null}
                       {reactiveRerunSummary.enabled ? (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Last partial rerun</p>
-                          <p className="mt-2">
-                            {reactiveRerunSummary.checkpointRestored ? "Checkpoint restored. " : ""}
-                            Reran {reactiveRerunSummary.rerunStages.length ? reactiveRerunSummary.rerunStages.join(", ") : "changed stages"}.
-                          </p>
-                          <p className="mt-1">
-                            Skipped {reactiveRerunSummary.skippedStages.length ? reactiveRerunSummary.skippedStages.join(", ") : "clean upstream stages"}.
-                          </p>
-                          {typeof reactiveRerunSummary.elapsedMs === "number" ? (
+                        <div className="mt-4 space-y-4 border-t border-slate-200 pt-4 text-xs text-slate-600">
+                          <div>
+                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Last partial rerun</p>
+                            <p className="mt-2">
+                              {reactiveRerunSummary.checkpointRestored ? "Checkpoint restored. " : ""}
+                              Reran {reactiveRerunSummary.rerunStages.length ? reactiveRerunSummary.rerunStages.map(formatStageLabel).join(", ") : "changed stages"}.
+                            </p>
                             <p className="mt-1">
-                              {Math.round(reactiveRerunSummary.elapsedMs)} ms
-                              {reactiveRerunSummary.withinQuickThreshold === false ? " over quick threshold" : " within quick threshold"}.
+                              Skipped {reactiveRerunSummary.skippedStages.length ? reactiveRerunSummary.skippedStages.map(formatStageLabel).join(", ") : "clean upstream stages"}.
+                            </p>
+                            {typeof reactiveRerunSummary.elapsedMs === "number" ? (
+                              <p className="mt-1">
+                                {Math.round(reactiveRerunSummary.elapsedMs)} ms
+                                {reactiveRerunSummary.withinQuickThreshold === false ? " over quick threshold" : " within quick threshold"}.
+                              </p>
+                            ) : null}
+                          </div>
+                          {reactiveRerunSummary.graphNodes.length ? (
+                            <div className="border-t border-slate-200 pt-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Dependency graph</p>
+                                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                  {reactiveRerunSummary.graphEdges.filter((edge) => edge.impacted).length} active edges
+                                </span>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-1.5">
+                                {reactiveRerunSummary.graphNodes.map((node) => (
+                                  <div
+                                    key={node.id ?? node.label}
+                                    className={`min-w-0 rounded-lg border px-2 py-2 ${
+                                      node.state === "affected"
+                                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                                        : "border-slate-200 bg-slate-50 text-slate-500"
+                                    }`}
+                                  >
+                                    <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.1em]">
+                                      {formatStageLabel(node.id ?? node.label ?? "stage")}
+                                    </span>
+                                    <span className="mt-1 block text-[10px]">
+                                      {node.changed ? "changed" : node.state === "affected" ? "affected" : "skipped"}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {reactiveRerunSummary.affectedRows.length ? (
+                            <div className="border-t border-slate-200 pt-3">
+                              <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">What changed / why</p>
+                              <div className="mt-2 space-y-2">
+                                {reactiveRerunSummary.affectedRows.slice(0, 5).map((row) => (
+                                  <div key={row.stage ?? row.why} className="grid grid-cols-[92px_1fr] gap-2">
+                                    <span className="font-semibold text-slate-800">{formatStageLabel(row.stage ?? "stage")}</span>
+                                    <span className="leading-5">{row.why || row.reason_codes?.join(", ") || "Dependency closure requires this rerun."}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {reactiveRerunSummary.skippedRows.length ? (
+                            <div className="border-t border-slate-200 pt-3">
+                              <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Skipped systems</p>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {reactiveRerunSummary.skippedRows.slice(0, 8).map((row) => (
+                                  <span key={row.stage ?? row.why} className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                                    {formatStageLabel(row.stage ?? "stage")}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {reactiveRerunSummary.comparisonRows.length ? (
+                            <div className="border-t border-slate-200 pt-3">
+                              <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Before / after comparison</p>
+                              <div className="mt-2 space-y-1.5">
+                                {reactiveRerunSummary.comparisonRows.slice(0, 6).map((row) => (
+                                  <div key={row.stage ?? `${row.before}-${row.after}`} className="grid grid-cols-[82px_1fr_1fr] items-center gap-2">
+                                    <span className="truncate font-semibold text-slate-800">{formatStageLabel(row.stage ?? "stage")}</span>
+                                    <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                                      {formatStageLabel(row.before ?? "current")}
+                                    </span>
+                                    <span className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                                      row.after === "complete"
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : row.after === "stale"
+                                          ? "bg-rose-100 text-rose-700"
+                                          : "bg-slate-100 text-slate-500"
+                                    }`}>
+                                      {formatStageLabel(row.after ?? "unchanged")}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {reactiveRerunSummary.postRerunExportBlocked === false ? (
+                            <p className="border-t border-slate-200 pt-3 font-semibold text-emerald-700">
+                              Affected outputs are current after rerun.
+                            </p>
+                          ) : reactiveRerunSummary.postRerunExportBlocked === true ? (
+                            <p className="border-t border-slate-200 pt-3 font-semibold text-rose-700">
+                              Some affected outputs are still stale; export remains blocked.
                             </p>
                           ) : null}
                         </div>
@@ -14320,6 +15849,26 @@ function PerformanceAIDashboardView({
                             <span>Repair local low points</span>
                             <input type="checkbox" checked={drainageAllowSlopeAdjust} onChange={(event) => setDrainageAllowSlopeAdjust(event.target.checked)} className="h-4 w-4 accent-slate-950" />
                           </label>
+                        </div>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Earthwork UX</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {[
+                            ["Heatmap", `${gradingEarthworkUx.heatmapCells.filter((cell) => cell.mode === "cut").length} cut / ${gradingEarthworkUx.heatmapCells.filter((cell) => cell.mode === "fill").length} fill`],
+                            ["Surface compare", gradingEarthworkUx.surfaceComparison.deltaLabel],
+                            ["Pad tie-ins", `${gradingEarthworkUx.padTieIns.filter((pad) => pad.status !== "ok").length} review`],
+                            ["Haul balance", gradingEarthworkUx.haulBalance.label],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                              <p className="mt-1 text-[11px] font-semibold text-slate-700">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-2 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-600">
+                          <p className="font-semibold text-slate-800">{gradingEarthworkUx.retainingWall.label}</p>
+                          <p className="mt-1">{gradingEarthworkUx.retainingWall.tradeoff}</p>
                         </div>
                       </div>
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -14681,6 +16230,164 @@ function PerformanceAIDashboardView({
                             </div>
                           ))}
                         </div>
+                        {sidePanelForRender === "system_storm" ? (
+                          <div className="mt-4 space-y-3" data-testid="storm-hydrology-review">
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                ["Pipes", stormHydrologyReview.segments.length || "None"],
+                                ["HGL/EGL", stormHydrologyReview.profile.length ? "Available" : "Missing"],
+                                ["Inlet spread", stormHydrologyReview.inletChecks.length ? `${stormHydrologyReview.inletChecks.length} checks` : "Missing"],
+                                ["Overflow", stormHydrologyReview.overflowPaths.length ? `${stormHydrologyReview.overflowPaths.length} paths` : "Missing"],
+                              ].map(([label, value]) => (
+                                <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                                  <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Pipe profile viewer</p>
+                                <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                  HGL/EGL
+                                </span>
+                              </div>
+                              {stormHydrologyReview.profile.length ? (
+                                (() => {
+                                  const points = stormHydrologyReview.profile;
+                                  const stations = points.map((point) => point.stationFt);
+                                  const elevations = points.flatMap((point) => [point.invertFt, point.hglFt, point.eglFt, point.groundFt]).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+                                  const minStation = Math.min(...stations);
+                                  const maxStation = Math.max(...stations, minStation + 1);
+                                  const minElev = Math.min(...elevations) - 1;
+                                  const maxElev = Math.max(...elevations) + 1;
+                                  const x = (value: number) => 6 + ((value - minStation) / Math.max(maxStation - minStation, 1)) * 88;
+                                  const y = (value: number) => 86 - ((value - minElev) / Math.max(maxElev - minElev, 1)) * 72;
+                                  const lineFor = (key: "invertFt" | "hglFt" | "eglFt" | "groundFt") =>
+                                    points
+                                      .filter((point) => typeof point[key] === "number")
+                                      .map((point) => `${x(point.stationFt)},${y(point[key] as number)}`)
+                                      .join(" ");
+                                  return (
+                                    <svg className="mt-3 h-40 w-full rounded-xl border border-slate-200 bg-white" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Storm pipe profile with HGL and EGL">
+                                      <line x1="6" y1="86" x2="94" y2="86" stroke="#cbd5e1" strokeWidth="0.5" />
+                                      <line x1="6" y1="10" x2="6" y2="86" stroke="#cbd5e1" strokeWidth="0.5" />
+                                      <polyline points={lineFor("groundFt")} fill="none" stroke="#64748b" strokeWidth="1.1" strokeDasharray="2 2" />
+                                      <polyline points={lineFor("invertFt")} fill="none" stroke="#334155" strokeWidth="1.3" />
+                                      <polyline points={lineFor("hglFt")} fill="none" stroke="#0284c7" strokeWidth="1.4" />
+                                      <polyline points={lineFor("eglFt")} fill="none" stroke="#f97316" strokeWidth="1.2" />
+                                    </svg>
+                                  );
+                                })()
+                              ) : (
+                                <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                  No HGL/EGL profile is recorded. Run drainage/storm with hydraulic analysis or provide tailwater/outfall evidence.
+                                </p>
+                              )}
+                              <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                <span className="rounded-md bg-slate-200 px-2 py-1">Ground</span>
+                                <span className="rounded-md bg-slate-800 px-2 py-1 text-white">Invert</span>
+                                <span className="rounded-md bg-sky-100 px-2 py-1 text-sky-700">HGL</span>
+                                <span className="rounded-md bg-orange-100 px-2 py-1 text-orange-700">EGL</span>
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Inlet spread map</p>
+                              <div className="mt-2 space-y-2">
+                                {stormHydrologyReview.inletChecks.length ? stormHydrologyReview.inletChecks.slice(0, 5).map((inlet) => {
+                                  const overTarget =
+                                    inlet.spreadFt !== null &&
+                                    inlet.allowableSpreadFt !== null &&
+                                    inlet.spreadFt > inlet.allowableSpreadFt;
+                                  return (
+                                    <div key={inlet.id} className={`rounded-xl border px-3 py-2 text-xs ${overTarget ? "border-rose-200 bg-rose-50 text-rose-800" : "border-sky-200 bg-white text-slate-700"}`}>
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="font-semibold">{inlet.id}</span>
+                                        <span className="font-semibold">{inlet.spreadFt !== null ? `${inlet.spreadFt.toFixed(1)} ft` : "Spread n/a"}</span>
+                                      </div>
+                                      <p className="mt-1 text-[11px]">
+                                        Limit {inlet.allowableSpreadFt !== null ? `${inlet.allowableSpreadFt.toFixed(1)} ft` : "not recorded"}; capture {inlet.captureEfficiency !== null ? `${Math.round(inlet.captureEfficiency * 100)}%` : "n/a"}.
+                                      </p>
+                                    </div>
+                                  );
+                                }) : (
+                                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                    Inlet spread checks are missing. Add inlet geometry and rerun storm hydraulics.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Detention routing chart</p>
+                              {stormHydrologyReview.detentionRouting.length ? (
+                                (() => {
+                                  const points = stormHydrologyReview.detentionRouting;
+                                  const maxTime = Math.max(...points.map((point) => point.timeMin), 1);
+                                  const flowValues = points.flatMap((point) => [point.inflowCfs, point.outflowCfs]).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+                                  const maxFlow = Math.max(...flowValues, 1);
+                                  const x = (value: number) => 6 + (value / maxTime) * 88;
+                                  const y = (value: number) => 86 - (value / maxFlow) * 72;
+                                  const lineFor = (key: "inflowCfs" | "outflowCfs") =>
+                                    points
+                                      .filter((point) => typeof point[key] === "number")
+                                      .map((point) => `${x(point.timeMin)},${y(point[key] as number)}`)
+                                      .join(" ");
+                                  return (
+                                    <svg className="mt-3 h-32 w-full rounded-xl border border-slate-200 bg-white" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Detention routing inflow and outflow">
+                                      <line x1="6" y1="86" x2="94" y2="86" stroke="#cbd5e1" strokeWidth="0.5" />
+                                      <line x1="6" y1="10" x2="6" y2="86" stroke="#cbd5e1" strokeWidth="0.5" />
+                                      <polyline points={lineFor("inflowCfs")} fill="none" stroke="#0284c7" strokeWidth="1.4" />
+                                      <polyline points={lineFor("outflowCfs")} fill="none" stroke="#16a34a" strokeWidth="1.4" />
+                                    </svg>
+                                  );
+                                })()
+                              ) : (
+                                <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                  Detention routing is missing. Confirm basin storage/outlet data, then rerun drainage.
+                                </p>
+                              )}
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Overflow path view</p>
+                              <div className="mt-2 space-y-2">
+                                {stormHydrologyReview.overflowPaths.length ? stormHydrologyReview.overflowPaths.map((path) => (
+                                  <div key={path.id} className={`rounded-xl border px-3 py-2 text-xs ${path.capacityValid ? "border-emerald-200 bg-white text-slate-700" : "border-rose-200 bg-rose-50 text-rose-800"}`}>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-semibold">{path.name}</span>
+                                      <span className="font-semibold">{path.capacityValid ? "Capacity ok" : "Blocked"}</span>
+                                    </div>
+                                    <p className="mt-1 text-[11px]">
+                                      {path.capacityCfs !== null ? `${path.capacityCfs.toFixed(1)} cfs capacity` : "Capacity n/a"}; required {path.requiredCapacityCfs !== null ? `${path.requiredCapacityCfs.toFixed(1)} cfs` : "not recorded"}.
+                                    </p>
+                                  </div>
+                                )) : (
+                                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                    Overflow path is missing. Add spillway/high-flow route evidence before export.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Exact blockers / fixes</p>
+                              <div className="mt-2 space-y-2">
+                                {stormHydrologyReview.blockerDetails.length ? stormHydrologyReview.blockerDetails.map((blocker) => (
+                                  <div key={blocker.code} className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs text-slate-700">
+                                    <p className="font-semibold text-slate-900">{blocker.message}</p>
+                                    <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-amber-700">{blocker.code.replaceAll("_", " ")}</p>
+                                    <p className="mt-2 text-[11px] font-semibold text-slate-700">Fix: {blocker.fix}</p>
+                                    {blocker.missingInputs.length ? (
+                                      <p className="mt-1 text-[11px] text-slate-500">Missing: {blocker.missingInputs.join(", ")}</p>
+                                    ) : null}
+                                  </div>
+                                )) : (
+                                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                                    No storm-specific blockers are recorded in the current result.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => handleOpenSidePanel(config.openPanel)}
@@ -14788,6 +16495,16 @@ function PerformanceAIDashboardView({
                         <button type="button" onClick={() => handleGenerateSystem("parking")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Parking</button>
                       </div>
                     </div>
+                    <RoadwayCorridorWorkbench
+                      data={roadwayWorkbenchData}
+                      activeTab={activeRoadwayWorkbenchTab}
+                      onTabChange={setActiveRoadwayWorkbenchTab}
+                      maxRoadGradePct={maxRoadGradePct}
+                      setMaxRoadGradePct={setMaxRoadGradePct}
+                      maxAdaCrossSlopePct={maxAdaCrossSlopePct}
+                      setMaxAdaCrossSlopePct={setMaxAdaCrossSlopePct}
+                      handleGenerateSystem={handleGenerateSystem}
+                    />
                   </div>
                 ) : null}
 
@@ -15119,6 +16836,196 @@ function PerformanceAIDashboardView({
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <button type="button" onClick={handleExportDxf} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">DXF</button>
                         <button type="button" onClick={handleExportReport} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">Report</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {sidePanelForRender === "jobs" ? (
+                  <div className="space-y-4" data-testid="async-jobs-panel">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Job workflow</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {visibleActiveJob ? `${toReadableLabel(String(visibleActiveJob.status || "active"))} active` : "No active job"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => token && refreshJobs(token, { suppressError: true, force: true })}
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-4 gap-2">
+                        {[
+                          ["Queued", jobStatusCounts.queued || 0],
+                          ["Running", jobStatusCounts.running || 0],
+                          ["Done", jobStatusCounts.completed || 0],
+                          ["Failed", (jobStatusCounts.failed || 0) + (jobStatusCounts.cancelled || 0)],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">History</p>
+                      <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                        {jobHistory.length ? jobHistory.map((job) => {
+                          const status = String(job.status || "").toLowerCase();
+                          const isSelected = selectedJob?.job_id === job.job_id;
+                          return (
+                            <button
+                              key={job.job_id}
+                              type="button"
+                              onClick={() => handleSelectJob(job.job_id)}
+                              className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                                isSelected
+                                  ? "border-slate-950 bg-slate-950 text-white"
+                                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-semibold">{job.job_id}</span>
+                                  <span className={`mt-0.5 block text-[11px] font-semibold uppercase tracking-[0.12em] ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                                    {toReadableLabel(String(job.job_type || "job"))}
+                                    {job.retry_of_job_id ? ` retry of ${job.retry_of_job_id}` : ""}
+                                  </span>
+                                </span>
+                                <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  status === "completed"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : status === "failed" || status === "cancelled"
+                                      ? "bg-red-50 text-red-600"
+                                      : status === "awaiting_approval"
+                                        ? "bg-amber-50 text-amber-700"
+                                        : "bg-blue-50 text-blue-700"
+                                }`}>
+                                  {toReadableLabel(status || "unknown")}
+                                </span>
+                              </div>
+                              <p className={`mt-1 truncate text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                                {job.stage_detail || job.stage || formatTimestamp(job.updated_at)}
+                              </p>
+                            </button>
+                          );
+                        }) : (
+                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                            No background jobs yet.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedJob ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="job-detail-drawer">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detail drawer</p>
+                            <p className="mt-1 truncate text-sm font-semibold text-slate-900">{selectedJob.job_id}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {toReadableLabel(String(selectedJob.job_type || "job"))} updated {formatTimestamp(selectedJob.updated_at)}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                            {Math.round(Number(selectedJob.progress || 0))}%
+                          </span>
+                        </div>
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-slate-950 transition-all"
+                            style={{ width: `${Math.max(0, Math.min(100, Number(selectedJob.progress || 0)))}%` }}
+                          />
+                        </div>
+                        <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                          {selectedJob.stage_detail || selectedJob.error || selectedJob.stage || "No detail recorded yet."}
+                        </p>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            disabled={!selectedJob.can_cancel}
+                            onClick={() => handleCancelJobById(selectedJob.job_id)}
+                            className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedJob.can_retry}
+                            onClick={() => handleRetryJob(selectedJob.job_id)}
+                            className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Retry
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedJob.can_resume}
+                            onClick={() => handleResumeJob(selectedJob.job_id)}
+                            className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            Resume
+                          </button>
+                        </div>
+                        {selectedJob.timeline?.length ? (
+                          <div className="mt-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Progress timeline</p>
+                            <div className="mt-3 space-y-2">
+                              {selectedJob.timeline.map((event, index) => (
+                                <div key={`${event.id || index}-${event.timestamp || index}`} className="flex gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                                    event.status === "blocked"
+                                      ? "bg-red-500"
+                                      : event.status === "current"
+                                        ? "bg-amber-500"
+                                        : "bg-emerald-600"
+                                  }`} />
+                                  <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-slate-800">{event.label || "Job event"}</span>
+                                    <span className="block text-xs leading-5 text-slate-500">{event.detail || formatTimestamp(event.timestamp)}</span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Artifact history</p>
+                      <div className="mt-3 space-y-2">
+                        {artifactHistory.length ? artifactHistory.slice(0, 8).map((artifact, index) => (
+                          <div key={`${artifact.artifact_id || artifact.filename || index}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-semibold text-slate-800">
+                                {artifact.filename || artifact.artifact_id || "Generated artifact"}
+                              </span>
+                              <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                {toReadableLabel(String(artifact.kind || "artifact"))}
+                              </span>
+                            </span>
+                            {artifact.download_path ? (
+                              <button
+                                type="button"
+                                onClick={() => downloadArtifactPath(artifact.download_path || "", artifact.filename || "civora-artifact")}
+                                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                              >
+                                Download
+                              </button>
+                            ) : null}
+                          </div>
+                        )) : (
+                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                            No generated artifacts have been recorded yet.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -15534,16 +17441,7 @@ function PerformanceAIDashboardView({
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Engineering health</p>
                           <div className="mt-3 grid grid-cols-2 gap-2">
-                            {([
-                              ["system_grading", "Grading"],
-                              ["system_storm", "Storm"],
-                              ["system_sanitary", "Sanitary"],
-                              ["system_water", "Water"],
-                              ["system_roadway", "Roadway"],
-                              ["system_utilities", "Utilities"],
-                              ["system_landscape", "Landscape"],
-                              ["analysis", "Review & QA"],
-                            ] as Array<[SidePanelKey, string]>).map(([panel, label]) => (
+                            {engineeringHealthPanelLinks.map(({ panel, label }) => (
                               <button
                                 key={panel}
                                 type="button"
@@ -15656,25 +17554,131 @@ function PerformanceAIDashboardView({
                     ) : null}
                     {sidePanelForRender === "quantities" ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quantity takeoff</p>
-                            <p className="mt-1 text-xs text-slate-500">Canonical state with stale and confidence labels.</p>
+                            <p className="mt-1 text-xs text-slate-500">Traceable canonical quantities with cost mapping, edit deltas, and source IDs.</p>
                           </div>
-                          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                            sidebarStaleSystems.length ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
-                          }`}>
-                            {sidebarStaleSystems.length ? "Stale" : sidebarTrustScore}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              quantityRows.some((row) => row.missingCost || row.status === "untraced")
+                                ? "bg-red-50 text-red-600"
+                                : sidebarStaleSystems.length || quantityRows.some((row) => row.delta !== null)
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-slate-100 text-slate-600"
+                            }`}>
+                              {quantityRows.some((row) => row.missingCost)
+                                ? "Cost gaps"
+                                : sidebarStaleSystems.length
+                                  ? "Stale"
+                                  : sidebarTrustScore}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleExportQuantityReviewReport}
+                              disabled={!quantityRows.length}
+                              className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                            >
+                              Export report
+                            </button>
+                          </div>
                         </div>
-                        <div className="mt-3 space-y-2 text-sm text-slate-700">
-                          {quantityRows.slice(0, 8).map((row) => (
-                            <div key={row.label} className="flex items-center justify-between gap-3">
-                              <span>{row.label}</span>
-                              <span className="font-semibold text-slate-950">{formatMetric(Number(row.value), row.unit)}</span>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                          {[
+                            ["Rows", quantityRows.length.toLocaleString()],
+                            ["Missing cost", quantityRows.filter((row) => row.missingCost).length.toLocaleString()],
+                            ["Untraced", quantityRows.filter((row) => !row.traceComplete).length.toLocaleString()],
+                            ["Deltas", quantityRows.filter((row) => row.delta !== null && Math.abs(row.delta) > 0.0001).length.toLocaleString()],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                              <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
                             </div>
                           ))}
-                          {!quantityRows.length ? <p className="text-slate-500">Run systems to populate quantities.</p> : null}
+                        </div>
+                        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-[760px] w-full border-collapse text-left text-xs">
+                            <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                              <tr>
+                                <th className="px-3 py-2 font-semibold">Quantity</th>
+                                <th className="px-3 py-2 font-semibold">Trace</th>
+                                <th className="px-3 py-2 font-semibold">Delta after edits</th>
+                                <th className="px-3 py-2 font-semibold">Cost mapping</th>
+                                <th className="px-3 py-2 font-semibold">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {quantityRows.map((row) => (
+                                <tr key={row.metric} className="align-top">
+                                  <td className="px-3 py-3">
+                                    <p className="font-semibold text-slate-900">{row.label}</p>
+                                    <p className="mt-1 font-semibold text-slate-700">{formatMetric(row.quantity, row.unit)}</p>
+                                    <p className="mt-1 break-all text-[11px] text-slate-400">{row.metric}</p>
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <p className="font-semibold text-slate-700">{row.sourceStage}</p>
+                                    <p className="mt-1 text-slate-500">{row.sourceLayer} / {row.method}</p>
+                                    <details className="mt-2">
+                                      <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                                        Source / canonical IDs
+                                      </summary>
+                                      <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                                        <p className="break-all"><span className="font-semibold text-slate-700">Canonical:</span> {row.canonicalIds.length ? row.canonicalIds.join(", ") : "Missing"}</p>
+                                        <p className="break-all"><span className="font-semibold text-slate-700">Source:</span> {row.sourceIds.length ? row.sourceIds.join(", ") : "Missing"}</p>
+                                      </div>
+                                    </details>
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    {row.delta !== null ? (
+                                      <>
+                                        <p className={`font-semibold ${row.delta > 0 ? "text-emerald-700" : row.delta < 0 ? "text-red-600" : "text-slate-700"}`}>
+                                          {row.delta > 0 ? "+" : ""}{formatMetric(row.delta, row.unit)}
+                                        </p>
+                                        <p className="mt-1 text-slate-500">
+                                          {row.previousQuantity !== null ? formatMetric(row.previousQuantity, row.unit) : "Previous pending"}{" -> "}{formatMetric(row.currentQuantity ?? row.quantity, row.unit)}
+                                        </p>
+                                      </>
+                                    ) : (
+                                      <p className="font-semibold text-slate-400">No edit delta recorded</p>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <p className="font-semibold text-slate-900">{row.costItem}</p>
+                                    <p className="mt-1 text-slate-600">
+                                      {row.unitCost !== null ? `${row.currency} ${row.unitCost.toLocaleString()} / ${row.unit}` : "No unit cost"}
+                                    </p>
+                                    <p className="mt-1 text-slate-500">
+                                      {row.amount !== null ? `${row.currency} ${row.amount.toLocaleString()}` : "Amount pending"}
+                                    </p>
+                                    <p className="mt-1 break-all text-[11px] text-slate-400">
+                                      {row.priceSourceItemId || row.priceSource}
+                                    </p>
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                      row.status === "missing_cost" || row.status === "untraced"
+                                        ? "bg-red-50 text-red-600"
+                                        : row.status === "stale" || row.status === "review"
+                                          ? "bg-amber-50 text-amber-700"
+                                          : "bg-emerald-50 text-emerald-700"
+                                    }`}>
+                                      {statusLabelForQuantityReview(row.status)}
+                                    </span>
+                                    <p className="mt-2 text-[11px] text-slate-500">
+                                      {row.missingCost
+                                        ? "Needs unit-price book mapping."
+                                        : row.traceComplete
+                                          ? "Traceable to canonical model."
+                                          : "Missing canonical source ID."}
+                                    </p>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {!quantityRows.length ? (
+                            <p className="p-4 text-sm font-semibold text-slate-500">Run systems to populate quantities.</p>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
@@ -15999,6 +18003,7 @@ function PerformanceAIDashboardView({
                 showCalculations={showCalculations}
                 measurementOverlayStats={measurementOverlayStats}
                 calculationOverlayStats={calculationOverlayStats}
+                gradingEarthworkUx={gradingEarthworkUx}
                 geocode={siteInputs?.geocode ?? null}
                 siteRotationDeg={siteInputs?.site_rotation_deg ?? 0}
                 showSiteBounds={showSiteBounds}
@@ -16009,6 +18014,10 @@ function PerformanceAIDashboardView({
                 alignToRoadRequest={alignToRoadRequest}
                 onMapCenter={handleMapCenter}
                 siteLocked={siteScaleLocked}
+                stormHydrologyOverlay={{
+                  inletChecks: stormHydrologyReview.inletChecks,
+                  overflowPaths: stormHydrologyReview.overflowPaths,
+                }}
                 onSetSiteRotationDeg={(value) => {
                   setSiteRotationDeg(value);
                   setSiteRotationInput(String(value));

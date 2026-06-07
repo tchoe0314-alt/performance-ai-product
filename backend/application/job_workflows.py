@@ -40,6 +40,9 @@ class JobQueueProtocol(Protocol):
     def continue_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def retry_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
     def revise_job(
         self,
         *,
@@ -322,6 +325,31 @@ def continue_existing_job(
             "project_id": job.get("project_id"),
             "job_id": job.get("job_id"),
             "retryable": True,
+        },
+    }
+
+
+def retry_existing_job(
+    *,
+    job_queue: JobQueueProtocol,
+    user_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    job = job_queue.retry_job(user_id=user_id, job_id=job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {
+        "success": True,
+        "job": job,
+        "operational_summary": {
+            "status": str(job.get("status") or "queued"),
+            "job_type": str(job.get("job_type") or "orchestrate"),
+            "job_bound": bool(job.get("job_id")),
+            "project_bound": bool(job.get("project_id")),
+            "project_id": job.get("project_id"),
+            "job_id": job.get("job_id"),
+            "retryable": True,
+            "retry_of_job_id": job.get("retry_of_job_id"),
         },
     }
 

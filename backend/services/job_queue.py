@@ -433,6 +433,8 @@ class JobQueueService:
             {
                 "payload": record.get("payload") or {},
                 "result": result_payload,
+                "timeline": self._job_timeline(record),
+                "artifact_history": self._artifact_history(record),
             }
         )
         return detail
@@ -491,6 +493,38 @@ class JobQueueService:
         summary = None if updated is None else self._job_summary(updated)
         self._queue.put(job_id)
         return summary
+
+    def retry_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        self._ensure_workers_alive()
+        record = self.get_job_detail(user_id=user_id, job_id=job_id)
+        if record is None:
+            return None
+        if record["status"] in {"queued", "running", "cancelling", "awaiting_approval"}:
+            return self._job_summary(record)
+
+        payload = dict(record.get("payload") or {})
+        meta = dict(payload.get("meta") or {})
+        retry_history = list(meta.get("job_retry_history") or [])
+        retry_history.append(
+            {
+                "job_id": job_id,
+                "status": record.get("status"),
+                "updated_at": record.get("updated_at"),
+                "error": record.get("error"),
+            }
+        )
+        meta["retry_of_job_id"] = job_id
+        meta["job_retry_history"] = retry_history[-5:]
+        payload["meta"] = meta
+
+        retried = self.submit_job(
+            user_id=user_id,
+            job_type=str(record.get("job_type") or "orchestrate"),
+            payload=payload,
+            project_id=record.get("project_id"),
+        )
+        retried["retry_of_job_id"] = job_id
+        return retried
 
     def revise_job(
         self,
@@ -768,6 +802,10 @@ class JobQueueService:
             queue_position = queued_positions.get(record["job_id"])
             queued_count = int(queue_stats.get("queued_count") or 0)
             running_count = int(queue_stats.get("running_count") or 0)
+        result = dict(record.get("result") or {})
+        payload_meta = dict(dict(record.get("payload") or {}).get("meta") or {})
+        result_metadata = dict(result.get("metadata") or {})
+        resume_checkpoint = dict(result_metadata.get("runtime_phase_checkpoint") or {})
         return {
             "job_id": record["job_id"],
             "job_type": record["job_type"],
@@ -782,7 +820,89 @@ class JobQueueService:
             "queue_position": queue_position,
             "queued_count": queued_count,
             "running_count": running_count,
+            "can_cancel": record["status"] in {"queued", "running", "cancelling", "awaiting_approval"},
+            "can_retry": record["status"] in {"failed", "cancelled", "completed"},
+            "can_resume": record["status"] == "awaiting_approval",
+            "resume_feasible": record["status"] == "awaiting_approval" and bool(resume_checkpoint),
+            "retry_of_job_id": payload_meta.get("retry_of_job_id"),
         }
+
+    def _job_timeline(self, record: Dict[str, Any]) -> List[Dict[str, Any]]:
+        status = str(record.get("status") or "")
+        created_at = float(record.get("created_at") or 0)
+        updated_at = float(record.get("updated_at") or created_at or 0)
+        stage = str(record.get("stage") or "")
+        detail = str(record.get("stage_detail") or "")
+        progress = _coerce_progress(record.get("progress"))
+        events: List[Dict[str, Any]] = [
+            {
+                "id": "queued",
+                "label": "Queued",
+                "status": "current" if status == "queued" else "completed",
+                "timestamp": created_at,
+                "detail": "Job accepted by the backend queue.",
+                "progress": 12,
+            }
+        ]
+        if status in {"running", "awaiting_approval", "completed", "failed", "cancelling", "cancelled"}:
+            events.append(
+                {
+                    "id": "running",
+                    "label": stage if status in {"running", "cancelling"} and stage else "Running",
+                    "status": "current" if status in {"running", "cancelling"} else "completed",
+                    "timestamp": updated_at,
+                    "detail": detail or "Worker picked up the job.",
+                    "progress": progress or 48,
+                }
+            )
+        if status == "awaiting_approval":
+            events.append(
+                {
+                    "id": "awaiting_approval",
+                    "label": "Awaiting Approval",
+                    "status": "current",
+                    "timestamp": updated_at,
+                    "detail": detail or "A phase checkpoint is ready for review.",
+                    "progress": progress or 60,
+                }
+            )
+        if status in {"completed", "failed", "cancelled"}:
+            terminal_label = "Completed" if status == "completed" else "Failed" if status == "failed" else "Cancelled"
+            events.append(
+                {
+                    "id": status,
+                    "label": stage or terminal_label,
+                    "status": "completed" if status == "completed" else "blocked",
+                    "timestamp": updated_at,
+                    "detail": str(record.get("error") or detail or terminal_label),
+                    "progress": progress if progress else (100 if status == "completed" else 0),
+                }
+            )
+        return events
+
+    def _artifact_history(self, record: Dict[str, Any]) -> List[Dict[str, Any]]:
+        result = dict(record.get("result") or {})
+        artifacts: List[Dict[str, Any]] = []
+        artifact = dict(result.get("artifact") or {})
+        if artifact:
+            artifacts.append(
+                {
+                    "artifact_id": str(artifact.get("artifact_id") or artifact.get("filename") or record.get("job_id")),
+                    "kind": artifact.get("kind") or record.get("job_type"),
+                    "filename": artifact.get("filename"),
+                    "download_path": artifact.get("download_path"),
+                    "created_at": record.get("updated_at"),
+                    "source_job_id": record.get("job_id"),
+                }
+            )
+        metadata = dict(result.get("metadata") or {})
+        run_summary = dict(metadata.get("run_summary") or {})
+        for item in run_summary.get("recent_artifacts") or []:
+            if isinstance(item, dict):
+                copied = dict(item)
+                copied.setdefault("source_job_id", record.get("job_id"))
+                artifacts.append(copied)
+        return artifacts
 
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
         keys = set(row.keys())

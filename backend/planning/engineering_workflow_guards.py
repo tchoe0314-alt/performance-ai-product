@@ -32,6 +32,16 @@ SYSTEM_LABELS: Dict[str, str] = {
     "qa_review": "QA/review",
 }
 
+DISCIPLINE_NATIVE_SYSTEMS: Dict[str, str] = {
+    "grading": "grading",
+    "drainage": "drainage",
+    "storm": "storm_pipes",
+    "roadway": "roadway",
+    "utilities": "utilities",
+    "quantities": "quantities",
+    "qa_review": "qa",
+}
+
 INPUT_DEPENDENCIES: Dict[str, Sequence[str]] = {
     "grading": ("lot_geometry", "terrain", "standards"),
     "drainage": ("lot_geometry", "terrain", "basin_outfall", "standards"),
@@ -250,7 +260,11 @@ def _annotate_output(meta: Dict[str, Any], system: str, row: Dict[str, Any]) -> 
     if system != "qa_review" and bool(row.get("blocked")) and not output:
         return
     if system == "roadway":
-        meta[key] = deepcopy(row)
+        road_row = deepcopy(row)
+        for guard_key in ("native_engine_guard", "engine_blockers", "engine_blocked"):
+            if guard_key in output:
+                road_row[guard_key] = deepcopy(output.get(guard_key))
+        meta[key] = road_row
         return
     output["engineer_review_required"] = True
     output["review_required"] = True
@@ -293,20 +307,92 @@ def _unique_blockers(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _native_engine_guard_record(system: str, blockers: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    native_blockers: List[Dict[str, Any]] = []
+    for item in blockers:
+        rec = deepcopy(safe_dict(item))
+        rec["engine_id"] = system
+        rec["blocker_origin"] = "discipline_native_engine"
+        native_blockers.append(rec)
+    return {
+        "version": "discipline_native_engine_input_guard_v1",
+        "engine_id": system,
+        "status": "blocked_missing_inputs" if native_blockers else "accepted_for_engineering_review",
+        "blocked": bool(native_blockers),
+        "success": not bool(native_blockers),
+        "production_usable": False,
+        "engineer_review_required": True,
+        "blockers": native_blockers,
+        "missing_inputs": deepcopy(native_blockers),
+        "truth_label": (
+            "This discipline engine blocks weak inputs before production use; "
+            "review wrappers may summarize this guard but do not own the blocker."
+        ),
+    }
+
+
+def apply_native_engine_input_guards(plan: Dict[str, Any], parsed: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach discipline-owned missing-input guards to native engine outputs."""
+
+    meta = safe_dict(plan.setdefault("meta", {}))
+    presence = _input_presence(parsed, meta)
+    native_guards: Dict[str, Dict[str, Any]] = {}
+
+    for system, meta_key in DISCIPLINE_NATIVE_SYSTEMS.items():
+        missing = [
+            _missing_input_record(system, input_key)
+            for input_key in INPUT_DEPENDENCIES.get(system, ())
+            if not presence.get(input_key, False)
+        ]
+        guard = _native_engine_guard_record(system, _unique_blockers(missing))
+        native_guards[system] = guard
+
+        output = safe_dict(meta.get(meta_key))
+        if guard["blocked"] or output:
+            output["native_engine_guard"] = deepcopy(guard)
+            output["engine_blockers"] = deepcopy(guard["blockers"])
+            output["engine_blocked"] = bool(guard["blocked"])
+            output["engineer_review_required"] = True
+            output["production_usable"] = False
+            if guard["blocked"]:
+                output["success"] = False
+                output["review_status"] = "blocked_missing_inputs"
+            meta[meta_key] = output
+
+    meta["discipline_native_engine_guards"] = {
+        "version": "discipline_native_engine_guards_v1",
+        "input_presence": presence,
+        "guards": native_guards,
+        "blocked_engines": [system for system, guard in native_guards.items() if bool(guard.get("blocked"))],
+        "blockers": _unique_blockers(
+            blocker
+            for guard in native_guards.values()
+            for blocker in safe_list(guard.get("blockers"))
+        ),
+    }
+    plan["meta"] = meta
+    return meta["discipline_native_engine_guards"]
+
+
 def apply_engineering_generation_review(plan: Dict[str, Any], parsed: Dict[str, Any]) -> Dict[str, Any]:
     """Attach an explicit no-fake-success review contract to engineering outputs."""
 
+    meta = safe_dict(plan.setdefault("meta", {}))
+    native_guards = apply_native_engine_input_guards(plan, parsed)
     meta = safe_dict(plan.setdefault("meta", {}))
     presence = _input_presence(parsed, meta)
     systems = ["grading", "drainage", "storm", "sanitary", "water", "utilities", "roadway", "quantities", "qa_review"]
     rows: Dict[str, Dict[str, Any]] = {}
 
     for system in systems:
-        missing = [
+        missing = []
+        native_guard = safe_dict(safe_dict(native_guards.get("guards")).get(system))
+        missing.extend(safe_list(native_guard.get("blockers")))
+        missing.extend([
             _missing_input_record(system, input_key)
             for input_key in INPUT_DEPENDENCIES.get(system, ())
             if not presence.get(input_key, False)
-        ]
+        ])
         output = _system_output(meta, system)
         if not missing and not _output_has_trace(system, output, plan):
             missing.append(_canonical_output_blocker(system))
@@ -399,4 +485,4 @@ def apply_engineering_generation_review(plan: Dict[str, Any], parsed: Dict[str, 
     return review
 
 
-__all__ = ["WORKFLOW_REVIEW_VERSION", "apply_engineering_generation_review"]
+__all__ = ["WORKFLOW_REVIEW_VERSION", "apply_engineering_generation_review", "apply_native_engine_input_guards"]

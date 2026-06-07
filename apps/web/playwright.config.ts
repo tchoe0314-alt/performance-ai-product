@@ -1,6 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || "https://civoraai.com";
+const shouldUseManagedLocalServer =
+  !process.env.PLAYWRIGHT_BASE_URL && process.env.PLAYWRIGHT_SKIP_WEBSERVER !== "1";
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
+const outputDir =
+  process.env.PLAYWRIGHT_OUTPUT_DIR ||
+  path.join("test-results", `run-${process.pid}`);
 
 export default defineConfig({
   testDir: "./tests/live",
@@ -12,7 +18,17 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
-  outputDir: "test-results",
+  outputDir,
+  webServer: shouldUseManagedLocalServer
+    ? {
+        command: "npm run dev:test",
+        url: baseURL,
+        timeout: 120_000,
+        reuseExistingServer: false,
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    : undefined,
   use: {
     baseURL,
     trace: "retain-on-failure",

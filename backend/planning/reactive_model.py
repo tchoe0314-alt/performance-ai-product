@@ -458,6 +458,27 @@ def build_reactive_update_report(
     }
     stale = sorted({safe_str(item) for item in stale_outputs if safe_str(item)})
     impacted_sorted = sorted(impacted_stages, key=_stage_index)
+    skipped_stages = [
+        stage_name
+        for stage_name in PLANNER_STAGE_ORDER
+        if stage_name not in set(impacted_sorted)
+    ]
+    dependency_edges: List[Dict[str, Any]] = []
+    for upstream in PLANNER_STAGE_ORDER:
+        for downstream in sorted(PLANNER_STAGE_DEPENDENCIES.get(upstream, set()), key=_stage_index):
+            edge_impacted = upstream in impacted_stages or downstream in impacted_stages
+            dependency_edges.append(
+                {
+                    "from": upstream,
+                    "to": downstream,
+                    "impacted": edge_impacted,
+                    "why": (
+                        f"{downstream} depends on {upstream}; rerun propagates through this edge."
+                        if edge_impacted
+                        else f"{downstream} depends on {upstream}; both are clean for this change."
+                    ),
+                }
+            )
     impact_matrix: List[Dict[str, Any]] = []
     for stage_name in impacted_sorted:
         reasons: List[str] = []
@@ -478,6 +499,7 @@ def build_reactive_update_report(
                 reasons.append(f"downstream_of_engine:{engine_id}")
         if stage_name in stale:
             reasons.append("already_stale")
+        reason_summary = "; ".join(reason.replace("_", " ") for reason in sorted(dict.fromkeys(reasons)))
         impact_matrix.append(
             {
                 "stage": stage_name,
@@ -485,9 +507,57 @@ def build_reactive_update_report(
                 "stale_before_rerun": stage_name in stale,
                 "heavy": stage_name in REACTIVE_HEAVY_STAGES,
                 "reason_codes": sorted(dict.fromkeys(reasons)),
+                "why": reason_summary or "Included by dependency closure.",
                 "export_blocking_until_complete": True,
             }
         )
+    changed_system_report = [
+        {
+            "system": stage_name,
+            "kind": "stage",
+            "why": "Directly changed by the user edit.",
+        }
+        for stage_name in sorted(changed_stage_set, key=_stage_index)
+    ] + [
+        {
+            "system": engine_id,
+            "kind": "engine",
+            "why": f"{engine_id} changed; mapped planner stages and downstream dependencies must be current.",
+        }
+        for engine_id in sorted(changed_engine_set)
+    ]
+    affected_system_report = {
+        "changed_systems": changed_system_report,
+        "affected_stages": [
+            {
+                "stage": row["stage"],
+                "why": row["why"],
+                "reason_codes": row["reason_codes"],
+                "rerun_required": True,
+            }
+            for row in impact_matrix
+        ],
+        "skipped_stages": [
+            {
+                "stage": stage_name,
+                "why": "No changed upstream dependency reaches this stage.",
+                "rerun_required": False,
+            }
+            for stage_name in skipped_stages
+        ],
+        "unaffected_stages": skipped_stages,
+    }
+    before_after_comparison = [
+        {
+            "stage": stage_name,
+            "before": "stale" if stage_name in impacted_stages or stage_name in stale else "current",
+            "after": "pending_rerun" if stage_name in impacted_stages or stage_name in stale else "unchanged",
+            "changed": stage_name in changed_stage_set,
+            "rerun_required": stage_name in impacted_stages or stage_name in stale,
+            "skipped": stage_name in skipped_stages,
+        }
+        for stage_name in PLANNER_STAGE_ORDER
+    ]
     run_policy = build_reactive_run_policy(
         impacted_stages=impacted_stages,
         changed_engine_ids=changed_engine_set,
@@ -500,7 +570,22 @@ def build_reactive_update_report(
         "changed_stages": sorted(changed_stage_set, key=_stage_index),
         "impacted_engine_ids": sorted(impacted_engines),
         "impacted_stages": impacted_sorted,
+        "skipped_stages": skipped_stages,
+        "dependency_graph": {
+            "nodes": [
+                {
+                    "id": stage_name,
+                    "label": stage_name.replace("_", " ").title(),
+                    "state": "affected" if stage_name in impacted_stages else "skipped",
+                    "changed": stage_name in changed_stage_set,
+                }
+                for stage_name in PLANNER_STAGE_ORDER
+            ],
+            "edges": dependency_edges,
+        },
         "impact_matrix": impact_matrix,
+        "affected_system_report": affected_system_report,
+        "before_after_comparison": before_after_comparison,
         "partial_rerun_supported": True,
         "ran_stages": sorted((stage for stage in ran_stages if stage), key=_stage_index),
         "stale_outputs": stale,
@@ -731,6 +816,8 @@ def execute_reactive_rerun(
     final_report["post_rerun_stage_status"] = [
         {
             "stage": stage_name,
+            "before": "stale",
+            "after": "complete" if stage_name in completed_stages else "stale",
             "completed": stage_name in completed_stages,
             "stale_after_rerun": stage_name in uncleared_stale,
             "export_blocking": stage_name in uncleared_stale,
@@ -742,12 +829,27 @@ def execute_reactive_rerun(
         "impacted_stages": safe_list(final_report.get("impacted_stages")),
         "completed_stages": final_report["post_rerun_completed_stages"],
         "stale_after_rerun": uncleared_stale,
+        "affected_stages": safe_list(safe_dict(final_report.get("affected_system_report")).get("affected_stages")),
+        "skipped_stages": safe_list(safe_dict(final_report.get("affected_system_report")).get("skipped_stages")),
         "unaffected_stages": [
             stage_name
             for stage_name in PLANNER_STAGE_ORDER
             if stage_name not in impacted_stages
         ],
     }
+    final_report["before_after_comparison"] = [
+        {
+            **safe_dict(row),
+            "after": (
+                "complete"
+                if safe_str(safe_dict(row).get("stage")) in completed_stages
+                else "stale"
+                if safe_str(safe_dict(row).get("stage")) in uncleared_stale
+                else safe_str(safe_dict(row).get("after"), "unchanged")
+            ),
+        }
+        for row in safe_list(final_report.get("before_after_comparison"))
+    ]
     final_report["post_rerun_truth"] = (
         "All impacted downstream stages reported complete after rerun."
         if not uncleared_stale

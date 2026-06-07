@@ -74,7 +74,8 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   const rotationSlider = page.locator('input[type="range"]').first();
   if (await rotationSlider.isVisible().catch(() => false)) {
     await rotationSlider.evaluate((el) => {
-      el.value = "12";
+      const input = el as HTMLInputElement;
+      input.value = "12";
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
     });

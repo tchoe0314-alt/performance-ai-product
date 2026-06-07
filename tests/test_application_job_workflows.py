@@ -9,6 +9,7 @@ from backend.application.job_workflows import (
     queue_artifact_export_job,
     revise_existing_job,
     queue_orchestrate_job,
+    retry_existing_job,
 )
 
 
@@ -57,6 +58,7 @@ class FakeJobQueue:
         self.cancelled = None
         self.continued = None
         self.revised = None
+        self.retried = None
         self.jobs = {}
 
     def submit_job(self, *, user_id, job_type, payload, project_id=None):
@@ -106,6 +108,20 @@ class FakeJobQueue:
         job["status"] = "queued"
         job["payload"] = dict(payload or {})
         self.jobs[job_id] = dict(job)
+        return job
+
+    def retry_job(self, *, user_id, job_id):
+        self.retried = {"user_id": user_id, "job_id": job_id}
+        if job_id == "missing":
+            return None
+        job = {
+            "job_id": "job_retry",
+            "status": "queued",
+            "project_id": "p1",
+            "job_type": "orchestrate",
+            "retry_of_job_id": job_id,
+        }
+        self.jobs[job["job_id"]] = dict(job)
         return job
 
     def get_job_detail(self, *, user_id, job_id):
@@ -304,6 +320,19 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertFalse(result["artifact"]["construction_release_allowed"])
         self.assertEqual(result["job_progress"]["progress"], 100)
         self.assertGreaterEqual(len(updates), 3)
+
+    def test_retry_existing_job_requeues_from_failed_job(self):
+        queue = FakeJobQueue()
+        response = retry_existing_job(
+            job_queue=queue,
+            user_id="u1",
+            job_id="job_failed",
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(queue.retried["job_id"], "job_failed")
+        self.assertEqual(response["job"]["status"], "queued")
+        self.assertEqual(response["operational_summary"]["retry_of_job_id"], "job_failed")
 
     def test_revise_existing_job_requeues_current_phase_with_saved_project_input(self):
         store = FakeProjectStore(

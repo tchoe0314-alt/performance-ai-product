@@ -65,7 +65,8 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
   await page.getByTestId("generate-grading").click();
   await expect.poll(() => observedPayload).not.toBeNull();
 
-  const meta = (observedPayload?.meta ?? {}) as Record<string, unknown>;
+  const payload = observedPayload as unknown as Record<string, unknown>;
+  const meta = (payload.meta ?? {}) as Record<string, unknown>;
   const orchestratorMeta = (meta.orchestrator_meta ?? {}) as Record<string, unknown>;
   const runtimeResume = (orchestratorMeta.runtime_resume ?? {}) as Record<string, unknown>;
   expect(meta.requested_system).toBe("grading");

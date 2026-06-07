@@ -12,7 +12,7 @@ async function openBlankWorkspace(page: Page) {
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Detention Basin A").first()).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: "Setup Site and boundary" }).click();
+  await page.getByRole("button", { name: "Open setup from sidebar command" }).click();
   await page.getByRole("button", { name: "Start a blank site and clear address map evidence" }).click({ noWaitAfter: true });
   await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
   await expect(page.getByText("Detention Basin A")).toHaveCount(0);
@@ -90,10 +90,10 @@ test.describe("drawn site boundary Finish workflow", () => {
     await page.getByRole("button", { name: "Canvas Design workspace" }).click();
     await page.getByRole("button", { name: "Selected Details" }).click();
     const rightPanel = page.getByTestId("workspace-right-panel");
-    await expect(rightPanel.getByText("Basin / Detention Pond 1", { exact: true })).toBeVisible();
+    await expect(rightPanel.locator("p").filter({ hasText: /^Basin \/ Detention Pond \d+$/ })).toBeVisible();
     await expect(rightPanel.locator('input[value="manual_drawn"]')).toBeVisible();
     await expect(
-      rightPanel.locator("button", { hasText: "Basin / Detention Pond 1" }).filter({
+      rightPanel.locator("button", { hasText: /Basin \/ Detention Pond \d+/ }).filter({
         hasText: "Canonical geometry · Draft review required",
       }),
     ).toBeVisible();

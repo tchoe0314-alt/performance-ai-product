@@ -137,6 +137,8 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(job["stage"], "Engineering Run")
         self.assertEqual(job["progress"], 48)
         self.assertEqual(job["result"]["final_plan"]["name"], "Demo")
+        self.assertEqual(job["timeline"][0]["id"], "queued")
+        self.assertTrue(job["can_cancel"])
 
     def test_get_job_detail_includes_result_after_completion_only(self):
         connection = self.db.connect()
@@ -172,6 +174,8 @@ class JobQueueServiceTest(unittest.TestCase):
         job = self.queue.get_job_detail(user_id=self.user_id, job_id="job_done")
         self.assertIsNotNone(job)
         self.assertEqual(job["result"]["final_plan"]["name"], "Demo")
+        self.assertTrue(job["can_retry"])
+        self.assertEqual(job["timeline"][-1]["id"], "completed")
 
     def test_get_job_detail_hides_non_plan_running_result_payloads(self):
         connection = self.db.connect()
@@ -584,6 +588,64 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(jobs["job_queued_1"]["queued_count"], 2)
         self.assertEqual(jobs["job_queued_1"]["running_count"], 1)
         self.assertEqual(jobs["job_queued_2"]["queue_position"], 2)
+
+    def test_cancel_queued_job_marks_cancelled_and_retryable(self):
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "cancel me"},
+        )
+
+        cancelled = self.queue.cancel_job(user_id=self.user_id, job_id=created["job_id"])
+        self.assertIsNotNone(cancelled)
+        self.assertEqual(cancelled["status"], "cancelled")
+
+        detail = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail["status"], "cancelled")
+        self.assertTrue(detail["can_retry"])
+        self.assertEqual(detail["timeline"][-1]["id"], "cancelled")
+
+    def test_retry_failed_job_creates_linked_queued_job_from_original_payload(self):
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_failed_retry",
+                    self.user_id,
+                    "orchestrate",
+                    "failed",
+                    1.0,
+                    2.0,
+                    None,
+                    "Failed",
+                    "Bad input",
+                    42,
+                    '{"prompt_text":"retry source"}',
+                    '{"job_progress":{"stage":"Failed","detail":"Bad input","progress":42}}',
+                    "Bad input",
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        retried = self.queue.retry_job(user_id=self.user_id, job_id="job_failed_retry")
+        self.assertIsNotNone(retried)
+        self.assertNotEqual(retried["job_id"], "job_failed_retry")
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["retry_of_job_id"], "job_failed_retry")
+
+        retry_detail = self.queue.get_job_detail(user_id=self.user_id, job_id=retried["job_id"])
+        self.assertEqual(retry_detail["payload"]["prompt_text"], "retry source")
+        self.assertEqual(retry_detail["payload"]["meta"]["retry_of_job_id"], "job_failed_retry")
 
     def test_worker_waits_for_approval_after_partial_runtime_phase_result(self):
         call_count = {"value": 0}
