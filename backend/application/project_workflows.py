@@ -10,10 +10,20 @@ from backend.application.design_workflows import (
     now_ts,
 )
 from backend.planning.common import blocker_explanations, construction_package_record
+from backend.planning.candidate_review_inbox import (
+    apply_candidate_review_decision,
+    build_candidate_review_inbox,
+)
+from backend.planning.progress_timeline import build_progress_timeline
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
 )
+from backend.planning.source_confidence_map import (
+    attach_source_confidence_map,
+    build_source_confidence_map,
+)
+from backend.planning.smart_fix import build_smart_fix_recommendations
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.job_workflows import JobQueueProtocol
 
@@ -450,6 +460,27 @@ def _record_with_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     return enriched
 
 
+def _with_progress_timeline_result(
+    latest_result: Dict[str, Any],
+    *,
+    project_input: Optional[Dict[str, Any]] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    result = dict(latest_result or {})
+    final_plan = dict(result.get("final_plan") or {})
+    if not final_plan:
+        return result
+    meta = dict(final_plan.get("meta") or {})
+    meta["progress_timeline_v1"] = build_progress_timeline(
+        project_input=dict(project_input or {}),
+        latest_result=result,
+        context=dict(context or {}),
+    )
+    final_plan["meta"] = meta
+    result["final_plan"] = final_plan
+    return result
+
+
 def merge_project_metadata(
     existing_metadata: Optional[Dict[str, Any]],
     *,
@@ -520,6 +551,10 @@ def artifact_summary(
 ) -> Dict[str, Any]:
     final_plan = dict(result_data.get("final_plan") or {})
     final_meta = dict(final_plan.get("meta") or {})
+    if final_plan and "smart_fix_recommendations_v1" not in final_meta:
+        final_meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=final_meta)
+        final_plan["meta"] = final_meta
+        result_data["final_plan"] = final_plan
     request_metadata = dict(result_data.get("request_metadata") or {})
     release_review = dict(request_metadata.get("release_review") or final_meta.get("release_review") or {})
     blocked_reasons = [str(item) for item in list(release_review.get("blocked_reasons") or []) if str(item)]
@@ -712,7 +747,133 @@ def get_project_result(
     return {
         "success": True,
         "project_id": project_id,
-        "latest_result": dict(latest_result or {}),
+        "latest_result": _with_progress_timeline_result(
+            _with_smart_fix_result(dict(latest_result or {})),
+            project_input=dict(record.get("project_input") or {}),
+        ),
+    }
+
+
+def _with_smart_fix_result(latest_result: Dict[str, Any]) -> Dict[str, Any]:
+    result = dict(latest_result or {})
+    final_plan = dict(result.get("final_plan") or {})
+    if not final_plan:
+        return result
+    meta = dict(final_plan.get("meta") or {})
+    if "smart_fix_recommendations_v1" not in meta:
+        meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=meta)
+        final_plan["meta"] = meta
+        result["final_plan"] = final_plan
+    return result
+
+
+def _project_final_plan_meta(record: Dict[str, Any]) -> Dict[str, Any]:
+    latest_result = dict(record.get("latest_result") or {})
+    final_plan = dict(latest_result.get("final_plan") or {})
+    return dict(final_plan.get("meta") or {})
+
+
+def get_project_candidate_review_inbox(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+) -> Dict[str, Any]:
+    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    meta = _project_final_plan_meta(record)
+    inbox = dict(meta.get("candidate_review_inbox_v1") or build_candidate_review_inbox(meta))
+    return {
+        "success": True,
+        "project_id": project_id,
+        "candidate_review_inbox_v1": inbox,
+        "truth_label": inbox.get("truth_label"),
+    }
+
+
+def get_project_source_confidence_map(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+) -> Dict[str, Any]:
+    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    meta = _project_final_plan_meta(record)
+    confidence_map = dict(
+        meta.get("source_confidence_map_v1")
+        or build_source_confidence_map(meta, project_input=dict(record.get("project_input") or {}))
+    )
+    return {
+        "success": True,
+        "project_id": project_id,
+        "source_confidence_map_v1": confidence_map,
+        "truth_label": confidence_map.get("truth_label"),
+    }
+
+
+def review_project_candidates(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+    candidate_ids: list[str],
+    action: str,
+    reason: str = "",
+    reviewer_id: str = "",
+) -> Dict[str, Any]:
+    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    latest_result = dict(record.get("latest_result") or {})
+    final_plan = dict(latest_result.get("final_plan") or {})
+    if not final_plan:
+        raise HTTPException(status_code=400, detail="Selected project has no saved planner result.")
+    meta = dict(final_plan.get("meta") or {})
+    try:
+        decision = apply_candidate_review_decision(
+            meta,
+            candidate_ids=candidate_ids,
+            action=action,
+            reviewer_id=reviewer_id or user_id,
+            reason=reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    updated_meta = dict(decision.get("updated_meta") or meta)
+    updated_meta["source_confidence_map_v1"] = build_source_confidence_map(
+        updated_meta,
+        project_input=dict(record.get("project_input") or {}),
+    )
+    final_plan["meta"] = updated_meta
+    latest_result["final_plan"] = final_plan
+    latest_result = _with_progress_timeline_result(
+        latest_result,
+        project_input=dict(record.get("project_input") or {}),
+    )
+    saved = project_store.save_project(
+        user_id=user_id,
+        project_id=project_id,
+        name=record.get("name", "Untitled Project"),
+        description=record.get("description", ""),
+        session_id=record.get("session_id"),
+        tags=record.get("tags", []),
+        project_input=record.get("project_input", {}),
+        latest_result=latest_result,
+        session_state=record.get("session_state", {}),
+        metadata=record.get("metadata", {}),
+    )
+    return {
+        "success": True,
+        "project_id": project_id,
+        "project": _record_with_operational_summary(saved),
+        "candidate_review_inbox_v1": decision["candidate_review_inbox_v1"],
+        "accepted_drafts": decision["accepted_drafts"],
+        "rejected_candidates": decision["rejected_candidates"],
+        "audit_trail": decision["audit_trail"],
+        "truth_label": decision["truth_label"],
     }
 
 
@@ -753,7 +914,10 @@ def save_project_record(
         existing_project_input = dict(current_existing.get("project_input") or {})
         if existing_project_input:
             project_input = _merge_project_input(existing_project_input, project_input)
+    if latest_result:
+        latest_result = attach_source_confidence_map(latest_result, project_input=project_input)
     if latest_result and build_run_summary:
+        latest_result = _with_smart_fix_result(latest_result)
         metadata = merge_project_metadata(
             metadata,
             run_summary=build_run_summary(
@@ -762,6 +926,10 @@ def save_project_record(
                 project_id=project_id,
             ),
         )
+    latest_result = _with_progress_timeline_result(
+        latest_result,
+        project_input=project_input,
+    )
     try:
         record = project_store.save_project(
             user_id=user_id,

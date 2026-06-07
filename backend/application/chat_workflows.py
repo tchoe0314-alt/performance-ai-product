@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 import re
 from typing import Any, Callable, Dict, List, Optional
 
@@ -12,7 +13,20 @@ from backend.planning.ai_orchestration_evidence import (
     attach_ai_orchestration_evidence_to_decision,
     attach_ai_orchestration_evidence_to_plan,
 )
+from backend.planning.candidate_review_inbox import (
+    apply_candidate_review_decision,
+    build_candidate_review_inbox,
+)
+from backend.planning.common import safe_str
+from backend.planning.existing_conditions_online import fetch_online_existing_conditions
 from backend.planning.map_feature_detection import build_map_feature_detection_report
+from backend.planning.progress_timeline import build_progress_timeline
+from backend.planning.smart_fix import build_smart_fix_recommendations
+from backend.planning.setup_wizard import build_setup_wizard_state
+from backend.planning.source_confidence_map import (
+    attach_source_confidence_map,
+    build_source_confidence_map,
+)
 from parsers.chat_intent_parser import build_chat_memory_summary
 
 
@@ -107,6 +121,18 @@ def _truthful_decision_update(
 
 
 def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_input: Dict[str, Any], latest_result: Dict[str, Any]) -> None:
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    if final_plan:
+        meta = _safe_dict(final_plan.get("meta"))
+        meta["setup_wizard_state_v1"] = build_setup_wizard_state(
+            project_input=project_input,
+            latest_result=latest_result,
+        )
+        meta["source_confidence_map_v1"] = build_source_confidence_map(meta, project_input=project_input)
+        meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=meta)
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+    latest_result = attach_source_confidence_map(latest_result, project_input=project_input)
     project_store.save_project(
         user_id=record.get("_user_id"),
         project_id=record.get("project_id"),
@@ -593,7 +619,7 @@ def _apply_chat_command_execution(
                 "matched_address": "",
                 "geocode": {"lat": None, "lng": None, "provider": "", "source": "", "confidence": None},
                 "evidence_source": "chat_address",
-                "truth_label": "Address text is location context only; it is not a site boundary, survey, control, parcel, or construction approval.",
+                "truth_label": "Address text is location context only; it is not a site boundary, survey, control, parcel, or final reliance source.",
                 "status": "address_unverified_geocode_required",
             }
             meta["location_context"] = location_context
@@ -1058,6 +1084,37 @@ def _canonical_chat_context(context: Dict[str, Any], record: Optional[Dict[str, 
     capability_statuses = _build_capability_statuses(project_input, latest_result)
     if capability_statuses:
         merged["capability_statuses"] = capability_statuses
+    wizard_state = build_setup_wizard_state(
+        project_input=project_input,
+        latest_result=latest_result,
+        context={**merged, "capability_statuses": capability_statuses},
+    )
+    merged["setup_wizard_state_v1"] = wizard_state
+    progress_timeline = build_progress_timeline(
+        project_input=project_input,
+        latest_result=latest_result,
+        context={**merged, "capability_statuses": capability_statuses, "setup_wizard_state_v1": wizard_state},
+    )
+    merged["progress_timeline_v1"] = progress_timeline
+    if (
+        meta.get("site_locked") is False
+        and safe_str(meta.get("site_size_status")) == "provided"
+        and safe_str(meta.get("address_status")).lower() not in {"", "missing", "not_set"}
+    ):
+        merged["next_best_action"] = "Lock the site boundary after confirming the address or site size."
+    if safe_str(meta.get("address_status")).lower() in {"missing", "not_set"}:
+        merged["next_best_action"] = "Enter an address, provide coordinates, or choose a blank site."
+    if not merged.get("next_best_action"):
+        merged["next_best_action"] = str(progress_timeline.get("next_action") or wizard_state.get("next_action") or "")
+    inbox = build_candidate_review_inbox(meta)
+    if inbox.get("candidate_count"):
+        merged["candidate_review_inbox_v1"] = inbox
+    smart_fix = _safe_dict(meta.get("smart_fix_recommendations_v1"))
+    if smart_fix:
+        merged["smart_fix_recommendations_v1"] = smart_fix
+        next_best = _safe_dict(smart_fix.get("next_best_recommendation"))
+        if next_best:
+            merged["smart_fix_next_best"] = next_best
 
     if not merged.get("project_type"):
         merged["project_type"] = project_input.get("project_type") or meta.get("project_type")
@@ -1068,6 +1125,449 @@ def _canonical_chat_context(context: Dict[str, Any], record: Optional[Dict[str, 
     if not merged.get("parking_count"):
         merged["parking_count"] = site_plan.get("parking_count") or meta.get("parking_count")
     return merged
+
+
+def _online_discovery_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    project_input = _safe_dict(record.get("project_input"))
+    project_meta = _safe_dict(project_input.get("meta"))
+    site_inputs = _safe_dict(project_meta.get("site_inputs"))
+    latest_result = _safe_dict(record.get("latest_result"))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    plan_meta = _safe_dict(final_plan.get("meta"))
+    return _safe_dict(site_inputs.get("online_existing_conditions_discovery_v1") or plan_meta.get("online_existing_conditions_discovery_v1"))
+
+
+def _address_from_online_message(message: str, record: Optional[Dict[str, Any]]) -> str:
+    cleaned = re.sub(r"(?i)\b(find site data from this address|use online sources if available|find site data|online sources|from this address)\b", "", message)
+    cleaned = cleaned.strip(" :-,")
+    if cleaned and len(cleaned) > 4:
+        return cleaned
+    if record:
+        site_inputs = _safe_dict(_safe_dict(_safe_dict(record.get("project_input")).get("meta")).get("site_inputs"))
+        return safe_str(site_inputs.get("address") or _safe_dict(site_inputs.get("geocode")).get("display_name"))
+    return ""
+
+
+def _summarize_online_discovery(discovery: Dict[str, Any], *, why_buildings: bool = False) -> str:
+    if not discovery:
+        return "I do not have an online existing-conditions discovery report saved for this project yet."
+    sources = [_safe_dict(item) for item in _safe_list(discovery.get("sources")) if _safe_dict(item)]
+    found = [item for item in sources if int(item.get("candidate_count") or 0) > 0]
+    missing = [item for item in sources if int(item.get("candidate_count") or 0) <= 0]
+    if why_buildings:
+        building = next((item for item in sources if safe_str(item.get("key")) == "building_footprints"), {})
+        blockers = _safe_list(_safe_dict(building).get("blockers"))
+        reason = safe_str(blockers[0] if blockers else "", "No building footprint source is configured or available.")
+        return f"It did not find buildings because: {reason} Building footprints stay candidate/review-required until a configured provider returns features and the user reviews them."
+    lines = []
+    if found:
+        lines.append(
+            "Found candidates: "
+            + "; ".join(
+                f"{safe_str(item.get('label') or item.get('key'))} ({int(item.get('candidate_count') or 0)}, {safe_str(item.get('provider') or item.get('source_type'))})"
+                for item in found[:6]
+            )
+            + "."
+        )
+    else:
+        lines.append("No online source candidates were found from the currently available providers.")
+    if missing:
+        lines.append(
+            "Missing/unavailable: "
+            + "; ".join(
+                f"{safe_str(item.get('label') or item.get('key'))}: {safe_str((_safe_list(item.get('blockers')) or ['missing/unavailable'])[0])}"
+                for item in missing[:6]
+            )
+            + "."
+        )
+    lines.append("Everything online is candidate/review-required and does not satisfy survey/control.")
+    return " ".join(lines)
+
+
+def _online_discovery_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_summary = any(
+        phrase in normalized
+        for phrase in (
+            "what did you find online",
+            "what did you find from online",
+            "what online sources",
+            "online existing conditions",
+        )
+    )
+    asks_find = any(phrase in normalized for phrase in ("find site data from this address", "find site data", "use online sources if available"))
+    asks_building_gap = "why" in normalized and any(phrase in normalized for phrase in ("didn't it find buildings", "did not find buildings", "no buildings", "building footprints"))
+    if not any((asks_summary, asks_find, asks_building_gap)):
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project before I can run or summarize online source discovery.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_online_discovery_project",
+            action_blocked_reason="No saved project record is available for online source discovery.",
+            required_missing_inputs=["saved canonical project record"],
+            affected_systems=["site"],
+            assumptions=[],
+            next_best_action="Save or load a project, apply an address, then ask again.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="No saved project record is available for online source discovery.",
+        )
+    if asks_find:
+        address = _address_from_online_message(message, record)
+        if not address:
+            return _truthful_decision_update(
+                {},
+                assistant_message="I need an address before I can look for online source candidates.",
+                intent="conversation",
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=True,
+                action_taken="blocked_online_discovery_missing_address",
+                action_blocked_reason="Address is missing.",
+                required_missing_inputs=["address"],
+                affected_systems=["site"],
+                assumptions=[],
+                next_best_action="Apply an address or include the address in your message.",
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="Address is missing.",
+            )
+        result = fetch_online_existing_conditions(
+            address=address,
+            parcel_service_url=safe_str(os.getenv("CIVORA_PARCEL_ARCGIS_SERVICE_URL")),
+            parcel_layer_id=int(os.getenv("CIVORA_PARCEL_ARCGIS_LAYER_ID") or "0"),
+            building_footprints_service_url=safe_str(os.getenv("CIVORA_BUILDING_FOOTPRINTS_ARCGIS_SERVICE_URL")),
+            building_footprints_layer_id=int(os.getenv("CIVORA_BUILDING_FOOTPRINTS_ARCGIS_LAYER_ID") or "0"),
+            roads_service_url=safe_str(os.getenv("CIVORA_ROADS_ROW_ARCGIS_SERVICE_URL")),
+            roads_layer_id=int(os.getenv("CIVORA_ROADS_ROW_ARCGIS_LAYER_ID") or "0"),
+            easements_service_url=safe_str(os.getenv("CIVORA_EASEMENTS_ARCGIS_SERVICE_URL")),
+            easements_layer_id=int(os.getenv("CIVORA_EASEMENTS_ARCGIS_LAYER_ID") or "0"),
+            zoning_service_url=safe_str(os.getenv("CIVORA_ZONING_ARCGIS_SERVICE_URL")),
+            zoning_layer_id=int(os.getenv("CIVORA_ZONING_ARCGIS_LAYER_ID") or "0"),
+            utilities_service_url=safe_str(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_SERVICE_URL")),
+            utilities_layer_id=int(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_LAYER_ID") or "0"),
+        )
+        discovery = _safe_dict(result.get("online_existing_conditions_discovery_v1"))
+        latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+        final_plan = _safe_dict(latest_result.get("final_plan"))
+        meta = _safe_dict(final_plan.get("meta"))
+        meta["online_existing_conditions_discovery_v1"] = discovery
+        meta["map_feature_detection_report_v1"] = result.get("map_feature_detection_report_v1")
+        meta["existing_conditions_package"] = result.get("existing_conditions_package")
+        meta["location_context"] = result.get("location_context")
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        project_input = deepcopy(_safe_dict(record.get("project_input")))
+        project_meta = _safe_dict(project_input.get("meta"))
+        site_inputs = _safe_dict(project_meta.get("site_inputs"))
+        site_inputs["address"] = address
+        site_inputs["online_existing_conditions_discovery_v1"] = discovery
+        site_inputs["map_feature_detection_report_v1"] = result.get("map_feature_detection_report_v1")
+        site_inputs["existing_conditions_package"] = result.get("existing_conditions_package")
+        project_meta["site_inputs"] = site_inputs
+        project_input["meta"] = project_meta
+        if project_store and user_id:
+            _save_project_record(project_store, {**record, "_user_id": user_id}, project_input=project_input, latest_result=latest_result)
+        return _truthful_decision_update(
+            {},
+            assistant_message=_summarize_online_discovery(discovery),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="fetched_online_existing_conditions_candidates",
+            action_blocked_reason="",
+            affected_systems=["site", "standards"],
+            assumptions=[],
+            next_best_action="Review found and missing online sources in the setup/data panel before using any candidate.",
+            command_payload_updates={"online_existing_conditions_discovery_v1": discovery, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_executed",
+            state_changed=True,
+        )
+    discovery = _online_discovery_from_record(record)
+    return _truthful_decision_update(
+        {},
+        assistant_message=_summarize_online_discovery(discovery, why_buildings=asks_building_gap),
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=not bool(discovery),
+        action_taken="reported_online_existing_conditions_discovery",
+        action_blocked_reason="" if discovery else "No online discovery report is saved for this project.",
+        required_missing_inputs=[] if discovery else ["online existing-conditions discovery report"],
+        affected_systems=["site", "standards"],
+        assumptions=[],
+        next_best_action="Apply an address or ask me to find site data from this address.",
+        command_payload_updates={"online_existing_conditions_discovery_v1": discovery, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+        outcome="understood_and_answered" if discovery else "understood_but_blocked",
+        state_changed=False,
+        blocker="" if discovery else "No online discovery report is saved for this project.",
+    )
+
+
+def _candidate_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_found = any(phrase in normalized for phrase in ("what did you find online", "what did you find from online", "what candidates did you find"))
+    asks_pending = "pending" in normalized and "candidate" in normalized
+    wants_parcel = any(phrase in normalized for phrase in ("use the parcel boundary", "use parcel boundary", "accept the parcel boundary"))
+    rejects_buildings = ("reject" in normalized or "remove" in normalized or "decline" in normalized) and any(
+        phrase in normalized for phrase in ("those buildings", "the buildings", "building candidates", "building footprints")
+    )
+    if not any((asks_found, asks_pending, wants_parcel, rejects_buildings)):
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project before I can review online/GIS/map candidates.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_candidate_project",
+            action_blocked_reason="No saved project record is available for candidate review.",
+            required_missing_inputs=["saved canonical project record"],
+            affected_systems=["site"],
+            assumptions=[],
+            next_best_action="Save or load a project with discovered candidates, then ask again.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="No saved project record is available for candidate review.",
+        )
+    latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    meta = _safe_dict(final_plan.get("meta"))
+    inbox = build_candidate_review_inbox(meta)
+    candidates = [_safe_dict(item) for item in _safe_list(inbox.get("candidates")) if _safe_dict(item)]
+
+    def matching(*candidate_types: str, status: str = "") -> List[Dict[str, Any]]:
+        wanted = {item for item in candidate_types if item}
+        result = [item for item in candidates if str(item.get("candidate_type") or "") in wanted]
+        if status:
+            result = [item for item in result if str(item.get("status") or "") == status]
+        return result
+
+    if asks_found or asks_pending:
+        visible = [item for item in candidates if not asks_pending or str(item.get("status") or "") == "pending"]
+        counts = _safe_dict(inbox.get("counts"))
+        if not visible:
+            msg = "I do not have any pending candidates in this project yet." if asks_pending else "I do not have any online/GIS/map candidates saved for this project yet."
+        else:
+            lines = [
+                f"{safe_str(item.get('label') or item.get('candidate_type'))}: {safe_str(item.get('status'))}, source {safe_str(item.get('source'))}, confidence {item.get('confidence')}, reason {safe_str(item.get('blocker_review_reason'))}"
+                for item in visible[:6]
+            ]
+            prefix = (
+                f"Candidate inbox: {counts.get('pending', 0)} pending, {counts.get('accepted', 0)} accepted, {counts.get('rejected', 0)} rejected."
+            )
+            msg = prefix + "\n" + "\n".join(f"- {line}" for line in lines)
+        return _truthful_decision_update(
+            {},
+            assistant_message=msg,
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="reported_candidate_review_inbox",
+            action_blocked_reason="",
+            affected_systems=["site", "standards"],
+            assumptions=[],
+            next_best_action="Accept, reject, or leave candidates pending in the candidate review inbox.",
+            command_payload_updates={"candidate_review_inbox_v1": inbox, "ui_navigation_target": "data", "requested_ui_mode": "data"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+
+    action = ""
+    targets: List[Dict[str, Any]] = []
+    reason = ""
+    if wants_parcel:
+        action = "accept"
+        targets = matching("parcel_site_boundary", status="pending") or matching("parcel_site_boundary")
+        reason = "User asked to use the parcel boundary as draft/review-required evidence."
+    elif rejects_buildings:
+        action = "reject"
+        targets = matching("building_footprint", status="pending") or matching("building_footprint")
+        reason = "User rejected building footprint candidates."
+    if not targets:
+        label = "parcel boundary" if wants_parcel else "building footprint"
+        return _truthful_decision_update(
+            {},
+            assistant_message=f"I could not find a {label} candidate to review in the saved project.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_candidate_not_found",
+            action_blocked_reason=f"No {label} candidate is available.",
+            required_missing_inputs=[f"{label} candidate"],
+            affected_systems=["site"],
+            assumptions=[],
+            next_best_action="Fetch/import GIS or map candidates, then ask again.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker=f"No {label} candidate is available.",
+        )
+    if not (project_store and user_id):
+        return None
+    decision = apply_candidate_review_decision(
+        meta,
+        candidate_ids=[safe_str(item.get("candidate_id")) for item in targets],
+        action=action,
+        reviewer_id=user_id,
+        reason=reason,
+    )
+    final_plan["meta"] = _safe_dict(decision.get("updated_meta"))
+    latest_result["final_plan"] = final_plan
+    _save_project_record(
+        project_store,
+        {**record, "_user_id": user_id},
+        project_input=deepcopy(_safe_dict(record.get("project_input"))),
+        latest_result=latest_result,
+    )
+    changed = len(targets)
+    verb = "accepted as draft/review-required evidence" if action == "accept" else "rejected and preserved in the audit trail"
+    return _truthful_decision_update(
+        {},
+        assistant_message=(
+            f"I {verb} {changed} candidate{'s' if changed != 1 else ''}. "
+            "This does not make the project survey-true or ready for final reliance."
+        ),
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken=f"{action}ed_candidate_review_items",
+        action_blocked_reason="",
+        affected_systems=["site", "layout"],
+        assumptions=[],
+        next_best_action="Review remaining pending candidates before relying on source evidence.",
+        command_payload_updates={"candidate_review_inbox_v1": decision["candidate_review_inbox_v1"], "ui_navigation_target": "data", "requested_ui_mode": "data"},
+        outcome="understood_and_executed",
+        state_changed=True,
+    )
+
+
+def _source_confidence_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_trust = "what can i trust" in normalized or ("trust" in normalized and "source" in normalized)
+    asks_low = "why is this low confidence" in normalized or "low confidence" in normalized
+    asks_drawn = "what is user drawn" in normalized or "user drawn" in normalized or "user-drawn" in normalized
+    asks_control = "what needs survey control" in normalized or "needs survey control" in normalized or "need survey control" in normalized
+    asks_stale_missing = (
+        "show me stale or missing sources" in normalized
+        or "stale sources" in normalized
+        or "missing sources" in normalized
+        or ("stale" in normalized and "source" in normalized)
+    )
+    if not any((asks_trust, asks_low, asks_drawn, asks_control, asks_stale_missing)):
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project before I can summarize source confidence.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_source_confidence_project",
+            action_blocked_reason="No saved project record is available for source confidence.",
+            required_missing_inputs=["saved canonical project record"],
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Save or load a project, then ask for the source confidence map.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="No saved project record is available for source confidence.",
+        )
+
+    latest_result = _safe_dict(record.get("latest_result"))
+    meta = _safe_dict(_safe_dict(latest_result.get("final_plan")).get("meta"))
+    confidence_map = build_source_confidence_map(meta, project_input=_safe_dict(record.get("project_input")))
+    entries = [_safe_dict(item) for item in _safe_list(confidence_map.get("entries"))]
+    summary = _safe_dict(confidence_map.get("summary"))
+
+    def line(item: Dict[str, Any]) -> str:
+        reason = safe_str(item.get("why_low_confidence")) or safe_str(item.get("next_action"))
+        return (
+            f"- {safe_str(item.get('label'))}: {safe_str(item.get('visible_badge'))}; "
+            f"source {safe_str(item.get('source_name'))}; why {reason}"
+        )
+
+    if asks_trust:
+        selected = [item for item in entries if item.get("confidence_band") == "higher"]
+        heading = "What you can trust most right now"
+        fallback = "Nothing is high-confidence yet. Verify survey/control and accept official/current sources before relying on location or engineering evidence."
+    elif asks_drawn:
+        selected = [item for item in entries if item.get("source_type") == "user-drawn"]
+        heading = "User-drawn geometry"
+        fallback = "No user-drawn objects are recorded in the source confidence map."
+    elif asks_control:
+        selected = [item for item in entries if item.get("needs_survey_control")]
+        heading = "Needs survey control"
+        fallback = "No entries are currently flagged for survey/control, but construction reliance still requires external professional review."
+    elif asks_stale_missing:
+        selected = [item for item in entries if item.get("stale") or item.get("dirty") or item.get("missing")]
+        heading = "Stale or missing sources"
+        fallback = "No stale/dirty/missing source entries are recorded right now."
+    else:
+        selected = [
+            item
+            for item in entries
+            if item.get("confidence_band") in {"low", "missing"} or item.get("stale") or item.get("dirty")
+        ]
+        heading = "Low confidence sources"
+        fallback = "No low-confidence source entries are recorded right now."
+
+    body = "\n".join(line(item) for item in selected[:8]) if selected else fallback
+    assistant_message = (
+        f"{heading}: {summary.get('entry_count', 0)} mapped source/object/layer entries. "
+        f"{summary.get('low_confidence_count', 0)} low confidence, "
+        f"{summary.get('needs_survey_control_count', 0)} need survey control, "
+        f"{summary.get('stale_or_missing_count', 0)} stale/missing.\n"
+        f"{body}\n"
+        "This is review transparency only; it does not imply construction readiness."
+    )
+    return _truthful_decision_update(
+        {},
+        assistant_message=assistant_message,
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken="reported_source_confidence_map",
+        action_blocked_reason="",
+        affected_systems=["site", "data", "review"],
+        assumptions=[],
+        next_best_action="Open Data to review the Source Confidence Map, then verify missing/control-dependent entries.",
+        command_payload_updates={
+            "source_confidence_map_v1": confidence_map,
+            "ui_navigation_target": "data",
+            "requested_ui_mode": "data",
+        },
+        outcome="understood_and_answered",
+        state_changed=False,
+    )
 
 
 def decide_chat(
@@ -1094,7 +1594,31 @@ def decide_chat(
     if record:
         context = _canonical_chat_context(context, record)
         payload["context"] = context
+    online_discovery_decision = _online_discovery_chat_response(
+        message=message,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if online_discovery_decision is not None:
+        return _enrich_response_contract(online_discovery_decision, message=message)
+    source_confidence_decision = _source_confidence_chat_response(message=message, record=record)
+    if source_confidence_decision is not None:
+        return _enrich_response_contract(source_confidence_decision, message=message)
+    candidate_decision = _candidate_chat_response(
+        message=message,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if candidate_decision is not None:
+        return _enrich_response_contract(candidate_decision, message=message)
     decision = decide_chat_message(payload)
+    if safe_str(decision.get("action_taken")) == "answered_from_project_context" and safe_str(context.get("next_best_action")):
+        metadata = _safe_dict(decision.get("response_metadata"))
+        metadata["next_best_action"] = safe_str(context.get("next_best_action"))
+        decision["response_metadata"] = metadata
+        decision["next_best_action"] = metadata["next_best_action"]
     decision = _apply_chat_command_execution(
         decision,
         context=context,

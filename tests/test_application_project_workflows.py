@@ -107,6 +107,33 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         )
         self.assertEqual(result["final_plan"]["project_name"], "Saved")
 
+    def test_save_project_record_attaches_source_confidence_map(self):
+        store = FakeProjectStore()
+        response = save_project_record(
+            project_store=store,
+            user_id="u1",
+            payload_data={
+                "project_id": "p1",
+                "name": "Demo",
+                "latest_result": {
+                    "success": True,
+                    "final_plan": {
+                        "meta": {
+                            "survey": {"source": "survey.csv", "point_count": 4},
+                            "survey_control_package": {"status": "blocked", "control_verified": False},
+                        }
+                    },
+                },
+            },
+        )
+
+        self.assertTrue(response["success"])
+        meta = store.saved_payload["latest_result"]["final_plan"]["meta"]
+        self.assertEqual(meta["source_confidence_map_v1"]["version"], "source_confidence_map_v1")
+        source_types = {entry["source_type"] for entry in meta["source_confidence_map_v1"]["entries"]}
+        self.assertIn("survey-unverified", source_types)
+        self.assertNotIn("survey-backed", source_types)
+
     def test_result_from_payload_raises_when_missing(self):
         store = FakeProjectStore()
         with self.assertRaises(HTTPException) as ctx:

@@ -465,11 +465,80 @@ def build_online_existing_conditions_discovery_report(
         status = "fetch_failed" if failed_sources else "no_sources_found"
     else:
         status = "candidates_found"
+    supported_live_providers = [
+        {
+            "key": "census_geocoder",
+            "provider": "US Census Geocoder",
+            "source_url": CENSUS_GEOCODER_URL,
+            "supports": ["address/location context"],
+            "status": safe_str(safe_dict(results.get("geocode")).get("status"), "available"),
+        },
+        {
+            "key": "usgs_3dep_epqs",
+            "provider": "USGS 3DEP EPQS",
+            "source_url": USGS_EPQS_URL,
+            "supports": ["terrain/DEM point elevation"],
+            "status": safe_str(safe_dict(results.get("elevation")).get("status"), "available"),
+        },
+        {
+            "key": "fema_nfhl_arcgis",
+            "provider": "FEMA NFHL ArcGIS",
+            "source_url": FEMA_NFHL_MAPSERVER_URL,
+            "supports": ["floodplain constraints"],
+            "status": safe_str(safe_dict(results.get("floodplain")).get("status"), "available"),
+        },
+        {
+            "key": "usfws_nwi_arcgis",
+            "provider": "USFWS NWI ArcGIS",
+            "source_url": USFWS_WETLANDS_MAPSERVER_URL,
+            "supports": ["wetlands/environmental constraints"],
+            "status": safe_str(safe_dict(results.get("wetlands")).get("status"), "available"),
+        },
+    ]
+    fixture_provider_only_sources = [
+        {
+            "key": "parcel_site_boundary",
+            "provider": "Configured county/local ArcGIS service",
+            "source_type": "configured_parcel_arcgis",
+            "status": safe_str(next((source.get("status") for source in sources if source.get("key") == "parcel_site_boundary"), ""), "unconfigured"),
+            "missing_message": next((safe_list(source.get("blockers"))[0] for source in sources if source.get("key") == "parcel_site_boundary" and safe_list(source.get("blockers"))), "No parcel GIS source is configured."),
+        },
+        {
+            "key": "building_footprints",
+            "provider": "Configured city/county building-footprint ArcGIS service",
+            "source_type": "configured_building_footprints_arcgis",
+            "status": safe_str(next((source.get("status") for source in sources if source.get("key") == "building_footprints"), ""), "unconfigured"),
+            "missing_message": next((safe_list(source.get("blockers"))[0] for source in sources if source.get("key") == "building_footprints" and safe_list(source.get("blockers"))), "No building footprint GIS source is configured."),
+        },
+        {
+            "key": "road_row",
+            "provider": "Configured road/ROW ArcGIS service",
+            "source_type": "configured_roads_row_arcgis",
+            "status": safe_str(next((source.get("status") for source in sources if source.get("key") == "road_row"), ""), "unconfigured"),
+            "missing_message": next((safe_list(source.get("blockers"))[0] for source in sources if source.get("key") == "road_row" and safe_list(source.get("blockers"))), "No road/ROW GIS source is configured."),
+        },
+        {
+            "key": "public_utilities",
+            "provider": "Configured utility owner/jurisdiction ArcGIS service",
+            "source_type": "configured_existing_utilities_arcgis",
+            "status": safe_str(next((source.get("status") for source in sources if source.get("key") == "public_utilities"), ""), "unconfigured"),
+            "missing_message": next((safe_list(source.get("blockers"))[0] for source in sources if source.get("key") == "public_utilities" and safe_list(source.get("blockers"))), "No public utility GIS source is configured."),
+        },
+        {
+            "key": "official_standards",
+            "provider": "Standards discovery registry",
+            "source_type": "standards_discovery_registry",
+            "status": safe_str(next((source.get("status") for source in sources if source.get("key") == "official_standards"), ""), "missing"),
+            "missing_message": next((safe_list(source.get("blockers"))[0] for source in sources if source.get("key") == "official_standards" and safe_list(source.get("blockers"))), "Official standards source candidates need jurisdiction/provider context."),
+        },
+    ]
     return {
         "version": ONLINE_DISCOVERY_VERSION,
         "status": status,
         "source_type": "online_existing_conditions_discovery",
         "location_context": safe_dict(location_context),
+        "supported_live_providers": supported_live_providers,
+        "fixture_provider_only_sources": fixture_provider_only_sources,
         "sources": sources,
         "candidate_count": candidate_count,
         "missing_sources": missing_sources,

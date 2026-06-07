@@ -197,6 +197,8 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
 
         self.assertEqual(report["version"], ONLINE_DISCOVERY_VERSION)
         self.assertEqual(report["status"], "candidates_found")
+        self.assertTrue(report["supported_live_providers"])
+        self.assertTrue(report["fixture_provider_only_sources"])
         self.assertGreaterEqual(sources["parcel_site_boundary"]["candidate_count"], 1)
         self.assertGreaterEqual(sources["building_footprints"]["candidate_count"], 1)
         self.assertGreaterEqual(sources["road_row"]["candidate_count"], 1)

@@ -366,6 +366,9 @@ def _chat_context_summary(context: Dict[str, Any]) -> Dict[str, Any]:
             for item in list(context.get("capability_statuses") or [])[:16]
             if isinstance(item, dict)
         ],
+        "smart_fix_recommendations_v1": dict(context.get("smart_fix_recommendations_v1") or {}),
+        "setup_wizard_state_v1": dict(context.get("setup_wizard_state_v1") or {}),
+        "progress_timeline_v1": dict(context.get("progress_timeline_v1") or {}),
         "missing_inputs": [str(item) for item in missing_inputs[:8]],
         "blockers": [str(item) for item in blockers[:8]],
         "next_best_action": str(context.get("next_best_action") or ""),
@@ -985,6 +988,20 @@ def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
     lowered = _normalized_chat_text(message)
     if not lowered:
         return True
+    if context.get("setup_wizard_state_v1") and any(
+        phrase in lowered
+        for phrase in [
+            "what do i do next",
+            "what should i do next",
+            "what next",
+            "why am i stuck",
+            "why am i blocked",
+            "can you set this up for me",
+            "can you set it up for me",
+            "set this up for me",
+        ]
+    ):
+        return False
     if _is_explicit_plan_tool_request(message, "fix") or _is_explicit_plan_tool_request(message, "improve"):
         return False
 
@@ -1235,7 +1252,100 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
     engine_depth_status = str(context.get("engine_depth_status") or "").strip()
     engineer_review_status = str(context.get("engineer_review_status") or "").strip()
     capability_statuses = [item for item in list(context.get("capability_statuses") or []) if isinstance(item, dict)]
+    smart_fix = context.get("smart_fix_recommendations_v1") if isinstance(context.get("smart_fix_recommendations_v1"), dict) else {}
+    smart_recommendations = [
+        item for item in list(smart_fix.get("recommendations") or []) if isinstance(item, dict)
+    ]
+    smart_next = smart_fix.get("next_best_recommendation") if isinstance(smart_fix.get("next_best_recommendation"), dict) else {}
+    setup_wizard = context.get("setup_wizard_state_v1") if isinstance(context.get("setup_wizard_state_v1"), dict) else {}
+    wizard_steps = [item for item in list(setup_wizard.get("steps") or []) if isinstance(item, dict)]
+    progress_timeline = context.get("progress_timeline_v1") if isinstance(context.get("progress_timeline_v1"), dict) else {}
+    timeline_chat = progress_timeline.get("chat_summary") if isinstance(progress_timeline.get("chat_summary"), dict) else {}
+    timeline_steps = [item for item in list(progress_timeline.get("steps") or []) if isinstance(item, dict)]
     recorded_next_best_action = str(context.get("next_best_action") or "").strip()
+
+    def _timeline_blockers() -> List[str]:
+        blockers = [str(item) for item in list(progress_timeline.get("exact_blockers") or []) if str(item)]
+        if blockers:
+            return blockers
+        export_blockers = [str(item) for item in list(progress_timeline.get("export_blockers") or []) if str(item)]
+        if export_blockers:
+            return export_blockers
+        return [
+            str(blocker)
+            for step in timeline_steps
+            for blocker in list(step.get("blockers") or [])
+            if str(blocker)
+        ]
+
+    def _timeline_reply(kind: str) -> Optional[str]:
+        if not progress_timeline:
+            return None
+        current = str(timeline_chat.get("where_am_i") or "").strip()
+        phase = str(timeline_chat.get("phase") or progress_timeline.get("current_step_label") or "").strip()
+        next_action = str(timeline_chat.get("what_should_i_do_next") or progress_timeline.get("next_action") or "").strip()
+        whats_left = [str(item) for item in list(timeline_chat.get("whats_left") or []) if str(item)]
+        blockers = _timeline_blockers()
+        if kind == "where" and current:
+            parts = [f"You are on {current}."]
+            if next_action:
+                parts.append(f"Next action: {next_action}.")
+            if blockers:
+                parts.append("Exact blocker: " + blockers[0] + ".")
+            return " ".join(parts)
+        if kind == "phase" and phase:
+            return f"You are in the {phase} phase. Next action: {next_action or 'review the timeline step'}."
+        if kind == "left":
+            return "What is left: " + (", ".join(whats_left[:6]) if whats_left else "no unfinished timeline steps recorded") + "."
+        if kind == "export":
+            export_blockers = [
+                str(item)
+                for item in list(timeline_chat.get("why_cant_export_yet") or progress_timeline.get("export_blockers") or [])
+                if str(item)
+            ]
+            if export_blockers:
+                return "You cannot export yet because " + "; ".join(export_blockers[:4]) + ". Next action: " + (next_action or "open deliverables") + "."
+            if progress_timeline.get("can_export") is True:
+                return "The timeline does not show export blockers right now. Review the deliverables package before sending it out."
+            return None
+        if kind == "next" and next_action:
+            return f"Next action: {next_action}."
+        return None
+
+    def _wizard_current_step() -> Dict[str, Any]:
+        current_id = str(setup_wizard.get("current_step_id") or "")
+        for item in wizard_steps:
+            if str(item.get("id") or "") == current_id:
+                return item
+        return wizard_steps[0] if wizard_steps else {}
+
+    def _wizard_next_action() -> str:
+        current = _wizard_current_step()
+        return str(setup_wizard.get("next_action") or current.get("next_action") or "").strip()
+
+    def _wizard_blocked_text() -> str:
+        current = _wizard_current_step()
+        why = str(setup_wizard.get("why_blocked") or current.get("why_blocked") or "").strip()
+        if why:
+            return why
+        blocked = [
+            f"{item.get('label')}: {item.get('why_blocked') or item.get('next_action')}"
+            for item in wizard_steps
+            if str(item.get("status") or "") == "blocked"
+        ]
+        return "; ".join(str(item) for item in blocked[:3] if str(item))
+
+    def _wizard_status_reply() -> Optional[str]:
+        current = _wizard_current_step()
+        if not current:
+            return None
+        label = str(setup_wizard.get("current_step_label") or current.get("label") or "Setup").strip()
+        status = str(setup_wizard.get("current_status") or current.get("status") or "pending").strip()
+        action = _wizard_next_action()
+        why = _wizard_blocked_text()
+        if why:
+            return f"You are on {label}. Status: {status}. Next action: {action}. Why blocked: {why}."
+        return f"You are on {label}. Status: {status}. Next action: {action}."
 
     def _format_requested_systems() -> str:
         enabled = [
@@ -1295,12 +1405,20 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
                 engine_depth_status,
                 engineer_review_status,
                 recorded_next_best_action,
+                setup_wizard,
             ]
         )
 
     def _primary_next_action() -> str:
+        if smart_next:
+            action = str(smart_next.get("one_action_needed_next") or "").strip()
+            if action:
+                return action
         if recorded_next_best_action:
             return recorded_next_best_action
+        wizard_action = _wizard_next_action()
+        if wizard_action:
+            return wizard_action
         if site_locked is False:
             return "Lock the site boundary after confirming the address or site size."
         if missing_inputs:
@@ -1380,14 +1498,81 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             ) + "."
         return None
 
+    def _smart_fix_reply(mode: str = "why") -> Optional[str]:
+        rec = smart_next or (smart_recommendations[0] if smart_recommendations else {})
+        if not rec:
+            return None
+        code = str(rec.get("blocker_code") or "current blocker")
+        wrong = str(rec.get("what_is_wrong") or code).strip()
+        matters = str(rec.get("why_it_matters") or "It keeps Civora from overstating the current result.").strip()
+        can_fix = bool(rec.get("can_civora_fix"))
+        next_action = str(rec.get("one_action_needed_next") or "").strip()
+        after_fix = str(rec.get("what_happens_after_fix") or "").strip()
+        missing = str(rec.get("missing_user_input_or_source") or "").strip()
+        if mode == "needs":
+            if can_fix:
+                return f"I can do the next supported action: {next_action}. After that, {after_fix}"
+            if missing:
+                return f"I need exactly this from you: {missing}. After that, {after_fix}"
+            return f"I need the source input for {code}. After that, {after_fix}"
+        if mode == "can_fix":
+            if can_fix:
+                return f"Yes for {code}. What is wrong: {wrong} Why it matters: {matters} Next action: {next_action}. After that, {after_fix}"
+            return f"Not by myself for {code}. What is wrong: {wrong} Why it matters: {matters} I need exactly this from you: {missing or 'the missing source evidence'}. After that, {after_fix}"
+        if mode == "next":
+            return f"Next best action: {next_action}. Blocker: {code}. After that, {after_fix}"
+        return (
+            f"{code}: {wrong} Why it matters: {matters} "
+            f"Can Civora fix it: {'yes' if can_fix else 'no'}. "
+            f"One action needed next: {next_action}. After that, {after_fix}"
+        )
+
     if any(token in lowered for token in ["status", "explain", "what is", "what's", "whats", "show", "tell me"]):
         capability = _matching_capability_status()
         if capability:
             return _capability_reply(capability)
 
     if (
+        "setup wizard" in lowered
+        or "setup status" in lowered
+        or "where am i in setup" in lowered
+        or "where am i stuck" in lowered
+    ):
+        reply = _wizard_status_reply()
+        if reply:
+            return reply
+
+    if (
+        "where am i" in lowered
+        or "where are we" in lowered
+        or "where am i in the project" in lowered
+    ):
+        reply = _timeline_reply("where")
+        if reply:
+            return reply
+
+    if (
+        "what phase am i on" in lowered
+        or "which phase am i on" in lowered
+        or "what phase are we on" in lowered
+        or "current phase" in lowered
+    ):
+        reply = _timeline_reply("phase")
+        if reply:
+            return reply
+
+    if (
+        "what's left" in lowered
+        or "whats left" in lowered
+        or "what is left" in lowered
+        or "what do i have left" in lowered
+    ):
+        reply = _timeline_reply("left")
+        if reply:
+            return reply
+
+    if (
         "what am i doing" in lowered
-        or "where am i" in lowered
         or "what is selected" in lowered
         or "what do i have selected" in lowered
         or "current workspace" in lowered
@@ -1413,6 +1598,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
 
     if (
         "what should i do next" in lowered
+        or "what do i do next" in lowered
         or "what next" in lowered
         or "what would you do next" in lowered
         or "what do you recommend next" in lowered
@@ -1422,6 +1608,15 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "what is the smartest next move" in lowered
         or "if you were me" in lowered
     ):
+        reply = _wizard_status_reply()
+        if setup_wizard and reply:
+            return reply
+        reply = _timeline_reply("next")
+        if reply:
+            return reply
+        smart_reply = _smart_fix_reply("next")
+        if smart_reply:
+            return smart_reply
         action = _primary_next_action()
         if blocked_reasons or blocked_exports:
             return "I’d address the blockers first. Next best action: " + action
@@ -1450,7 +1645,23 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             return "The warning is tied to this blocker: " + str(blocked_reasons[0]) + "."
         return "I do not have a warning message in the current workspace state. Select the warning or include its text and I can explain it."
 
-    if "why isn't this working" in lowered or "why isnt this working" in lowered or "why is this not working" in lowered:
+    if (
+        "why am i stuck" in lowered
+        or "why am i blocked" in lowered
+        or "why is this blocked" in lowered
+        or "why isn't this working" in lowered
+        or "why isnt this working" in lowered
+        or "why is this not working" in lowered
+    ):
+        smart_reply = _smart_fix_reply("why")
+        if smart_reply:
+            return smart_reply
+        if setup_wizard:
+            why = _wizard_blocked_text()
+            action = _wizard_next_action() or _primary_next_action()
+            if why:
+                return "You are stuck because " + why + " Next action: " + action
+            return "I do not see a setup blocker. Next action: " + action
         blocked = _blocked_text()
         if blocked:
             return blocked + " Next best action: " + _primary_next_action()
@@ -1459,10 +1670,29 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         return "I do not see an exact blocker recorded. Next best action: " + _primary_next_action()
 
     if "can you fix this" in lowered or "can you fix it" in lowered:
+        smart_reply = _smart_fix_reply("can_fix")
+        if smart_reply:
+            return smart_reply
         blocked = _blocked_text()
         if blocked:
             return blocked + " I can help with supported chat actions, but I will not pretend unsupported edits worked."
         return "I can help if the fix is a supported site, object, grading, drainage, utility, or review command. Next best action: " + _primary_next_action()
+
+    if (
+        "can you set this up for me" in lowered
+        or "can you set it up for me" in lowered
+        or "set this up for me" in lowered
+        or "setup this for me" in lowered
+    ):
+        action = _wizard_next_action() or _primary_next_action()
+        current = _wizard_current_step()
+        label = str(current.get("label") or "setup").strip()
+        if setup_wizard:
+            return (
+                f"I can guide setup and record explicit inputs, but I cannot mark review gates complete for you. "
+                f"Current step: {label}. Next action: {action}"
+            )
+        return "I can guide setup once I have a saved project or visible site state. Next action: " + action
 
     if "what mode" in lowered or "which mode" in lowered:
         return f"You’re currently in {str(context.get('strategy_mode') or 'assisted').strip().lower()} mode."
@@ -1514,6 +1744,9 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "what info do you need" in lowered
         or "what should i give you" in lowered
     ):
+        smart_reply = _smart_fix_reply("needs")
+        if smart_reply:
+            return smart_reply
         asks = _current_input_needs()
         if asks:
             return "The most useful inputs right now are " + _format_missing_requirements(asks[:4]) + "."
@@ -1531,6 +1764,9 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "why cant i export" in lowered
         or "why can’t i export" in lowered
     ):
+        reply = _timeline_reply("export")
+        if reply:
+            return reply
         needs: List[str] = []
         if blocked_exports or blocked_reasons:
             needs.append("resolve blockers: " + "; ".join(str(item) for item in (blocked_reasons[:2] or blocked_exports[:2])))
@@ -1779,6 +2015,13 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "why did export fail" in lowered
         or "por que esta bloqueado" in lowered
     ):
+        if "export" in lowered:
+            reply = _timeline_reply("export")
+            if reply:
+                return reply
+        smart_reply = _smart_fix_reply("why")
+        if smart_reply:
+            return smart_reply
         if blocked_exports or blocked_reasons:
             parts: List[str] = []
             if blocked_exports:
@@ -2147,6 +2390,7 @@ def _is_explicit_plan_tool_request(text: str, tool: str) -> bool:
     normalized = _normalized_chat_text(text)
     explicit_phrases = {
         "fix": [
+            "fix it",
             "fix this",
             "fix the design",
             "fix issues",
@@ -2837,6 +3081,21 @@ def _compose_specific_response(decision: Dict[str, Any], context: Dict[str, Any]
     exact_missing = [_specific_input_label(item) for item in missing]
     next_best_action = str(metadata.get("next_best_action") or updated.get("next_best_action") or "").strip()
     assistant_message = str(updated.get("assistant_message") or "").strip()
+    setup_wizard_context = context.get("setup_wizard_state_v1") if isinstance(context.get("setup_wizard_state_v1"), dict) else {}
+    if setup_wizard_context and any(
+        phrase in _normalized_chat_text(message)
+        for phrase in [
+            "what do i do next",
+            "what should i do next",
+            "what next",
+            "why am i stuck",
+            "why am i blocked",
+            "can you set this up for me",
+            "can you set it up for me",
+            "set this up for me",
+        ]
+    ):
+        next_best_action = str(setup_wizard_context.get("next_action") or next_best_action)
 
     if command_intent == "drainage_command" and "detention basin or outfall target" in missing:
         drainage_target_label = (
@@ -3344,6 +3603,58 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             ),
         )
 
+    smart_fix = context.get("smart_fix_recommendations_v1") if isinstance(context.get("smart_fix_recommendations_v1"), dict) else {}
+    smart_next = smart_fix.get("next_best_recommendation") if isinstance(smart_fix.get("next_best_recommendation"), dict) else {}
+    if lowered in {"do the next best thing", "do the next best action", "next best thing"} and smart_next:
+        can_fix = bool(smart_next.get("can_civora_fix"))
+        next_action = str(smart_next.get("one_action_needed_next") or "").strip()
+        after_fix = str(smart_next.get("what_happens_after_fix") or "").strip()
+        blocker = str(smart_next.get("blocker_code") or "").strip()
+        if can_fix:
+            return _base_decision(
+                intent="fix",
+                assistant_message=f"I’ll do the next supported action: {next_action}. After that, {after_fix}",
+                run_mode="fix",
+                design_prompt=f"Apply Smart Fix next action for {blocker}: {next_action}",
+                reason="Smart Fix next-best action requested",
+                confidence=0.94,
+                control_overrides=overrides,
+                response_metadata=_metadata_for_decision(
+                    command_intent="fix",
+                    action_taken="prepared_smart_fix_action",
+                    affected_systems=affected_systems or [str(smart_next.get("category") or "review")],
+                    next_best_action=next_action,
+                    command_payload={"smart_fix_recommendation": smart_next},
+                    outcome="understood_and_executed",
+                    confidence=0.94,
+                    state_changed=False,
+                ),
+            )
+        missing = str(smart_next.get("missing_user_input_or_source") or "the missing source evidence").strip()
+        return _base_decision(
+            intent="conversation",
+            assistant_message=f"I cannot do that part by myself. I need exactly this from you: {missing}. After that, {after_fix}",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            reason="Smart Fix next-best action needs user source",
+            confidence=0.94,
+            control_overrides=overrides,
+            response_metadata=_metadata_for_decision(
+                command_intent="fix",
+                missing=[missing],
+                action_taken="blocked_smart_fix_missing_source",
+                action_blocked_reason=f"Missing required source: {missing}",
+                affected_systems=[str(smart_next.get("category") or "review")],
+                next_best_action=f"Provide {missing}.",
+                command_payload={"smart_fix_recommendation": smart_next},
+                outcome="understood_needs_more_info",
+                confidence=0.94,
+                state_changed=False,
+                blocker=f"Missing required source: {missing}",
+            ),
+        )
+
     if command_intent == "ui_navigation":
         selected_action_id = str(action_plan.get("selected_action_id") or "")
         ui_payload = _ui_navigation_payload(message, context, selected_action_id)
@@ -3656,6 +3967,21 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             context,
             "Use a targeted command if you want Civora to change the design.",
         )
+        setup_wizard_context = context.get("setup_wizard_state_v1") if isinstance(context.get("setup_wizard_state_v1"), dict) else {}
+        if setup_wizard_context and any(
+            phrase in lowered
+            for phrase in [
+                "what do i do next",
+                "what should i do next",
+                "what next",
+                "why am i stuck",
+                "why am i blocked",
+                "can you set this up for me",
+                "can you set it up for me",
+                "set this up for me",
+            ]
+        ):
+            next_best_action = str(setup_wizard_context.get("next_action") or next_best_action)
         return _base_decision(
             intent=intent,
             assistant_message=contextual_reply,

@@ -34,6 +34,7 @@ from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
 )
+from backend.planning.smart_fix import build_smart_fix_recommendations
 
 
 # =============================================================================
@@ -411,6 +412,7 @@ def _release_review_block(
         "blocked_exports": list(dict.fromkeys(_safe_str(item) for item in _safe_list(review.get("blocked_exports")) if _safe_str(item))),
         "release_blockers": list(dict.fromkeys(blockers)),
         "release_blocker_details": blocker_explanations(blockers),
+        "smart_fix_recommendations_v1": build_smart_fix_recommendations(final_plan, meta=meta),
         "construction_release_required": construction_release_required,
         "construction_readiness": deepcopy(_safe_dict(meta.get("construction_readiness"))),
         "construction_package_id": package_id,

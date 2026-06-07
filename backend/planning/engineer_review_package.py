@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 from core.professional_release import validate_professional_release
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
+from .smart_fix import build_smart_fix_recommendations
 from .production_evidence import build_production_evidence
 
 
@@ -829,6 +830,7 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
         "missing_inputs_by_gate": missing_inputs_by_gate,
         "blockers": blockers,
         "blocker_details": readiness_issue_explanations(blockers),
+        "smart_fix_recommendations_v1": build_smart_fix_recommendations(plan_or_meta if isinstance(plan_or_meta, dict) else {}, meta=meta),
         "calculation_artifacts": calculation_artifacts,
         "reviewer_comments": reviewer_comments,
         "reviewer_comments_by_severity": reviewer_comments_by_severity,

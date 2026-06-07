@@ -201,6 +201,87 @@ export type ConvergenceSummary = {
   unresolved_conflict_count?: number;
 };
 
+export type SetupWizardStatus =
+  | "complete"
+  | "blocked"
+  | "needs_review"
+  | "pending"
+  | "not_started";
+
+export type SetupWizardStep = {
+  id: string;
+  label: string;
+  status: SetupWizardStatus;
+  next_action: string;
+  why_blocked?: string;
+  review_required?: boolean;
+  panel?: string;
+};
+
+export type SetupWizardStateV1 = {
+  schema_version?: "setup_wizard_state_v1" | string;
+  steps?: SetupWizardStep[];
+  current_step_id?: string;
+  current_step_label?: string;
+  current_status?: SetupWizardStatus;
+  next_action?: string;
+  why_blocked?: string;
+  blocked_step_ids?: string[];
+  needs_review_step_ids?: string[];
+  completed_count?: number;
+  total_count?: number;
+};
+
+export type ProgressTimelineStatus =
+  | "completed"
+  | "blocked"
+  | "needs_review"
+  | "current"
+  | "pending"
+  | "not_started";
+
+export type ProgressTimelineStep = {
+  id: string;
+  label: string;
+  status: ProgressTimelineStatus;
+  summary?: string;
+  blockers?: string[];
+  action_label?: string;
+  action_panel?: string;
+  action?: {
+    type?: string;
+    target?: string;
+    label?: string;
+  };
+  source_refs?: string[];
+};
+
+export type ProgressTimelineV1 = {
+  schema_version?: "progress_timeline_v1" | string;
+  order?: string[];
+  steps?: ProgressTimelineStep[];
+  current_step_id?: string;
+  current_step_label?: string;
+  current_status?: ProgressTimelineStatus;
+  current_panel?: string;
+  next_action?: string;
+  exact_blockers?: string[];
+  blocked_step_ids?: string[];
+  needs_review_step_ids?: string[];
+  completed_count?: number;
+  total_count?: number;
+  can_export?: boolean;
+  export_blockers?: string[];
+  chat_summary?: {
+    where_am_i?: string;
+    phase?: string;
+    whats_left?: string[];
+    why_cant_export_yet?: string[];
+    what_should_i_do_next?: string;
+  };
+  truth_label?: string;
+};
+
 export type PhaseCheckpoint = {
   label?: string;
   status?: string;
@@ -283,7 +364,144 @@ export type ReactivePartialRerun = {
   };
 };
 
+export type CandidateReviewItem = {
+  candidate_id: string;
+  candidate_type?: string;
+  label?: string;
+  source?: string;
+  provider?: string;
+  source_url?: string;
+  source_date?: string;
+  confidence?: number | string;
+  status?: "accepted" | "rejected" | "pending" | string;
+  blocker_review_reason?: string;
+  review_required?: boolean;
+  accepted_as?: string;
+  construction_release_allowed?: boolean;
+  audit_trail?: Array<Record<string, unknown>>;
+};
+
+export type CandidateReviewInbox = {
+  version?: "candidate_review_inbox_v1" | string;
+  candidate_count?: number;
+  counts?: {
+    accepted?: number;
+    rejected?: number;
+    pending?: number;
+  };
+  by_type?: Record<string, number>;
+  candidates?: CandidateReviewItem[];
+  truth_label?: string;
+  construction_release_allowed?: boolean;
+  construction_release_blocked?: boolean;
+};
+
+export type SourceConfidenceEntry = {
+  entry_id: string;
+  label?: string;
+  category?: "source" | "layer" | "object" | "candidate" | "standards" | "production_evidence" | string;
+  object_id?: string;
+  layer?: string;
+  source_type?:
+    | "survey-backed"
+    | "survey-unverified"
+    | "GIS candidate"
+    | "official GIS source"
+    | "map imagery candidate"
+    | "user-drawn"
+    | "imported CAD"
+    | "DEM-backed"
+    | "LiDAR-backed"
+    | "inferred"
+    | "metadata-only"
+    | "missing"
+    | "stale/dirty"
+    | string;
+  source_name?: string;
+  confidence_score?: number;
+  confidence_band?: "higher" | "review" | "low" | "missing" | string;
+  visible_badge?: string;
+  status?: string;
+  accepted?: boolean;
+  verified?: boolean;
+  needs_verification?: boolean;
+  needs_survey_control?: boolean;
+  stale?: boolean;
+  dirty?: boolean;
+  missing?: boolean;
+  low_confidence_reasons?: string[];
+  why_low_confidence?: string;
+  next_action?: string;
+  evidence?: Record<string, unknown>;
+  construction_release_allowed?: boolean;
+  construction_readiness_implied?: boolean;
+  truth_label?: string;
+};
+
+export type SourceConfidenceMap = {
+  version?: "source_confidence_map_v1" | string;
+  generated_on?: string;
+  entries?: SourceConfidenceEntry[];
+  summary?: {
+    entry_count?: number;
+    counts_by_source_type?: Record<string, number>;
+    counts_by_confidence_band?: Record<string, number>;
+    trusted_count?: number;
+    low_confidence_count?: number;
+    user_drawn_count?: number;
+    needs_survey_control_count?: number;
+    stale_or_missing_count?: number;
+    highest_confidence_labels?: string[];
+    low_confidence_labels?: string[];
+    user_drawn_labels?: string[];
+    needs_survey_control_labels?: string[];
+    stale_or_missing_labels?: string[];
+  };
+  answer_cards?: Record<string, string[]>;
+  construction_release_allowed?: boolean;
+  construction_readiness_implied?: boolean;
+  truth_label?: string;
+};
+
+export type SmartFixRecommendation = {
+  id?: string;
+  blocker_code?: string;
+  category?: string;
+  severity?: string;
+  what_is_wrong?: string;
+  why_it_matters?: string;
+  can_civora_fix?: boolean;
+  fix_mode?: "auto_supported" | "manual_input_required" | string;
+  supported_action_id?: string;
+  supported_action?: Record<string, unknown>;
+  one_action_needed_next?: string;
+  missing_user_input_or_source?: string;
+  what_happens_after_fix?: string;
+  ui_action?: {
+    type?: "open_panel" | "run_fix" | "generate_system" | "export_report" | "export_dxf" | "chat_prompt" | string;
+    panel?: string;
+    target?: string;
+    prompt?: string;
+  };
+  chat_prompt?: string;
+  engineer_review_required?: boolean;
+};
+
+export type SmartFixRecommendationsV1 = {
+  version?: "smart_fix_recommendations_v1" | string;
+  recommendation_count?: number;
+  auto_fix_action_count?: number;
+  manual_action_count?: number;
+  recommendations?: SmartFixRecommendation[];
+  supported_auto_fix_actions?: Array<Record<string, unknown>>;
+  blocked_manual_only_actions?: Array<Record<string, unknown>>;
+  next_best_recommendation?: SmartFixRecommendation;
+  truth_label?: string;
+};
+
 export type PlanMeta = {
+  setup_wizard_state_v1?: SetupWizardStateV1;
+  progress_timeline_v1?: ProgressTimelineV1;
   explanation?: PlanExplanation;
   convergence_summary?: ConvergenceSummary;
   deliverables?: {
@@ -323,6 +541,25 @@ export type PlanMeta = {
   coordination?: Record<string, unknown>;
   reactive_update_report?: ReactiveUpdateReport;
   reactive_partial_rerun?: ReactivePartialRerun;
+  export_audit?: Record<string, unknown>;
+  candidate_review_inbox_v1?: CandidateReviewInbox;
+  source_confidence_map_v1?: SourceConfidenceMap;
+  smart_fix_recommendations_v1?: SmartFixRecommendationsV1;
+  map_feature_detection_report_v1?: {
+    candidate_count?: number;
+    feature_candidates?: Array<Record<string, unknown>>;
+  };
+  online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
+  existing_conditions_package?: Record<string, unknown>;
+  existing_conditions_summary?: Record<string, unknown>;
+  candidate_rule_report?: {
+    candidate_count?: number;
+    candidate_rules?: Array<Record<string, unknown>>;
+  };
+  standards_candidate_rule_report?: {
+    candidate_count?: number;
+    candidate_rules?: Array<Record<string, unknown>>;
+  };
   iterations?: IterationRecord[];
 };
 
@@ -381,6 +618,39 @@ export type MapSnapshotInput = {
 
 export type MapAnalysis = Record<string, unknown>;
 
+export type OnlineExistingConditionsSource = {
+  key?: string;
+  label?: string;
+  source_url?: string;
+  agency?: string;
+  provider?: string;
+  confidence?: string | number;
+  source_type?: string;
+  status?: string;
+  candidate_count?: number;
+  review_required?: boolean;
+  acceptance_status?: string;
+  blockers?: string[];
+};
+
+export type OnlineExistingConditionsDiscovery = {
+  version?: "online_existing_conditions_discovery_v1" | string;
+  status?: string;
+  source_type?: string;
+  location_context?: Record<string, unknown>;
+  supported_live_providers?: Array<Record<string, unknown>>;
+  fixture_provider_only_sources?: Array<Record<string, unknown>>;
+  sources?: OnlineExistingConditionsSource[];
+  candidate_count?: number;
+  missing_sources?: Array<Record<string, unknown>>;
+  failed_sources?: Array<Record<string, unknown>>;
+  blockers?: string[];
+  survey_control?: Record<string, unknown>;
+  review_required?: boolean;
+  acceptance_status?: string;
+  truth_label?: string;
+};
+
 export type SiteInputs = {
   address?: string;
   geocode?: {
@@ -394,6 +664,9 @@ export type SiteInputs = {
     location_context?: Record<string, unknown>;
   };
   location_context?: Record<string, unknown>;
+  online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
+  map_feature_detection_report_v1?: Record<string, unknown>;
+  existing_conditions_package?: Record<string, unknown>;
   viewport_bounds?: {
     north?: number;
     south?: number;

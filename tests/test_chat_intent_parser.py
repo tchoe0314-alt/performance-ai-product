@@ -365,6 +365,88 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertIn("review", result["assistant_message"])
 
+    def test_what_next_uses_setup_wizard_state(self):
+        result = _decide(
+            "what do I do next?",
+            {
+                "setup_wizard_state_v1": {
+                    "schema_version": "setup_wizard_state_v1",
+                    "current_step_id": "site_boundary",
+                    "current_step_label": "Site Boundary",
+                    "current_status": "blocked",
+                    "next_action": "Set dimensions or draw/import the boundary.",
+                    "why_blocked": "A trusted boundary has not been defined.",
+                    "steps": [
+                        {
+                            "id": "site_boundary",
+                            "label": "Site Boundary",
+                            "status": "blocked",
+                            "next_action": "Set dimensions or draw/import the boundary.",
+                            "why_blocked": "A trusted boundary has not been defined.",
+                        }
+                    ],
+                }
+            },
+        )
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertIn("Site Boundary", result["assistant_message"])
+        self.assertIn("Set dimensions", result["assistant_message"])
+        self.assertIn("Why blocked", result["assistant_message"])
+
+    def test_why_stuck_uses_setup_wizard_blocker(self):
+        result = _decide(
+            "why am I stuck?",
+            {
+                "setup_wizard_state_v1": {
+                    "schema_version": "setup_wizard_state_v1",
+                    "current_step_id": "survey_terrain_control",
+                    "current_step_label": "Survey / Terrain / Control",
+                    "current_status": "blocked",
+                    "next_action": "Upload survey/topo/control evidence.",
+                    "why_blocked": "Survey/control remains an explicit gate.",
+                    "steps": [
+                        {
+                            "id": "survey_terrain_control",
+                            "label": "Survey / Terrain / Control",
+                            "status": "blocked",
+                            "next_action": "Upload survey/topo/control evidence.",
+                            "why_blocked": "Survey/control remains an explicit gate.",
+                        }
+                    ],
+                }
+            },
+        )
+        self.assertIn("Survey/control remains an explicit gate", result["assistant_message"])
+        self.assertIn("Upload survey", result["assistant_message"])
+
+    def test_can_you_set_this_up_for_me_preserves_explicit_gates(self):
+        result = _decide(
+            "can you set this up for me?",
+            {
+                "setup_wizard_state_v1": {
+                    "schema_version": "setup_wizard_state_v1",
+                    "current_step_id": "standards",
+                    "current_step_label": "Standards",
+                    "current_status": "blocked",
+                    "next_action": "Review standards sources and accept/reject applicable candidate rules.",
+                    "why_blocked": "Standards acceptance remains an explicit gate.",
+                    "steps": [
+                        {
+                            "id": "standards",
+                            "label": "Standards",
+                            "status": "blocked",
+                            "next_action": "Review standards sources and accept/reject applicable candidate rules.",
+                            "why_blocked": "Standards acceptance remains an explicit gate.",
+                        }
+                    ],
+                }
+            },
+        )
+        self.assertIn("cannot mark review gates complete", result["assistant_message"])
+        self.assertIn("Standards", result["assistant_message"])
+        self.assertNotIn("stamp", result["assistant_message"].lower())
+        self.assertNotIn("certif", result["assistant_message"].lower())
+
     def test_what_do_you_need_from_me_answers_with_inputs(self):
         result = _decide(
             "what do you need from me?",
@@ -934,6 +1016,49 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertEqual(result["intent"], "conversation")
         self.assertIn("storm_graph_invalid", result["assistant_message"])
         self.assertIn("supported chat actions", result["assistant_message"])
+
+    def test_smart_fix_answers_can_fix_and_next_best(self):
+        smart_fix = {
+            "version": "smart_fix_recommendations_v1",
+            "next_best_recommendation": {
+                "blocker_code": "drainage_outfall_missing",
+                "category": "drainage",
+                "what_is_wrong": "Drainage has no outfall or basin.",
+                "why_it_matters": "Drainage cannot be checked without a receiving point.",
+                "can_civora_fix": True,
+                "one_action_needed_next": "Add basin",
+                "what_happens_after_fix": "Civora will rerun drainage and refresh blockers.",
+            },
+            "recommendations": [],
+        }
+        result = _decide("can you fix this?", {"has_plan": True, "smart_fix_recommendations_v1": smart_fix})
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("Yes for drainage_outfall_missing", result["assistant_message"])
+        self.assertIn("Next action: Add basin", result["assistant_message"])
+
+        next_result = _decide("do the next best thing", {"has_plan": True, "smart_fix_recommendations_v1": smart_fix})
+        self.assertEqual(next_result["intent"], "fix")
+        self.assertEqual(next_result["run_mode"], "fix")
+        self.assertEqual(next_result["action_taken"], "prepared_smart_fix_action")
+
+    def test_smart_fix_manual_need_asks_for_exact_source(self):
+        smart_fix = {
+            "version": "smart_fix_recommendations_v1",
+            "next_best_recommendation": {
+                "blocker_code": "survey_control_missing",
+                "category": "survey_control",
+                "what_is_wrong": "Survey/control evidence is missing.",
+                "why_it_matters": "Control is needed before grading can rely on elevations.",
+                "can_civora_fix": False,
+                "one_action_needed_next": "Provide survey/control file.",
+                "missing_user_input_or_source": "survey/control file with datum and benchmark",
+                "what_happens_after_fix": "Civora can rerun validation.",
+            },
+            "recommendations": [],
+        }
+        result = _decide("what do you need from me?", {"has_plan": True, "smart_fix_recommendations_v1": smart_fix})
+        self.assertEqual(result["intent"], "conversation")
+        self.assertIn("survey/control file with datum and benchmark", result["assistant_message"])
 
     def test_responsibility_guard_has_no_positive_approval_language(self):
         result = _decide("stamp it")

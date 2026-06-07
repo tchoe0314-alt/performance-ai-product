@@ -1,0 +1,430 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from datetime import date
+import hashlib
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from .common import safe_dict, safe_float, safe_list, safe_str
+from .map_feature_detection import accept_feature_candidate_as_draft_object
+
+
+INBOX_VERSION = "candidate_review_inbox_v1"
+
+ACCEPTED_STATUSES = {"accepted", "draft_review_required"}
+REJECTED_STATUSES = {"rejected", "unaccepted_rejected"}
+PENDING_STATUSES = {"", "pending", "candidate", "unaccepted", "review_required"}
+
+MAP_KIND_BY_FEATURE_TYPE = {
+    "parcel_or_site_boundary": "parcel_site_boundary",
+    "building_footprint": "building_footprint",
+    "road_or_drive": "road_row",
+    "water/pond/basin": "floodplain_wetland_constraint",
+    "constraint_area": "floodplain_wetland_constraint",
+    "utility": "utility",
+}
+
+
+def _today() -> str:
+    return date.today().isoformat()
+
+
+def _stable_id(*parts: Any) -> str:
+    seed = "|".join(safe_str(part) for part in parts if safe_str(part))
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
+    return f"cri_{digest}"
+
+
+def _status(value: Any) -> str:
+    text = safe_str(value).lower()
+    if text in ACCEPTED_STATUSES:
+        return "accepted"
+    if text in REJECTED_STATUSES or "reject" in text:
+        return "rejected"
+    if text in PENDING_STATUSES:
+        return "pending"
+    return "pending"
+
+
+def _confidence(value: Any) -> Any:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(max(0.0, min(1.0, safe_float(value))), 3)
+    return safe_str(value) or "unknown"
+
+
+def _candidate(
+    *,
+    candidate_id: str,
+    candidate_type: str,
+    label: str,
+    source: str = "",
+    provider: str = "",
+    source_url: str = "",
+    source_date: str = "",
+    confidence: Any = "",
+    status: str = "pending",
+    blocker_review_reason: str = "",
+    source_record: Optional[Dict[str, Any]] = None,
+    audit_trail: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    return {
+        "candidate_id": candidate_id,
+        "candidate_type": candidate_type,
+        "label": label,
+        "source": source or source_url or provider or "unknown_source",
+        "provider": provider or source or "unknown_provider",
+        "source_url": source_url,
+        "source_date": source_date,
+        "confidence": _confidence(confidence),
+        "status": _status(status),
+        "blocker_review_reason": blocker_review_reason
+        or "Review and accept, reject, or leave pending before relying on this candidate.",
+        "review_required": True,
+        "accepted_as": "project_draft_review_required_evidence" if _status(status) == "accepted" else "",
+        "construction_release_allowed": False,
+        "construction_readiness_implied": False,
+        "source_record": deepcopy(source_record or {}),
+        "audit_trail": [deepcopy(safe_dict(item)) for item in audit_trail or []],
+        "truth_label": (
+            "Candidate review decisions create project draft/review-required evidence only. "
+            "They do not create survey truth, construction readiness, approval, stamp, seal, or engineer-of-record decisions."
+        ),
+    }
+
+
+def _map_candidate_type(candidate: Dict[str, Any]) -> str:
+    feature_type = safe_str(candidate.get("feature_type"))
+    mapped = MAP_KIND_BY_FEATURE_TYPE.get(feature_type, "uploaded_imported_layer")
+    layer_hint = " ".join(
+        safe_str(value).lower()
+        for value in (
+            candidate.get("source_name"),
+            candidate.get("source_type"),
+            safe_dict(candidate.get("properties")).get("layer"),
+        )
+        if safe_str(value)
+    )
+    if mapped == "floodplain_wetland_constraint" and "utility" in layer_hint:
+        return "utility"
+    if mapped == "floodplain_wetland_constraint" and ("row" in layer_hint or "right_of_way" in layer_hint):
+        return "road_row"
+    return mapped
+
+
+def _map_feature_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    report = safe_dict(meta.get("map_feature_detection_report_v1"))
+    candidates = []
+    for rec in safe_list(report.get("feature_candidates")):
+        candidate = safe_dict(rec)
+        if not candidate:
+            continue
+        blocker = "; ".join(safe_str(item) for item in safe_list(candidate.get("blockers")) if safe_str(item))
+        candidate_id = safe_str(candidate.get("candidate_id")) or _stable_id("map", candidate.get("source_feature_id"), candidate.get("geometry"))
+        candidates.append(
+            _candidate(
+                candidate_id=candidate_id,
+                candidate_type=_map_candidate_type(candidate),
+                label=safe_str(candidate.get("feature_type")).replace("_", " ") or "Map/GIS candidate",
+                source=safe_str(candidate.get("evidence_source") or candidate.get("source_name") or candidate.get("source_type")),
+                provider=safe_str(candidate.get("source_name") or candidate.get("source_type")),
+                source_url=safe_str(candidate.get("source_url")),
+                source_date=safe_str(candidate.get("source_date") or safe_dict(candidate.get("properties")).get("date")),
+                confidence=candidate.get("confidence"),
+                status=candidate.get("acceptance_status"),
+                blocker_review_reason=blocker or "Map/GIS source is candidate evidence until explicitly reviewed for this project.",
+                source_record=candidate,
+                audit_trail=safe_list(candidate.get("audit_trail")),
+            )
+        )
+    return candidates
+
+
+def _candidate_rules_from_meta(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    reports = [
+        safe_dict(meta.get("candidate_rule_report")),
+        safe_dict(meta.get("standards_candidate_rule_report")),
+        safe_dict(safe_dict(meta.get("standards_review_packet")).get("candidate_rule_report")),
+        safe_dict(safe_dict(meta.get("standards_package")).get("candidate_rule_report")),
+    ]
+    candidates: List[Dict[str, Any]] = []
+    seen = set()
+    for report in reports:
+        for rule in safe_list(report.get("candidate_rules")):
+            rec = safe_dict(rule)
+            rule_id = safe_str(rec.get("rule_id"))
+            if not rule_id or rule_id in seen:
+                continue
+            candidates.append(rec)
+            seen.add(rule_id)
+    packet = safe_dict(meta.get("standards_review_packet"))
+    for rule in safe_list(packet.get("candidate_rules")):
+        rec = safe_dict(rule)
+        rule_id = safe_str(rec.get("rule_id"))
+        if rule_id and rule_id not in seen:
+            candidates.append(rec)
+            seen.add(rule_id)
+    return candidates
+
+
+def _standards_status_by_rule(meta: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, List[Dict[str, Any]]]]:
+    acceptance = safe_dict(meta.get("standards_acceptance"))
+    status_by_rule: Dict[str, str] = {}
+    audit_by_rule: Dict[str, List[Dict[str, Any]]] = {}
+    for key, status in (("accepted_rules", "accepted"), ("rejected_rules", "rejected"), ("pending_rules", "pending")):
+        for item in safe_list(acceptance.get(key)):
+            rec = safe_dict(item)
+            rule_id = safe_str(rec.get("rule_id") or rec.get("candidate_rule_id"))
+            if rule_id:
+                status_by_rule[rule_id] = status
+    for audit in safe_list(acceptance.get("audit_trail")):
+        rec = safe_dict(audit)
+        rule_id = safe_str(rec.get("rule_id"))
+        if rule_id:
+            audit_by_rule.setdefault(rule_id, []).append(rec)
+    return status_by_rule, audit_by_rule
+
+
+def _standards_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    status_by_rule, audit_by_rule = _standards_status_by_rule(meta)
+    candidates = []
+    for rule in _candidate_rules_from_meta(meta):
+        rule_id = safe_str(rule.get("rule_id"))
+        if not rule_id:
+            continue
+        status = status_by_rule.get(rule_id) or rule.get("acceptance_status") or rule.get("status")
+        candidates.append(
+            _candidate(
+                candidate_id=f"std_{rule_id}",
+                candidate_type="standards",
+                label=safe_str(rule.get("topic") or rule.get("discipline") or "Standards candidate"),
+                source=safe_str(rule.get("source_id") or rule.get("source_type")),
+                provider=safe_str(rule.get("source_id") or rule.get("source_type")),
+                source_url=safe_str(rule.get("source_url")),
+                source_date=safe_str(rule.get("retrieved_date") or rule.get("retrieved_at")),
+                confidence=rule.get("confidence"),
+                status=status,
+                blocker_review_reason="Candidate standards need explicit user/company/engineer review before any QA gate can rely on them.",
+                source_record=rule,
+                audit_trail=audit_by_rule.get(rule_id, []),
+            )
+        )
+    return candidates
+
+
+def _online_or_imported_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+    online = safe_dict(meta.get("online_existing_conditions") or meta.get("existing_conditions_online"))
+    elevation = safe_dict(online.get("elevation") or meta.get("dem_evidence") or meta.get("terrain_dem_candidate"))
+    if elevation:
+        candidates.append(
+            _candidate(
+                candidate_id=_stable_id("terrain_dem", elevation.get("source"), elevation.get("lat"), elevation.get("lng")),
+                candidate_type="terrain_dem",
+                label="Terrain/DEM candidate",
+                source=safe_str(elevation.get("source") or elevation.get("source_type")),
+                provider=safe_str(elevation.get("source_type") or "DEM"),
+                source_url=safe_str(elevation.get("source")),
+                source_date=safe_str(elevation.get("date") or elevation.get("retrieved_at")),
+                confidence=elevation.get("confidence") or "public_context",
+                status=elevation.get("acceptance_status") or "pending",
+                blocker_review_reason=safe_str(
+                    elevation.get("truth_label"),
+                    "Public DEM/terrain context remains review-required and is not a stamped topographic survey.",
+                ),
+                source_record=elevation,
+                audit_trail=safe_list(elevation.get("audit_trail")),
+            )
+        )
+    existing_package = safe_dict(meta.get("existing_conditions_package"))
+    for idx, layer in enumerate(safe_list(existing_package.get("import_records") or existing_package.get("source_records") or [])):
+        rec = safe_dict(layer)
+        if not rec:
+            continue
+        source_type = safe_str(rec.get("source_type"))
+        if source_type in {"survey_csv", "surface_xyz_csv", "geotiff_surface", "las_point_cloud", "geojson", "geospatial_vector"}:
+            candidates.append(
+                _candidate(
+                    candidate_id=_stable_id("import", idx, source_type, rec.get("source") or rec.get("file_name")),
+                    candidate_type="uploaded_imported_layer" if source_type not in {"surface_xyz_csv", "geotiff_surface", "las_point_cloud"} else "terrain_dem",
+                    label=safe_str(rec.get("label") or source_type or "Imported candidate layer"),
+                    source=safe_str(rec.get("source") or rec.get("file_name")),
+                    provider=safe_str(rec.get("provider") or source_type),
+                    source_url=safe_str(rec.get("source_url")),
+                    source_date=safe_str(rec.get("date") or rec.get("imported_at")),
+                    confidence=rec.get("confidence") or rec.get("source_quality") or "imported",
+                    status=rec.get("acceptance_status") or rec.get("review_status") or "pending",
+                    blocker_review_reason=safe_str(
+                        rec.get("truth_label"),
+                        "Imported source/layer needs review before it can be treated as project evidence.",
+                    ),
+                    source_record=rec,
+                    audit_trail=safe_list(rec.get("audit_trail")),
+                )
+            )
+    return candidates
+
+
+def build_candidate_review_inbox(meta: Dict[str, Any]) -> Dict[str, Any]:
+    candidates = _map_feature_candidates(meta) + _standards_candidates(meta) + _online_or_imported_candidates(meta)
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for candidate in candidates:
+        by_id[safe_str(candidate.get("candidate_id"))] = candidate
+    ordered = list(by_id.values())
+    counts = {"accepted": 0, "rejected": 0, "pending": 0}
+    by_type: Dict[str, int] = {}
+    for candidate in ordered:
+        status = _status(candidate.get("status"))
+        counts[status] = counts.get(status, 0) + 1
+        ctype = safe_str(candidate.get("candidate_type"), "unknown")
+        by_type[ctype] = by_type.get(ctype, 0) + 1
+    return {
+        "version": INBOX_VERSION,
+        "candidate_count": len(ordered),
+        "counts": counts,
+        "by_type": by_type,
+        "candidates": ordered,
+        "construction_release_allowed": False,
+        "construction_release_blocked": True,
+        "truth_label": (
+            "Accepted candidates are project draft/review-required evidence only. "
+            "Rejected candidates remain preserved in the audit trail. Pending candidates remain pending."
+        ),
+    }
+
+
+def _decision_audit(candidate: Dict[str, Any], *, action: str, reviewer_id: str, reason: str = "") -> Dict[str, Any]:
+    return {
+        "action": action,
+        "candidate_id": safe_str(candidate.get("candidate_id")),
+        "candidate_type": safe_str(candidate.get("candidate_type")),
+        "reviewed_by": reviewer_id,
+        "reviewed_at": _today(),
+        "reason": reason,
+        "result_status": {
+            "accept": "draft_review_required",
+            "reject": "rejected",
+            "pending": "pending",
+        }.get(action, "pending"),
+    }
+
+
+def apply_candidate_review_decision(
+    meta: Dict[str, Any],
+    *,
+    candidate_ids: Iterable[str],
+    action: str,
+    reviewer_id: str = "",
+    reason: str = "",
+) -> Dict[str, Any]:
+    updated_meta = deepcopy(safe_dict(meta))
+    inbox = build_candidate_review_inbox(updated_meta)
+    requested = {safe_str(item) for item in candidate_ids if safe_str(item)}
+    if not requested:
+        raise ValueError("At least one candidate_id is required.")
+    normalized_action = safe_str(action).lower()
+    if normalized_action not in {"accept", "reject", "pending"}:
+        raise ValueError("action must be accept, reject, or pending.")
+    reviewer = safe_str(reviewer_id, "user")
+    found: List[Dict[str, Any]] = []
+    missing = sorted(requested)
+    for candidate in safe_list(inbox.get("candidates")):
+        rec = safe_dict(candidate)
+        if safe_str(rec.get("candidate_id")) in requested:
+            found.append(rec)
+            missing = [item for item in missing if item != safe_str(rec.get("candidate_id"))]
+    if missing:
+        raise ValueError(f"Unknown candidate_id(s): {', '.join(missing)}")
+
+    decisions = safe_list(updated_meta.get("candidate_review_decisions_v1"))
+    accepted_drafts = safe_list(updated_meta.get("candidate_review_accepted_drafts_v1"))
+    rejected = safe_list(updated_meta.get("candidate_review_rejected_v1"))
+    for candidate in found:
+        audit = _decision_audit(candidate, action=normalized_action, reviewer_id=reviewer, reason=reason)
+        decisions.append(audit)
+        if normalized_action == "accept":
+            draft = _accepted_draft_from_candidate(candidate, accepted_by=reviewer)
+            accepted_drafts = [item for item in accepted_drafts if safe_str(safe_dict(item).get("source_candidate_id")) != safe_str(candidate.get("candidate_id"))]
+            accepted_drafts.append(draft)
+        elif normalized_action == "reject":
+            rec = deepcopy(candidate)
+            rec["status"] = "rejected"
+            rec["rejection_reason"] = reason
+            rec["audit_trail"] = safe_list(rec.get("audit_trail")) + [audit]
+            rejected = [item for item in rejected if safe_str(safe_dict(item).get("candidate_id")) != safe_str(candidate.get("candidate_id"))]
+            rejected.append(rec)
+    updated_meta["candidate_review_decisions_v1"] = decisions
+    updated_meta["candidate_review_accepted_drafts_v1"] = accepted_drafts
+    updated_meta["candidate_review_rejected_v1"] = rejected
+    updated_meta["candidate_review_inbox_v1"] = _inbox_with_decisions(build_candidate_review_inbox(updated_meta), decisions)
+    return {
+        "success": True,
+        "action": normalized_action,
+        "candidate_ids": sorted(requested),
+        "reviewed_by": reviewer,
+        "candidate_review_inbox_v1": updated_meta["candidate_review_inbox_v1"],
+        "updated_meta": updated_meta,
+        "audit_trail": decisions,
+        "accepted_drafts": accepted_drafts,
+        "rejected_candidates": rejected,
+        "truth_label": "Candidate decisions changed review evidence only; construction release remains blocked until external professional approval and required source evidence exist.",
+    }
+
+
+def _accepted_draft_from_candidate(candidate: Dict[str, Any], *, accepted_by: str) -> Dict[str, Any]:
+    source = safe_dict(candidate.get("source_record"))
+    if source.get("candidate_id") and source.get("feature_type"):
+        try:
+            return accept_feature_candidate_as_draft_object(source, accepted_by=accepted_by)
+        except Exception:
+            pass
+    return {
+        "object_id": f"draft_{safe_str(candidate.get('candidate_id'), 'candidate')}",
+        "object_type": safe_str(candidate.get("candidate_type"), "review_evidence"),
+        "source_candidate_id": safe_str(candidate.get("candidate_id")),
+        "source_type": safe_str(candidate.get("candidate_type")),
+        "source_url": safe_str(candidate.get("source_url")),
+        "source_name": safe_str(candidate.get("source")),
+        "confidence": candidate.get("confidence"),
+        "status": "draft_review_required",
+        "review_required": True,
+        "acceptance_status": "accepted",
+        "trusted_canonical": False,
+        "needs_engineer_review": True,
+        "accepted_by": accepted_by,
+        "construction_release_allowed": False,
+        "audit_trail": [_decision_audit(candidate, action="accept", reviewer_id=accepted_by)],
+        "truth_label": "Accepted candidate became draft/review-required evidence only; it is not survey truth or construction readiness.",
+    }
+
+
+def _inbox_with_decisions(inbox: Dict[str, Any], decisions: List[Any]) -> Dict[str, Any]:
+    latest_by_id: Dict[str, Dict[str, Any]] = {}
+    for item in decisions:
+        rec = safe_dict(item)
+        candidate_id = safe_str(rec.get("candidate_id"))
+        if candidate_id:
+            latest_by_id[candidate_id] = rec
+    counts = {"accepted": 0, "rejected": 0, "pending": 0}
+    candidates = []
+    for candidate in safe_list(inbox.get("candidates")):
+        rec = deepcopy(safe_dict(candidate))
+        latest = latest_by_id.get(safe_str(rec.get("candidate_id")))
+        if latest:
+            action = safe_str(latest.get("action"))
+            rec["status"] = {"accept": "accepted", "reject": "rejected", "pending": "pending"}.get(action, rec.get("status"))
+            rec["accepted_as"] = "project_draft_review_required_evidence" if rec["status"] == "accepted" else ""
+            rec["blocker_review_reason"] = safe_str(latest.get("reason")) or rec.get("blocker_review_reason")
+            rec["audit_trail"] = safe_list(rec.get("audit_trail")) + [latest]
+        counts[_status(rec.get("status"))] = counts.get(_status(rec.get("status")), 0) + 1
+        candidates.append(rec)
+    updated = dict(inbox)
+    updated["candidates"] = candidates
+    updated["counts"] = counts
+    return updated
+
+
+__all__ = [
+    "INBOX_VERSION",
+    "apply_candidate_review_decision",
+    "build_candidate_review_inbox",
+]

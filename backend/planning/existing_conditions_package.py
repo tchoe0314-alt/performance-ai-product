@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS, summarize_existing_conditions
+from .source_confidence_map import build_source_confidence_map
 from .survey_control import build_survey_control_package
 
 
@@ -180,6 +181,9 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
             sources=safe_list(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources")),
         )
     )
+    source_confidence_map = build_source_confidence_map(
+        {**meta, "existing_conditions_package": {"survey_control_package": survey_control_package, "terrain_source_confidence": terrain_confidence}},
+    )
     return {
         "version": "existing_conditions_package_v1",
         "status": status,
@@ -219,6 +223,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         "canonical_vs_metadata_only": deepcopy(validation.get("canonical_vs_metadata_only")),
         "terrain_source_confidence": deepcopy(terrain_confidence),
         "survey_control_package": deepcopy(survey_control_package),
+        "source_confidence_map_v1": deepcopy(source_confidence_map),
         "survey_ready": bool(survey.get("ready")),
         "gis_ready": bool(gis.get("ready")),
         "coordinate_system_ready": bool(coordinate.get("ready")),

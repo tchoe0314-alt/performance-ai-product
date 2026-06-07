@@ -288,6 +288,9 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(saved_input["manual_fields"]["lot"]["h"], 1000.0)
         self.assertEqual(saved_input["meta"]["site_inputs"]["address"], "20525 Margo St, Gretna, NE")
         self.assertEqual(saved_meta["location_context"]["address"], "20525 Margo St, Gretna, NE")
+        self.assertEqual(saved_meta["setup_wizard_state_v1"]["schema_version"], "setup_wizard_state_v1")
+        self.assertEqual(saved_meta["setup_wizard_state_v1"]["current_step_id"], "address_location")
+        self.assertIn("Review", saved_meta["setup_wizard_state_v1"]["next_action"])
         self.assertIn("not a site boundary", saved_meta["location_context"]["truth_label"])
         self.assertNotIn("chat_command_workflows", saved_meta)
 
@@ -347,6 +350,120 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertTaxonomyMetadata(result, "understood_but_blocked")
         self.assertFalse(result["response_metadata"]["state_changed"])
         self.assertEqual(store.saved, [])
+
+    def test_chat_reports_saved_online_discovery(self):
+        record = _record()
+        discovery = {
+            "version": "online_existing_conditions_discovery_v1",
+            "candidate_count": 2,
+            "sources": [
+                {
+                    "key": "terrain_dem_lidar",
+                    "label": "terrain/DEM/LiDAR",
+                    "provider": "USGS 3DEP EPQS",
+                    "status": "candidates_found",
+                    "candidate_count": 1,
+                    "blockers": ["terrain candidates are review-required"],
+                },
+                {
+                    "key": "building_footprints",
+                    "label": "building footprints",
+                    "provider": "configured_building_footprints_arcgis",
+                    "status": "unconfigured",
+                    "candidate_count": 0,
+                    "blockers": ["No building footprint GIS source is configured."],
+                },
+            ],
+            "survey_control": {"survey_control_satisfied": False},
+        }
+        record["project_input"]["meta"] = {
+            "site_inputs": {
+                "address": "1 Main St",
+                "online_existing_conditions_discovery_v1": discovery,
+            }
+        }
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "what did you find online?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "reported_online_existing_conditions_discovery")
+        self.assertTaxonomyMetadata(result, "understood_and_answered")
+        self.assertIn("terrain/DEM/LiDAR", result["assistant_message"])
+        self.assertIn("No building footprint GIS source is configured.", result["assistant_message"])
+        self.assertIn("candidate/review-required", result["assistant_message"])
+
+    def test_chat_explains_why_buildings_were_not_found(self):
+        record = _record()
+        record["project_input"]["meta"] = {
+            "site_inputs": {
+                "online_existing_conditions_discovery_v1": {
+                    "version": "online_existing_conditions_discovery_v1",
+                    "candidate_count": 0,
+                    "sources": [
+                        {
+                            "key": "building_footprints",
+                            "label": "building footprints",
+                            "status": "unconfigured",
+                            "candidate_count": 0,
+                            "blockers": ["No building footprint GIS source is configured."],
+                        }
+                    ],
+                }
+            }
+        }
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "why didn't it find buildings?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "reported_online_existing_conditions_discovery")
+        self.assertIn("No building footprint GIS source is configured.", result["assistant_message"])
+
+    def test_chat_fetches_and_persists_online_discovery_from_address(self):
+        store = RecordingProjectStore()
+        fake_result = {
+            "online_existing_conditions_discovery_v1": {
+                "version": "online_existing_conditions_discovery_v1",
+                "candidate_count": 1,
+                "sources": [
+                    {
+                        "key": "parcel_site_boundary",
+                        "label": "parcel/site boundary",
+                        "provider": "county",
+                        "status": "candidates_found",
+                        "candidate_count": 1,
+                        "blockers": ["parcel candidates are review-required"],
+                    }
+                ],
+            },
+            "map_feature_detection_report_v1": {"candidate_count": 1, "feature_candidates": []},
+            "existing_conditions_package": {"status": "blocked"},
+            "location_context": {"address": "1 Main St"},
+        }
+        with patch("backend.application.chat_workflows.fetch_online_existing_conditions", return_value=fake_result) as fetch:
+            result = decide_chat(
+                {"message": "find site data from this address 1 Main St", "context": {"current_project": {"project_id": "project_123"}}},
+                decide_chat_message=decide_chat_message,
+                project_store=store,
+                user_id="user_1",
+            )
+
+        self.assertEqual(result["action_taken"], "fetched_online_existing_conditions_candidates")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        fetch.assert_called_once()
+        saved_meta = store.saved[-1]["latest_result"]["final_plan"]["meta"]
+        saved_site_inputs = store.saved[-1]["project_input"]["meta"]["site_inputs"]
+        self.assertEqual(saved_meta["online_existing_conditions_discovery_v1"]["candidate_count"], 1)
+        self.assertEqual(saved_site_inputs["online_existing_conditions_discovery_v1"]["candidate_count"], 1)
 
     def test_object_creation_command_creates_draft_geometry_and_truthful_action(self):
         store = RecordingProjectStore()
@@ -823,6 +940,50 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("survey_control_verified", result["assistant_message"])
         self.assertIn("exact fix", result["assistant_message"])
 
+    def test_chat_answers_source_confidence_questions(self):
+        record = _record_with_handoffs([_handoff(object_id="drawn-source-1")])
+        record["latest_result"]["final_plan"]["meta"].update(
+            {
+                "candidate_review_inbox_v1": {
+                    "candidates": [
+                        {
+                            "candidate_id": "parcel-1",
+                            "candidate_type": "parcel_site_boundary",
+                            "label": "Parcel boundary",
+                            "source": "county GIS",
+                            "status": "pending",
+                            "blocker_review_reason": "Needs parcel review.",
+                        }
+                    ]
+                },
+                "reactive_update_report": {"stale_outputs": ["grading"]},
+            }
+        )
+        store = RecordingProjectStore(record)
+
+        for prompt, expected in (
+            ("what can I trust?", "does not imply construction readiness"),
+            ("why is this low confidence?", "Low confidence sources"),
+            ("what is user drawn?", "Drawn polygon"),
+            ("what needs survey control?", "Needs survey control"),
+            ("show me stale or missing sources", "Stale output: grading"),
+        ):
+            result = decide_chat(
+                {
+                    "message": prompt,
+                    "context": {"current_project": {"project_id": "project_123"}},
+                },
+                decide_chat_message=decide_chat_message,
+                project_store=store,
+                user_id="user_1",
+            )
+
+            self.assertEqual(result["action_taken"], "reported_source_confidence_map")
+            self.assertIn(expected, result["assistant_message"])
+            command_payload = result["response_metadata"]["command_payload"]
+            self.assertEqual(command_payload["source_confidence_map_v1"]["version"], "source_confidence_map_v1")
+            self.assertEqual(command_payload["requested_ui_mode"], "data")
+
     def test_chat_explains_cost_pricing_blockers(self):
         store = RecordingProjectStore(
             _record()
@@ -922,8 +1083,9 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
 
         self.assertEqual(result["action_taken"], "answered_from_project_context")
         self.assertTaxonomyMetadata(result, "understood_and_executed")
-        self.assertIn("Lock the site boundary", result["assistant_message"])
-        self.assertIn("Lock the site boundary", result["response_metadata"]["next_best_action"])
+        self.assertIn("Address / Location", result["assistant_message"])
+        self.assertIn("Enter an address", result["assistant_message"])
+        self.assertIn("Enter an address", result["response_metadata"]["next_best_action"])
 
     def test_why_export_blocked_reads_review_package_blockers(self):
         store = RecordingProjectStore(
@@ -962,6 +1124,79 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("engineer_review_required", result["assistant_message"])
         self.assertIn("accepted_standards_missing", result["response_metadata"]["blocker"])
         self.assertIn("next_best_action", result["response_metadata"])
+
+    def test_chat_answers_progress_timeline_location_and_next_action(self):
+        timeline = {
+            "schema_version": "progress_timeline_v1",
+            "current_step_id": "candidates",
+            "current_step_label": "Candidates",
+            "current_status": "needs_review",
+            "current_panel": "data",
+            "next_action": "Review candidates: Review pending source candidates before relying on them.",
+            "exact_blockers": ["Review pending source candidates before relying on them."],
+            "steps": [
+                {"id": "setup", "label": "Setup", "status": "completed", "blockers": []},
+                {
+                    "id": "candidates",
+                    "label": "Candidates",
+                    "status": "needs_review",
+                    "blockers": ["Review pending source candidates before relying on them."],
+                },
+                {"id": "deliverables", "label": "Deliverables", "status": "pending", "blockers": []},
+            ],
+            "chat_summary": {
+                "where_am_i": "Candidates (needs_review)",
+                "phase": "Candidates",
+                "whats_left": ["Candidates", "Deliverables"],
+                "what_should_i_do_next": "Review candidates: Review pending source candidates before relying on them.",
+            },
+        }
+
+        result = decide_chat(
+            {"message": "where am I?", "context": {"progress_timeline_v1": timeline}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("Candidates", result["assistant_message"])
+        self.assertIn("Review pending source candidates", result["assistant_message"])
+
+        result = decide_chat(
+            {"message": "what's left?", "context": {"progress_timeline_v1": timeline}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertIn("Candidates, Deliverables", result["assistant_message"])
+
+    def test_chat_answers_why_export_blocked_from_progress_timeline(self):
+        timeline = {
+            "schema_version": "progress_timeline_v1",
+            "current_step_id": "review_package",
+            "current_step_label": "Review Package",
+            "current_status": "blocked",
+            "current_panel": "reports",
+            "next_action": "Open review package: accepted_standards_missing",
+            "can_export": False,
+            "export_blockers": ["accepted_standards_missing", "Missing deliverable: drainage_report"],
+            "steps": [],
+            "chat_summary": {
+                "where_am_i": "Review Package (blocked)",
+                "phase": "Review Package",
+                "why_cant_export_yet": ["accepted_standards_missing", "Missing deliverable: drainage_report"],
+                "what_should_i_do_next": "Open review package: accepted_standards_missing",
+            },
+        }
+
+        result = decide_chat(
+            {"message": "why can't I export yet?", "context": {"progress_timeline_v1": timeline}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_from_project_context")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("accepted_standards_missing", result["assistant_message"])
+        self.assertIn("Missing deliverable: drainage_report", result["assistant_message"])
 
     def test_what_am_i_doing_with_selected_geometry(self):
         result = decide_chat(

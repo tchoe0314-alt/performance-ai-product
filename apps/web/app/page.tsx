@@ -56,7 +56,18 @@ import type {
   PlanRequestPayload,
   PreviewRequestPayload,
   SiteInputs,
+  OnlineExistingConditionsDiscovery,
   CanonicalGeometryHandoffV1,
+  CandidateReviewInbox,
+  CandidateReviewItem,
+  SourceConfidenceEntry,
+  SourceConfidenceMap,
+  SmartFixRecommendation,
+  SmartFixRecommendationsV1,
+  SetupWizardStateV1,
+  SetupWizardStep,
+  ProgressTimelineStep,
+  ProgressTimelineV1,
 } from "./types";
 import type { CivoraWorkflowStep } from "./design-system";
 
@@ -137,6 +148,16 @@ type AddressSuggestion = {
   location_context?: Record<string, unknown>;
   blockers?: Array<{ area?: string; code?: string; message?: string }>;
 };
+type OnlineExistingConditionsFetchResponse = {
+  success?: boolean;
+  status?: string;
+  online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
+  map_feature_detection_report_v1?: Record<string, unknown>;
+  existing_conditions_package?: Record<string, unknown>;
+  existing_conditions_summary?: Record<string, unknown>;
+  canonical_existing_conditions?: Record<string, unknown>;
+  warnings?: string[];
+};
 const hasAddressCoordinates = (
   value: AddressSuggestion | null | undefined,
 ): value is AddressSuggestion & { lat: number; lng: number; display_name: string } =>
@@ -147,6 +168,8 @@ const hasAddressCoordinates = (
       Number.isFinite(value.lng) &&
       value.display_name,
   );
+const sourceStatusLabel = (value: string | undefined) =>
+  String(value || "missing").replace(/_/g, " ");
 type BottomPanelTab = "model_review" | "systems" | "objects" | "properties" | "history";
 type SidebarNavItem = {
   label: string;
@@ -644,10 +667,10 @@ const REACTIVE_EDIT_POLICY_PREFERENCE = {
   stale_exports_block_download: true,
 } as const;
 
-const REACTIVE_SYSTEM_STAGE_MAP: Record<
+const REACTIVE_SYSTEM_STAGE_MAP: Partial<Record<
   EngineeringSystemKey,
   string[]
-> = {
+>> = {
   roads: ["layout", "grading", "drainage", "storm_pipes", "utility_network", "coordination_resolution", "qa"],
   parking: ["layout", "grading", "drainage", "storm_pipes", "coordination_resolution", "qa"],
   grading: ["grading", "drainage", "storm_pipes", "sanitary", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"],
@@ -1350,6 +1373,7 @@ function PerformanceAIDashboardView({
   });
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedAddressSuggestion, setSelectedAddressSuggestion] = useState<AddressSuggestion | null>(null);
+  const [onlineDiscoveryBusy, setOnlineDiscoveryBusy] = useState(false);
   const addressSuggestTimeoutRef = useRef<number | null>(null);
   const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "uploaded" | "detecting" | "failed">("idle");
   const [imageUploadNote, setImageUploadNote] = useState<string | null>(null);
@@ -2109,6 +2133,338 @@ function PerformanceAIDashboardView({
     }
   }, [visibleActiveJob?.status]);
   const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
+  const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  const hasLocationEvidence =
+    Boolean(siteInputs?.address || siteAddress.trim()) ||
+    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
+    Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
+  const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
+  const hasTerrainSource =
+    (Boolean(surveyFileName) && useSurveyForGrading) ||
+    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
+    Boolean(surveySlopeEstimate?.slope_percent);
+  const smartFixBlockedReasons = useMemo(() => {
+    const releaseReview = currentPlanMeta.release_review && typeof currentPlanMeta.release_review === "object"
+      ? currentPlanMeta.release_review as Record<string, unknown>
+      : {};
+    const exportAudit = currentPlanMeta.export_audit && typeof currentPlanMeta.export_audit === "object"
+      ? currentPlanMeta.export_audit as Record<string, unknown>
+      : {};
+    const manualFailures = Array.isArray(currentPlanMeta.manual_validation?.failures)
+      ? currentPlanMeta.manual_validation.failures
+      : [];
+    const values = [
+      ...(Array.isArray(releaseReview.blocked_reasons) ? releaseReview.blocked_reasons : []),
+      ...(Array.isArray(releaseReview.blocked_exports) ? releaseReview.blocked_exports : []),
+      ...(currentPlanMeta.convergence_summary?.blocked_reasons ?? []),
+      ...(currentPlanMeta.convergence_summary?.blocked_exports ?? []),
+      ...(Array.isArray(exportAudit.blocked_reasons) ? exportAudit.blocked_reasons : []),
+      ...(manualFailures.map((failure) => failure.message || failure.reason || failure.code || "manual validation failure")),
+    ];
+    return Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean)));
+  }, [currentPlanMeta]);
+  const smartFixRecommendations = useMemo<SmartFixRecommendationsV1>(() => {
+    const stored = currentPlanMeta.smart_fix_recommendations_v1;
+    if (stored?.recommendations?.length) return stored;
+    const fallbackReasons = smartFixBlockedReasons;
+    const recommendations: SmartFixRecommendation[] = fallbackReasons.slice(0, 6).map((reason, index) => ({
+      id: `ui_smart_fix_${index + 1}`,
+      blocker_code: reason.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "ui_blocker",
+      category: reason.toLowerCase().includes("export")
+        ? "exports"
+        : reason.toLowerCase().includes("boundary") || reason.toLowerCase().includes("setup")
+          ? "setup_site_boundary"
+          : "general",
+      what_is_wrong: reason,
+      why_it_matters: "Civora keeps unresolved blockers visible so review outputs do not overstate the current state.",
+      can_civora_fix: !reason.toLowerCase().includes("survey") && !reason.toLowerCase().includes("standards"),
+      fix_mode: !reason.toLowerCase().includes("survey") && !reason.toLowerCase().includes("standards") ? "auto_supported" : "manual_input_required",
+      one_action_needed_next: reason.toLowerCase().includes("export")
+        ? "Open Deliver and rebuild the review report after blockers are resolved."
+        : reason.toLowerCase().includes("boundary")
+          ? "Open Setup and lock the site boundary."
+          : "Run a fix pass.",
+      missing_user_input_or_source: reason.toLowerCase().includes("survey")
+        ? "survey/control source"
+        : reason.toLowerCase().includes("standards")
+          ? "accepted standards source"
+          : "",
+      what_happens_after_fix: "Civora will refresh blockers and keep remaining review gates visible.",
+      ui_action: reason.toLowerCase().includes("export")
+        ? { type: "open_panel", panel: "deliverables" }
+        : reason.toLowerCase().includes("boundary") || reason.toLowerCase().includes("setup")
+          ? { type: "open_panel", panel: "site_existing" }
+          : { type: "run_fix" },
+      engineer_review_required: true,
+    }));
+    return {
+      version: "smart_fix_recommendations_v1",
+      recommendation_count: recommendations.length,
+      auto_fix_action_count: recommendations.filter((item) => item.can_civora_fix).length,
+      manual_action_count: recommendations.filter((item) => !item.can_civora_fix).length,
+      recommendations,
+      next_best_recommendation: recommendations[0],
+      truth_label: "Smart Fix explains blockers and only runs supported actions.",
+    };
+  }, [currentPlanMeta.smart_fix_recommendations_v1, smartFixBlockedReasons]);
+  const smartFixItems = smartFixRecommendations.recommendations ?? [];
+  const topSmartFix = smartFixRecommendations.next_best_recommendation ?? smartFixItems[0];
+  const candidateReviewInbox = useMemo<CandidateReviewInbox>(() => {
+    const stored = currentPlanMeta.candidate_review_inbox_v1;
+    if (stored?.candidates?.length) return stored;
+    const mapCandidates = (currentPlanMeta.map_feature_detection_report_v1?.feature_candidates ?? []).map((item, index) => {
+      const rec = item as Record<string, unknown>;
+      const featureType = String(rec.feature_type ?? "map_feature_candidate");
+      return {
+        candidate_id: String(rec.candidate_id ?? `map-candidate-${index + 1}`),
+        candidate_type:
+          featureType === "parcel_or_site_boundary"
+            ? "parcel_site_boundary"
+            : featureType === "building_footprint"
+              ? "building_footprint"
+              : featureType === "road_or_drive"
+                ? "road_row"
+                : featureType === "utility"
+                  ? "utility"
+                  : "floodplain_wetland_constraint",
+        label: featureType.replaceAll("_", " "),
+        source: String(rec.evidence_source ?? rec.source_name ?? rec.source_type ?? "map/GIS source"),
+        provider: String(rec.source_name ?? rec.source_type ?? "map/GIS"),
+        source_url: String(rec.source_url ?? ""),
+        confidence: typeof rec.confidence === "number" || typeof rec.confidence === "string" ? rec.confidence : "unknown",
+        status: String(rec.acceptance_status ?? "pending"),
+        blocker_review_reason: Array.isArray(rec.blockers) && rec.blockers.length
+          ? rec.blockers.map(String).join("; ")
+          : "Map/GIS candidate needs project review before use.",
+      } satisfies CandidateReviewItem;
+    });
+    const standardsCandidates = (
+      currentPlanMeta.candidate_rule_report?.candidate_rules ??
+      currentPlanMeta.standards_candidate_rule_report?.candidate_rules ??
+      []
+    ).map((item, index) => {
+      const rec = item as Record<string, unknown>;
+      return {
+        candidate_id: `std_${String(rec.rule_id ?? index + 1)}`,
+        candidate_type: "standards",
+        label: String(rec.topic ?? rec.discipline ?? "Standards candidate"),
+        source: String(rec.source_id ?? rec.source_type ?? "standards source"),
+        provider: String(rec.source_id ?? rec.source_type ?? "standards"),
+        source_url: String(rec.source_url ?? ""),
+        source_date: String(rec.retrieved_date ?? rec.retrieved_at ?? ""),
+        confidence: typeof rec.confidence === "number" || typeof rec.confidence === "string" ? rec.confidence : "unknown",
+        status: String(rec.acceptance_status ?? rec.status ?? "pending"),
+        blocker_review_reason: "Candidate standards need explicit review before QA can rely on them.",
+      } satisfies CandidateReviewItem;
+    });
+    const candidates = [...mapCandidates, ...standardsCandidates];
+    const counts = candidates.reduce(
+      (acc, item) => {
+        const status = item.status === "accepted" || item.status === "rejected" ? item.status : "pending";
+        acc[status] += 1;
+        return acc;
+      },
+      { accepted: 0, rejected: 0, pending: 0 },
+    );
+    return {
+      version: "candidate_review_inbox_v1",
+      candidate_count: candidates.length,
+      counts,
+      candidates,
+      construction_release_allowed: false,
+      construction_release_blocked: true,
+      truth_label: "Accepted candidates are project draft/review-required evidence only.",
+    };
+  }, [currentPlanMeta]);
+  const candidateReviewItems = candidateReviewInbox.candidates ?? [];
+  const candidateReviewCounts = candidateReviewInbox.counts ?? { accepted: 0, rejected: 0, pending: 0 };
+  const sourceConfidenceMap = useMemo<SourceConfidenceMap>(() => {
+    const stored = currentPlanMeta.source_confidence_map_v1;
+    if (stored?.entries?.length) return stored;
+    const entries: SourceConfidenceEntry[] = [];
+    const addEntry = (entry: SourceConfidenceEntry) => {
+      entries.push({
+        construction_release_allowed: false,
+        construction_readiness_implied: false,
+        ...entry,
+      });
+    };
+    candidateReviewItems.forEach((item) => {
+      const isAccepted = item.status === "accepted";
+      const sourceType = item.candidate_type === "standards"
+        ? isAccepted
+          ? "official GIS source"
+          : "inferred"
+        : isAccepted
+          ? "official GIS source"
+          : "GIS candidate";
+      addEntry({
+        entry_id: item.candidate_id,
+        label: item.label || item.candidate_type || "Candidate source",
+        category: item.candidate_type === "standards" ? "standards" : "candidate",
+        object_id: item.accepted_as || item.candidate_id,
+        source_type: sourceType,
+        source_name: item.source || item.provider || "candidate source",
+        confidence_score: typeof item.confidence === "number" ? item.confidence : isAccepted ? 0.56 : 0.38,
+        confidence_band: isAccepted ? "review" : "low",
+        visible_badge: `${sourceType} · ${isAccepted ? "review" : "low"}`,
+        status: item.status || "pending",
+        accepted: isAccepted,
+        needs_verification: true,
+        needs_survey_control: item.candidate_type !== "standards",
+        low_confidence_reasons: [item.blocker_review_reason || "Candidate source needs review and verification."],
+        why_low_confidence: item.blocker_review_reason || "Candidate source needs review and verification.",
+        next_action: "Review candidate evidence and verify against survey/control before relying on it.",
+      });
+    });
+    buildingPlacements.forEach((item) => {
+      const handoff = item.meta && typeof item.meta === "object"
+        ? (item.meta as { canonical_geometry_handoff_v1?: CanonicalGeometryHandoffV1 }).canonical_geometry_handoff_v1
+        : undefined;
+      const sourceType = item.source === "manual_drawn" || item.source === "user" || handoff?.source === "manual_drawn" ? "user-drawn" : "inferred";
+      addEntry({
+        entry_id: `ui-object-${item.id}`,
+        label: item.label || item.type || "Draft object",
+        category: "object",
+        object_id: item.id,
+        layer: item.type,
+        source_type: sourceType,
+        source_name: handoff?.source_ui_mode || item.source || "ui",
+        confidence_score: sourceType === "user-drawn" ? 0.48 : 0.28,
+        confidence_band: sourceType === "user-drawn" ? "review" : "low",
+        visible_badge: `${sourceType} · ${sourceType === "user-drawn" ? "review" : "low"}`,
+        status: handoff?.engineering_status || "draft_review_required",
+        needs_verification: true,
+        needs_survey_control: true,
+        low_confidence_reasons: [
+          sourceType === "user-drawn"
+            ? "User-drawn geometry is draft review evidence, not survey/control truth."
+            : "Object source is inferred from UI state.",
+        ],
+        why_low_confidence:
+          sourceType === "user-drawn"
+            ? "User-drawn geometry is draft review evidence, not survey/control truth."
+            : "Object source is inferred from UI state.",
+        next_action: "Verify object geometry against survey/control or keep it review-only.",
+      });
+    });
+    if (!entries.some((item) => item.source_type === "survey-backed")) {
+      addEntry({
+        entry_id: "ui-missing-survey-control",
+        label: "Verified survey/control",
+        category: "source",
+        source_type: hasVerifiedSurveyControl ? "survey-backed" : "missing",
+        source_name: hasVerifiedSurveyControl ? "survey/control" : "missing",
+        confidence_score: hasVerifiedSurveyControl ? 0.9 : 0,
+        confidence_band: hasVerifiedSurveyControl ? "higher" : "missing",
+        visible_badge: hasVerifiedSurveyControl ? "survey-backed · higher" : "missing · missing",
+        status: hasVerifiedSurveyControl ? "verified" : "missing",
+        verified: hasVerifiedSurveyControl,
+        missing: !hasVerifiedSurveyControl,
+        needs_verification: !hasVerifiedSurveyControl,
+        needs_survey_control: !hasVerifiedSurveyControl,
+        low_confidence_reasons: hasVerifiedSurveyControl ? [] : ["Verified survey/control is not attached."],
+        why_low_confidence: hasVerifiedSurveyControl ? "" : "Verified survey/control is not attached.",
+        next_action: "Attach verified survey/control with datum, benchmark, CRS, and verification status.",
+      });
+    }
+    const low = entries.filter((item) => item.confidence_band === "low" || item.confidence_band === "missing" || item.stale || item.dirty);
+    const userDrawn = entries.filter((item) => item.source_type === "user-drawn");
+    const needsControl = entries.filter((item) => item.needs_survey_control);
+    const staleMissing = entries.filter((item) => item.stale || item.dirty || item.missing);
+    return {
+      version: "source_confidence_map_v1",
+      entries,
+      summary: {
+        entry_count: entries.length,
+        trusted_count: entries.filter((item) => item.confidence_band === "higher").length,
+        low_confidence_count: low.length,
+        user_drawn_count: userDrawn.length,
+        needs_survey_control_count: needsControl.length,
+        stale_or_missing_count: staleMissing.length,
+        low_confidence_labels: low.map((item) => item.label || "").filter(Boolean),
+        user_drawn_labels: userDrawn.map((item) => item.label || "").filter(Boolean),
+        needs_survey_control_labels: needsControl.map((item) => item.label || "").filter(Boolean),
+        stale_or_missing_labels: staleMissing.map((item) => item.label || "").filter(Boolean),
+      },
+      construction_release_allowed: false,
+      construction_readiness_implied: false,
+      truth_label: "UI fallback confidence map keeps low-confidence sources visible; it does not imply construction readiness.",
+    };
+  }, [buildingPlacements, candidateReviewItems, currentPlanMeta.source_confidence_map_v1, hasVerifiedSurveyControl]);
+  const sourceConfidenceEntries = sourceConfidenceMap.entries ?? [];
+  const sourceConfidenceSummary = sourceConfidenceMap.summary ?? {};
+  const sourceConfidenceRows = sourceConfidenceEntries.slice(0, 10);
+  const sourceConfidenceByObjectId = useMemo(() => {
+    const byId = new Map<string, SourceConfidenceEntry>();
+    sourceConfidenceEntries.forEach((entry) => {
+      if (entry.object_id && !byId.has(entry.object_id)) {
+        byId.set(entry.object_id, entry);
+      }
+    });
+    return byId;
+  }, [sourceConfidenceEntries]);
+  const handleCandidateReviewDecision = useCallback(
+    async (candidateId: string, action: "accept" | "reject" | "pending") => {
+      const activeProjectId = projectId || currentProject?.project_id;
+      if (!token || !activeProjectId) {
+        setStatusMessage("Save or load a project before reviewing candidates.");
+        return;
+      }
+      try {
+        setStatusMessage(`${action === "accept" ? "Accepting" : action === "reject" ? "Rejecting" : "Keeping"} candidate...`);
+        const data = await postJson<{
+          success: boolean;
+          project?: ProjectRecord;
+          candidate_review_inbox_v1?: CandidateReviewInbox;
+          truth_label?: string;
+        }>(
+          `/api/projects/${activeProjectId}/candidate-review`,
+          {
+            candidate_ids: [candidateId],
+            action,
+            reason:
+              action === "accept"
+                ? "Accepted from Candidate Review Inbox as draft/review-required project evidence."
+                : action === "reject"
+                  ? "Rejected from Candidate Review Inbox."
+                  : "Kept pending from Candidate Review Inbox.",
+          },
+          { token },
+        );
+        if (data.project) {
+          setCurrentProject(data.project);
+          if (data.project.latest_result) {
+            setBackendResult(data.project.latest_result);
+          }
+        } else if (data.candidate_review_inbox_v1) {
+          setBackendResult((prev) => {
+            if (!prev?.final_plan) return prev;
+            return {
+              ...prev,
+              final_plan: {
+                ...prev.final_plan,
+                meta: {
+                  ...(prev.final_plan.meta ?? {}),
+                  candidate_review_inbox_v1: data.candidate_review_inbox_v1,
+                },
+              },
+            };
+          });
+        }
+        setStatusMessage(
+          action === "accept"
+            ? "Candidate accepted as draft/review-required evidence. Construction remains blocked."
+            : action === "reject"
+              ? "Candidate rejected and preserved in the audit trail."
+              : "Candidate kept pending.",
+        );
+      } catch (error) {
+        setStatusMessage(error instanceof Error ? error.message : "Candidate review update failed.");
+      }
+    },
+    [currentProject?.project_id, projectId, token],
+  );
   const reactiveChangedSystems = useMemo<EngineeringSystemKey[]>(
     () =>
       (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
@@ -4485,6 +4841,16 @@ function PerformanceAIDashboardView({
       utilities: overrides.utilities ?? utilities,
       has_plan: Boolean(backendResult?.final_plan),
       has_preview: Boolean(planPreviewUrl),
+      site_locked: siteScaleLocked,
+      site_address: siteAddress,
+      has_location_evidence: hasLocationEvidence,
+      has_site_boundary: buildingPlacements.some((item) => item.type === "site"),
+      has_terrain_source: hasTerrainSource,
+      has_verified_survey_control: hasVerifiedSurveyControl,
+      placed_object_count: placedObjectCount,
+      system_statuses: systemStatuses,
+      map_analysis_success: Boolean(mapAnalysis?.success),
+      setup_wizard_state_v1: setupWizardState,
       current_project: currentProject
         ? {
             project_id: currentProject.project_id,
@@ -4511,6 +4877,7 @@ function PerformanceAIDashboardView({
         String(visibleActiveJob?.stage || "") ||
         String((currentPlanMeta?.runtime_phase_checkpoint as { stage_name?: string } | undefined)?.stage_name || ""),
       current_phase_detail: String(visibleActiveJob?.stage_detail || ""),
+      progress_timeline_v1: progressTimelineState,
       chat_thread: [
         ...liveThread,
         createChatMessage("user", message),
@@ -6223,6 +6590,7 @@ function PerformanceAIDashboardView({
             chat_thread: liveChatThread,
             auto_named: autoNamedOverride ?? siteNameAuto,
             auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+            setup_wizard_state_v1: setupWizardState,
           },
         }
       : {
@@ -6237,6 +6605,7 @@ function PerformanceAIDashboardView({
             chat_thread: liveChatThread,
             auto_named: autoNamedOverride ?? siteNameAuto,
             auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+            setup_wizard_state_v1: setupWizardState,
           },
         };
     const latestResultToSave =
@@ -8198,6 +8567,7 @@ function PerformanceAIDashboardView({
       return;
     }
     try {
+      setOnlineDiscoveryBusy(true);
       let geocode = selectedAddressSuggestion;
       if (!hasAddressCoordinates(geocode)) {
         geocode = await postJson<AddressSuggestion>("/api/geocode", { address: trimmed }, { token });
@@ -8229,12 +8599,69 @@ function PerformanceAIDashboardView({
           crs: geocode.crs ?? { epsg: "EPSG:4326", units: "degrees" },
           evidence_source: geocode.provider ?? "geocoder",
           truth_label:
-            "Address/geocode is location context only; it is not a site boundary, survey, control, or construction approval.",
+            "Address/geocode is location context only; it is not a site boundary, survey, control, or final reliance source.",
         };
+      let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
+      try {
+        onlineFetch = await postJson<OnlineExistingConditionsFetchResponse>(
+          "/api/existing-conditions/fetch-online",
+          {
+            address: geocode.display_name,
+            bbox: undefined,
+            include_floodplain: true,
+            include_wetlands: true,
+            include_parcels: true,
+            include_elevation: true,
+          },
+          { token },
+        );
+      } catch (error) {
+        onlineFetch = {
+          success: false,
+          status: "fetch_failed",
+          online_existing_conditions_discovery_v1: {
+            version: "online_existing_conditions_discovery_v1",
+            status: "fetch_failed",
+            candidate_count: 0,
+            sources: [],
+            blockers: [error instanceof Error ? error.message : "Online existing-condition discovery failed."],
+            review_required: true,
+            acceptance_status: "missing",
+            truth_label:
+              "Online existing-condition discovery failed; no online source candidate is treated as accepted project evidence.",
+          },
+        };
+      }
+      if (onlineFetch?.online_existing_conditions_discovery_v1) {
+        nextSiteInputs.online_existing_conditions_discovery_v1 = onlineFetch.online_existing_conditions_discovery_v1;
+      }
+      if (onlineFetch?.map_feature_detection_report_v1) {
+        nextSiteInputs.map_feature_detection_report_v1 = onlineFetch.map_feature_detection_report_v1;
+      }
+      if (onlineFetch?.existing_conditions_package) {
+        nextSiteInputs.existing_conditions_package = onlineFetch.existing_conditions_package;
+      }
       nextSiteInputs.site_alignment_locked = false;
       setAddressSuggestions([]);
       setActiveWorkspaceMode("setup");
       setActiveSidePanel("site_existing");
+      const latestResultOverride =
+        currentProject?.latest_result?.final_plan
+          ? {
+              ...currentProject.latest_result,
+              final_plan: {
+                ...currentProject.latest_result.final_plan,
+                meta: {
+                  ...(currentProject.latest_result.final_plan.meta ?? {}),
+                  location_context: nextSiteInputs.location_context,
+                  online_existing_conditions_discovery_v1: onlineFetch?.online_existing_conditions_discovery_v1,
+                  map_feature_detection_report_v1: onlineFetch?.map_feature_detection_report_v1,
+                  existing_conditions_package: onlineFetch?.existing_conditions_package,
+                  existing_conditions_summary: onlineFetch?.existing_conditions_summary,
+                },
+              },
+            }
+          : undefined;
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -8248,18 +8675,26 @@ function PerformanceAIDashboardView({
           },
           manual_fields: currentInput?.manual_fields,
         },
+        latestResultOverride,
       });
       setSiteScaleLocked(false);
       setShowSiteBounds(true);
       setPreviewQuality("high");
       setSiteSelectionMode(true);
       setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
-      setStatusMessage("Address applied as location evidence. Set site size, draw the boundary, then lock it.");
+      const candidateCount = Number(onlineFetch?.online_existing_conditions_discovery_v1?.candidate_count ?? 0);
+      setStatusMessage(
+        candidateCount > 0
+          ? `Address applied. Found ${candidateCount} online source candidate${candidateCount === 1 ? "" : "s"} for review.`
+          : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
+      );
       setSelectedAddressSuggestion(geocode);
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Geocoding failed.",
       );
+    } finally {
+      setOnlineDiscoveryBusy(false);
     }
   };
 
@@ -8534,7 +8969,14 @@ function PerformanceAIDashboardView({
     siteName,
   ]);
 
-  const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  const onlineDiscovery =
+    (siteInputs?.online_existing_conditions_discovery_v1 ??
+      (currentPlanMeta.online_existing_conditions_discovery_v1 as OnlineExistingConditionsDiscovery | undefined) ??
+      {}) as OnlineExistingConditionsDiscovery;
+  const onlineDiscoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
+  const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
+  const onlineMissingSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) <= 0);
+  const onlineDiscoveryCandidateCount = Number(onlineDiscovery.candidate_count ?? 0);
 
   const ensureSiteLocked = useCallback(
     (action: string) => {
@@ -9570,6 +10012,51 @@ function PerformanceAIDashboardView({
     }
   };
 
+  const handleSmartFixAction = (recommendation: SmartFixRecommendation) => {
+    const action = recommendation.ui_action ?? {};
+    const actionType = String(action.type || "");
+    if (actionType === "open_panel" && action.panel) {
+      handleOpenSidePanel(action.panel as SidePanelKey);
+      setStatusMessage(recommendation.one_action_needed_next || "Opened the recommended panel.");
+      return;
+    }
+    if (actionType === "run_fix") {
+      void handleRunFix();
+      return;
+    }
+    if (actionType === "generate_system") {
+      const target = String(action.target || "");
+      const mappedTarget = target === "roadway" ? "roads" : target;
+      if (["roads", "parking", "grading", "drainage", "utilities", "full"].includes(mappedTarget)) {
+        void handleGenerateSystem(mappedTarget as SystemGenerationTarget);
+        return;
+      }
+    }
+    if (actionType === "export_report") {
+      void handleExportReport();
+      return;
+    }
+    if (actionType === "export_dxf") {
+      void handleExportDxf();
+      return;
+    }
+    if (actionType === "chat_prompt" && action.prompt) {
+      const nextPrompt = String(action.prompt);
+      setPrompt(nextPrompt);
+      appendChatMessage("assistant", `I need you to confirm or send: ${nextPrompt}`, "status");
+      setStatusMessage("Smart Fix needs a chat confirmation.");
+      return;
+    }
+    const missing = recommendation.missing_user_input_or_source;
+    appendChatMessage(
+      "assistant",
+      missing
+        ? `I need exactly this from you: ${missing}.`
+        : recommendation.one_action_needed_next || "This blocker needs manual review before Civora can continue.",
+      "status",
+    );
+  };
+
   useJobPolling({
     token,
     activeJobId,
@@ -10044,15 +10531,6 @@ function PerformanceAIDashboardView({
   const missingSite = !(lotBounds.w && lotBounds.h);
   const missingImage = !mapSnapshotPath;
   const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
-  const hasLocationEvidence =
-    Boolean(siteInputs?.address || siteAddress.trim()) ||
-    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
-    Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
-  const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
-  const hasTerrainSource =
-    (Boolean(surveyFileName) && useSurveyForGrading) ||
-    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
-    Boolean(surveySlopeEstimate?.slope_percent);
   const siteSizeSet = Boolean(parsePositiveNumber(lotWidth) && parsePositiveNumber(lotHeight));
   const gradingSourceSummary = useMemo(() => {
     const hasSurvey = Boolean(siteInputs?.survey_file?.stored_filename || siteInputs?.survey_file?.survey_url);
@@ -11041,109 +11519,321 @@ function PerformanceAIDashboardView({
       status: "review",
     },
   ] as const;
+  const derivedSetupWizardSteps: SetupWizardStep[] = [
+    {
+      id: "address_location",
+      label: "Address / Location",
+      status: hasLocationEvidence || siteAddress.trim() ? "needs_review" : "not_started",
+      panel: "site_existing",
+      next_action: hasLocationEvidence || siteAddress.trim()
+        ? "Review the geocode/source and continue to site boundary."
+        : "Enter an address, provide coordinates, or choose a blank site.",
+      review_required: Boolean(hasLocationEvidence || siteAddress.trim()),
+    },
+    {
+      id: "site_boundary",
+      label: "Site Boundary",
+      status: siteScaleLocked ? "complete" : siteSizeSet || buildingPlacements.some((item) => item.type === "site") ? "pending" : "blocked",
+      panel: "site_existing",
+      next_action: siteScaleLocked
+        ? "Review source candidates and survey/control evidence next."
+        : siteSizeSet || buildingPlacements.some((item) => item.type === "site")
+          ? "Review and lock the site boundary before using it for systems."
+          : "Set dimensions or draw/import the boundary.",
+      why_blocked: siteScaleLocked || siteSizeSet || buildingPlacements.some((item) => item.type === "site") ? "" : "A trusted boundary has not been defined.",
+    },
+    {
+      id: "online_sources_candidates",
+      label: "Online Sources / Candidates",
+      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl ? "needs_review" : hasLocationEvidence || siteAddress.trim() ? "not_started" : "blocked",
+      panel: "data",
+      next_action: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl
+        ? "Review the source result; no online/GIS candidate is auto-accepted."
+        : hasLocationEvidence || siteAddress.trim()
+          ? "Run online/source discovery or upload a map/GIS source."
+          : "Add address/location evidence before source discovery.",
+      why_blocked: hasLocationEvidence || siteAddress.trim() ? "" : "Online/source discovery needs a location or uploaded source.",
+      review_required: Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl),
+    },
+    {
+      id: "survey_terrain_control",
+      label: "Survey / Terrain / Control",
+      status: hasVerifiedSurveyControl ? "complete" : hasTerrainSource || surveyPreviewPoints.length ? "needs_review" : "blocked",
+      panel: "import_survey",
+      next_action: hasVerifiedSurveyControl
+        ? "Continue to standards acceptance."
+        : hasTerrainSource || surveyPreviewPoints.length
+          ? "Review survey/control, datum, benchmark, coordinate system, and terrain source."
+          : "Upload survey/topo/control evidence or explicitly choose an assumed terrain path.",
+      why_blocked: hasVerifiedSurveyControl || hasTerrainSource || surveyPreviewPoints.length ? "" : "Survey/control remains an explicit gate.",
+      review_required: Boolean(!hasVerifiedSurveyControl && (hasTerrainSource || surveyPreviewPoints.length)),
+    },
+    {
+      id: "standards",
+      label: "Standards",
+      status: panelStatus("standards") === "ok" ? "needs_review" : "blocked",
+      panel: "standards",
+      next_action: "Review standards sources and accept/reject applicable candidate rules.",
+      why_blocked: panelStatus("standards") === "ok" ? "" : "Standards acceptance remains an explicit gate.",
+      review_required: true,
+    },
+    {
+      id: "objects_program",
+      label: "Objects / Program",
+      status: placedObjectCount > 1 && parkingCount ? "complete" : siteScaleLocked ? "pending" : "blocked",
+      panel: "objects",
+      next_action: placedObjectCount > 1 && parkingCount
+        ? "Run systems when survey/control and standards gates are ready."
+        : siteScaleLocked
+          ? "Add buildings, parking/program, roads/access, basin/outfall, and utility points as needed."
+          : "Lock the site boundary before placing relied-on objects.",
+      why_blocked: siteScaleLocked ? "" : "Objects/program depends on a locked boundary.",
+    },
+    {
+      id: "run_systems",
+      label: "Run Systems",
+      status: Object.values(systemStatuses).some((status) => status === "fresh") ? "complete" : siteScaleLocked && placedObjectCount > 1 && hasTerrainSource && panelStatus("standards") === "ok" ? "pending" : "blocked",
+      panel: "generate",
+      next_action: Object.values(systemStatuses).some((status) => status === "fresh")
+        ? "Review blockers and prepare the review/export package."
+        : "Clear setup gates before running systems.",
+      why_blocked: Object.values(systemStatuses).some((status) => status === "fresh") || (siteScaleLocked && placedObjectCount > 1 && hasTerrainSource && panelStatus("standards") === "ok")
+        ? ""
+        : "Blocked by boundary, survey/control, standards, or objects/program.",
+    },
+    {
+      id: "review_export_package",
+      label: "Review / Export Package",
+      status: backendResult && !getExportBlockReason() ? "needs_review" : backendResult ? "blocked" : "blocked",
+      panel: "deliverables",
+      next_action: backendResult
+        ? "Review the package contents and unresolved notes."
+        : "Run systems before preparing the review/export package.",
+      why_blocked: backendResult ? getExportBlockReason() || "" : "No system run evidence is available yet.",
+      review_required: Boolean(backendResult && !getExportBlockReason()),
+    },
+  ];
+  const persistedSetupWizardState = currentPlanMeta.setup_wizard_state_v1;
+  const persistedSetupWizardSteps =
+    persistedSetupWizardState?.schema_version === "setup_wizard_state_v1" &&
+    Array.isArray(persistedSetupWizardState.steps)
+      ? persistedSetupWizardState.steps
+      : [];
+  const setupWizardSteps: SetupWizardStep[] = persistedSetupWizardSteps.length
+    ? persistedSetupWizardSteps
+    : derivedSetupWizardSteps;
+  const setupWizardCurrentStep =
+    setupWizardSteps.find((item) => item.id === persistedSetupWizardState?.current_step_id) ??
+    setupWizardSteps.find((item) => ["blocked", "needs_review", "pending", "not_started"].includes(item.status)) ??
+    setupWizardSteps[setupWizardSteps.length - 1];
+  const setupWizardState: SetupWizardStateV1 = {
+    schema_version: "setup_wizard_state_v1",
+    steps: setupWizardSteps,
+    current_step_id: setupWizardCurrentStep?.id,
+    current_step_label: setupWizardCurrentStep?.label,
+    current_status: setupWizardCurrentStep?.status,
+    next_action: persistedSetupWizardState?.next_action || setupWizardCurrentStep?.next_action || "",
+    why_blocked: persistedSetupWizardState?.why_blocked || setupWizardCurrentStep?.why_blocked || "",
+    blocked_step_ids: setupWizardSteps.filter((item) => item.status === "blocked").map((item) => item.id),
+    needs_review_step_ids: setupWizardSteps.filter((item) => item.status === "needs_review").map((item) => item.id),
+    completed_count: setupWizardSteps.filter((item) => item.status === "complete").length,
+    total_count: setupWizardSteps.length,
+  };
+  const nextSetupAction = setupWizardState.next_action || "Start setup.";
   const setupChecklistItems: Array<{
     label: string;
     status: "done" | "missing" | "blocked";
     panel: SidePanelKey;
     action: string;
     detail: string;
-  }> = [
-    {
-      label: "Project name",
-      status: siteName.trim() || currentProject?.name ? "done" : "missing",
-      panel: "dashboard",
-      action: "Enter a project name and save project identity.",
-      detail: siteName.trim() || currentProject?.name || "Missing",
-    },
-    {
-      label: "Address / location",
-      status: hasLocationEvidence || siteAddress.trim() ? "done" : "missing",
-      panel: "site_existing",
-      action: "Enter an address, pick a suggestion if shown, then apply it.",
-      detail: siteAddress.trim() || (hasLocationEvidence ? "Applied" : "Missing"),
-    },
-    {
-      label: "Site size or drawn boundary",
-      status: siteSizeSet || buildingPlacements.some((item) => item.type === "site") ? "done" : "missing",
-      panel: "site_existing",
-      action: "Set width/depth, choose acreage, or draw the site boundary.",
-      detail: siteSizeSet
-        ? `${parsePositiveNumber(lotWidth)?.toFixed(0)} ft x ${parsePositiveNumber(lotHeight)?.toFixed(0)} ft`
-        : buildingPlacements.some((item) => item.type === "site")
-          ? "Boundary drawn"
-          : "Missing",
-    },
-    {
-      label: "Lock site",
-      status: siteScaleLocked ? "done" : siteSizeSet || buildingPlacements.some((item) => item.type === "site") ? "missing" : "blocked",
-      panel: "site_existing",
-      action: "Review the boundary and lock the site before generating systems.",
-      detail: siteScaleLocked ? "Locked" : "Not locked",
-    },
-    {
-      label: "Add / draw objects",
-      status: placedObjectCount > 1 ? "done" : siteScaleLocked ? "missing" : "blocked",
-      panel: "objects",
-      action: "Add buildings, roads, parking, basin/outfall, and utility points or lines.",
-      detail: placedObjectCount > 1 ? `${placedObjectCount} objects` : "Needs site objects",
-    },
-    {
-      label: "Upload survey / GIS / terrain",
-      status: hasTerrainSource || surveyFileName || uploadedImageApiUrl || uploadedImagePreviewUrl ? "done" : "missing",
-      panel: "import_survey",
-      action: "Upload survey, topo, GIS, terrain, or a map snapshot when available.",
-      detail: hasTerrainSource ? "Terrain available" : surveyFileName || uploadedImageApiUrl || uploadedImagePreviewUrl ? "Source uploaded" : "Optional but recommended",
-    },
-    {
-      label: "Review standards",
-      status: panelStatus("standards") === "ok" ? "done" : "missing",
-      panel: "standards",
-      action: "Review criteria and accepted standards sources before relying on outputs.",
-      detail: panelStatus("standards") === "ok" ? "Criteria entered" : "Needs review",
-    },
-    {
-      label: "Run systems",
-      status: Object.values(systemStatuses).some((status) => status === "fresh") ? "done" : siteScaleLocked && placedObjectCount > 1 ? "missing" : "blocked",
-      panel: "generate",
-      action: "Run one discipline or a full system run after setup is complete.",
-      detail: Object.values(systemStatuses).some((status) => status === "fresh") ? "Run evidence exists" : "Not run",
-    },
-    {
-      label: "Review blockers",
-      status: hasHardSystemBlock || previewBlockedReasons.length ? "blocked" : backendResult ? "done" : "missing",
-      panel: "analysis",
-      action: "Open Issues or Review to inspect blockers, assumptions, and missing inputs.",
-      detail: hasHardSystemBlock || previewBlockedReasons.length ? "Blockers visible" : backendResult ? "No blockers recorded" : "Needs run",
-    },
-    {
-      label: "Generate review package",
-      status: backendResult && !getExportBlockReason() ? "done" : backendResult ? "blocked" : "missing",
-      panel: "deliverables",
-      action: "Open Deliver and export the review package when gates allow it.",
-      detail: backendResult && !getExportBlockReason() ? "Available" : getExportBlockReason() || "Needs run",
-    },
-  ];
-  const nextSetupAction = !siteAddress.trim() && !uploadedImageApiUrl && !uploadedImagePreviewUrl
-    ? "Start from address/map or choose blank site."
-    : !siteSizeSet
-      ? "Set site width and length, or enter acreage through chat."
-      : !buildingPlacements.some((item) => item.type === "site")
-        ? "Draw or add the site boundary."
-        : !siteScaleLocked
-          ? "Lock the site boundary before generating systems."
-          : placedObjectCount <= 1
-            ? "Add or draw buildings, roads, parking, and utilities."
-            : "Run systems, then review blockers and gates.";
-  const selectedCanvasObject = activePlacementId
-    ? buildingPlacements.find((item) => item.id === activePlacementId) ??
-      filteredDetectedPlacements.find((item) => item.id === activePlacementId) ??
-      null
-    : null;
+  }> = setupWizardSteps.map((step) => ({
+    label: step.label,
+    status: step.status === "complete" ? "done" : step.status === "blocked" ? "blocked" : "missing",
+    panel: (step.panel || "site_existing") as SidePanelKey,
+    action: step.next_action,
+    detail: step.status.replaceAll("_", " "),
+  }));
+  const setupWizardStatusClass = (status?: SetupWizardStep["status"]) =>
+    status === "complete"
+      ? "text-emerald-700"
+      : status === "blocked"
+        ? "text-red-600"
+        : status === "needs_review"
+          ? "text-amber-600"
+          : status === "pending"
+            ? "text-slate-600"
+          : "text-slate-400";
+  const statusFromSetup = (status?: SetupWizardStep["status"]): ProgressTimelineStep["status"] =>
+    status === "complete"
+      ? "completed"
+      : status === "blocked"
+        ? "blocked"
+        : status === "needs_review"
+          ? "needs_review"
+          : status === "not_started"
+            ? "not_started"
+            : "pending";
+  const progressTimelineStatusClass = (status?: ProgressTimelineStep["status"]) =>
+    status === "completed"
+      ? "text-emerald-700"
+      : status === "blocked"
+        ? "text-red-600"
+        : status === "needs_review" || status === "current"
+          ? "text-amber-600"
+          : status === "pending"
+            ? "text-slate-600"
+            : "text-slate-400";
+  const progressTimelineDotClass = (status?: ProgressTimelineStep["status"]) =>
+    status === "completed"
+      ? "border-emerald-600 bg-emerald-600"
+      : status === "blocked"
+        ? "border-red-500 bg-red-500"
+        : status === "needs_review" || status === "current"
+          ? "border-amber-500 bg-amber-500"
+          : "border-slate-300 bg-white";
+  const progressPanelTarget = (value?: string): SidePanelKey => {
+    const panel = String(value || "dashboard") as SidePanelKey;
+    return sidePanelCopy[panel] ? panel : "dashboard";
+  };
+  const persistedProgressTimeline = currentPlanMeta.progress_timeline_v1;
   const bottomBlockerItems = [
     ...previewBlockedReasons,
     ...issues.map((issue) => issue.message),
     ...analysisIssues.map((issue) => issue.message),
   ].filter(Boolean);
+  const setupBlockedText = setupWizardSteps
+    .filter((item) => item.status === "blocked")
+    .map((item) => item.why_blocked || item.next_action)
+    .filter(Boolean);
+  const exportBlockText = getExportBlockReason();
+  const derivedProgressTimelineSteps: ProgressTimelineStep[] = [
+    {
+      id: "setup",
+      label: "Setup",
+      status: setupWizardSteps.slice(0, 2).some((item) => item.status === "blocked" || item.status === "not_started")
+        ? "blocked"
+        : setupWizardSteps.slice(0, 2).some((item) => item.status !== "complete")
+          ? "needs_review"
+          : "completed",
+      summary: "Address, location, and boundary establish the project frame.",
+      blockers: setupBlockedText.slice(0, 2),
+      action_label: "Open setup",
+      action_panel: "site_existing",
+    },
+    {
+      id: "sources",
+      label: "Sources",
+      status: setupWizardSteps.slice(2, 5).some((item) => item.status === "blocked")
+        ? "blocked"
+        : setupWizardSteps.slice(2, 5).some((item) => item.status !== "complete")
+          ? "needs_review"
+          : "completed",
+      summary: "Survey, terrain, standards, online, and imported evidence.",
+      blockers: setupWizardSteps.slice(2, 5).filter((item) => item.status === "blocked").map((item) => item.why_blocked || item.next_action).filter(Boolean),
+      action_label: "Review sources",
+      action_panel: "data",
+    },
+    {
+      id: "candidates",
+      label: "Candidates",
+      status: (candidateReviewCounts.pending ?? 0) > 0
+        ? "needs_review"
+        : candidateReviewItems.length
+          ? "completed"
+          : (candidateReviewInbox.candidate_count ?? 0) > 0
+            ? "needs_review"
+            : "pending",
+      summary: `${candidateReviewCounts.pending ?? 0} pending, ${candidateReviewCounts.accepted ?? 0} accepted candidate(s).`,
+      blockers: (candidateReviewCounts.pending ?? 0) > 0 ? ["Review pending candidates before relying on them."] : [],
+      action_label: "Review candidates",
+      action_panel: "data",
+    },
+    {
+      id: "design_objects",
+      label: "Design Objects",
+      status: statusFromSetup(setupWizardSteps.find((item) => item.id === "objects_program")?.status),
+      summary: `${Math.max(0, placedObjectCount)} object(s) in the project model.`,
+      blockers: setupWizardSteps.find((item) => item.id === "objects_program")?.why_blocked
+        ? [String(setupWizardSteps.find((item) => item.id === "objects_program")?.why_blocked)]
+        : [],
+      action_label: "Open objects",
+      action_panel: "objects",
+    },
+    {
+      id: "systems",
+      label: "Systems",
+      status: statusFromSetup(setupWizardSteps.find((item) => item.id === "run_systems")?.status),
+      summary: Object.entries(systemStatuses).map(([key, value]) => `${key}: ${value}`).join(", "),
+      blockers: setupWizardSteps.find((item) => item.id === "run_systems")?.why_blocked
+        ? [String(setupWizardSteps.find((item) => item.id === "run_systems")?.why_blocked)]
+        : [],
+      action_label: "Run systems",
+      action_panel: "generate",
+    },
+    {
+      id: "qa",
+      label: "QA",
+      status: bottomBlockerItems.length || hasHardSystemBlock ? "blocked" : backendResult ? "needs_review" : "pending",
+      summary: bottomBlockerItems.length ? `${bottomBlockerItems.length} blocker/review item(s).` : "QA waits for model output.",
+      blockers: bottomBlockerItems.slice(0, 4),
+      action_label: "Open QA",
+      action_panel: "analysis",
+    },
+    {
+      id: "review_package",
+      label: "Review Package",
+      status: exportBlockText ? "blocked" : backendResult ? "needs_review" : "pending",
+      summary: backendResult ? "Review package evidence is available for review." : "Run systems before package review.",
+      blockers: exportBlockText ? [exportBlockText] : [],
+      action_label: "Open review",
+      action_panel: "reports",
+    },
+    {
+      id: "deliverables",
+      label: "Deliverables",
+      status: exportBlockText ? "blocked" : backendResult ? "needs_review" : "pending",
+      summary: backendResult ? "Sheets, reports, exports, and package gates." : "Deliverables need a generated result.",
+      blockers: exportBlockText ? [exportBlockText] : [],
+      action_label: "Open deliverables",
+      action_panel: "deliverables",
+    },
+  ];
+  const progressTimelineSteps =
+    persistedProgressTimeline?.schema_version === "progress_timeline_v1" && persistedProgressTimeline.steps?.length
+      ? persistedProgressTimeline.steps
+      : derivedProgressTimelineSteps;
+  const progressTimelineCurrentStep =
+    progressTimelineSteps.find((item) => item.id === persistedProgressTimeline?.current_step_id) ??
+    progressTimelineSteps.find((item) => ["blocked", "needs_review", "current", "pending", "not_started"].includes(item.status)) ??
+    progressTimelineSteps[progressTimelineSteps.length - 1];
+  const progressTimelineState: ProgressTimelineV1 = {
+    schema_version: "progress_timeline_v1",
+    steps: progressTimelineSteps,
+    current_step_id: progressTimelineCurrentStep?.id,
+    current_step_label: progressTimelineCurrentStep?.label,
+    current_status: progressTimelineCurrentStep?.status,
+    current_panel: persistedProgressTimeline?.current_panel || progressTimelineCurrentStep?.action_panel,
+    next_action: persistedProgressTimeline?.next_action || progressTimelineCurrentStep?.action_label || "",
+    exact_blockers:
+      persistedProgressTimeline?.exact_blockers ??
+      progressTimelineSteps.flatMap((item) => item.status === "blocked" ? (item.blockers ?? []) : []).filter(Boolean),
+    blocked_step_ids: progressTimelineSteps.filter((item) => item.status === "blocked").map((item) => item.id),
+    needs_review_step_ids: progressTimelineSteps.filter((item) => item.status === "needs_review").map((item) => item.id),
+    completed_count: progressTimelineSteps.filter((item) => item.status === "completed").length,
+    total_count: progressTimelineSteps.length,
+    can_export: persistedProgressTimeline?.can_export ?? !exportBlockText,
+    export_blockers: persistedProgressTimeline?.export_blockers ?? (exportBlockText ? [exportBlockText] : []),
+    chat_summary: persistedProgressTimeline?.chat_summary,
+  };
+  const progressPercent =
+    progressTimelineState.total_count
+      ? Math.round(((progressTimelineState.completed_count ?? 0) / progressTimelineState.total_count) * 100)
+      : 0;
+  const selectedCanvasObject = activePlacementId
+    ? buildingPlacements.find((item) => item.id === activePlacementId) ??
+      filteredDetectedPlacements.find((item) => item.id === activePlacementId) ??
+      null
+    : null;
   const visibleStatusSummary = bottomBlockerItems.length
     ? bottomBlockerItems.slice(0, 6).join("; ")
     : hasHardSystemBlock
@@ -11278,6 +11968,77 @@ function PerformanceAIDashboardView({
                 </span>
               </div>
             </button>
+            <button
+              type="button"
+              onClick={() => handleOpenPanelFromDrawer((setupWizardCurrentStep?.panel as SidePanelKey) || "site_existing")}
+              className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50"
+              data-testid="setup-wizard-sidebar-card"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Auto Setup Wizard
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                    {setupWizardState.current_step_label || "Setup"}
+                  </p>
+                </div>
+                <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] ${setupWizardStatusClass(setupWizardState.current_status)}`}>
+                  {String(setupWizardState.current_status || "pending").replace("_", " ")}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-xs font-medium text-slate-600">
+                {setupWizardState.next_action}
+              </p>
+            </button>
+            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="progress-timeline-sidebar">
+              <button
+                type="button"
+                onClick={() => handleOpenPanelFromDrawer(progressPanelTarget(progressTimelineState.current_panel))}
+                className="w-full text-left"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Progress Timeline
+                    </p>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                      {progressTimelineState.current_step_label || "Setup"}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] ${progressTimelineStatusClass(progressTimelineState.current_status)}`}>
+                    {String(progressTimelineState.current_status || "pending").replace("_", " ")}
+                  </span>
+                </div>
+                <p className="mt-2 line-clamp-2 text-xs font-medium text-slate-600">
+                  {progressTimelineState.next_action || "Review the next timeline step."}
+                </p>
+              </button>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-slate-800" style={{ width: `${progressPercent}%` }} />
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-1.5">
+                {progressTimelineSteps.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    title={`${item.label}: ${item.status.replace("_", " ")}`}
+                    onClick={() => handleOpenPanelFromDrawer(progressPanelTarget(item.action_panel || item.action?.target))}
+                    className="flex min-h-9 flex-col items-center justify-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1 py-1 hover:bg-white"
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full border ${progressTimelineDotClass(item.status)}`} />
+                    <span className="max-w-full truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      {item.label.split(" ")[0]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {progressTimelineState.exact_blockers?.length ? (
+                <p className="mt-3 line-clamp-2 rounded-md border border-red-100 bg-red-50 px-2 py-1.5 text-[11px] font-semibold text-red-700">
+                  {progressTimelineState.exact_blockers[0]}
+                </p>
+              ) : null}
+            </div>
             <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Truth Status
@@ -11557,9 +12318,75 @@ function PerformanceAIDashboardView({
                         className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
                       >
                         Save project identity
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
+	                      </button>
+	                    </div>
+	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="progress-timeline-dashboard">
+	                      <div className="flex items-start justify-between gap-3">
+	                        <div>
+	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Progress Timeline</p>
+	                          <p className="mt-1 text-base font-semibold text-slate-950">
+	                            {progressTimelineState.current_step_label || "Setup"}
+	                          </p>
+	                          <p className="mt-1 text-xs text-slate-500">
+	                            {progressTimelineState.completed_count ?? 0} of {progressTimelineState.total_count ?? progressTimelineSteps.length} phases complete
+	                          </p>
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => handleOpenSidePanel(progressPanelTarget(progressTimelineState.current_panel))}
+	                          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
+	                        >
+	                          {progressTimelineState.next_action || "Open current"}
+	                        </button>
+	                      </div>
+	                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+	                        <div className="h-full rounded-full bg-slate-800" style={{ width: `${progressPercent}%` }} />
+	                      </div>
+	                      <div className="mt-4 space-y-2">
+	                        {progressTimelineSteps.map((item, index) => {
+	                          const isCurrent = item.id === progressTimelineState.current_step_id;
+	                          const blockers = item.blockers ?? [];
+	                          return (
+	                            <button
+	                              key={item.id}
+	                              type="button"
+	                              onClick={() => handleOpenSidePanel(progressPanelTarget(item.action_panel || item.action?.target))}
+	                              className={`w-full rounded-xl border px-3 py-2 text-left transition hover:bg-white ${
+	                                isCurrent ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+	                              }`}
+	                            >
+	                              <div className="flex items-start gap-3">
+	                                <span className={`mt-1 h-3 w-3 shrink-0 rounded-full border ${progressTimelineDotClass(item.status)}`} />
+	                                <div className="min-w-0 flex-1">
+	                                  <div className="flex items-start justify-between gap-2">
+	                                    <p className="text-sm font-semibold text-slate-900">
+	                                      {index + 1}. {item.label}
+	                                    </p>
+	                                    <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] ${progressTimelineStatusClass(item.status)}`}>
+	                                      {item.status.replace("_", " ")}
+	                                    </span>
+	                                  </div>
+	                                  {item.summary ? (
+	                                    <p className="mt-1 text-xs text-slate-500">{item.summary}</p>
+	                                  ) : null}
+	                                  {blockers.length ? (
+	                                    <p className="mt-1 text-xs font-semibold text-red-600">
+	                                      {blockers.slice(0, 2).join("; ")}
+	                                    </p>
+	                                  ) : null}
+	                                </div>
+	                              </div>
+	                            </button>
+	                          );
+	                        })}
+	                      </div>
+	                      {progressTimelineState.export_blockers?.length ? (
+	                        <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+	                          Export blocked: {progressTimelineState.export_blockers.slice(0, 3).join("; ")}
+	                        </div>
+	                      ) : null}
+	                    </div>
+	                    <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Objects", placedObjectCount],
                         ["Issues", issues.length + analysisIssues.length],
@@ -11983,35 +12810,45 @@ function PerformanceAIDashboardView({
                           ))}
                         </div>
                       </div>
-                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Next required step</p>
-                        <p className="mt-1 text-sm font-semibold text-amber-900">{nextSetupAction}</p>
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2" data-testid="setup-wizard-current-step">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Auto Setup Wizard</p>
+                          <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${setupWizardStatusClass(setupWizardState.current_status)}`}>
+                            {String(setupWizardState.current_status || "pending").replace("_", " ")}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm font-semibold text-amber-950">
+                          {setupWizardState.current_step_label || "Setup"}
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-amber-900">{nextSetupAction}</p>
+                        {setupWizardState.why_blocked ? (
+                          <p className="mt-2 rounded-lg border border-amber-200 bg-white/70 px-2 py-1 text-xs font-semibold text-amber-900">
+                            Why blocked: {setupWizardState.why_blocked}
+                          </p>
+                        ) : null}
                       </div>
                       <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3" open>
                         <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Setup checklist
+                          Wizard steps
                         </summary>
                         <div className="mt-2 space-y-2">
-                          {setupChecklistItems.map((item) => (
+                          {setupWizardState.steps?.map((item) => (
                             <button
-                              key={item.label}
+                              key={item.id}
                               type="button"
-                              onClick={() => handleOpenSidePanel(item.panel)}
+                              onClick={() => handleOpenSidePanel((item.panel as SidePanelKey) || "site_existing")}
                               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-white"
                             >
                               <div className="flex items-center justify-between gap-3">
                                 <span className="text-sm font-semibold text-slate-800">{item.label}</span>
-                                <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                  item.status === "done"
-                                    ? "text-emerald-700"
-                                    : item.status === "blocked"
-                                      ? "text-red-600"
-                                      : "text-amber-700"
-                                }`}>
-                                  {item.status}
+                                <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${setupWizardStatusClass(item.status)}`}>
+                                  {item.status.replace("_", " ")}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs text-slate-500">{item.action}</p>
+                              <p className="mt-1 text-xs text-slate-500">{item.next_action}</p>
+                              {item.why_blocked ? (
+                                <p className="mt-1 text-xs font-medium text-red-600">Why blocked: {item.why_blocked}</p>
+                              ) : null}
                             </button>
                           ))}
                         </div>
@@ -12038,6 +12875,69 @@ function PerformanceAIDashboardView({
                         <p className="mt-2 text-xs font-medium text-slate-500">
                           No imported source is labeled survey-backed unless survey/control evidence is uploaded and reviewed.
                         </p>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Online source candidates</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500">
+                              {onlineDiscovery.version
+                                ? `${onlineDiscoveryCandidateCount} candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} found`
+                                : "Apply an address to run source discovery."}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                            Review required
+                          </span>
+                        </div>
+                        {onlineDiscoveryBusy ? (
+                          <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                            Finding online source candidates...
+                          </p>
+                        ) : null}
+                        {onlineFoundSources.length ? (
+                          <div className="mt-3 space-y-2">
+                            {onlineFoundSources.slice(0, 6).map((source) => (
+                              <div key={source.key || source.label} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-amber-950">{source.label || source.key}</p>
+                                    <p className="mt-1 truncate text-xs font-medium text-amber-800">
+                                      {source.provider || source.agency || source.source_type || "Online provider"}
+                                    </p>
+                                  </div>
+                                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                                    {source.candidate_count ?? 0}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-xs font-medium text-amber-800">
+                                  {sourceStatusLabel(source.status)} | {String(source.confidence ?? "candidate")}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : onlineDiscovery.version && !onlineDiscoveryBusy ? (
+                          <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                            No online source candidates found from the currently available providers.
+                          </p>
+                        ) : null}
+                        {onlineMissingSources.length ? (
+                          <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Missing or unavailable sources
+                            </summary>
+                            <div className="mt-2 space-y-2">
+                              {onlineMissingSources.slice(0, 8).map((source) => (
+                                <div key={source.key || source.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                  <p className="text-xs font-semibold text-slate-700">{source.label || source.key}</p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {(source.blockers ?? [])[0] || `${source.label || source.key} source is missing/unavailable.`}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
                       </div>
                     </div>
                     <input
@@ -12275,13 +13175,60 @@ function PerformanceAIDashboardView({
                           ["CRS / datum", (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "Not set"],
                           ["Terrain", hasTerrainSource ? "Provided" : "Missing"],
                           ["GIS", mapAnalysis?.success ? "Analyzed" : "Not analyzed"],
-                          ["Confidence", sidebarTrustScore],
+                          ["Low confidence", sourceConfidenceSummary.low_confidence_count ?? 0],
+                          ["Need control", sourceConfidenceSummary.needs_survey_control_count ?? 0],
+                          ["Stale/missing", sourceConfidenceSummary.stale_or_missing_count ?? 0],
                         ].map(([label, value]) => (
                           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
                             <p className="mt-1 truncate font-semibold text-slate-800">{value}</p>
                           </div>
                         ))}
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="source-confidence-map">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Source Confidence Map</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500">
+                              {sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length} visible source/object/layer entries. Review only.
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-red-700">
+                            no construction readiness
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {sourceConfidenceRows.length ? (
+                            sourceConfidenceRows.map((entry) => (
+                              <div key={entry.entry_id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-800">{entry.label || entry.layer || "Source entry"}</p>
+                                    <p className="mt-0.5 truncate text-[11px] uppercase tracking-[0.12em] text-slate-400">
+                                      {entry.category || "source"} · {entry.source_name || "unknown"}
+                                    </p>
+                                  </div>
+                                  <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                    entry.confidence_band === "higher"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : entry.confidence_band === "review"
+                                        ? "bg-amber-50 text-amber-700"
+                                        : "bg-red-50 text-red-700"
+                                  }`}>
+                                    {entry.visible_badge || `${entry.source_type || "unknown"} · ${entry.confidence_band || "low"}`}
+                                  </span>
+                                </div>
+                                {entry.why_low_confidence || entry.next_action ? (
+                                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                    {entry.why_low_confidence || entry.next_action}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-slate-500">No source confidence entries are available yet.</p>
+                          )}
+                        </div>
                       </div>
                       <div className="mt-3 space-y-2">
                         {capabilityAuditRows
@@ -12309,6 +13256,144 @@ function PerformanceAIDashboardView({
                               ) : null}
                             </div>
                           ))}
+                      </div>
+                      <div className="mt-4 border-t border-slate-200 pt-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Online discovery</p>
+                          <span className="text-[11px] font-semibold text-slate-500">
+                            {onlineDiscovery.version ? sourceStatusLabel(onlineDiscovery.status) : "not run"}
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {(onlineDiscoverySources.length ? onlineDiscoverySources : []).slice(0, 8).map((source) => (
+                            <div key={source.key || source.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="flex items-start justify-between gap-3 text-sm">
+                                <span className="font-semibold text-slate-700">{source.label || source.key}</span>
+                                <span className={`shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                  Number(source.candidate_count ?? 0) > 0 ? "text-amber-700" : "text-red-600"
+                                }`}>
+                                  {Number(source.candidate_count ?? 0) > 0 ? `${source.candidate_count} found` : sourceStatusLabel(source.status)}
+                                </span>
+                              </div>
+                              <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                                {source.provider || source.agency || source.source_type || "Provider not configured"}
+                              </p>
+                              {Number(source.candidate_count ?? 0) <= 0 ? (
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {(source.blockers ?? [])[0] || `${source.label || source.key} source is missing/unavailable.`}
+                                </p>
+                              ) : (
+                                <p className="mt-1 text-xs text-slate-500">Candidate evidence only; review is required before use.</p>
+                              )}
+                            </div>
+                          ))}
+                          {!onlineDiscoverySources.length ? (
+                            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+                              Apply an address to run online source discovery.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-4 border-t border-slate-200 pt-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Candidate Review Inbox</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500">
+                              Accepted items become draft evidence for review only.
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                            {candidateReviewCounts.pending ?? 0} pending
+                          </span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.12em]">
+                          {[
+                            ["Accepted", candidateReviewCounts.accepted ?? 0, "text-emerald-700"],
+                            ["Rejected", candidateReviewCounts.rejected ?? 0, "text-red-600"],
+                            ["Pending", candidateReviewCounts.pending ?? 0, "text-amber-700"],
+                          ].map(([label, value, color]) => (
+                            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+                              <p className="text-slate-400">{label}</p>
+                              <p className={`mt-1 text-sm ${color}`}>{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {candidateReviewItems.length ? (
+                            candidateReviewItems.slice(0, 8).map((candidate) => {
+                              const status = candidate.status === "accepted" || candidate.status === "rejected" ? candidate.status : "pending";
+                              return (
+                                <div key={candidate.candidate_id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-slate-800">
+                                        {candidate.label || candidate.candidate_type || "Candidate"}
+                                      </p>
+                                      <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                                        {candidate.provider || candidate.source || "Unknown provider"}
+                                        {candidate.source_date ? ` | ${candidate.source_date}` : ""}
+                                      </p>
+                                    </div>
+                                    <span
+                                      className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                        status === "accepted"
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : status === "rejected"
+                                            ? "bg-red-50 text-red-600"
+                                            : "bg-amber-50 text-amber-700"
+                                      }`}
+                                    >
+                                      {status}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                                    <p className="min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
+                                      <span className="font-semibold text-slate-400">Source </span>
+                                      <span className="break-words">{candidate.source || candidate.source_url || "Unknown"}</span>
+                                    </p>
+                                    <p className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
+                                      <span className="font-semibold text-slate-400">Confidence </span>
+                                      {String(candidate.confidence ?? "unknown")}
+                                    </p>
+                                  </div>
+                                  <p className="mt-2 text-xs font-medium text-slate-500">
+                                    {candidate.blocker_review_reason || "Review reason not recorded."}
+                                  </p>
+                                  <div className="mt-3 grid grid-cols-3 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleCandidateReviewDecision(candidate.candidate_id, "accept")}
+                                      disabled={status === "accepted"}
+                                      className="rounded-lg border border-emerald-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Accept
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleCandidateReviewDecision(candidate.candidate_id, "reject")}
+                                      disabled={status === "rejected"}
+                                      className="rounded-lg border border-red-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Reject
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleCandidateReviewDecision(candidate.candidate_id, "pending")}
+                                      disabled={status === "pending"}
+                                      className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Pending
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+                              No source candidates have been discovered or imported yet.
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div>
@@ -13685,6 +14770,31 @@ function PerformanceAIDashboardView({
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Selected object</p>
                       {selectedBuilding ? (
                         <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          {sourceConfidenceByObjectId.get(selectedBuilding.id) ? (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="selected-object-confidence-badge">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Source confidence</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  sourceConfidenceByObjectId.get(selectedBuilding.id)?.confidence_band === "higher"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : sourceConfidenceByObjectId.get(selectedBuilding.id)?.confidence_band === "review"
+                                      ? "bg-amber-50 text-amber-700"
+                                      : "bg-red-50 text-red-700"
+                                }`}>
+                                  {sourceConfidenceByObjectId.get(selectedBuilding.id)?.visible_badge ||
+                                    sourceConfidenceByObjectId.get(selectedBuilding.id)?.source_type ||
+                                    "low confidence"}
+                                </span>
+                                <span className="text-xs font-medium text-slate-500">
+                                  {sourceConfidenceByObjectId.get(selectedBuilding.id)?.needs_survey_control ? "needs survey control" : "verification visible"}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {sourceConfidenceByObjectId.get(selectedBuilding.id)?.why_low_confidence ||
+                                  sourceConfidenceByObjectId.get(selectedBuilding.id)?.next_action}
+                              </p>
+                            </div>
+                          ) : null}
                           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Name</p>
                             <p className="mt-1 font-semibold text-slate-900">{selectedBuilding.label}</p>
@@ -14173,7 +15283,9 @@ function PerformanceAIDashboardView({
                       </div>
                       <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
                         {buildingPlacements.length ? (
-                          buildingPlacements.map((item) => (
+                          buildingPlacements.map((item) => {
+                            const confidenceEntry = sourceConfidenceByObjectId.get(item.id);
+                            return (
                             <div
                               key={item.id}
                               draggable={!item.locked}
@@ -14195,6 +15307,17 @@ function PerformanceAIDashboardView({
                                     {SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object"} ·{" "}
                                     {item.placed ? "Placed" : "Unplaced"}
                                   </p>
+                                  {confidenceEntry ? (
+                                    <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                      confidenceEntry.confidence_band === "higher"
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : confidenceEntry.confidence_band === "review"
+                                          ? "bg-amber-50 text-amber-700"
+                                          : "bg-red-50 text-red-700"
+                                    }`}>
+                                      {confidenceEntry.visible_badge || confidenceEntry.source_type || "low confidence"}
+                                    </span>
+                                  ) : null}
                                   {item.type === "custom" ? (
                                     <CustomGeometryHandoffDetails item={item} units={units} />
                                   ) : null}
@@ -14265,7 +15388,8 @@ function PerformanceAIDashboardView({
                                 </div>
                               ) : null}
                             </div>
-                          ))
+                            );
+                          })
                         ) : (
                           <p className="text-sm text-slate-500">No objects yet.</p>
                         )}
@@ -14365,6 +15489,43 @@ function PerformanceAIDashboardView({
                                 }`}>
                                   {item.value}
                                 </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Source confidence</p>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            {[
+                              ["Entries", sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length],
+                              ["Low confidence", sourceConfidenceSummary.low_confidence_count ?? 0],
+                              ["User drawn", sourceConfidenceSummary.user_drawn_count ?? 0],
+                              ["Need control", sourceConfidenceSummary.needs_survey_control_count ?? 0],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {sourceConfidenceRows.slice(0, 5).map((entry) => (
+                              <div key={entry.entry_id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="flex items-start justify-between gap-3">
+                                  <span className="text-sm font-semibold text-slate-700">{entry.label || "Source entry"}</span>
+                                  <span className={`text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                    entry.confidence_band === "higher"
+                                      ? "text-emerald-700"
+                                      : entry.confidence_band === "review"
+                                        ? "text-amber-600"
+                                        : "text-red-600"
+                                  }`}>
+                                    {entry.visible_badge || entry.source_type}
+                                  </span>
+                                </div>
+                                <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                  {entry.why_low_confidence || entry.next_action || "Verification status visible."}
+                                </p>
                               </div>
                             ))}
                           </div>
@@ -14507,6 +15668,41 @@ function PerformanceAIDashboardView({
                           <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                             Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record.
                           </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="smart-fix-panel">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Smart Fix</p>
+                              <p className="mt-1 text-sm font-semibold text-slate-900">
+                                {topSmartFix?.blocker_code ? topSmartFix.blocker_code.replaceAll("_", " ") : "No active blocker recommendation"}
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              topSmartFix?.can_civora_fix ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                            }`}>
+                              {topSmartFix?.can_civora_fix ? "Fix available" : "Input needed"}
+                            </span>
+                          </div>
+                          {topSmartFix ? (
+                            <div className="mt-3 space-y-2 text-xs text-slate-600">
+                              <p><span className="font-semibold text-slate-800">What:</span> {topSmartFix.what_is_wrong}</p>
+                              <p><span className="font-semibold text-slate-800">Why:</span> {topSmartFix.why_it_matters}</p>
+                              <p><span className="font-semibold text-slate-800">Next:</span> {topSmartFix.one_action_needed_next}</p>
+                              <p><span className="font-semibold text-slate-800">After:</span> {topSmartFix.what_happens_after_fix}</p>
+                              {!topSmartFix.can_civora_fix && topSmartFix.missing_user_input_or_source ? (
+                                <p><span className="font-semibold text-slate-800">Need:</span> {topSmartFix.missing_user_input_or_source}</p>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => handleSmartFixAction(topSmartFix)}
+                                className="mt-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
+                              >
+                                {topSmartFix.can_civora_fix ? "Fix" : "Show Need"}
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-xs text-slate-500">Run or load a project to see blocker-specific next actions.</p>
+                          )}
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review gates</p>

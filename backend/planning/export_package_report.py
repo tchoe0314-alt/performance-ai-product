@@ -9,6 +9,7 @@ from .production_evidence import build_production_evidence
 from .production_depth import build_cad_interop_metadata
 from .export_external_verification import normalize_external_verification_record
 from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
+from .smart_fix import build_smart_fix_recommendations
 
 
 def _utc_now_iso() -> str:
@@ -491,6 +492,7 @@ def build_export_package_report_v1(
         "external_construction_release_required": True,
         "construction_release_blockers": _unique(construction_blockers + safe_list(export_audit.get("blocked_reasons"))),
         "construction_release_blocker_details": blocker_explanations(_unique(construction_blockers + safe_list(export_audit.get("blocked_reasons")))),
+        "smart_fix_recommendations_v1": build_smart_fix_recommendations(plan, meta=meta),
         "canonical_ids_included": canonical_ids,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
         "deliverable_confidence": deliverable_confidence,
