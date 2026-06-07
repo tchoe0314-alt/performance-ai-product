@@ -859,7 +859,9 @@ export type PlanPdfElement = {
   type?: string;
   page_index?: number;
   text?: string;
+  original_text?: string;
   bbox?: PlanPdfBBox | null;
+  original_bbox?: PlanPdfBBox | null;
   source_evidence_id?: string;
   source_confidence?: string;
   review_status?: "pending" | "accepted" | "rejected" | string;
@@ -868,6 +870,24 @@ export type PlanPdfElement = {
   construction_release_allowed?: boolean;
   blockers?: string[];
   truth_label?: string;
+};
+
+export type PlanPdfChangedElements = {
+  version?: "plan_pdf_changed_elements_v1" | string;
+  source_confidence?: string;
+  review_required?: boolean;
+  construction_release_allowed?: boolean;
+  truth_label?: string;
+  changed_count?: number;
+  accepted_count?: number;
+  rejected_count?: number;
+  moved_count?: number;
+  text_edit_count?: number;
+  elements?: Array<PlanPdfElement & {
+    changed_text?: boolean;
+    moved?: boolean;
+  }>;
+  change_log?: Array<Record<string, unknown>>;
 };
 
 export type PlanPdfEditableSheet = {
@@ -879,11 +899,18 @@ export type PlanPdfEditableSheet = {
   construction_release_allowed?: boolean;
   truth_label?: string;
   elements?: PlanPdfElement[];
+  changed_elements?: PlanPdfChangedElements;
+  change_log?: Array<Record<string, unknown>>;
   summary?: {
     element_count?: number;
     counts_by_type?: Record<string, number>;
     editable_count?: number;
     pending_review_count?: number;
+    accepted_count?: number;
+    rejected_count?: number;
+    changed_count?: number;
+    moved_count?: number;
+    text_edit_count?: number;
   };
 };
 
@@ -941,6 +968,7 @@ export type UploadPlanPdfResponse = {
   project?: ProjectRecord;
   plan_pdf_analysis_v1?: PlanPdfAnalysis;
   plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
+  plan_pdf_changed_elements_v1?: PlanPdfChangedElements;
   candidate_review_inbox_v1?: CandidateReviewInbox;
 };
 
@@ -1004,6 +1032,7 @@ export type PlanMeta = {
   plan_pdf_analysis_v1?: PlanPdfAnalysis;
   plan_pdf_analyses_v1?: PlanPdfAnalysis[];
   plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
+  plan_pdf_changed_elements_v1?: PlanPdfChangedElements;
   smart_fix_recommendations_v1?: SmartFixRecommendationsV1;
   map_feature_detection_report_v1?: {
     candidate_count?: number;
@@ -1872,6 +1901,7 @@ export type LearningReport = {
 };
 
 export type Preview3DItem = {
+  id?: string;
   x: number;
   y: number;
   w: number;
@@ -1881,6 +1911,9 @@ export type Preview3DItem = {
   color: string;
   label: string;
   layer: string;
+  source?: string;
+  confidence?: number | string | null;
+  blockers?: string[];
 };
 
 export type GradingEarthworkUx = {

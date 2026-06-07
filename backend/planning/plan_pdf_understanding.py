@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 import hashlib
@@ -13,7 +14,7 @@ from backend.planning.common import safe_dict, safe_list, safe_str
 
 TRUTH_LABEL = (
     "PDF-derived plan data is imported source evidence and review-required draft content only. "
-    "Civora does not approve, stamp, seal, sign, certify, submit, or act as engineer of record."
+    "Civora provides no field-use release and does not act as engineer of record."
 )
 SOURCE_CONFIDENCE = "imported_pdf_review_required"
 ANALYSIS_VERSION = "plan_pdf_analysis_v1"
@@ -227,12 +228,16 @@ def _classify_evidence(evidence: Iterable[Dict[str, Any]]) -> Dict[str, List[Dic
 
 
 def _element_from_evidence(item: Dict[str, Any], element_type: str, index: int) -> Dict[str, Any]:
+    text = safe_str(item.get("text"))
+    bbox = safe_dict(item.get("bbox")) or None
     return {
         "element_id": _stable_id("sheet_element", element_type, index, item.get("page_index"), item.get("text"), prefix="pse"),
         "type": element_type,
         "page_index": int(item.get("page_index") or 0),
-        "text": safe_str(item.get("text")),
-        "bbox": safe_dict(item.get("bbox")) or None,
+        "text": text,
+        "original_text": text,
+        "bbox": bbox,
+        "original_bbox": deepcopy(bbox),
         "source_evidence_id": safe_str(item.get("evidence_id")),
         "source_confidence": SOURCE_CONFIDENCE,
         "review_status": "pending",
@@ -289,11 +294,17 @@ def build_editable_sheet_from_analysis(analysis: Dict[str, Any]) -> Dict[str, An
         "construction_release_allowed": False,
         "truth_label": TRUTH_LABEL,
         "elements": elements,
+        "change_log": [],
         "summary": {
             "element_count": len(elements),
             "counts_by_type": counts,
             "editable_count": len([item for item in elements if item.get("editable")]),
             "pending_review_count": len([item for item in elements if item.get("review_required")]),
+            "accepted_count": 0,
+            "rejected_count": 0,
+            "changed_count": 0,
+            "moved_count": 0,
+            "text_edit_count": 0,
         },
     }
 
@@ -336,7 +347,7 @@ def analyze_plan_pdf(
         [
             "raster_preview_blocked:no_pdf_renderer_configured",
             "vector_geometry_extraction_blocked:no_vector_parser_configured",
-            "survey_or_engineering_approval_blocked:pdf_import_is_source_imagery_only",
+            "field_use_release_blocked:pdf_import_is_source_imagery_only",
         ]
     )
     has_stamp = bool(classifications.get("stamp_or_seal_source_imagery"))
@@ -347,7 +358,7 @@ def analyze_plan_pdf(
         "source_confidence": SOURCE_CONFIDENCE,
         "review_required": True,
         "construction_release_allowed": False,
-        "stamp_seal_signature_policy": "source_imagery_only_do_not_edit_as_approval",
+        "stamp_seal_signature_policy": "source_imagery_only_protected_mark_area_not_editable",
         "contains_possible_stamp_seal_signature": has_stamp,
         "truth_label": TRUTH_LABEL,
         "source_pdf": {
@@ -409,7 +420,7 @@ def merge_plan_pdf_analysis_into_meta(meta: Dict[str, Any], analysis: Dict[str, 
             "needs_verification": True,
             "needs_survey_control": True,
             "low_confidence_reasons": safe_list(analysis.get("blockers")),
-            "why_low_confidence": "PDF extraction is imported source evidence and needs user/engineer verification.",
+            "why_low_confidence": "PDF extraction is imported source evidence and needs reviewer verification.",
             "next_action": "Review extracted sheet elements and accept/reject candidates before relying on them.",
             "construction_release_allowed": False,
             "construction_readiness_implied": False,
@@ -433,19 +444,74 @@ def merge_plan_pdf_analysis_into_meta(meta: Dict[str, Any], analysis: Dict[str, 
     return updated
 
 
+def _bbox_changed(element: Dict[str, Any]) -> bool:
+    bbox = safe_dict(element.get("bbox"))
+    original = safe_dict(element.get("original_bbox"))
+    if not bbox and not original:
+        return False
+    return bbox != original
+
+
+def _element_changed(element: Dict[str, Any]) -> bool:
+    return (
+        safe_str(element.get("text")) != safe_str(element.get("original_text"))
+        or _bbox_changed(element)
+        or safe_str(element.get("review_status"), "pending") in {"accepted", "rejected"}
+    )
+
+
+def _changed_element_record(element: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "element_id": safe_str(element.get("element_id")),
+        "type": safe_str(element.get("type")),
+        "page_index": int(element.get("page_index") or 0),
+        "original_text": safe_str(element.get("original_text")),
+        "text": safe_str(element.get("text")),
+        "original_bbox": safe_dict(element.get("original_bbox")) or None,
+        "bbox": safe_dict(element.get("bbox")) or None,
+        "review_status": safe_str(element.get("review_status"), "pending"),
+        "changed_text": safe_str(element.get("text")) != safe_str(element.get("original_text")),
+        "moved": _bbox_changed(element),
+        "review_required": True,
+        "source_confidence": SOURCE_CONFIDENCE,
+    }
+
+
+def _sheet_change_summary(elements: List[Dict[str, Any]], change_log: List[Dict[str, Any]]) -> Dict[str, Any]:
+    changed = [_changed_element_record(item) for item in elements if _element_changed(item)]
+    return {
+        "version": "plan_pdf_changed_elements_v1",
+        "source_confidence": SOURCE_CONFIDENCE,
+        "review_required": True,
+        "construction_release_allowed": False,
+        "truth_label": TRUTH_LABEL,
+        "changed_count": len(changed),
+        "accepted_count": len([item for item in elements if safe_str(item.get("review_status")) == "accepted"]),
+        "rejected_count": len([item for item in elements if safe_str(item.get("review_status")) == "rejected"]),
+        "moved_count": len([item for item in changed if item.get("moved")]),
+        "text_edit_count": len([item for item in changed if item.get("changed_text")]),
+        "elements": changed,
+        "change_log": change_log[-100:],
+    }
+
+
 def update_editable_sheet_element(meta: Dict[str, Any], element_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
     updated = dict(meta or {})
     sheet = safe_dict(updated.get("plan_pdf_editable_sheet_v1"))
     if not sheet:
         raise ValueError("No editable PDF sheet is available on this project.")
     elements = [safe_dict(item) for item in safe_list(sheet.get("elements")) if safe_dict(item)]
+    change_log = [safe_dict(item) for item in safe_list(sheet.get("change_log")) if safe_dict(item)]
     found = False
     for element in elements:
         if safe_str(element.get("element_id")) != element_id:
             continue
         found = True
         if safe_str(element.get("type")) == "stamp_or_seal_source_imagery":
-            raise ValueError("Stamp, seal, and signature imagery cannot be edited as approval content.")
+            raise ValueError("Protected professional mark imagery cannot be edited.")
+        if element.get("editable") is False and any(key in updates for key in ("text", "bbox", "move_target")):
+            raise ValueError("This PDF-derived element is not editable.")
+        before = deepcopy(element)
         if "text" in updates:
             element["text"] = safe_str(updates.get("text"))
         if "review_status" in updates:
@@ -453,21 +519,74 @@ def update_editable_sheet_element(meta: Dict[str, Any], element_id: str, updates
             if status not in {"pending", "accepted", "rejected"}:
                 raise ValueError("review_status must be pending, accepted, or rejected.")
             element["review_status"] = status
+        if "move_target" in updates:
+            target = safe_dict(updates.get("move_target"))
+            bbox = safe_dict(element.get("bbox"))
+            if not bbox:
+                raise ValueError("This PDF-derived element has no extracted bounds to move.")
+            try:
+                target_x = float(target["x0"])
+                target_y = float(target["y0"])
+            except Exception as exc:
+                raise ValueError("Moving a PDF-derived element requires explicit target x0/y0 coordinates.") from exc
+            width = max(1.0, float(bbox.get("x1", target_x + 1.0)) - float(bbox.get("x0", target_x)))
+            height = max(1.0, float(bbox.get("y1", target_y + 1.0)) - float(bbox.get("y0", target_y)))
+            element["bbox"] = {
+                "x0": round(target_x, 3),
+                "y0": round(target_y, 3),
+                "x1": round(target_x + width, 3),
+                "y1": round(target_y + height, 3),
+            }
         if "bbox" in updates and isinstance(updates.get("bbox"), dict):
             element["bbox"] = safe_dict(updates.get("bbox"))
         element["review_required"] = True
         element["source_confidence"] = SOURCE_CONFIDENCE
         element["construction_release_allowed"] = False
+        changed_fields = [
+            field
+            for field in ("text", "bbox", "review_status")
+            if safe_dict(before.get(field)) != safe_dict(element.get(field))
+            or safe_str(before.get(field)) != safe_str(element.get(field))
+        ]
+        if changed_fields:
+            change_log.append(
+                {
+                    "changed_at": _now(),
+                    "element_id": element_id,
+                    "changed_fields": sorted(set(changed_fields)),
+                    "before": {
+                        "text": safe_str(before.get("text")),
+                        "bbox": safe_dict(before.get("bbox")) or None,
+                        "review_status": safe_str(before.get("review_status"), "pending"),
+                    },
+                    "after": {
+                        "text": safe_str(element.get("text")),
+                        "bbox": safe_dict(element.get("bbox")) or None,
+                        "review_status": safe_str(element.get("review_status"), "pending"),
+                    },
+                    "review_required": True,
+                    "source_confidence": SOURCE_CONFIDENCE,
+                }
+            )
     if not found:
         raise ValueError("Editable PDF sheet element was not found.")
     sheet["elements"] = elements
+    sheet["change_log"] = change_log[-100:]
+    changed_report = _sheet_change_summary(elements, change_log)
     sheet["summary"] = {
         **safe_dict(sheet.get("summary")),
         "element_count": len(elements),
         "editable_count": len([item for item in elements if item.get("editable")]),
         "pending_review_count": len([item for item in elements if safe_str(item.get("review_status")) not in {"accepted", "rejected"}]),
+        "accepted_count": changed_report["accepted_count"],
+        "rejected_count": changed_report["rejected_count"],
+        "changed_count": changed_report["changed_count"],
+        "moved_count": changed_report["moved_count"],
+        "text_edit_count": changed_report["text_edit_count"],
     }
+    sheet["changed_elements"] = changed_report
     updated["plan_pdf_editable_sheet_v1"] = sheet
+    updated["plan_pdf_changed_elements_v1"] = changed_report
     analysis = safe_dict(updated.get("plan_pdf_analysis_v1"))
     if analysis:
         analysis["editable_sheet"] = sheet
@@ -478,6 +597,7 @@ def update_editable_sheet_element(meta: Dict[str, Any], element_id: str, updates
 def plan_pdf_report(meta: Dict[str, Any]) -> Dict[str, Any]:
     analysis = safe_dict(meta.get("plan_pdf_analysis_v1"))
     sheet = safe_dict(meta.get("plan_pdf_editable_sheet_v1"))
+    changed = safe_dict(meta.get("plan_pdf_changed_elements_v1")) or safe_dict(sheet.get("changed_elements"))
     return {
         "version": "plan_pdf_extraction_report_v1",
         "source_confidence": SOURCE_CONFIDENCE,
@@ -486,6 +606,17 @@ def plan_pdf_report(meta: Dict[str, Any]) -> Dict[str, Any]:
         "truth_label": TRUTH_LABEL,
         "analysis": analysis,
         "editable_sheet": sheet,
+        "changed_elements": changed,
+        "review_only_edited_sheet_export": {
+            "version": "plan_pdf_review_only_edited_sheet_export_v1",
+            "source_confidence": SOURCE_CONFIDENCE,
+            "review_required": True,
+            "construction_release_allowed": False,
+            "truth_label": TRUTH_LABEL,
+            "elements": safe_list(sheet.get("elements")),
+            "changed_elements": safe_list(changed.get("elements")),
+            "blocked_capabilities": safe_list(analysis.get("blockers")),
+        },
         "blocked_capabilities": safe_list(analysis.get("blockers")),
     }
 

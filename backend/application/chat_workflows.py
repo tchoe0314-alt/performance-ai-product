@@ -29,6 +29,7 @@ from backend.planning.source_confidence_map import (
 )
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE as PLAN_PDF_SOURCE_CONFIDENCE,
+    plan_pdf_report,
     update_editable_sheet_element,
 )
 from parsers.chat_intent_parser import build_chat_memory_summary
@@ -1671,6 +1672,41 @@ def _plan_pdf_replacement(message: str) -> str:
     return match.group(1).strip(" .") if match else ""
 
 
+def _plan_pdf_move_target(message: str) -> Dict[str, float]:
+    match = re.search(
+        r"\b(?:to|target|at)\s*(?:x0?\s*)?(-?\d+(?:\.\d+)?)\s*[,/ ]+\s*(?:y0?\s*)?(-?\d+(?:\.\d+)?)\b",
+        str(message or ""),
+        re.IGNORECASE,
+    )
+    if not match:
+        return {}
+    return {"x0": float(match.group(1)), "y0": float(match.group(2))}
+
+
+def _plan_pdf_changed_lines(meta: Dict[str, Any]) -> List[str]:
+    report = plan_pdf_report(meta)
+    changed = _safe_dict(report.get("changed_elements"))
+    elements = [_safe_dict(item) for item in _safe_list(changed.get("elements"))]
+    if not elements:
+        return ["No PDF-derived sheet elements have been changed yet."]
+    lines = [
+        (
+            f"{int(changed.get('changed_count') or len(elements))} changed PDF-derived element(s): "
+            f"{int(changed.get('text_edit_count') or 0)} text edit(s), "
+            f"{int(changed.get('moved_count') or 0)} move(s), "
+            f"{int(changed.get('accepted_count') or 0)} accepted, "
+            f"{int(changed.get('rejected_count') or 0)} rejected."
+        )
+    ]
+    for item in elements[:8]:
+        before = safe_str(item.get("original_text")) or "(blank)"
+        after = safe_str(item.get("text")) or "(blank)"
+        moved = " moved" if item.get("moved") else ""
+        status = safe_str(item.get("review_status"), "pending")
+        lines.append(f"- {safe_str(item.get('type'), 'element')} {safe_str(item.get('element_id'))}: {before} -> {after}; {status}{moved}")
+    return lines
+
+
 def _plan_pdf_chat_response(
     *,
     message: str,
@@ -1691,9 +1727,12 @@ def _plan_pdf_chat_response(
             "extract the dimensions",
             "what scale",
             "what can you not read",
+            "unreadable text",
             "make this detail editable",
             "turn this pdf into editable plan objects",
             "pool deck elevation",
+            "move this label",
+            "what changed",
         )
     )
     if not asks_pdf:
@@ -1732,13 +1771,32 @@ def _plan_pdf_chat_response(
             confidence=0.35,
             blocker="No plan_pdf_analysis_v1 record is attached to the project.",
         )
-    wants_edit = any(token in normalized for token in ("change", "edit", "accept", "reject", "make this detail editable"))
+    wants_move = "move" in normalized
+    if wants_move and "to" not in normalized and "target" not in normalized and " at " not in f" {normalized} ":
+        return _truthful_decision_update(
+            {},
+            assistant_message="I can move a PDF-derived label only with an explicit target. Give me PDF coordinates like: move this label to x0 120, y0 640.",
+            intent="plan_pdf_edit",
+            run_mode="none",
+            needs_clarification=True,
+            action_taken="blocked_pdf_move_missing_target",
+            action_blocked_reason="Moving a PDF-derived element requires explicit target x0/y0 coordinates.",
+            required_missing_inputs=["explicit PDF coordinate target"],
+            affected_systems=["editable_sheet"],
+            next_best_action="Select a PDF-derived label and provide target x0/y0 coordinates.",
+            confidence=0.55,
+            blocker="Moving a PDF-derived element requires explicit target x0/y0 coordinates.",
+        )
+    wants_edit = any(token in normalized for token in ("change", "edit", "accept", "reject", "make this detail editable", "move"))
     if wants_edit and project_store and user_id:
         element = _plan_pdf_target_element(meta, message)
         if element:
             updates: Dict[str, Any] = {}
             replacement = _plan_pdf_replacement(message)
-            if "reject" in normalized:
+            move_target = _plan_pdf_move_target(message)
+            if wants_move and move_target:
+                updates["move_target"] = move_target
+            elif "reject" in normalized:
                 updates["review_status"] = "rejected"
             elif "accept" in normalized or "make this detail editable" in normalized:
                 updates["review_status"] = "accepted"
@@ -1771,12 +1829,12 @@ def _plan_pdf_chat_response(
                         confidence=0.4,
                         blocker=str(exc),
                     )
-                changed = safe_str(updates.get("text")) or safe_str(updates.get("review_status"))
+                changed = safe_str(updates.get("text")) or safe_str(updates.get("review_status")) or "new target location"
                 return _truthful_decision_update(
                     {},
                     assistant_message=(
                         f"Updated PDF-derived element {safe_str(element.get('element_id'))} to {changed}. "
-                        "It remains review-required imported PDF evidence, not survey-backed or engineer-approved."
+                        "It remains review-required imported PDF evidence, not survey-backed field evidence."
                     ),
                     intent="plan_pdf_edit",
                     run_mode="plan_pdf_editable_sheet_update",
@@ -1791,7 +1849,9 @@ def _plan_pdf_chat_response(
                 )
     summary = _safe_dict(analysis.get("summary"))
     blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
-    if "what can you not read" in normalized or "blocker" in normalized:
+    if "what changed" in normalized:
+        lines = _plan_pdf_changed_lines(meta)
+    elif "what can you not read" in normalized or "unreadable" in normalized or "blocker" in normalized:
         lines = ["Blocked or uncertain PDF capabilities:"] + [f"- {item}" for item in blockers[:10]]
     elif "scale" in normalized:
         values = _plan_pdf_text(meta, "scale_candidates")
@@ -1816,7 +1876,7 @@ def _plan_pdf_chat_response(
                 f"{int(summary.get('elevation_callout_count') or 0)} elevation, "
                 f"{int(summary.get('scale_candidate_count') or 0)} scale."
             ),
-            "PDF-derived data remains imported_pdf_review_required and is not construction approval.",
+            "PDF-derived data remains imported_pdf_review_required and is not field-use release.",
         ]
     return _truthful_decision_update(
         {},

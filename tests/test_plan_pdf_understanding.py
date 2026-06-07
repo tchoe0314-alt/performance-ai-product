@@ -10,6 +10,8 @@ from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE,
     analyze_plan_pdf,
     merge_plan_pdf_analysis_into_meta,
+    plan_pdf_report,
+    update_editable_sheet_element,
 )
 
 
@@ -171,7 +173,66 @@ def test_chat_answers_pdf_questions_and_edits_review_required_element(tmp_path: 
     assert any(item.get("text") == "NEW OWNER" and item.get("review_required") for item in elements)
 
 
-def test_pdf_analysis_never_allows_unsafe_approval_language(tmp_path: Path) -> None:
+def test_select_edit_pdf_text_candidate_records_changed_elements(tmp_path: Path) -> None:
+    pdf = tmp_path / "pool.pdf"
+    _write_text_pdf(pdf, ["OWNER: OLD OWNER", "POOL DECK ELEVATION 102.50"])
+    meta = merge_plan_pdf_analysis_into_meta({}, analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="pool.pdf"))
+    element = next(item for item in meta["plan_pdf_editable_sheet_v1"]["elements"] if item["type"] == "title_block_field")
+
+    updated = update_editable_sheet_element(meta, element["element_id"], {"text": "OWNER: NEW OWNER"})
+    changed = updated["plan_pdf_changed_elements_v1"]
+
+    assert changed["changed_count"] == 1
+    assert changed["text_edit_count"] == 1
+    assert changed["elements"][0]["original_text"] == "OWNER: OLD OWNER"
+    assert changed["elements"][0]["text"] == "OWNER: NEW OWNER"
+    assert changed["elements"][0]["review_required"] is True
+
+
+def test_accept_reject_pdf_candidate_updates_review_report(tmp_path: Path) -> None:
+    pdf = tmp_path / "pool.pdf"
+    _write_text_pdf(pdf, ["OWNER: ACME HOMES", "POOL DECK ELEVATION 102.50"])
+    meta = merge_plan_pdf_analysis_into_meta({}, analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="pool.pdf"))
+    elements = meta["plan_pdf_editable_sheet_v1"]["elements"]
+
+    accepted = update_editable_sheet_element(meta, elements[0]["element_id"], {"review_status": "accepted"})
+    rejected = update_editable_sheet_element(accepted, elements[1]["element_id"], {"review_status": "rejected"})
+    report = plan_pdf_report(rejected)
+
+    assert report["changed_elements"]["accepted_count"] == 1
+    assert report["changed_elements"]["rejected_count"] == 1
+    assert report["review_only_edited_sheet_export"]["review_required"] is True
+
+
+def test_changed_elements_report_includes_move_and_review_export(tmp_path: Path) -> None:
+    pdf = tmp_path / "pool.pdf"
+    _write_text_pdf(pdf, ["POOL DECK ELEVATION 102.50"])
+    meta = merge_plan_pdf_analysis_into_meta({}, analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="pool.pdf"))
+    element = next(item for item in meta["plan_pdf_editable_sheet_v1"]["elements"] if item.get("bbox"))
+
+    moved = update_editable_sheet_element(meta, element["element_id"], {"move_target": {"x0": 120, "y0": 640}})
+    report = plan_pdf_report(moved)
+
+    assert report["changed_elements"]["moved_count"] == 1
+    assert report["changed_elements"]["elements"][0]["moved"] is True
+    assert report["review_only_edited_sheet_export"]["changed_elements"][0]["bbox"]["x0"] == 120
+
+
+def test_move_pdf_candidate_without_target_is_blocked(tmp_path: Path) -> None:
+    pdf = tmp_path / "pool.pdf"
+    _write_text_pdf(pdf, ["POOL DECK ELEVATION 102.50"])
+    meta = merge_plan_pdf_analysis_into_meta({}, analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="pool.pdf"))
+    element = next(item for item in meta["plan_pdf_editable_sheet_v1"]["elements"] if item.get("bbox"))
+
+    try:
+        update_editable_sheet_element(meta, element["element_id"], {"move_target": {}})
+    except ValueError as exc:
+        assert "explicit target x0/y0 coordinates" in str(exc)
+    else:
+        raise AssertionError("Expected targetless PDF move to be blocked.")
+
+
+def test_pdf_analysis_never_uses_unsafe_release_wording(tmp_path: Path) -> None:
     pdf = tmp_path / "sealed.pdf"
     _write_text_pdf(pdf, ["ENGINEER SEAL", "SIGNATURE", "OWNER: ACME"])
 
@@ -179,4 +240,7 @@ def test_pdf_analysis_never_allows_unsafe_approval_language(tmp_path: Path) -> N
 
     assert analysis["construction_release_allowed"] is False
     assert analysis["contains_possible_stamp_seal_signature"] is True
-    assert "does not approve, stamp, seal, sign, certify" in analysis["truth_label"]
+    rendered = str(plan_pdf_report(merge_plan_pdf_analysis_into_meta({}, analysis))).lower()
+    for unsafe in ("construction-ready", "construction ready", "approved for construction", "certified for construction"):
+        assert unsafe not in rendered
+    assert "field-use release" in analysis["truth_label"]

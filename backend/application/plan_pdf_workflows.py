@@ -158,6 +158,7 @@ def update_project_plan_pdf_element(
         "message": "PDF-derived editable sheet element updated. It remains review-required.",
         "project": saved,
         "plan_pdf_editable_sheet_v1": result_meta.get("plan_pdf_editable_sheet_v1"),
+        "plan_pdf_changed_elements_v1": result_meta.get("plan_pdf_changed_elements_v1"),
         "candidate_review_inbox_v1": result_meta.get("candidate_review_inbox_v1"),
         "construction_release_allowed": False,
         "truth_label": TRUTH_LABEL,

@@ -350,6 +350,7 @@ class PlanPdfElementUpdatePayload(BaseModel):
     text: Optional[str] = None
     review_status: Optional[str] = None
     bbox: Optional[Dict[str, Any]] = None
+    move_target: Optional[Dict[str, Any]] = None
 
 
 class QueueOrchestratePayload(BaseModel):
