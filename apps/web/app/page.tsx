@@ -3405,7 +3405,7 @@ function PerformanceAIDashboardView({
       },
       construction_release_allowed: false,
       construction_readiness_implied: false,
-      truth_label: "UI fallback confidence map keeps low-confidence sources visible; it does not imply construction readiness.",
+      truth_label: "UI fallback confidence map keeps low-confidence sources visible; it does not imply field-use readiness.",
     };
   }, [buildingPlacements, candidateReviewItems, currentPlanMeta.source_confidence_map_v1, hasVerifiedSurveyControl]);
   const sourceConfidenceEntries = sourceConfidenceMap.entries ?? [];
@@ -3470,7 +3470,7 @@ function PerformanceAIDashboardView({
         }
         setStatusMessage(
           action === "accept"
-            ? "Candidate accepted as draft/review-required evidence. Construction remains blocked."
+            ? "Candidate accepted as draft/review-required evidence."
             : action === "reject"
               ? "Candidate rejected and preserved in the audit trail."
               : "Candidate kept pending.",
@@ -7474,7 +7474,7 @@ function PerformanceAIDashboardView({
         "assistant",
         reason
           ? `Export is blocked: ${reason}.${blockerText}`
-          : `Exports are available only as engineer-review packages. Construction reliance remains outside Civora and requires independent licensed-professional review.${blockerText}`,
+          : `Exports are available only as engineer-review packages. Field use is outside Civora and requires independent licensed-professional review.${blockerText}`,
         "status",
       );
       return true;
@@ -7483,7 +7483,7 @@ function PerformanceAIDashboardView({
     if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability. Construction reliance and professional responsibility remain outside Civora.",
+        "Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability. Field use and professional responsibility remain outside Civora.",
         "status",
       );
       return true;
@@ -8798,10 +8798,10 @@ function PerformanceAIDashboardView({
             );
             appendChatMessage(
               "assistant",
-              `${toReadableLabel(String(artifact.kind || "export"))} review export is ready and downloaded. Construction reliance remains outside Civora and requires independent licensed-professional review.`,
+              `${toReadableLabel(String(artifact.kind || "export"))} review export is ready and downloaded. Field use is outside Civora and requires independent licensed-professional review.`,
               "status",
             );
-            setStatusMessage("Review export downloaded. Construction reliance remains outside Civora.");
+            setStatusMessage("Review export downloaded. Field use remains outside Civora.");
           } else {
             setStatusMessage("Export job completed but did not return a download path.");
           }
@@ -12113,7 +12113,7 @@ function PerformanceAIDashboardView({
         status: row.status,
       })),
       warning:
-        "This is a traceable review report only. External licensed engineer review is required before construction reliance.",
+        "This is a traceable review report only. Independent licensed-professional review is required before field use.",
     };
     downloadBlob(
       new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }),
@@ -12143,7 +12143,7 @@ function PerformanceAIDashboardView({
       setStatusMessage(`DXF review export queued as ${queued.job.job_id}.`);
       appendChatMessage(
         "assistant",
-        `Queued DXF review export as ${queued.job.job_id}. Progress will stay visible here; this does not create construction reliance.`,
+        `Queued DXF review export as ${queued.job.job_id}. Progress will stay visible here for review tracking.`,
         "status",
       );
     } catch (error) {
@@ -12176,7 +12176,7 @@ function PerformanceAIDashboardView({
       setStatusMessage(`Engineer-review report queued as ${queued.job.job_id}.`);
       appendChatMessage(
         "assistant",
-        `Queued engineer-review report export as ${queued.job.job_id}. Progress will stay visible here; construction release remains blocked.`,
+        `Queued engineer-review report export as ${queued.job.job_id}. Progress will stay visible here for review tracking.`,
         "status",
       );
     } catch (error) {
@@ -12274,7 +12274,7 @@ function PerformanceAIDashboardView({
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
   const getExportBlockReason = useCallback(() => {
     if (!token) {
-      return "sign in with a backend session before exporting review packages";
+      return "authenticate with a backend session before exporting review packages";
     }
     if (busy) {
       return "wait for the current operation to finish";
@@ -13205,7 +13205,7 @@ function PerformanceAIDashboardView({
     ["LandXML", formatSupportValue("Not generated in this UI yet", true)],
     ["Civil 3D", formatSupportValue("No native Civil 3D package; use review exports externally", true)],
     ["DWG", formatSupportValue("Not exported directly; DXF review export only", true)],
-    ["Construction support package", formatSupportValue(backendResult ? "Review-only package; independent professional review required" : "Needs run and review gates", !backendResult)],
+    ["Review support package", formatSupportValue(backendResult ? "Review-only package; independent professional review required" : "Needs run and review gates", !backendResult)],
     ["Independent professional review", formatSupportValue("Required outside Civora")],
   ] as const;
   const capabilityAuditRows = useMemo<CapabilityExposure[]>(() => {
@@ -13272,8 +13272,8 @@ function PerformanceAIDashboardView({
       ? (productionEvidence.quantity_cost as Record<string, unknown>)
       : {};
     const exportPackage = readRecord("export_package_report_v1");
-    const constructionPackage = readRecord("construction_document_support_package_v1");
-    const constructionManifest = readRecord("construction_package_manifest");
+    const reviewSupportPackage = readRecord("construction_document_support_package_v1");
+    const reviewSupportManifest = readRecord("construction_package_manifest");
     const engineerReviewPackage = readRecord("engineer_review_package_v1");
     const reactiveReport = readRecord("reactive_update_report");
     const reactivePartial = readRecord("reactive_partial_rerun");
@@ -13407,14 +13407,14 @@ function PerformanceAIDashboardView({
         exportBlocked || blockerCount(exportPackage) > 0,
       ),
       row(
-        "construction_document_support_package",
-        "Construction document support package",
+        "review_document_support_package",
+        "Review document support package",
         hasRecord("construction_document_support_package_v1", "construction_package_manifest"),
         ["UI", "chat", "API", "report"],
         packageStatus("construction_document_support_package_v1", "construction_package_manifest") || "Review-only support; independent review required",
-        "Construction document support package is not attached to this plan.",
-        "Build the construction document support package after deliverable artifacts, standards, survey/control, QA, and pricing evidence exist.",
-        blockerCount(constructionPackage) > 0 || blockerCount(constructionManifest) > 0 || true,
+        "Review document support package is not attached to this plan.",
+        "Build the review document support package after deliverable artifacts, standards, survey/control, QA, and pricing evidence exist.",
+        blockerCount(reviewSupportPackage) > 0 || blockerCount(reviewSupportManifest) > 0 || true,
       ),
       row(
         "engineer_review_package",
@@ -13796,7 +13796,7 @@ function PerformanceAIDashboardView({
       status: !sidebarHasTruthEvidence ? "idle" : sidebarReleaseStatus === "blocked" ? "block" : "review",
     },
     {
-      label: "Construction blocks",
+      label: "Field-use blocks",
       value: sidebarHasTruthEvidence ? "independent review required" : "not evaluated",
       status: sidebarHasTruthEvidence ? "block" : "idle",
     },
@@ -14274,7 +14274,7 @@ function PerformanceAIDashboardView({
     `Systems: ${Object.entries(systemStatuses).map(([key, value]) => `${key}=${value}`).join(", ")}`,
     `User message: ${issueReportMessage.trim() || "(add details before sending)"}`,
     "",
-    "Reminder: outputs are review-required materials only. Construction reliance remains outside Civora.",
+    "Reminder: outputs are review-required materials only. Field use remains outside Civora.",
   ].join("\n");
   const handleCopyIssueDiagnostic = async () => {
     try {
@@ -14522,7 +14522,7 @@ function PerformanceAIDashboardView({
               </div>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {sidebarHasTruthEvidence
-                  ? "Engineer review required | Construction reliance outside Civora"
+                  ? "Engineer review required | Field use outside Civora"
                   : "No project evidence yet | Engineer review required before release"}
               </p>
             </div>
@@ -14846,7 +14846,7 @@ function PerformanceAIDashboardView({
 	                              {Math.round(engineDepthDashboard.overall_depth_score ?? 0)}% backend depth
 	                            </p>
 	                            <p className="mt-1 text-xs leading-5 text-slate-500">
-	                              {engineDepthDashboard.truth_label || "Deterministic backend evidence for review only; construction release remains blocked."}
+	                              {engineDepthDashboard.truth_label || "Deterministic backend evidence for review only."}
 	                            </p>
 	                          </div>
 	                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
@@ -15015,14 +15015,14 @@ function PerformanceAIDashboardView({
                       </summary>
                       <div className="mt-3 space-y-2 text-sm text-slate-600">
                         {[
-                          ["Ready", "Enough current, traceable evidence exists for review; this does not create construction reliance."],
+                          ["Ready", "Enough current, traceable evidence exists for review."],
                           ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
                           ["Blocked", "Missing evidence, stale output, unsupported export, or unresolved conflict prevents the next review step."],
                           ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
                           ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
-                          ["Visual preview only", "The view is a visual aid and is not construction evidence by itself."],
+                          ["Visual preview only", "The view is a visual aid and is not evidence by itself."],
                           ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
-                          ["Construction reliance", "Remains outside Civora and requires independent licensed-professional review."],
+                          ["Field use", "Remains outside Civora and requires independent licensed-professional review."],
                         ].map(([label, desc]) => (
                           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="font-semibold text-slate-800">{label}</p>
@@ -15127,7 +15127,7 @@ function PerformanceAIDashboardView({
                           >
                             <span className="block uppercase tracking-[0.14em] text-slate-400">Assumptions</span>
                             <span className="mt-1 block text-sm text-slate-900">
-                              {workflowReviewDashboard.assumption_review?.requires_approval ? "Acceptance required" : "Engineer acceptance required"}
+                              {workflowReviewDashboard.assumption_review?.requires_approval ? "Acceptance required" : "Engineer review required"}
                             </span>
                           </button>
                         </div>
@@ -15822,7 +15822,7 @@ function PerformanceAIDashboardView({
                             </p>
                           </div>
                           <span className="shrink-0 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-red-700">
-                            no construction readiness
+                            review only
                           </span>
                         </div>
                         <div className="mt-3 space-y-2">
@@ -16086,7 +16086,7 @@ function PerformanceAIDashboardView({
                                       </button>
                                     </div>
                                     <p className="text-xs text-slate-500">
-                                      PDF-derived content is editable for review only. It does not modify protected authorization marks or construction status.
+                                      PDF-derived content is editable for review only. It does not modify protected authorization marks or field-use status.
                                     </p>
                                   </div>
                                 ) : (
@@ -18984,11 +18984,11 @@ function PerformanceAIDashboardView({
                             or external licensed engineer can review the work.
                           </p>
                           <p className="font-semibold text-slate-800">
-                            It is not a construction release or permit package.
+                            It is not a field-use package.
                             Exports remain review packages for external review.
                           </p>
                           <p>
-                            Construction reliance remains outside Civora.
+                            Field use remains outside Civora.
                           </p>
                         </div>
                       </details>
@@ -19341,7 +19341,7 @@ function PerformanceAIDashboardView({
                                 {sidebarReleaseStatus === "ready" ? "Ready for engineer review" : sidebarReleaseStatus === "blocked" ? "Review package blocked" : "Review-only package"}
                               </p>
                               <p className="mt-1 text-xs font-medium text-slate-500">
-                                Construction reliance remains outside Civora.
+                                Field use remains outside Civora.
                               </p>
                             </div>
                             <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
@@ -19387,7 +19387,7 @@ function PerformanceAIDashboardView({
                                     "production_evidence",
                                     "cost_book_pricing",
                                     "export_package_report",
-                                    "construction_document_support_package",
+                                    "review_document_support_package",
                                     "engineer_review_package",
                                     "reactive_rerun_evidence",
                                     "cad_geometry_handoff",
@@ -19411,7 +19411,7 @@ function PerformanceAIDashboardView({
                             </div>
                           </div>
                           <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                            Civora provides review evidence only. Construction reliance and professional responsibility remain outside Civora.
+                            Civora provides review evidence only. Field use and professional responsibility remain outside Civora.
                           </p>
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="smart-fix-panel">
@@ -19704,7 +19704,7 @@ function PerformanceAIDashboardView({
                     </p>
                     <p className="truncate text-xs font-semibold text-slate-500">
                       {sidebarHasTruthEvidence
-                        ? "Engineer review required. Construction reliance remains outside Civora."
+                        ? "Engineer review required. Field use remains outside Civora."
                         : "No project evidence yet. Start setup to create traceable state."}
                     </p>
                   </div>
