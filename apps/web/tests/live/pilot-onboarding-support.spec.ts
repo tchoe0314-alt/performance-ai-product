@@ -16,9 +16,9 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
   await expect(page.locator("#operations")).toBeVisible();
   await expect(page.locator("#responsibility")).toBeVisible();
 
-  await page.goto(`${baseURL}/?demo=1`, { waitUntil: "networkidle" });
+  await page.goto(`${baseURL}/?demo=1`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
-  await page.locator("button").filter({ hasText: "Dashboard" }).filter({ hasText: "Project status" }).first().click();
+  await page.getByRole("banner").getByRole("button", { name: "Dashboard" }).click();
   const rightPanel = page.getByTestId("workspace-right-panel");
   await expect(rightPanel.getByText("Onboarding checklist")).toBeVisible();
   await expect(rightPanel.getByText("What do statuses mean?")).toBeVisible();

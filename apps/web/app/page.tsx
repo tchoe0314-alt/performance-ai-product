@@ -13323,7 +13323,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
+            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
           >
             <button
               type="button"
@@ -13462,7 +13462,7 @@ function PerformanceAIDashboardView({
                   : "No project evidence yet | Engineer review required before release"}
               </p>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
+            <div className="flex shrink-0 flex-col gap-1 pr-1">
               <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Workspace
               </p>

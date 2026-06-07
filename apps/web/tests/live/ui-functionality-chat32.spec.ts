@@ -105,7 +105,7 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(sidebar).toBeVisible();
     await expect(sidebar).toHaveAttribute("data-motion-state", "open");
 
-    await sidebar.getByRole("button", { name: "Canvas" }).click();
+    await sidebar.getByRole("button", { name: "Open canvas from sidebar" }).click();
     await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();
     await expect(canvas).toBeVisible();
 
