@@ -317,7 +317,7 @@ def run_dense_utility_benchmark(write_report: bool = False) -> Dict[str, Any]:
 
 class DenseUtilityBenchmarkTest(unittest.TestCase):
     def test_dense_utility_objects_are_represented_traced_and_coordinated(self) -> None:
-        report = run_dense_utility_benchmark(write_report=True)
+        report = run_dense_utility_benchmark()
 
         self.assertTrue(report["validation"]["drainage"]["ready"], report)
         self.assertTrue(report["validation"]["storm"]["ready"], report)

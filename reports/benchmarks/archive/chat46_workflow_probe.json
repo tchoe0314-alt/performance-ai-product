@@ -1,0 +1,126 @@
+{
+  "case_count": 9,
+  "results": [
+    {
+      "case": "small_project",
+      "elapsed_ms": 73800.119,
+      "peak_rss_mb": 123.031,
+      "result": {
+        "action_count": 62,
+        "blocked_count": 0,
+        "building_count": null,
+        "export_ready": null
+      },
+      "rss_delta_mb": 116.625,
+      "rss_mb": 123.031,
+      "status": "passed"
+    },
+    {
+      "case": "medium_project",
+      "elapsed_ms": 8927.292,
+      "peak_rss_mb": 115.141,
+      "result": {
+        "action_count": 130,
+        "blocked_count": 0,
+        "building_count": null,
+        "export_ready": null
+      },
+      "rss_delta_mb": 108.781,
+      "rss_mb": 115.141,
+      "status": "passed"
+    },
+    {
+      "case": "large_project",
+      "elapsed_ms": 29787.458,
+      "peak_rss_mb": 216.328,
+      "result": {
+        "action_count": 214,
+        "blocked_count": 0,
+        "building_count": null,
+        "export_ready": null
+      },
+      "rss_delta_mb": 209.953,
+      "rss_mb": 216.328,
+      "status": "passed"
+    },
+    {
+      "case": "many_objects",
+      "elapsed_ms": 487.326,
+      "peak_rss_mb": 18.141,
+      "result": {
+        "action_count": 3501,
+        "building_count": 350
+      },
+      "rss_delta_mb": 11.766,
+      "rss_mb": 18.141,
+      "status": "passed"
+    },
+    {
+      "case": "many_utilities",
+      "elapsed_ms": 25915.223,
+      "peak_rss_mb": 222.656,
+      "result": {
+        "action_count": 214,
+        "blocked_count": 0,
+        "building_count": null,
+        "export_ready": null
+      },
+      "rss_delta_mb": 216.281,
+      "rss_mb": 222.656,
+      "status": "passed"
+    },
+    {
+      "case": "repeated_reruns",
+      "elapsed_ms": 67139.186,
+      "peak_rss_mb": 127.641,
+      "result": {
+        "action_counts": [
+          130,
+          130,
+          130,
+          130,
+          130,
+          130,
+          130,
+          130
+        ],
+        "iterations": 8,
+        "stable_action_count": true
+      },
+      "rss_delta_mb": 121.234,
+      "rss_mb": 127.641,
+      "status": "passed"
+    },
+    {
+      "case": "export_generation",
+      "elapsed_ms": 73011.964,
+      "peak_rss_mb": 130.906,
+      "result": {
+        "bytes": 967717,
+        "path_exists": true,
+        "suffix": ".json"
+      },
+      "rss_delta_mb": 124.516,
+      "rss_mb": 130.906,
+      "status": "passed"
+    },
+    {
+      "case": "chat_workflows",
+      "elapsed_ms": 60009.792,
+      "status": "timeout",
+      "timeout_seconds": 60
+    },
+    {
+      "case": "queue_monitoring",
+      "elapsed_ms": 73.349,
+      "error": "FOREIGN KEY constraint failed",
+      "peak_rss_mb": 12.844,
+      "rss_delta_mb": 6.453,
+      "rss_mb": 12.844,
+      "status": "failed"
+    }
+  ],
+  "status": "failed",
+  "truth_label": "Local bounded workflow probe for Chat 46 performance/load/soak hardening; not production capacity proof.",
+  "version": "chat46_workflow_probe_v1"
+}

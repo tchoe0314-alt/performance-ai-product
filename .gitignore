@@ -27,3 +27,5 @@ stderr.txt
 isolated_out.txt
 isolated_err.txt
 debug_trace.txt
+reports/benchmarks/*_local.json
+reports/benchmarks/golden_load_benchmark_report.json
