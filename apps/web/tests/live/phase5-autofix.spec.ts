@@ -24,6 +24,61 @@ type IssueLike = {
   context?: unknown;
 };
 
+type CaseResult = {
+  case: string;
+  action: string | null;
+  before: DrainageCounts;
+  after: DrainageCounts;
+  error: string | null;
+};
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function seedBrowserToken(page: Page, token: string) {
+  if (!page.url().startsWith(APP_BASE_URL)) {
+    await page.goto(APP_BASE_URL, { waitUntil: "domcontentloaded" });
+  }
+  await page.evaluate(
+    ([tokenKey, authToken]) => {
+      window.localStorage.setItem(tokenKey, authToken);
+    },
+    [TOKEN_KEY, token] as const,
+  );
+  await expect
+    .poll(
+      () =>
+        page.evaluate(([tokenKey]) => window.localStorage.getItem(tokenKey), [
+          TOKEN_KEY,
+        ] as const),
+      { timeout: 5_000 },
+    )
+    .toBe(token);
+}
+
+async function waitForAuthenticatedShell(page: Page, timeout = 30_000) {
+  await expect(page.getByText(/^Dashboard$/).first()).toBeVisible({ timeout });
+}
+
+async function ensureSignedIn(page: Page, token: string) {
+  await seedBrowserToken(page, token);
+  try {
+    await waitForAuthenticatedShell(page, 8_000);
+    return;
+  } catch {
+    const signInMode = page.getByRole("button", { name: "Sign In Mode" });
+    await expect(signInMode).toBeVisible({ timeout: 10_000 });
+    await signInMode.click();
+    await page.getByPlaceholder("you@example.com").fill(email);
+    await page.getByPlaceholder("At least 8 characters").fill(password);
+    const signInButton = page.getByRole("button", { name: /^Sign In$/ });
+    await expect(signInButton).toBeVisible({ timeout: 10_000 });
+    await signInButton.click();
+    await waitForAuthenticatedShell(page);
+  }
+}
+
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   const timeout = new Promise<never>((_, reject) => {
@@ -51,12 +106,10 @@ async function loginAndSeedToken(request: APIRequestContext, page: Page) {
   const token = String(loginPayload?.token || "");
   expect(token).toBeTruthy();
 
-  await page.addInitScript(
-    ([tokenKey, authToken]) => {
-      window.localStorage.setItem(tokenKey, authToken);
-    },
-    [TOKEN_KEY, token] as const,
-  );
+  await page.addInitScript(([tokenKey, authToken]) => {
+    window.localStorage.setItem(tokenKey, authToken);
+  }, [TOKEN_KEY, token] as const);
+  await ensureSignedIn(page, token);
   return token;
 }
 
@@ -178,20 +231,31 @@ function parseDrainageCounts(result: Record<string, unknown>): DrainageCounts {
   return { basins, inlets, runs, issues };
 }
 
-async function openProject(page: Page, name: string) {
-  const projectsButton = page.getByRole("button", { name: "Projects" });
+async function openProject(page: Page, token: string, name: string) {
+  // Projects in this suite are created through the API after the app authenticates,
+  // so reload before opening the project drawer to refresh the app-side project list.
+  await seedBrowserToken(page, token);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await ensureSignedIn(page, token);
+  const dashboardButton = page.getByRole("button", { name: /Dashboard/i });
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    await projectsButton.click();
-    const projectButton = page.getByRole("button", { name: new RegExp(name, "i") });
+    await dashboardButton.click();
+    const projectCard = page.locator("div", {
+      has: page.getByText(new RegExp(`^${escapeRegExp(name)}$`, "i")),
+      hasNot: page.getByPlaceholder("you@example.com"),
+    }).filter({
+      has: page.getByRole("button", { name: "View Docs" }),
+    }).first();
     try {
-      await projectButton.waitFor({ timeout: 20_000 });
-      await projectButton.click();
-      await page.getByText("Preview Workspace").waitFor({ timeout: 30_000 });
+      await projectCard.waitFor({ timeout: 20_000 });
+      await projectCard.getByRole("button", { name: "View Docs" }).click();
+      await waitForAuthenticatedShell(page);
+      await page.getByText(new RegExp(escapeRegExp(name), "i")).first().waitFor({ timeout: 10_000 });
       return;
     } catch (err) {
       if (attempt === 0) {
         await page.reload({ waitUntil: "domcontentloaded" });
-        await page.getByText("Preview Workspace").waitFor({ timeout: 30_000 });
+        await ensureSignedIn(page, token);
         continue;
       }
       throw err;
@@ -347,7 +411,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
     const selectedCases = onlyCase
       ? cases.filter((entry) => entry.name.toLowerCase().includes(onlyCase.toLowerCase()))
       : cases;
-    const caseResults: Array<Record<string, unknown>> = [];
+    const caseResults: CaseResult[] = [];
 
     for (const entry of selectedCases) {
       console.info(`Starting ${entry.name}`);
@@ -364,13 +428,13 @@ test.describe("Phase 5 drainage autofix matrix", () => {
       const actionLabel = entry.action;
       try {
           if (entry.skipApply || !actionLabel) {
-            console.info(`${entry.name} BEFORE`, before);
+            console.info(`${entry.name} APPLY SKIPPED: validation control case has no autofix action.`);
             after = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
           } else if (!before.issues.length) {
             applyError = "No issues produced; cannot apply autofix.";
           } else {
             console.info(`${entry.name} BEFORE`, before);
-            await withTimeout(openProject(page, entry.name), 45_000, `${entry.name} openProject`);
+            await withTimeout(openProject(page, token, entry.name), 90_000, `${entry.name} openProject`);
           const jobResponsePromise = page.waitForResponse((response) => {
             return response.url().includes("/api/jobs/drainage") && response.request().method() === "POST";
           });
@@ -467,6 +531,24 @@ test.describe("Phase 5 drainage autofix matrix", () => {
       console.info(`${entry.name} AFTER`, after);
     }
     console.info("PHASE5_AUTOFIX_RESULTS", JSON.stringify(caseResults, null, 2));
+
+    const failedApplyCases = caseResults.filter((result) => result.action && result.error);
+    expect(
+      failedApplyCases,
+      `Phase 5 autofix UI apply failed for: ${failedApplyCases
+        .map((result) => `${result.case}: ${result.error}`)
+        .join("; ")}`,
+    ).toEqual([]);
+
+    const unexercisedApplyCases = caseResults.filter(
+      (result) => result.action && !result.before.issues.length,
+    );
+    expect(
+      unexercisedApplyCases,
+      `Phase 5 autofix cases produced no issues, so the configured apply action was not exercised: ${unexercisedApplyCases
+        .map((result) => result.case)
+        .join(", ")}`,
+    ).toEqual([]);
 
     await page.addInitScript(
       ([tokenKey]) => {
