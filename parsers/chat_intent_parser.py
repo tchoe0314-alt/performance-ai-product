@@ -1382,7 +1382,7 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             if isinstance(item, dict) and str(item.get("label") or "").strip()
         ]
         parts = [
-            f"I can keep moving setup, but I will only record real inputs and explicit reviews. Current step: {label}.",
+            f"I can keep moving setup, but I cannot mark review gates complete for you; I will only record real inputs and explicit reviews. Current step: {label}.",
             f"Next action: {action}.",
         ]
         if why:
@@ -1615,6 +1615,16 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
             return reply
 
     if (
+        "finish setup" in lowered
+        or "finish the setup" in lowered
+        or "complete setup" in lowered
+        or "complete the setup" in lowered
+    ):
+        reply = _wizard_finish_reply()
+        if reply:
+            return reply
+
+    if (
         "where am i" in lowered
         or "where are we" in lowered
         or "where am i in the project" in lowered
@@ -1700,6 +1710,14 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "whats missing" in lowered
         or "what state is missing" in lowered
     ):
+        if "grading" in lowered:
+            reply = _wizard_grading_missing_reply()
+            if reply:
+                return reply
+        if setup_wizard:
+            wizard_missing = _wizard_missing_inputs()
+            if wizard_missing:
+                return "The missing setup inputs are " + _format_missing_requirements(wizard_missing[:6]) + ". Next action: " + (_wizard_next_action() or _primary_next_action())
         if missing_inputs:
             return "The missing inputs are " + _format_missing_requirements([str(item) for item in missing_inputs[:5]]) + "."
         inferred = _current_input_needs()
@@ -1756,6 +1774,9 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         or "set this up for me" in lowered
         or "setup this for me" in lowered
     ):
+        finish_reply = _wizard_finish_reply()
+        if finish_reply:
+            return finish_reply
         action = _wizard_next_action() or _primary_next_action()
         current = _wizard_current_step()
         label = str(current.get("label") or "setup").strip()
@@ -3165,6 +3186,11 @@ def _compose_specific_response(decision: Dict[str, Any], context: Dict[str, Any]
             "can you set this up for me",
             "can you set it up for me",
             "set this up for me",
+            "finish setup",
+            "finish the setup",
+            "what's missing before i can run grading",
+            "whats missing before i can run grading",
+            "what is missing before i can run grading",
         ]
     ):
         next_best_action = str(setup_wizard_context.get("next_action") or next_best_action)
@@ -4051,6 +4077,11 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 "can you set this up for me",
                 "can you set it up for me",
                 "set this up for me",
+                "finish setup",
+                "finish the setup",
+                "what's missing before i can run grading",
+                "whats missing before i can run grading",
+                "what is missing before i can run grading",
             ]
         ):
             next_best_action = str(setup_wizard_context.get("next_action") or next_best_action)
