@@ -14,6 +14,13 @@ from backend.planning.candidate_review_inbox import (
     apply_candidate_review_decision,
     build_candidate_review_inbox,
 )
+from backend.planning.design_alternatives import (
+    ALTERNATIVES_VERSION,
+    append_revised_design_alternative,
+    build_design_alternatives,
+    compare_design_alternatives,
+    select_design_alternative,
+)
 from backend.planning.progress_timeline import build_progress_timeline
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
@@ -811,6 +818,118 @@ def get_project_source_confidence_map(
         "project_id": project_id,
         "source_confidence_map_v1": confidence_map,
         "truth_label": confidence_map.get("truth_label"),
+    }
+
+
+def get_project_design_alternatives(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+    requested_count: int = 3,
+) -> Dict[str, Any]:
+    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    latest_result = dict(record.get("latest_result") or {})
+    final_plan = dict(latest_result.get("final_plan") or {})
+    if not final_plan:
+        raise HTTPException(status_code=400, detail="Selected project has no saved planner result.")
+    meta = dict(final_plan.get("meta") or {})
+    alternatives = dict(meta.get(ALTERNATIVES_VERSION) or build_design_alternatives(meta, requested_count=requested_count))
+    return {
+        "success": True,
+        "project_id": project_id,
+        ALTERNATIVES_VERSION: alternatives,
+        "comparison": compare_design_alternatives({**meta, ALTERNATIVES_VERSION: alternatives}, requested_count=requested_count),
+        "truth_label": alternatives.get("truth_label"),
+    }
+
+
+def update_project_design_alternatives(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+    action: str,
+    requested_count: int = 3,
+    option_number: Optional[int] = None,
+    alternative_id: str = "",
+    reason: str = "",
+    reviewer_id: str = "",
+) -> Dict[str, Any]:
+    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    latest_result = dict(record.get("latest_result") or {})
+    final_plan = dict(latest_result.get("final_plan") or {})
+    if not final_plan:
+        raise HTTPException(status_code=400, detail="Selected project has no saved planner result.")
+    meta = dict(final_plan.get("meta") or {})
+    normalized_action = str(action or "generate").strip().lower()
+    try:
+        if normalized_action == "generate":
+            alternatives = build_design_alternatives(meta, requested_count=requested_count)
+            meta[ALTERNATIVES_VERSION] = alternatives
+            result = {"success": True, ALTERNATIVES_VERSION: alternatives, "updated_meta": meta}
+        elif normalized_action == "compare":
+            alternatives = dict(meta.get(ALTERNATIVES_VERSION) or build_design_alternatives(meta, requested_count=requested_count))
+            meta[ALTERNATIVES_VERSION] = alternatives
+            result = {
+                "success": True,
+                ALTERNATIVES_VERSION: alternatives,
+                "comparison": compare_design_alternatives(meta, requested_count=requested_count),
+                "updated_meta": meta,
+            }
+        elif normalized_action in {"choose", "merge", "select", "use"}:
+            result = select_design_alternative(
+                meta,
+                option_number=option_number,
+                alternative_id=alternative_id,
+                action="merge" if normalized_action == "merge" else "choose",
+                reviewer_id=reviewer_id or user_id,
+                reason=reason,
+            )
+            meta = dict(result.get("updated_meta") or meta)
+        elif normalized_action == "revise":
+            result = append_revised_design_alternative(
+                meta,
+                basis_option_number=option_number,
+                reviewer_id=reviewer_id or user_id,
+                reason=reason,
+            )
+            meta = dict(result.get("updated_meta") or meta)
+        else:
+            raise ValueError("Unsupported alternatives action.")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    final_plan["meta"] = meta
+    latest_result["final_plan"] = final_plan
+    latest_result = _with_progress_timeline_result(
+        latest_result,
+        project_input=dict(record.get("project_input") or {}),
+    )
+    saved = project_store.save_project(
+        user_id=user_id,
+        project_id=project_id,
+        name=record.get("name", "Untitled Project"),
+        description=record.get("description", ""),
+        session_id=record.get("session_id"),
+        tags=record.get("tags", []),
+        project_input=record.get("project_input", {}),
+        latest_result=latest_result,
+        session_state=record.get("session_state", {}),
+        metadata=record.get("metadata", {}),
+    )
+    alternatives = dict(meta.get(ALTERNATIVES_VERSION) or {})
+    return {
+        **result,
+        "success": True,
+        "project_id": project_id,
+        "project": _record_with_operational_summary(saved),
+        ALTERNATIVES_VERSION: alternatives,
+        "comparison": result.get("comparison") or compare_design_alternatives(meta, requested_count=requested_count),
+        "truth_label": result.get("truth_label") or alternatives.get("truth_label"),
     }
 
 

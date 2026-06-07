@@ -661,6 +661,72 @@ export type CandidateReviewInbox = {
   construction_release_blocked?: boolean;
 };
 
+export type DesignAlternative = {
+  alternative_id: string;
+  option_number?: number;
+  label?: string;
+  summary?: string;
+  categories?: string[];
+  concepts?: Record<string, string>;
+  scoring?: {
+    review_score?: number;
+    score_basis?: string[];
+    criteria?: Record<string, number>;
+  };
+  tradeoffs?: string[];
+  cost_quantity_comparison?: {
+    available?: boolean;
+    reason?: string;
+    estimated_review_deltas?: Record<string, {
+      basis_key?: string;
+      base_value?: number;
+      concept_value?: number;
+      delta?: number;
+      basis?: string;
+    }>;
+  };
+  input_support_state?: string;
+  review_required?: boolean;
+  status?: string;
+  construction_release_allowed?: boolean;
+  construction_readiness_implied?: boolean;
+  merge_ready?: boolean;
+  next_action?: string;
+  truth_label?: string;
+};
+
+export type DesignAlternativesV1 = {
+  version?: "design_alternatives_v1" | string;
+  generated_on?: string;
+  requested_count?: number;
+  alternative_count?: number;
+  selected_alternative_id?: string;
+  selected_alternative?: DesignAlternative;
+  selection_status?: string;
+  categories?: string[];
+  accepted_input_summary?: {
+    accepted_candidate_count?: number;
+    trusted_source_count?: number;
+    has_existing_conditions_package?: boolean;
+    has_verified_survey_control?: boolean;
+    accepted_labels?: string[];
+    trusted_labels?: string[];
+  };
+  quantity_basis?: {
+    available?: boolean;
+    totals?: Record<string, unknown>;
+    line_item_count?: number;
+    cost_status?: string;
+    review_required?: boolean;
+  };
+  alternatives?: DesignAlternative[];
+  ranked_alternative_ids?: string[];
+  review_required?: boolean;
+  construction_release_allowed?: boolean;
+  construction_readiness_implied?: boolean;
+  truth_label?: string;
+};
+
 export type SourceConfidenceEntry = {
   entry_id: string;
   label?: string;
@@ -970,6 +1036,7 @@ export type UploadPlanPdfResponse = {
   plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
   plan_pdf_changed_elements_v1?: PlanPdfChangedElements;
   candidate_review_inbox_v1?: CandidateReviewInbox;
+  design_alternatives_v1?: DesignAlternativesV1;
 };
 
 export type PlanMeta = {
@@ -1028,6 +1095,7 @@ export type PlanMeta = {
   reactive_partial_rerun?: ReactivePartialRerun;
   export_audit?: Record<string, unknown>;
   candidate_review_inbox_v1?: CandidateReviewInbox;
+  design_alternatives_v1?: DesignAlternativesV1;
   source_confidence_map_v1?: SourceConfidenceMap;
   plan_pdf_analysis_v1?: PlanPdfAnalysis;
   plan_pdf_analyses_v1?: PlanPdfAnalysis[];
@@ -1865,6 +1933,7 @@ export type ChatDecisionResponse = {
     affected_systems?: string[];
     assumptions?: string[];
     next_best_action?: string;
+    design_alternatives_v1?: DesignAlternativesV1;
     command_payload?: Record<string, unknown>;
   };
   required_missing_inputs?: string[];

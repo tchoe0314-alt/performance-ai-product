@@ -88,6 +88,7 @@ from backend.application.project_workflows import (
     artifact_summary as application_artifact_summary,
     delete_project_record as application_delete_project_record,
     get_project_candidate_review_inbox as application_get_project_candidate_review_inbox,
+    get_project_design_alternatives as application_get_project_design_alternatives,
     get_project_detail as application_get_project_detail,
     get_project_result as application_get_project_result,
     get_project_source_confidence_map as application_get_project_source_confidence_map,
@@ -97,6 +98,7 @@ from backend.application.project_workflows import (
     review_project_candidates as application_review_project_candidates,
     save_project_record as application_save_project_record,
     save_project_workflow_update as application_save_project_workflow_update,
+    update_project_design_alternatives as application_update_project_design_alternatives,
 )
 from backend.application.session_workflows import maybe_export_session as application_maybe_export_session
 from backend.application.standards_workflows import (
@@ -343,6 +345,14 @@ class SaveProjectPayload(BaseModel):
 class CandidateReviewPayload(BaseModel):
     candidate_ids: List[str] = Field(default_factory=list)
     action: str
+    reason: str = ""
+
+
+class DesignAlternativesPayload(BaseModel):
+    action: str = "generate"
+    requested_count: int = 3
+    option_number: Optional[int] = None
+    alternative_id: str = ""
     reason: str = ""
 
 
@@ -1719,6 +1729,34 @@ def get_project_source_confidence_map(project_id: str, current_user: Dict[str, A
         project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
         project_id=project_id,
+    )
+
+
+@app.get("/api/projects/{project_id}/design-alternatives")
+def get_project_design_alternatives(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return application_get_project_design_alternatives(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
+
+
+@app.post("/api/projects/{project_id}/design-alternatives")
+def update_project_design_alternatives(
+    project_id: str,
+    payload: DesignAlternativesPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    return application_update_project_design_alternatives(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+        action=payload.action,
+        requested_count=payload.requested_count,
+        option_number=payload.option_number,
+        alternative_id=payload.alternative_id,
+        reason=payload.reason,
+        reviewer_id=str(current_user.get("user_id") or current_user.get("email") or ""),
     )
 
 

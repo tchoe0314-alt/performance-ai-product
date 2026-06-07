@@ -17,7 +17,16 @@ from backend.planning.candidate_review_inbox import (
     apply_candidate_review_decision,
     build_candidate_review_inbox,
 )
-from backend.planning.common import safe_str
+from backend.planning.common import safe_float, safe_str
+from backend.planning.design_alternatives import (
+    ALTERNATIVES_VERSION,
+    append_revised_design_alternative,
+    build_design_alternatives,
+    compare_design_alternatives,
+    option_number_from_message,
+    requested_alternative_count_from_message,
+    select_design_alternative,
+)
 from backend.planning.dwg_compatibility import dwg_strategy_from_meta
 from backend.planning.existing_conditions_online import fetch_online_existing_conditions
 from backend.planning.map_feature_detection import build_map_feature_detection_report
@@ -1586,6 +1595,199 @@ def _candidate_chat_response(
     )
 
 
+def _design_alternatives_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_show = any(
+        phrase in normalized
+        for phrase in (
+            "show me 3 options",
+            "show me options",
+            "show options",
+            "design alternatives",
+            "layout alternatives",
+            "parking alternatives",
+            "road alternatives",
+            "basin alternatives",
+            "utility alternatives",
+            "grading alternatives",
+        )
+    )
+    asks_compare = any(phrase in normalized for phrase in ("compare these", "compare options", "compare alternatives"))
+    asks_use = any(phrase in normalized for phrase in ("use option", "choose option", "merge option", "select option"))
+    asks_revise = any(phrase in normalized for phrase in ("make another layout", "another layout", "revise option", "make another option"))
+    if not any((asks_show, asks_compare, asks_use, asks_revise)):
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project with a planner result before I can create design alternatives.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_alternatives_project",
+            action_blocked_reason="No saved project record is available for alternatives.",
+            required_missing_inputs=["saved project with planner result"],
+            affected_systems=["layout", "grading", "drainage", "utilities"],
+            assumptions=[],
+            next_best_action="Save or load a project result, then ask for alternatives again.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="No saved project record is available for alternatives.",
+        )
+    latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    if not final_plan:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved planner result before I can compare layout alternatives.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_alternatives_plan",
+            action_blocked_reason="Saved project has no final plan.",
+            required_missing_inputs=["saved planner result"],
+            affected_systems=["layout"],
+            assumptions=[],
+            next_best_action="Run or load a design first, then ask for alternatives.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="Saved project has no final plan.",
+        )
+    meta = _safe_dict(final_plan.get("meta"))
+    requested_count = requested_alternative_count_from_message(message)
+    option_number = option_number_from_message(message)
+    state_changed = False
+    action_taken = "reported_design_alternatives"
+
+    try:
+        if asks_revise:
+            result = append_revised_design_alternative(
+                meta,
+                basis_option_number=option_number,
+                reviewer_id=user_id or "user",
+                reason=message,
+            )
+            meta = _safe_dict(result.get("updated_meta"))
+            action_taken = "revised_design_alternative"
+            state_changed = True
+        elif asks_use:
+            if not option_number:
+                return _truthful_decision_update(
+                    {},
+                    assistant_message="Which option should I use as the draft direction? Say something like “use option 2.”",
+                    intent="conversation",
+                    run_mode="none",
+                    design_prompt="",
+                    needs_clarification=True,
+                    action_taken="blocked_missing_alternative_option",
+                    action_blocked_reason="No option number was provided.",
+                    required_missing_inputs=["option number"],
+                    affected_systems=["layout"],
+                    assumptions=[],
+                    next_best_action="Choose one option number from the Alternatives panel.",
+                    outcome="understood_but_blocked",
+                    state_changed=False,
+                    blocker="No option number was provided.",
+                )
+            result = select_design_alternative(
+                meta,
+                option_number=option_number,
+                action="merge" if "merge" in normalized else "choose",
+                reviewer_id=user_id or "user",
+                reason=message,
+            )
+            meta = _safe_dict(result.get("updated_meta"))
+            action_taken = "selected_design_alternative"
+            state_changed = True
+        else:
+            alternatives = _safe_dict(meta.get(ALTERNATIVES_VERSION)) or build_design_alternatives(meta, requested_count=requested_count)
+            meta[ALTERNATIVES_VERSION] = alternatives
+            action_taken = "compared_design_alternatives" if asks_compare else "generated_design_alternatives"
+            state_changed = asks_show or not _safe_dict(final_plan.get("meta")).get(ALTERNATIVES_VERSION)
+        alternatives_record = _safe_dict(meta.get(ALTERNATIVES_VERSION)) or build_design_alternatives(meta, requested_count=requested_count)
+        meta[ALTERNATIVES_VERSION] = alternatives_record
+        comparison = compare_design_alternatives(meta, requested_count=requested_count)
+    except ValueError as exc:
+        return _truthful_decision_update(
+            {},
+            assistant_message=str(exc),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_design_alternative_action",
+            action_blocked_reason=str(exc),
+            required_missing_inputs=["valid alternative option"],
+            affected_systems=["layout"],
+            assumptions=[],
+            next_best_action="Generate alternatives and choose a visible option number.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker=str(exc),
+        )
+
+    if state_changed and project_store and user_id:
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        _save_project_record(
+            project_store,
+            {**record, "_user_id": user_id},
+            project_input=deepcopy(_safe_dict(record.get("project_input"))),
+            latest_result=latest_result,
+        )
+    rows = _safe_list(comparison.get("rows"))
+    if asks_use:
+        selected = _safe_dict(alternatives_record.get("selected_alternative"))
+        assistant = (
+            f"I selected {safe_str(selected.get('label'), 'the requested option')} as a draft review direction. "
+            "It remains a review-required concept and still depends on accepted inputs before deeper reliance."
+        )
+    elif asks_revise:
+        assistant = (
+            "I added another layout concept for comparison. "
+            "It is review-required and should be compared before you choose or merge it."
+        )
+    else:
+        lines = [
+            f"Option {int(row.get('option_number') or 0)}: {safe_str(row.get('label'))}, score {safe_float(row.get('review_score'), 0):.0f}, {safe_str((_safe_list(row.get('top_tradeoffs')) or ['review required'])[0])}"
+            for row in rows[:requested_count]
+        ]
+        assistant = (
+            f"Here are {len(lines)} review-required design alternatives:\n"
+            + "\n".join(f"- {line}" for line in lines)
+            + "\nUse compare, revise, or choose one as a draft direction. These concepts are not field-use documents."
+        )
+    return _truthful_decision_update(
+        {},
+        assistant_message=assistant,
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken=action_taken,
+        action_blocked_reason="",
+        affected_systems=["parking", "roads", "drainage", "utilities", "grading", "layout"],
+        assumptions=["Alternatives are concept-level unless backed by accepted project inputs."],
+        next_best_action="Review tradeoffs, compare costs/quantities where available, then choose or revise a concept.",
+        command_payload_updates={
+            ALTERNATIVES_VERSION: alternatives_record,
+            "design_alternatives_comparison_v1": comparison,
+            "ui_navigation_target": "reports",
+            "requested_ui_mode": "review",
+        },
+        outcome="understood_and_executed" if state_changed else "understood_and_answered",
+        state_changed=state_changed,
+    )
+
+
 def _source_confidence_chat_response(
     *,
     message: str,
@@ -2043,6 +2245,14 @@ def decide_chat(
     )
     if online_discovery_decision is not None:
         return _enrich_response_contract(online_discovery_decision, message=message)
+    alternatives_decision = _design_alternatives_chat_response(
+        message=message,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if alternatives_decision is not None:
+        return _enrich_response_contract(alternatives_decision, message=message)
     source_confidence_decision = _source_confidence_chat_response(message=message, record=record)
     if source_confidence_decision is not None:
         return _enrich_response_contract(source_confidence_decision, message=message)
