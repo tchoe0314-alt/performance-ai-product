@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import hashlib
 import json
+import os
 import re
+import shutil
 import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -49,6 +51,7 @@ class _TextEvidence:
     bbox: Optional[Dict[str, float]]
     source: str
     confidence: str = "embedded_text"
+    confidence_score: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -58,6 +61,7 @@ class _TextEvidence:
             "bbox": self.bbox,
             "source": self.source,
             "confidence": self.confidence,
+            "confidence_score": self.confidence_score,
             "review_required": True,
         }
 
@@ -172,6 +176,170 @@ def _extract_with_pypdf(path: Path) -> Tuple[List[Dict[str, Any]], List[_TextEvi
         page_record["embedded_text_excerpt"] = _truncate(" ".join(fragments), 600)
         pages.append(page_record)
     return pages, evidence, []
+
+
+def _ocr_config() -> Dict[str, Any]:
+    requested = safe_str(os.environ.get("CIVORA_OCR_ENGINE"), "auto").lower()
+    lang = safe_str(os.environ.get("CIVORA_OCR_LANG"), "eng") or "eng"
+    min_confidence = 55.0
+    try:
+        min_confidence = float(os.environ.get("CIVORA_OCR_MIN_CONFIDENCE", "55") or 55)
+    except Exception:
+        min_confidence = 55.0
+    enabled = requested not in {"0", "false", "off", "disabled", "none"}
+    return {
+        "version": "ocr_engine_config_v1",
+        "requested_engine": requested,
+        "enabled": enabled,
+        "language": lang,
+        "min_confidence": round(min_confidence, 3),
+    }
+
+
+def _detect_ocr_engine(config: Dict[str, Any]) -> Dict[str, Any]:
+    if not config.get("enabled"):
+        return {
+            "engine": "disabled",
+            "available": False,
+            "status": "disabled",
+            "blockers": ["ocr_disabled_by_config"],
+            "config": config,
+        }
+    blockers: List[str] = []
+    tesseract_path = shutil.which("tesseract")
+    if not tesseract_path:
+        blockers.append("ocr_engine_unavailable:tesseract_binary_missing")
+    try:
+        import pytesseract  # type: ignore
+
+        pytesseract_available = True
+        version = safe_str(pytesseract.get_tesseract_version()) if tesseract_path else ""
+    except Exception as exc:
+        pytesseract_available = False
+        version = ""
+        blockers.append(f"ocr_engine_unavailable:pytesseract_missing:{exc.__class__.__name__}")
+    available = bool(tesseract_path and pytesseract_available)
+    return {
+        "engine": "tesseract",
+        "available": available,
+        "status": "available" if available else "blocked",
+        "executable": tesseract_path or "",
+        "version": version,
+        "blockers": blockers,
+        "config": config,
+    }
+
+
+def _render_page_previews(path: Path, pages: List[Dict[str, Any]], *, file_url: str = "") -> Tuple[List[Dict[str, Any]], List[Any], List[str]]:
+    blockers: List[str] = []
+    images: List[Any] = []
+    try:
+        import fitz  # type: ignore
+    except Exception as exc:
+        blockers.append(f"raster_preview_blocked:no_pdf_renderer_configured:{exc.__class__.__name__}")
+        return pages, images, blockers
+
+    try:
+        document = fitz.open(str(path))
+    except Exception as exc:
+        blockers.append(f"raster_preview_blocked:pdf_open_failed:{exc.__class__.__name__}")
+        return pages, images, blockers
+
+    upload_url_base = ""
+    if file_url and "/" in file_url:
+        upload_url_base = file_url.rsplit("/", 1)[0]
+    try:
+        for idx in range(min(len(document), len(pages))):
+            page = document.load_page(idx)
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+            preview_name = f"{path.stem}_page_{idx + 1}.png"
+            preview_path = path.with_name(preview_name)
+            pix.save(str(preview_path))
+            from PIL import Image  # type: ignore
+
+            image = Image.open(preview_path).convert("RGB")
+            images.append({"page_index": idx, "image": image, "preview_path": str(preview_path)})
+            page_record = dict(pages[idx])
+            page_record.update(
+                {
+                    "preview_status": "available",
+                    "preview_path": str(preview_path),
+                    "preview_url": f"{upload_url_base}/{preview_name}" if upload_url_base else "",
+                    "preview_blocker": "",
+                    "raster_preview_generated": True,
+                }
+            )
+            pages[idx] = page_record
+    except Exception as exc:
+        blockers.append(f"raster_preview_blocked:render_failed:{exc.__class__.__name__}")
+    finally:
+        try:
+            document.close()
+        except Exception:
+            pass
+    return pages, images, blockers
+
+
+def _ocr_images(images: List[Any], engine: Dict[str, Any], *, min_confidence: float) -> Tuple[List[_TextEvidence], List[Dict[str, Any]], List[str]]:
+    if not engine.get("available"):
+        return [], [], list(safe_list(engine.get("blockers"))) or ["ocr_fallback_blocked:no_ocr_engine_configured"]
+    try:
+        import pytesseract  # type: ignore
+    except Exception as exc:
+        return [], [], [f"ocr_fallback_blocked:pytesseract_import_failed:{exc.__class__.__name__}"]
+
+    evidence: List[_TextEvidence] = []
+    unreadable: List[Dict[str, Any]] = []
+    blockers: List[str] = []
+    lang = safe_str(safe_dict(engine.get("config")).get("language"), "eng") or "eng"
+    for image_record in images:
+        page_index = int(safe_dict(image_record).get("page_index") or 0)
+        image = safe_dict(image_record).get("image")
+        if image is None:
+            continue
+        try:
+            data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT)
+        except Exception as exc:
+            blockers.append(f"ocr_page_failed:page_{page_index + 1}:{exc.__class__.__name__}")
+            continue
+        count = len(data.get("text", []) or [])
+        for idx in range(count):
+            text = _clean_text((data.get("text") or [""])[idx])
+            try:
+                confidence_score = float((data.get("conf") or ["-1"])[idx])
+            except Exception:
+                confidence_score = -1.0
+            bbox = {
+                "x0": round(float((data.get("left") or [0])[idx]), 3),
+                "y0": round(float((data.get("top") or [0])[idx]), 3),
+                "x1": round(float((data.get("left") or [0])[idx]) + float((data.get("width") or [0])[idx]), 3),
+                "y1": round(float((data.get("top") or [0])[idx]) + float((data.get("height") or [0])[idx]), 3),
+            }
+            if text and confidence_score >= min_confidence:
+                evidence.append(
+                    _TextEvidence(
+                        text=text,
+                        page_index=page_index,
+                        bbox=bbox,
+                        source="ocr_tesseract",
+                        confidence="ocr_tesseract_review_required",
+                        confidence_score=round(confidence_score / 100.0, 4),
+                    )
+                )
+            elif text or confidence_score >= 0:
+                unreadable.append(
+                    {
+                        "page_index": page_index,
+                        "bbox": bbox,
+                        "raw_text": text,
+                        "confidence_score": round(max(confidence_score, 0.0) / 100.0, 4),
+                        "reason": "below_ocr_confidence_threshold",
+                        "review_required": True,
+                    }
+                )
+    if not images:
+        blockers.append("ocr_fallback_blocked:no_raster_page_preview_available")
+    return evidence, unreadable[:200], blockers
 
 
 def _classify_evidence(evidence: Iterable[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
@@ -338,18 +506,44 @@ def analyze_plan_pdf(
             }
             for idx in range(fallback_count)
         ]
-    evidence_records = [item.to_dict() for item in text_evidence]
+    ocr_config = _ocr_config()
+    ocr_engine = _detect_ocr_engine(ocr_config)
+    pages, preview_images, preview_blockers = _render_page_previews(path, pages, file_url=file_url)
+    embedded_text_found = bool(text_evidence)
+    ocr_evidence: List[_TextEvidence] = []
+    unreadable_ocr: List[Dict[str, Any]] = []
+    ocr_blockers: List[str] = []
+    if not embedded_text_found:
+        ocr_evidence, unreadable_ocr, ocr_blockers = _ocr_images(
+            preview_images,
+            ocr_engine,
+            min_confidence=float(ocr_config.get("min_confidence") or 55.0),
+        )
+        if not ocr_engine.get("available") and "ocr_fallback_blocked:no_ocr_engine_configured" not in ocr_blockers:
+            ocr_blockers.insert(0, "ocr_fallback_blocked:no_ocr_engine_configured")
+    else:
+        ocr_blockers.append("ocr_not_run:embedded_text_already_available")
+    for ocr_item in ocr_evidence:
+        if 0 <= ocr_item.page_index < len(pages):
+            page_record = dict(pages[ocr_item.page_index])
+            page_record["ocr_text_present"] = True
+            page_record["ocr_text_excerpt"] = _truncate(
+                " ".join([safe_str(page_record.get("ocr_text_excerpt")), ocr_item.text]),
+                600,
+            )
+            pages[ocr_item.page_index] = page_record
+    evidence_records = [item.to_dict() for item in [*text_evidence, *ocr_evidence]]
     classifications = _classify_evidence(evidence_records)
     blockers = list(extraction_blockers)
-    if not evidence_records:
-        blockers.append("ocr_fallback_blocked:no_ocr_engine_configured")
+    blockers.extend(preview_blockers)
+    blockers.extend(ocr_blockers)
     blockers.extend(
         [
-            "raster_preview_blocked:no_pdf_renderer_configured",
             "vector_geometry_extraction_blocked:no_vector_parser_configured",
             "field_use_release_blocked:pdf_import_is_source_imagery_only",
         ]
     )
+    blockers = list(dict.fromkeys([item for item in blockers if item]))
     has_stamp = bool(classifications.get("stamp_or_seal_source_imagery"))
     analysis = {
         "version": ANALYSIS_VERSION,
@@ -372,11 +566,26 @@ def analyze_plan_pdf(
         },
         "page_count": len(pages),
         "pages": pages,
+        "ocr": {
+            "version": "plan_pdf_ocr_v1",
+            "engine": ocr_engine,
+            "status": "extracted_review_required" if ocr_evidence else "blocked" if not embedded_text_found else "not_run_embedded_text_available",
+            "review_required": True,
+            "text_evidence_count": len(ocr_evidence),
+            "unreadable_count": len(unreadable_ocr),
+            "unreadable_regions": unreadable_ocr,
+            "blockers": ocr_blockers,
+            "truth_label": TRUTH_LABEL,
+        },
         "raw_text_evidence": evidence_records[:500],
         "classifications": classifications,
         "blockers": blockers,
         "summary": {
-            "embedded_text_found": bool(evidence_records),
+            "embedded_text_found": embedded_text_found,
+            "ocr_text_found": bool(ocr_evidence),
+            "ocr_review_required": bool(ocr_evidence),
+            "ocr_unreadable_count": len(unreadable_ocr),
+            "raster_preview_available": any(safe_str(page.get("preview_status")) == "available" for page in pages),
             "text_evidence_count": len(evidence_records),
             "title_block_count": len(classifications.get("title_blocks", [])),
             "note_block_count": len(classifications.get("note_blocks", [])),

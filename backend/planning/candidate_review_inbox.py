@@ -381,7 +381,7 @@ def _plan_pdf_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
                 object_count=1,
                 blocker_review_reason=(
                     "PDF-derived sheet element must be reviewed before use. "
-                    "It is not survey-backed, engineer-approved, stamped, sealed, signed, or construction-ready."
+                    "It is not survey-backed or externally reviewed, and protected professional mark areas are not editable."
                 ),
                 source_record=rec,
                 audit_trail=safe_list(rec.get("audit_trail")),

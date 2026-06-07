@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import backend.planning.plan_pdf_understanding as pdfu
 from backend.application.chat_workflows import decide_chat
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE,
@@ -41,6 +42,16 @@ def _write_text_pdf(path: Path, lines: list[str]) -> None:
 
 def _write_blank_pdf(path: Path) -> None:
     _write_text_pdf(path, [])
+
+
+def _write_image_pdf(path: Path, text: str = "POOL DECK ELEVATION 102.50") -> None:
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (900, 500), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((80, 120), text, fill="black")
+    draw.rectangle((70, 105, 620, 160), outline="black", width=3)
+    image.save(path, "PDF", resolution=150.0)
 
 
 class FakeProjectStore:
@@ -103,6 +114,153 @@ def test_image_like_pdf_records_ocr_and_geometry_blockers(tmp_path: Path) -> Non
     assert "ocr_fallback_blocked:no_ocr_engine_configured" in analysis["blockers"]
     assert "vector_geometry_extraction_blocked:no_vector_parser_configured" in analysis["blockers"]
     assert analysis["summary"]["embedded_text_found"] is False
+    assert analysis["ocr"]["engine"]["available"] is False
+
+
+def test_generated_image_pdf_does_not_fake_ocr_when_engine_unavailable(tmp_path: Path) -> None:
+    pdf = tmp_path / "generated-scan.pdf"
+    _write_image_pdf(pdf)
+
+    analysis = analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="scan.pdf")
+
+    assert analysis["summary"]["embedded_text_found"] is False
+    assert analysis["summary"]["ocr_text_found"] is False
+    assert analysis["ocr"]["text_evidence_count"] == 0
+    assert analysis["classifications"]["elevation_callouts"] == []
+    assert any(item.startswith("ocr_engine_unavailable") or item.startswith("ocr_fallback_blocked") for item in analysis["blockers"])
+
+
+def test_scanned_pdf_ocr_path_records_bbox_confidence_unreadable_and_review_candidates(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "fake-ocr-scan.pdf"
+    _write_image_pdf(pdf)
+
+    def fake_detect(config):
+        return {
+            "engine": "tesseract",
+            "available": True,
+            "status": "available",
+            "config": config,
+            "blockers": [],
+        }
+
+    def fake_render(path, pages, *, file_url=""):
+        page = dict(pages[0])
+        page.update({"preview_status": "available", "preview_path": str(tmp_path / "page.png"), "preview_blocker": ""})
+        return [page], [{"page_index": 0, "image": object()}], []
+
+    def fake_ocr(images, engine, *, min_confidence):
+        return (
+            [
+                pdfu._TextEvidence(
+                    text="POOL DECK ELEVATION 102.50",
+                    page_index=0,
+                    bbox={"x0": 80, "y0": 120, "x1": 350, "y1": 145},
+                    source="ocr_tesseract",
+                    confidence="ocr_tesseract_review_required",
+                    confidence_score=0.91,
+                )
+            ],
+            [
+                {
+                    "page_index": 0,
+                    "bbox": {"x0": 420, "y0": 120, "x1": 470, "y1": 145},
+                    "raw_text": "??",
+                    "confidence_score": 0.21,
+                    "reason": "below_ocr_confidence_threshold",
+                    "review_required": True,
+                }
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(pdfu, "_detect_ocr_engine", fake_detect)
+    monkeypatch.setattr(pdfu, "_render_page_previews", fake_render)
+    monkeypatch.setattr(pdfu, "_ocr_images", fake_ocr)
+
+    analysis = analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="scan.pdf")
+    meta = merge_plan_pdf_analysis_into_meta({}, analysis)
+    from backend.planning.candidate_review_inbox import build_candidate_review_inbox
+
+    inbox = build_candidate_review_inbox(meta)
+
+    assert analysis["summary"]["ocr_text_found"] is True
+    assert analysis["ocr"]["status"] == "extracted_review_required"
+    assert analysis["ocr"]["unreadable_count"] == 1
+    assert analysis["raw_text_evidence"][0]["bbox"]["x0"] == 80
+    assert analysis["raw_text_evidence"][0]["confidence_score"] == 0.91
+    assert analysis["classifications"]["elevation_callouts"][0]["source"] == "ocr_tesseract"
+    assert any(item["candidate_type"] == "plan_pdf_elevation_callout" for item in inbox["candidates"])
+
+
+def test_chat_supports_scanned_plan_unreadable_and_elevation_queries(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "fake-ocr-chat.pdf"
+    _write_image_pdf(pdf)
+
+    monkeypatch.setattr(
+        pdfu,
+        "_detect_ocr_engine",
+        lambda config: {"engine": "tesseract", "available": True, "status": "available", "config": config, "blockers": []},
+    )
+    monkeypatch.setattr(
+        pdfu,
+        "_render_page_previews",
+        lambda path, pages, *, file_url="": ([{**pages[0], "preview_status": "available", "preview_blocker": ""}], [{"page_index": 0, "image": object()}], []),
+    )
+    monkeypatch.setattr(
+        pdfu,
+        "_ocr_images",
+        lambda images, engine, *, min_confidence: (
+            [
+                pdfu._TextEvidence(
+                    text="POOL DECK ELEVATION 102.50",
+                    page_index=0,
+                    bbox={"x0": 80, "y0": 120, "x1": 350, "y1": 145},
+                    source="ocr_tesseract",
+                    confidence="ocr_tesseract_review_required",
+                    confidence_score=0.91,
+                )
+            ],
+            [{"page_index": 0, "bbox": {"x0": 1, "y0": 2, "x1": 3, "y1": 4}, "raw_text": "??", "confidence_score": 0.21}],
+            [],
+        ),
+    )
+    meta = merge_plan_pdf_analysis_into_meta({}, analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="scan.pdf"))
+    record = {
+        "project_id": "project_ocr",
+        "user_id": "user_1",
+        "name": "Scan",
+        "description": "",
+        "session_id": None,
+        "tags": [],
+        "project_input": {},
+        "latest_result": {"final_plan": {"actions": [], "meta": meta}},
+        "session_state": {},
+        "metadata": {},
+    }
+    store = FakeProjectStore(record)
+
+    scanned = decide_chat(
+        {"message": "read this scanned plan", "context": {"current_project": {"project_id": "project_ocr"}}},
+        decide_chat_message=lambda payload: {},
+        project_store=store,
+        user_id="user_1",
+    )
+    elevations = decide_chat(
+        {"message": "find all elevations", "context": {"current_project": {"project_id": "project_ocr"}}},
+        decide_chat_message=lambda payload: {},
+        project_store=store,
+        user_id="user_1",
+    )
+    unreadable = decide_chat(
+        {"message": "what could you not read?", "context": {"current_project": {"project_id": "project_ocr"}}},
+        decide_chat_message=lambda payload: {},
+        project_store=store,
+        user_id="user_1",
+    )
+
+    assert "OCR status: extracted_review_required" in scanned["assistant_message"]
+    assert "POOL DECK ELEVATION 102.50" in elevations["assistant_message"]
+    assert "??" in unreadable["assistant_message"]
 
 
 def test_dependency_blocked_path_is_clean(tmp_path: Path, monkeypatch) -> None:

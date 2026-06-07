@@ -1707,6 +1707,37 @@ def _plan_pdf_changed_lines(meta: Dict[str, Any]) -> List[str]:
     return lines
 
 
+def _plan_pdf_unreadable_lines(meta: Dict[str, Any]) -> List[str]:
+    analysis = _safe_dict(meta.get("plan_pdf_analysis_v1"))
+    ocr = _safe_dict(analysis.get("ocr"))
+    unreadable = [_safe_dict(item) for item in _safe_list(ocr.get("unreadable_regions"))]
+    blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
+    lines = ["Unreadable or blocked PDF text:"]
+    if unreadable:
+        for item in unreadable[:8]:
+            page = int(item.get("page_index") or 0) + 1
+            raw = safe_str(item.get("raw_text")) or "(blank OCR fragment)"
+            score = item.get("confidence_score")
+            score_text = f"{float(score):.2f}" if isinstance(score, (int, float)) else "unknown"
+            lines.append(f"- Page {page}: {raw} at OCR confidence {score_text}; reviewer verification required.")
+    else:
+        lines.append("- No low-confidence OCR regions are saved.")
+    for blocker in blockers[:8]:
+        if "ocr" in blocker or "raster_preview" in blocker:
+            lines.append(f"- {blocker}")
+    return lines
+
+
+def _plan_pdf_ocr_behavior_line(meta: Dict[str, Any]) -> str:
+    analysis = _safe_dict(meta.get("plan_pdf_analysis_v1"))
+    ocr = _safe_dict(analysis.get("ocr"))
+    engine = _safe_dict(ocr.get("engine"))
+    status = safe_str(ocr.get("status"), "unknown")
+    engine_name = safe_str(engine.get("engine"), "unknown")
+    available = "available" if engine.get("available") else "blocked"
+    return f"OCR status: {status}; engine {engine_name} is {available}; OCR results are review-required."
+
+
 def _plan_pdf_chat_response(
     *,
     message: str,
@@ -1727,7 +1758,14 @@ def _plan_pdf_chat_response(
             "extract the dimensions",
             "what scale",
             "what can you not read",
+            "what could you not read",
             "unreadable text",
+            "read this scanned plan",
+            "scanned plan",
+            "image-only pdf",
+            "image only pdf",
+            "find all elevations",
+            "all elevations",
             "make this detail editable",
             "turn this pdf into editable plan objects",
             "pool deck elevation",
@@ -1851,11 +1889,14 @@ def _plan_pdf_chat_response(
     blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
     if "what changed" in normalized:
         lines = _plan_pdf_changed_lines(meta)
-    elif "what can you not read" in normalized or "unreadable" in normalized or "blocker" in normalized:
-        lines = ["Blocked or uncertain PDF capabilities:"] + [f"- {item}" for item in blockers[:10]]
+    elif "what can you not read" in normalized or "what could you not read" in normalized or "unreadable" in normalized or "blocker" in normalized:
+        lines = _plan_pdf_unreadable_lines(meta)
     elif "scale" in normalized:
         values = _plan_pdf_text(meta, "scale_candidates")
         lines = ["Scale candidates from the PDF:"] + ([f"- {item}" for item in values] if values else ["- No scale text was extracted."])
+    elif "elevation" in normalized:
+        values = _plan_pdf_text(meta, "elevation_callouts", limit=20)
+        lines = ["Elevation candidates from the PDF:"] + ([f"- {item}" for item in values] if values else ["- No elevation text was extracted."])
     elif "dimension" in normalized:
         values = _plan_pdf_text(meta, "dimensions")
         lines = ["Dimension candidates from the PDF:"] + ([f"- {item}" for item in values] if values else ["- No dimension text was extracted."])
@@ -1876,6 +1917,7 @@ def _plan_pdf_chat_response(
                 f"{int(summary.get('elevation_callout_count') or 0)} elevation, "
                 f"{int(summary.get('scale_candidate_count') or 0)} scale."
             ),
+            _plan_pdf_ocr_behavior_line(meta),
             "PDF-derived data remains imported_pdf_review_required and is not field-use release.",
         ]
     return _truthful_decision_update(
