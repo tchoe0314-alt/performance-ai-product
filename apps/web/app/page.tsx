@@ -242,6 +242,7 @@ type QuantityReviewRow = {
   status: QuantityReviewStatus;
 };
 type RoadwayWorkbenchTab = "alignment" | "profile" | "section" | "checks";
+type Civil3DWorkflowTab = "surface" | "profile" | "sections" | "cutfill" | "blockers" | "confidence";
 type RoadwayPlotPoint = {
   x: number;
   y: number;
@@ -615,6 +616,265 @@ function RoadwayCorridorWorkbench({
         <SlidersHorizontal className="h-4 w-4 shrink-0" />
         <span>Profile, section, and ADA values remain review evidence until survey/control and standards are accepted.</span>
       </div>
+    </div>
+  );
+}
+
+function CivilSurfaceCorridorWorkflow({
+  activeTab,
+  onTabChange,
+  roadwayData,
+  gradingEarthworkUx,
+  sourceConfidenceRows,
+  blockers,
+  gradingSourceSummary,
+  hasTerrainSource,
+  hasVerifiedSurveyControl,
+  onOpenRoadwayControls,
+}: {
+  activeTab: Civil3DWorkflowTab;
+  onTabChange: (tab: Civil3DWorkflowTab) => void;
+  roadwayData: RoadwayWorkbenchData;
+  gradingEarthworkUx: GradingEarthworkUx;
+  sourceConfidenceRows: SourceConfidenceEntry[];
+  blockers: string[];
+  gradingSourceSummary: string;
+  hasTerrainSource: boolean;
+  hasVerifiedSurveyControl: boolean;
+  onOpenRoadwayControls: () => void;
+}) {
+  const hasAlignment = roadwayData.alignments.length > 0 || roadwayData.alignmentPoints.length > 1;
+  const hasProfile = roadwayData.profiles.length > 0 || roadwayData.profilePoints.length > 1;
+  const hasSections = roadwayData.sections.length > 0 || roadwayData.sectionPoints.length > 1;
+  const corridorReviewBlocked = blockers.length > 0 || !hasTerrainSource || !hasAlignment || !hasProfile || !hasSections;
+  const highCutFillCells = [...gradingEarthworkUx.heatmapCells]
+    .sort((a, b) => Math.abs(b.deltaFt) - Math.abs(a.deltaFt))
+    .slice(0, 4);
+  const confidencePreviewRows = sourceConfidenceRows.slice(0, 5);
+  const workflowSteps = [
+    { key: "surface", label: "Surface", status: hasTerrainSource ? "Review" : "Missing" },
+    { key: "alignment", label: "Alignment", status: hasAlignment ? "Review" : "Missing" },
+    { key: "profile", label: "Profile", status: hasProfile ? "Review" : "Missing" },
+    { key: "corridor", label: "Corridor", status: corridorReviewBlocked ? "Blocked" : "Review" },
+    { key: "sections", label: "Sections", status: hasSections ? "Review" : "Missing" },
+    { key: "cutfill", label: "Cut/Fill", status: gradingEarthworkUx.haulBalance.direction === "unknown" ? "Pending" : "Review" },
+  ];
+  const sourceLabel = hasVerifiedSurveyControl
+    ? "Survey/control uploaded for review"
+    : "No verified survey/control attached";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="civil3d-visual-workflow">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Civil3D visual workflow</p>
+          <p className="mt-1 text-sm text-slate-500">Surface, alignment, profile, corridor, sections, and cut/fill linked as review-required evidence.</p>
+        </div>
+        <Layers className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        {workflowSteps.map((step) => (
+          <button
+            key={step.key}
+            type="button"
+            onClick={() => onTabChange(step.key === "alignment" || step.key === "corridor" ? "profile" : (step.key as Civil3DWorkflowTab))}
+            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-white"
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{step.label}</p>
+            <p className={`mt-1 text-sm font-semibold ${step.status === "Blocked" || step.status === "Missing" ? "text-amber-700" : "text-slate-800"}`}>
+              {step.status}
+            </p>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+        {[
+          ["surface", "Surface"],
+          ["profile", "Profile"],
+          ["sections", "Sections"],
+          ["cutfill", "Cut/Fill"],
+          ["blockers", "Blockers"],
+          ["confidence", "Sources"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onTabChange(key as Civil3DWorkflowTab)}
+            className={`h-9 rounded-md text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
+              activeTab === key ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "surface" ? (
+        <div className="mt-4 space-y-3">
+          <div className="relative h-52 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+            <div className="absolute inset-0 grid grid-cols-6 grid-rows-4">
+              {gradingEarthworkUx.heatmapCells.map((cell) => (
+                <div
+                  key={cell.id}
+                  className={
+                    cell.mode === "cut"
+                      ? "bg-rose-100"
+                      : cell.mode === "fill"
+                        ? "bg-sky-100"
+                        : "bg-emerald-50"
+                  }
+                  style={{ opacity: Math.min(0.85, 0.25 + Math.abs(cell.deltaFt) / 10) }}
+                />
+              ))}
+            </div>
+            {[18, 34, 50, 66, 82].map((top, index) => (
+              <div
+                key={top}
+                className="absolute left-4 right-4 rounded-[50%] border border-slate-500/35"
+                style={{
+                  top: `${top}%`,
+                  height: `${18 + index * 4}%`,
+                  transform: `rotate(${-8 + index * 4}deg)`,
+                }}
+              />
+            ))}
+            <div className="absolute left-4 top-4 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700">
+              Contours / spots / slope
+            </div>
+            <div className="absolute bottom-4 right-4 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-right text-xs font-semibold text-slate-700">
+              {gradingEarthworkUx.surfaceComparison.deltaLabel}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Surface source", gradingSourceSummary],
+              ["Control", sourceLabel],
+              ["Existing", gradingEarthworkUx.surfaceComparison.existing],
+              ["Proposed", gradingEarthworkUx.surfaceComparison.proposed],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "profile" ? (
+        <div className="mt-4 space-y-3">
+          <RoadwayMiniPlot points={roadwayData.profilePoints.length ? roadwayData.profilePoints : roadwayData.alignmentPoints} variant={roadwayData.profilePoints.length ? "profile" : "plan"} />
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Alignment records", roadwayData.alignments.length],
+              ["Profile samples", roadwayData.profilePoints.length || "Missing"],
+              ["Corridor state", corridorReviewBlocked ? "Blocked for review" : "Linked for review"],
+              ["Source label", sourceLabel],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={onOpenRoadwayControls} className="w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800">
+            Open roadway controls
+          </button>
+        </div>
+      ) : null}
+
+      {activeTab === "sections" ? (
+        <div className="mt-4 space-y-3">
+          <RoadwayMiniPlot points={roadwayData.sectionPoints} variant="section" />
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Sections", roadwayData.sections.length || "Missing"],
+              ["Section samples", roadwayData.sectionPoints.length || "Missing"],
+              ["Crown controls", roadwayData.crownControls.length || "Missing"],
+              ["Curb/gutter controls", roadwayData.curbGutterControls.length || "Missing"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "cutfill" ? (
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-6 overflow-hidden rounded-xl border border-slate-200">
+            {gradingEarthworkUx.heatmapCells.map((cell) => (
+              <div
+                key={cell.id}
+                className={`flex h-14 items-center justify-center text-[10px] font-semibold ${
+                  cell.mode === "cut"
+                    ? "bg-rose-100 text-rose-800"
+                    : cell.mode === "fill"
+                      ? "bg-sky-100 text-sky-800"
+                      : "bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                {cell.deltaFt > 0 ? "+" : ""}{cell.deltaFt.toFixed(1)}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Haul", gradingEarthworkUx.haulBalance.label],
+              ["Net", gradingEarthworkUx.haulBalance.netCf !== null && gradingEarthworkUx.haulBalance.netCf !== undefined ? `${Math.round(gradingEarthworkUx.haulBalance.netCf)} cf` : "Pending"],
+              ["Cut", gradingEarthworkUx.haulBalance.cutCf ? `${Math.round(gradingEarthworkUx.haulBalance.cutCf)} cf` : "Pending"],
+              ["Fill", gradingEarthworkUx.haulBalance.fillCf ? `${Math.round(gradingEarthworkUx.haulBalance.fillCf)} cf` : "Pending"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            <p className="font-semibold text-slate-800">Highest cut/fill deltas</p>
+            <p className="mt-1">{highCutFillCells.map((cell) => `${cell.mode} ${cell.deltaFt > 0 ? "+" : ""}${cell.deltaFt.toFixed(1)} ft`).join(" / ")}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "blockers" ? (
+        <div className="mt-4 space-y-2">
+          {(blockers.length ? blockers : ["No corridor-specific blockers recorded. Review-required status remains until source evidence is checked."]).map((blocker) => (
+            <div key={blocker} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+              {blocker}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {activeTab === "confidence" ? (
+        <div className="mt-4 space-y-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+            {sourceLabel}. Corridor and earthwork outputs are review-required only.
+          </div>
+          {(confidencePreviewRows.length ? confidencePreviewRows : []).map((entry) => (
+            <div key={entry.entry_id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-800">{entry.label || "Source entry"}</p>
+                <span className="text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  {entry.visible_badge || entry.confidence_band || entry.source_type || "Review"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">{entry.why_low_confidence || entry.next_action || "Source label visible for review."}</p>
+            </div>
+          ))}
+          {!confidencePreviewRows.length ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+              No source confidence entries are recorded yet.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1328,6 +1588,79 @@ const createDemoPlacements = (): BuildingPlacement[] => [
   },
 ];
 
+const createDefaultPlanSheet = (index = 0, projectName = "Untitled Project"): PlanSheet => {
+  const sheetNumber = `R-${String(index + 1).padStart(2, "0")}`;
+  return {
+    id: `sheet-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+    name: `${sheetNumber} Review Plan`,
+    size: "ARCH D",
+    titleBlock: {
+      projectName,
+      sheetTitle: index === 0 ? "Review Site Plan" : `Review Sheet ${index + 1}`,
+      sheetNumber,
+      reviewStage: "Internal review",
+      preparedBy: "Civora",
+      checkedBy: "Reviewer",
+      date: new Date().toISOString().slice(0, 10),
+    },
+    viewports: [
+      {
+        id: `viewport-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: "Site plan viewport",
+        source: "Current model preview",
+        scale: "1:40",
+        x: 7,
+        y: 15,
+        w: 56,
+        h: 58,
+      },
+    ],
+    annotations: [
+      { id: "note-review-only", type: "note", text: "Review package only", x: 10, y: 78 },
+      { id: "label-north", type: "label", text: "N", x: 58, y: 20 },
+      { id: "dimension-site", type: "dimension", text: "Site dimensions pending source check", x: 15, y: 68 },
+    ],
+    legends: [
+      {
+        id: "legend-layers",
+        title: "Layer Legend",
+        rows: [
+          ["CIV-SITE", "Site geometry"],
+          ["CIV-STORM", "Storm review"],
+          ["CIV-UTIL", "Utility review"],
+        ],
+      },
+    ],
+    detailBlocks: [
+      {
+        id: "detail-review-notes",
+        title: "General Review Notes",
+        rows: [
+          ["1", "Verify source geometry before reliance."],
+          ["2", "Resolve listed blockers before package handoff."],
+        ],
+      },
+    ],
+    references: [
+      { id: "profile-main", kind: "profile", label: "Profile reference", target: "Roadway / utility profile pending" },
+      { id: "section-a", kind: "section", label: "Section reference", target: "Typical section pending" },
+    ],
+  };
+};
+
+const createDefaultPlanSheetSet = (projectName = "Untitled Project"): PlanSheetSet => {
+  const firstSheet = createDefaultPlanSheet(0, projectName);
+  return {
+    id: `sheet-set-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: `${projectName} Review Sheet Package`,
+    status: "draft",
+    sheets: [firstSheet],
+    activeSheetId: firstSheet.id,
+    blockers: ["Model preview has not been linked to a reviewed source package."],
+    updatedAt: new Date().toISOString(),
+  };
+};
+
 const createDemoPlanResponse = (): PlanResponse => ({
   success: true,
   message: "Demo workspace loaded for UI QA.",
@@ -1537,7 +1870,16 @@ import { uploadedImageSrc } from "./utils/auth";
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
+import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
+import type {
+  PlanSheet,
+  PlanSheetAnnotation,
+  PlanSheetReference,
+  PlanSheetScale,
+  PlanSheetSet,
+  PlanSheetTitleBlock,
+} from "./components/PlanSheetEditor";
 import useChatPersistence from "./hooks/useChatPersistence";
 import usePreviewReview from "./hooks/usePreviewReview";
 import useJobPolling from "./hooks/useJobPolling";
@@ -1678,10 +2020,10 @@ function buildThinkingState({
   }
   if (normalizedJobStatus === "awaiting_approval") {
     return {
-      label: stageLabel || "Awaiting Approval",
+      label: stageLabel || "Review Hold",
       detail:
         stageDetail ||
-        "Civora saved the current phase result and is waiting for your approval to continue.",
+        "Civora saved the current phase result and is waiting for your review step to continue.",
       progress: numericProgress ?? 60,
     };
   }
@@ -1792,6 +2134,7 @@ function PerformanceAIDashboardView({
   const [parkingAngle, setParkingAngle] = useState<"90" | "60" | "45">("90");
   const [parkingLoading, setParkingLoading] = useState<"single" | "double">("double");
   const [activeRoadwayWorkbenchTab, setActiveRoadwayWorkbenchTab] = useState<RoadwayWorkbenchTab>("alignment");
+  const [activeCivil3DWorkflowTab, setActiveCivil3DWorkflowTab] = useState<Civil3DWorkflowTab>("surface");
   const [minSlopePct, setMinSlopePct] = useState("");
   const [pipeMinSlopePct, setPipeMinSlopePct] = useState("");
   const [maxParkingSlopePct, setMaxParkingSlopePct] = useState("");
@@ -1819,11 +2162,16 @@ function PerformanceAIDashboardView({
     useState<Assumption[]>(defaultAssumptions);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [backendResult, setBackendResult] = useState<PlanResponse | null>(null);
+  const [planSheetSet, setPlanSheetSet] = useState<PlanSheetSet>(() =>
+    createDefaultPlanSheetSet("Untitled Project"),
+  );
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [planPdfUploadState, setPlanPdfUploadState] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
   const [selectedPlanPdfElementId, setSelectedPlanPdfElementId] = useState("");
   const [planPdfElementDraftText, setPlanPdfElementDraftText] = useState("");
+  const [planPdfMoveX, setPlanPdfMoveX] = useState("");
+  const [planPdfMoveY, setPlanPdfMoveY] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [, setSurveyPoints] = useState<number[][]>([]);
@@ -1859,6 +2207,10 @@ function PerformanceAIDashboardView({
   const debugPreview = useMemo(() => {
     if (!clientMounted || typeof window === "undefined") return false;
     return window.location.search.includes("debugPreview=1");
+  }, [clientMounted]);
+  const debugNoTerrain = useMemo(() => {
+    if (!clientMounted || typeof window === "undefined") return false;
+    return process.env.NODE_ENV !== "production" && window.location.search.includes("debugNoTerrain=1");
   }, [clientMounted]);
   const rotationSaveTimeoutRef = useRef<number | null>(null);
   const scaleSaveTimeoutRef = useRef<number | null>(null);
@@ -2773,12 +3125,18 @@ function PerformanceAIDashboardView({
     : "";
   const planPdfSummary = planPdfAnalysis?.summary ?? {};
   const planPdfBlockers = planPdfAnalysis?.blockers ?? [];
+  const planPdfChangedReport = currentPlanMeta.plan_pdf_changed_elements_v1 ?? planPdfEditableSheet?.changed_elements ?? null;
+  const planPdfChangedElements = planPdfChangedReport?.elements ?? [];
+  const planPdfUnreadableItems = planPdfBlockers.filter((item) => /ocr|raster|vector|unread|parser|renderer/i.test(String(item)));
   useEffect(() => {
     if (selectedPlanPdfElement?.element_id && selectedPlanPdfElement.element_id !== selectedPlanPdfElementId) {
       setSelectedPlanPdfElementId(selectedPlanPdfElement.element_id);
     }
     setPlanPdfElementDraftText(selectedPlanPdfElement?.text ?? "");
-  }, [selectedPlanPdfElement?.element_id, selectedPlanPdfElement?.text]);
+    const bbox = selectedPlanPdfElement?.bbox;
+    setPlanPdfMoveX(bbox?.x0 !== undefined ? String(bbox.x0) : "");
+    setPlanPdfMoveY(bbox?.y0 !== undefined ? String(bbox.y0) : "");
+  }, [selectedPlanPdfElement?.bbox, selectedPlanPdfElement?.element_id, selectedPlanPdfElement?.text]);
   const engineDepthDashboard = useMemo<EngineDepthDashboard | null>(() => {
     const direct = currentPlanMeta.engine_depth_dashboard_v1;
     if (direct?.version) return direct;
@@ -2795,9 +3153,10 @@ function PerformanceAIDashboardView({
     Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
   const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
   const hasTerrainSource =
-    (Boolean(surveyFileName) && useSurveyForGrading) ||
-    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
-    Boolean(surveySlopeEstimate?.slope_percent);
+    !debugNoTerrain &&
+    ((Boolean(surveyFileName) && useSurveyForGrading) ||
+      Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
+      Boolean(surveySlopeEstimate?.slope_percent));
   const smartFixBlockedReasons = useMemo(() => {
     const releaseReview = currentPlanMeta.release_review && typeof currentPlanMeta.release_review === "object"
       ? currentPlanMeta.release_review as Record<string, unknown>
@@ -6128,7 +6487,7 @@ function PerformanceAIDashboardView({
         setActiveJobId(queued.job.job_id);
         const queuedDetail = forceQueue
           ? `I queued this long-running engineering workflow as ${queued.job.job_id} so progress stays visible while the backend works.`
-          : `I queued the full staged design workflow as ${queued.job.job_id} so each phase can save, pause for approval, and continue on the same project.`;
+          : `I queued the full staged design workflow as ${queued.job.job_id} so each phase can save, pause for review, and continue on the same project.`;
         appendChatMessage(
           "assistant",
           [
@@ -6831,6 +7190,75 @@ function PerformanceAIDashboardView({
     return false;
   };
 
+  const tryHandleSheetIntent = (message: string): boolean => {
+    const normalized = message.toLowerCase();
+    const activeSheet =
+      planSheetSet.sheets.find((sheet) => sheet.id === planSheetSet.activeSheetId) ??
+      planSheetSet.sheets[0];
+
+    if (/(make|create|build).*(review\s+)?sheet|review sheet package|plan sheet/i.test(normalized)) {
+      handleCreateReviewSheet();
+      return true;
+    }
+
+    if (/edit title block|title block/i.test(normalized)) {
+      const titleMatch = message.match(/title(?: block)?(?: to|:)\s*([^.;\n]+)/i);
+      const sheetNoMatch = message.match(/(?:sheet number|sheet no\.?|number)(?: to|:)\s*([A-Za-z0-9.-]+)/i);
+      const stageMatch = message.match(/(?:stage|review stage)(?: to|:)\s*([^.;\n]+)/i);
+      const updates: Partial<PlanSheetTitleBlock> = {};
+      if (titleMatch?.[1]) updates.sheetTitle = titleMatch[1].trim();
+      if (sheetNoMatch?.[1]) updates.sheetNumber = sheetNoMatch[1].trim();
+      if (stageMatch?.[1]) updates.reviewStage = stageMatch[1].trim();
+      if (Object.keys(updates).length) {
+        handlePlanSheetTitleBlockUpdate(updates);
+        appendChatMessage("assistant", "Updated the active sheet title block.", "status");
+      } else {
+        setActiveWorkspaceMode("deliver");
+        handleOpenSidePanel("deliverables");
+        appendChatMessage("assistant", "Opened the sheet editor title block fields.", "status");
+      }
+      return true;
+    }
+
+    if (/add note|new note|sheet note/i.test(normalized)) {
+      const noteText =
+        message.match(/(?:add|new)\s+(?:a\s+)?note(?: that says| saying|:)?\s*["“]?([^"”]+)["”]?/i)?.[1]?.trim() ||
+        "Review note: confirm source before package handoff.";
+      handlePlanSheetAddNote(noteText);
+      appendChatMessage("assistant", `Added note: ${noteText}`, "status");
+      return true;
+    }
+
+    if (/change scale|set scale|scale/i.test(normalized)) {
+      const scaleMatch = message.match(/1\s*:\s*(10|20|30|40|50|100)/i);
+      const scale = scaleMatch ? (`1:${scaleMatch[1]}` as PlanSheetScale) : null;
+      const viewportId = activeSheet?.viewports[0]?.id;
+      if (scale && viewportId) {
+        handlePlanSheetScaleChange(viewportId, scale);
+        appendChatMessage("assistant", `Changed the active viewport scale to ${scale}.`, "status");
+      } else {
+        appendChatMessage("assistant", "Tell me a supported scale like 1:20, 1:40, or 1:100.", "status");
+      }
+      return true;
+    }
+
+    if (/show sheet blockers|sheet blockers|sheet blocked/i.test(normalized)) {
+      const blockers = getPlanSheetBlockers();
+      appendChatMessage(
+        "assistant",
+        blockers.length
+          ? `Sheet blockers:\n${blockers.map((blocker) => `- ${blocker}`).join("\n")}`
+          : "No sheet blockers recorded.",
+        "status",
+      );
+      setActiveWorkspaceMode("deliver");
+      handleOpenSidePanel("deliverables");
+      return true;
+    }
+
+    return false;
+  };
+
   const tryHandleInfoIntent = (message: string): boolean => {
     const normalized = message.toLowerCase();
     const placed = buildingPlacements.filter((item) => item.placed);
@@ -6888,10 +7316,150 @@ function PerformanceAIDashboardView({
       return true;
     }
 
+    if (/\bshow\s+profile\b|\bprofile\s+view\b/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      handleOpenSidePanel("roadway");
+      setActiveCivil3DWorkflowTab("profile");
+      setActiveRoadwayWorkbenchTab("profile");
+      appendChatMessage(
+        "assistant",
+        roadwayWorkbenchData.profilePoints.length
+          ? `Opened the linked profile view with ${roadwayWorkbenchData.profilePoints.length} profile samples. This remains review-required evidence.`
+          : "Opened the profile view. No profile samples are recorded yet, so the corridor stays blocked for review.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/\bshow\s+(cross[-\s]?)?sections\b|\bsection\s+view\b/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      handleOpenSidePanel("roadway");
+      setActiveCivil3DWorkflowTab("sections");
+      setActiveRoadwayWorkbenchTab("section");
+      appendChatMessage(
+        "assistant",
+        roadwayWorkbenchData.sectionPoints.length
+          ? `Opened the cross-section viewer with ${roadwayWorkbenchData.sectionPoints.length} section samples. These are review-required only.`
+          : "Opened the cross-section viewer. Corridor section samples are missing, so review blockers remain visible.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/why\s+is\s+(the\s+)?corridor\s+blocked|corridor.*blocked/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      handleOpenSidePanel("roadway");
+      setActiveCivil3DWorkflowTab("blockers");
+      const blockers = civil3DWorkflowBlockers.length
+        ? civil3DWorkflowBlockers
+        : ["No corridor-specific blocker text is recorded, but profile, section, surface, and source confidence still require review."];
+      appendChatMessage(
+        "assistant",
+        `Corridor review blockers:\n${blockers.map((item) => `- ${item}`).join("\n")}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/where\s+is\s+cut\/?fill\s+high|cut\/?fill\s+high|high\s+cut|high\s+fill/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      handleOpenSidePanel("roadway");
+      setActiveCivil3DWorkflowTab("cutfill");
+      const highCells = [...gradingEarthworkUx.heatmapCells]
+        .sort((a, b) => Math.abs(b.deltaFt) - Math.abs(a.deltaFt))
+        .slice(0, 4);
+      appendChatMessage(
+        "assistant",
+        highCells.length
+          ? `Opened cut/fill visualization. Highest review deltas: ${highCells.map((cell) => `${cell.mode} ${cell.deltaFt > 0 ? "+" : ""}${cell.deltaFt.toFixed(1)} ft`).join("; ")}.`
+          : "Opened cut/fill visualization. No cut/fill cells are available yet.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/show\s+surface\s+confidence|surface\s+confidence/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      handleOpenSidePanel("roadway");
+      setActiveCivil3DWorkflowTab("confidence");
+      const sourceLines = sourceConfidenceRows.slice(0, 4).map((entry) =>
+        `- ${entry.label || "Source entry"}: ${entry.visible_badge || entry.confidence_band || entry.source_type || "review"}`,
+      );
+      appendChatMessage(
+        "assistant",
+        sourceLines.length
+          ? `Opened surface confidence. Source/control note: ${hasVerifiedSurveyControl ? "survey/control uploaded for review" : "no verified survey/control attached"}.\n${sourceLines.join("\n")}`
+          : `Opened surface confidence. ${hasVerifiedSurveyControl ? "Survey/control is uploaded for review." : "No verified survey/control is attached."}`,
+        "status",
+      );
+      return true;
+    }
+
     if (/(what should i do next|what next|next step|where should i start|what do i do next)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        `${nextSetupAction} Everything remains review-required; Civora does not stamp, seal, sign, submit, approve construction, or act as engineer of record.`,
+        `${nextSetupAction} Everything remains review-required and limited to review evidence.`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(show.*in\s+3d|open\s+3d|3d\s+view|show\s+this\s+3d|what am i looking at)/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      setPreviewMode("3d");
+      handleOpenSidePanel("details");
+      appendChatMessage(
+        "assistant",
+        `Opened the 3D civil model workspace. You are looking at placed site objects, roads/paving, drainage, utilities when evidence exists, confidence badges, and terrain status. ${
+          hasTerrainSource && hasGradingSurface
+            ? "Terrain is shown only from available preview elevations."
+            : "The site is flat because no terrain mesh source is attached to this preview."
+        } Visual review does not change canonical geometry.`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/why\s+is\s+(this|it|the\s+site|terrain)\s+flat|why.*flat/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      setPreviewMode("3d");
+      appendChatMessage(
+        "assistant",
+        hasTerrainSource && hasGradingSurface
+          ? "The 3D view is using the available preview elevation samples. If it still appears flat, the preview did not include enough vertical variation or sampled terrain vertices."
+          : "It is flat because no terrain mesh source is attached. The fallback plane is labeled in the 3D view, and Civora is not inventing terrain.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/show\s+low\s+confidence|low\s+confidence\s+objects|show\s+blockers|show\s+fix\s+badges/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      setPreviewMode("3d");
+      handleOpenSidePanel("data");
+      setPreviewLabelDensity("high");
+      appendChatMessage(
+        "assistant",
+        sourceConfidenceRows.length
+          ? `Showing source confidence and blocker badges in 3D. Low-confidence entries: ${sourceConfidenceRows
+              .filter((entry) => entry.confidence_band !== "higher")
+              .slice(0, 4)
+              .map((entry) => entry.label || entry.source_name || "source entry")
+              .join("; ") || "none in the visible source map"}.`
+          : "Showing 3D confidence badges. No source confidence entries are available yet.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/show\s+utilities\s+(in\s+)?3d|utilities\s+in\s+3d|show\s+utility\s+network/i.test(normalized)) {
+      setActiveWorkspaceMode("canvas");
+      setPreviewMode("3d");
+      handleOpenSidePanel("utilities");
+      setPreviewLayers((prev) => ({ ...prev, utilities: true, drainage: true }));
+      appendChatMessage(
+        "assistant",
+        "Utilities are enabled in the 3D workspace where utility evidence exists. Depth, pressure, and elevation are not inferred when missing.",
         "status",
       );
       return true;
@@ -6906,7 +7474,7 @@ function PerformanceAIDashboardView({
         "assistant",
         reason
           ? `Export is blocked: ${reason}.${blockerText}`
-          : `Exports are available only as engineer-review packages. Construction release remains blocked unless an external licensed engineer approves it.${blockerText}`,
+          : `Exports are available only as engineer-review packages. Construction reliance remains outside Civora and requires independent licensed-professional review.${blockerText}`,
         "status",
       );
       return true;
@@ -6915,7 +7483,7 @@ function PerformanceAIDashboardView({
     if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "Civora cannot stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for a licensed engineer or the user to review.",
+        "Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability. Construction reliance and professional responsibility remain outside Civora.",
         "status",
       );
       return true;
@@ -7020,10 +7588,11 @@ function PerformanceAIDashboardView({
     };
 
     if (normalized.startsWith("select ")) {
-      const label = message.replace(/^select\s+/i, "").trim();
+      const label = message.replace(/^select\s+/i, "").replace(/^(the|a|an)\s+/i, "").trim();
       const target =
         findByLabel(label) ||
-        allObjects.find((item) => item.label.toLowerCase().includes(label.toLowerCase()));
+        allObjects.find((item) => item.label.toLowerCase().includes(label.toLowerCase())) ||
+        (matchByKeyword(label).length === 1 ? matchByKeyword(label)[0] : null);
       if (target) {
         setActivePlacementId(target.id);
         setStatusMessage(`Selected ${target.label}.`);
@@ -7165,7 +7734,7 @@ function PerformanceAIDashboardView({
         handleOpenSidePanel(targetPanel);
         appendChatMessage(
           "assistant",
-          `Next fix: ${nextHint} I opened the ${sidePanelCopy[targetPanel].title} panel. Civora can prepare review evidence only; external engineer approval remains required.`,
+          `Next fix: ${nextHint} I opened the ${sidePanelCopy[targetPanel].title} panel. Civora can prepare review evidence only; independent professional review remains required.`,
           "status",
         );
         return true;
@@ -7416,6 +7985,11 @@ function PerformanceAIDashboardView({
     if (trimmed) {
       const routeToOrchestrator = shouldRouteToOrchestrator(trimmed);
       if (!routeToOrchestrator) {
+        const handledSheet = tryHandleSheetIntent(trimmed);
+        if (handledSheet) {
+          setPrompt("");
+          return;
+        }
         const handledInfo = tryHandleInfoIntent(trimmed);
         if (handledInfo) {
           setPrompt("");
@@ -7632,12 +8206,12 @@ function PerformanceAIDashboardView({
   const handleContinueActiveJob = async () => {
     if (!token) return;
     if (!visibleActiveJob?.job_id) {
-      setStatusMessage("No active job is awaiting approval.");
+      setStatusMessage("No active job is waiting at a review hold.");
       return;
     }
     const status = String(visibleActiveJob.status || "").toLowerCase();
     if (status !== "awaiting_approval") {
-      setStatusMessage("There is no phase awaiting approval right now.");
+      setStatusMessage("There is no phase waiting at a review hold right now.");
       return;
     }
     const nextPhaseLabel =
@@ -7669,7 +8243,7 @@ function PerformanceAIDashboardView({
         setApprovalPendingJobId(data.job.job_id);
       }
       await refreshJobs(token, { suppressError: true, force: true });
-      queuePreviewRefresh("Refreshing preview after approval...");
+      queuePreviewRefresh("Refreshing preview after review step...");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not continue the staged run.";
@@ -8146,7 +8720,7 @@ function PerformanceAIDashboardView({
         } else if (job.status === "awaiting_approval") {
           appendChatMessage(
             "assistant",
-            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. User-controlled workflow.`,
+            `${toReadableLabel(stageLabel)} stage complete. Waiting at a user-controlled review hold.`,
             "status",
           );
         } else if (job.status === "cancelling") {
@@ -8165,7 +8739,7 @@ function PerformanceAIDashboardView({
         if (normalizedStatus === "awaiting_approval") {
           appendChatMessage(
             "assistant",
-            `${toReadableLabel(stageLabel)} stage complete. Waiting for your approval. User-controlled workflow.`,
+            `${toReadableLabel(stageLabel)} stage complete. Waiting at a user-controlled review hold.`,
             "status",
           );
         }
@@ -8224,10 +8798,10 @@ function PerformanceAIDashboardView({
             );
             appendChatMessage(
               "assistant",
-              `${toReadableLabel(String(artifact.kind || "export"))} review export is ready and downloaded. Construction release remains blocked unless a licensed engineer approval record exists.`,
+              `${toReadableLabel(String(artifact.kind || "export"))} review export is ready and downloaded. Construction reliance remains outside Civora and requires independent licensed-professional review.`,
               "status",
             );
-            setStatusMessage("Review export downloaded. Construction release remains blocked.");
+            setStatusMessage("Review export downloaded. Construction reliance remains outside Civora.");
           } else {
             setStatusMessage("Export job completed but did not return a download path.");
           }
@@ -8463,7 +9037,10 @@ function PerformanceAIDashboardView({
     }
   };
 
-  const updatePlanPdfElement = async (elementId: string, updates: { text?: string; review_status?: string }) => {
+  const updatePlanPdfElement = async (
+    elementId: string,
+    updates: { text?: string; review_status?: string; move_target?: { x0: number; y0: number } },
+  ) => {
     if (!token) return;
     const activeProjectId = projectId || currentProject?.project_id;
     if (!activeProjectId) {
@@ -8475,6 +9052,7 @@ function PerformanceAIDashboardView({
         success?: boolean;
         project?: ProjectRecord;
         plan_pdf_editable_sheet_v1?: PlanMeta["plan_pdf_editable_sheet_v1"];
+        plan_pdf_changed_elements_v1?: PlanMeta["plan_pdf_changed_elements_v1"];
         candidate_review_inbox_v1?: CandidateReviewInbox;
       }>(`/api/projects/${activeProjectId}/plan-pdf/elements/${elementId}`, updates, { token });
       if (data.project) {
@@ -8488,6 +9066,7 @@ function PerformanceAIDashboardView({
             meta: {
               ...(current?.final_plan?.meta ?? {}),
               plan_pdf_editable_sheet_v1: data.plan_pdf_editable_sheet_v1,
+              plan_pdf_changed_elements_v1: data.plan_pdf_changed_elements_v1,
               candidate_review_inbox_v1: data.candidate_review_inbox_v1,
             },
           },
@@ -11016,6 +11595,7 @@ function PerformanceAIDashboardView({
     setAnalysisFocusLocked(false);
     setSelectedIssueId(null);
     setPendingClarification(null);
+    setPlanSheetSet(createDefaultPlanSheetSet("Untitled Project"));
   }, []);
 
   const handleNewProject = async () => {
@@ -11030,6 +11610,7 @@ function PerformanceAIDashboardView({
     setActiveJobId("");
     setPrompt("");
     setImageName("");
+    setPlanSheetSet(createDefaultPlanSheetSet("Untitled Project"));
     setUploadedImageApiUrl("");
     setUploadedImagePreviewUrl("");
     setSurveyFileName("");
@@ -11210,6 +11791,274 @@ function PerformanceAIDashboardView({
     downloadBlob(await response.blob(), filename);
   };
 
+  const getPlanSheetBlockers = (sheetSetOverride = planSheetSet) => {
+    const activeSheet =
+      sheetSetOverride.sheets.find((sheet) => sheet.id === sheetSetOverride.activeSheetId) ??
+      sheetSetOverride.sheets[0];
+    const blockers = new Set<string>(sheetSetOverride.blockers);
+    if (!activeSheet) {
+      blockers.add("Add at least one review sheet.");
+      return Array.from(blockers);
+    }
+    if (!activeSheet.titleBlock.projectName.trim()) blockers.add("Fill in the project name.");
+    if (!activeSheet.titleBlock.sheetTitle.trim()) blockers.add("Fill in the sheet title.");
+    if (!activeSheet.titleBlock.sheetNumber.trim()) blockers.add("Fill in the sheet number.");
+    if (!activeSheet.viewports.length) blockers.add("Add at least one viewport.");
+    if (!planPreviewUrl && !backendResult) blockers.add("Link a generated model preview or source package.");
+    if (issues.length || analysisIssues.length) blockers.add("Resolve or acknowledge current model review issues.");
+    if (previewBlockedReasons.length) blockers.add(previewBlockedReasons[0]);
+    return Array.from(blockers).filter(Boolean);
+  };
+
+  const refreshPlanSheet = (updater: (sheet: PlanSheet) => PlanSheet) => {
+    setPlanSheetSet((current) => ({
+      ...current,
+      sheets: current.sheets.map((sheet) =>
+        sheet.id === current.activeSheetId ? updater(sheet) : sheet,
+      ),
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+
+  const handlePlanSheetTitleBlockUpdate = (updates: Partial<PlanSheetTitleBlock>) => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      titleBlock: { ...sheet.titleBlock, ...updates },
+    }));
+    setStatusMessage("Updated sheet title block fields.");
+  };
+
+  const handlePlanSheetScaleChange = (viewportId: string, scale: PlanSheetScale) => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      viewports: sheet.viewports.map((viewport) =>
+        viewport.id === viewportId ? { ...viewport, scale } : viewport,
+      ),
+    }));
+    setStatusMessage(`Changed sheet viewport scale to ${scale}.`);
+  };
+
+  const addPlanSheetAnnotation = (type: PlanSheetAnnotation["type"], text: string) => {
+    refreshPlanSheet((sheet) => {
+      const offset = sheet.annotations.length % 5;
+      return {
+        ...sheet,
+        annotations: [
+          ...sheet.annotations,
+          {
+            id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            type,
+            text,
+            x: 12 + offset * 8,
+            y: 24 + offset * 9,
+          },
+        ],
+      };
+    });
+  };
+
+  const handlePlanSheetAddNote = (text = "Review note: confirm source before package handoff.") => {
+    addPlanSheetAnnotation("note", text);
+    setStatusMessage("Added a review note to the active sheet.");
+  };
+
+  const handlePlanSheetAddViewport = () => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      viewports: [
+        ...sheet.viewports,
+        {
+          id: `viewport-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          label: `Viewport ${sheet.viewports.length + 1}`,
+          source: "Model layer selection",
+          scale: "1:50",
+          x: 12 + (sheet.viewports.length % 2) * 32,
+          y: 18 + (sheet.viewports.length % 3) * 16,
+          w: 30,
+          h: 24,
+        },
+      ],
+    }));
+    setStatusMessage("Added a sheet viewport.");
+  };
+
+  const handlePlanSheetAddTable = () => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      legends: [
+        ...sheet.legends,
+        {
+          id: `legend-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          title: `Legend ${sheet.legends.length + 1}`,
+          rows: [["Linework", "Review layer"], ["Labels", "Visible callouts"]],
+        },
+      ],
+    }));
+    setStatusMessage("Added a legend/table block.");
+  };
+
+  const handlePlanSheetAddDetailBlock = () => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      detailBlocks: [
+        ...sheet.detailBlocks,
+        {
+          id: `detail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          title: `Detail ${sheet.detailBlocks.length + 1}`,
+          rows: [["Reference", "Detail block pending source"], ["Status", "For review"]],
+        },
+      ],
+    }));
+    setStatusMessage("Added a detail block.");
+  };
+
+  const handlePlanSheetAddReference = (kind: PlanSheetReference["kind"]) => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      references: [
+        ...sheet.references,
+        {
+          id: `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind,
+          label: `${toReadableLabel(kind)} reference`,
+          target: `${toReadableLabel(kind)} pending source`,
+        },
+      ],
+    }));
+    setStatusMessage(`Added ${toReadableLabel(kind).toLowerCase()} reference.`);
+  };
+
+  const handleCreateReviewSheet = () => {
+    setPlanSheetSet((current) => {
+      const projectName = siteName || currentProject?.name || "Untitled Project";
+      const nextSheet = createDefaultPlanSheet(current.sheets.length, projectName);
+      return {
+        ...current,
+        name: `${projectName} Review Sheet Package`,
+        sheets: [...current.sheets, nextSheet],
+        activeSheetId: nextSheet.id,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    setActiveWorkspaceMode("deliver");
+    setActiveSidePanel("deliverables");
+    appendChatMessage("assistant", "Made a new review sheet and opened the sheet editor.", "status");
+    setStatusMessage("New review sheet added.");
+  };
+
+  const handlePlanSheetExportJson = () => {
+    const projectName = siteName || currentProject?.name || "civora-project";
+    const safeProjectName = projectName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 64);
+    const payload = {
+      schema_version: "plan_sheet_set_review_v1",
+      generated_at: new Date().toISOString(),
+      review_only: true,
+      sheet_set: {
+        ...planSheetSet,
+        blockers: getPlanSheetBlockers(),
+      },
+    };
+    downloadBlob(
+      new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
+      `${safeProjectName || "civora"}-review-sheets.json`,
+    );
+    setStatusMessage("Review sheet JSON exported.");
+  };
+
+  const handlePlanSheetExportPdf = () => {
+    const blockers = getPlanSheetBlockers();
+    const escapeHtml = (value: string) =>
+      value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    const activeSheet =
+      planSheetSet.sheets.find((sheet) => sheet.id === planSheetSet.activeSheetId) ??
+      planSheetSet.sheets[0];
+    if (!activeSheet) {
+      setStatusMessage("Add a review sheet before exporting PDF.");
+      return;
+    }
+    const popup = window.open("", "_blank", "noopener,noreferrer,width=1200,height=900");
+    if (!popup) {
+      setStatusMessage("Browser blocked the review PDF window.");
+      return;
+    }
+    popup.document.write(`<!doctype html>
+<html>
+<head>
+  <title>${escapeHtml(activeSheet.titleBlock.sheetNumber)} review sheet</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
+    .sheet { border: 2px solid #0f172a; min-height: 720px; padding: 24px; position: relative; }
+    .title { border-top: 2px solid #0f172a; margin-top: 24px; padding-top: 12px; display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
+    .viewport { border: 2px solid #334155; background: #f8fafc; padding: 12px; margin: 12px 0; min-height: 180px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #64748b; margin-top: 18px; }
+    p, li { font-size: 12px; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    td { border: 1px solid #cbd5e1; padding: 6px; font-size: 12px; }
+    @media print { button { display: none; } body { margin: 0.25in; } }
+  </style>
+</head>
+<body>
+  <button onclick="window.print()">Print review PDF</button>
+  <div class="sheet">
+    <h1>${escapeHtml(activeSheet.titleBlock.sheetTitle)}</h1>
+    <p>${escapeHtml(planSheetSet.name)} · ${escapeHtml(activeSheet.size)} · Review package only</p>
+    <h2>Viewports</h2>
+    ${activeSheet.viewports
+      .map(
+        (viewport) =>
+          `<div class="viewport"><strong>${escapeHtml(viewport.label)}</strong><p>${escapeHtml(viewport.source)}</p><p>Scale ${escapeHtml(viewport.scale)}</p></div>`,
+      )
+      .join("")}
+    <div class="grid">
+      <div>
+        <h2>Notes and Callouts</h2>
+        <ul>${activeSheet.annotations.map((item) => `<li>${escapeHtml(item.type)}: ${escapeHtml(item.text)}</li>`).join("")}</ul>
+      </div>
+      <div>
+        <h2>References</h2>
+        <ul>${activeSheet.references.map((item) => `<li>${escapeHtml(item.kind)}: ${escapeHtml(item.target)}</li>`).join("")}</ul>
+      </div>
+    </div>
+    <h2>Legends and Details</h2>
+    ${[...activeSheet.legends, ...activeSheet.detailBlocks]
+      .map(
+        (table) =>
+          `<table><caption>${escapeHtml(table.title)}</caption>${table.rows
+            .map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`)
+            .join("")}</table>`,
+      )
+      .join("")}
+    <h2>Sheet Blockers</h2>
+    <ul>${(blockers.length ? blockers : ["No sheet blockers recorded."]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    <div class="title">
+      <div>
+        <p><strong>Project:</strong> ${escapeHtml(activeSheet.titleBlock.projectName)}</p>
+        <p><strong>Stage:</strong> ${escapeHtml(activeSheet.titleBlock.reviewStage)}</p>
+        <p><strong>By:</strong> ${escapeHtml(activeSheet.titleBlock.preparedBy)} · <strong>Check:</strong> ${escapeHtml(activeSheet.titleBlock.checkedBy)}</p>
+      </div>
+      <div>
+        <p><strong>${escapeHtml(activeSheet.titleBlock.sheetNumber)}</strong></p>
+        <p>${escapeHtml(activeSheet.titleBlock.date)}</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`);
+    popup.document.close();
+    setStatusMessage("Opened review PDF print view.");
+  };
+
   const handleExportQuantityReviewReport = () => {
     const safeProjectName = (siteName || currentProject?.name || "civora-project")
       .toLowerCase()
@@ -11294,7 +12143,7 @@ function PerformanceAIDashboardView({
       setStatusMessage(`DXF review export queued as ${queued.job.job_id}.`);
       appendChatMessage(
         "assistant",
-        `Queued DXF review export as ${queued.job.job_id}. Progress will stay visible here; this does not approve construction readiness.`,
+        `Queued DXF review export as ${queued.job.job_id}. Progress will stay visible here; this does not create construction reliance.`,
         "status",
       );
     } catch (error) {
@@ -11809,12 +12658,21 @@ function PerformanceAIDashboardView({
     buildingPlacements
       .filter((item) => item.type !== "site" && item.placed)
       .forEach((item) => {
+        const confidenceEntry = sourceConfidenceByObjectId.get(item.id);
+        const metaConfidence =
+          typeof item.meta?.confidence === "number" || typeof item.meta?.confidence === "string"
+            ? item.meta.confidence
+            : null;
+        const metaBlockers = Array.isArray(item.meta?.blockers)
+          ? item.meta.blockers.map((blocker) => String(blocker))
+          : [];
         const isBuilding = Boolean(item.type && item.type.includes("building")) || !item.type;
         const isRoad = item.type === "road" || item.type === "driveway" || item.type === "sidewalk";
         const isParking = item.type === "parking";
         const isDrainage = item.type === "basin" || item.type === "inlet" || item.type === "outfall";
         const isUtility = item.type === "hydrant" || item.type === "manhole" || item.type === "utility_corridor";
         items.push({
+          id: item.id,
           x: item.x ?? 0,
           y: item.y ?? 0,
           w: Math.max(1, item.w),
@@ -11840,10 +12698,17 @@ function PerformanceAIDashboardView({
               : isUtility
                 ? "UTILITY"
                 : "ROAD",
+          source: confidenceEntry?.source_name || item.source || "workspace object",
+          confidence: confidenceEntry?.confidence_band || item.confidence || metaConfidence,
+          blockers: [
+            ...(confidenceEntry?.why_low_confidence ? [confidenceEntry.why_low_confidence] : []),
+            ...(confidenceEntry?.next_action ? [confidenceEntry.next_action] : []),
+            ...metaBlockers,
+          ],
         });
       });
     return items;
-  }, [buildingPlacements, resolveLotBounds]);
+  }, [buildingPlacements, resolveLotBounds, sourceConfidenceByObjectId]);
   const preview3DEffectiveItems = preview3DItems.length
     ? preview3DItems
     : preview3DAnnotationItems.length
@@ -12299,6 +13164,30 @@ function PerformanceAIDashboardView({
     { key: "utilities", label: "Utilities", panel: "utilities" as SidePanelKey, runTarget: "utilities" as SystemGenerationTarget, status: systemStatuses.utilities, blockers: getSystemBlockers("utilities") },
     { key: "roadway", label: "Roadway", panel: "roadway" as SidePanelKey, runTarget: "roads" as SystemGenerationTarget, status: systemStatuses.roads, blockers: getSystemBlockers("roadway") },
   ] as const;
+  const civil3DWorkflowBlockers = useMemo(() => {
+    const blockers = [
+      ...getSystemBlockers("roadway"),
+      ...getSystemBlockers("grading"),
+      ...previewBlockedReasons,
+      ...issues
+        .filter((issue) => /corridor|road|profile|section|surface|grading|cut|fill/i.test(`${issue.code ?? ""} ${issue.message}`))
+        .map((issue) => issue.message),
+    ];
+    return Array.from(new Set(blockers.filter(Boolean))).slice(0, 8);
+  }, [
+    confirmedObjectCounts.access,
+    confirmedObjectCounts.buildings,
+    hasHardSystemBlock,
+    hasTerrainSource,
+    issues,
+    missingSite,
+    previewBlockedReasons,
+    roads,
+    siteScaleLocked,
+    siteTooLargeForGrading,
+    systemStatuses.grading,
+    systemStatuses.roads,
+  ]);
   const workflowActionHints = [
     !hasLocationEvidence ? "Setup panel -> Start from address or blank site." : "",
     !siteSizeSet ? "Setup panel -> enter site width and depth." : "",
@@ -12316,8 +13205,8 @@ function PerformanceAIDashboardView({
     ["LandXML", formatSupportValue("Not generated in this UI yet", true)],
     ["Civil 3D", formatSupportValue("No native Civil 3D package; use review exports externally", true)],
     ["DWG", formatSupportValue("Not exported directly; DXF review export only", true)],
-    ["Construction document support package", formatSupportValue(backendResult ? "Review-only package; external engineer approval required" : "Needs run and review gates", !backendResult)],
-    ["External engineer approval", formatSupportValue("Always required outside Civora")],
+    ["Construction support package", formatSupportValue(backendResult ? "Review-only package; independent professional review required" : "Needs run and review gates", !backendResult)],
+    ["Independent professional review", formatSupportValue("Required outside Civora")],
   ] as const;
   const capabilityAuditRows = useMemo<CapabilityExposure[]>(() => {
     const meta = currentPlanMeta as Record<string, unknown>;
@@ -12502,9 +13391,9 @@ function PerformanceAIDashboardView({
         "Cost book / pricing",
         costPresent,
         ["UI", "chat", "API", "report"],
-        quantityCost.ready === true ? "Approved pricing source covers quantities" : "Blocked without approved/current unit-price book",
+        quantityCost.ready === true ? "Reviewed pricing source covers quantities" : "Blocked without reviewed/current unit-price book",
         "Cost pricing validation is absent until quantities and a unit-price book exist.",
-        "Normalize and validate an approved unit-price book, then rerun quantities/cost evidence.",
+        "Normalize and validate a reviewed unit-price book, then rerun quantities/cost evidence.",
         quantityCost.ready !== true,
       ),
       row(
@@ -12522,7 +13411,7 @@ function PerformanceAIDashboardView({
         "Construction document support package",
         hasRecord("construction_document_support_package_v1", "construction_package_manifest"),
         ["UI", "chat", "API", "report"],
-        packageStatus("construction_document_support_package_v1", "construction_package_manifest") || "Review-only support; external approval required",
+        packageStatus("construction_document_support_package_v1", "construction_package_manifest") || "Review-only support; independent review required",
         "Construction document support package is not attached to this plan.",
         "Build the construction document support package after deliverable artifacts, standards, survey/control, QA, and pricing evidence exist.",
         blockerCount(constructionPackage) > 0 || blockerCount(constructionManifest) > 0 || true,
@@ -12643,7 +13532,7 @@ function PerformanceAIDashboardView({
     quantities: { title: "Quantities", desc: "Review takeoff totals, stale labels, source confidence, and cost inputs." },
     deliverables: { title: "Deliver", desc: "Review sheets, reports, quantities, profiles, sections, exports, and package gates." },
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
-    jobs: { title: "Async Jobs", desc: "Inspect background runs, retries, approvals, exports, and artifact history." },
+    jobs: { title: "Async Jobs", desc: "Inspect background runs, retries, review holds, exports, and artifact history." },
     standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
     data: { title: "Data", desc: "Configure survey, terrain, GIS, parcels, standards sources, imported utilities, and confidence labels." },
@@ -12908,7 +13797,7 @@ function PerformanceAIDashboardView({
     },
     {
       label: "Construction blocks",
-      value: sidebarHasTruthEvidence ? "external approval required" : "not evaluated",
+      value: sidebarHasTruthEvidence ? "independent review required" : "not evaluated",
       status: sidebarHasTruthEvidence ? "block" : "idle",
     },
     {
@@ -13003,7 +13892,7 @@ function PerformanceAIDashboardView({
       status: sidebarReleaseStatus === "blocked" ? "block" : "review",
     },
     {
-      label: "External approval",
+      label: "Independent review",
       value: "required outside Civora",
       status: "review",
     },
@@ -13385,7 +14274,7 @@ function PerformanceAIDashboardView({
     `Systems: ${Object.entries(systemStatuses).map(([key, value]) => `${key}=${value}`).join(", ")}`,
     `User message: ${issueReportMessage.trim() || "(add details before sending)"}`,
     "",
-    "Reminder: outputs are engineer-review-required review materials only. External licensed engineer approval is required before any construction reliance.",
+    "Reminder: outputs are review-required materials only. Construction reliance remains outside Civora.",
   ].join("\n");
   const handleCopyIssueDiagnostic = async () => {
     try {
@@ -13633,7 +14522,7 @@ function PerformanceAIDashboardView({
               </div>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {sidebarHasTruthEvidence
-                  ? "Engineer review required | Construction blocked until external approval"
+                  ? "Engineer review required | Construction reliance outside Civora"
                   : "No project evidence yet | Engineer review required before release"}
               </p>
             </div>
@@ -14126,14 +15015,14 @@ function PerformanceAIDashboardView({
                       </summary>
                       <div className="mt-3 space-y-2 text-sm text-slate-600">
                         {[
-                          ["Ready", "Enough current, traceable evidence exists for review; this does not mean externally approved."],
+                          ["Ready", "Enough current, traceable evidence exists for review; this does not create construction reliance."],
                           ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
                           ["Blocked", "Missing evidence, stale output, unsupported export, or unresolved conflict prevents the next review step."],
                           ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
                           ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
                           ["Visual preview only", "The view is a visual aid and is not construction evidence by itself."],
                           ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
-                          ["Construction release blocked", "Construction reliance remains blocked unless approved outside Civora by the responsible licensed engineer."],
+                          ["Construction reliance", "Remains outside Civora and requires independent licensed-professional review."],
                         ].map(([label, desc]) => (
                           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="font-semibold text-slate-800">{label}</p>
@@ -14972,7 +15861,7 @@ function PerformanceAIDashboardView({
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="plan-pdf-workflow">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Plan PDF Understanding</p>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">PDF Plan Visual Editor</p>
                             <p className="mt-1 text-xs font-medium text-slate-500">
                               {planPdfAnalysis
                                 ? `${planPdfAnalysis.source_pdf?.filename ?? "Plan PDF"} · ${planPdfAnalysis.page_count ?? 0} page(s) · ${planPdfElements.length} editable/review candidates`
@@ -14996,7 +15885,7 @@ function PerformanceAIDashboardView({
                             event.currentTarget.value = "";
                           }}
                         />
-                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <div className="mt-3 grid gap-2 sm:grid-cols-4">
                           <button
                             type="button"
                             onClick={() => planPdfInputRef.current?.click()}
@@ -15007,13 +15896,24 @@ function PerformanceAIDashboardView({
                           <button
                             type="button"
                             onClick={() => {
-                              setPrompt("what is on this plan?");
+                              setPrompt("change pool deck elevation");
                               handleOpenSidePanel("chat");
                             }}
                             disabled={!planPdfAnalysis}
                             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Ask Chat
+                            Edit by Chat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPrompt("what changed?");
+                              handleOpenSidePanel("chat");
+                            }}
+                            disabled={!planPdfAnalysis}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            What Changed
                           </button>
                           <button
                             type="button"
@@ -15021,7 +15921,7 @@ function PerformanceAIDashboardView({
                             disabled={!planPdfAnalysis}
                             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Export Report
+                            Export Review
                           </button>
                         </div>
                         {planPdfAnalysis ? (
@@ -15115,6 +16015,52 @@ function PerformanceAIDashboardView({
                                       rows={4}
                                       className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                                     />
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+                                        <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Original</p>
+                                        <p className="mt-1 line-clamp-3 text-slate-700">{selectedPlanPdfElement.original_text || selectedPlanPdfElement.text || "No text"}</p>
+                                      </div>
+                                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+                                        <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Edited</p>
+                                        <p className="mt-1 line-clamp-3 text-slate-700">{selectedPlanPdfElement.text || "No text"}</p>
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                                      <label className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                        X0
+                                        <input
+                                          value={planPdfMoveX}
+                                          onChange={(event) => setPlanPdfMoveX(event.target.value)}
+                                          disabled={selectedPlanPdfElement.editable === false || !selectedPlanPdfElement.bbox}
+                                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        />
+                                      </label>
+                                      <label className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                        Y0
+                                        <input
+                                          value={planPdfMoveY}
+                                          onChange={(event) => setPlanPdfMoveY(event.target.value)}
+                                          disabled={selectedPlanPdfElement.editable === false || !selectedPlanPdfElement.bbox}
+                                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const x0 = Number(planPdfMoveX);
+                                          const y0 = Number(planPdfMoveY);
+                                          if (!Number.isFinite(x0) || !Number.isFinite(y0)) {
+                                            setStatusMessage("Moving a PDF-derived element requires explicit target x0/y0 coordinates.");
+                                            return;
+                                          }
+                                          void updatePlanPdfElement(selectedPlanPdfElement.element_id, { move_target: { x0, y0 } });
+                                        }}
+                                        disabled={selectedPlanPdfElement.editable === false || !selectedPlanPdfElement.bbox}
+                                        className="mt-5 rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        Move
+                                      </button>
+                                    </div>
                                     <div className="grid grid-cols-3 gap-2">
                                       <button
                                         type="button"
@@ -15140,12 +16086,87 @@ function PerformanceAIDashboardView({
                                       </button>
                                     </div>
                                     <p className="text-xs text-slate-500">
-                                      PDF-derived content is editable for review only. It does not modify a stamp, seal, signature, or construction approval.
+                                      PDF-derived content is editable for review only. It does not modify protected authorization marks or construction status.
                                     </p>
                                   </div>
                                 ) : (
                                   <p className="mt-2 text-xs text-slate-500">No extracted sheet element is selected.</p>
                                 )}
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Extracted Elements</p>
+                                  <span className="text-[11px] font-semibold text-slate-400">{planPdfElements.length}</span>
+                                </div>
+                                <div className="mt-2 max-h-48 space-y-1 overflow-auto pr-1">
+                                  {planPdfElements.length ? (
+                                    planPdfElements.slice(0, 80).map((element) => (
+                                      <button
+                                        key={element.element_id}
+                                        type="button"
+                                        onClick={() => setSelectedPlanPdfElementId(element.element_id)}
+                                        className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
+                                          selectedPlanPdfElement?.element_id === element.element_id
+                                            ? "border-slate-900 bg-slate-900 text-white"
+                                            : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                                        }`}
+                                      >
+                                        <span className="block truncate font-semibold">{element.text || element.type || "PDF element"}</span>
+                                        <span className="block truncate text-[10px] opacity-70">
+                                          {String(element.type ?? "element").replace(/_/g, " ")} / {element.review_status ?? "pending"}
+                                        </span>
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <p className="text-xs text-slate-500">No embedded text candidates were extracted.</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-white p-3" data-testid="plan-pdf-changed-elements">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Changed Elements</p>
+                                  <span className="text-[11px] font-semibold text-slate-400">{planPdfChangedReport?.changed_count ?? planPdfChangedElements.length}</span>
+                                </div>
+                                <div className="mt-2 space-y-1">
+                                  {planPdfChangedElements.length ? (
+                                    planPdfChangedElements.slice(0, 6).map((element) => (
+                                      <div key={element.element_id} className="rounded-md bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+                                        <p className="truncate font-semibold">{element.original_text || "(blank)"} -&gt; {element.text || "(blank)"}</p>
+                                        <p className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                                          {element.review_status ?? "pending"}{element.moved ? " / moved" : ""}{element.changed_text ? " / text edited" : ""}
+                                        </p>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p className="text-xs text-slate-500">No PDF-derived sheet edits have been recorded yet.</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Unreadable / Blocked</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPrompt("show unreadable text");
+                                      handleOpenSidePanel("chat");
+                                    }}
+                                    className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:text-slate-900"
+                                  >
+                                    Ask
+                                  </button>
+                                </div>
+                                <div className="mt-2 space-y-1">
+                                  {planPdfUnreadableItems.length ? (
+                                    planPdfUnreadableItems.slice(0, 4).map((blocker) => (
+                                      <p key={blocker} className="rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
+                                        {blocker.replace(/_/g, " ")}
+                                      </p>
+                                    ))
+                                  ) : (
+                                    <p className="text-xs text-slate-500">No unreadable-text blocker has been recorded.</p>
+                                  )}
+                                </div>
                               </div>
                               <div className="rounded-lg border border-slate-200 bg-white p-3">
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Blockers</p>
@@ -16939,6 +17960,20 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "roadway" ? (
                   <div className="space-y-4">
+                    <CivilSurfaceCorridorWorkflow
+                      activeTab={activeCivil3DWorkflowTab}
+                      onTabChange={setActiveCivil3DWorkflowTab}
+                      roadwayData={roadwayWorkbenchData}
+                      gradingEarthworkUx={gradingEarthworkUx}
+                      sourceConfidenceRows={sourceConfidenceRows}
+                      blockers={civil3DWorkflowBlockers}
+                      gradingSourceSummary={gradingSourceSummary}
+                      hasTerrainSource={hasTerrainSource}
+                      hasVerifiedSurveyControl={hasVerifiedSurveyControl}
+                      onOpenRoadwayControls={() => {
+                        setActiveRoadwayWorkbenchTab("profile");
+                      }}
+                    />
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Roads", systemStatuses.roads === "fresh" ? "Complete" : "Not configured"],
@@ -17949,13 +18984,11 @@ function PerformanceAIDashboardView({
                             or external licensed engineer can review the work.
                           </p>
                           <p className="font-semibold text-slate-800">
-                            It is not a construction release, permit submission,
-                            or professional approval. Exports remain review
-                            packages unless externally approved outside Civora.
+                            It is not a construction release or permit package.
+                            Exports remain review packages for external review.
                           </p>
                           <p>
-                            External licensed engineer approval is required
-                            before any construction reliance or release.
+                            Construction reliance remains outside Civora.
                           </p>
                         </div>
                       </details>
@@ -17990,6 +19023,53 @@ function PerformanceAIDashboardView({
                             ))}
                           </div>
                         </div>
+                        {issues.length ? (
+                          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Engineering Issues</p>
+                              <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Apply fixes</span>
+                            </div>
+                            <div className="mt-3 space-y-2 text-xs text-slate-700">
+                              {issues.map((issue, idx) => {
+                                const applyLabel = drainageIssueApplyLabel(issue);
+                                const canApply = applyLabel ? canApplyDrainageIssue(issue) : false;
+                                const guidance = getIssueGuidance(issue);
+                                return (
+                                  <div
+                                    key={`${issue.message}-${idx}`}
+                                    className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2"
+                                  >
+                                    <div>
+                                      <p className="font-semibold text-slate-800">{issue.message}</p>
+                                      {issue.code ? (
+                                        <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">{issue.code}</p>
+                                      ) : null}
+                                      {guidance.bestNextFix ? (
+                                        <p className="mt-2 text-[11px] font-semibold text-slate-700">Best next fix: {guidance.bestNextFix}</p>
+                                      ) : null}
+                                    </div>
+                                    {applyLabel ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApplyDrainageIssue(issue)}
+                                        disabled={!canApply}
+                                        className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                          canApply
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                            : "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+                                        }`}
+                                      >
+                                        {applyLabel}
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Review</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Truth gates</p>
                           <div className="mt-3 space-y-2">
@@ -18221,15 +19301,47 @@ function PerformanceAIDashboardView({
                     ) : null}
                     {sidePanelForRender === "deliverables" ? (
                       <>
+                        <PlanSheetEditor
+                          sheetSet={{ ...planSheetSet, blockers: getPlanSheetBlockers() }}
+                          onUpdateTitleBlock={handlePlanSheetTitleBlockUpdate}
+                          onChangeScale={handlePlanSheetScaleChange}
+                          onAddNote={handlePlanSheetAddNote}
+                          onAddLabel={() => {
+                            addPlanSheetAnnotation("label", "New sheet label");
+                            setStatusMessage("Added a sheet label.");
+                          }}
+                          onAddCallout={() => {
+                            addPlanSheetAnnotation("callout", "Review callout");
+                            setStatusMessage("Added a sheet callout.");
+                          }}
+                          onAddDimension={() => {
+                            addPlanSheetAnnotation("dimension", "Dimension reference");
+                            setStatusMessage("Added a dimension note.");
+                          }}
+                          onAddViewport={handlePlanSheetAddViewport}
+                          onAddTable={handlePlanSheetAddTable}
+                          onAddDetailBlock={handlePlanSheetAddDetailBlock}
+                          onAddReference={handlePlanSheetAddReference}
+                          onSelectSheet={(sheetId) => {
+                            setPlanSheetSet((current) => ({
+                              ...current,
+                              activeSheetId: sheetId,
+                              updatedAt: new Date().toISOString(),
+                            }));
+                          }}
+                          onCreateSheet={handleCreateReviewSheet}
+                          onExportJson={handlePlanSheetExportJson}
+                          onExportPdf={handlePlanSheetExportPdf}
+                        />
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Package gate</p>
                               <p className="mt-1 text-sm font-semibold text-slate-900">
-                                {sidebarReleaseStatus === "ready" ? "Ready for engineer review" : sidebarReleaseStatus === "blocked" ? "Construction package blocked" : "Review-only package"}
+                                {sidebarReleaseStatus === "ready" ? "Ready for engineer review" : sidebarReleaseStatus === "blocked" ? "Review package blocked" : "Review-only package"}
                               </p>
                               <p className="mt-1 text-xs font-medium text-slate-500">
-                                Construction remains blocked unless an external licensed engineer approval record exists.
+                                Construction reliance remains outside Civora.
                               </p>
                             </div>
                             <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
@@ -18299,7 +19411,7 @@ function PerformanceAIDashboardView({
                             </div>
                           </div>
                           <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                            Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record.
+                            Civora provides review evidence only. Construction reliance and professional responsibility remain outside Civora.
                           </p>
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="smart-fix-panel">
@@ -18592,7 +19704,7 @@ function PerformanceAIDashboardView({
                     </p>
                     <p className="truncate text-xs font-semibold text-slate-500">
                       {sidebarHasTruthEvidence
-                        ? "Engineer review required. Construction remains blocked until external approval."
+                        ? "Engineer review required. Construction reliance remains outside Civora."
                         : "No project evidence yet. Start setup to create traceable state."}
                     </p>
                   </div>

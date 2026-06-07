@@ -202,7 +202,7 @@ export default function ChatPanel({
               <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
                 {approvalState === "starting"
                   ? approvalLabel
-                  : "Phase ready for review. Approve to continue or send changes."}
+                  : "Phase ready for review. Continue when the review step is complete, or send changes."}
               </div>
             ) : null}
             {(hasVisibleActiveJob || hasDirectRunInFlight) && (
@@ -229,10 +229,10 @@ export default function ChatPanel({
                       className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {approvalState === "approving"
-                        ? "Approving..."
+                        ? "Continuing..."
                         : approvalState === "starting"
                           ? approvalLabel
-                          : "Approve & Continue"}
+                          : "Continue Review Flow"}
                     </button>
                   )}
                 </div>
