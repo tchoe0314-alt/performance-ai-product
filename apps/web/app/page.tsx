@@ -11058,7 +11058,7 @@ function PerformanceAIDashboardView({
         status: row.status,
       })),
       warning:
-        "This is a traceable review report only. External licensed engineer review and approval are required before construction reliance.",
+        "This is a traceable review report only. External licensed engineer review is required before construction reliance.",
     };
     downloadBlob(
       new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }),
