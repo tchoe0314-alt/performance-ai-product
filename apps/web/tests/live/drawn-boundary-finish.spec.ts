@@ -111,4 +111,49 @@ test.describe("drawn site boundary Finish workflow", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test("CAD precision controls support coordinates, snaps, transforms, layers, and history", async ({ page }) => {
+    await openBlankWorkspace(page);
+
+    const canvas = page.getByTestId("workspace-canvas-shell");
+    const surface = page.getByTestId("preview-drawing-surface");
+    await canvas.getByRole("button", { name: "Draw Site Boundary" }).click();
+    await clickSurfaceAt(surface, 0.2, 0.35);
+    await clickSurfaceAt(surface, 0.78, 0.35);
+    await clickSurfaceAt(surface, 0.72, 0.78);
+    await canvas.getByRole("button", { name: "Finish" }).click();
+
+    const cadTools = page.getByTestId("cad-precision-tools");
+    await expect(cadTools).toBeVisible();
+    await expect(cadTools).toContainText("CAD precision");
+    await expect(cadTools.getByLabel("CAD X coordinate")).toBeVisible();
+    await expect(cadTools.getByLabel("CAD Y coordinate")).toBeVisible();
+    await expect(cadTools.getByText("Snap", { exact: true })).toBeVisible();
+    await expect(cadTools.getByText("Ortho", { exact: true })).toBeVisible();
+
+    await cadTools.getByLabel("CAD X coordinate").fill("120");
+    await cadTools.getByLabel("CAD Y coordinate").fill("120");
+    await cadTools.getByRole("button", { name: "XY" }).click();
+    await cadTools.getByLabel("CAD X coordinate").fill("250");
+    await cadTools.getByLabel("CAD Y coordinate").fill("120");
+    await cadTools.getByRole("button", { name: "XY" }).click();
+    await canvas.getByRole("button", { name: "Finish" }).click();
+    await expect(page.getByText("Custom Line 1").first()).toBeVisible();
+
+    await page.getByText("Custom Line 1").first().click();
+    await expect(cadTools).toContainText("Length");
+    await expect(cadTools).toContainText("Angle");
+    await cadTools.getByLabel("CAD transform value").fill("15");
+    await cadTools.getByRole("button", { name: "Move selected CAD objects" }).click();
+    await expect(cadTools).toContainText("Move");
+    await cadTools.getByRole("button", { name: "Undo CAD command" }).click();
+    await cadTools.getByRole("button", { name: "Redo CAD command" }).click();
+
+    await cadTools.getByLabel("CAD layer").selectOption("C-UTIL");
+    await cadTools.getByRole("button", { name: "Layer" }).click();
+    await expect(cadTools).toContainText("Layer");
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
 });

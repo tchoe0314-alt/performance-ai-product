@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { AlertTriangle, Download, Droplets, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Pentagon, PencilLine, RefreshCw, RotateCcw, Route, ShieldCheck, Square, Table2, Trash2, Unlock, X } from "lucide-react";
+import { AlertTriangle, CornerUpLeft, CornerUpRight, Download, Droplets, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X } from "lucide-react";
 
 import type {
   Preview3DItem,
@@ -36,6 +36,15 @@ type EngineeringSystemStatuses = Record<
   EngineeringSystemStatus
 >;
 type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
+type CadSnapKind = "endpoint" | "midpoint" | "intersection" | "perpendicular" | "orthogonal";
+type CadPoint = { x: number; y: number };
+type CadHistoryEntry = {
+  id: string;
+  label: string;
+  objectId: string;
+  before: BuildingPlacement;
+  after: BuildingPlacement;
+};
 type StormHydrologyOverlay = {
   inletChecks?: Array<{
     id: string;
@@ -326,6 +335,7 @@ export default function PreviewPanel({
   previewInteraction,
   previewQuality,
   systemStatuses,
+  hasTerrainSource,
   hasGeneratedPlan,
   onSetPreviewMode,
   onSetPreviewInteraction,
@@ -539,6 +549,17 @@ export default function PreviewPanel({
   const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
+  const [cadSnapEnabled, setCadSnapEnabled] = useState(true);
+  const [cadOrthoEnabled, setCadOrthoEnabled] = useState(false);
+  const [cadOffsetDistance, setCadOffsetDistance] = useState("10");
+  const [cadFilletRadius, setCadFilletRadius] = useState("5");
+  const [cadTransformValue, setCadTransformValue] = useState("10");
+  const [cadLayerDraft, setCadLayerDraft] = useState("C-DRAFT");
+  const [cadCoordinateDraft, setCadCoordinateDraft] = useState({ x: "", y: "" });
+  const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
+  const [cadHistory, setCadHistory] = useState<CadHistoryEntry[]>([]);
+  const [cadRedoStack, setCadRedoStack] = useState<CadHistoryEntry[]>([]);
+  const [activeSnapPoint, setActiveSnapPoint] = useState<(CadPoint & { kind: CadSnapKind }) | null>(null);
   const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
@@ -617,8 +638,9 @@ export default function PreviewPanel({
   const highQualityObjectCount = buildingPlacements.length + suggestedPlacements.length + (surveyPoints?.length ?? 0);
   const useLightHighQuality =
     previewQuality === "high" && (compactViewport || highQualityObjectCount > 220);
-  const showMap = mapAvailable && previewQuality === "high";
-  const showMap3D = showMap && previewMode === "3d";
+  const showMapBase = mapAvailable && previewQuality === "high";
+  const showMap = showMapBase && previewMode === "2d";
+  const showMap3D = showMapBase && previewMode === "3d";
   const mapPitch = showMap3D ? 58 : 0;
   const mapBearing = showMap3D ? (typeof siteRotationDeg === "number" ? siteRotationDeg : 0) : 0;
   const allowMapInteraction =
@@ -1297,17 +1319,150 @@ export default function PreviewPanel({
     return Math.round(value / step) * step;
   }, []);
 
+  const getObjectGeometryPoints = useCallback((item: BuildingPlacement): Array<[number, number]> => {
+    if (Array.isArray(item.geometry) && item.geometry.length) {
+      return (item.geometry as Array<[number, number]>).map((pt) => [pt[0], pt[1]]);
+    }
+    const x = item.x ?? 0;
+    const y = item.y ?? 0;
+    if (item.geometryType === "point") return [[x + item.w / 2, y + item.d / 2]];
+    return [
+      [x, y],
+      [x + item.w, y],
+      [x + item.w, y + item.d],
+      [x, y + item.d],
+    ];
+  }, []);
+
+  const distanceBetweenPoints = useCallback((a: CadPoint, b: CadPoint) => Math.hypot(a.x - b.x, a.y - b.y), []);
+
+  const segmentIntersection = useCallback((a: CadPoint, b: CadPoint, c: CadPoint, d: CadPoint): CadPoint | null => {
+    const denominator = (a.x - b.x) * (c.y - d.y) - (a.y - b.y) * (c.x - d.x);
+    if (Math.abs(denominator) < 0.0001) return null;
+    const t = ((a.x - c.x) * (c.y - d.y) - (a.y - c.y) * (c.x - d.x)) / denominator;
+    const u = -((a.x - b.x) * (a.y - c.y) - (a.y - b.y) * (a.x - c.x)) / denominator;
+    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+    return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+  }, []);
+
+  const cadSegments = useMemo(() => {
+    const segments: Array<{ a: CadPoint; b: CadPoint }> = [];
+    [...buildingPlacements, ...suggestedPlacements].forEach((item) => {
+      const points = getObjectGeometryPoints(item);
+      if (points.length < 2) return;
+      points.forEach((pt, idx) => {
+        const isLast = idx === points.length - 1;
+        if (isLast && item.geometryType === "polyline") return;
+        const next = isLast ? points[0] : points[idx + 1];
+        segments.push({
+          a: { x: pt[0], y: pt[1] },
+          b: { x: next[0], y: next[1] },
+        });
+      });
+    });
+    return segments;
+  }, [buildingPlacements, getObjectGeometryPoints, suggestedPlacements]);
+
+  const resolveCadSnapPoint = useCallback(
+    (point: CadPoint, basePoint?: CadPoint | null): (CadPoint & { kind: CadSnapKind }) => {
+      if (!cadSnapEnabled) {
+        if (cadOrthoEnabled && basePoint) {
+          const dx = Math.abs(point.x - basePoint.x);
+          const dy = Math.abs(point.y - basePoint.y);
+          return dx >= dy
+            ? { x: point.x, y: basePoint.y, kind: "orthogonal" }
+            : { x: basePoint.x, y: point.y, kind: "orthogonal" };
+        }
+        return { ...point, kind: "endpoint" };
+      }
+      const threshold = Math.max(lotWidth, lotHeight, 1) * 0.018;
+      const candidates: Array<CadPoint & { kind: CadSnapKind }> = [];
+      cadSegments.forEach((segment, index) => {
+        candidates.push({ ...segment.a, kind: "endpoint" });
+        candidates.push({ ...segment.b, kind: "endpoint" });
+        candidates.push({
+          x: (segment.a.x + segment.b.x) / 2,
+          y: (segment.a.y + segment.b.y) / 2,
+          kind: "midpoint",
+        });
+        for (let otherIndex = index + 1; otherIndex < cadSegments.length; otherIndex += 1) {
+          const hit = segmentIntersection(segment.a, segment.b, cadSegments[otherIndex].a, cadSegments[otherIndex].b);
+          if (hit) candidates.push({ ...hit, kind: "intersection" });
+        }
+        if (basePoint) {
+          const dx = segment.b.x - segment.a.x;
+          const dy = segment.b.y - segment.a.y;
+          const lenSq = dx * dx + dy * dy;
+          if (lenSq > 0) {
+            const t = ((point.x - segment.a.x) * dx + (point.y - segment.a.y) * dy) / lenSq;
+            if (t >= 0 && t <= 1) {
+              candidates.push({
+                x: segment.a.x + t * dx,
+                y: segment.a.y + t * dy,
+                kind: "perpendicular",
+              });
+            }
+          }
+        }
+      });
+      let best = candidates
+        .map((candidate) => ({ candidate, distance: distanceBetweenPoints(point, candidate) }))
+        .filter((entry) => entry.distance <= threshold)
+        .sort((a, b) => a.distance - b.distance)[0]?.candidate;
+      if (!best && cadOrthoEnabled && basePoint) {
+        const dx = Math.abs(point.x - basePoint.x);
+        const dy = Math.abs(point.y - basePoint.y);
+        best = dx >= dy
+          ? { x: point.x, y: basePoint.y, kind: "orthogonal" }
+          : { x: basePoint.x, y: point.y, kind: "orthogonal" };
+      }
+      return best ?? { ...point, kind: "endpoint" };
+    },
+    [cadOrthoEnabled, cadSegments, cadSnapEnabled, distanceBetweenPoints, lotHeight, lotWidth, segmentIntersection],
+  );
+
+  const updateCadObject = useCallback(
+    (target: BuildingPlacement, updates: Partial<BuildingPlacement>, label: string) => {
+      const after: BuildingPlacement = {
+        ...target,
+        ...updates,
+        meta: {
+          ...(target.meta ?? {}),
+          ...(updates.meta ?? {}),
+          classification_status: target.meta?.classification_status ?? "draft_review_required",
+          engineering_status: target.meta?.engineering_status ?? "draft_review_required",
+        },
+        source: target.source ?? "manual_drawn",
+        placed: true,
+      };
+      setCadHistory((prev) => [
+        ...prev.slice(-24),
+        {
+          id: `${Date.now()}-${target.id}`,
+          label,
+          objectId: target.id,
+          before: { ...target, meta: { ...(target.meta ?? {}) } },
+          after,
+        },
+      ]);
+      setCadRedoStack([]);
+      onUpdateBuilding(target.id, after);
+    },
+    [onUpdateBuilding],
+  );
+
   const updateDraggedBuilding = useCallback(
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
       if (!draggingBuildingId || !draggingMode) return;
       const rect = event.currentTarget.getBoundingClientRect();
-      const sitePoint = transformScreenToSitePoint(
+      const transformedSitePoint = transformScreenToSitePoint(
         { x: event.clientX, y: event.clientY },
         { left: rect.left, top: rect.top },
         bounds,
         currentSiteSize,
         canvasView,
       );
+      const sitePoint = resolveCadSnapPoint(transformedSitePoint, null);
       const target =
         buildingPlacements.find((item) => item.id === draggingBuildingId) ??
         suggestedPlacements.find((item) => item.id === draggingBuildingId);
@@ -1437,6 +1592,7 @@ export default function PreviewPanel({
       getEditCapabilities,
       onUpdateBuilding,
       onUpdateSuggested,
+      resolveCadSnapPoint,
       snapValue,
     ],
   );
@@ -1582,6 +1738,282 @@ export default function PreviewPanel({
     setLastRectEdit(null);
   }, [lastRectEdit, onRemoveBuilding, onRestoreBuilding, onUpdateBuilding]);
 
+  const selectedCadObject = useMemo(
+    () => buildingPlacements.find((item) => item.id === selectedBuildingId && item.type !== "site") ?? null,
+    [buildingPlacements, selectedBuildingId],
+  );
+  const selectedCadMetrics = useMemo(() => {
+    const points = selectedCadObject ? getObjectGeometryPoints(selectedCadObject) : [];
+    if (!selectedCadObject || points.length < 2) return null;
+    const segments = points.map((point, index) => {
+      if (index === points.length - 1 && selectedCadObject.geometryType === "polyline") return null;
+      const next = index === points.length - 1 ? points[0] : points[index + 1];
+      return {
+        length: Math.hypot(next[0] - point[0], next[1] - point[1]),
+        angle: ((Math.atan2(next[1] - point[1], next[0] - point[0]) * 180) / Math.PI + 360) % 360,
+      };
+    }).filter(Boolean) as Array<{ length: number; angle: number }>;
+    return {
+      segmentCount: segments.length,
+      totalLength: segments.reduce((sum, segment) => sum + segment.length, 0),
+      firstLength: segments[0]?.length ?? 0,
+      firstAngle: segments[0]?.angle ?? 0,
+      layer: String(selectedCadObject.meta?.cad_layer || selectedCadObject.meta?.layer || "C-DRAFT"),
+    };
+  }, [getObjectGeometryPoints, selectedCadObject]);
+  const selectedCadIds = useMemo(
+    () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...cadSelectionSet])),
+    [cadSelectionSet, selectedBuildingId],
+  );
+  const applyCadHistorySnapshot = useCallback(
+    (snapshot: BuildingPlacement) => {
+      onUpdateBuilding(snapshot.id, {
+        ...snapshot,
+        meta: { ...(snapshot.meta ?? {}) },
+      });
+    },
+    [onUpdateBuilding],
+  );
+  const undoCadCommand = useCallback(() => {
+    const entry = cadHistory[cadHistory.length - 1];
+    if (!entry) {
+      if (lastPolylineEdit || lastRectEdit) {
+        const polyTs = lastPolylineEdit?.ts ?? 0;
+        const rectTs = lastRectEdit?.ts ?? 0;
+        if (polyTs >= rectTs) applyPolylineUndo();
+        else applyRectUndo();
+      }
+      return;
+    }
+    applyCadHistorySnapshot(entry.before);
+    setCadHistory((prev) => prev.slice(0, -1));
+    setCadRedoStack((prev) => [...prev, entry]);
+  }, [applyCadHistorySnapshot, applyPolylineUndo, applyRectUndo, cadHistory, lastPolylineEdit, lastRectEdit]);
+  const redoCadCommand = useCallback(() => {
+    const entry = cadRedoStack[cadRedoStack.length - 1];
+    if (!entry) return;
+    applyCadHistorySnapshot(entry.after);
+    setCadRedoStack((prev) => prev.slice(0, -1));
+    setCadHistory((prev) => [...prev, entry]);
+  }, [applyCadHistorySnapshot, cadRedoStack]);
+  const parseCadNumber = useCallback((value: string, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }, []);
+  const transformSelectedCadObjects = useCallback(
+    (kind: "move" | "rotate" | "scale") => {
+      const amount = parseCadNumber(cadTransformValue, kind === "scale" ? 1 : 0);
+      selectedCadIds.forEach((id) => {
+        const target = buildingPlacements.find((item) => item.id === id);
+        if (!target || target.locked || target.type === "site") return;
+        if (kind === "move") {
+          const delta = { x: amount, y: amount };
+          const updates: Partial<BuildingPlacement> = {
+            x: (target.x ?? 0) + delta.x,
+            y: (target.y ?? 0) + delta.y,
+          };
+          if (Array.isArray(target.geometry)) {
+            updates.geometry = translateSiteGeometry(target.geometry as Array<[number, number]>, delta);
+          }
+          updateCadObject(target, updates, "Move");
+          return;
+        }
+        if (kind === "rotate") {
+          updateCadObject(target, { rotation: ((target.rotation ?? 0) + amount + 360) % 360 }, "Rotate");
+          return;
+        }
+        const factor = amount > 0 ? amount : 1;
+        const nextW = Math.max(1, target.w * factor);
+        const nextD = Math.max(1, target.d * factor);
+        const updates: Partial<BuildingPlacement> = { w: nextW, d: nextD };
+        if (Array.isArray(target.geometry)) {
+          updates.geometry = resizeSiteGeometryFromOrigin(
+            target.geometry as Array<[number, number]>,
+            { x: target.x ?? 0, y: target.y ?? 0 },
+            { width: target.w, height: target.d },
+            { width: nextW, height: nextD },
+          );
+        }
+        updateCadObject(target, updates, "Scale");
+      });
+    },
+    [buildingPlacements, cadTransformValue, parseCadNumber, selectedCadIds, updateCadObject],
+  );
+  const applyCadCoordinate = useCallback(() => {
+    const x = parseCadNumber(cadCoordinateDraft.x, NaN);
+    const y = parseCadNumber(cadCoordinateDraft.y, NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (selectedCadObject) {
+      const delta = { x: x - (selectedCadObject.x ?? 0), y: y - (selectedCadObject.y ?? 0) };
+      const updates: Partial<BuildingPlacement> = { x, y };
+      if (Array.isArray(selectedCadObject.geometry)) {
+        updates.geometry = translateSiteGeometry(selectedCadObject.geometry as Array<[number, number]>, delta);
+      }
+      updateCadObject(selectedCadObject, updates, "Coordinate input");
+      return;
+    }
+    setDraftPoints((prev) => [...prev, [clampValue(x, 0, lotWidth), clampValue(y, 0, lotHeight)]]);
+    setDrawMode((prev) => prev === "select" ? "polyline" : prev);
+    onSetPreviewInteraction("edit");
+  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, lotHeight, lotWidth, onSetPreviewInteraction, parseCadNumber, selectedCadObject, updateCadObject]);
+  const applySelectedCadLayer = useCallback(() => {
+    selectedCadIds.forEach((id) => {
+      const target = buildingPlacements.find((item) => item.id === id);
+      if (!target || target.locked || target.type === "site") return;
+      updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: cadLayerDraft || "C-DRAFT" } }, "Layer");
+    });
+  }, [buildingPlacements, cadLayerDraft, selectedCadIds, updateCadObject]);
+  const offsetSelectedCadObject = useCallback(() => {
+    if (!selectedCadObject) return;
+    const distance = parseCadNumber(cadOffsetDistance, 0);
+    if (!distance) return;
+    const updates: Partial<BuildingPlacement> = {
+      x: (selectedCadObject.x ?? 0) + distance,
+      y: (selectedCadObject.y ?? 0) + distance,
+    };
+    if (Array.isArray(selectedCadObject.geometry)) {
+      updates.geometry = translateSiteGeometry(selectedCadObject.geometry as Array<[number, number]>, { x: distance, y: distance });
+    }
+    updateCadObject(selectedCadObject, updates, "Offset");
+  }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
+  const trimExtendSelectedCadObject = useCallback(
+    (kind: "trim" | "extend") => {
+      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) return;
+      const geometry = selectedCadObject.geometry as Array<[number, number]>;
+      if (geometry.length < 2) return;
+      const amount = Math.max(1, parseCadNumber(cadTransformValue, 10));
+      const nextGeometry = geometry.map((pt) => [pt[0], pt[1]] as [number, number]);
+      const last = nextGeometry[nextGeometry.length - 1];
+      const prev = nextGeometry[nextGeometry.length - 2];
+      const dx = last[0] - prev[0];
+      const dy = last[1] - prev[1];
+      const len = Math.max(Math.hypot(dx, dy), 0.001);
+      const signed = kind === "trim" ? -amount : amount;
+      nextGeometry[nextGeometry.length - 1] = [
+        clampValue(last[0] + (dx / len) * signed, 0, lotWidth),
+        clampValue(last[1] + (dy / len) * signed, 0, lotHeight),
+      ];
+      const nextBounds = boundsForSiteGeometry(nextGeometry);
+      updateCadObject(
+        selectedCadObject,
+        {
+          geometry: nextGeometry,
+          x: nextBounds.minX,
+          y: nextBounds.minY,
+          w: Math.max(5, nextBounds.width),
+          d: Math.max(5, nextBounds.height),
+        },
+        kind === "trim" ? "Trim" : "Extend",
+      );
+    },
+    [cadTransformValue, lotHeight, lotWidth, parseCadNumber, selectedCadObject, updateCadObject],
+  );
+  const filletSelectedCadObject = useCallback(() => {
+    if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) return;
+    const geometry = selectedCadObject.geometry as Array<[number, number]>;
+    if (geometry.length < 3) return;
+    const radius = Math.max(1, parseCadNumber(cadFilletRadius, 5));
+    const nextGeometry = geometry.map((pt) => [pt[0], pt[1]] as [number, number]);
+    const index = selectedVertex?.id === selectedCadObject.id ? selectedVertex.index : 1;
+    const current = nextGeometry[index];
+    const prev = nextGeometry[Math.max(index - 1, 0)];
+    const next = nextGeometry[Math.min(index + 1, nextGeometry.length - 1)];
+    const toward = (from: [number, number], to: [number, number]) => {
+      const dx = to[0] - from[0];
+      const dy = to[1] - from[1];
+      const len = Math.max(Math.hypot(dx, dy), 0.001);
+      const step = Math.min(radius, len / 2);
+      return [from[0] + (dx / len) * step, from[1] + (dy / len) * step] as [number, number];
+    };
+    const before = toward(current, prev);
+    const after = toward(current, next);
+    nextGeometry.splice(index, 1, before, after);
+    const nextBounds = boundsForSiteGeometry(nextGeometry);
+    updateCadObject(
+      selectedCadObject,
+      {
+        geometry: nextGeometry,
+        x: nextBounds.minX,
+        y: nextBounds.minY,
+        w: Math.max(5, nextBounds.width),
+        d: Math.max(5, nextBounds.height),
+      },
+      "Fillet",
+    );
+  }, [cadFilletRadius, parseCadNumber, selectedCadObject, selectedVertex, updateCadObject]);
+
+  useEffect(() => {
+    const handleCadShortcuts = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      const key = event.key.toLowerCase();
+      const command = event.metaKey || event.ctrlKey;
+      if (command && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoCadCommand();
+        else undoCadCommand();
+        return;
+      }
+      if (command && key === "y") {
+        event.preventDefault();
+        redoCadCommand();
+        return;
+      }
+      if (key === "v") {
+        event.preventDefault();
+        setDrawMode("select");
+        return;
+      }
+      if (key === "l") {
+        event.preventDefault();
+        if (canDrawObjects) {
+          setDraftPoints([]);
+          setDraftPreviewPoint(null);
+          setDrawMode("polyline");
+          onSetPreviewInteraction("edit");
+        }
+        return;
+      }
+      if (key === "a") {
+        event.preventDefault();
+        if (canDrawObjects) {
+          setDraftPoints([]);
+          setDraftPreviewPoint(null);
+          setDrawMode("polygon");
+          onSetPreviewInteraction("edit");
+        }
+        return;
+      }
+      if (key === "o") {
+        event.preventDefault();
+        setCadOrthoEnabled((value) => !value);
+        return;
+      }
+      if (key === "s") {
+        event.preventDefault();
+        setCadSnapEnabled((value) => !value);
+        return;
+      }
+      if (key === "m") {
+        event.preventDefault();
+        transformSelectedCadObjects("move");
+        return;
+      }
+      if (key === "r") {
+        event.preventDefault();
+        transformSelectedCadObjects("rotate");
+      }
+    };
+    window.addEventListener("keydown", handleCadShortcuts);
+    return () => window.removeEventListener("keydown", handleCadShortcuts);
+  }, [
+    canDrawObjects,
+    onSetPreviewInteraction,
+    redoCadCommand,
+    transformSelectedCadObjects,
+    undoCadCommand,
+  ]);
+
   const clearDraftGeometry = useCallback(() => {
     setDraftPoints([]);
     setDraftPreviewPoint(null);
@@ -1659,10 +2091,15 @@ export default function PreviewPanel({
         event.stopPropagation();
         return true;
       }
-      const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, bounds);
-      if (!sitePoint) return true;
+      const rawSitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, bounds);
+      if (!rawSitePoint) return true;
       event.preventDefault();
       event.stopPropagation();
+      const basePoint = draftPoints.length
+        ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
+        : null;
+      const sitePoint = resolveCadSnapPoint(rawSitePoint, basePoint);
+      setActiveSnapPoint(sitePoint);
       const point: [number, number] = [sitePoint.x, sitePoint.y];
       if (drawMode === "point") {
         onCreateCustomGeometry({ mode: "point", points: [point] });
@@ -1692,6 +2129,7 @@ export default function PreviewPanel({
       draftPoints,
       drawMode,
       onCreateCustomGeometry,
+      resolveCadSnapPoint,
       screenToSitePoint,
     ],
   );
@@ -4130,6 +4568,134 @@ export default function PreviewPanel({
               </div>
             </div>
           ) : null}
+          {previewMode === "2d" ? (
+            <div className="mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.1fr_1fr_1fr]" data-testid="cad-precision-tools">
+              <section className="min-w-0">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      aria-label="Undo CAD command"
+                      title="Undo CAD command"
+                      onClick={undoCadCommand}
+                      disabled={!cadHistory.length && !lastPolylineEdit && !lastRectEdit}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 disabled:opacity-40"
+                    >
+                      <CornerUpLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Redo CAD command"
+                      title="Redo CAD command"
+                      onClick={redoCadCommand}
+                      disabled={!cadRedoStack.length}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 disabled:opacity-40"
+                    >
+                      <CornerUpRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700 sm:grid-cols-4">
+                  <label className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2">
+                    <input type="checkbox" checked={cadSnapEnabled} onChange={(event) => setCadSnapEnabled(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                    Snap
+                  </label>
+                  <label className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2">
+                    <input type="checkbox" checked={cadOrthoEnabled} onChange={(event) => setCadOrthoEnabled(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                    Ortho
+                  </label>
+                  <span className="flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    {activeSnapPoint ? activeSnapPoint.kind : "No snap"}
+                  </span>
+                  <span className="flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                    {cadHistory.at(-1)?.label || "No command"}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+                  <input
+                    aria-label="CAD X coordinate"
+                    inputMode="decimal"
+                    value={cadCoordinateDraft.x}
+                    onChange={(event) => setCadCoordinateDraft((prev) => ({ ...prev, x: event.target.value }))}
+                    placeholder="X ft"
+                    className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  />
+                  <input
+                    aria-label="CAD Y coordinate"
+                    inputMode="decimal"
+                    value={cadCoordinateDraft.y}
+                    onChange={(event) => setCadCoordinateDraft((prev) => ({ ...prev, y: event.target.value }))}
+                    placeholder="Y ft"
+                    className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyCadCoordinate}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white"
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                    XY
+                  </button>
+                </div>
+              </section>
+              <section className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Readout / transform</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    ["Length", selectedCadMetrics ? `${selectedCadMetrics.totalLength.toFixed(1)} ft` : "Select object"],
+                    ["Angle", selectedCadMetrics ? `${selectedCadMetrics.firstAngle.toFixed(1)} deg` : "Select object"],
+                    ["Segments", selectedCadMetrics ? String(selectedCadMetrics.segmentCount) : "--"],
+                    ["Layer", selectedCadMetrics?.layer || "C-DRAFT"],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                      <p className="mt-1 truncate font-semibold text-slate-800">{value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-[1fr_repeat(3,auto)] gap-2">
+                  <input
+                    aria-label="CAD transform value"
+                    inputMode="decimal"
+                    value={cadTransformValue}
+                    onChange={(event) => setCadTransformValue(event.target.value)}
+                    className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  />
+                  <button type="button" aria-label="Move selected CAD objects" onClick={() => transformSelectedCadObjects("move")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Move className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Rotate selected CAD objects" onClick={() => transformSelectedCadObjects("rotate")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RotateCw className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Scale selected CAD objects" onClick={() => transformSelectedCadObjects("scale")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scale className="h-4 w-4" /></button>
+                </div>
+              </section>
+              <section className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Modify / layers</p>
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  <button type="button" aria-label="Offset selected CAD object" title="Offset selected CAD object" onClick={offsetSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Ruler className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Trim selected CAD object" title="Trim selected CAD object" onClick={() => trimExtendSelectedCadObject("trim")} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scissors className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Extend selected CAD object" title="Extend selected CAD object" onClick={() => trimExtendSelectedCadObject("extend")} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><GitBranch className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Fillet selected CAD vertex" title="Fillet selected CAD vertex" onClick={filletSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RefreshCw className="h-4 w-4" /></button>
+                </div>
+                <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+                  <input aria-label="CAD offset distance" inputMode="decimal" value={cadOffsetDistance} onChange={(event) => setCadOffsetDistance(event.target.value)} className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <input aria-label="CAD fillet radius" inputMode="decimal" value={cadFilletRadius} onChange={(event) => setCadFilletRadius(event.target.value)} className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <button type="button" onClick={() => setCadSelectionSet(selectedBuildingId ? [selectedBuildingId] : [])} disabled={!selectedBuildingId} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 disabled:opacity-40">Set</button>
+                </div>
+                <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                  <select
+                    aria-label="CAD layer"
+                    value={cadLayerDraft}
+                    onChange={(event) => setCadLayerDraft(event.target.value)}
+                    className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  >
+                    {["C-DRAFT", "C-SITE", "C-ROAD", "C-UTIL", "C-DRAIN", "C-BLDG"].map((layer) => (
+                      <option key={layer} value={layer}>{layer}</option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={applySelectedCadLayer} disabled={!selectedCadIds.length} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Layer</button>
+                </div>
+              </section>
+            </div>
+          ) : null}
           <div className="mb-3 grid gap-3 xl:grid-cols-[1.1fr_1.4fr_1fr]">
             <section className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm" data-testid="utility-conflict-viewer">
               <div className="flex items-start justify-between gap-3">
@@ -4246,14 +4812,15 @@ export default function PreviewPanel({
           </div>
           {show3D ? (
             preview3DEffectiveItems.length ? (
-              <div
-                className="relative cursor-pointer"
-                onClick={onOpenFullscreen}
-              >
+              <div className="relative min-w-0">
                 <Preview3DCanvas
                   items={preview3DEffectiveItems}
                   interactive={allowEdits}
                   previewQuality={previewQuality}
+                  selectedItemId={selectedBuildingId}
+                  hasTerrainSource={hasTerrainSource}
+                  hasGradingSurface={hasGradingSurface}
+                  onSelectItem={onSelectBuilding}
                   onOpenFullscreen={onOpenFullscreen}
                 />
                 {usingAnnotation3D ? (
@@ -4345,8 +4912,13 @@ export default function PreviewPanel({
                   return;
                 }
                 if (drawMode !== "select" && drawMode !== "pan" && overlayBoundsResolved) {
-                  const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
+                  const rawSitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
+                  const basePoint = draftPoints.length
+                    ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
+                    : null;
+                  const sitePoint = rawSitePoint ? resolveCadSnapPoint(rawSitePoint, basePoint) : null;
                   setDraftPreviewPoint(sitePoint ? [sitePoint.x, sitePoint.y] : null);
+                  setActiveSnapPoint(sitePoint);
                   if (sitePoint) {
                     setCursorSitePoint({ x: sitePoint.x, y: sitePoint.y });
                   }
@@ -4380,6 +4952,7 @@ export default function PreviewPanel({
                 setDraggingMode(null);
                 setCanvasPanStart(null);
                 setDraftPreviewPoint(null);
+                setActiveSnapPoint(null);
               }}
               onMouseUp={() => {
                 setDraggingBuildingId(null);
@@ -4592,7 +5165,7 @@ export default function PreviewPanel({
                     Add objects to start building the site. Then click Place and drop them here.
                   </div>
                 ) : null}
-                {!showGeneratedPlan && previewMode === "3d" && !showMap ? (
+                {false && !showGeneratedPlan && !showMap ? (
                   <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
                     3D needs a preview run
                   </div>
@@ -5107,6 +5680,24 @@ export default function PreviewPanel({
                               );
                             })
                           : null}
+                        {activeSnapPoint ? (
+                          <g>
+                            <circle
+                              cx={siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0]}
+                              cy={siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1]}
+                              r={1.15}
+                              fill="none"
+                              stroke="#f59e0b"
+                              strokeWidth={0.42}
+                            />
+                            <path
+                              d={`M ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0] - 1.6} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1]} L ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0] + 1.6} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1]} M ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0]} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1] - 1.6} L ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0]} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1] + 1.6}`}
+                              stroke="#f59e0b"
+                              strokeWidth={0.32}
+                              strokeLinecap="round"
+                            />
+                          </g>
+                        ) : null}
                         {draftPoints.length || draftPreviewPoint ? (
                           (() => {
                             const points =
@@ -5346,6 +5937,7 @@ export default function PreviewPanel({
                           Number.isFinite(item.x) &&
                           Number.isFinite(item.y),
                       )
+                      // eslint-disable-next-line react-hooks/refs
                       .map((item) => {
                         const caps = getEditCapabilities(item);
                         const isSelected = selectedBuildingId === item.id;
@@ -5675,6 +6267,7 @@ export default function PreviewPanel({
                       })}
                       {suggestedPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                      // eslint-disable-next-line react-hooks/refs
                       .map((item) => {
                         const rectPct = mapAnchoredRectPercent(item, mapRef.current);
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
@@ -6172,6 +6765,7 @@ export default function PreviewPanel({
                       : null}
                     {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                      // eslint-disable-next-line react-hooks/refs
                       .map((item) => {
                         const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
@@ -6247,6 +6841,7 @@ export default function PreviewPanel({
                       })}
                       {suggestedPlacements
                         .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
+                        // eslint-disable-next-line react-hooks/refs
                         .map((item) => {
                           const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
                           const rotation = showMap ? 0 : (item.rotation ?? 0);
