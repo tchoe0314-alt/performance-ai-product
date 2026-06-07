@@ -598,6 +598,7 @@ export default function PreviewPanel({
   const [mapboxTileCount, setMapboxTileCount] = useState(0);
   const [mapCanvasSize, setMapCanvasSize] = useState<{ w: number; h: number } | null>(null);
   const [mapContainerSize, setMapContainerSize] = useState<{ w: number; h: number } | null>(null);
+  const [compactViewport, setCompactViewport] = useState(false);
   const lastMapResizeRef = useRef<number>(0);
   const [mapLocked, setMapLocked] = useState(false);
   const mapDragRef = useRef<{ x: number; y: number } | null>(null);
@@ -613,6 +614,9 @@ export default function PreviewPanel({
   const mapAvailable =
     Boolean(mapboxToken) &&
     Boolean(geocode?.lat && geocode?.lng);
+  const highQualityObjectCount = buildingPlacements.length + suggestedPlacements.length + (surveyPoints?.length ?? 0);
+  const useLightHighQuality =
+    previewQuality === "high" && (compactViewport || highQualityObjectCount > 220);
   const showMap = mapAvailable && previewQuality === "high";
   const showMap3D = showMap && previewMode === "3d";
   const mapPitch = showMap3D ? 58 : 0;
@@ -664,6 +668,14 @@ export default function PreviewPanel({
     siteFill: "bg-white/15",
   } as const;
   const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
+    const update = () => setCompactViewport(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const currentSiteSize = useMemo(
     () => ({ width: Math.max(lotWidth, 1), height: Math.max(lotHeight, 1) }),
     [lotHeight, lotWidth],
@@ -2054,6 +2066,50 @@ export default function PreviewPanel({
     },
     [currentSiteSize],
   );
+  const mapAnchoredRectPercent = useCallback(
+    (item: BuildingPlacement, targetMap: mapboxgl.Map | null) => {
+      if (!showMap || !targetMap || !mapAnchor) return siteRectPercent(item);
+      const container = targetMap.getContainer();
+      const containerWidth = Math.max(container.clientWidth, 1);
+      const containerHeight = Math.max(container.clientHeight, 1);
+      const sitePoints =
+        (item.geometryType === "polygon" || item.geometryType === "rect" || item.geometryType === "polyline") &&
+        Array.isArray(item.geometry) &&
+        item.geometry.length
+          ? item.geometry
+          : (() => {
+              const x = item.x ?? 0;
+              const y = item.y ?? 0;
+              const rotated = (item.rotation ?? 0) % 180 !== 0;
+              const w = rotated ? item.d : item.w;
+              const d = rotated ? item.w : item.d;
+              return [
+                [x, y],
+                [x + w, y],
+                [x + w, y + d],
+                [x, y + d],
+              ] as Array<[number, number]>;
+            })();
+      const projected = sitePoints
+        .map(([x, y]) => siteToMapLngLat({ x, y }, mapAnchor))
+        .filter(Boolean)
+        .map((coord) => targetMap.project(coord as [number, number]));
+      if (!projected.length) return siteRectPercent(item);
+      const xs = projected.map((pt) => pt.x);
+      const ys = projected.map((pt) => pt.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      return {
+        left: (minX / containerWidth) * 100,
+        top: (minY / containerHeight) * 100,
+        width: (Math.max(maxX - minX, 8) / containerWidth) * 100,
+        height: (Math.max(maxY - minY, 8) / containerHeight) * 100,
+      };
+    },
+    [mapAnchor, showMap, siteRectPercent],
+  );
 
   useEffect(() => {
     if (!mapAvailable) return;
@@ -2256,6 +2312,11 @@ export default function PreviewPanel({
     map.on("zoomend", reportViewport);
     map.on("moveend", reportCenter);
     map.on("zoomend", reportCenter);
+    const requestMapOverlayUpdate = () => setMapRevision((value) => value + 1);
+    map.on("move", requestMapOverlayUpdate);
+    map.on("zoom", requestMapOverlayUpdate);
+    map.on("pitch", requestMapOverlayUpdate);
+    map.on("rotate", requestMapOverlayUpdate);
     const handleClick = (event: mapboxgl.MapMouseEvent) => {
       if (placementMode) {
         const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
@@ -2283,6 +2344,9 @@ export default function PreviewPanel({
           "civora-buildings-fill",
           "civora-parking-fill",
           "civora-basins-fill",
+          "civora-constraints-fill",
+          "civora-landscape-fill",
+          "civora-utilities-line",
           "civora-roads-line",
           "civora-custom-areas-line",
           "civora-custom-lines-line",
@@ -2312,6 +2376,10 @@ export default function PreviewPanel({
       map.off("zoomend", reportViewport);
       map.off("moveend", reportCenter);
       map.off("zoomend", reportCenter);
+      map.off("move", requestMapOverlayUpdate);
+      map.off("zoom", requestMapOverlayUpdate);
+      map.off("pitch", requestMapOverlayUpdate);
+      map.off("rotate", requestMapOverlayUpdate);
     };
   }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
 
@@ -2376,7 +2444,7 @@ export default function PreviewPanel({
     mapboxgl.accessToken = mapboxToken || "";
     const center = mapRef.current?.getCenter();
     const zoom = mapRef.current?.getZoom();
-    fullscreenMapRef.current = new mapboxgl.Map({
+    const fullscreenMap = new mapboxgl.Map({
       container: fullscreenMapContainerRef.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: center ? [center.lng, center.lat] : [-95.9345, 41.2565],
@@ -2385,17 +2453,29 @@ export default function PreviewPanel({
       bearing: mapBearing,
       attributionControl: false,
     });
-    fullscreenMapRef.current.on("load", () => {
-      fullscreenMapRef.current?.addSource("mapbox-dem", {
+    fullscreenMapRef.current = fullscreenMap;
+    const requestMapOverlayUpdate = () => setMapRevision((value) => value + 1);
+    fullscreenMap.on("move", requestMapOverlayUpdate);
+    fullscreenMap.on("zoom", requestMapOverlayUpdate);
+    fullscreenMap.on("pitch", requestMapOverlayUpdate);
+    fullscreenMap.on("rotate", requestMapOverlayUpdate);
+    fullscreenMap.on("load", () => {
+      fullscreenMap.addSource("mapbox-dem", {
         type: "raster-dem",
         url: "mapbox://mapbox.terrain-rgb",
         tileSize: 512,
         maxzoom: 14,
       });
-      fullscreenMapRef.current?.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
-      fullscreenMapRef.current?.resize();
+      fullscreenMap.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      fullscreenMap.resize();
       setMapRevision((value) => value + 1);
     });
+    return () => {
+      fullscreenMap.off("move", requestMapOverlayUpdate);
+      fullscreenMap.off("zoom", requestMapOverlayUpdate);
+      fullscreenMap.off("pitch", requestMapOverlayUpdate);
+      fullscreenMap.off("rotate", requestMapOverlayUpdate);
+    };
   }, [fullscreenContainerReady, mapBearing, mapPitch, mapboxToken, previewFullscreenOpen, showMap]);
 
   useEffect(() => {
@@ -2877,10 +2957,15 @@ export default function PreviewPanel({
     const roads = placedObjects.filter((item) => item.type === "road" || item.type === "driveway");
     const sidewalks = placedObjects.filter((item) => item.type === "sidewalk");
     const parking = placedObjects.filter((item) => item.type === "parking");
-    const basins = placedObjects.filter((item) => item.type === "basin");
+    const basins = placedObjects.filter((item) => resolveVisualKind(item) === "water");
+    const utilities = placedObjects.filter((item) => resolveVisualKind(item) === "utility");
+    const constraints = placedObjects.filter(
+      (item) => item.type === "setback_zone" || item.type === "no_build_zone" || item.type === "lot_block",
+    );
+    const landscapeAreas = placedObjects.filter((item) => resolveVisualKind(item) === "landscape");
     const customAreas = placedObjects.filter(
       (item) =>
-        (item.type === "custom" || resolveVisualKind(item) === "landscape") &&
+        item.type === "custom" &&
         (item.geometryType === "polygon" || item.geometryType === "rect"),
     );
     const customLines = placedObjects.filter(
@@ -2895,6 +2980,28 @@ export default function PreviewPanel({
     const sitePolygon = buildSitePolygon();
 
     const parkingModules = parking.flatMap((item) => buildParkingModules(item, accessPoints));
+    const visualLabelFeatureCollection = () => ({
+      type: "FeatureCollection",
+      features: placedObjects
+        .filter((item) => item.type !== "site")
+        .map((item) => {
+          const x = (item.x ?? 0) + item.w / 2;
+          const y = (item.y ?? 0) + item.d / 2;
+          const coords = siteToLatLng(x, y);
+          if (!coords) return null;
+          return {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: coords },
+            properties: {
+              id: item.id,
+              label: item.label || item.type || "Object",
+              visualOnly: true,
+              kind: resolveVisualKind(item),
+            },
+          };
+        })
+        .filter(Boolean),
+    });
 
     const updateMap = (map: mapboxgl.Map | null) => {
       if (!map || !map.isStyleLoaded()) return;
@@ -2927,6 +3034,10 @@ export default function PreviewPanel({
       ensureSource("civora-roads", toFeatureCollection(roads, "LineString"));
       ensureSource("civora-sidewalks", toFeatureCollection(sidewalks, "LineString"));
       ensureSource("civora-parking", toFeatureCollection(parking, "Polygon"));
+      ensureSource("civora-constraints", toFeatureCollection(constraints, "Polygon"));
+      ensureSource("civora-landscape", toFeatureCollection(landscapeAreas, "Polygon"));
+      ensureSource("civora-utilities", toFeatureCollection(utilities, "LineString"));
+      ensureSource("civora-visual-labels", visualLabelFeatureCollection());
       ensureSource("civora-parking-aisles", {
         type: "FeatureCollection",
         features: parkingModules
@@ -3115,20 +3226,72 @@ export default function PreviewPanel({
         "fill-extrusion-color": "#374151",
         "fill-extrusion-height": ["get", "height"],
         "fill-extrusion-base": 0,
-        "fill-extrusion-opacity": 0.6,
+        "fill-extrusion-opacity": useLightHighQuality ? 0.28 : 0.6,
+      });
+      ensureLayer("civora-buildings-fill", "civora-buildings", "fill", {
+        "fill-color": "#475569",
+        "fill-opacity": useLightHighQuality ? 0.18 : 0.26,
       });
       ensureLayer("civora-buildings-line", "civora-buildings", "line", {
         "line-color": "#111827",
-        "line-width": 2,
+        "line-width": useLightHighQuality ? 1.3 : 2,
       });
       ensureLayer("civora-roads-line", "civora-roads", "line", {
         "line-color": "#1f2937",
-        "line-width": 3,
+        "line-width": useLightHighQuality ? 2.1 : 3,
       });
       ensureLayer("civora-sidewalks-line", "civora-sidewalks", "line", {
         "line-color": "#0f766e",
-        "line-width": 2,
+        "line-width": useLightHighQuality ? 1.2 : 2,
         "line-dasharray": [1, 1],
+      });
+      ensureLayer("civora-constraints-fill", "civora-constraints", "fill", {
+        "fill-color": [
+          "case",
+          ["==", ["get", "type"], "no_build_zone"],
+          "#ef4444",
+          ["==", ["get", "type"], "setback_zone"],
+          "#f59e0b",
+          "#64748b",
+        ],
+        "fill-opacity": useLightHighQuality ? 0.12 : 0.18,
+      });
+      ensureLayer("civora-constraints-line", "civora-constraints", "line", {
+        "line-color": [
+          "case",
+          ["==", ["get", "type"], "no_build_zone"],
+          "#b91c1c",
+          ["==", ["get", "type"], "setback_zone"],
+          "#d97706",
+          "#475569",
+        ],
+        "line-width": useLightHighQuality ? 1 : 1.4,
+        "line-dasharray": [2, 1],
+      });
+      ensureLayer("civora-landscape-fill", "civora-landscape", "fill", {
+        "fill-color": [
+          "case",
+          ["==", ["get", "type"], "amenity"],
+          "#84cc16",
+          "#22c55e",
+        ],
+        "fill-opacity": useLightHighQuality ? 0.16 : 0.26,
+      });
+      ensureLayer("civora-landscape-line", "civora-landscape", "line", {
+        "line-color": "#16a34a",
+        "line-width": useLightHighQuality ? 0.8 : 1.2,
+      });
+      ensureLayer("civora-utilities-line", "civora-utilities", "line", {
+        "line-color": [
+          "case",
+          ["==", ["get", "type"], "hydrant"],
+          "#dc2626",
+          ["==", ["get", "type"], "inlet"],
+          "#0284c7",
+          "#7c3aed",
+        ],
+        "line-width": useLightHighQuality ? 1.5 : 2.2,
+        "line-dasharray": [3, 1],
       });
       ensureLayer("civora-parking-fill", "civora-parking", "fill", {
         "fill-color": "#64748b",
@@ -3278,6 +3441,39 @@ export default function PreviewPanel({
       } else if (map.getLayer("civora-survey-points")) {
         map.removeLayer("civora-survey-points");
       }
+      if (!useLightHighQuality) {
+        if (!map.getLayer("civora-visual-labels")) {
+          map.addLayer({
+            id: "civora-visual-labels",
+            type: "symbol",
+            source: "civora-visual-labels",
+            layout: {
+              "text-field": ["get", "label"],
+              "text-size": 11,
+              "text-anchor": "top",
+              "text-offset": [0, 0.8],
+              "text-max-width": 10,
+              "text-allow-overlap": false,
+              "symbol-sort-key": [
+                "case",
+                ["==", ["get", "kind"], "building"],
+                1,
+                ["==", ["get", "kind"], "road"],
+                2,
+                3,
+              ],
+            },
+            paint: {
+              "text-color": "#0f172a",
+              "text-halo-color": "rgba(255,255,255,0.9)",
+              "text-halo-width": 1.2,
+              "text-opacity": 0.82,
+            },
+          });
+        }
+      } else if (map.getLayer("civora-visual-labels")) {
+        map.removeLayer("civora-visual-labels");
+      }
     };
 
     updateMap(mapRef.current);
@@ -3300,6 +3496,7 @@ export default function PreviewPanel({
     showSiteBounds,
     suggestedPlacements.length,
     surveyPoints,
+    useLightHighQuality,
     waterFireFlow,
   ]);
 
@@ -3509,7 +3706,15 @@ export default function PreviewPanel({
                 data-testid="high-quality-preview-only-label"
                 className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
               >
-                Visual preview only — canonical geometry unchanged. Not engineering evidence.
+                Visual preview only. Canonical geometry unchanged. Not engineering evidence.
+              </span>
+            ) : null}
+            {useLightHighQuality ? (
+              <span
+                data-testid="high-quality-lite-label"
+                className="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-800"
+              >
+                High Quality Lite: simplified labels and effects for this viewport.
               </span>
             ) : null}
             <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -3524,8 +3729,8 @@ export default function PreviewPanel({
           </div>
           <p className="max-w-3xl text-xs text-slate-500">
             Visual anchoring keeps objects consistent in the model view. High Quality visuals are communication
-            previews only and never construction evidence. Civora does not stamp, seal, sign, certify, approve
-            construction, submit construction documents, or act as engineer of record.
+            previews only and never engineering evidence. Labels in this mode are visual aids, not source-confidence
+            claims.
           </p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
             <div className="inline-flex max-w-3xl items-start rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -5144,8 +5349,8 @@ export default function PreviewPanel({
                       .map((item) => {
                         const caps = getEditCapabilities(item);
                         const isSelected = selectedBuildingId === item.id;
-                        const rectPct = siteRectPercent(item);
-                        const rotation = item.rotation ?? 0;
+                        const rectPct = mapAnchoredRectPercent(item, mapRef.current);
+                        const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const borderColorMap: Record<string, string> = {
                           site: previewQuality === "high" ? "border-white/70" : "border-slate-400",
                           setback_zone: "border-slate-300",
@@ -5471,8 +5676,8 @@ export default function PreviewPanel({
                       {suggestedPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
-                        const rectPct = siteRectPercent(item);
-                        const rotation = item.rotation ?? 0;
+                        const rectPct = mapAnchoredRectPercent(item, mapRef.current);
+                        const rotation = showMap ? 0 : (item.rotation ?? 0);
                         return (
                           <div
                             key={item.id}
@@ -5968,8 +6173,8 @@ export default function PreviewPanel({
                     {buildingPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
-                        const rectPct = siteRectPercent(item);
-                        const rotation = item.rotation ?? 0;
+                        const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
+                        const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const isSite = item.type === "site";
                         const allowItemInteraction =
                           !isSite || (previewInteraction === "edit" && !siteLocked);
@@ -6043,8 +6248,8 @@ export default function PreviewPanel({
                       {suggestedPlacements
                         .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                         .map((item) => {
-                          const rectPct = siteRectPercent(item);
-                          const rotation = item.rotation ?? 0;
+                          const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
+                          const rotation = showMap ? 0 : (item.rotation ?? 0);
                           const borderColorMap: Record<string, string> = {
                             site: "border-slate-400",
                             setback_zone: "border-slate-300",

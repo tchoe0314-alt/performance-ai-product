@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   boundsForSiteGeometry,
@@ -83,6 +85,23 @@ test.describe("map anchored canvas geometry transforms", () => {
       expect(bounds.height).toBe(60);
       expect(JSON.stringify(building)).toBe(canonicalBefore);
     }
+  });
+
+  test("high quality panel copy stays visual-only and avoids restricted wording", () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), "app/components/PreviewPanel.tsx"),
+      "utf8",
+    );
+    const highQualitySection = source.slice(
+      source.indexOf('data-testid="high-quality-preview-only-label"'),
+      source.indexOf('data-testid="preview-mode-2d"'),
+    );
+
+    expect(highQualitySection).toContain("Visual preview only");
+    expect(highQualitySection).toContain("Canonical geometry unchanged");
+    expect(highQualitySection).toContain("not source-confidence");
+    expect(highQualitySection).toContain("high-quality-lite-label");
+    expect(highQualitySection).not.toMatch(/construction-ready|stamp|seal|sign|certify|approval/i);
   });
 
   test("coordinate mode labels distinguish map anchored from local site fallback", () => {
