@@ -3451,7 +3451,7 @@ export default function PreviewPanel({
         ? current
         : nextTransform,
     );
-  }, []);
+  }, [setFocusTransform]);
 
   useEffect(() => {
     if (!focusDetectedId) return;
