@@ -9,6 +9,10 @@ const baseUrl = (process.env.CHAT34_BASE_URL || process.env.PLAYWRIGHT_BASE_URL 
 const apiBase = (process.env.CHAT34_API_BASE_URL || process.env.PLAYWRIGHT_API_BASE_URL || "https://api.civoraai.com").replace(/\/+$/, "");
 const email = process.env.CIVORA_EMAIL || "";
 const password = process.env.CIVORA_PASSWORD || "";
+const demoWorkflowMode = String(process.env.CHAT34_DEMO_WORKFLOW || "").trim().toLowerCase();
+const useDemoWorkflow = demoWorkflowMode
+  ? !["0", "false", "no", "off"].includes(demoWorkflowMode)
+  : !(email && password);
 const artifactDir = path.resolve(
   process.cwd(),
   process.env.CHAT34_ARTIFACT_DIR || "playwright-artifacts/chat34-controlled-pilot",
@@ -61,6 +65,7 @@ function artifact() {
       base_url: baseUrl,
       api_base_url: apiBase,
       credentials_present: Boolean(email && password),
+      workflow_route: useDemoWorkflow ? "demo" : "authenticated",
     },
     controlled_pilot_ready: blockers.every((blocker) => !["P0", "P1"].includes(blocker.severity)),
     checks,
@@ -583,9 +588,9 @@ async function runProductWorkflow() {
   page.setDefaultNavigationTimeout(60000);
   attachPageTelemetry(page);
   try {
-    const url = process.env.CHAT34_DEMO_WORKFLOW === "0"
-      ? baseUrl
-      : `${baseUrl}/demo/workspace?debugPreview=1&chat34ControlledPilot=1`;
+    const url = useDemoWorkflow
+      ? `${baseUrl}/demo/workspace?debugPreview=1&chat34ControlledPilot=1`
+      : baseUrl;
     if (authToken) {
       await page.addInitScript(([tokenKey, token]) => {
         window.localStorage.setItem(tokenKey, token);
@@ -782,9 +787,9 @@ async function runMobileSmoke() {
   page.setDefaultNavigationTimeout(60000);
   attachPageTelemetry(page);
   try {
-    const url = process.env.CHAT34_DEMO_WORKFLOW === "0"
-      ? baseUrl
-      : `${baseUrl}/demo/workspace?debugPreview=1&chat34ControlledMobile=1`;
+    const url = useDemoWorkflow
+      ? `${baseUrl}/demo/workspace?debugPreview=1&chat34ControlledMobile=1`
+      : baseUrl;
     if (authToken) {
       await page.addInitScript(([tokenKey, token]) => {
         window.localStorage.setItem(tokenKey, token);

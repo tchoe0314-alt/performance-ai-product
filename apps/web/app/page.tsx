@@ -1147,6 +1147,17 @@ const EMPTY_REACTIVE_VALIDATION: ReactiveValidationState = {
 
 const DEMO_PROJECT_ID = "demo-pinecrest-mixed-use";
 
+function isSeededDemoProjectId(value?: string | null) {
+  return String(value || "").trim() === DEMO_PROJECT_ID;
+}
+
+function hasPreviewablePlanResult(result?: PlanResponse | null) {
+  const actions = Array.isArray(result?.final_plan?.actions)
+    ? result.final_plan.actions
+    : [];
+  return actions.some((item) => item && typeof item === "object");
+}
+
 function isDemoWorkspaceQuery() {
   if (typeof window === "undefined") return false;
   if (window.location.pathname === "/demo/workspace") return true;
@@ -7663,11 +7674,17 @@ function PerformanceAIDashboardView({
     autoFileNamedOverride?: boolean;
   } = {}): Promise<ProjectRecord | null> => {
     if (!token) return null;
-    if (!silent) setBusy(true);
     const effectiveProjectId =
       projectIdOverride !== undefined
         ? projectIdOverride
         : resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
+    if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
+      if (!silent) {
+        setStatusMessage("Demo workspace changes stay local and are not saved to pilot projects.");
+      }
+      return currentProject;
+    }
+    if (!silent) setBusy(true);
     const resolvedName = (nameOverride ?? siteName).trim();
     const resolvedFileName = (fileNameOverride ?? fileName).trim();
     const liveChatThread = chatMessagesRef.current;
@@ -7944,6 +7961,7 @@ function PerformanceAIDashboardView({
 
   const ensureProjectDraft = async (): Promise<string | null> => {
     if (!token) return null;
+    if (effectiveDemoWorkspaceEnabled) return null;
     if (resolvedProjectIdRef.current) return resolvedProjectIdRef.current;
     if (projectId) return projectId;
     if (currentProject?.project_id) return currentProject.project_id;
@@ -9835,6 +9853,12 @@ function PerformanceAIDashboardView({
     options?: { silent?: boolean; track?: boolean },
   ) => {
     if (!token) return;
+    if (effectiveDemoWorkspaceEnabled || isSeededDemoProjectId(payload.project_id)) {
+      return;
+    }
+    if (!hasPreviewablePlanResult(payload.result ?? backendResult)) {
+      return;
+    }
     if (options?.track) {
       setPreviewRefreshing(true);
       setPreviewRefreshNote((prev) => prev || "Refreshing preview...");
@@ -11378,7 +11402,7 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     if (!token) return;
-    if (!backendResult && !planPreviewUrl && !projectId) return;
+    if (!hasPreviewablePlanResult(backendResult)) return;
     const intent = previewRefreshIntentRef.current;
     if (intent) {
       previewRefreshIntentRef.current = null;
