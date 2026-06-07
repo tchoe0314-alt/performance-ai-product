@@ -7,7 +7,7 @@
     "dev": "next dev --webpack",
     "dev:test": "npm run clean:next && next dev --webpack",
     "prebuild": "npm run clean:next",
-    "build": "next build --webpack",
+    "build": "node scripts/build-next-stable.mjs",
     "start": "next start",
     "serve:test": "npm run build && next start --hostname 127.0.0.1 --port 3000",
     "lint": "eslint",

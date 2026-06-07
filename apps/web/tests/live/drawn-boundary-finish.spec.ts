@@ -48,7 +48,7 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     await canvas.getByRole("button", { name: "Change Site Boundary" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
-    await page.getByRole("button", { name: "Setup Site and boundary" }).click();
+    await page.getByRole("button", { name: "Open setup from sidebar command" }).click();
     await page.getByRole("button", { name: "Lock current site boundary for engineer review" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     const relockClose = page.getByRole("button", { name: "Close" });
@@ -87,7 +87,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await page.getByRole("button", { name: "Send" }).click();
     await expect(page.locator("p.whitespace-pre-wrap").filter({ hasText: "draft geometry and still requires engineer review" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Canvas Design workspace" }).click();
+    await page.getByRole("button", { name: "Open canvas from sidebar command" }).click();
     await page.getByRole("button", { name: "Selected Details" }).click();
     const rightPanel = page.getByTestId("workspace-right-panel");
     await expect(rightPanel.locator("p").filter({ hasText: /^Basin \/ Detention Pond \d+$/ })).toBeVisible();
