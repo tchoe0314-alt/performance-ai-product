@@ -21,9 +21,9 @@ export default defineConfig({
   outputDir,
   webServer: shouldUseManagedLocalServer
     ? {
-        command: "npm run dev:test",
+        command: "npm run serve:test",
         url: baseURL,
-        timeout: 120_000,
+        timeout: 240_000,
         reuseExistingServer: false,
         stdout: "pipe",
         stderr: "pipe",
