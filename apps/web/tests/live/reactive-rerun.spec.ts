@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("focused generate sends reactive checkpoint metadata", async ({ page }) => {
-  let observedPayload: Record<string, unknown> | null = null;
+  let observedPayload: unknown = null;
 
   await page.route("**/api/orchestrate", async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -64,8 +64,11 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
   });
   await page.getByTestId("generate-grading").click();
   await expect.poll(() => observedPayload).not.toBeNull();
+  if (!observedPayload) {
+    throw new Error("Expected reactive rerun payload to be captured.");
+  }
 
-  const payload = observedPayload as unknown as Record<string, unknown>;
+  const payload = observedPayload as Record<string, unknown>;
   const meta = (payload.meta ?? {}) as Record<string, unknown>;
   const orchestratorMeta = (meta.orchestrator_meta ?? {}) as Record<string, unknown>;
   const runtimeResume = (orchestratorMeta.runtime_resume ?? {}) as Record<string, unknown>;
