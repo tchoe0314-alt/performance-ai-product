@@ -1,207 +1,492 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Preview3DItem } from "../types";
 
-export default function Preview3DCanvas({
-  items,
-  interactive,
-  previewQuality = "standard",
-  onOpenFullscreen,
-}: {
+type PickedObject = {
+  id: string | null;
+  label: string;
+  layer: string;
+  confidence: string;
+  blockers: string[];
+  source: string;
+  x: number;
+  y: number;
+};
+
+type Preview3DCanvasProps = {
   items: Preview3DItem[];
   interactive: boolean;
   previewQuality?: "standard" | "high";
+  selectedItemId?: string | null;
+  hasTerrainSource?: boolean;
+  hasGradingSurface?: boolean;
+  onSelectItem?: (id: string | null) => void;
   onOpenFullscreen?: () => void;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [rotation, setRotation] = useState({ x: 0.75, z: -0.8 });
-  const dragRef = useRef<{ x: number; y: number } | null>(null);
+};
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const parent = canvas.parentElement;
-    if (!parent) return;
-    const width = parent.clientWidth;
-    const height = parent.clientHeight;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = width * ratio;
-    canvas.height = height * ratio;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+const layerPalette: Record<string, { top: string; side: string; line: string }> = {
+  BUILDING: { top: "#334155", side: "#475569", line: "#e2e8f0" },
+  STRUCTURE: { top: "#a16207", side: "#ca8a04", line: "#fef3c7" },
+  ROAD: { top: "#374151", side: "#4b5563", line: "#f8fafc" },
+  PARKING: { top: "#64748b", side: "#94a3b8", line: "#f8fafc" },
+  SIDEWALK: { top: "#99f6e4", side: "#5eead4", line: "#0f766e" },
+  DRAINAGE: { top: "#38bdf8", side: "#0284c7", line: "#e0f2fe" },
+  UTILITY: { top: "#a78bfa", side: "#7c3aed", line: "#faf5ff" },
+  TERRAIN: { top: "#bbf7d0", side: "#86efac", line: "#166534" },
+};
 
-    if (!items.length) {
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = "14px ui-sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("No geometry to render yet.", width / 2, height / 2);
-      return;
-    }
+const normalizeLayer = (layer: string) => {
+  const key = String(layer || "").toUpperCase();
+  if (key.includes("BUILDING") || key.includes("PAD")) return "BUILDING";
+  if (key.includes("STRUCTURE")) return "STRUCTURE";
+  if (key.includes("PARK")) return "PARKING";
+  if (key.includes("SIDEWALK") || key.includes("WALK")) return "SIDEWALK";
+  if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM") || key.includes("WATER")) return "DRAINAGE";
+  if (key.includes("UTILITY") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
+  if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
+  if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
+  return key || "OBJECT";
+};
 
+const describeConfidence = (value: Preview3DItem["confidence"]) => {
+  if (typeof value === "number" && Number.isFinite(value)) return `${Math.round(value * 100)}%`;
+  if (typeof value === "string" && value.trim()) return value.replaceAll("_", " ");
+  return "review required";
+};
+
+const createTextSprite = (label: string, color = "#0f172a") => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.strokeStyle = "rgba(15,23,42,0.14)";
+    ctx.lineWidth = 4;
+    ctx.roundRect(12, 28, 488, 68, 22);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = "600 30px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label.slice(0, 34), 256, 63);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(58, 14.5, 1);
+  return sprite;
+};
+
+const getItemId = (item: Preview3DItem, index: number) =>
+  item.id || `${normalizeLayer(item.layer).toLowerCase()}-${item.label.replace(/\W+/g, "-").toLowerCase()}-${index}`;
+
+export default function Preview3DCanvas({
+  items,
+  previewQuality = "standard",
+  selectedItemId,
+  hasTerrainSource = false,
+  hasGradingSurface = false,
+  onSelectItem,
+  onOpenFullscreen,
+}: Preview3DCanvasProps) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const pickablesRef = useRef<THREE.Object3D[]>([]);
+  const selectedRef = useRef<string | null | undefined>(selectedItemId);
+  const [picked, setPicked] = useState<PickedObject | null>(null);
+  const objectChips = useMemo(
+    () =>
+      items
+        .map((item, index) => ({
+          id: getItemId(item, index),
+          label: item.label,
+          layer: normalizeLayer(item.layer),
+          confidence: describeConfidence(item.confidence),
+          blockers: item.blockers || [],
+          source: item.source || "preview object",
+        }))
+        .filter((item) => item.layer !== "TERRAIN")
+        .slice(0, 10),
+    [items],
+  );
+
+  const selectObject = (object: (typeof objectChips)[number]) => {
+    onSelectItem?.(object.id);
+    setPicked({
+      id: object.id,
+      label: object.label,
+      layer: object.layer,
+      confidence: object.confidence,
+      blockers: object.blockers,
+      source: object.source,
+      x: 22,
+      y: 118,
+    });
+  };
+
+  const modelBounds = useMemo(() => {
+    if (!items.length) return { minX: 0, minY: 0, maxX: 240, maxY: 160, spanX: 240, spanY: 160 };
     const minX = Math.min(...items.map((item) => item.x));
     const minY = Math.min(...items.map((item) => item.y));
     const maxX = Math.max(...items.map((item) => item.x + item.w));
     const maxY = Math.max(...items.map((item) => item.y + item.h));
-    const spanX = Math.max(maxX - minX, 1);
-    const spanY = Math.max(maxY - minY, 1);
-    const scale = Math.min(width / spanX, height / spanY) * 0.65;
-    const centerX = width / 2;
-    const centerY = height / 2 + 20;
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      spanX: Math.max(maxX - minX, 1),
+      spanY: Math.max(maxY - minY, 1),
+    };
+  }, [items]);
 
-    const project = (x: number, y: number, z: number) => {
-      const cx = x - (minX + spanX / 2);
-      const cy = y - (minY + spanY / 2);
-      const cosZ = Math.cos(rotation.z);
-      const sinZ = Math.sin(rotation.z);
-      const rx = cx * cosZ - cy * sinZ;
-      const ry = cx * sinZ + cy * cosZ;
-      const cosX = Math.cos(rotation.x);
-      const sinX = Math.sin(rotation.x);
-      const ry2 = ry * cosX - z * sinX;
+  const terrainState = useMemo(() => {
+    const zValues = items
+      .map((item) => (typeof item.z === "number" && Number.isFinite(item.z) ? item.z : null))
+      .filter((value): value is number => value !== null);
+    const zRange = zValues.length ? Math.max(...zValues) - Math.min(...zValues) : 0;
+    if (!hasTerrainSource || !hasGradingSurface) {
       return {
-        x: centerX + rx * scale,
-        y: centerY + ry2 * scale,
+        label: "Flat site fallback - terrain source missing",
+        detail: "No terrain mesh is being inferred.",
+        mode: "fallback" as const,
       };
-    };
-
-    const highQuality = previewQuality === "high";
-    const layerStyles = (layer: string) => {
-      const key = layer.toUpperCase();
-      if (!highQuality) {
-        return {
-          top: itemColorFallback(key, "#dbe5ff"),
-          sideDark: key === "BUILDING" ? "#94a3b8" : "#cbd5f5",
-          sideLight: key === "BUILDING" ? "#bfc7d4" : "#dbe5ff",
-        };
-      }
-      if (key === "BUILDING") {
-        return { top: "#334155", sideDark: "#1f2937", sideLight: "#475569" };
-      }
-      if (key === "ROAD" || key === "PARKING") {
-        return { top: "#3f4652", sideDark: "#252b34", sideLight: "#5b6472" };
-      }
-      if (key === "DRAINAGE" || key === "WATER") {
-        return { top: "#38bdf8", sideDark: "#0369a1", sideLight: "#7dd3fc" };
-      }
-      if (key === "UTILITY") {
-        return { top: "#8b5cf6", sideDark: "#5b21b6", sideLight: "#a78bfa" };
-      }
-      if (key === "LANDSCAPE" || key === "TERRAIN") {
-        return { top: "#86efac", sideDark: "#16a34a", sideLight: "#bbf7d0" };
-      }
-      return { top: "#cbd5e1", sideDark: "#94a3b8", sideLight: "#e2e8f0" };
-    };
-
-    ctx.fillStyle = highQuality ? "#f8fafc" : "#eef2f7";
-    ctx.fillRect(0, 0, width, height);
-
-    const drawFace = (points: { x: number; y: number }[], color: string) => {
-      ctx.beginPath();
-      points.forEach((pt, idx) => {
-        if (idx === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      });
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(15,23,42,0.15)";
-      ctx.stroke();
-    };
-    const itemColorFallback = (layer: string, fallback: string) => {
-      if (layer === "BUILDING") return "#bfc7d4";
-      if (layer === "ROAD" || layer === "PARKING") return "#cbd5e1";
-      if (layer === "DRAINAGE" || layer === "WATER") return "#bfdbfe";
-      if (layer === "UTILITY") return "#e9d5ff";
-      if (layer === "LANDSCAPE" || layer === "TERRAIN") return "#dcfce7";
-      return fallback;
-    };
-
-    const sorted = [...items].sort((a, b) => a.x + a.y - (b.x + b.y));
-    for (const item of sorted) {
-      const baseZ = item.z ?? 0;
-      const topZ = baseZ + item.height;
-      const base = [
-        project(item.x, item.y, baseZ),
-        project(item.x + item.w, item.y, baseZ),
-        project(item.x + item.w, item.y + item.h, baseZ),
-        project(item.x, item.y + item.h, baseZ),
-      ];
-      const top = [
-        project(item.x, item.y, topZ),
-        project(item.x + item.w, item.y, topZ),
-        project(item.x + item.w, item.y + item.h, topZ),
-        project(item.x, item.y + item.h, topZ),
-      ];
-      const style = layerStyles(item.layer);
-      drawFace([base[0], base[1], top[1], top[0]], style.sideDark);
-      drawFace([base[1], base[2], top[2], top[1]], style.sideLight);
-      drawFace([top[0], top[1], top[2], top[3]], highQuality ? style.top : item.color || style.top);
-      if (highQuality && item.layer === "BUILDING") {
-        const ridgeA = project(item.x + item.w * 0.18, item.y + item.h * 0.5, topZ + item.height * 0.05);
-        const ridgeB = project(item.x + item.w * 0.82, item.y + item.h * 0.5, topZ + item.height * 0.05);
-        ctx.beginPath();
-        ctx.moveTo(ridgeA.x, ridgeA.y);
-        ctx.lineTo(ridgeB.x, ridgeB.y);
-        ctx.strokeStyle = "rgba(255,255,255,0.42)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-      if (highQuality && (item.layer === "ROAD" || item.layer === "PARKING")) {
-        const midA = project(item.x + item.w * 0.15, item.y + item.h * 0.5, topZ + 0.04);
-        const midB = project(item.x + item.w * 0.85, item.y + item.h * 0.5, topZ + 0.04);
-        ctx.beginPath();
-        ctx.moveTo(midA.x, midA.y);
-        ctx.lineTo(midB.x, midB.y);
-        ctx.strokeStyle = "rgba(248,250,252,0.55)";
-        ctx.setLineDash(item.layer === "PARKING" ? [2, 3] : [6, 5]);
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
     }
-  }, [items, previewQuality, rotation]);
+    if (zRange < 0.5) {
+      return {
+        label: "Terrain source loaded - flat sampled surface",
+        detail: "No vertical terrain variation was provided to this preview.",
+        mode: "flat-source" as const,
+      };
+    }
+    return {
+      label: "Terrain mesh from preview elevations",
+      detail: `${zValues.length} sampled object elevation(s) visible.`,
+      mode: "terrain" as const,
+    };
+  }, [hasGradingSurface, hasTerrainSource, items]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !interactive) return;
-    const onPointerDown = (event: PointerEvent) => {
-      dragRef.current = { x: event.clientX, y: event.clientY };
+    selectedRef.current = selectedItemId;
+    const pickables = pickablesRef.current;
+    pickables.forEach((object) => {
+      const selected = object.userData.itemId === selectedItemId;
+      object.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!("material" in mesh)) return;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((material) => {
+          if (material instanceof THREE.MeshStandardMaterial) {
+            material.emissive.set(selected ? "#f59e0b" : "#000000");
+            material.emissiveIntensity = selected ? 0.22 : 0;
+          }
+        });
+      });
+    });
+  }, [selectedItemId]);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    mount.innerHTML = "";
+
+    const width = Math.max(mount.clientWidth, 320);
+    const height = Math.max(mount.clientHeight, 320);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(previewQuality === "high" ? "#e2e8f0" : "#eef2f7");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
+    renderer.setSize(width, height);
+    renderer.shadowMap.enabled = previewQuality === "high";
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    rendererRef.current = renderer;
+    mount.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(48, width / height, 0.1, 5000);
+    const maxSpan = Math.max(modelBounds.spanX, modelBounds.spanY);
+    camera.position.set(maxSpan * 0.72, maxSpan * 0.62, maxSpan * 0.78);
+    cameraRef.current = camera;
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    controls.minDistance = Math.max(maxSpan * 0.18, 25);
+    controls.maxDistance = Math.max(maxSpan * 3.2, 300);
+    controls.target.set(0, 0, 0);
+    controls.update();
+    controlsRef.current = controls;
+
+    const ambient = new THREE.HemisphereLight("#ffffff", "#94a3b8", previewQuality === "high" ? 2.4 : 2.0);
+    scene.add(ambient);
+    const sun = new THREE.DirectionalLight("#ffffff", previewQuality === "high" ? 2.8 : 1.8);
+    sun.position.set(maxSpan * 0.3, maxSpan * 0.8, maxSpan * 0.6);
+    sun.castShadow = previewQuality === "high";
+    scene.add(sun);
+
+    const root = new THREE.Group();
+    root.rotation.x = 0;
+    scene.add(root);
+
+    const centerX = modelBounds.minX + modelBounds.spanX / 2;
+    const centerY = modelBounds.minY + modelBounds.spanY / 2;
+    const toScene = (x: number, y: number, z = 0) =>
+      new THREE.Vector3(x - centerX, z, y - centerY);
+
+    const terrainGeometry =
+      terrainState.mode === "terrain"
+        ? new THREE.PlaneGeometry(modelBounds.spanX, modelBounds.spanY, previewQuality === "high" ? 24 : 12, previewQuality === "high" ? 24 : 12)
+        : new THREE.PlaneGeometry(modelBounds.spanX, modelBounds.spanY, 1, 1);
+    terrainGeometry.rotateX(-Math.PI / 2);
+    if (terrainState.mode === "terrain") {
+      const positions = terrainGeometry.attributes.position;
+      const samples = items
+        .filter((item) => typeof item.z === "number" && Number.isFinite(item.z))
+        .map((item) => ({
+          x: item.x + item.w / 2 - centerX,
+          z: item.y + item.h / 2 - centerY,
+          y: Number(item.z),
+        }));
+      for (let i = 0; i < positions.count; i += 1) {
+        const vx = positions.getX(i);
+        const vz = positions.getZ(i);
+        let weighted = 0;
+        let weight = 0;
+        samples.forEach((sample) => {
+          const distance = Math.max(Math.hypot(sample.x - vx, sample.z - vz), 1);
+          const nextWeight = 1 / distance;
+          weighted += sample.y * nextWeight;
+          weight += nextWeight;
+        });
+        positions.setY(i, weight ? weighted / weight : 0);
+      }
+      positions.needsUpdate = true;
+      terrainGeometry.computeVertexNormals();
+    }
+    const terrainMaterial = new THREE.MeshStandardMaterial({
+      color: terrainState.mode === "fallback" ? "#f1f5f9" : "#bbf7d0",
+      roughness: 0.9,
+      metalness: 0,
+      wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
+      transparent: terrainState.mode === "fallback",
+      opacity: terrainState.mode === "fallback" ? 0.92 : 1,
+    });
+    const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+    terrain.receiveShadow = true;
+    root.add(terrain);
+
+    const grid = new THREE.GridHelper(Math.max(modelBounds.spanX, modelBounds.spanY), previewQuality === "high" ? 20 : 10, "#94a3b8", "#cbd5e1");
+    grid.position.y = 0.035;
+    root.add(grid);
+
+    const pickables: THREE.Object3D[] = [];
+    const labels: THREE.Sprite[] = [];
+    items.forEach((item, index) => {
+      const layer = normalizeLayer(item.layer);
+      if (layer === "TERRAIN") return;
+      const id = getItemId(item, index);
+      const palette = layerPalette[layer] || { top: item.color || "#cbd5e1", side: item.color || "#94a3b8", line: "#f8fafc" };
+      const heightFt = Math.max(layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" ? 0.45 : 1, item.height || 1);
+      const baseY = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
+      const object = new THREE.Group();
+      object.userData = {
+        itemId: id,
+        label: item.label,
+        layer,
+        confidence: describeConfidence(item.confidence),
+        blockers: item.blockers || [],
+        source: item.source || (layer === "UTILITY" ? "utility evidence only where supplied" : "preview object"),
+      };
+
+      if (layer === "DRAINAGE") {
+        const depth = Math.max(1.2, Math.abs(Math.min(baseY, 0)) || Math.min(heightFt, 4));
+        const basin = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(item.w * 0.72, 1), Math.max(depth, 0.75), Math.max(item.h * 0.72, 1)),
+          new THREE.MeshStandardMaterial({ color: palette.top, roughness: 0.55, transparent: true, opacity: 0.74 }),
+        );
+        basin.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, -depth / 2));
+        basin.userData = object.userData;
+        object.add(basin);
+
+        const rim = new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.BoxGeometry(item.w, 0.35, item.h)),
+          new THREE.LineBasicMaterial({ color: palette.line }),
+        );
+        rim.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, 0.2));
+        object.add(rim);
+      } else if (layer === "UTILITY") {
+        const geometry = new THREE.CapsuleGeometry(Math.max(Math.min(item.w, item.h) * 0.08, 0.45), Math.max(item.w, item.h), 8, 16);
+        const utility = new THREE.Mesh(
+          geometry,
+          new THREE.MeshStandardMaterial({ color: palette.side, roughness: 0.45, metalness: 0.05 }),
+        );
+        utility.rotation.z = Math.PI / 2;
+        utility.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, Math.max(baseY, 1.5)));
+        utility.userData = object.userData;
+        object.add(utility);
+      } else {
+        const geometry = new THREE.BoxGeometry(Math.max(item.w, 1), heightFt, Math.max(item.h, 1));
+        const material = new THREE.MeshStandardMaterial({
+          color: previewQuality === "high" ? palette.top : item.color || palette.top,
+          roughness: layer === "ROAD" || layer === "PARKING" ? 0.72 : 0.58,
+          metalness: 0.02,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = previewQuality === "high" && layer === "BUILDING";
+        mesh.receiveShadow = true;
+        mesh.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt / 2));
+        mesh.userData = object.userData;
+        object.add(mesh);
+
+        if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK") {
+          const stripe = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w * 0.96, 1), 0.08, Math.max(item.h * 0.96, 1))),
+            new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.78 }),
+          );
+          stripe.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.08));
+          object.add(stripe);
+        }
+      }
+
+      const needsBadge =
+        object.userData.blockers.length > 0 ||
+        /low|missing|review/i.test(String(object.userData.confidence));
+      if (needsBadge || previewQuality === "high") {
+        const sprite = createTextSprite(needsBadge ? `${item.label} | review` : item.label, needsBadge ? "#b45309" : "#0f172a");
+        sprite.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 8));
+        labels.push(sprite);
+        object.add(sprite);
+      }
+
+      root.add(object);
+      pickables.push(object);
+    });
+    pickablesRef.current = pickables;
+
+    const terrainLabel = createTextSprite(terrainState.label, terrainState.mode === "fallback" ? "#b45309" : "#166534");
+    terrainLabel.position.set(0, 12, -modelBounds.spanY / 2 - 14);
+    root.add(terrainLabel);
+
+    const animate = () => {
+      controls.update();
+      renderer.render(scene, camera);
+      frame = window.requestAnimationFrame(animate);
     };
-    const onPointerMove = (event: PointerEvent) => {
-      if (!dragRef.current) return;
-      const dx = event.clientX - dragRef.current.x;
-      const dy = event.clientY - dragRef.current.y;
-      dragRef.current = { x: event.clientX, y: event.clientY };
-      setRotation((prev) => ({
-        x: Math.max(0.2, Math.min(1.2, prev.x + dy * 0.005)),
-        z: prev.z + dx * 0.005,
-      }));
+    let frame = window.requestAnimationFrame(animate);
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const pickAt = (event: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+      pointer.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(pickables, true);
+      const hit = hits.find((candidate) => candidate.object.userData.itemId || candidate.object.parent?.userData.itemId);
+      const data = hit?.object.userData.itemId ? hit.object.userData : hit?.object.parent?.userData;
+      if (!data?.itemId) {
+        onSelectItem?.(null);
+        setPicked(null);
+        return;
+      }
+      onSelectItem?.(data.itemId);
+      setPicked({
+        id: data.itemId,
+        label: data.label,
+        layer: data.layer,
+        confidence: data.confidence,
+        blockers: data.blockers,
+        source: data.source,
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
     };
-    const onPointerUp = () => {
-      dragRef.current = null;
-    };
-    canvas.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("click", pickAt);
+
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      const nextWidth = Math.max(entry.contentRect.width, 320);
+      const nextHeight = Math.max(entry.contentRect.height, 320);
+      renderer.setSize(nextWidth, nextHeight);
+      camera.aspect = nextWidth / nextHeight;
+      camera.updateProjectionMatrix();
+    });
+    resizeObserver.observe(mount);
+
     return () => {
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
+      window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      renderer.domElement.removeEventListener("click", pickAt);
+      controls.dispose();
+      renderer.dispose();
+      scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if ("geometry" in mesh && mesh.geometry) mesh.geometry.dispose();
+        if ("material" in mesh && mesh.material) {
+          const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          materials.forEach((material) => material.dispose());
+        }
+      });
+      mount.innerHTML = "";
     };
-  }, [interactive]);
+  }, [items, modelBounds, onSelectItem, previewQuality, terrainState]);
 
   return (
     <div
-      className="relative h-[600px] w-full overflow-hidden rounded-[20px] bg-white"
+      className="relative h-[600px] w-full min-w-0 overflow-hidden rounded-[20px] bg-white"
+      data-testid="civil-3d-viewer"
       onDoubleClick={onOpenFullscreen}
     >
-      <canvas ref={canvasRef} className="h-full w-full" />
-      {interactive ? (
-        <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-          Drag to rotate
+      <div ref={mountRef} className="h-full w-full touch-none" data-testid="civil-3d-canvas-mount" />
+      <div className="pointer-events-none absolute left-4 top-4 max-w-[calc(100%-2rem)] rounded-xl border border-white/60 bg-white/88 px-3 py-2 text-xs text-slate-700 shadow-sm backdrop-blur">
+        <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">{terrainState.label}</p>
+        <p className="mt-1 text-[11px] text-slate-500">{terrainState.detail}</p>
+      </div>
+      <div className="pointer-events-none absolute bottom-4 left-4 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm">
+        Engineer-review visualization only | visual mode does not mutate canonical geometry
+      </div>
+      <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-slate-900/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+        Orbit | Pan | Zoom
+      </div>
+      {objectChips.length ? (
+        <div className="absolute bottom-16 right-4 flex max-h-44 w-[min(260px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-sm backdrop-blur" data-testid="civil-3d-object-strip">
+          {objectChips.map((object) => (
+            <button
+              key={object.id}
+              type="button"
+              onClick={() => selectObject(object)}
+              className={`min-w-0 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition ${
+                selectedItemId === object.id
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <span className="block truncate">{object.label}</span>
+              <span className="block truncate text-[10px] uppercase tracking-[0.12em] text-slate-400">{object.layer} | {object.confidence}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {picked ? (
+        <div
+          className="pointer-events-none absolute max-w-[230px] rounded-xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
+          data-testid="civil-3d-selection-popover"
+          style={{
+            left: Math.min(Math.max(picked.x + 12, 8), 360),
+            top: Math.max(picked.y - 18, 58),
+          }}
+        >
+          <p className="font-semibold text-slate-900">{picked.label}</p>
+          <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">{picked.layer} | {picked.confidence}</p>
+          <p className="mt-2 text-slate-500">{picked.blockers[0] || picked.source}</p>
         </div>
       ) : null}
     </div>
