@@ -6241,13 +6241,15 @@ def _validate_storm_hydraulics(summary: Dict[str, Any]) -> Dict[str, Any]:
             )
     backwater_validation = safe_dict(summary.get("backwater_validation"))
     if backwater_validation and backwater_validation.get("valid") is False:
-        backwater_failures.append(
-            {
-                "reason": "tailwater_surcharges_pipe_crown",
-                "max_tailwater_surcharge_ft": round(safe_float(backwater_validation.get("max_tailwater_surcharge_ft"), 0.0), 3),
-                "surcharged_segments": deepcopy(safe_list(backwater_validation.get("surcharged_segments"))),
-            }
-        )
+        missing_inputs = safe_list(backwater_validation.get("missing_inputs"))
+        if not missing_inputs:
+            backwater_failures.append(
+                {
+                    "reason": "tailwater_surcharges_pipe_crown",
+                    "max_tailwater_surcharge_ft": round(safe_float(backwater_validation.get("max_tailwater_surcharge_ft"), 0.0), 3),
+                    "surcharged_segments": deepcopy(safe_list(backwater_validation.get("surcharged_segments"))),
+                }
+            )
     hydraulic_engine_summary = safe_dict(summary.get("hydraulic_engine_summary"))
     for node in safe_list(hydraulic_engine_summary.get("critical_nodes")):
         rec = safe_dict(node)

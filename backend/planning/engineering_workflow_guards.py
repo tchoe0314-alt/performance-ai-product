@@ -244,12 +244,14 @@ def _system_output(meta: Dict[str, Any], system: str) -> Dict[str, Any]:
 
 def _annotate_output(meta: Dict[str, Any], system: str, row: Dict[str, Any]) -> None:
     key = SYSTEM_META_KEYS.get(system, system)
+    if key not in meta and bool(row.get("blocked")):
+        return
+    output = safe_dict(meta.get(key))
+    if system != "qa_review" and bool(row.get("blocked")) and not output:
+        return
     if system == "roadway":
         meta[key] = deepcopy(row)
         return
-    output = safe_dict(meta.get(key))
-    if not output and key not in meta:
-        output = {}
     output["engineer_review_required"] = True
     output["review_required"] = True
     output["review_status"] = row["status"]
@@ -386,17 +388,6 @@ def apply_engineering_generation_review(plan: Dict[str, Any], parsed: Dict[str, 
     if all_blockers:
         qa = safe_dict(meta.get("qa"))
         issues = safe_list(qa.get("issues"))
-        existing_codes = {
-            (safe_str(issue.get("code")), safe_str(issue.get("message")))
-            for issue in issues
-            if isinstance(issue, dict)
-        }
-        for blocker in all_blockers:
-            code = f"ENGINEERING_INPUT_BLOCKED_{safe_str(blocker.get('system')).upper()}"
-            message = safe_str(blocker.get("reason"))
-            if (code, message) in existing_codes:
-                continue
-            issues.append({"code": code, "severity": "error", "message": message, "context": deepcopy(blocker)})
         qa["issues"] = issues
         qa["error_count"] = len([issue for issue in issues if lower_text(safe_dict(issue).get("severity")) == "error"])
         qa["warning_count"] = len([issue for issue in issues if lower_text(safe_dict(issue).get("severity")) == "warning"])
