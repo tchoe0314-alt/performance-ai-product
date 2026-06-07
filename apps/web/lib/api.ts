@@ -140,6 +140,25 @@ export async function postJson<T>(
   return readJsonResponse<T>(response);
 }
 
+export async function patchJson<T>(
+  path: string,
+  body: unknown,
+  options: RequestOptions = {},
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(toApiUrl(path), {
+      method: "PATCH",
+      headers: buildHeaders(options.token, true),
+      body: JSON.stringify(body),
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw formatNetworkError(error);
+  }
+  return readJsonResponse<T>(response);
+}
+
 export async function postForm<T>(
   path: string,
   formData: FormData,

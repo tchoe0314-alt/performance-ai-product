@@ -18,7 +18,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
-import { deleteJson, getJson, postForm, postJson, toApiUrl } from "../lib/api";
+import { deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
 
 import type {
   Assumption,
@@ -54,6 +54,7 @@ import type {
   PreviewResponse,
   UploadImageResponse,
   UploadExistingConditionsResponse,
+  UploadPlanPdfResponse,
   UploadSurveyResponse,
   UserRecord,
   PlanToolMode,
@@ -82,6 +83,7 @@ import type {
   EngineDepthDashboard,
   GradingEarthworkUx,
   WaterFireFlowAnnotations,
+  PlanPdfElement,
 } from "./types";
 import type { CivoraWorkflowStep } from "./design-system";
 
@@ -1819,6 +1821,9 @@ function PerformanceAIDashboardView({
   const [backendResult, setBackendResult] = useState<PlanResponse | null>(null);
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
+  const [planPdfUploadState, setPlanPdfUploadState] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
+  const [selectedPlanPdfElementId, setSelectedPlanPdfElementId] = useState("");
+  const [planPdfElementDraftText, setPlanPdfElementDraftText] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [, setSurveyPoints] = useState<number[][]>([]);
@@ -1998,6 +2003,7 @@ function PerformanceAIDashboardView({
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const siteAddressInputRef = useRef<HTMLInputElement | null>(null);
   const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
+  const planPdfInputRef = useRef<HTMLInputElement | null>(null);
   const surveyInputRef = useRef<HTMLInputElement | null>(null);
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
@@ -2751,6 +2757,28 @@ function PerformanceAIDashboardView({
     }
   }, [visibleActiveJob?.status]);
   const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
+  const planPdfAnalysis = currentPlanMeta.plan_pdf_analysis_v1;
+  const planPdfEditableSheet = currentPlanMeta.plan_pdf_editable_sheet_v1 ?? planPdfAnalysis?.editable_sheet;
+  const planPdfElements = useMemo<PlanPdfElement[]>(
+    () => (planPdfEditableSheet?.elements ?? []).filter((item): item is PlanPdfElement => Boolean(item?.element_id)),
+    [planPdfEditableSheet?.elements],
+  );
+  const selectedPlanPdfElement = useMemo(
+    () => planPdfElements.find((item) => item.element_id === selectedPlanPdfElementId) ?? planPdfElements[0] ?? null,
+    [planPdfElements, selectedPlanPdfElementId],
+  );
+  const planPdfFirstPage = planPdfAnalysis?.pages?.[0] ?? null;
+  const planPdfSourceUrl = planPdfAnalysis?.source_pdf?.file_url
+    ? toApiUrl(`${planPdfAnalysis.source_pdf.file_url}?access_token=${encodeURIComponent(token || "")}`)
+    : "";
+  const planPdfSummary = planPdfAnalysis?.summary ?? {};
+  const planPdfBlockers = planPdfAnalysis?.blockers ?? [];
+  useEffect(() => {
+    if (selectedPlanPdfElement?.element_id && selectedPlanPdfElement.element_id !== selectedPlanPdfElementId) {
+      setSelectedPlanPdfElementId(selectedPlanPdfElement.element_id);
+    }
+    setPlanPdfElementDraftText(selectedPlanPdfElement?.text ?? "");
+  }, [selectedPlanPdfElement?.element_id, selectedPlanPdfElement?.text]);
   const engineDepthDashboard = useMemo<EngineDepthDashboard | null>(() => {
     const direct = currentPlanMeta.engine_depth_dashboard_v1;
     if (direct?.version) return direct;
@@ -8387,6 +8415,114 @@ function PerformanceAIDashboardView({
     }
   };
 
+  const uploadPlanPdf = async (file: File) => {
+    if (!token) return;
+    setPlanPdfUploadState("uploading");
+    setStatusMessage("Uploading plan PDF...");
+    try {
+      const activeProjectId = projectId || currentProject?.project_id || (await ensureProjectDraft());
+      if (!activeProjectId) {
+        throw new Error("Save or create a project before importing a plan PDF.");
+      }
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("project_id", activeProjectId);
+      const data = await postForm<UploadPlanPdfResponse>("/api/upload-plan-pdf", formData, { token });
+      if (data.project) {
+        setCurrentProject(data.project);
+        setProjectId(data.project.project_id);
+        resolvedProjectIdRef.current = data.project.project_id;
+        if (data.project.latest_result) {
+          setBackendResult(data.project.latest_result);
+        }
+      } else if (data.plan_pdf_analysis_v1) {
+        setBackendResult((current) => ({
+          ...(current ?? { success: true }),
+          final_plan: {
+            ...(current?.final_plan ?? { actions: [] }),
+            meta: {
+              ...(current?.final_plan?.meta ?? {}),
+              plan_pdf_analysis_v1: data.plan_pdf_analysis_v1,
+              plan_pdf_editable_sheet_v1: data.plan_pdf_editable_sheet_v1,
+              candidate_review_inbox_v1: data.candidate_review_inbox_v1,
+            },
+          },
+        }));
+      }
+      setPlanPdfUploadState("uploaded");
+      setActiveWorkspaceMode("data");
+      setStatusMessage("Plan PDF analyzed. All extracted objects are review-required.");
+      appendChatMessage(
+        "assistant",
+        "Plan PDF imported. I extracted review-required sheet candidates where embedded text was available and recorded blockers for OCR, raster preview, and vector geometry where unsupported.",
+        "status",
+      );
+    } catch (error) {
+      setPlanPdfUploadState("failed");
+      setStatusMessage(error instanceof Error ? error.message : "Plan PDF upload failed.");
+    }
+  };
+
+  const updatePlanPdfElement = async (elementId: string, updates: { text?: string; review_status?: string }) => {
+    if (!token) return;
+    const activeProjectId = projectId || currentProject?.project_id;
+    if (!activeProjectId) {
+      setStatusMessage("Save or load a project before editing PDF-derived sheet elements.");
+      return;
+    }
+    try {
+      const data = await patchJson<{
+        success?: boolean;
+        project?: ProjectRecord;
+        plan_pdf_editable_sheet_v1?: PlanMeta["plan_pdf_editable_sheet_v1"];
+        candidate_review_inbox_v1?: CandidateReviewInbox;
+      }>(`/api/projects/${activeProjectId}/plan-pdf/elements/${elementId}`, updates, { token });
+      if (data.project) {
+        setCurrentProject(data.project);
+        if (data.project.latest_result) setBackendResult(data.project.latest_result);
+      } else if (data.plan_pdf_editable_sheet_v1) {
+        setBackendResult((current) => ({
+          ...(current ?? { success: true }),
+          final_plan: {
+            ...(current?.final_plan ?? { actions: [] }),
+            meta: {
+              ...(current?.final_plan?.meta ?? {}),
+              plan_pdf_editable_sheet_v1: data.plan_pdf_editable_sheet_v1,
+              candidate_review_inbox_v1: data.candidate_review_inbox_v1,
+            },
+          },
+        }));
+      }
+      setStatusMessage("PDF-derived sheet element updated. Review is still required.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "PDF element update failed.");
+    }
+  };
+
+  const exportPlanPdfReport = async () => {
+    const activeProjectId = projectId || currentProject?.project_id;
+    if (!token || !activeProjectId) {
+      setStatusMessage("Save or load a project before exporting the PDF extraction report.");
+      return;
+    }
+    try {
+      const data = await getJson<{ success?: boolean; report?: Record<string, unknown> }>(
+        `/api/projects/${activeProjectId}/plan-pdf/report`,
+        { token },
+      );
+      const blob = new Blob([JSON.stringify(data.report ?? {}, null, 2)], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${activeProjectId}_plan_pdf_extraction_report.json`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      setStatusMessage("PDF extraction report exported.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "PDF extraction report export failed.");
+    }
+  };
+
   function mapSurveyPointsToSite(points: number[][]) {
     const width = parsePositiveNumber(lotWidth);
     const height = parsePositiveNumber(lotHeight);
@@ -12239,6 +12375,8 @@ function PerformanceAIDashboardView({
     const existingPackage = readRecord("existing_conditions_package");
     const surveyControl = readRecord("survey_control_package");
     const mapFeatureReport = readRecord("map_feature_detection_report_v1");
+    const planPdfReport = readRecord("plan_pdf_analysis_v1");
+    const planPdfSheet = readRecord("plan_pdf_editable_sheet_v1");
     const engineDepth = readRecord("engine_depth_audit_report_v1");
     const productionEvidence = readRecord("production_evidence");
     const quantityCost = productionEvidence.quantity_cost && typeof productionEvidence.quantity_cost === "object"
@@ -12326,6 +12464,18 @@ function PerformanceAIDashboardView({
         "No map feature report is attached.",
         "Upload/analyze a map snapshot or accept GIS feature sources, then review candidates before drafting objects.",
         blockerCount(mapFeatureReport) > 0 || mapCandidateCount === 0,
+      ),
+      row(
+        "plan_pdf_understanding",
+        "Plan PDF understanding",
+        hasRecord("plan_pdf_analysis_v1", "plan_pdf_editable_sheet_v1"),
+        ["UI", "chat", "API", "report"],
+        planPdfReport.source_confidence
+          ? `${planPdfReport.source_confidence} · ${Number((planPdfSheet.summary as Record<string, unknown> | undefined)?.element_count ?? 0)} object(s)`
+          : "No plan PDF imported",
+        "No plan PDF analysis is attached.",
+        "Upload a plan PDF from the Data panel, then review extracted sheet/object candidates.",
+        blockerCount(planPdfReport) > 0 || !hasRecord("plan_pdf_editable_sheet_v1"),
       ),
       row(
         "engine_depth_audit",
@@ -13351,7 +13501,8 @@ function PerformanceAIDashboardView({
           >
             <button
               type="button"
-              onClick={() => handleOpenWorkspaceMode("dashboard")}
+              onClick={() => handleOpenSidePanel("projects")}
+              aria-label="Open projects"
               className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
             >
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</p>
@@ -14818,6 +14969,202 @@ function PerformanceAIDashboardView({
                           )}
                         </div>
                       </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="plan-pdf-workflow">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Plan PDF Understanding</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500">
+                              {planPdfAnalysis
+                                ? `${planPdfAnalysis.source_pdf?.filename ?? "Plan PDF"} · ${planPdfAnalysis.page_count ?? 0} page(s) · ${planPdfElements.length} editable/review candidates`
+                                : "Import a plan PDF to extract review-required sheet objects."}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                            {planPdfAnalysis?.source_confidence ?? "review required"}
+                          </span>
+                        </div>
+                        <input
+                          ref={planPdfInputRef}
+                          type="file"
+                          accept="application/pdf,.pdf"
+                          className="hidden"
+                          onChange={async (event) => {
+                            const file = event.currentTarget.files?.[0];
+                            if (file) {
+                              await uploadPlanPdf(file);
+                            }
+                            event.currentTarget.value = "";
+                          }}
+                        />
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <button
+                            type="button"
+                            onClick={() => planPdfInputRef.current?.click()}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                          >
+                            {planPdfUploadState === "uploading" ? "Importing..." : "Upload PDF"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPrompt("what is on this plan?");
+                              handleOpenSidePanel("chat");
+                            }}
+                            disabled={!planPdfAnalysis}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Ask Chat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void exportPlanPdfReport()}
+                            disabled={!planPdfAnalysis}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Export Report
+                          </button>
+                        </div>
+                        {planPdfAnalysis ? (
+                          <div className="mt-3 grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
+                            <div className="min-w-0">
+                              <div
+                                className="relative overflow-hidden rounded-lg border border-slate-200 bg-white"
+                                style={{
+                                  aspectRatio:
+                                    planPdfFirstPage?.width && planPdfFirstPage?.height
+                                      ? `${planPdfFirstPage.width} / ${planPdfFirstPage.height}`
+                                      : "8.5 / 11",
+                                }}
+                              >
+                                {planPdfSourceUrl ? (
+                                  <iframe
+                                    title="Plan PDF source preview"
+                                    src={planPdfSourceUrl}
+                                    className="absolute inset-0 h-full w-full"
+                                  />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center px-4 text-center text-xs font-semibold text-slate-500">
+                                    Source PDF preview is unavailable.
+                                  </div>
+                                )}
+                                {planPdfElements
+                                  .filter((element) => element.page_index === 0 && element.bbox && planPdfFirstPage?.width && planPdfFirstPage?.height)
+                                  .slice(0, 40)
+                                  .map((element) => {
+                                    const bbox = element.bbox;
+                                    const width = Number(planPdfFirstPage?.width ?? 1);
+                                    const height = Number(planPdfFirstPage?.height ?? 1);
+                                    if (!bbox || !width || !height) return null;
+                                    const x0 = Number(bbox.x0 ?? 0);
+                                    const y0 = Number(bbox.y0 ?? 0);
+                                    const x1 = Number(bbox.x1 ?? x0 + 20);
+                                    const y1 = Number(bbox.y1 ?? y0 + 12);
+                                    return (
+                                      <button
+                                        key={element.element_id}
+                                        type="button"
+                                        aria-label={`Select extracted PDF element ${element.text ?? element.type ?? "element"}`}
+                                        onClick={() => setSelectedPlanPdfElementId(element.element_id)}
+                                        className={`absolute border bg-amber-300/20 text-left text-[9px] font-semibold text-amber-950 ${
+                                          selectedPlanPdfElement?.element_id === element.element_id
+                                            ? "border-slate-900 ring-2 ring-slate-900"
+                                            : "border-amber-500"
+                                        }`}
+                                        style={{
+                                          left: `${Math.max(0, Math.min(100, (x0 / width) * 100))}%`,
+                                          top: `${Math.max(0, Math.min(100, 100 - (y1 / height) * 100))}%`,
+                                          width: `${Math.max(2, Math.min(80, ((x1 - x0) / width) * 100))}%`,
+                                          height: `${Math.max(2, Math.min(20, ((y1 - y0) / height) * 100))}%`,
+                                        }}
+                                      >
+                                        <span className="sr-only">{element.text}</span>
+                                      </button>
+                                    );
+                                  })}
+                              </div>
+                              <div className="mt-2 grid grid-cols-3 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.12em]">
+                                {[
+                                  ["Text", Number(planPdfSummary.text_evidence_count ?? 0)],
+                                  ["Dimensions", Number(planPdfSummary.dimension_count ?? 0)],
+                                  ["Scale", Number(planPdfSummary.scale_candidate_count ?? 0)],
+                                ].map(([label, value]) => (
+                                  <div key={label} className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                                    <p className="text-slate-400">{label}</p>
+                                    <p className="mt-1 text-sm text-slate-800">{value}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="min-w-0 space-y-3">
+                              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Sheet/Object Inspector</p>
+                                {selectedPlanPdfElement ? (
+                                  <div className="mt-2 space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="truncate text-sm font-semibold text-slate-800">
+                                        {String(selectedPlanPdfElement.type ?? "sheet element").replace(/_/g, " ")}
+                                      </span>
+                                      <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                                        {selectedPlanPdfElement.review_status ?? "pending"}
+                                      </span>
+                                    </div>
+                                    <textarea
+                                      value={planPdfElementDraftText}
+                                      onChange={(event) => setPlanPdfElementDraftText(event.target.value)}
+                                      disabled={selectedPlanPdfElement.editable === false}
+                                      rows={4}
+                                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                                    />
+                                    <div className="grid grid-cols-3 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => void updatePlanPdfElement(selectedPlanPdfElement.element_id, { text: planPdfElementDraftText })}
+                                        disabled={selectedPlanPdfElement.editable === false}
+                                        className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void updatePlanPdfElement(selectedPlanPdfElement.element_id, { review_status: "accepted" })}
+                                        className="rounded-lg border border-emerald-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50"
+                                      >
+                                        Accept
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void updatePlanPdfElement(selectedPlanPdfElement.element_id, { review_status: "rejected" })}
+                                        className="rounded-lg border border-red-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-600 hover:bg-red-50"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                      PDF-derived content is editable for review only. It does not modify a stamp, seal, signature, or construction approval.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p className="mt-2 text-xs text-slate-500">No extracted sheet element is selected.</p>
+                                )}
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Blockers</p>
+                                <div className="mt-2 space-y-1">
+                                  {planPdfBlockers.length ? (
+                                    planPdfBlockers.slice(0, 5).map((blocker) => (
+                                      <p key={blocker} className="rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
+                                        {blocker.replace(/_/g, " ")}
+                                      </p>
+                                    ))
+                                  ) : (
+                                    <p className="text-xs text-slate-500">No extraction blockers recorded.</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                       <div className="mt-3 space-y-2">
                         {capabilityAuditRows
                           .filter((item) =>
@@ -14825,6 +15172,7 @@ function PerformanceAIDashboardView({
                               "existing_conditions_package",
                               "survey_control_package",
                               "map_feature_candidates",
+                              "plan_pdf_understanding",
                               "standards_source_registry",
                               "candidate_standards_review",
                             ].includes(item.key),

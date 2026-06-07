@@ -837,6 +837,113 @@ export type EngineDepthDashboard = {
   truth_label?: string;
 };
 
+export type PlanPdfBBox = {
+  x0?: number;
+  y0?: number;
+  x1?: number;
+  y1?: number;
+};
+
+export type PlanPdfEvidence = {
+  evidence_id?: string;
+  text?: string;
+  page_index?: number;
+  bbox?: PlanPdfBBox | null;
+  classification?: string;
+  source_confidence?: string;
+  review_required?: boolean;
+};
+
+export type PlanPdfElement = {
+  element_id: string;
+  type?: string;
+  page_index?: number;
+  text?: string;
+  bbox?: PlanPdfBBox | null;
+  source_evidence_id?: string;
+  source_confidence?: string;
+  review_status?: "pending" | "accepted" | "rejected" | string;
+  review_required?: boolean;
+  editable?: boolean;
+  construction_release_allowed?: boolean;
+  blockers?: string[];
+  truth_label?: string;
+};
+
+export type PlanPdfEditableSheet = {
+  version?: "plan_pdf_editable_sheet_v1" | string;
+  source_analysis_id?: string;
+  source_pdf_id?: string;
+  source_confidence?: string;
+  review_required?: boolean;
+  construction_release_allowed?: boolean;
+  truth_label?: string;
+  elements?: PlanPdfElement[];
+  summary?: {
+    element_count?: number;
+    counts_by_type?: Record<string, number>;
+    editable_count?: number;
+    pending_review_count?: number;
+  };
+};
+
+export type PlanPdfAnalysis = {
+  version?: "plan_pdf_analysis_v1" | string;
+  analysis_id?: string;
+  created_at?: number;
+  source_confidence?: string;
+  review_required?: boolean;
+  construction_release_allowed?: boolean;
+  stamp_seal_signature_policy?: string;
+  contains_possible_stamp_seal_signature?: boolean;
+  truth_label?: string;
+  source_pdf?: {
+    source_pdf_id?: string;
+    filename?: string;
+    stored_filename?: string;
+    file_url?: string;
+    content_type?: string;
+    byte_count?: number;
+    sha256?: string;
+  };
+  page_count?: number;
+  pages?: Array<{
+    page_index?: number;
+    page_number?: number;
+    width?: number | null;
+    height?: number | null;
+    rotation?: number;
+    size_units?: string;
+    embedded_text_present?: boolean;
+    embedded_text_excerpt?: string;
+    preview_url?: string;
+    preview_status?: string;
+    preview_blocker?: string;
+  }>;
+  raw_text_evidence?: PlanPdfEvidence[];
+  classifications?: Record<string, PlanPdfEvidence[]>;
+  blockers?: string[];
+  summary?: Record<string, number | boolean | string>;
+  editable_sheet?: PlanPdfEditableSheet;
+};
+
+export type UploadPlanPdfResponse = {
+  success?: boolean;
+  message?: string;
+  filename?: string;
+  stored_filename?: string;
+  file_url?: string;
+  source_confidence?: string;
+  review_required?: boolean;
+  construction_release_allowed?: boolean;
+  truth_label?: string;
+  project_id?: string;
+  project?: ProjectRecord;
+  plan_pdf_analysis_v1?: PlanPdfAnalysis;
+  plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
+  candidate_review_inbox_v1?: CandidateReviewInbox;
+};
+
 export type PlanMeta = {
   setup_wizard_state_v1?: SetupWizardStateV1;
   progress_timeline_v1?: ProgressTimelineV1;
@@ -894,6 +1001,9 @@ export type PlanMeta = {
   export_audit?: Record<string, unknown>;
   candidate_review_inbox_v1?: CandidateReviewInbox;
   source_confidence_map_v1?: SourceConfidenceMap;
+  plan_pdf_analysis_v1?: PlanPdfAnalysis;
+  plan_pdf_analyses_v1?: PlanPdfAnalysis[];
+  plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
   smart_fix_recommendations_v1?: SmartFixRecommendationsV1;
   map_feature_detection_report_v1?: {
     candidate_count?: number;
