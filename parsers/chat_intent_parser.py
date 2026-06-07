@@ -2876,6 +2876,15 @@ def _command_family(message: str) -> str:
     lowered = _normalized_chat_text(message)
     if _is_responsibility_blocked_request(message):
         return "responsibility_guard"
+    if any(
+        phrase in lowered
+        for phrase in [
+            "what's missing before i can run grading",
+            "whats missing before i can run grading",
+            "what is missing before i can run grading",
+        ]
+    ):
+        return "conversation"
     if _looks_like_site_setup(message):
         return "site_setup"
     if any(phrase in lowered for phrase in ["what do i need before export", "before export", "export ready", "ready to export"]):
@@ -3700,6 +3709,36 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 blocker=blocker,
             ),
         )
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "what's missing before i can run grading",
+            "whats missing before i can run grading",
+            "what is missing before i can run grading",
+        ]
+    ):
+        contextual_reply = _contextual_question_reply(message, context)
+        if contextual_reply:
+            return _base_decision(
+                intent="conversation",
+                assistant_message=contextual_reply,
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=False,
+                reason="Answered setup blocker question",
+                confidence=0.93,
+                control_overrides=overrides,
+                response_metadata=_metadata_for_decision(
+                    command_intent="workspace_state",
+                    action_taken="answered_setup_blocker_question",
+                    affected_systems=["setup", "grading"],
+                    next_best_action=str(context.get("next_best_action") or ""),
+                    outcome="understood_and_answered",
+                    confidence=0.93,
+                    state_changed=False,
+                ),
+            )
 
     smart_fix = context.get("smart_fix_recommendations_v1") if isinstance(context.get("smart_fix_recommendations_v1"), dict) else {}
     smart_next = smart_fix.get("next_best_recommendation") if isinstance(smart_fix.get("next_best_recommendation"), dict) else {}

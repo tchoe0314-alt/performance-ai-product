@@ -447,6 +447,76 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertNotIn("stamp", result["assistant_message"].lower())
         self.assertNotIn("certif", result["assistant_message"].lower())
 
+    def test_finish_setup_reports_safe_actions_and_gates(self):
+        result = _decide(
+            "finish setup",
+            {
+                "setup_wizard_state_v1": {
+                    "schema_version": "setup_wizard_state_v1",
+                    "current_step_id": "online_sources_candidates",
+                    "current_step_label": "Online Sources / Candidates",
+                    "current_status": "needs_review",
+                    "next_action": "Review each online/GIS candidate before turning it into a draft object.",
+                    "why_blocked": "Online/GIS candidates remain review-required.",
+                    "safe_actions": [{"label": "Open candidate inbox", "kind": "open_panel", "panel": "data"}],
+                    "steps": [
+                        {
+                            "id": "online_sources_candidates",
+                            "label": "Online Sources / Candidates",
+                            "status": "needs_review",
+                            "next_action": "Review each online/GIS candidate before turning it into a draft object.",
+                            "why_blocked": "Online/GIS candidates remain review-required.",
+                            "safe_actions": [{"label": "Open candidate inbox", "kind": "open_panel", "panel": "data"}],
+                        }
+                    ],
+                }
+            },
+        )
+        self.assertIn("only record real inputs", result["assistant_message"])
+        self.assertIn("Open candidate inbox", result["assistant_message"])
+        self.assertIn("review-required gates", result["assistant_message"])
+
+    def test_grading_missing_uses_setup_gates(self):
+        result = _decide(
+            "what's missing before I can run grading?",
+            {
+                "setup_wizard_state_v1": {
+                    "schema_version": "setup_wizard_state_v1",
+                    "current_step_id": "survey_terrain_control",
+                    "current_step_label": "Survey / Terrain / Control",
+                    "current_status": "blocked",
+                    "next_action": "Upload survey/topo/control evidence.",
+                    "why_blocked": "Survey/control remains an explicit gate.",
+                    "steps": [
+                        {
+                            "id": "site_boundary",
+                            "label": "Site Boundary",
+                            "status": "complete",
+                            "next_action": "Review source candidates.",
+                        },
+                        {
+                            "id": "survey_terrain_control",
+                            "label": "Survey / Terrain / Control",
+                            "status": "blocked",
+                            "next_action": "Upload survey/topo/control evidence.",
+                            "why_blocked": "Survey/control remains an explicit gate.",
+                        },
+                        {
+                            "id": "standards",
+                            "label": "Standards",
+                            "status": "blocked",
+                            "next_action": "Review standards sources and accept/reject applicable candidate rules.",
+                            "why_blocked": "Standards acceptance remains an explicit gate.",
+                        },
+                    ],
+                }
+            },
+        )
+        self.assertIn("Before running grading", result["assistant_message"])
+        self.assertIn("Survey / Terrain / Control", result["assistant_message"])
+        self.assertIn("Standards", result["assistant_message"])
+        self.assertIn("explicit gate", result["assistant_message"])
+
     def test_what_do_you_need_from_me_answers_with_inputs(self):
         result = _decide(
             "what do you need from me?",

@@ -216,6 +216,20 @@ export type SetupWizardStep = {
   why_blocked?: string;
   review_required?: boolean;
   panel?: string;
+  primary_action_label?: string;
+  missing_inputs?: string[];
+  blockers?: string[];
+  safe_actions?: Array<{
+    id?: string;
+    label?: string;
+    kind?: string;
+    panel?: string;
+    safe?: boolean;
+    disabled_reason?: string;
+  }>;
+  depends_on?: string[];
+  source_refs?: string[];
+  can_auto_complete?: boolean;
 };
 
 export type SetupWizardStateV1 = {
@@ -228,8 +242,13 @@ export type SetupWizardStateV1 = {
   why_blocked?: string;
   blocked_step_ids?: string[];
   needs_review_step_ids?: string[];
+  exact_blockers?: string[];
+  missing_inputs?: string[];
+  primary_action_label?: string;
+  safe_actions?: SetupWizardStep["safe_actions"];
   completed_count?: number;
   total_count?: number;
+  truth_rules?: string[];
 };
 
 export type ProgressTimelineStatus =

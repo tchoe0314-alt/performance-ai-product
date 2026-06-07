@@ -33,8 +33,10 @@ test("setup wizard surfaces current step and blocker text", async ({ page, reque
   await expect(page.getByTestId("setup-wizard-sidebar-card")).toContainText("Auto Setup Wizard");
   await expect(page.getByTestId("setup-wizard-current-step")).toContainText("Auto Setup Wizard");
   await expect(page.getByTestId("setup-wizard-current-step")).toContainText(/Enter an address|Set dimensions|Review/i);
+  await expect(page.getByTestId("setup-wizard-current-step")).toContainText(/Missing|Why blocked|Open|Add|Review/i);
   await expect(page.getByText("Wizard steps")).toBeVisible();
   await expect(page.getByText("Online Sources / Candidates")).toBeVisible();
   await expect(page.getByText("Survey / Terrain / Control")).toBeVisible();
   await expect(page.getByText("Standards")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Open|Add|Review|Find sources|Run systems/i }).first()).toBeVisible();
 });

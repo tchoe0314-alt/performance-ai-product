@@ -11638,10 +11638,54 @@ function PerformanceAIDashboardView({
     why_blocked: persistedSetupWizardState?.why_blocked || setupWizardCurrentStep?.why_blocked || "",
     blocked_step_ids: setupWizardSteps.filter((item) => item.status === "blocked").map((item) => item.id),
     needs_review_step_ids: setupWizardSteps.filter((item) => item.status === "needs_review").map((item) => item.id),
+    exact_blockers:
+      persistedSetupWizardState?.exact_blockers ??
+      setupWizardSteps.flatMap((item) => item.status === "blocked" ? (item.blockers ?? [item.why_blocked].filter(Boolean) as string[]) : []),
+    missing_inputs:
+      persistedSetupWizardState?.missing_inputs ??
+      setupWizardSteps.flatMap((item) => item.status !== "complete" ? (item.missing_inputs ?? []) : []),
+    primary_action_label: persistedSetupWizardState?.primary_action_label || setupWizardCurrentStep?.primary_action_label,
+    safe_actions: persistedSetupWizardState?.safe_actions || setupWizardCurrentStep?.safe_actions || [],
     completed_count: setupWizardSteps.filter((item) => item.status === "complete").length,
     total_count: setupWizardSteps.length,
+    truth_rules: persistedSetupWizardState?.truth_rules,
   };
   const nextSetupAction = setupWizardState.next_action || "Start setup.";
+  const defaultSetupActionForStep = (step: SetupWizardStep) => ({
+    id: `open_${step.panel || "site_existing"}`,
+    label: step.primary_action_label || "Open step",
+    kind: "open_panel",
+    panel: step.panel || "site_existing",
+    safe: true,
+  });
+  const handleSetupWizardAction = (step: SetupWizardStep, action = defaultSetupActionForStep(step)) => {
+    const panel = ((action.panel || step.panel || "site_existing") as SidePanelKey);
+    if (action.disabled_reason) {
+      setStatusMessage(action.disabled_reason);
+      handleOpenSidePanel(panel);
+      return;
+    }
+    if (action.kind === "draw_boundary") {
+      handleOpenSidePanel("site_existing");
+      handleStartSiteBoundaryDraw();
+      return;
+    }
+    if (action.kind === "lock_boundary") {
+      void handleApplySite();
+      return;
+    }
+    if (action.kind === "run_source_discovery") {
+      handleOpenSidePanel("data");
+      void analyzeMapSnapshot();
+      return;
+    }
+    if (action.kind === "run_systems") {
+      handleOpenSidePanel("generate");
+      void handlePreviewPlan();
+      return;
+    }
+    handleOpenSidePanel(panel);
+  };
   const setupChecklistItems: Array<{
     label: string;
     status: "done" | "missing" | "blocked";
@@ -12823,23 +12867,47 @@ function PerformanceAIDashboardView({
                           {setupWizardState.current_step_label || "Setup"}
                         </p>
                         <p className="mt-1 text-sm font-medium text-amber-900">{nextSetupAction}</p>
+                        {setupWizardState.missing_inputs?.length ? (
+                          <p className="mt-2 text-xs font-semibold text-amber-900">
+                            Missing: {setupWizardState.missing_inputs.slice(0, 3).join(", ")}
+                          </p>
+                        ) : null}
                         {setupWizardState.why_blocked ? (
                           <p className="mt-2 rounded-lg border border-amber-200 bg-white/70 px-2 py-1 text-xs font-semibold text-amber-900">
                             Why blocked: {setupWizardState.why_blocked}
                           </p>
                         ) : null}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(setupWizardState.safe_actions?.length
+                            ? setupWizardState.safe_actions
+                            : setupWizardCurrentStep
+                              ? [defaultSetupActionForStep(setupWizardCurrentStep)]
+                              : []
+                          ).slice(0, 3).map((action) => (
+                            <button
+                              key={action.id || action.label || action.kind}
+                              type="button"
+                              onClick={() => setupWizardCurrentStep && handleSetupWizardAction(setupWizardCurrentStep, action)}
+                              disabled={Boolean(action.disabled_reason)}
+                              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              title={action.disabled_reason || action.label || setupWizardState.primary_action_label || "Open setup step"}
+                            >
+                              {action.label || setupWizardState.primary_action_label || "Open step"}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3" open>
                         <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Wizard steps
                         </summary>
                         <div className="mt-2 space-y-2">
-                          {setupWizardState.steps?.map((item) => (
-                            <button
+                          {setupWizardState.steps?.map((item) => {
+                            const actions = item.safe_actions?.length ? item.safe_actions : [defaultSetupActionForStep(item)];
+                            return (
+                            <div
                               key={item.id}
-                              type="button"
-                              onClick={() => handleOpenSidePanel((item.panel as SidePanelKey) || "site_existing")}
-                              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-white"
+                              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left"
                             >
                               <div className="flex items-center justify-between gap-3">
                                 <span className="text-sm font-semibold text-slate-800">{item.label}</span>
@@ -12848,11 +12916,28 @@ function PerformanceAIDashboardView({
                                 </span>
                               </div>
                               <p className="mt-1 text-xs text-slate-500">{item.next_action}</p>
+                              {item.missing_inputs?.length ? (
+                                <p className="mt-1 text-xs font-medium text-slate-500">Missing: {item.missing_inputs.slice(0, 2).join(", ")}</p>
+                              ) : null}
                               {item.why_blocked ? (
                                 <p className="mt-1 text-xs font-medium text-red-600">Why blocked: {item.why_blocked}</p>
                               ) : null}
-                            </button>
-                          ))}
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {actions.slice(0, 2).map((action) => (
+                                  <button
+                                    key={action.id || action.label || action.kind}
+                                    type="button"
+                                    onClick={() => handleSetupWizardAction(item, action)}
+                                    disabled={Boolean(action.disabled_reason)}
+                                    className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    title={action.disabled_reason || action.label || item.primary_action_label || "Open setup step"}
+                                  >
+                                    {action.label || item.primary_action_label || "Open step"}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )})}
                         </div>
                       </details>
                       <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
