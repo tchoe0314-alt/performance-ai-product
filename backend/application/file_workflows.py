@@ -386,6 +386,7 @@ def fetch_existing_conditions_online(
         "coordinate_system": canonical.get("coordinate_system"),
         "dem_lidar": canonical.get("dem_lidar"),
         "location_context": result.get("location_context"),
+        "online_existing_conditions_discovery_v1": result.get("online_existing_conditions_discovery_v1"),
         "map_feature_detection_report_v1": result.get("map_feature_detection_report_v1"),
     }
     summary = summarize_existing_conditions({"meta": package_meta})

@@ -8,12 +8,58 @@ import requests
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
 from .map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
+from .standards_discovery import discover_standards_sources
 
 
 CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 USGS_EPQS_URL = "https://epqs.nationalmap.gov/v1/json"
 FEMA_NFHL_MAPSERVER_URL = "https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer"
 USFWS_WETLANDS_MAPSERVER_URL = "https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer"
+ONLINE_DISCOVERY_VERSION = "online_existing_conditions_discovery_v1"
+
+
+DISCOVERY_SOURCE_SPECS = {
+    "parcel_site_boundary": {
+        "label": "parcel/site boundary",
+        "result_keys": ("parcels",),
+        "layer_keys": ("parcels",),
+    },
+    "gis_constraints": {
+        "label": "GIS constraints",
+        "result_keys": ("floodplain", "wetlands", "easements", "zoning"),
+        "layer_keys": ("floodplain", "wetlands", "easements", "zoning"),
+    },
+    "building_footprints": {
+        "label": "building footprints",
+        "result_keys": ("building_footprints",),
+        "layer_keys": ("building_footprints",),
+    },
+    "road_row": {
+        "label": "road/ROW data",
+        "result_keys": ("roads_row",),
+        "layer_keys": ("roads", "row"),
+    },
+    "terrain_dem_lidar": {
+        "label": "terrain/DEM/LiDAR",
+        "result_keys": ("elevation",),
+        "layer_keys": (),
+    },
+    "floodplain_wetlands_environmental": {
+        "label": "floodplain/wetlands/environmental constraints",
+        "result_keys": ("floodplain", "wetlands"),
+        "layer_keys": ("floodplain", "wetlands"),
+    },
+    "public_utilities": {
+        "label": "public utility layers",
+        "result_keys": ("existing_utilities",),
+        "layer_keys": ("existing_utilities",),
+    },
+    "official_standards": {
+        "label": "official standards source candidates",
+        "result_keys": (),
+        "layer_keys": (),
+    },
+}
 
 
 def _json_get(session: Any, url: str, params: Dict[str, Any], *, timeout: float = 10.0) -> Dict[str, Any]:
@@ -72,7 +118,7 @@ def fetch_usgs_elevation_point(lat: float, lng: float, *, units: str = "Feet", s
         "lng": lng,
         "elevation": safe_float(elevation),
         "units": units,
-        "truth_label": "Public DEM point elevation; not a stamped topographic survey.",
+        "truth_label": "Public DEM point elevation; not a topographic survey.",
     }
 
 
@@ -253,6 +299,190 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _source_url(result: Dict[str, Any]) -> str:
+    return safe_str(result.get("source") or result.get("source_url"))
+
+
+def _candidate_count_for_source(*, source_key: str, result: Dict[str, Any], gis_layers: Dict[str, Any], layer_keys: Tuple[str, ...]) -> int:
+    if source_key == "terrain_dem_lidar":
+        return 1 if result.get("success") else 0
+    count = sum(len(safe_list(gis_layers.get(key))) for key in layer_keys)
+    if count:
+        return count
+    geojson_features = safe_list(safe_dict(result.get("geojson")).get("features"))
+    return len(geojson_features)
+
+
+def _source_blockers(*, label: str, result_records: List[Dict[str, Any]], candidate_count: int) -> List[str]:
+    blockers: List[str] = []
+    if candidate_count:
+        blockers.append(f"{label} candidates are review-required and not survey-backed.")
+    if not result_records:
+        blockers.append(f"{label} source is missing/unavailable.")
+    for result in result_records:
+        status = safe_str(result.get("status"), "missing")
+        warnings = [safe_str(item) for item in safe_list(result.get("warnings")) if safe_str(item)]
+        if result.get("success"):
+            continue
+        if status == "skipped":
+            blockers.append(f"{label} source was skipped.")
+        elif status == "unconfigured":
+            blockers.append(warnings[0] if warnings else f"{label} source is not configured.")
+        elif status == "not_found":
+            blockers.append(warnings[0] if warnings else f"{label} source returned no matches.")
+        elif status == "fetch_failed":
+            blockers.append(warnings[0] if warnings else f"{label} source fetch failed.")
+        elif status:
+            blockers.append(warnings[0] if warnings else f"{label} source status is {status}.")
+        else:
+            blockers.append(f"{label} source is missing/unavailable.")
+    return list(dict.fromkeys(item for item in blockers if item))
+
+
+def _source_record(
+    *,
+    key: str,
+    label: str,
+    result_records: List[Dict[str, Any]],
+    candidate_count: int,
+    blockers: List[str],
+) -> Dict[str, Any]:
+    first = next((item for item in result_records if safe_dict(item)), {})
+    success = candidate_count > 0
+    status = "candidates_found" if success else safe_str(first.get("status"), "missing")
+    if not success and any(safe_str(item.get("status")) == "fetch_failed" for item in result_records):
+        status = "fetch_failed"
+    if not success and any(safe_str(item.get("status")) == "unconfigured" for item in result_records):
+        status = "unconfigured"
+    return {
+        "key": key,
+        "label": label,
+        "source_url": _source_url(first),
+        "agency": safe_str(first.get("agency") or first.get("layer_name") or first.get("source_type")),
+        "provider": safe_str(first.get("provider") or first.get("source_type")),
+        "confidence": "candidate" if success else "unavailable",
+        "source_type": safe_str(first.get("source_type"), key),
+        "status": status,
+        "candidate_count": candidate_count,
+        "review_required": True,
+        "acceptance_status": "candidate" if success else "missing",
+        "blockers": blockers,
+    }
+
+
+def build_online_existing_conditions_discovery_report(
+    *,
+    source_results: Optional[Dict[str, Any]] = None,
+    gis_layers: Optional[Dict[str, Any]] = None,
+    location_context: Optional[Dict[str, Any]] = None,
+    standards_jurisdiction: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    results = safe_dict(source_results)
+    layers = safe_dict(gis_layers)
+    sources: List[Dict[str, Any]] = []
+    candidate_count = 0
+    missing_sources: List[Dict[str, Any]] = []
+    failed_sources: List[Dict[str, Any]] = []
+
+    for key, spec in DISCOVERY_SOURCE_SPECS.items():
+        label = safe_str(spec.get("label"), key)
+        if key == "official_standards":
+            jurisdiction = safe_dict(standards_jurisdiction)
+            if any(safe_str(jurisdiction.get(field)) for field in ("city", "county", "state", "utility_provider")):
+                standards = discover_standards_sources(
+                    city=safe_str(jurisdiction.get("city")),
+                    county=safe_str(jurisdiction.get("county")),
+                    state=safe_str(jurisdiction.get("state")),
+                    utility_provider=safe_str(jurisdiction.get("utility_provider")),
+                )
+                standards_sources = [
+                    safe_dict(item)
+                    for item in safe_list(standards.get("sources"))
+                    if safe_str(safe_dict(item).get("url")).startswith("https://")
+                ]
+                blockers = ["Official standards sources are candidates until exact jurisdiction/provider standards are reviewed and accepted."]
+                record = {
+                    "key": key,
+                    "label": label,
+                    "source_url": safe_str(standards_sources[0].get("url")) if standards_sources else "",
+                    "agency": safe_str(standards_sources[0].get("name")) if standards_sources else "",
+                    "provider": "standards_discovery_registry",
+                    "confidence": "candidate" if standards_sources else "unavailable",
+                    "source_type": "standards_discovery_registry",
+                    "status": "candidates_found" if standards_sources else "missing",
+                    "candidate_count": len(standards_sources),
+                    "review_required": True,
+                    "acceptance_status": "candidate" if standards_sources else "missing",
+                    "blockers": blockers if standards_sources else ["Official standards source candidates need city/county/state or utility provider context."],
+                }
+            else:
+                record = _source_record(
+                    key=key,
+                    label=label,
+                    result_records=[],
+                    candidate_count=0,
+                    blockers=["Official standards source candidates need city/county/state or utility provider context."],
+                )
+            sources.append(record)
+            candidate_count += int(record["candidate_count"])
+            if not record["candidate_count"]:
+                missing_sources.append({"key": key, "label": label, "missing": record["blockers"]})
+            continue
+
+        result_records = [safe_dict(results.get(item)) for item in spec.get("result_keys", ()) if safe_dict(results.get(item))]
+        if key == "terrain_dem_lidar":
+            count = sum(
+                _candidate_count_for_source(source_key=key, result=result, gis_layers=layers, layer_keys=())
+                for result in result_records
+            )
+        else:
+            layer_keys = tuple(spec.get("layer_keys", ()))
+            count = sum(len(safe_list(layers.get(layer_key))) for layer_key in layer_keys)
+            if not count:
+                count = sum(len(safe_list(safe_dict(result.get("geojson")).get("features"))) for result in result_records)
+        blockers = _source_blockers(label=label, result_records=result_records, candidate_count=count)
+        record = _source_record(key=key, label=label, result_records=result_records, candidate_count=count, blockers=blockers)
+        sources.append(record)
+        candidate_count += count
+        if not count:
+            missing_sources.append({"key": key, "label": label, "missing": blockers or [f"{label} source is missing/unavailable."]})
+        if record["status"] == "fetch_failed":
+            failed_sources.append({"key": key, "label": label, "blockers": blockers})
+
+    survey_control = {
+        "status": "not_satisfied",
+        "survey_control_satisfied": False,
+        "review_required": True,
+        "blockers": ["Online discovery does not satisfy survey, boundary, benchmark, utility locate, or site-control requirements."],
+    }
+    blockers = [
+        item
+        for source in sources
+        for item in safe_list(source.get("blockers"))
+        if safe_str(item)
+    ]
+    if not candidate_count:
+        status = "fetch_failed" if failed_sources else "no_sources_found"
+    else:
+        status = "candidates_found"
+    return {
+        "version": ONLINE_DISCOVERY_VERSION,
+        "status": status,
+        "source_type": "online_existing_conditions_discovery",
+        "location_context": safe_dict(location_context),
+        "sources": sources,
+        "candidate_count": candidate_count,
+        "missing_sources": missing_sources,
+        "failed_sources": failed_sources,
+        "blockers": list(dict.fromkeys(blockers)),
+        "survey_control": survey_control,
+        "review_required": True,
+        "acceptance_status": "candidate" if candidate_count else "missing",
+        "construction_release_allowed": False,
+        "truth_label": "Online existing-condition discovery returns candidate/review-required sources only; it is not survey-backed and does not satisfy final reliance requirements.",
+    }
+
+
 def fetch_online_existing_conditions(
     *,
     address: str = "",
@@ -278,6 +508,7 @@ def fetch_online_existing_conditions(
     include_zoning: bool = True,
     include_utilities: bool = True,
     include_elevation: bool = True,
+    standards_jurisdiction: Optional[Dict[str, Any]] = None,
     session: Any = requests,
 ) -> Dict[str, Any]:
     source_results: Dict[str, Dict[str, Any]] = {}
@@ -300,12 +531,19 @@ def fetch_online_existing_conditions(
             gis_layers={layer: [] for layer in REQUIRED_GIS_LAYERS},
             source_results=source_results,
         )
+        discovery_report = build_online_existing_conditions_discovery_report(
+            source_results=source_results,
+            gis_layers={layer: [] for layer in REQUIRED_GIS_LAYERS},
+            location_context=location_context,
+            standards_jurisdiction=standards_jurisdiction,
+        )
         return {
             "success": False,
             "source_type": "online_existing_conditions_fetch",
             "status": "blocked",
             "source_results": source_results,
             "location_context": location_context,
+            ONLINE_DISCOVERY_VERSION: discovery_report,
             "map_feature_detection_report_v1": feature_report,
             "canonical_existing_conditions": {
                 "survey": {"source": "missing", "point_count": 0, "points": []},
@@ -445,6 +683,12 @@ def fetch_online_existing_conditions(
         gis_layers=online_layers.get("gis_layers"),
         source_results=source_results,
     )
+    discovery_report = build_online_existing_conditions_discovery_report(
+        source_results=source_results,
+        gis_layers=online_layers.get("gis_layers"),
+        location_context=location_context,
+        standards_jurisdiction=standards_jurisdiction,
+    )
     return {
         "success": any(bool(result.get("success")) for result in source_results.values()),
         "source_type": "online_existing_conditions_fetch",
@@ -452,6 +696,7 @@ def fetch_online_existing_conditions(
         "bbox": working_bbox,
         "source_results": source_results,
         "location_context": location_context,
+        ONLINE_DISCOVERY_VERSION: discovery_report,
         "map_feature_detection_report_v1": feature_report,
         "canonical_existing_conditions": canonical,
         "warnings": warnings,
@@ -479,8 +724,10 @@ def build_online_source_urls(address: str = "", bbox: Optional[Dict[str, Any]] =
 __all__ = [
     "CENSUS_GEOCODER_URL",
     "FEMA_NFHL_MAPSERVER_URL",
+    "ONLINE_DISCOVERY_VERSION",
     "USFWS_WETLANDS_MAPSERVER_URL",
     "USGS_EPQS_URL",
+    "build_online_existing_conditions_discovery_report",
     "build_online_source_urls",
     "bbox_around_point",
     "bbox_center",

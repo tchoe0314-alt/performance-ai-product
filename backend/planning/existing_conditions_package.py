@@ -55,7 +55,7 @@ def _acceptance(meta: Dict[str, Any], accepted_by: str = "") -> Dict[str, Any]:
         "accepted_by": accepted_user,
         "accepted_at": safe_str(acceptance.get("accepted_at") or safe_dict(meta.get("existing_conditions_acceptance")).get("accepted_at")),
         "notes": safe_str(acceptance.get("notes") or safe_dict(meta.get("existing_conditions_acceptance")).get("notes")),
-        "truth_label": "User acceptance records that the imported existing-condition package may be used for review workflows; it is not a professional survey certification.",
+        "truth_label": "User acceptance records that the imported existing-condition package may be used for review workflows; it is not a professional survey record.",
     }
 
 
@@ -205,6 +205,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
             "surfaces": deepcopy(meta.get("surfaces")),
             "point_clouds": deepcopy(meta.get("point_clouds")),
             "sources": deepcopy(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources")),
+            "online_existing_conditions_discovery_v1": deepcopy(meta.get("online_existing_conditions_discovery_v1")),
             "model": deepcopy(canonical_model),
             "metadata_only_sources": deepcopy(metadata_only_sources),
         },

@@ -182,6 +182,8 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
         self.assertIn("existing_conditions_summary", result)
         self.assertIn("existing_conditions_package", result)
         self.assertEqual(result["existing_conditions_package"]["status"], "blocked")
+        self.assertIn("online_existing_conditions_discovery_v1", result)
+        self.assertIn("online_existing_conditions_discovery_v1", result["existing_conditions_package"]["canonical_existing_conditions"])
 
 
 if __name__ == "__main__":
