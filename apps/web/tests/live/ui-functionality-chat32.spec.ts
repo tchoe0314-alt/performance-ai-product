@@ -90,10 +90,26 @@ test.describe("Chat 32 UI functionality QA", () => {
     });
     expect(offscreenBottomTabs).toBe(0);
 
-    const sidebarToggle = page.getByRole("button", { name: "Hide left sidebar" });
-    await expect(sidebarToggle).toBeVisible();
-    await sidebarToggle.click();
+    const canvas = page.getByTestId("workspace-canvas-shell");
+    const sidebar = page.getByTestId("left-sidebar");
+    const showSidebarToggle = page.getByRole("button", { name: "Show left sidebar" });
+    await expect(showSidebarToggle).toBeVisible();
+    await expect(canvas).toBeVisible();
+
+    const canvasBounds = await canvas.boundingBox();
+    expect(canvasBounds?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect(canvasBounds?.width ?? 0).toBeGreaterThan(0);
+
+    await showSidebarToggle.click();
+    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toBeVisible();
+    await expect(sidebar).toBeVisible();
+    await expect(sidebar).toHaveAttribute("data-motion-state", "open");
+
+    await sidebar.getByRole("button", { name: "Canvas" }).click();
     await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();
-    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+    await expect(canvas).toBeVisible();
+
+    const postToggleOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(postToggleOverflow).toBeLessThanOrEqual(1);
   });
 });
