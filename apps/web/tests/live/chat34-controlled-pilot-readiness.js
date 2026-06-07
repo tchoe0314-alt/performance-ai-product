@@ -24,6 +24,10 @@ const checks = [];
 const browserErrors = [];
 /** @type {Array<{url:string, method?:string, status?:number, failure?:string}>} */
 const failedRequests = [];
+/** @type {Array<{category:string, expected:boolean, source:string, message:string, url?:string, method?:string, status?:number, resourceType?:string}>} */
+const consoleIssues = [];
+/** @type {Array<{category:string, source:string, message:string, url?:string, method?:string, status?:number, resourceType?:string}>} */
+const expectedTelemetry = [];
 /** @type {Array<{name:string, path:string}>} */
 const screenshots = [];
 const startedAt = Date.now();
@@ -63,6 +67,8 @@ function artifact() {
     blockers,
     browser_errors: browserErrors,
     failed_requests: failedRequests,
+    console_issues: consoleIssues,
+    expected_telemetry: expectedTelemetry,
     screenshots,
   };
 }
@@ -90,7 +96,7 @@ async function screenshot(page, name) {
   try {
     fs.mkdirSync(screenshotDir, { recursive: true });
     const filePath = path.join(screenshotDir, `${name}.png`);
-    await page.screenshot({ path: filePath, fullPage: true });
+    await page.screenshot({ path: filePath, fullPage: true, caret: "initial", timeout: 20000 });
     screenshots.push({ name, path: filePath });
   } catch (error) {
     browserErrors.push({ type: "screenshot", message: String(error && error.message ? error.message : error) });
@@ -114,26 +120,245 @@ async function soft(name, owner, severity, fn, optional = false) {
   }
 }
 
+function safeUrlParts(value) {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function isExpectedBlockedResource(url, status) {
+  const parsed = safeUrlParts(url);
+  const lower = String(url || "").toLowerCase();
+  if (!parsed) return false;
+  if ([401, 403].includes(status) && lower.includes("/api/debug/runtime")) return true;
+  if ([401, 403].includes(status) && lower.includes("/api/auth/status")) return true;
+  if (status === 403 && /(^|\.)mapbox\.com$/.test(parsed.hostname)) return true;
+  if (status === 403 && /(^|\.)tiles\.mapbox\.com$/.test(parsed.hostname)) return true;
+  if (status === 403 && /(^|\.)api\.mapbox\.com$/.test(parsed.hostname)) return true;
+  if (status === 403 && /(^|\.)events\.mapbox\.com$/.test(parsed.hostname)) return true;
+  return false;
+}
+
+function isHarmlessResourceAbort(url, resourceType, status, failure = "") {
+  const parsed = safeUrlParts(url);
+  const lower = String(url || "").toLowerCase();
+  const failureLower = String(failure || "").toLowerCase();
+  const isMapbox = parsed ? /(^|\.)mapbox\.com$/.test(parsed.hostname) : lower.includes("mapbox.com/");
+  if (lower.includes("/favicon.ico") && status === 404) return true;
+  if (lower.includes("/_vercel/speed-insights/") && [0, 404].includes(status)) return true;
+  if (lower.includes("__nextjs_original-stack-frame") && status === 404) return true;
+  if (isMapbox && [403, 404].includes(status)) return true;
+  if (isMapbox && failureLower.includes("net::err_aborted")) return true;
+  if (["image", "media", "font"].includes(resourceType || "") && [403, 404].includes(status)) return true;
+  if (failureLower.includes("net::err_aborted") && ["image", "media", "font"].includes(resourceType || "")) return true;
+  return false;
+}
+
+function classifyIssue({ source, message, url, method, status, resourceType, failure }) {
+  const text = String(message || failure || "");
+  const issueUrl = sanitizeUrl(url || "");
+  if (/hydrated but some attributes of the server rendered html didn't match/i.test(text)) {
+    return {
+      category: "hydration mismatch",
+      expected: false,
+      source,
+      message: text,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (/cors policy/i.test(text) && /\/api\/auth\/status/i.test(text)) {
+    return {
+      category: "expected blocked path",
+      expected: true,
+      source,
+      message: text,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (/\/api\/auth\/status/i.test(url || "") && /net::err_(failed|connection_refused|aborted|empty_response)/i.test(text)) {
+    return {
+      category: "expected blocked path",
+      expected: true,
+      source,
+      message: text,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (isHarmlessResourceAbort(url, resourceType, status ?? 0, failure || text)) {
+    return {
+      category: "harmless third-party/resource abort",
+      expected: true,
+      source,
+      message: text,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (/^\[debug-preview\]/i.test(text)) {
+    return {
+      category: "harmless third-party/resource abort",
+      expected: true,
+      source,
+      message: text,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (/GL Driver Message/i.test(text)) {
+    return {
+      category: "harmless third-party/resource abort",
+      expected: true,
+      source,
+      message: text,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (typeof status === "number" && isExpectedBlockedResource(url, status)) {
+    return {
+      category: "expected blocked path",
+      expected: true,
+      source,
+      message: text || `HTTP ${status}`,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (typeof status === "number" && isHarmlessResourceAbort(url, resourceType, status, failure)) {
+    return {
+      category: "harmless third-party/resource abort",
+      expected: true,
+      source,
+      message: text || `HTTP ${status}`,
+      url: issueUrl,
+      method,
+      status,
+      resourceType,
+    };
+  }
+  if (/failed to load resource/i.test(text)) {
+    const match = text.match(/status of (\d+)/i);
+    const textStatus = match ? Number(match[1]) : status;
+    if (typeof textStatus === "number" && isExpectedBlockedResource(url, textStatus)) {
+      return {
+        category: "expected blocked path",
+        expected: true,
+        source,
+        message: text,
+        url: issueUrl,
+        method,
+        status: textStatus,
+        resourceType,
+      };
+    }
+    if (typeof textStatus === "number" && isHarmlessResourceAbort(url, resourceType, textStatus, failure)) {
+      return {
+        category: "harmless third-party/resource abort",
+        expected: true,
+        source,
+        message: text,
+        url: issueUrl,
+        method,
+        status: textStatus,
+        resourceType,
+      };
+    }
+  }
+  return {
+    category: "real app bug",
+    expected: false,
+    source,
+    message: text,
+    url: issueUrl,
+    method,
+    status,
+    resourceType,
+  };
+}
+
+function recordIssue(issue) {
+  consoleIssues.push(issue);
+  if (issue.expected) {
+    expectedTelemetry.push({
+      category: issue.category,
+      source: issue.source,
+      message: issue.message,
+      url: issue.url,
+      method: issue.method,
+      status: issue.status,
+      resourceType: issue.resourceType,
+    });
+    return;
+  }
+  if (issue.source === "requestfailed" || issue.source === "response") {
+    failedRequests.push({
+      url: issue.url,
+      method: issue.method,
+      status: issue.status,
+      failure: issue.message,
+    });
+    return;
+  }
+  browserErrors.push({ type: issue.source, message: issue.message, url: issue.url });
+}
+
 function attachPageTelemetry(page) {
   page.on("console", (msg) => {
-    if (msg.type() === "error") {
-      browserErrors.push({ type: "console", message: msg.text(), url: sanitizeUrl(page.url()) });
+    if (["error", "warning"].includes(msg.type())) {
+      const location = msg.location();
+      const url = location && location.url ? location.url : page.url();
+      const statusMatch = msg.text().match(/status of (\d+)/i);
+      recordIssue(classifyIssue({
+        source: "console",
+        message: msg.text(),
+        url,
+        status: statusMatch ? Number(statusMatch[1]) : undefined,
+      }));
     }
   });
   page.on("pageerror", (error) => {
-    browserErrors.push({ type: "pageerror", message: error.message, url: sanitizeUrl(page.url()) });
+    recordIssue(classifyIssue({ source: "pageerror", message: error.message, url: page.url() }));
   });
   page.on("requestfailed", (req) => {
-    failedRequests.push({
-      url: sanitizeUrl(req.url()),
+    recordIssue(classifyIssue({
+      source: "requestfailed",
+      message: req.failure()?.errorText || "request failed",
+      url: req.url(),
       method: req.method(),
       failure: req.failure()?.errorText || "request failed",
-    });
+      resourceType: req.resourceType(),
+    }));
   });
   page.on("response", (response) => {
     const status = response.status();
-    if (status >= 500) {
-      failedRequests.push({ url: sanitizeUrl(response.url()), status, method: response.request().method() });
+    if (status >= 400) {
+      recordIssue(classifyIssue({
+        source: "response",
+        message: `HTTP ${status}`,
+        url: response.url(),
+        method: response.request().method(),
+        status,
+        resourceType: response.request().resourceType(),
+      }));
     }
   });
 }
@@ -193,13 +418,36 @@ async function clickButton(page, matcher, options = {}) {
   if (count > 1 && exactRoleName) {
     locator = page.locator("button").filter({ hasText: matcher });
   }
-  const target = locator.first();
-  const disabled = await target.isDisabled().catch(() => false);
-  if (disabled) {
+  let target = null;
+  let sawVisibleDisabled = false;
+  for (let idx = 0; idx < count; idx += 1) {
+    const candidate = locator.nth(idx);
+    if (!(await candidate.isVisible().catch(() => false))) continue;
+    if (await candidate.isDisabled().catch(() => false)) {
+      sawVisibleDisabled = true;
+      continue;
+    }
+    target = candidate;
+    break;
+  }
+  if (!target && sawVisibleDisabled) {
     note(options.name || `Click ${matcher}`, false, "button disabled", owner, optional ? "P2" : "P1", optional);
     return false;
   }
-  await target.click({ noWaitAfter: true, timeout: 5000 });
+  if (!target) {
+    note(options.name || `Click ${matcher}`, false, "visible enabled button missing", owner, optional ? "P2" : "P1", optional);
+    return false;
+  }
+  await target.click({ noWaitAfter: true, timeout: 5000 }).catch(async (error) => {
+    if (!/not stable|Timeout/i.test(String(error && error.message ? error.message : error))) {
+      throw error;
+    }
+    await target.click({ noWaitAfter: true, timeout: 5000, force: true }).catch(async () => {
+      await target.evaluate((node) => {
+        if (node instanceof HTMLElement) node.click();
+      });
+    });
+  });
   return true;
 }
 

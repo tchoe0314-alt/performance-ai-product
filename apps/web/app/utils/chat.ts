@@ -25,10 +25,14 @@ export function createChatMessage(
 }
 
 export function createWelcomeMessage(): ChatMessage {
-  return createChatMessage(
-    "assistant",
-    "Hi, I’m Civora. I can help you think through a site, answer questions, and turn design requests into a plan when you’re ready. Tell me what you want to change, or just ask me a question first.",
-  );
+  return {
+    id: "welcome-message",
+    role: "assistant",
+    content:
+      "Hi, I’m Civora. I can help you think through a site, answer questions, and turn design requests into a plan when you’re ready. Tell me what you want to change, or just ask me a question first.",
+    createdAt: 0,
+    kind: "message",
+  };
 }
 
 export function extractDesignMemory(thread: ChatMessage[]): {

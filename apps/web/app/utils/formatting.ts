@@ -28,6 +28,7 @@ export const defaultIssues = [
 ];
 
 export function formatChatTimestamp(value: number) {
+  if (!value) return "";
   try {
     return new Date(value).toLocaleTimeString([], {
       hour: "numeric",

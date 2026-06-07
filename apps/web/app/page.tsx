@@ -11193,6 +11193,23 @@ function PerformanceAIDashboardView({
         ? sidePanelCopy[sidePanelForRender].desc
         : "";
 
+  if (!clientMounted) {
+    return (
+      <div className="civora-app-bg min-h-screen text-[var(--civora-text)]">
+        <div className="flex min-h-screen items-center justify-center px-6">
+          <div className="text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+              Civora AI
+            </p>
+            <p className="mt-3 text-sm font-medium text-slate-600">
+              Loading workspace...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!effectiveUser) {
     return (
       <AuthScreen
