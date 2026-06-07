@@ -11651,7 +11651,8 @@ function PerformanceAIDashboardView({
     truth_rules: persistedSetupWizardState?.truth_rules,
   };
   const nextSetupAction = setupWizardState.next_action || "Start setup.";
-  const defaultSetupActionForStep = (step: SetupWizardStep) => ({
+  type SetupWizardSafeAction = NonNullable<SetupWizardStep["safe_actions"]>[number];
+  const defaultSetupActionForStep = (step: SetupWizardStep): SetupWizardSafeAction => ({
     id: `open_${step.panel || "site_existing"}`,
     label: step.primary_action_label || "Open step",
     kind: "open_panel",

@@ -962,7 +962,7 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         store = RecordingProjectStore(record)
 
         for prompt, expected in (
-            ("what can I trust?", "does not imply construction readiness"),
+            ("what can I trust?", "does not imply field-use readiness"),
             ("why is this low confidence?", "Low confidence sources"),
             ("what is user drawn?", "Drawn polygon"),
             ("what needs survey control?", "Needs survey control"),
