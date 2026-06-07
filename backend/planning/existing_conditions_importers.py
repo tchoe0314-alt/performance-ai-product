@@ -431,15 +431,22 @@ def surface_from_survey_import(import_result: Dict[str, Any], *, cell_size: floa
     quality = safe_dict(import_result.get("quality")) or _point_quality([{"x": point.x, "y": point.y, "z": point.z} for point in points])
     if len(points) < 3 or safe_int(quality.get("unique_xy_count"), 0) < 3 or not bool(quality.get("has_surface_span")):
         return None
-    surface = SurfaceEngine(points).build_grid(cell_size=max(0.1, safe_float(cell_size, 10.0)), padding=max(0.0, safe_float(padding, 0.0)))
+    control = safe_dict(import_result.get("survey_control_package")) or safe_dict(import_result.get("coordinate_validation"))
+    control_verified = bool(control.get("control_verified") or control.get("verified_control"))
+    surface = SurfaceEngine(points, control_verified=control_verified, source_type="survey").build_grid(
+        cell_size=max(0.1, safe_float(cell_size, 10.0)),
+        padding=max(0.0, safe_float(padding, 0.0)),
+        method="tin",
+    )
     setattr(
         surface,
         "_inferred_profile",
         {
-            "source_quality": "survey",
-            "source_detail": "survey_csv_import",
+            "source_quality": "survey_backed" if control_verified else "survey_unverified",
+            "source_detail": "survey_csv_import_with_verified_control" if control_verified else "survey_csv_import_control_unverified",
             "source_file": safe_str(import_result.get("source")),
             "point_count": len(points),
+            "survey_control_verified": control_verified,
             "coordinate_system": safe_dict(import_result.get("coordinate_system")),
         },
     )

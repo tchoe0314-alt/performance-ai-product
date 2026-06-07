@@ -12760,6 +12760,113 @@ function PerformanceAIDashboardView({
       gradingSummary?.earthwork && typeof gradingSummary.earthwork === "object"
         ? (gradingSummary.earthwork as Record<string, unknown>)
         : {};
+    const rawSurfaceModel =
+      gradingSummary?.surface_model && typeof gradingSummary.surface_model === "object"
+        ? (gradingSummary.surface_model as Record<string, unknown>)
+        : {};
+    const rawSurfaceConfidence =
+      rawSurfaceModel.confidence && typeof rawSurfaceModel.confidence === "object"
+        ? (rawSurfaceModel.confidence as Record<string, unknown>)
+        : {};
+    const rawSurfaceComparison =
+      rawSurfaceModel.surface_comparison && typeof rawSurfaceModel.surface_comparison === "object"
+        ? (rawSurfaceModel.surface_comparison as Record<string, unknown>)
+        : {};
+    const parseSurfacePoint = (value: unknown): [number, number] | null => {
+      if (!Array.isArray(value) || value.length < 2) return null;
+      const x = Number(value[0]);
+      const y = Number(value[1]);
+      return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+    };
+    const surfaceModel: GradingEarthworkUx["surfaceModel"] | undefined = rawSurfaceModel.schema_version
+      ? {
+          model: String(rawSurfaceModel.model || "surface"),
+          sourceType: String(rawSurfaceModel.source_type || rawSurfaceConfidence.source_type || ""),
+          controlVerified: Boolean(rawSurfaceModel.control_verified || rawSurfaceConfidence.control_verified),
+          confidenceNote: String(rawSurfaceConfidence.not_survey_backed_reason || rawSurfaceModel.truth_label || ""),
+          contours: Array.isArray(rawSurfaceModel.contours)
+            ? rawSurfaceModel.contours
+                .map((item) => {
+                  const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+                  const points = Array.isArray(rec.points)
+                    ? rec.points.map(parseSurfacePoint).filter((pt): pt is [number, number] => Boolean(pt))
+                    : [];
+                  const level = Number(rec.level);
+                  return Number.isFinite(level) && points.length >= 2 ? { level, points } : null;
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .slice(0, 180)
+            : [],
+          spotElevations: Array.isArray(rawSurfaceModel.spot_elevations)
+            ? rawSurfaceModel.spot_elevations
+                .map((item) => {
+                  const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+                  const x = Number(rec.x);
+                  const y = Number(rec.y);
+                  const z = Number(rec.z);
+                  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x, y, z } : null;
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .slice(0, 48)
+            : [],
+          slopeArrows: Array.isArray(rawSurfaceModel.slope_arrows)
+            ? rawSurfaceModel.slope_arrows
+                .map((item) => {
+                  const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+                  const x = Number(rec.x);
+                  const y = Number(rec.y);
+                  const dx = Number(rec.dx);
+                  const dy = Number(rec.dy);
+                  const slopePct = Number(rec.slope_pct);
+                  return [x, y, dx, dy, slopePct].every(Number.isFinite) ? { x, y, dx, dy, slopePct } : null;
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .slice(0, 64)
+            : [],
+          flowPaths: Array.isArray(rawSurfaceModel.flow_paths)
+            ? rawSurfaceModel.flow_paths
+                .map((item, index) => {
+                  const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+                  const points = Array.isArray(rec.points)
+                    ? rec.points
+                        .map((point) => {
+                          const pointRec = point && typeof point === "object" ? (point as Record<string, unknown>) : {};
+                          const x = Number(pointRec.x);
+                          const y = Number(pointRec.y);
+                          const z = Number(pointRec.z);
+                          return Number.isFinite(x) && Number.isFinite(y) ? { x, y, z: Number.isFinite(z) ? z : undefined } : null;
+                        })
+                        .filter((point): point is NonNullable<typeof point> => Boolean(point))
+                    : [];
+                  return points.length >= 2 ? { id: String(rec.id || `flow-${index}`), points } : null;
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .slice(0, 16)
+            : [],
+          comparisonCells: Array.isArray(rawSurfaceComparison.cells)
+            ? rawSurfaceComparison.cells
+                .map((item) => {
+                  const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+                  const x = Number(rec.x);
+                  const y = Number(rec.y);
+                  const deltaFt = Number(rec.delta_ft);
+                  const mode = String(rec.mode || "balanced");
+                  const normalizedMode: "cut" | "fill" | "balanced" =
+                    mode === "cut" || mode === "fill" ? mode : "balanced";
+                  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(deltaFt)
+                    ? ({ x, y, deltaFt, mode: normalizedMode } satisfies {
+                        x: number;
+                        y: number;
+                        deltaFt: number;
+                        mode: "cut" | "fill" | "balanced";
+                      })
+                    : null;
+                })
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .slice(0, 96)
+            : [],
+        }
+      : undefined;
     const gradeRangeFt = Math.max(
       1,
       Number(surfaceControls.grade_range_ft ?? proposedSurface.range_z ?? existingSurface.range_z ?? 6),
@@ -12859,6 +12966,7 @@ function PerformanceAIDashboardView({
                 ? "Balanced haul"
                 : "Haul pending",
       },
+      surfaceModel,
     };
   }, [
     buildingPlacements,

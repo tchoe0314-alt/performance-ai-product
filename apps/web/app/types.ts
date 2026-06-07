@@ -1956,4 +1956,15 @@ export type GradingEarthworkUx = {
     direction: "export" | "import" | "balanced" | "unknown";
     label: string;
   };
+  surfaceModel?: {
+    model?: string;
+    sourceType?: string;
+    controlVerified?: boolean;
+    confidenceNote?: string;
+    contours: Array<{ level: number; points: Array<[number, number]> }>;
+    spotElevations: Array<{ x: number; y: number; z: number }>;
+    slopeArrows: Array<{ x: number; y: number; dx: number; dy: number; slopePct: number }>;
+    flowPaths: Array<{ id: string; points: Array<{ x: number; y: number; z?: number }> }>;
+    comparisonCells: Array<{ x: number; y: number; deltaFt: number; mode: "cut" | "fill" | "balanced" }>;
+  };
 };

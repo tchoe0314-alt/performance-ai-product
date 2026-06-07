@@ -334,6 +334,7 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   previewQuality,
+  previewLabelDensity,
   systemStatuses,
   hasTerrainSource,
   hasGeneratedPlan,
@@ -861,6 +862,7 @@ export default function PreviewPanel({
     previewMode === "2d" &&
     Boolean(gradingEarthworkUx) &&
     (hasGradingSurface || systemStatuses.grading === "fresh" || previewQuality === "high");
+  const surfaceModel = gradingEarthworkUx?.surfaceModel;
   const heatmapFill = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
     if (mode === "cut") return "rgba(239, 68, 68, 0.2)";
     if (mode === "fill") return "rgba(14, 165, 233, 0.2)";
@@ -5665,6 +5667,99 @@ export default function PreviewPanel({
                             })}
                           </g>
                         ) : null}
+                        {surfaceModel ? (
+                          <g data-testid="surface-model-overlay">
+                            {surfaceModel.comparisonCells.map((cell, idx) => {
+                              const [x, y] = siteTupleToPercent([cell.x, cell.y], currentSiteSize);
+                              const fill =
+                                cell.mode === "cut"
+                                  ? "rgba(220,38,38,0.35)"
+                                  : cell.mode === "fill"
+                                    ? "rgba(2,132,199,0.35)"
+                                    : "rgba(22,163,74,0.28)";
+                              return (
+                                <circle
+                                  key={`surface-compare-${idx}`}
+                                  cx={x}
+                                  cy={y}
+                                  r={0.72}
+                                  fill={fill}
+                                  stroke="rgba(255,255,255,0.75)"
+                                  strokeWidth={0.18}
+                                />
+                              );
+                            })}
+                            {surfaceModel.contours.map((contour, idx) => {
+                              const points = contour.points.map((pt) => siteTupleToPercent(pt, currentSiteSize).join(",")).join(" ");
+                              if (!points) return null;
+                              return (
+                                <polyline
+                                  key={`surface-contour-${idx}`}
+                                  points={points}
+                                  fill="none"
+                                  stroke="#475569"
+                                  strokeWidth={0.32}
+                                  strokeOpacity={0.72}
+                                />
+                              );
+                            })}
+                            {surfaceModel.flowPaths.map((path) => {
+                              const points = path.points.map((pt) => siteTupleToPercent([pt.x, pt.y], currentSiteSize).join(",")).join(" ");
+                              if (!points) return null;
+                              return (
+                                <polyline
+                                  key={`surface-flow-${path.id}`}
+                                  points={points}
+                                  fill="none"
+                                  stroke="#0f766e"
+                                  strokeWidth={0.58}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeDasharray="1.4 0.8"
+                                />
+                              );
+                            })}
+                            {surfaceModel.slopeArrows.map((arrow, idx) => {
+                              const [x, y] = siteTupleToPercent([arrow.x, arrow.y], currentSiteSize);
+                              const scale = Math.min(2.7, Math.max(1.1, arrow.slopePct / 3));
+                              const x2 = x + arrow.dx * scale;
+                              const y2 = y + arrow.dy * scale;
+                              return (
+                                <g key={`surface-slope-${idx}`}>
+                                  <line
+                                    x1={x}
+                                    y1={y}
+                                    x2={x2}
+                                    y2={y2}
+                                    stroke="#0f766e"
+                                    strokeWidth={0.36}
+                                    strokeLinecap="round"
+                                  />
+                                  <circle cx={x2} cy={y2} r={0.32} fill="#0f766e" />
+                                </g>
+                              );
+                            })}
+                            {previewLabelDensity !== "low"
+                              ? surfaceModel.spotElevations.slice(0, previewLabelDensity === "high" ? 28 : 12).map((spot, idx) => {
+                                  const [x, y] = siteTupleToPercent([spot.x, spot.y], currentSiteSize);
+                                  return (
+                                    <g key={`surface-spot-${idx}`}>
+                                      <circle cx={x} cy={y} r={0.48} fill="#111827" />
+                                      <text
+                                        x={x + 0.85}
+                                        y={y - 0.65}
+                                        fontSize="2.05"
+                                        fill="#111827"
+                                        fontWeight={700}
+                                      >
+                                        {spot.z.toFixed(1)}
+                                      </text>
+                                    </g>
+                                  );
+                                })
+                              : null}
+                          </g>
+                        ) : null}
                         {(surveyPoints ?? []).length
                           ? (surveyPoints ?? []).slice(0, 1500).map((pt, idx) => {
                               const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
@@ -5869,7 +5964,18 @@ export default function PreviewPanel({
                             <span className="h-2 w-2 rounded-sm bg-emerald-500/70" />
                             Balanced
                           </span>
+                          {surfaceModel ? (
+                            <span className="inline-flex items-center gap-1 text-teal-700">
+                              <span className="h-2 w-2 rounded-sm bg-teal-600/70" />
+                              {surfaceModel.model?.toUpperCase() || "SURFACE"}
+                            </span>
+                          ) : null}
                         </div>
+                        {surfaceModel ? (
+                          <p className="mt-2 text-[10px] font-medium text-slate-500">
+                            Source: {surfaceModel.sourceType || "surface"} · Control {surfaceModel.controlVerified ? "verified" : "not verified"}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                     <div

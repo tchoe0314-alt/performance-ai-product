@@ -22,7 +22,7 @@ from core.config import (
 from core.geometry_core import Point3D, ProjectModel, ZoneType
 from engines.contour_engine import contour_segments
 from engines.grading_engine import GradeElement
-from engines.surface_engine import GridSurface, SurveyPoint, SurfaceEngine
+from engines.surface_engine import Breakline, GridSurface, SurveyPoint, SurfaceEngine, compare_surfaces, serialize_tin_surface
 from .terrain_provider import build_terrain_surface, normalize_surface
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
@@ -31,6 +31,47 @@ from .production_depth import build_grading_detail_controls
 
 MAX_TERRAIN_GRID_CELLS = 12000
 MAX_TERRAIN_GRID_AXIS = 140
+
+
+def _survey_control_verified(meta: Dict[str, Any], site_inputs: Dict[str, Any]) -> bool:
+    control = safe_dict(site_inputs.get("survey_control_package")) or safe_dict(meta.get("survey_control_package"))
+    return bool(control.get("control_verified") and (control.get("production_usable") is not False))
+
+
+def _surface_breaklines(site_inputs: Dict[str, Any], meta: Dict[str, Any]) -> List[Breakline]:
+    raw = safe_list(site_inputs.get("breaklines")) or safe_list(meta.get("breaklines")) or safe_list(safe_dict(meta.get("surface_controls")).get("breaklines"))
+    breaklines: List[Breakline] = []
+    for index, item in enumerate(raw, start=1):
+        rec = safe_dict(item)
+        raw_points = safe_list(rec.get("points"))
+        points: List[Tuple[float, float, float]] = []
+        for pt in raw_points:
+            if isinstance(pt, dict):
+                points.append((safe_float(pt.get("x")), safe_float(pt.get("y")), safe_float(pt.get("z"))))
+            elif isinstance(pt, (list, tuple)) and len(pt) >= 3:
+                points.append((safe_float(pt[0]), safe_float(pt[1]), safe_float(pt[2])))
+        if len(points) >= 2:
+            breaklines.append(
+                Breakline(
+                    points=points,
+                    breakline_id=safe_str(rec.get("id") or rec.get("breakline_id"), f"breakline-{index}"),
+                    source=safe_str(rec.get("source"), "surface_breakline"),
+                )
+            )
+    return breaklines
+
+
+def _surface_boundary(site_inputs: Dict[str, Any], meta: Dict[str, Any]) -> Optional[List[Tuple[float, float]]]:
+    raw = safe_list(site_inputs.get("surface_boundary")) or safe_list(meta.get("surface_boundary"))
+    if not raw:
+        raw = safe_list(site_inputs.get("site_boundary")) or safe_list(meta.get("site_boundary"))
+    boundary: List[Tuple[float, float]] = []
+    for pt in raw:
+        if isinstance(pt, dict):
+            boundary.append((safe_float(pt.get("x")), safe_float(pt.get("y"))))
+        elif isinstance(pt, (list, tuple)) and len(pt) >= 2:
+            boundary.append((safe_float(pt[0]), safe_float(pt[1])))
+    return boundary if len(boundary) >= 3 else None
 
 
 def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
@@ -194,18 +235,31 @@ def build_existing_surface(
             parsed_points.append(SurveyPoint(x=x, y=y, z=z))
         if len(parsed_points) >= 3:
             try:
-                engine = SurfaceEngine(parsed_points)
+                control_verified = _survey_control_verified(meta, site_inputs)
+                engine = SurfaceEngine(
+                    parsed_points,
+                    breaklines=_surface_breaklines(site_inputs, meta),
+                    boundary=_surface_boundary(site_inputs, meta),
+                    control_verified=control_verified,
+                    source_type="survey",
+                )
                 survey_surface = engine.build_grid(
                     x_min=x_min,
                     y_min=y_min,
                     x_max=x_max,
                     y_max=y_max,
                     cell_size=cell,
+                    method="tin",
                 )
                 profile["survey_point_count"] = len(parsed_points)
                 profile["survey_used"] = True
-                profile["source_quality"] = "survey"
-                profile["source_detail"] = "Survey/topo points"
+                profile["survey_control_verified"] = control_verified
+                profile["source_quality"] = "survey_backed" if control_verified else "survey_unverified"
+                profile["source_detail"] = (
+                    "Survey/topo points with verified control"
+                    if control_verified
+                    else "Survey/topo points; verified control not attached"
+                )
                 setattr(survey_surface, "_inferred_profile", profile)
                 return survey_surface
             except Exception as exc:
@@ -734,6 +788,45 @@ def canonical_grading_payload(
         existing_low_points=existing_low_points,
         proposed_range_ft=proposed_max - proposed_min,
     )
+    tin_surface = getattr(existing_surface, "_tin_surface", None) if existing_surface is not None else None
+    surface_model: Dict[str, Any] = {}
+    if tin_surface is not None:
+        surface_model = serialize_tin_surface(
+            tin_surface,
+            contour_interval=max(0.5, safe_float(CONTOUR_INTERVAL, 2.0)),
+            spot_spacing=max(10.0, safe_float(getattr(existing_surface, "cell_size", 10.0), 10.0) * 3.0),
+            flow_step=max(10.0, safe_float(getattr(existing_surface, "cell_size", 10.0), 10.0) * 3.0),
+            max_items=120,
+        )
+    elif existing_surface is not None:
+        surface_model = {
+            "schema_version": "surface_artifact_v1",
+            "model": "grid",
+            "source_type": safe_str(inferred_profile_dict.get("source_quality"), "assumed"),
+            "control_verified": bool(inferred_profile_dict.get("survey_control_verified")),
+            "metadata": {
+                "point_count": 0,
+                "triangle_count": 0,
+                "truth_label": "Grid surface is available; TIN topology requires supplied point control.",
+            },
+            "bounds": [
+                round(safe_float(getattr(existing_surface, "x_min", 0.0), 0.0), 3),
+                round(safe_float(getattr(existing_surface, "y_min", 0.0), 0.0), 3),
+                round(safe_float(getattr(existing_surface, "x_max", 0.0), 0.0), 3),
+                round(safe_float(getattr(existing_surface, "y_max", 0.0), 0.0), 3),
+            ],
+            "contours": [],
+            "spot_elevations": existing_high_points[:3] + existing_low_points[:3],
+            "slope_arrows": [],
+            "flow_paths": [],
+            "confidence": {
+                "source_type": safe_str(inferred_profile_dict.get("source_quality"), "assumed"),
+                "control_verified": bool(inferred_profile_dict.get("survey_control_verified")),
+                "not_survey_backed_reason": "" if inferred_profile_dict.get("survey_control_verified") else "verified survey/control is not attached",
+            },
+        }
+    if surface_model and existing_surface is not None and proposed_surface is not None:
+        surface_model["surface_comparison"] = compare_surfaces(existing_surface, proposed_surface, max_cells=96)
     return {
         "schema_version": "v1",
         "source": "grading_engine",
@@ -765,6 +858,7 @@ def canonical_grading_payload(
             "fill_cf": round(safe_float(getattr(result, "fill_volume", 0.0), 0.0), 3),
             "net_cf": round(safe_float(getattr(result, "net_volume", 0.0), 0.0), 3),
         },
+        "surface_model": surface_model,
         "grading_source_quality": safe_str(inferred_profile_dict.get("source_quality"), ""),
         "grading_source_detail": safe_str(inferred_profile_dict.get("source_detail"), ""),
         "source_quality": safe_str(inferred_profile_dict.get("source_quality"), ""),
