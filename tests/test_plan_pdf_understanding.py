@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import builtins
+import sys
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from backend.application.chat_workflows import decide_chat
+from backend.planning.plan_pdf_understanding import (
+    SOURCE_CONFIDENCE,
+    analyze_plan_pdf,
+    merge_plan_pdf_analysis_into_meta,
+)
+
+
+def _write_text_pdf(path: Path, lines: list[str]) -> None:
+    content = "BT /F1 12 Tf 72 720 Td " + " Tj 0 -18 Td ".join(f"({line})" for line in lines) + " Tj ET"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        f"<< /Length {len(content.encode('latin-1'))} >>\nstream\n{content}\nendstream".encode("latin-1"),
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out.extend(f"{index} 0 obj\n".encode("ascii"))
+        out.extend(obj)
+        out.extend(b"\nendobj\n")
+    xref = len(out)
+    out.extend(f"xref\n0 {len(objects)+1}\n0000000000 65535 f \n".encode("ascii"))
+    for offset in offsets[1:]:
+        out.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    out.extend(f"trailer << /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii"))
+    path.write_bytes(bytes(out))
+
+
+def _write_blank_pdf(path: Path) -> None:
+    _write_text_pdf(path, [])
+
+
+class FakeProjectStore:
+    def __init__(self, record: Dict[str, Any]) -> None:
+        self.record = record
+
+    def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        return self.record if self.record.get("user_id") == user_id and self.record.get("project_id") == project_id else None
+
+    def save_project(self, **kwargs: Any) -> Dict[str, Any]:
+        self.record = {
+            "project_id": kwargs["project_id"],
+            "user_id": kwargs["user_id"],
+            "name": kwargs["name"],
+            "description": kwargs["description"],
+            "session_id": kwargs["session_id"],
+            "tags": kwargs["tags"],
+            "project_input": kwargs["project_input"],
+            "latest_result": kwargs["latest_result"],
+            "session_state": kwargs["session_state"],
+            "metadata": kwargs["metadata"],
+        }
+        return self.record
+
+
+def test_embedded_text_pdf_extracts_title_notes_scale_and_dimensions(tmp_path: Path) -> None:
+    pdf = tmp_path / "Pool Geometric.pdf"
+    _write_text_pdf(
+        pdf,
+        [
+            "OWNER: ACME HOMES",
+            "SCALE: 1\" = 10'",
+            "POOL DECK ELEVATION 102.50",
+            "GENERAL NOTES",
+            "DETAIL A - POOL COPING",
+            "DIMENSION 24 ft",
+            "MATCHLINE SEE SHEET C2",
+        ],
+    )
+
+    analysis = analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="user_pool.pdf")
+
+    assert analysis["page_count"] == 1
+    assert analysis["source_confidence"] == SOURCE_CONFIDENCE
+    assert analysis["summary"]["title_block_count"] >= 1
+    assert analysis["summary"]["note_block_count"] >= 1
+    assert analysis["summary"]["scale_candidate_count"] >= 1
+    assert analysis["summary"]["dimension_count"] >= 1
+    assert analysis["editable_sheet"]["summary"]["editable_count"] >= 4
+    assert all(item["review_required"] for item in analysis["editable_sheet"]["elements"])
+
+
+def test_image_like_pdf_records_ocr_and_geometry_blockers(tmp_path: Path) -> None:
+    pdf = tmp_path / "scanned.pdf"
+    _write_blank_pdf(pdf)
+
+    analysis = analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="scan.pdf")
+
+    assert analysis["page_count"] == 1
+    assert "ocr_fallback_blocked:no_ocr_engine_configured" in analysis["blockers"]
+    assert "vector_geometry_extraction_blocked:no_vector_parser_configured" in analysis["blockers"]
+    assert analysis["summary"]["embedded_text_found"] is False
+
+
+def test_dependency_blocked_path_is_clean(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "blocked.pdf"
+    _write_text_pdf(pdf, ["SCALE: 1\" = 20'"])
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "pypdf":
+            raise ImportError("blocked")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    analysis = analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="blocked.pdf")
+
+    assert any(item.startswith("embedded_text_extraction_unavailable:pypdf_missing") for item in analysis["blockers"])
+    assert analysis["source_confidence"] == SOURCE_CONFIDENCE
+
+
+def test_merge_creates_candidate_review_and_source_confidence(tmp_path: Path) -> None:
+    pdf = tmp_path / "pool.pdf"
+    _write_text_pdf(pdf, ["OWNER: ACME HOMES", "SCALE: 1\" = 10'", "DIMENSION 24 ft"])
+    analysis = analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="pool.pdf")
+
+    meta = merge_plan_pdf_analysis_into_meta({}, analysis)
+    from backend.planning.candidate_review_inbox import build_candidate_review_inbox
+
+    inbox = build_candidate_review_inbox(meta)
+    assert inbox["candidate_count"] >= 3
+    assert any(str(item["candidate_type"]).startswith("plan_pdf_") for item in inbox["candidates"])
+    assert meta["source_confidence_map_v1"]["entries"][0]["source_type"] == SOURCE_CONFIDENCE
+
+
+def test_chat_answers_pdf_questions_and_edits_review_required_element(tmp_path: Path) -> None:
+    pdf = tmp_path / "pool.pdf"
+    _write_text_pdf(pdf, ["OWNER: OLD OWNER", "SCALE: 1\" = 10'", "POOL DECK ELEVATION 102.50"])
+    meta = merge_plan_pdf_analysis_into_meta({}, analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="pool.pdf"))
+    record = {
+        "project_id": "project_1",
+        "user_id": "user_1",
+        "name": "Pool",
+        "description": "",
+        "session_id": None,
+        "tags": [],
+        "project_input": {},
+        "latest_result": {"final_plan": {"actions": [], "meta": meta}},
+        "session_state": {},
+        "metadata": {},
+    }
+    store = FakeProjectStore(record)
+
+    summary = decide_chat(
+        {"message": "what is on this plan?", "context": {"current_project": {"project_id": "project_1"}}},
+        decide_chat_message=lambda payload: {},
+        project_store=store,
+        user_id="user_1",
+    )
+    assert "review-required plan PDF analysis" in summary["assistant_message"]
+
+    edited = decide_chat(
+        {"message": "edit the owner block to NEW OWNER", "context": {"current_project": {"project_id": "project_1"}}},
+        decide_chat_message=lambda payload: {},
+        project_store=store,
+        user_id="user_1",
+    )
+    assert edited["action_taken"] == "updated_pdf_derived_sheet_element"
+    elements = store.record["latest_result"]["final_plan"]["meta"]["plan_pdf_editable_sheet_v1"]["elements"]
+    assert any(item.get("text") == "NEW OWNER" and item.get("review_required") for item in elements)
+
+
+def test_pdf_analysis_never_allows_unsafe_approval_language(tmp_path: Path) -> None:
+    pdf = tmp_path / "sealed.pdf"
+    _write_text_pdf(pdf, ["ENGINEER SEAL", "SIGNATURE", "OWNER: ACME"])
+
+    analysis = analyze_plan_pdf(pdf, original_filename=pdf.name, stored_filename="sealed.pdf")
+
+    assert analysis["construction_release_allowed"] is False
+    assert analysis["contains_possible_stamp_seal_signature"] is True
+    assert "does not approve, stamp, seal, sign, certify" in analysis["truth_label"]

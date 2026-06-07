@@ -351,8 +351,52 @@ def _online_or_imported_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]
     return candidates
 
 
+def _plan_pdf_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    sheet = safe_dict(meta.get("plan_pdf_editable_sheet_v1"))
+    analysis = safe_dict(meta.get("plan_pdf_analysis_v1"))
+    source = safe_dict(analysis.get("source_pdf"))
+    candidates: List[Dict[str, Any]] = []
+    for idx, element in enumerate(safe_list(sheet.get("elements"))):
+        rec = safe_dict(element)
+        if not rec:
+            continue
+        element_id = safe_str(rec.get("element_id")) or _stable_id("plan_pdf_element", idx, rec.get("text"))
+        status = safe_str(rec.get("review_status") or rec.get("status") or "pending")
+        element_type = safe_str(rec.get("type"), "pdf_sheet_element")
+        text = safe_str(rec.get("text"))
+        label = f"PDF {element_type.replace('_', ' ')}"
+        if text:
+            label = f"{label}: {text[:80]}"
+        candidates.append(
+            _candidate(
+                candidate_id=element_id,
+                candidate_type=f"plan_pdf_{element_type}",
+                label=label,
+                source=safe_str(source.get("filename") or source.get("stored_filename") or "uploaded plan PDF"),
+                provider="plan_pdf_analysis_v1",
+                source_url=safe_str(source.get("file_url")),
+                source_date=safe_str(analysis.get("created_at")),
+                confidence=safe_str(rec.get("source_confidence"), "imported_pdf_review_required"),
+                status=status,
+                object_count=1,
+                blocker_review_reason=(
+                    "PDF-derived sheet element must be reviewed before use. "
+                    "It is not survey-backed, engineer-approved, stamped, sealed, signed, or construction-ready."
+                ),
+                source_record=rec,
+                audit_trail=safe_list(rec.get("audit_trail")),
+            )
+        )
+    return candidates
+
+
 def build_candidate_review_inbox(meta: Dict[str, Any]) -> Dict[str, Any]:
-    candidates = _map_feature_candidates(meta) + _standards_candidates(meta) + _online_or_imported_candidates(meta)
+    candidates = (
+        _map_feature_candidates(meta)
+        + _standards_candidates(meta)
+        + _online_or_imported_candidates(meta)
+        + _plan_pdf_candidates(meta)
+    )
     by_id: Dict[str, Dict[str, Any]] = {}
     for candidate in candidates:
         by_id[safe_str(candidate.get("candidate_id"))] = candidate

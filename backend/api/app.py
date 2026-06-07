@@ -12,7 +12,7 @@ import hashlib
 import threading
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -64,6 +64,12 @@ from backend.application.memory_logging import (
     record_process_start,
     runtime_monitoring_snapshot,
     runtime_process_monitoring_snapshot,
+)
+from backend.application.plan_pdf_workflows import (
+    download_project_plan_pdf_report as application_download_project_plan_pdf_report,
+    get_project_plan_pdf_report as application_get_project_plan_pdf_report,
+    update_project_plan_pdf_element as application_update_project_plan_pdf_element,
+    upload_plan_pdf_file as application_upload_plan_pdf_file,
 )
 from backend.planning.alpha_monitoring import build_alpha_monitoring_report
 from backend.application.job_workflows import (
@@ -338,6 +344,12 @@ class CandidateReviewPayload(BaseModel):
     candidate_ids: List[str] = Field(default_factory=list)
     action: str
     reason: str = ""
+
+
+class PlanPdfElementUpdatePayload(BaseModel):
+    text: Optional[str] = None
+    review_status: Optional[str] = None
+    bbox: Optional[Dict[str, Any]] = None
 
 
 class QueueOrchestratePayload(BaseModel):
@@ -1007,6 +1019,22 @@ async def upload_existing_conditions(
         upload_dir=UPLOAD_DIR,
         file=file,
         current_user=current_user,
+    )
+
+
+@app.post("/api/upload-plan-pdf")
+async def upload_plan_pdf(
+    file: UploadFile = File(...),
+    project_id: str = Form(default=""),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("upload")),
+) -> Dict[str, Any]:
+    return application_upload_plan_pdf_file(
+        upload_dir=UPLOAD_DIR,
+        file=file,
+        current_user=current_user,
+        project_store=PROJECT_STORE,
+        project_id=project_id,
     )
 
 
@@ -1707,6 +1735,40 @@ def review_project_candidates(
         action=payload.action,
         reason=payload.reason,
         reviewer_id=str(current_user.get("user_id") or current_user.get("email") or ""),
+    )
+
+
+@app.get("/api/projects/{project_id}/plan-pdf/report")
+def get_project_plan_pdf_report(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return application_get_project_plan_pdf_report(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
+
+
+@app.get("/api/projects/{project_id}/plan-pdf/report/download")
+def download_project_plan_pdf_report(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    return application_download_project_plan_pdf_report(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
+
+
+@app.patch("/api/projects/{project_id}/plan-pdf/elements/{element_id}")
+def update_project_plan_pdf_element(
+    project_id: str,
+    element_id: str,
+    payload: PlanPdfElementUpdatePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    return application_update_project_plan_pdf_element(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+        element_id=element_id,
+        updates=_model_to_dict(payload),
     )
 
 

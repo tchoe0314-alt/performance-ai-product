@@ -27,6 +27,10 @@ from backend.planning.source_confidence_map import (
     attach_source_confidence_map,
     build_source_confidence_map,
 )
+from backend.planning.plan_pdf_understanding import (
+    SOURCE_CONFIDENCE as PLAN_PDF_SOURCE_CONFIDENCE,
+    update_editable_sheet_element,
+)
 from parsers.chat_intent_parser import build_chat_memory_summary
 
 
@@ -1622,6 +1626,213 @@ def _source_confidence_chat_response(
     )
 
 
+def _plan_pdf_text(meta: Dict[str, Any], bucket: str, limit: int = 8) -> List[str]:
+    analysis = _safe_dict(meta.get("plan_pdf_analysis_v1"))
+    values: List[str] = []
+    for item in _safe_list(_safe_dict(analysis.get("classifications")).get(bucket))[:limit]:
+        text = safe_str(_safe_dict(item).get("text"))
+        if text and text not in values:
+            values.append(text)
+    return values
+
+
+def _plan_pdf_elements(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [_safe_dict(item) for item in _safe_list(_safe_dict(meta.get("plan_pdf_editable_sheet_v1")).get("elements")) if _safe_dict(item)]
+
+
+def _plan_pdf_target_element(meta: Dict[str, Any], message: str) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    elements = _plan_pdf_elements(meta)
+    typed = {
+        "owner": ["title_block_field"],
+        "title block": ["title_block_field"],
+        "elevation": ["elevation_callout"],
+        "elev": ["elevation_callout"],
+        "label": ["text_label"],
+        "note": ["note"],
+        "detail": ["detail_block"],
+        "dimension": ["dimension"],
+    }
+    for phrase, types in typed.items():
+        if phrase not in normalized:
+            continue
+        for element in elements:
+            if safe_str(element.get("type")) in types or phrase in _normalized_text(safe_str(element.get("text"))):
+                return element
+    return elements[0] if elements else None
+
+
+def _plan_pdf_replacement(message: str) -> str:
+    text = str(message or "").strip()
+    quoted = re.findall(r"[\"']([^\"']{1,180})[\"']", text)
+    if quoted:
+        return quoted[-1].strip()
+    match = re.search(r"\b(?:to|as)\s+(.{1,180})$", text, re.IGNORECASE)
+    return match.group(1).strip(" .") if match else ""
+
+
+def _plan_pdf_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_pdf = any(
+        phrase in normalized
+        for phrase in (
+            "plan pdf",
+            "this plan",
+            "on this plan",
+            "pdf",
+            "owner block",
+            "title block",
+            "extract the dimensions",
+            "what scale",
+            "what can you not read",
+            "make this detail editable",
+            "turn this pdf into editable plan objects",
+            "pool deck elevation",
+        )
+    )
+    if not asks_pdf:
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project with an uploaded plan PDF before I can answer PDF understanding questions.",
+            intent="plan_pdf_understanding",
+            run_mode="none",
+            needs_clarification=True,
+            action_taken="blocked_missing_plan_pdf_project",
+            action_blocked_reason="No saved project record is available.",
+            required_missing_inputs=["saved project with plan PDF analysis"],
+            affected_systems=["plan_pdf_understanding", "editable_sheet"],
+            next_best_action="Upload a plan PDF into a saved project, then ask again.",
+            confidence=0.3,
+            blocker="No saved project record is available.",
+        )
+    latest_result = _safe_dict(record.get("latest_result"))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    meta = _safe_dict(final_plan.get("meta"))
+    analysis = _safe_dict(meta.get("plan_pdf_analysis_v1"))
+    if not analysis:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I do not have a plan PDF analysis saved on this project yet.",
+            intent="plan_pdf_understanding",
+            run_mode="none",
+            needs_clarification=True,
+            action_taken="blocked_missing_plan_pdf_analysis",
+            action_blocked_reason="No plan_pdf_analysis_v1 record is attached to the project.",
+            required_missing_inputs=["uploaded plan PDF"],
+            affected_systems=["plan_pdf_understanding", "editable_sheet"],
+            next_best_action="Upload a plan PDF from the Data panel.",
+            confidence=0.35,
+            blocker="No plan_pdf_analysis_v1 record is attached to the project.",
+        )
+    wants_edit = any(token in normalized for token in ("change", "edit", "accept", "reject", "make this detail editable"))
+    if wants_edit and project_store and user_id:
+        element = _plan_pdf_target_element(meta, message)
+        if element:
+            updates: Dict[str, Any] = {}
+            replacement = _plan_pdf_replacement(message)
+            if "reject" in normalized:
+                updates["review_status"] = "rejected"
+            elif "accept" in normalized or "make this detail editable" in normalized:
+                updates["review_status"] = "accepted"
+            elif replacement:
+                updates["text"] = replacement
+            if updates:
+                try:
+                    updated_meta = update_editable_sheet_element(meta, safe_str(element.get("element_id")), updates)
+                    updated_latest = deepcopy(latest_result)
+                    updated_plan = deepcopy(final_plan)
+                    updated_plan["meta"] = updated_meta
+                    updated_latest["final_plan"] = updated_plan
+                    _save_project_record(
+                        project_store,
+                        record,
+                        project_input=deepcopy(_safe_dict(record.get("project_input"))),
+                        latest_result=updated_latest,
+                    )
+                except Exception as exc:
+                    return _truthful_decision_update(
+                        {},
+                        assistant_message=f"I could not update that PDF-derived element: {exc}",
+                        intent="plan_pdf_edit",
+                        run_mode="none",
+                        needs_clarification=False,
+                        action_taken="blocked_pdf_element_update_failed",
+                        action_blocked_reason=str(exc),
+                        affected_systems=["editable_sheet"],
+                        next_best_action="Use another extracted element or update it from the sheet inspector.",
+                        confidence=0.4,
+                        blocker=str(exc),
+                    )
+                changed = safe_str(updates.get("text")) or safe_str(updates.get("review_status"))
+                return _truthful_decision_update(
+                    {},
+                    assistant_message=(
+                        f"Updated PDF-derived element {safe_str(element.get('element_id'))} to {changed}. "
+                        "It remains review-required imported PDF evidence, not survey-backed or engineer-approved."
+                    ),
+                    intent="plan_pdf_edit",
+                    run_mode="plan_pdf_editable_sheet_update",
+                    needs_clarification=False,
+                    action_taken="updated_pdf_derived_sheet_element",
+                    affected_systems=["editable_sheet", "candidate_review_inbox"],
+                    next_best_action="Review and accept/reject the updated extraction candidate before relying on it.",
+                    command_payload_updates={"ui_navigation_target": "data", "requested_ui_mode": "data"},
+                    state_changed=True,
+                    referenced_object_ids=[safe_str(element.get("element_id"))],
+                    confidence=0.72,
+                )
+    summary = _safe_dict(analysis.get("summary"))
+    blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
+    if "what can you not read" in normalized or "blocker" in normalized:
+        lines = ["Blocked or uncertain PDF capabilities:"] + [f"- {item}" for item in blockers[:10]]
+    elif "scale" in normalized:
+        values = _plan_pdf_text(meta, "scale_candidates")
+        lines = ["Scale candidates from the PDF:"] + ([f"- {item}" for item in values] if values else ["- No scale text was extracted."])
+    elif "dimension" in normalized:
+        values = _plan_pdf_text(meta, "dimensions")
+        lines = ["Dimension candidates from the PDF:"] + ([f"- {item}" for item in values] if values else ["- No dimension text was extracted."])
+    elif "turn this pdf into editable" in normalized or "make this detail editable" in normalized:
+        sheet_summary = _safe_dict(_safe_dict(meta.get("plan_pdf_editable_sheet_v1")).get("summary"))
+        lines = [
+            f"Editable PDF-derived sheet objects exist: {int(sheet_summary.get('element_count') or 0)} total, {int(sheet_summary.get('editable_count') or 0)} editable text/note/detail candidates.",
+            "Every element is review-required until accepted/rejected by a user or external reviewer.",
+        ]
+    else:
+        lines = [
+            f"I found a review-required plan PDF analysis with {int(analysis.get('page_count') or 0)} page(s).",
+            (
+                f"Extracted candidates: {int(summary.get('title_block_count') or 0)} title block, "
+                f"{int(summary.get('note_block_count') or 0)} note block, "
+                f"{int(summary.get('detail_block_count') or 0)} detail, "
+                f"{int(summary.get('dimension_count') or 0)} dimension, "
+                f"{int(summary.get('elevation_callout_count') or 0)} elevation, "
+                f"{int(summary.get('scale_candidate_count') or 0)} scale."
+            ),
+            "PDF-derived data remains imported_pdf_review_required and is not construction approval.",
+        ]
+    return _truthful_decision_update(
+        {},
+        assistant_message="\n".join(lines),
+        intent="plan_pdf_understanding",
+        run_mode="none",
+        needs_clarification=False,
+        action_taken="answered_plan_pdf_understanding_question",
+        affected_systems=["plan_pdf_understanding", "editable_sheet"],
+        assumptions=["Answers are based only on saved PDF extraction evidence."],
+        next_best_action="Review extracted candidates in the Data panel and verify against survey/control before relying on them.",
+        command_payload_updates={"ui_navigation_target": "data", "requested_ui_mode": "data", "source_confidence": PLAN_PDF_SOURCE_CONFIDENCE},
+        confidence=0.68,
+    )
+
+
 def decide_chat(
     payload_data: Dict[str, Any],
     *,
@@ -1646,6 +1857,14 @@ def decide_chat(
     if record:
         context = _canonical_chat_context(context, record)
         payload["context"] = context
+    plan_pdf_decision = _plan_pdf_chat_response(
+        message=message,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if plan_pdf_decision is not None:
+        return _enrich_response_contract(plan_pdf_decision, message=message)
     online_discovery_decision = _online_discovery_chat_response(
         message=message,
         record=record,
