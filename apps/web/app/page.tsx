@@ -1163,7 +1163,9 @@ function PerformanceAIDashboardView({
   ]);
   const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
   const [clientMounted, setClientMounted] = useState(false);
-  const effectiveDemoWorkspaceEnabled = forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled;
+  const queryDemoWorkspaceEnabled = clientMounted && isDemoWorkspaceQuery();
+  const effectiveDemoWorkspaceEnabled =
+    forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled || queryDemoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [, setChatCollapsed] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
@@ -1565,7 +1567,7 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     setDemoWorkspaceEnabled(forceDemoWorkspace || isDemoWorkspaceQuery());
-  }, [forceDemoWorkspace, routeDemoWorkspaceEnabled]);
+  }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled]);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -2563,7 +2565,8 @@ function PerformanceAIDashboardView({
   });
 
   useEffect(() => {
-    if (!effectiveDemoWorkspaceEnabled || demoWorkspaceSeededRef.current) return;
+    if (demoWorkspaceSeededRef.current) return;
+    if (!forceDemoWorkspace && !routeDemoWorkspaceEnabled && !isDemoWorkspaceQuery()) return;
     const demoPlacements = createDemoPlacements();
     const demoResult = createDemoPlanResponse();
     const demoProjectInput: ProjectInput = {
@@ -2666,7 +2669,7 @@ function PerformanceAIDashboardView({
     setChatMessages(demoThread);
     chatMessagesRef.current = demoThread;
     setStatusMessage("Demo workspace loaded for UI QA.");
-  }, [effectiveDemoWorkspaceEnabled]);
+  }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled]);
 
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
@@ -6404,8 +6407,13 @@ function PerformanceAIDashboardView({
           : "approximate",
       );
       if (alignmentLocked !== null) {
-        const lotW = parsePositiveNumber(lotWidth);
-        const lotH = parsePositiveNumber(lotHeight);
+        const projectLot: { w?: string | number | null; h?: string | number | null } =
+          currentProject?.project_input?.manual_fields?.lot &&
+          typeof currentProject.project_input.manual_fields.lot === "object"
+            ? currentProject.project_input.manual_fields.lot
+            : {};
+        const lotW = parsePositiveNumber(lotWidth) ?? parsePositiveNumber(projectLot.w);
+        const lotH = parsePositiveNumber(lotHeight) ?? parsePositiveNumber(projectLot.h);
         if (alignmentLocked && (!lotW || !lotH)) {
           setSiteScaleLocked(false);
         } else {
