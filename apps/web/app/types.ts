@@ -374,6 +374,7 @@ export type CandidateReviewItem = {
   source_date?: string;
   confidence?: number | string;
   status?: "accepted" | "rejected" | "pending" | string;
+  object_count?: number;
   blocker_review_reason?: string;
   review_required?: boolean;
   accepted_as?: string;

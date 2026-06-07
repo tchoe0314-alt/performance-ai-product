@@ -2233,6 +2233,7 @@ function PerformanceAIDashboardView({
         source_url: String(rec.source_url ?? ""),
         confidence: typeof rec.confidence === "number" || typeof rec.confidence === "string" ? rec.confidence : "unknown",
         status: String(rec.acceptance_status ?? "pending"),
+        object_count: typeof rec.object_count === "number" ? rec.object_count : 1,
         blocker_review_reason: Array.isArray(rec.blockers) && rec.blockers.length
           ? rec.blockers.map(String).join("; ")
           : "Map/GIS candidate needs project review before use.",
@@ -2254,6 +2255,7 @@ function PerformanceAIDashboardView({
         source_date: String(rec.retrieved_date ?? rec.retrieved_at ?? ""),
         confidence: typeof rec.confidence === "number" || typeof rec.confidence === "string" ? rec.confidence : "unknown",
         status: String(rec.acceptance_status ?? rec.status ?? "pending"),
+        object_count: 1,
         blocker_review_reason: "Candidate standards need explicit review before QA can rely on them.",
       } satisfies CandidateReviewItem;
     });
@@ -13346,7 +13348,7 @@ function PerformanceAIDashboardView({
                                       {status}
                                     </span>
                                   </div>
-                                  <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                                  <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
                                     <p className="min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
                                       <span className="font-semibold text-slate-400">Source </span>
                                       <span className="break-words">{candidate.source || candidate.source_url || "Unknown"}</span>
@@ -13354,6 +13356,10 @@ function PerformanceAIDashboardView({
                                     <p className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
                                       <span className="font-semibold text-slate-400">Confidence </span>
                                       {String(candidate.confidence ?? "unknown")}
+                                    </p>
+                                    <p className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
+                                      <span className="font-semibold text-slate-400">Objects </span>
+                                      {Number(candidate.object_count ?? 1)}
                                     </p>
                                   </div>
                                   <p className="mt-2 text-xs font-medium text-slate-500">

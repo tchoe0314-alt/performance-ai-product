@@ -19,9 +19,41 @@ MAP_KIND_BY_FEATURE_TYPE = {
     "parcel_or_site_boundary": "parcel_site_boundary",
     "building_footprint": "building_footprint",
     "road_or_drive": "road_row",
+    "road_row": "road_row",
+    "right_of_way": "road_row",
+    "parking": "parking_object",
+    "parking_area": "parking_object",
+    "parking_stall": "parking_object",
+    "object": "parking_object",
+    "detected_object": "parking_object",
+    "terrain": "terrain_dem",
+    "dem": "terrain_dem",
+    "lidar": "terrain_dem",
     "water/pond/basin": "floodplain_wetland_constraint",
+    "floodplain": "floodplain_wetland_constraint",
+    "wetland": "floodplain_wetland_constraint",
     "constraint_area": "floodplain_wetland_constraint",
     "utility": "utility",
+}
+
+IMPORT_SOURCE_TYPE_BY_CANDIDATE_TYPE = {
+    "surface_xyz_csv": "terrain_dem",
+    "geotiff_surface": "terrain_dem",
+    "las_point_cloud": "terrain_dem",
+    "lidar_point_cloud": "terrain_dem",
+    "dem_raster": "terrain_dem",
+    "landxml": "uploaded_imported_layer",
+    "landxml_surface": "terrain_dem",
+    "dxf": "uploaded_imported_layer",
+    "dxf_existing_conditions": "uploaded_imported_layer",
+    "dwg_existing_conditions": "uploaded_imported_layer",
+    "geojson": "uploaded_imported_layer",
+    "geospatial_vector": "uploaded_imported_layer",
+    "shapefile": "uploaded_imported_layer",
+    "survey_csv": "uploaded_imported_layer",
+    "image_detection": "uploaded_image_map_detection",
+    "map_snapshot_detection": "uploaded_image_map_detection",
+    "uploaded_image_detection": "uploaded_image_map_detection",
 }
 
 
@@ -63,6 +95,7 @@ def _candidate(
     source_date: str = "",
     confidence: Any = "",
     status: str = "pending",
+    object_count: Any = None,
     blocker_review_reason: str = "",
     source_record: Optional[Dict[str, Any]] = None,
     audit_trail: Optional[Iterable[Dict[str, Any]]] = None,
@@ -77,6 +110,7 @@ def _candidate(
         "source_date": source_date,
         "confidence": _confidence(confidence),
         "status": _status(status),
+        "object_count": max(1, int(safe_float(object_count))) if object_count not in (None, "") else 1,
         "blocker_review_reason": blocker_review_reason
         or "Review and accept, reject, or leave pending before relying on this candidate.",
         "review_required": True,
@@ -93,7 +127,7 @@ def _candidate(
 
 
 def _map_candidate_type(candidate: Dict[str, Any]) -> str:
-    feature_type = safe_str(candidate.get("feature_type"))
+    feature_type = safe_str(candidate.get("feature_type") or candidate.get("candidate_type"))
     mapped = MAP_KIND_BY_FEATURE_TYPE.get(feature_type, "uploaded_imported_layer")
     layer_hint = " ".join(
         safe_str(value).lower()
@@ -108,7 +142,25 @@ def _map_candidate_type(candidate: Dict[str, Any]) -> str:
         return "utility"
     if mapped == "floodplain_wetland_constraint" and ("row" in layer_hint or "right_of_way" in layer_hint):
         return "road_row"
+    if mapped == "uploaded_imported_layer" and any(token in layer_hint for token in ("parking", "stall", "vehicle")):
+        return "parking_object"
+    if mapped == "uploaded_imported_layer" and any(token in layer_hint for token in ("terrain", "dem", "lidar", "contour", "surface")):
+        return "terrain_dem"
+    if mapped == "uploaded_imported_layer" and any(token in layer_hint for token in ("flood", "wetland", "constraint")):
+        return "floodplain_wetland_constraint"
     return mapped
+
+
+def _object_count(record: Dict[str, Any], *, fallback: int = 1) -> int:
+    for key in ("object_count", "feature_count", "candidate_count", "detected_count", "count"):
+        value = record.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return max(1, int(value))
+    for key in ("features", "objects", "detections", "items", "geometries"):
+        values = safe_list(record.get(key))
+        if values:
+            return len(values)
+    return max(1, fallback)
 
 
 def _map_feature_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -131,6 +183,7 @@ def _map_feature_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
                 source_date=safe_str(candidate.get("source_date") or safe_dict(candidate.get("properties")).get("date")),
                 confidence=candidate.get("confidence"),
                 status=candidate.get("acceptance_status"),
+                object_count=_object_count(candidate),
                 blocker_review_reason=blocker or "Map/GIS source is candidate evidence until explicitly reviewed for this project.",
                 source_record=candidate,
                 audit_trail=safe_list(candidate.get("audit_trail")),
@@ -203,6 +256,7 @@ def _standards_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
                 source_date=safe_str(rule.get("retrieved_date") or rule.get("retrieved_at")),
                 confidence=rule.get("confidence"),
                 status=status,
+                object_count=1,
                 blocker_review_reason="Candidate standards need explicit user/company/engineer review before any QA gate can rely on them.",
                 source_record=rule,
                 audit_trail=audit_by_rule.get(rule_id, []),
@@ -227,6 +281,7 @@ def _online_or_imported_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]
                 source_date=safe_str(elevation.get("date") or elevation.get("retrieved_at")),
                 confidence=elevation.get("confidence") or "public_context",
                 status=elevation.get("acceptance_status") or "pending",
+                object_count=_object_count(elevation),
                 blocker_review_reason=safe_str(
                     elevation.get("truth_label"),
                     "Public DEM/terrain context remains review-required and is not a stamped topographic survey.",
@@ -236,16 +291,23 @@ def _online_or_imported_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]
             )
         )
     existing_package = safe_dict(meta.get("existing_conditions_package"))
-    for idx, layer in enumerate(safe_list(existing_package.get("import_records") or existing_package.get("source_records") or [])):
+    import_records = (
+        safe_list(existing_package.get("import_records"))
+        + safe_list(existing_package.get("source_records"))
+        + safe_list(meta.get("imported_candidate_layers_v1"))
+        + safe_list(meta.get("uploaded_candidate_layers_v1"))
+    )
+    for idx, layer in enumerate(import_records):
         rec = safe_dict(layer)
         if not rec:
             continue
         source_type = safe_str(rec.get("source_type"))
-        if source_type in {"survey_csv", "surface_xyz_csv", "geotiff_surface", "las_point_cloud", "geojson", "geospatial_vector"}:
+        candidate_type = safe_str(rec.get("candidate_type")) or IMPORT_SOURCE_TYPE_BY_CANDIDATE_TYPE.get(source_type)
+        if candidate_type:
             candidates.append(
                 _candidate(
                     candidate_id=_stable_id("import", idx, source_type, rec.get("source") or rec.get("file_name")),
-                    candidate_type="uploaded_imported_layer" if source_type not in {"surface_xyz_csv", "geotiff_surface", "las_point_cloud"} else "terrain_dem",
+                    candidate_type=candidate_type,
                     label=safe_str(rec.get("label") or source_type or "Imported candidate layer"),
                     source=safe_str(rec.get("source") or rec.get("file_name")),
                     provider=safe_str(rec.get("provider") or source_type),
@@ -253,6 +315,7 @@ def _online_or_imported_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]
                     source_date=safe_str(rec.get("date") or rec.get("imported_at")),
                     confidence=rec.get("confidence") or rec.get("source_quality") or "imported",
                     status=rec.get("acceptance_status") or rec.get("review_status") or "pending",
+                    object_count=_object_count(rec),
                     blocker_review_reason=safe_str(
                         rec.get("truth_label"),
                         "Imported source/layer needs review before it can be treated as project evidence.",
@@ -261,6 +324,30 @@ def _online_or_imported_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]
                     audit_trail=safe_list(rec.get("audit_trail")),
                 )
             )
+    for idx, layer in enumerate(safe_list(meta.get("uploaded_image_map_detections_v1")) + safe_list(meta.get("image_detection_candidates_v1"))):
+        rec = safe_dict(layer)
+        if not rec:
+            continue
+        candidates.append(
+            _candidate(
+                candidate_id=safe_str(rec.get("candidate_id")) or _stable_id("image_detection", idx, rec.get("source") or rec.get("file_name")),
+                candidate_type=safe_str(rec.get("candidate_type")) or "uploaded_image_map_detection",
+                label=safe_str(rec.get("label") or rec.get("feature_type") or "Uploaded image/map detection"),
+                source=safe_str(rec.get("source") or rec.get("file_name") or rec.get("source_type")),
+                provider=safe_str(rec.get("provider") or rec.get("source_type") or "uploaded image/map"),
+                source_url=safe_str(rec.get("source_url")),
+                source_date=safe_str(rec.get("date") or rec.get("detected_at") or rec.get("uploaded_at")),
+                confidence=rec.get("confidence") or "image_detected",
+                status=rec.get("acceptance_status") or rec.get("review_status") or "pending",
+                object_count=_object_count(rec),
+                blocker_review_reason=safe_str(
+                    rec.get("truth_label"),
+                    "Uploaded image/map detections are candidate evidence until reviewed and checked against survey/control.",
+                ),
+                source_record=rec,
+                audit_trail=safe_list(rec.get("audit_trail")),
+            )
+        )
     return candidates
 
 
@@ -277,7 +364,7 @@ def build_candidate_review_inbox(meta: Dict[str, Any]) -> Dict[str, Any]:
         counts[status] = counts.get(status, 0) + 1
         ctype = safe_str(candidate.get("candidate_type"), "unknown")
         by_type[ctype] = by_type.get(ctype, 0) + 1
-    return {
+    inbox = {
         "version": INBOX_VERSION,
         "candidate_count": len(ordered),
         "counts": counts,
@@ -290,6 +377,8 @@ def build_candidate_review_inbox(meta: Dict[str, Any]) -> Dict[str, Any]:
             "Rejected candidates remain preserved in the audit trail. Pending candidates remain pending."
         ),
     }
+    decisions = safe_list(meta.get("candidate_review_decisions_v1"))
+    return _inbox_with_decisions(inbox, decisions) if decisions else inbox
 
 
 def _decision_audit(candidate: Dict[str, Any], *, action: str, reviewer_id: str, reason: str = "") -> Dict[str, Any]:

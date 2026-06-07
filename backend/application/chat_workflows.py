@@ -1324,13 +1324,36 @@ def _candidate_chat_response(
     user_id: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     normalized = _normalized_text(message)
-    asks_found = any(phrase in normalized for phrase in ("what did you find online", "what did you find from online", "what candidates did you find"))
+    asks_found = any(
+        phrase in normalized
+        for phrase in (
+            "what did you find",
+            "what did you find online",
+            "what did you find from online",
+            "what candidates did you find",
+        )
+    )
     asks_pending = "pending" in normalized and "candidate" in normalized
+    asks_why_candidate = any(
+        phrase in normalized
+        for phrase in (
+            "why is this only a candidate",
+            "why are these only candidates",
+            "why is it only a candidate",
+            "why candidate",
+        )
+    )
     wants_parcel = any(phrase in normalized for phrase in ("use the parcel boundary", "use parcel boundary", "accept the parcel boundary"))
+    accepts_buildings = ("accept" in normalized or "use" in normalized) and any(
+        phrase in normalized for phrase in ("those buildings", "the buildings", "building candidates", "building footprints")
+    )
     rejects_buildings = ("reject" in normalized or "remove" in normalized or "decline" in normalized) and any(
         phrase in normalized for phrase in ("those buildings", "the buildings", "building candidates", "building footprints")
     )
-    if not any((asks_found, asks_pending, wants_parcel, rejects_buildings)):
+    rejects_roads = ("reject" in normalized or "remove" in normalized or "decline" in normalized) and any(
+        phrase in normalized for phrase in ("those roads", "the roads", "road candidates", "roads", "row candidates", "right of way")
+    )
+    if not any((asks_found, asks_pending, asks_why_candidate, wants_parcel, accepts_buildings, rejects_buildings, rejects_roads)):
         return None
     if not record:
         return _truthful_decision_update(
@@ -1363,6 +1386,27 @@ def _candidate_chat_response(
             result = [item for item in result if str(item.get("status") or "") == status]
         return result
 
+    if asks_why_candidate:
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                "It is only a candidate because the source is discovered/imported/detected evidence, not survey truth. "
+                "Accepting it only promotes it to draft/review-required project evidence; it still needs source verification, survey/control, and professional review before final reliance."
+            ),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="explained_candidate_review_truth_boundary",
+            action_blocked_reason="",
+            affected_systems=["site", "standards"],
+            assumptions=[],
+            next_best_action="Use the Candidate Review Inbox to accept, reject, or leave the candidate pending.",
+            command_payload_updates={"candidate_review_inbox_v1": inbox, "ui_navigation_target": "data", "requested_ui_mode": "data"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+
     if asks_found or asks_pending:
         visible = [item for item in candidates if not asks_pending or str(item.get("status") or "") == "pending"]
         counts = _safe_dict(inbox.get("counts"))
@@ -1370,7 +1414,7 @@ def _candidate_chat_response(
             msg = "I do not have any pending candidates in this project yet." if asks_pending else "I do not have any online/GIS/map candidates saved for this project yet."
         else:
             lines = [
-                f"{safe_str(item.get('label') or item.get('candidate_type'))}: {safe_str(item.get('status'))}, source {safe_str(item.get('source'))}, confidence {item.get('confidence')}, reason {safe_str(item.get('blocker_review_reason'))}"
+                f"{safe_str(item.get('label') or item.get('candidate_type'))}: {safe_str(item.get('status'))}, source {safe_str(item.get('source'))}, provider {safe_str(item.get('provider'))}, confidence {item.get('confidence')}, objects {int(item.get('object_count') or 1)}, reason {safe_str(item.get('blocker_review_reason'))}"
                 for item in visible[:6]
             ]
             prefix = (
@@ -1401,12 +1445,20 @@ def _candidate_chat_response(
         action = "accept"
         targets = matching("parcel_site_boundary", status="pending") or matching("parcel_site_boundary")
         reason = "User asked to use the parcel boundary as draft/review-required evidence."
+    elif accepts_buildings:
+        action = "accept"
+        targets = matching("building_footprint", status="pending") or matching("building_footprint")
+        reason = "User asked to accept building footprint candidates as draft/review-required evidence."
     elif rejects_buildings:
         action = "reject"
         targets = matching("building_footprint", status="pending") or matching("building_footprint")
         reason = "User rejected building footprint candidates."
+    elif rejects_roads:
+        action = "reject"
+        targets = matching("road_row", status="pending") or matching("road_row")
+        reason = "User rejected road/ROW candidates."
     if not targets:
-        label = "parcel boundary" if wants_parcel else "building footprint"
+        label = "parcel boundary" if wants_parcel else "road/ROW" if rejects_roads else "building footprint"
         return _truthful_decision_update(
             {},
             assistant_message=f"I could not find a {label} candidate to review in the saved project.",
@@ -1546,7 +1598,7 @@ def _source_confidence_chat_response(
         f"{summary.get('needs_survey_control_count', 0)} need survey control, "
         f"{summary.get('stale_or_missing_count', 0)} stale/missing.\n"
         f"{body}\n"
-        "This is review transparency only; it does not imply construction readiness."
+        "This is review transparency only; it does not imply field-use readiness."
     )
     return _truthful_decision_update(
         {},

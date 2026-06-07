@@ -999,6 +999,11 @@ def _is_ambiguous_request(message: str, context: Dict[str, Any]) -> bool:
             "can you set this up for me",
             "can you set it up for me",
             "set this up for me",
+            "finish setup",
+            "finish the setup",
+            "what's missing before i can run grading",
+            "whats missing before i can run grading",
+            "what is missing before i can run grading",
         ]
     ):
         return False
@@ -1335,6 +1340,23 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         ]
         return "; ".join(str(item) for item in blocked[:3] if str(item))
 
+    def _wizard_missing_inputs() -> List[str]:
+        values = [str(item).strip() for item in list(setup_wizard.get("missing_inputs") or []) if str(item).strip()]
+        if values:
+            return values
+        missing: List[str] = []
+        for item in wizard_steps:
+            if str(item.get("status") or "") in {"blocked", "needs_review", "pending", "not_started"}:
+                missing.extend(str(value).strip() for value in list(item.get("missing_inputs") or []) if str(value).strip())
+        seen = set()
+        result: List[str] = []
+        for item in missing:
+            key = item.lower()
+            if key not in seen:
+                seen.add(key)
+                result.append(item)
+        return result
+
     def _wizard_status_reply() -> Optional[str]:
         current = _wizard_current_step()
         if not current:
@@ -1346,6 +1368,56 @@ def _contextual_question_reply(message: str, context: Dict[str, Any]) -> Optiona
         if why:
             return f"You are on {label}. Status: {status}. Next action: {action}. Why blocked: {why}."
         return f"You are on {label}. Status: {status}. Next action: {action}."
+
+    def _wizard_finish_reply() -> Optional[str]:
+        current = _wizard_current_step()
+        if not current:
+            return None
+        label = str(current.get("label") or setup_wizard.get("current_step_label") or "Setup").strip()
+        action = _wizard_next_action() or _primary_next_action()
+        why = _wizard_blocked_text()
+        safe_actions = [
+            str(item.get("label") or "").strip()
+            for item in list(current.get("safe_actions") or setup_wizard.get("safe_actions") or [])
+            if isinstance(item, dict) and str(item.get("label") or "").strip()
+        ]
+        parts = [
+            f"I can keep moving setup, but I will only record real inputs and explicit reviews. Current step: {label}.",
+            f"Next action: {action}.",
+        ]
+        if why:
+            parts.append(f"Why blocked: {why}.")
+        if safe_actions:
+            parts.append("Safe actions I can surface: " + ", ".join(safe_actions[:3]) + ".")
+        parts.append("Online/GIS candidates, survey/control, and standards stay review-required gates.")
+        return " ".join(parts)
+
+    def _wizard_grading_missing_reply() -> Optional[str]:
+        if not setup_wizard:
+            return None
+        by_id = {str(item.get("id") or ""): item for item in wizard_steps}
+        gate_ids = ["site_boundary", "survey_terrain_control", "standards", "objects_program"]
+        missing: List[str] = []
+        blockers: List[str] = []
+        for step_id in gate_ids:
+            step = by_id.get(step_id)
+            if not step:
+                continue
+            status = str(step.get("status") or "")
+            if status == "complete":
+                continue
+            label = str(step.get("label") or step_id).strip()
+            action = str(step.get("next_action") or "").strip()
+            why = str(step.get("why_blocked") or "").strip()
+            missing.append(f"{label}: {action}")
+            if why:
+                blockers.append(why)
+        if not missing:
+            return "The setup wizard does not show grading setup gates blocking right now. Next action: run grading, then review returned blockers."
+        reply = "Before running grading, finish these setup gates: " + "; ".join(missing[:5]) + "."
+        if blockers:
+            reply += " Why blocked: " + "; ".join(blockers[:3]) + "."
+        return reply
 
     def _format_requested_systems() -> str:
         enabled = [
