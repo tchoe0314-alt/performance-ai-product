@@ -288,7 +288,7 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertIn("profile-canon-1", export_trace["profile_section_export"]["profiles"][0]["canonical_ids"])
         self.assertIn("section-canon-1", export_trace["profile_section_export"]["sections"][0]["canonical_ids"])
         self.assertEqual(export_trace["civil3d_external_verification_status"], "not_verified")
-        self.assertEqual(export_trace["dwg_support_status"], "unsupported_no_writer")
+        self.assertEqual(export_trace["dwg_support_status"], "unsupported_no_native_writer")
         self.assertFalse(export_trace["profile_section_export"]["construction_release_allowed"])
 
     def test_build_report_blocks_stale_export_package_report(self):

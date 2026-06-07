@@ -186,11 +186,47 @@ class ExportPackageReportTests(unittest.TestCase):
         report = plan["meta"]["export_package_report_v1"]
 
         self.assertEqual(report["civil3d_compatibility"], "not_verified")
-        self.assertEqual(report["dwg_compatibility"], "unsupported_no_writer")
+        self.assertEqual(report["dwg_compatibility"], "unsupported_no_native_writer")
         self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "not_verified")
-        self.assertEqual(report["supported_deliverables"]["dwg"]["status"], "unsupported_no_writer")
+        self.assertEqual(report["supported_deliverables"]["dwg"]["status"], "unsupported_no_native_writer")
         self.assertFalse(report["supported_deliverables"]["civil3d"]["construction_ready"])
         self.assertFalse(report["supported_deliverables"]["dwg"]["construction_ready"])
+        self.assertIn("dwg_capability_matrix", report)
+        self.assertEqual(report["dwg_capability_matrix"]["dwg_native"]["status"], "unsupported_no_native_writer")
+        self.assertFalse(report["dwg_capability_matrix"]["dwg_native"]["native_writer"])
+        self.assertGreaterEqual(len(report["dwg_provider_options"]), 3)
+        self.assertFalse(any(option["civora_native_support"] for option in report["dwg_provider_options"]))
+
+    def test_dwg_external_conversion_hook_requires_workflow_record(self) -> None:
+        plan = _plan()
+        plan["meta"]["dwg_conversion_hook"] = {
+            "enabled": True,
+            "provider": "Autodesk Platform Services Design Automation",
+            "hook_id": "dwg-hook-1",
+            "source_formats": ["dxf"],
+        }
+
+        unverified = build_export_package_report_v1(plan, export_type="dxf", generated_at="2026-06-06T00:00:00Z")
+
+        self.assertEqual(unverified["dwg_compatibility"], "external_conversion_hook_configured_unverified")
+        self.assertFalse(unverified["supported_deliverables"]["dwg"]["review_ready"])
+        self.assertFalse(unverified["supported_deliverables"]["dwg"]["native_writer"])
+
+        plan["meta"]["external_verification"] = {
+            "dwg_conversion": {
+                "result": "passed",
+                "tool": "AutoCAD",
+                "tool_version": "2026",
+                "source_artifact_hash": "hash-rev-2",
+            }
+        }
+        verified = build_export_package_report_v1(plan, export_type="dxf", generated_at="2026-06-06T00:00:00Z")
+
+        self.assertEqual(verified["dwg_compatibility"], "external_conversion_hook_configured_review_only")
+        self.assertTrue(verified["supported_deliverables"]["dwg"]["available"])
+        self.assertTrue(verified["supported_deliverables"]["dwg"]["review_ready"])
+        self.assertFalse(verified["supported_deliverables"]["dwg"]["native_writer"])
+        self.assertTrue(verified["dwg_strategy"]["external_workflow_record_present"])
 
     def test_failed_external_civil3d_verification_is_blocked_needs_review(self) -> None:
         plan = _plan()

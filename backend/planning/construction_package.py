@@ -10,6 +10,7 @@ from core.config import PRODUCT_MODE, REVIEW_ONLY_PRODUCT_MODES
 from core.professional_release import validate_professional_release
 
 from .common import construction_package_record, readiness_issue_explanations, safe_dict, safe_list, safe_str
+from .dwg_compatibility import DWG_UNSUPPORTED_STATUS, dwg_strategy_from_meta
 
 
 CONSTRUCTION_PACKAGE_SECTIONS: Sequence[Dict[str, Any]] = (
@@ -539,13 +540,14 @@ def _format_export_confidence(format_id: str, *, available: bool, review_ready: 
 
 def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
     cad = safe_dict(meta.get("cad_interop"))
+    dwg_strategy = dwg_strategy_from_meta({**meta, "cad_interop": cad})
     audit = safe_dict(meta.get("export_audit"))
     audit_ready = _export_audit_ready(meta)
     export_blocked = bool(audit.get("export_blocked"))
     dxf_available = cad.get("dxf") is True
     dxf_ready = bool(dxf_available and audit_ready)
     pipe_contract = bool(cad.get("landxml_pipe_network_contract") or cad.get("landxml") is True)
-    dwg_available = cad.get("dwg") is True
+    dwg_available = bool(dwg_strategy["dwg_export_supported"])
     civil3d_available = cad.get("civil3d") is True
 
     if dxf_ready:
@@ -580,7 +582,7 @@ def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     civil3d_status = "available_not_verified" if civil3d_available else "not_verified"
-    dwg_status = "available_not_audited" if dwg_available else "unsupported_no_writer"
+    dwg_status = safe_str(dwg_strategy.get("dwg_status"), DWG_UNSUPPORTED_STATUS)
 
     formats = {
         "dxf": _format_export_confidence(
@@ -611,12 +613,12 @@ def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
         "dwg": _format_export_confidence(
             "dwg",
             available=dwg_available,
-            review_ready=False,
+            review_ready=bool(dwg_strategy["dwg_review_ready"]),
             status=dwg_status,
             blocker=(
-                "DWG export requires a current audit before it can be reviewed."
+                "DWG export requires the configured conversion hook and workflow record before it can be reviewed."
                 if dwg_available
-                else "DWG export is unsupported until a real DWG writer is implemented."
+                else "DWG export is unsupported until a real DWG writer or configured external conversion hook exists."
             ),
         ),
     }
@@ -628,9 +630,10 @@ def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
         "formats": formats,
         "primary_review_format": "dxf" if dxf_ready else "",
         "review_ready": dxf_ready,
+        "dwg_strategy": dwg_strategy,
         "construction_confidence_blockers": [
             "Civil 3D export is not implemented/verified.",
-            "DWG export is unsupported until a real DWG writer exists.",
+            "DWG export is unsupported until a real DWG writer or configured external conversion hook exists.",
             "LandXML is review-only unless externally verified against the target Civil 3D workflow.",
         ],
         "truth_label": (

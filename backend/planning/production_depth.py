@@ -11,6 +11,7 @@ from engines.storm.storm_types import HydraulicAnalysisRequest, StormNode, Storm
 from engines.water_sizing_engine import WaterSizingEngine, analyze_fire_flow_residual, analyze_water_pressure_graph
 
 from .common import blocker_explanations, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
+from .dwg_compatibility import DWG_UNSUPPORTED_STATUS, dwg_strategy_from_meta
 
 
 def _point_xy(point: Any) -> Optional[Tuple[float, float]]:
@@ -1413,6 +1414,7 @@ def build_grading_detail_controls(
 
 def build_cad_interop_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
     meta = safe_dict(plan.get("meta"))
+    dwg_strategy = dwg_strategy_from_meta(meta)
     has_pipe_network = bool(safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary")) or safe_dict(meta.get("sanitary") or meta.get("sanitary_summary")))
     export_audit_ready = bool(safe_dict(meta.get("export_audit")))
     landxml_status = "schema_ready_not_civil3d_verified" if has_pipe_network else "no_pipe_network_available"
@@ -1446,16 +1448,18 @@ def build_cad_interop_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
         },
         {
             "format": "dwg",
-            "available": False,
-            "review_ready": False,
+            "available": dwg_strategy["dwg_export_supported"],
+            "review_ready": dwg_strategy["dwg_review_ready"],
             "construction_ready": False,
-            "status": "unsupported_no_writer",
+            "status": dwg_strategy["dwg_status"],
+            "native_writer": False,
+            "requires_external_workflow_record": True,
         },
     ]
     return {
         "source": "dxf_exporter_metadata",
         "dxf": True,
-        "dwg": False,
+        "dwg": dwg_strategy["dwg_export_supported"],
         "civil3d": False,
         "landxml": False,
         "surface_export": bool(safe_dict(meta.get("grading") or meta.get("grading_summary"))),
@@ -1466,9 +1470,17 @@ def build_cad_interop_metadata(plan: Dict[str, Any]) -> Dict[str, Any]:
         "export_audit_ready": export_audit_ready,
         "compatibility_checks": compatibility_checks,
         "review_ready_formats": [item["format"] for item in compatibility_checks if item["review_ready"]],
-        "unsupported_formats": ["civil3d", "dwg"],
+        "unsupported_formats": ["civil3d"] + ([] if dwg_strategy["dwg_export_supported"] else ["dwg"]),
+        "dwg_strategy": dwg_strategy,
+        "dwg_capability_matrix": dwg_strategy["capability_matrix"],
+        "dwg_provider_options": dwg_strategy["provider_options"],
+        "dwg_conversion_hook": dwg_strategy["conversion_hook"],
+        "dwg_native_status": DWG_UNSUPPORTED_STATUS,
         "contract_status": "dxf_ready; landxml_pipe_network_contract_ready; civil3d_landxml_contract_not_implemented",
-        "truth_label": "DXF export metadata and a LandXML pipe-network exchange contract are available; Civil 3D-verified writers still require implementation.",
+        "truth_label": (
+            "DXF export metadata and a LandXML pipe-network exchange contract are available; "
+            "Civil 3D target workflow evidence and native DWG writing still require implementation."
+        ),
     }
 
 

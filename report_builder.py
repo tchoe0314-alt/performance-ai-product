@@ -24,6 +24,8 @@ Design goals
 - be flexible enough to work even if some optional sections are unavailable
 """
 
+from backend.planning.dwg_compatibility import DWG_UNSUPPORTED_STATUS
+
 from dataclasses import dataclass, field
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence
@@ -461,10 +463,10 @@ def _report_export_trace(final_plan: Dict[str, Any]) -> Dict[str, Any]:
         "stale_outputs_detected": stale_outputs,
         "stale_export_blocked": bool(stale_outputs),
         "civil3d_external_verification_status": "not_verified",
-        "dwg_support_status": "unsupported_no_writer",
+        "dwg_support_status": DWG_UNSUPPORTED_STATUS,
         "truth_label": (
             "Report exports carry traceable review metadata only; Civil3D is not verified "
-            "and DWG is unsupported unless a real writer and verification record are attached."
+            "and DWG is unsupported unless a real writer or external conversion workflow record is attached."
         ),
     }
 

@@ -10,6 +10,8 @@ import time
 import uuid
 import shutil
 
+from backend.planning.dwg_compatibility import DWG_UNSUPPORTED_STATUS
+
 PREVIEW_RENDER_VERSION = "2026-04-17-preview-modes-v1"
 DEFAULT_HEAVY_EXPORT_TIMEOUT_SECONDS = 30.0
 
@@ -136,7 +138,7 @@ class ArtifactService:
             "format": export_type,
             "externally_verified": False,
             "civil3d_external_verification_status": "not_verified",
-            "dwg_support_status": "unsupported_no_writer",
+            "dwg_support_status": DWG_UNSUPPORTED_STATUS,
             "construction_release_allowed": False,
             "construction_release_blocked": True,
         }

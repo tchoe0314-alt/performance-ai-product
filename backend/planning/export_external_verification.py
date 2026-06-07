@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from .common import safe_dict, safe_list, safe_str
+from .dwg_compatibility import DWG_UNSUPPORTED_STATUS
 
 
 DXF_ALLOWED_LAYERS = {
@@ -331,7 +332,7 @@ def verify_dxf_export(
         "canonical_id_traceability": trace_check,
         "profile_section_linkage": linkage_check,
         "civil3d_external_verification_status": "not_verified",
-        "dwg_support_status": "unsupported_no_writer",
+        "dwg_support_status": DWG_UNSUPPORTED_STATUS,
         "construction_release_allowed": False,
         "construction_release_blocked": True,
         "local_contract_verified": local_contract_ok,
@@ -419,7 +420,7 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
         "construction_release_flags_ok": construction_release_flags_ok,
         "landxml_external_verification_status": landxml_status,
         "civil3d_external_verification_status": civil3d_status or "not_verified",
-        "dwg_support_status": "unsupported_no_writer",
+        "dwg_support_status": DWG_UNSUPPORTED_STATUS,
         "construction_release_allowed": False,
         "construction_release_blocked": True,
         "local_contract_verified": not failures,

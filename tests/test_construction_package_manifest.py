@@ -54,7 +54,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertFalse(review_manifest["construction_release_allowed"])
         self.assertTrue(review_manifest["construction_release_blocked"])
         self.assertIn("civil3d", review_manifest["export_confidence"]["formats"])
-        self.assertEqual(review_manifest["export_confidence"]["formats"]["dwg"]["status"], "unsupported_no_writer")
+        self.assertEqual(review_manifest["export_confidence"]["formats"]["dwg"]["status"], "unsupported_no_native_writer")
 
     def test_review_package_manifest_allows_alpha_review_without_construction_release(self) -> None:
         meta = {
@@ -82,7 +82,7 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertTrue(formats["dxf"]["review_ready"])
         self.assertEqual(formats["landxml"]["status"], "pipe_network_contract_review_ready_not_civil3d_verified")
         self.assertEqual(formats["civil3d"]["status"], "not_verified")
-        self.assertEqual(formats["dwg"]["status"], "unsupported_no_writer")
+        self.assertEqual(formats["dwg"]["status"], "unsupported_no_native_writer")
 
     def test_review_package_manifest_blocks_missing_export_audit(self) -> None:
         meta = {

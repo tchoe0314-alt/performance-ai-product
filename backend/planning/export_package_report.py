@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Sequence
 
 from .common import blocker_explanations, safe_dict, safe_list, safe_str
+from .dwg_compatibility import DWG_UNSUPPORTED_STATUS, dwg_strategy_from_meta
 from .production_evidence import build_production_evidence
 from .production_depth import build_cad_interop_metadata
 from .export_external_verification import normalize_external_verification_record
@@ -331,6 +332,7 @@ def _external_verification_record(meta: Dict[str, Any], *keys: str) -> Dict[str,
 
 
 def _external_verification_hooks(meta: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    dwg_strategy = dwg_strategy_from_meta(meta)
     landxml = normalize_external_verification_record(
         _external_verification_record(meta, "landxml", "landxml_external_verification"),
         format_id="landxml",
@@ -346,9 +348,11 @@ def _external_verification_hooks(meta: Dict[str, Any]) -> Dict[str, Dict[str, An
         format_id="dwg",
         target_tool="DWG",
     )
-    dwg["status"] = "unsupported_no_writer"
-    dwg["verified"] = False
+    dwg["status"] = dwg_strategy["dwg_status"]
+    dwg["verified"] = bool(dwg_strategy["dwg_review_ready"])
     dwg["requires_external_verification"] = True
+    dwg["native_dwg_writer"] = False
+    dwg["conversion_hook"] = deepcopy(dwg_strategy["conversion_hook"])
     return {"landxml": landxml, "civil3d": civil3d, "dwg": dwg}
 
 
@@ -382,9 +386,12 @@ def _format_matrix(cad_interop: Dict[str, Any], export_audit_ready: bool) -> Dic
     formats["civil3d"]["available"] = False
     formats["civil3d"]["review_ready"] = False
     formats["civil3d"]["status"] = "not_verified"
-    formats["dwg"]["available"] = False
-    formats["dwg"]["review_ready"] = False
-    formats["dwg"]["status"] = "unsupported_no_writer"
+    dwg_strategy = safe_dict(cad_interop.get("dwg_strategy"))
+    formats["dwg"]["available"] = bool(dwg_strategy.get("dwg_export_supported"))
+    formats["dwg"]["review_ready"] = bool(dwg_strategy.get("dwg_review_ready"))
+    formats["dwg"]["status"] = safe_str(dwg_strategy.get("dwg_status"), DWG_UNSUPPORTED_STATUS)
+    formats["dwg"]["native_writer"] = False
+    formats["dwg"]["requires_external_workflow_record"] = True
     if not export_audit_ready:
         formats["dxf"]["review_ready"] = False
         if formats["dxf"]["status"] in {"", "ready", "review_ready", "available"}:
@@ -411,6 +418,11 @@ def _apply_external_verification_to_formats(
         if status in {"blocked_needs_review", "externally_verified_review_only", "not_verified"}:
             updated.setdefault(format_id, {})["status"] = status
         updated.setdefault(format_id, {})["construction_ready"] = False
+    dwg_status = safe_str(safe_dict(external_verification.get("dwg")).get("status"))
+    if dwg_status:
+        updated.setdefault("dwg", {})["status"] = dwg_status
+    updated.setdefault("dwg", {})["construction_ready"] = False
+    updated.setdefault("dwg", {})["native_writer"] = False
     return updated
 
 
@@ -424,6 +436,7 @@ def build_export_package_report_v1(
     production_evidence = safe_dict(meta.get("production_evidence")) or build_production_evidence(plan)
     evidence_meta = {**meta, "production_evidence": production_evidence}
     cad_interop = safe_dict(meta.get("cad_interop")) or build_cad_interop_metadata(plan)
+    dwg_strategy = dwg_strategy_from_meta({**meta, "cad_interop": cad_interop})
     export_audit = safe_dict(meta.get("export_audit"))
     construction_readiness = safe_dict(meta.get("construction_readiness"))
     source_revision = _canonical_revision(meta)
@@ -501,8 +514,11 @@ def build_export_package_report_v1(
         "section_packages": _deliverable_records(meta, "cross_sections", safe_str(export_type)),
         "external_verification": external_verification,
         "supported_deliverables": deepcopy(formats),
+        "dwg_strategy": dwg_strategy,
+        "dwg_capability_matrix": dwg_strategy["capability_matrix"],
+        "dwg_provider_options": dwg_strategy["provider_options"],
         "civil3d_compatibility": civil3d_compatibility,
-        "dwg_compatibility": "unsupported_no_writer",
+        "dwg_compatibility": dwg_strategy["dwg_status"],
         "landxml_compatibility": formats["landxml"]["status"],
         "truth_label": "Export package report is traceable review metadata only. Civora never signs, seals, certifies, or approves construction; construction release requires external licensed engineer/user action outside Civora.",
     }

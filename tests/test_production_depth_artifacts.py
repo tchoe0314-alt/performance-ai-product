@@ -581,7 +581,7 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(checks["dxf"]["status"], "audited_review_ready")
         self.assertEqual(checks["landxml"]["status"], "pipe_network_contract_review_ready_not_civil3d_verified")
         self.assertEqual(checks["civil3d"]["status"], "not_verified")
-        self.assertEqual(checks["dwg"]["status"], "unsupported_no_writer")
+        self.assertEqual(checks["dwg"]["status"], "unsupported_no_native_writer")
         self.assertEqual(cad["unsupported_formats"], ["civil3d", "dwg"])
 
     def test_baseline_optimization_recommendations_do_not_fake_production_ready(self) -> None:

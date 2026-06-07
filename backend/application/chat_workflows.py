@@ -18,6 +18,7 @@ from backend.planning.candidate_review_inbox import (
     build_candidate_review_inbox,
 )
 from backend.planning.common import safe_str
+from backend.planning.dwg_compatibility import dwg_strategy_from_meta
 from backend.planning.existing_conditions_online import fetch_online_existing_conditions
 from backend.planning.map_feature_detection import build_map_feature_detection_report
 from backend.planning.progress_timeline import build_progress_timeline
@@ -243,6 +244,70 @@ def _enrich_response_contract(decision: Dict[str, Any], *, message: str) -> Dict
     )
     updated["response_metadata"] = metadata
     return updated
+
+
+def _meta_from_chat_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    current_project = _safe_dict(context.get("current_project"))
+    latest_result = _safe_dict(current_project.get("latest_result"))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    return _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
+
+
+def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    mentions_dwg = bool(re.search(r"\bdwg\b", lowered))
+    mentions_civil3d = "civil3d" in lowered or "civil 3d" in lowered
+    if not mentions_dwg and not mentions_civil3d:
+        return None
+    asks_export = "export" in lowered or "download" in lowered or "save" in lowered
+    asks_why = "why" in lowered or "unsupported" in lowered or "not supported" in lowered
+    asks_need = "what do i need" in lowered or "what do we need" in lowered or "need for" in lowered or "civil3d" in lowered or "civil 3d" in lowered
+    if not (asks_export or asks_why or asks_need):
+        return None
+
+    strategy = dwg_strategy_from_meta(_meta_from_chat_context(context))
+    if mentions_civil3d and not mentions_dwg:
+        assistant_message = (
+            "For Civil 3D, Civora needs a target-workflow record: tool and version, source DXF/LandXML artifact hashes, "
+            "what imported successfully, what changed during import, and any limitations. Civora can provide DXF review exports "
+            "and LandXML exchange data, but it does not claim native Civil 3D package compatibility without that external record."
+        )
+        action_taken = "answered_civil3d_compatibility_requirements"
+        next_best_action = "Generate the DXF/LandXML review artifacts, then attach a Civil 3D workflow record from the target environment."
+    elif asks_why:
+        assistant_message = (
+            "DWG is unsupported because Civora does not include a native DWG writer and DWG SDKs/providers require separate licensing, "
+            "implementation, and repeatable compatibility tests. The truthful path today is DXF/LandXML review output, or an optional external "
+            "conversion hook with a workflow record."
+        )
+        action_taken = "explained_dwg_unsupported_status"
+        next_best_action = "Use DXF review export now, or configure an external DWG conversion hook and attach its workflow record."
+    else:
+        assistant_message = (
+            "No, Civora cannot export DWG natively right now. DWG status is "
+            f"{strategy['dwg_status']}. You can export DXF for review, use LandXML where available, or configure an external DWG conversion hook "
+            "and attach a workflow record before Civora shows DWG as an externally converted review artifact."
+        )
+        action_taken = "answered_dwg_export_capability"
+        next_best_action = "Open Deliver for DXF review export, or configure the external DWG conversion hook outside Civora."
+
+    return _truthful_decision_update(
+        {},
+        assistant_message=assistant_message,
+        intent="explain",
+        run_mode="none",
+        needs_clarification=False,
+        action_taken=action_taken,
+        affected_systems=["cad_interop", "deliverables"],
+        assumptions=["DWG answers are based on Civora compatibility metadata, not a native DWG writer."],
+        next_best_action=next_best_action,
+        command_payload_updates={
+            "ui_navigation_target": "deliverables",
+            "requested_ui_mode": "deliver",
+            "dwg_strategy": strategy,
+        },
+        confidence=0.92,
+    )
 
 
 def _classification_type_from_message(message: str) -> str:
@@ -1959,6 +2024,9 @@ def decide_chat(
     if record:
         context = _canonical_chat_context(context, record)
         payload["context"] = context
+    dwg_decision = _dwg_compatibility_chat_response(message, context)
+    if dwg_decision is not None:
+        return _enrich_response_contract(dwg_decision, message=message)
     plan_pdf_decision = _plan_pdf_chat_response(
         message=message,
         record=record,

@@ -103,7 +103,7 @@ class ArtifactServiceTest(unittest.TestCase):
                 sidecar["external_artifact_verification"]["civil3d_external_verification_status"],
                 "not_verified",
             )
-            self.assertEqual(sidecar["external_artifact_verification"]["dwg_support_status"], "unsupported_no_writer")
+            self.assertEqual(sidecar["external_artifact_verification"]["dwg_support_status"], "unsupported_no_native_writer")
             self.assertFalse(sidecar["external_artifact_verification"]["externally_verified"])
             self.assertEqual(sidecar["quantity_line_items"][0]["canonical_ids"], ["storm-line-1"])
             self.assertEqual(final_plan["meta"]["artifact_sidecars"][0]["sidecar_metadata_path"], str(sidecar_path))

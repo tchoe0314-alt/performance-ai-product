@@ -13199,12 +13199,13 @@ function PerformanceAIDashboardView({
     getExportBlockReason() ? `Deliver panel -> export blocked: ${getExportBlockReason()}.` : "",
   ].filter(Boolean);
   const formatSupportValue = (value: string, blocked = false) => ({ value, status: blocked ? "block" : "review" });
+  const dwgCompatibilityMessage = "Unsupported natively; use DXF/LandXML review artifacts or an external conversion hook with workflow record";
   const deliverableSupportRows = [
     ["DXF", formatSupportValue(getExportBlockReason() || (backendResult ? "Review export available" : "Needs planner run"), Boolean(getExportBlockReason()))],
     ["Engineer-review report", formatSupportValue(getExportBlockReason() || (backendResult ? "Available" : "Needs planner run"), Boolean(getExportBlockReason()))],
     ["LandXML", formatSupportValue("Not generated in this UI yet", true)],
-    ["Civil 3D", formatSupportValue("No native Civil 3D package; use review exports externally", true)],
-    ["DWG", formatSupportValue("Not exported directly; DXF review export only", true)],
+    ["Civil 3D", formatSupportValue("Needs target workflow record; no native Civil 3D package", true)],
+    ["DWG", formatSupportValue(dwgCompatibilityMessage, true)],
     ["Review support package", formatSupportValue(backendResult ? "Review-only package; independent professional review required" : "Needs run and review gates", !backendResult)],
     ["Independent professional review", formatSupportValue("Required outside Civora")],
   ] as const;
@@ -18398,6 +18399,7 @@ function PerformanceAIDashboardView({
                           ["Preview", planPreviewUrl ? "Review ready" : "Not generated"],
                           ["Report", backendResult ? "Review package" : "Not generated"],
                           ["DXF", getExportBlockReason() || (backendResult ? "Review export" : "Needs run")],
+                          ["DWG", "Unsupported natively"],
                         ].map(([label, value]) => (
                           <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                             <span className="font-semibold text-slate-700">{label}</span>

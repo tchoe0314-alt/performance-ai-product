@@ -231,6 +231,45 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("canonical_id_traceability_missing", called["context"]["convergence_summary"]["blocked_reasons"])
         self.assertIn("export", called["context"]["convergence_summary"]["blocked_exports"])
 
+    def test_chat_answers_dwg_export_without_claiming_native_support(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {"message": "can I export DWG?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_dwg_export_capability")
+        self.assertTaxonomyMetadata(result, "understood_and_executed")
+        self.assertIn("cannot export DWG natively", result["assistant_message"])
+        self.assertIn("unsupported_no_native_writer", result["assistant_message"])
+        self.assertFalse(result["response_metadata"]["command_payload"]["dwg_strategy"]["native_dwg_supported"])
+
+    def test_chat_explains_why_dwg_is_unsupported(self):
+        result = decide_chat(
+            {"message": "why is DWG unsupported?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "explained_dwg_unsupported_status")
+        self.assertIn("does not include a native DWG writer", result["assistant_message"])
+        self.assertIn("separate licensing", result["assistant_message"])
+        self.assertNotIn("verified Civil 3D", result["assistant_message"])
+
+    def test_chat_explains_civil3d_requirements(self):
+        result = decide_chat(
+            {"message": "what do I need for Civil3D?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_civil3d_compatibility_requirements")
+        self.assertIn("target-workflow record", result["assistant_message"])
+        self.assertIn("tool and version", result["assistant_message"])
+        self.assertIn("source DXF/LandXML artifact hashes", result["assistant_message"])
+        self.assertIn("does not claim native Civil 3D package compatibility", result["assistant_message"])
+
     def test_site_update_command_persists_canonical_state(self):
         store = RecordingProjectStore()
 
