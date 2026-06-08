@@ -133,6 +133,7 @@ class Database:
         CREATE TABLE IF NOT EXISTS projects (
             project_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
+            organization_id TEXT,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
             created_at REAL NOT NULL,
@@ -149,6 +150,87 @@ class Database:
 
         CREATE INDEX IF NOT EXISTS idx_projects_user_updated
         ON projects(user_id, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_projects_organization_updated
+        ON projects(organization_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS organizations (
+            organization_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_by_user_id TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            metadata_json TEXT NOT NULL,
+            FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS organization_members (
+            organization_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            invited_email TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY (organization_id, user_id),
+            FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_organization_members_user
+        ON organization_members(user_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            invited_email TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY (project_id, user_id),
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_members_user
+        ON project_members(user_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_invites (
+            invite_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            email TEXT NOT NULL,
+            role TEXT NOT NULL,
+            invited_by_user_id TEXT NOT NULL,
+            accepted_by_user_id TEXT,
+            status TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY (invited_by_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (accepted_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_invites_project
+        ON project_invites(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS access_audit_log (
+            audit_id TEXT PRIMARY KEY,
+            organization_id TEXT,
+            project_id TEXT,
+            actor_user_id TEXT NOT NULL,
+            target_user_id TEXT,
+            target_email TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            metadata_json TEXT NOT NULL,
+            FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE SET NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (target_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_access_audit_project
+        ON access_audit_log(project_id, created_at DESC);
 
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
@@ -196,6 +278,7 @@ class Database:
         CREATE TABLE IF NOT EXISTS projects (
             project_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            organization_id TEXT,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
             created_at DOUBLE PRECISION NOT NULL,
@@ -211,6 +294,75 @@ class Database:
 
         CREATE INDEX IF NOT EXISTS idx_projects_user_updated
         ON projects(user_id, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_projects_organization_updated
+        ON projects(organization_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS organizations (
+            organization_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL,
+            metadata_json TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS organization_members (
+            organization_id TEXT NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            invited_email TEXT NOT NULL DEFAULT '',
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL,
+            PRIMARY KEY (organization_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_organization_members_user
+        ON organization_members(user_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            invited_email TEXT NOT NULL DEFAULT '',
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL,
+            PRIMARY KEY (project_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_members_user
+        ON project_members(user_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_invites (
+            invite_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            email TEXT NOT NULL,
+            role TEXT NOT NULL,
+            invited_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            accepted_by_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+            status TEXT NOT NULL,
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_invites_project
+        ON project_invites(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS access_audit_log (
+            audit_id TEXT PRIMARY KEY,
+            organization_id TEXT REFERENCES organizations(organization_id) ON DELETE SET NULL,
+            project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE,
+            actor_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            target_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+            target_email TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT '',
+            created_at DOUBLE PRECISION NOT NULL,
+            metadata_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_access_audit_project
+        ON access_audit_log(project_id, created_at DESC);
 
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
@@ -245,6 +397,7 @@ class Database:
                 connection.close()
         self._ensure_jobs_runtime_columns()
         self._ensure_project_summary_columns()
+        self._ensure_team_access_columns()
 
     def _get_table_columns(self, table_name: str) -> set[str]:
         connection = self.connect()
@@ -314,6 +467,21 @@ class Database:
                     END
                     """
                 )
+                connection.commit()
+            finally:
+                connection.close()
+
+    def _ensure_team_access_columns(self) -> None:
+        with self._lock:
+            connection = self.connect()
+            try:
+                columns = self._get_table_columns("projects")
+                if self.storage_kind == "postgres":
+                    if "organization_id" not in columns:
+                        connection.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS organization_id TEXT")
+                else:
+                    if "organization_id" not in columns:
+                        connection.execute("ALTER TABLE projects ADD COLUMN organization_id TEXT")
                 connection.commit()
             finally:
                 connection.close()

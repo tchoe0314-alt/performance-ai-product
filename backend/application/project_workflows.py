@@ -61,6 +61,8 @@ class ProjectStoreProtocol(Protocol):
         latest_result: Dict[str, Any],
         session_state: Dict[str, Any],
         metadata: Dict[str, Any],
+        organization_id: Optional[str] = None,
+        minimum_role: str = "editor",
     ) -> Dict[str, Any]:
         ...
 
@@ -983,6 +985,7 @@ def review_project_candidates(
         latest_result=latest_result,
         session_state=record.get("session_state", {}),
         metadata=record.get("metadata", {}),
+        minimum_role="reviewer",
     )
     return {
         "success": True,
@@ -1053,6 +1056,7 @@ def save_project_record(
         record = project_store.save_project(
             user_id=user_id,
             project_id=project_id,
+            organization_id=payload_data.get("organization_id"),
             name=str(payload_data.get("name") or ""),
             description=str(payload_data.get("description") or ""),
             session_id=session_id,

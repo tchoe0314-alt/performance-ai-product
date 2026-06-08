@@ -334,6 +334,7 @@ class ChatLearningReportPayload(BaseModel):
 
 class SaveProjectPayload(BaseModel):
     project_id: Optional[str] = None
+    organization_id: Optional[str] = None
     name: str
     description: str = ""
     session_id: Optional[str] = None
@@ -341,6 +342,11 @@ class SaveProjectPayload(BaseModel):
     project_input: Dict[str, Any] = Field(default_factory=dict)
     latest_result: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectInvitePayload(BaseModel):
+    email: str
+    role: str = "viewer"
 
 
 class CandidateReviewPayload(BaseModel):
@@ -1803,6 +1809,60 @@ def get_project_result(project_id: str, current_user: Dict[str, Any] = Depends(g
         user_id=current_user["user_id"],
         project_id=project_id,
     )
+
+
+@app.get("/api/projects/{project_id}/admin")
+def get_project_admin(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    surface = PROJECT_STORE.project_admin_surface(user_id=current_user["user_id"], project_id=project_id)
+    if surface is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return {"success": True, **surface}
+
+
+@app.post("/api/projects/{project_id}/admin/invites")
+def invite_project_member(
+    project_id: str,
+    payload: ProjectInvitePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        invite = PROJECT_STORE.invite_project_member(
+            actor_user_id=current_user["user_id"],
+            project_id=project_id,
+            email=payload.email,
+            role=payload.role,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"success": True, "invite": invite}
+
+
+@app.delete("/api/projects/{project_id}/admin/members/{member_user_id}")
+def remove_project_member(
+    project_id: str,
+    member_user_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        removed = PROJECT_STORE.remove_project_member(
+            actor_user_id=current_user["user_id"],
+            project_id=project_id,
+            user_id=member_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if not removed:
+        raise HTTPException(status_code=404, detail="Project member not found.")
+    return {"success": True, "project_id": project_id, "removed_user_id": member_user_id}
+
+
+@app.get("/api/projects/{project_id}/admin/audit")
+def get_project_access_audit(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "project_id": project_id,
+        "audit_log": PROJECT_STORE.project_audit_log(user_id=current_user["user_id"], project_id=project_id, limit=100),
+    }
 
 
 @app.get("/api/projects/{project_id}/candidate-review-inbox")

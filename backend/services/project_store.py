@@ -92,44 +92,220 @@ def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any]) -> 
     return merged
 
 
+PROJECT_ROLES = ("owner", "admin", "editor", "reviewer", "viewer")
+ROLE_RANK = {role: index for index, role in enumerate(("viewer", "reviewer", "editor", "admin", "owner"))}
+
+
+def _normalize_role(role: str, *, default: str = "viewer") -> str:
+    normalized = str(role or "").strip().lower()
+    return normalized if normalized in PROJECT_ROLES else default
+
+
+def _role_allows(actual: str, required: str) -> bool:
+    return ROLE_RANK.get(_normalize_role(actual), -1) >= ROLE_RANK.get(_normalize_role(required), 0)
+
+
 class ProjectStore:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def _project_owner(self, project_id: str) -> Optional[str]:
+    def _public_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         connection = self.db.connect()
         try:
             row = connection.execute(
-                "SELECT user_id FROM projects WHERE project_id = ?",
-                (project_id,),
+                "SELECT user_id, email, name, created_at, updated_at FROM users WHERE user_id = ?",
+                (user_id,),
             ).fetchone()
-            return None if row is None else str(row["user_id"])
+            return None if row is None else dict(row)
         finally:
             connection.close()
+
+    def _public_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        email_norm = str(email or "").strip().lower()
+        if not email_norm:
+            return None
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                "SELECT user_id, email, name, created_at, updated_at FROM users WHERE email = ?",
+                (email_norm,),
+            ).fetchone()
+            return None if row is None else dict(row)
+        finally:
+            connection.close()
+
+    def _log_access_event(
+        self,
+        connection: Any,
+        *,
+        actor_user_id: str,
+        action: str,
+        organization_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        target_user_id: Optional[str] = None,
+        target_email: str = "",
+        role: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO access_audit_log (
+                audit_id, organization_id, project_id, actor_user_id, target_user_id,
+                target_email, action, role, created_at, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _new_id("audit"),
+                organization_id,
+                project_id,
+                actor_user_id,
+                target_user_id,
+                str(target_email or "").strip().lower(),
+                str(action or "").strip(),
+                str(role or "").strip(),
+                _now(),
+                _json_dumps(metadata or {}),
+            ),
+        )
+
+    def ensure_default_organization(self, *, user_id: str) -> Dict[str, Any]:
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT o.organization_id, o.name, o.created_by_user_id, o.created_at, o.updated_at, o.metadata_json
+                FROM organizations o
+                JOIN organization_members om ON om.organization_id = o.organization_id
+                WHERE om.user_id = ? AND o.created_by_user_id = ?
+                ORDER BY o.created_at ASC
+                """,
+                (user_id, user_id),
+            ).fetchone()
+            if row is not None:
+                return self._organization_row_to_record(row)
+
+            user = self._public_user_by_id(user_id) or {"name": "Personal", "email": ""}
+            now = _now()
+            organization_id = _new_id("org")
+            name = f"{str(user.get('name') or 'Personal').strip() or 'Personal'} Team"
+            metadata = {"source": "default_personal_team"}
+            connection.execute(
+                """
+                INSERT INTO organizations (organization_id, name, created_by_user_id, created_at, updated_at, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (organization_id, name, user_id, now, now, _json_dumps(metadata)),
+            )
+            connection.execute(
+                """
+                INSERT INTO organization_members (organization_id, user_id, role, invited_email, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (organization_id, user_id, "owner", str(user.get("email") or ""), now, now),
+            )
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                organization_id=organization_id,
+                target_user_id=user_id,
+                target_email=str(user.get("email") or ""),
+                action="organization_created",
+                role="owner",
+            )
+            connection.commit()
+            return {
+                "organization_id": organization_id,
+                "name": name,
+                "created_by_user_id": user_id,
+                "created_at": now,
+                "updated_at": now,
+                "metadata": metadata,
+            }
+        finally:
+            connection.close()
+
+    def _ensure_owner_membership(
+        self,
+        connection: Any,
+        *,
+        project_id: str,
+        user_id: str,
+        organization_id: Optional[str],
+    ) -> None:
+        now = _now()
+        user = self._public_user_by_id(user_id) or {}
+        existing = connection.execute(
+            "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        ).fetchone()
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO project_members (project_id, user_id, role, invited_email, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (project_id, user_id, "owner", str(user.get("email") or ""), now, now),
+            )
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                organization_id=organization_id,
+                project_id=project_id,
+                target_user_id=user_id,
+                target_email=str(user.get("email") or ""),
+                action="project_owner_membership_created",
+                role="owner",
+            )
+        elif existing["role"] != "owner":
+            connection.execute(
+                "UPDATE project_members SET role = ?, updated_at = ? WHERE project_id = ? AND user_id = ?",
+                ("owner", now, project_id, user_id),
+            )
+
+    def project_role(self, *, user_id: str, project_id: str) -> Optional[str]:
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT p.user_id, pm.role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ?
+                """,
+                (user_id, project_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["user_id"] == user_id:
+                return "owner"
+            return _normalize_role(row["role"]) if row["role"] else None
+        finally:
+            connection.close()
+
+    def has_project_permission(self, *, user_id: str, project_id: str, minimum_role: str) -> bool:
+        role = self.project_role(user_id=user_id, project_id=project_id)
+        return bool(role and _role_allows(role, minimum_role))
 
     def list_projects(self, *, user_id: str) -> List[Dict[str, Any]]:
         connection = self.db.connect()
         try:
             rows = connection.execute(
                 """
-                SELECT
-                    project_id,
-                    name,
-                    description,
-                    created_at,
-                    updated_at,
-                    session_id,
-                    has_result,
-                    tags_json
-                FROM projects
-                WHERE user_id = ?
-                ORDER BY updated_at DESC
+                SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
+                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
+                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.user_id = ? OR pm.user_id = ?
+                ORDER BY p.updated_at DESC
                 """,
-                (user_id,),
+                (user_id, user_id, user_id, user_id),
             ).fetchall()
             return [
                 {
                     "project_id": row["project_id"],
+                    "user_id": row["user_id"],
+                    "organization_id": row["organization_id"] if "organization_id" in row.keys() else None,
                     "name": row["name"],
                     "description": row["description"],
                     "created_at": row["created_at"],
@@ -137,6 +313,7 @@ class ProjectStore:
                     "session_id": row["session_id"],
                     "tags": _json_loads(row["tags_json"], []),
                     "has_result": bool(row["has_result"]),
+                    "access_role": _normalize_role(row["access_role"], default="owner" if row["user_id"] == user_id else "viewer"),
                 }
                 for row in rows
             ]
@@ -148,65 +325,32 @@ class ProjectStore:
         try:
             row = connection.execute(
                 """
-                SELECT *
-                FROM projects
-                WHERE user_id = ? AND project_id = ?
+                SELECT p.*, COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
                 """,
-                (user_id, project_id),
+                (user_id, user_id, project_id, user_id, user_id),
             ).fetchone()
-            return None if row is None else self._row_to_record(row)
+            if row is None:
+                return None
+            return self._row_to_record(row)
         finally:
             connection.close()
 
     def get_project_shell(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
-        connection = self.db.connect()
-        try:
-            row = connection.execute(
-                """
-                SELECT project_id, user_id, name, description, created_at, updated_at, session_id,
-                       has_result,
-                       tags_json, project_input_json, session_state_json, metadata_json
-                FROM projects
-                WHERE user_id = ? AND project_id = ?
-                """,
-                (user_id, project_id),
-            ).fetchone()
-            if row is None:
-                return None
-            return {
-                "project_id": row["project_id"],
-                "user_id": row["user_id"],
-                "name": row["name"],
-                "description": row["description"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-                "session_id": row["session_id"],
-                "has_result": bool(row["has_result"]),
-                "tags": _json_loads(row["tags_json"], []),
-                "project_input": _json_loads(row["project_input_json"], {}),
-                "latest_result": {},
-                "session_state": _json_loads(row["session_state_json"], {}),
-                "metadata": _json_loads(row["metadata_json"], {}),
-            }
-        finally:
-            connection.close()
+        record = self.get_project(user_id=user_id, project_id=project_id)
+        if record is None:
+            return None
+        shell = dict(record)
+        shell["latest_result"] = {}
+        return shell
 
     def get_project_latest_result(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
-        connection = self.db.connect()
-        try:
-            row = connection.execute(
-                """
-                SELECT latest_result_json
-                FROM projects
-                WHERE user_id = ? AND project_id = ?
-                """,
-                (user_id, project_id),
-            ).fetchone()
-            if row is None:
-                return None
-            return _json_loads(row["latest_result_json"], {})
-        finally:
-            connection.close()
+        record = self.get_project(user_id=user_id, project_id=project_id)
+        if record is None:
+            return None
+        return dict(record.get("latest_result") or {})
 
     def save_project(
         self,
@@ -221,12 +365,15 @@ class ProjectStore:
         latest_result: Optional[Dict[str, Any]] = None,
         session_state: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        organization_id: Optional[str] = None,
+        minimum_role: str = "editor",
     ) -> Dict[str, Any]:
         now = _now()
         if project_id:
-            owner_id = self._project_owner(project_id)
-            if owner_id is not None and owner_id != user_id:
-                raise ValueError("That project belongs to another user.")
+            if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role=minimum_role):
+                raise ValueError(f"You do not have {minimum_role} access to that project.")
+        elif not organization_id:
+            organization_id = self.ensure_default_organization(user_id=user_id)["organization_id"]
 
         existing = self.get_project(user_id=user_id, project_id=project_id) if project_id else None
         existing_latest_result = dict((existing or {}).get("latest_result") or {})
@@ -244,6 +391,7 @@ class ProjectStore:
         record = {
             "project_id": project_id or _new_id("project"),
             "user_id": user_id,
+            "organization_id": organization_id or (existing or {}).get("organization_id"),
             "name": str(name or "").strip() or "Untitled Project",
             "description": description or "",
             "created_at": (existing or {}).get("created_at", now),
@@ -261,12 +409,13 @@ class ProjectStore:
             connection.execute(
                 """
                 INSERT INTO projects (
-                    project_id, user_id, name, description, created_at, updated_at, session_id,
+                    project_id, user_id, organization_id, name, description, created_at, updated_at, session_id,
                     has_result,
                     tags_json, project_input_json, latest_result_json, session_state_json, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(project_id) DO UPDATE SET
                     user_id = excluded.user_id,
+                    organization_id = COALESCE(excluded.organization_id, projects.organization_id),
                     name = excluded.name,
                     description = excluded.description,
                     updated_at = excluded.updated_at,
@@ -287,6 +436,7 @@ class ProjectStore:
                 (
                     record["project_id"],
                     record["user_id"],
+                    record["organization_id"],
                     record["name"],
                     record["description"],
                     record["created_at"],
@@ -300,12 +450,21 @@ class ProjectStore:
                     _json_dumps(record["metadata"]),
                 ),
             )
+            self._ensure_owner_membership(
+                connection,
+                project_id=record["project_id"],
+                user_id=user_id,
+                organization_id=record["organization_id"],
+            )
             connection.commit()
+            record["access_role"] = "owner"
             return record
         finally:
             connection.close()
 
     def delete_project(self, *, user_id: str, project_id: str) -> bool:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="owner"):
+            return False
         connection = self.db.connect()
         try:
             cursor = connection.execute(
@@ -317,10 +476,239 @@ class ProjectStore:
         finally:
             connection.close()
 
+    def invite_project_member(self, *, actor_user_id: str, project_id: str, email: str, role: str) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="admin"):
+            raise ValueError("You do not have admin access to that project.")
+        normalized_role = _normalize_role(role, default="viewer")
+        if normalized_role == "owner":
+            raise ValueError("Owner access cannot be granted by invite.")
+        target_email = str(email or "").strip().lower()
+        if not target_email or "@" not in target_email:
+            raise ValueError("A valid invite email is required.")
+        target_user = self._public_user_by_email(target_email)
+        now = _now()
+        invite_id = _new_id("invite")
+        connection = self.db.connect()
+        try:
+            project = connection.execute(
+                "SELECT organization_id FROM projects WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if project is None:
+                raise ValueError("Project not found.")
+            status = "accepted" if target_user else "pending"
+            connection.execute(
+                """
+                INSERT INTO project_invites (
+                    invite_id, project_id, email, role, invited_by_user_id,
+                    accepted_by_user_id, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    invite_id,
+                    project_id,
+                    target_email,
+                    normalized_role,
+                    actor_user_id,
+                    target_user.get("user_id") if target_user else None,
+                    status,
+                    now,
+                    now,
+                ),
+            )
+            if target_user:
+                connection.execute(
+                    """
+                    INSERT INTO project_members (project_id, user_id, role, invited_email, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(project_id, user_id) DO UPDATE SET
+                        role = excluded.role,
+                        invited_email = excluded.invited_email,
+                        updated_at = excluded.updated_at
+                    """,
+                    (project_id, target_user["user_id"], normalized_role, target_email, now, now),
+                )
+            self._log_access_event(
+                connection,
+                actor_user_id=actor_user_id,
+                organization_id=project["organization_id"] if "organization_id" in project.keys() else None,
+                project_id=project_id,
+                target_user_id=target_user.get("user_id") if target_user else None,
+                target_email=target_email,
+                action="project_member_added" if target_user else "project_member_invited",
+                role=normalized_role,
+                metadata={"invite_id": invite_id, "status": status},
+            )
+            connection.commit()
+            return {
+                "invite_id": invite_id,
+                "project_id": project_id,
+                "email": target_email,
+                "role": normalized_role,
+                "status": status,
+                "user": target_user or {},
+                "created_at": now,
+                "updated_at": now,
+            }
+        finally:
+            connection.close()
+
+    def remove_project_member(self, *, actor_user_id: str, project_id: str, user_id: str) -> bool:
+        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="admin"):
+            raise ValueError("You do not have admin access to that project.")
+        if actor_user_id == user_id:
+            raise ValueError("You cannot remove your own access from this admin endpoint.")
+        target_role = self.project_role(user_id=user_id, project_id=project_id)
+        if target_role == "owner":
+            raise ValueError("Owner access cannot be removed from this endpoint.")
+        connection = self.db.connect()
+        try:
+            project = connection.execute(
+                "SELECT organization_id FROM projects WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            target_user = self._public_user_by_id(user_id) or {}
+            cursor = connection.execute(
+                "DELETE FROM project_members WHERE project_id = ? AND user_id = ?",
+                (project_id, user_id),
+            )
+            if cursor.rowcount <= 0:
+                connection.rollback()
+                return False
+            self._log_access_event(
+                connection,
+                actor_user_id=actor_user_id,
+                organization_id=project["organization_id"] if project and "organization_id" in project.keys() else None,
+                project_id=project_id,
+                target_user_id=user_id,
+                target_email=str(target_user.get("email") or ""),
+                action="project_member_removed",
+                role=str(target_role or ""),
+            )
+            connection.commit()
+            return True
+        finally:
+            connection.close()
+
+    def project_audit_log(self, *, user_id: str, project_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="admin"):
+            return []
+        connection = self.db.connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT audit_id, organization_id, project_id, actor_user_id, target_user_id,
+                       target_email, action, role, created_at, metadata_json
+                FROM access_audit_log
+                WHERE project_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (project_id, int(max(1, min(limit, 200)))),
+            ).fetchall()
+            return [
+                {
+                    "audit_id": row["audit_id"],
+                    "organization_id": row["organization_id"],
+                    "project_id": row["project_id"],
+                    "actor_user_id": row["actor_user_id"],
+                    "target_user_id": row["target_user_id"],
+                    "target_email": row["target_email"],
+                    "action": row["action"],
+                    "role": row["role"],
+                    "created_at": row["created_at"],
+                    "metadata": _json_loads(row["metadata_json"], {}),
+                }
+                for row in rows
+            ]
+        finally:
+            connection.close()
+
+    def project_admin_surface(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="viewer"):
+            return None
+        project = self.get_project_shell(user_id=user_id, project_id=project_id)
+        if project is None:
+            return None
+        connection = self.db.connect()
+        try:
+            members = [
+                {
+                    "user_id": row["user_id"],
+                    "email": row["email"],
+                    "name": row["name"],
+                    "role": _normalize_role(row["role"]),
+                    "invited_email": row["invited_email"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in connection.execute(
+                    """
+                    SELECT pm.user_id, u.email, u.name, pm.role, pm.invited_email, pm.created_at, pm.updated_at
+                    FROM project_members pm
+                    JOIN users u ON u.user_id = pm.user_id
+                    WHERE pm.project_id = ?
+                    ORDER BY CASE pm.role
+                        WHEN 'owner' THEN 5
+                        WHEN 'admin' THEN 4
+                        WHEN 'editor' THEN 3
+                        WHEN 'reviewer' THEN 2
+                        ELSE 1
+                    END DESC, u.email ASC
+                    """,
+                    (project_id,),
+                ).fetchall()
+            ]
+            invites = [
+                {
+                    "invite_id": row["invite_id"],
+                    "project_id": row["project_id"],
+                    "email": row["email"],
+                    "role": _normalize_role(row["role"]),
+                    "status": row["status"],
+                    "invited_by_user_id": row["invited_by_user_id"],
+                    "accepted_by_user_id": row["accepted_by_user_id"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in connection.execute(
+                    """
+                    SELECT invite_id, project_id, email, role, invited_by_user_id, accepted_by_user_id,
+                           status, created_at, updated_at
+                    FROM project_invites
+                    WHERE project_id = ?
+                    ORDER BY updated_at DESC
+                    """,
+                    (project_id,),
+                ).fetchall()
+            ]
+        finally:
+            connection.close()
+        return {
+            "project": project,
+            "roles": list(PROJECT_ROLES),
+            "current_user_role": self.project_role(user_id=user_id, project_id=project_id),
+            "permissions": {
+                "can_view": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="viewer"),
+                "can_review": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="reviewer"),
+                "can_edit": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="editor"),
+                "can_manage_access": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="admin"),
+                "can_delete_project": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="owner"),
+            },
+            "members": members,
+            "invites": invites,
+            "audit_log": self.project_audit_log(user_id=user_id, project_id=project_id, limit=50),
+            "explanation": (
+                "Project access uses owner, admin, editor, reviewer, and viewer roles. "
+                "Admin-level users can add or remove non-owner project members; viewers keep read-only access."
+            ),
+        }
+
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
         return {
             "project_id": row["project_id"],
             "user_id": row["user_id"],
+            "organization_id": row["organization_id"] if "organization_id" in row.keys() else None,
             "name": row["name"],
             "description": row["description"],
             "created_at": row["created_at"],
@@ -331,5 +719,16 @@ class ProjectStore:
             "project_input": _json_loads(row["project_input_json"], {}),
             "latest_result": _json_loads(row["latest_result_json"], {}),
             "session_state": _json_loads(row["session_state_json"], {}),
+            "metadata": _json_loads(row["metadata_json"], {}),
+            "access_role": _normalize_role(row["access_role"], default="owner") if "access_role" in row.keys() else "owner",
+        }
+
+    def _organization_row_to_record(self, row: Any) -> Dict[str, Any]:
+        return {
+            "organization_id": row["organization_id"],
+            "name": row["name"],
+            "created_by_user_id": row["created_by_user_id"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
             "metadata": _json_loads(row["metadata_json"], {}),
         }
