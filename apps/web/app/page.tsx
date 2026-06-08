@@ -14846,7 +14846,10 @@ function PerformanceAIDashboardView({
           >
             <button
               type="button"
-              onClick={() => handleOpenSidePanel("projects")}
+              onClick={() => {
+                void refreshProjects();
+                handleOpenSidePanel("projects");
+              }}
               aria-label="Open projects"
               className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
             >
