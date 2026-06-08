@@ -118,6 +118,7 @@ from backend.application.professional_workflows import (
 )
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
+from backend.services.billing import build_billing_status, usage_gate
 from backend.services.database import Database
 from backend.services.job_queue import JobQueueService
 from backend.services.project_store import ProjectStore
@@ -1016,7 +1017,17 @@ def me(
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("auth")),
 ) -> Dict[str, Any]:
-    return application_current_user_response(current_user=current_user)
+    response = application_current_user_response(current_user=current_user)
+    response["billing_status_v1"] = build_billing_status(user=current_user)
+    return response
+
+
+@app.get("/api/billing/status")
+def billing_status(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    return build_billing_status(user=current_user)
 
 
 @app.post("/api/auth/logout")
@@ -1771,7 +1782,11 @@ def orchestrate(
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    return _run_orchestration(_orchestration_request_payload(payload), current_user=current_user)
+    result = _run_orchestration(_orchestration_request_payload(payload), current_user=current_user)
+    metadata = dict(result.get("metadata") or {})
+    metadata["billing_usage_gate_v1"] = usage_gate(action="orchestrate", user=current_user)
+    result["metadata"] = metadata
+    return result
 
 
 @app.get("/api/projects")
@@ -1988,13 +2003,15 @@ def queue_orchestrate_job(
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
     project_id, request_payload = _queue_request_payload_with_project(payload)
-    return application_queue_orchestrate_job(
+    response = application_queue_orchestrate_job(
         project_store=PROJECT_STORE,
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
         project_id=project_id,
         request_payload=request_payload,
     )
+    response["billing_usage_gate_v1"] = usage_gate(action="queue_orchestrate_job", user=current_user)
+    return response
 
 
 @app.post("/api/jobs/drainage")
@@ -2019,7 +2036,7 @@ def queue_export_dxf_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("export")),
 ) -> Dict[str, Any]:
-    return application_queue_artifact_export_job(
+    response = application_queue_artifact_export_job(
         project_store=PROJECT_STORE,
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
@@ -2027,6 +2044,8 @@ def queue_export_dxf_job(
         request_payload=_model_to_dict(payload),
         export_kind="dxf",
     )
+    response["billing_usage_gate_v1"] = usage_gate(action="queue_export_dxf_job", user=current_user)
+    return response
 
 
 @app.post("/api/jobs/export/report")
@@ -2035,7 +2054,7 @@ def queue_export_report_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("export")),
 ) -> Dict[str, Any]:
-    return application_queue_artifact_export_job(
+    response = application_queue_artifact_export_job(
         project_store=PROJECT_STORE,
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
@@ -2043,6 +2062,8 @@ def queue_export_report_job(
         request_payload=_model_to_dict(payload),
         export_kind="report",
     )
+    response["billing_usage_gate_v1"] = usage_gate(action="queue_export_report_job", user=current_user)
+    return response
 
 
 @app.post("/api/preview")
