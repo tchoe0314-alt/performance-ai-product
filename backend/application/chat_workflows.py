@@ -37,6 +37,7 @@ from backend.planning.source_confidence_map import (
     attach_source_confidence_map,
     build_source_confidence_map,
 )
+from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE as PLAN_PDF_SOURCE_CONFIDENCE,
     plan_pdf_report,
@@ -456,6 +457,116 @@ def _package_blockers(record: Dict[str, Any]) -> List[str]:
             if text and text not in blockers:
                 blockers.append(text)
     return blockers
+
+
+def _utility_catalog_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    catalog_words = ("catalog", "part", "parts", "pipe size", "pipe sizes", "hydrant", "valve", "fitting", "manhole", "inlet")
+    if not any(word in lowered for word in catalog_words):
+        return None
+
+    def _base_response(text: str, action_taken: str, *, metadata_updates: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        metadata = {
+            "action_taken": action_taken,
+            "state_changed": action_taken.startswith("added_"),
+            "affected_systems": ["storm", "sanitary", "water"],
+            "catalog_policy": "Catalog entries require explicit source metadata and workspace review status. Catalog presence does not claim standards compliance.",
+            "ui_navigation_target": "catalogs",
+            "requested_ui_mode": "data",
+            "confidence": 0.96,
+        }
+        if metadata_updates:
+            metadata.update(metadata_updates)
+        return {
+            "intent": "conversation",
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": False,
+            "assistant_message": text,
+            "reason": "Handled by utility catalog chat support.",
+            "confidence": 0.96,
+            "response_metadata": metadata,
+        }
+
+    if "available" in lowered and "pipe" in lowered and ("size" in lowered or "sizes" in lowered):
+        network = "storm" if "storm" in lowered else "sanitary" if "sanitary" in lowered else "water" if "water" in lowered else ""
+        sizes = GLOBAL_UTILITY_CATALOG_MANAGER.available_pipe_sizes(network=network)
+        rows = []
+        for key, values in sorted(_safe_dict(sizes.get("sizes_by_network_material")).items()):
+            formatted = ", ".join(f'{float(value):g}"' for value in values)
+            rows.append(f"{key.replace(':', ' ')}: {formatted}")
+        if not rows:
+            rows.append("No matching pipe sizes are listed yet.")
+        review_ids = [str(item) for item in _safe_list(sizes.get("review_required_catalog_ids")) if str(item)]
+        review_text = f" Review required for: {', '.join(review_ids)}." if review_ids else ""
+        return _base_response(
+            "Available pipe sizes in the catalog: " + " | ".join(rows) + review_text,
+            "answered_catalog_pipe_sizes",
+            metadata_updates={"catalog_result": sizes},
+        )
+
+    if "why" in lowered and "pipe" in lowered and "invalid" in lowered:
+        current_pipe = _safe_dict(context.get("selected_pipe") or context.get("current_pipe"))
+        if not current_pipe:
+            current_pipe = {
+                "id": "chat_pipe_check",
+                "network": "water" if "water" in lowered else "sanitary" if "sanitary" in lowered else "storm",
+            }
+            size_match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:in|inch|inches|[\"”])", lowered)
+            material_match = re.search(r"\b(rcp|pvc|dip|hdpe|cmp)\b", lowered)
+            if size_match:
+                current_pipe["size_in"] = float(size_match.group(1))
+            if material_match:
+                current_pipe["material"] = material_match.group(1).upper()
+        if not current_pipe.get("material") or not (current_pipe.get("size_in") or current_pipe.get("diameter_in")):
+            return _base_response(
+                "I need the pipe network, material, and size to explain the catalog issue. Example: why is this water DIP 14 inch pipe invalid?",
+                "asked_catalog_pipe_details",
+                metadata_updates={"required_missing_inputs": ["pipe network, material, and size"]},
+            )
+        explanation = GLOBAL_UTILITY_CATALOG_MANAGER.explain_invalid_pipe(current_pipe)
+        return _base_response(
+            str(explanation.get("message") or "Pipe catalog validation did not return a reason."),
+            "answered_invalid_pipe_reason",
+            metadata_updates={"catalog_result": explanation},
+        )
+
+    if ("add" in lowered or "create" in lowered) and "hydrant" in lowered and "catalog" in lowered:
+        source = _safe_dict(context.get("catalog_source") or context.get("utility_catalog_source"))
+        if not source:
+            return _base_response(
+                "I can add a hydrant catalog entry after you provide source_name, source_type, source_reference, jurisdiction or company, reviewed_by, and review_date. I will not infer standards compliance from a hydrant name alone.",
+                "blocked_catalog_missing_source_review",
+                metadata_updates={
+                    "required_missing_inputs": ["catalog source and review metadata"],
+                    "state_changed": False,
+                },
+            )
+        payload = {
+            "item_id": str(context.get("catalog_item_id") or "water-hydrant-chat"),
+            "network": "water",
+            "part_type": "hydrant",
+            "name": str(context.get("catalog_part_name") or "Hydrant assembly"),
+            "compatible_materials": context.get("compatible_materials") or ["DIP"],
+            "compatible_sizes_in": context.get("compatible_sizes_in") or [6, 8, 10, 12],
+            "source": source,
+            "review_status": str(context.get("catalog_review_status") or "needs_review"),
+            "limitations": ["Added from chat; review source details before use in validation."],
+        }
+        result = GLOBAL_UTILITY_CATALOG_MANAGER.add_part_catalog(payload)
+        if not result.get("success"):
+            return _base_response(
+                "I could not add the hydrant catalog entry: " + "; ".join(str(item) for item in _safe_list(result.get("issues"))),
+                "blocked_catalog_validation",
+                metadata_updates={"catalog_result": result, "state_changed": False},
+            )
+        return _base_response(
+            "Hydrant catalog entry added with its source/review metadata. It is usable for validation only when its review status is accepted for this workspace.",
+            "added_hydrant_catalog",
+            metadata_updates={"catalog_result": result},
+        )
+
+    return None
 
 
 def _build_capability_statuses(project_input: Dict[str, Any], latest_result: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -2245,6 +2356,9 @@ def decide_chat(
     )
     if online_discovery_decision is not None:
         return _enrich_response_contract(online_discovery_decision, message=message)
+    utility_catalog_decision = _utility_catalog_chat_response(message, context)
+    if utility_catalog_decision is not None:
+        return _enrich_response_contract(utility_catalog_decision, message=message)
     alternatives_decision = _design_alternatives_chat_response(
         message=message,
         record=record,

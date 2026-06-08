@@ -128,6 +128,7 @@ type SidePanelKey =
   | "files"
   | "jobs"
   | "standards"
+  | "catalogs"
   | "libraries"
   | "data"
   | "settings"
@@ -182,6 +183,53 @@ type OnlineExistingConditionsFetchResponse = {
   existing_conditions_summary?: Record<string, unknown>;
   canonical_existing_conditions?: Record<string, unknown>;
   warnings?: string[];
+};
+type UtilityCatalogSource = {
+  source_name?: string;
+  source_type?: string;
+  source_reference?: string;
+  jurisdiction?: string;
+  company?: string;
+  effective_date?: string;
+  reviewed_by?: string;
+  review_date?: string;
+  notes?: string;
+};
+type UtilityPipeCatalogItem = {
+  item_id?: string;
+  network?: string;
+  material?: string;
+  sizes_in?: number[];
+  pressure_class?: string;
+  source?: UtilityCatalogSource;
+  review_status?: string;
+  accepted_for_workspace?: boolean;
+  limitations?: string[];
+};
+type UtilityPartCatalogItem = {
+  item_id?: string;
+  network?: string;
+  part_type?: string;
+  name?: string;
+  compatible_materials?: string[];
+  compatible_sizes_in?: number[];
+  source?: UtilityCatalogSource;
+  review_status?: string;
+  accepted_for_workspace?: boolean;
+  limitations?: string[];
+};
+type UtilityCatalogResponse = {
+  version?: string;
+  pipes?: UtilityPipeCatalogItem[];
+  parts?: UtilityPartCatalogItem[];
+  policy?: Record<string, unknown>;
+  summary?: {
+    pipe_catalog_count?: number;
+    part_catalog_count?: number;
+    accepted_pipe_catalog_count?: number;
+    accepted_part_catalog_count?: number;
+    review_required_count?: number;
+  };
 };
 const hasAddressCoordinates = (
   value: AddressSuggestion | null | undefined,
@@ -2145,6 +2193,9 @@ function PerformanceAIDashboardView({
   const [roads, setRoads] = useState(true);
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
+  const [utilityCatalog, setUtilityCatalog] = useState<UtilityCatalogResponse | null>(null);
+  const [utilityCatalogStatus, setUtilityCatalogStatus] = useState("Catalog not loaded");
+  const [utilityCatalogNetworkFilter, setUtilityCatalogNetworkFilter] = useState("all");
   const [assistedEnabled, setAssistedEnabled] = useState(false);
   const [drainageForcedInlets, setDrainageForcedInlets] = useState<
     Array<{ x: number; y: number; name?: string }>
@@ -2522,6 +2573,35 @@ function PerformanceAIDashboardView({
   useEffect(() => {
     setDemoWorkspaceEnabled(forceDemoWorkspace || isDemoWorkspaceQuery());
   }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled]);
+
+  useEffect(() => {
+    if (!token) {
+      setUtilityCatalog(null);
+      setUtilityCatalogStatus("Sign in to load utility catalogs");
+      return;
+    }
+    let cancelled = false;
+    setUtilityCatalogStatus("Loading utility catalogs");
+    void getJson<UtilityCatalogResponse>("/api/utility-catalogs", { token })
+      .then((data) => {
+        if (cancelled) return;
+        setUtilityCatalog(data);
+        const reviewCount = Number(data.summary?.review_required_count ?? 0);
+        setUtilityCatalogStatus(
+          reviewCount > 0
+            ? `${reviewCount} catalog entries need workspace review`
+            : "Catalog entries loaded",
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setUtilityCatalog(null);
+        setUtilityCatalogStatus(error instanceof Error ? error.message : "Catalog load failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const disciplineToggles: DisciplineToggle[] = [
     {
@@ -13691,6 +13771,7 @@ function PerformanceAIDashboardView({
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
     jobs: { title: "Async Jobs", desc: "Inspect background runs, retries, review holds, exports, and artifact history." },
     standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
+    catalogs: { title: "Utility Catalogs", desc: "Manage source-traced pipe and parts catalogs for storm, sanitary, and water networks." },
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
     data: { title: "Data", desc: "Configure survey, terrain, GIS, parcels, standards sources, imported utilities, and confidence labels." },
     settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
@@ -13721,6 +13802,15 @@ function PerformanceAIDashboardView({
     { panel: "analysis", label: "Review & QA" },
   ];
   const sidePanelForRender = activeSidePanel ?? renderedSidePanel;
+  const utilityCatalogPipes = utilityCatalog?.pipes ?? [];
+  const utilityCatalogParts = utilityCatalog?.parts ?? [];
+  const filteredUtilityPipes = utilityCatalogNetworkFilter === "all"
+    ? utilityCatalogPipes
+    : utilityCatalogPipes.filter((item) => item.network === utilityCatalogNetworkFilter);
+  const filteredUtilityParts = utilityCatalogNetworkFilter === "all"
+    ? utilityCatalogParts
+    : utilityCatalogParts.filter((item) => item.network === utilityCatalogNetworkFilter);
+  const utilityCatalogReviewCount = Number(utilityCatalog?.summary?.review_required_count ?? 0);
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
@@ -13746,6 +13836,7 @@ function PerformanceAIDashboardView({
     files: "data",
     jobs: "review",
     standards: "data",
+    catalogs: "data",
     libraries: "data",
     data: "data",
     settings: "settings",
@@ -13798,6 +13889,7 @@ function PerformanceAIDashboardView({
       files: "Deliverables",
       jobs: "Review",
       standards: "Review",
+      catalogs: "Review",
       libraries: "Concept",
       data: "Concept",
       settings: "Concept",
@@ -13886,6 +13978,9 @@ function PerformanceAIDashboardView({
     }
     if (target === "standards") {
       return minSlopePct || maxRoadGradePct || pipeMinSlopePct || maxAdaCrossSlopePct ? "ok" : "review";
+    }
+    if (target === "catalogs") {
+      return Number(utilityCatalog?.summary?.review_required_count ?? 0) > 0 ? "review" : utilityCatalog ? "ok" : "idle";
     }
     if (target === "libraries" || target === "settings" || target === "chat" || target === "projects") {
       return "ok";
@@ -15943,6 +16038,7 @@ function PerformanceAIDashboardView({
                           ["import_survey", "Survey / Terrain"],
                           ["files", "Files"],
                           ["standards", "Standards Sources"],
+                          ["catalogs", "Utility Catalogs"],
                           ["libraries", "Libraries"],
                         ] as Array<[SidePanelKey, string]>).map(([panel, label]) => (
                           <button
@@ -18756,6 +18852,129 @@ function PerformanceAIDashboardView({
                             No generated artifacts have been recorded yet.
                           </p>
                         )}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {sidePanelForRender === "catalogs" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Utility catalog manager</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{utilityCatalogStatus}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          utilityCatalogReviewCount > 0 ? "bg-amber-50 text-amber-700" : utilityCatalog ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {utilityCatalogReviewCount > 0 ? "Review required" : utilityCatalog ? "Loaded" : "Pending"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
+                        {[
+                          ["Pipe catalogs", utilityCatalog?.summary?.pipe_catalog_count ?? 0],
+                          ["Part catalogs", utilityCatalog?.summary?.part_catalog_count ?? 0],
+                          ["Accepted pipes", utilityCatalog?.summary?.accepted_pipe_catalog_count ?? 0],
+                          ["Accepted parts", utilityCatalog?.summary?.accepted_part_catalog_count ?? 0],
+                          ["Needs review", utilityCatalogReviewCount],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                            <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {["all", "storm", "sanitary", "water"].map((network) => (
+                          <button
+                            key={network}
+                            type="button"
+                            onClick={() => setUtilityCatalogNetworkFilter(network)}
+                            className={`rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
+                              utilityCatalogNetworkFilter === network
+                                ? "border-slate-950 bg-slate-950 text-white"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            {network}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                        Catalog entries require explicit source and workspace review metadata. Listed sizes do not claim standards compliance.
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pipe material / size catalogs</p>
+                      <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-[720px] w-full border-collapse text-left text-xs">
+                          <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2 font-semibold">Network</th>
+                              <th className="px-3 py-2 font-semibold">Material</th>
+                              <th className="px-3 py-2 font-semibold">Sizes</th>
+                              <th className="px-3 py-2 font-semibold">Source</th>
+                              <th className="px-3 py-2 font-semibold">Review status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {filteredUtilityPipes.map((item) => (
+                              <tr key={item.item_id} className="align-top">
+                                <td className="px-3 py-3 font-semibold text-slate-800">{item.network}</td>
+                                <td className="px-3 py-3 font-semibold text-slate-800">{item.material}</td>
+                                <td className="px-3 py-3 text-slate-600">{(item.sizes_in ?? []).map((size) => `${size}"`).join(", ") || "No sizes"}</td>
+                                <td className="px-3 py-3">
+                                  <p className="font-semibold text-slate-800">{item.source?.source_name || "Missing source"}</p>
+                                  <p className="mt-1 text-slate-500">{item.source?.jurisdiction || item.source?.company || "Jurisdiction/company missing"}</p>
+                                  <p className="mt-1 break-all text-[11px] text-slate-400">{item.source?.source_reference || "Reference missing"}</p>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                    item.accepted_for_workspace ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                                  }`}>
+                                    {item.review_status || "needs_review"}
+                                  </span>
+                                  <p className="mt-2 text-[11px] text-slate-500">{item.accepted_for_workspace ? "Accepted for workspace validation." : "Needs source/review acceptance before validation use."}</p>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {!filteredUtilityPipes.length ? (
+                          <p className="p-4 text-sm font-semibold text-slate-500">No pipe catalogs match this filter.</p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Structures / valves / fittings</p>
+                      <div className="mt-3 grid gap-2">
+                        {filteredUtilityParts.map((item) => (
+                          <div key={item.item_id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
+                                <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                  {item.network} / {item.part_type} / {(item.compatible_materials ?? []).join(", ") || "material pending"}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  Sizes: {(item.compatible_sizes_in ?? []).map((size) => `${size}"`).join(", ") || "not listed"}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  Source: {item.source?.source_name || "missing"} / {item.source?.jurisdiction || item.source?.company || "jurisdiction/company missing"}
+                                </p>
+                              </div>
+                              <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                item.accepted_for_workspace ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                              }`}>
+                                {item.review_status || "needs_review"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {!filteredUtilityParts.length ? (
+                          <p className="text-sm font-semibold text-slate-500">No part catalogs match this filter.</p>
+                        ) : null}
                       </div>
                     </div>
                   </div>

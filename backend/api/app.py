@@ -72,6 +72,7 @@ from backend.application.plan_pdf_workflows import (
     upload_plan_pdf_file as application_upload_plan_pdf_file,
 )
 from backend.planning.alpha_monitoring import build_alpha_monitoring_report
+from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
 from backend.application.job_workflows import (
     build_artifact_export_job_runner as application_build_artifact_export_job_runner,
     build_drainage_job_runner as application_build_drainage_job_runner,
@@ -402,6 +403,35 @@ class ChatFeedbackPayload(BaseModel):
     message: str
     assistant_message: str
     context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UtilityPipeCatalogPayload(BaseModel):
+    item_id: str
+    network: str
+    material: str
+    sizes_in: List[float] = Field(default_factory=list)
+    pressure_class: str = ""
+    roughness_n: Optional[float] = None
+    source: Dict[str, Any] = Field(default_factory=dict)
+    review_status: str = "needs_review"
+    limitations: List[str] = Field(default_factory=list)
+
+
+class UtilityPartCatalogPayload(BaseModel):
+    item_id: str
+    network: str
+    part_type: str
+    name: str
+    compatible_materials: List[str] = Field(default_factory=list)
+    compatible_sizes_in: List[float] = Field(default_factory=list)
+    source: Dict[str, Any] = Field(default_factory=dict)
+    review_status: str = "needs_review"
+    limitations: List[str] = Field(default_factory=list)
+
+
+class UtilityCatalogValidationPayload(BaseModel):
+    network: str = ""
+    features: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class SurveySlopePayload(BaseModel):
@@ -1189,6 +1219,67 @@ def controlled_single_source_lookup(
         uploaded_by=payload.uploaded_by,
         allowlist_entries=payload.allowlist_entries,
     )
+
+
+@app.get("/api/utility-catalogs")
+def utility_catalogs(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return GLOBAL_UTILITY_CATALOG_MANAGER.snapshot()
+
+
+@app.get("/api/utility-catalogs/pipe-sizes")
+def utility_catalog_pipe_sizes(
+    network: str = "",
+    material: str = "",
+    accepted_only: bool = False,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return GLOBAL_UTILITY_CATALOG_MANAGER.available_pipe_sizes(
+        network=network,
+        material=material,
+        accepted_only=accepted_only,
+    )
+
+
+@app.post("/api/utility-catalogs/pipes")
+def utility_catalog_add_pipe(
+    payload: UtilityPipeCatalogPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    result = GLOBAL_UTILITY_CATALOG_MANAGER.add_pipe_catalog(_model_to_dict(payload))
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@app.post("/api/utility-catalogs/parts")
+def utility_catalog_add_part(
+    payload: UtilityPartCatalogPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    result = GLOBAL_UTILITY_CATALOG_MANAGER.add_part_catalog(_model_to_dict(payload))
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@app.post("/api/utility-catalogs/validate-network")
+def utility_catalog_validate_network(
+    payload: UtilityCatalogValidationPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return GLOBAL_UTILITY_CATALOG_MANAGER.validate_network(_model_to_dict(payload))
 
 
 @app.post("/api/golden-scenarios/run")
