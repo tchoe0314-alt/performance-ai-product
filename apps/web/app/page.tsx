@@ -128,6 +128,7 @@ type SidePanelKey =
   | "files"
   | "jobs"
   | "standards"
+  | "templates"
   | "catalogs"
   | "libraries"
   | "data"
@@ -229,6 +230,84 @@ type UtilityCatalogResponse = {
     accepted_pipe_catalog_count?: number;
     accepted_part_catalog_count?: number;
     review_required_count?: number;
+  };
+};
+type CustomerTemplateSummary = {
+  template_id?: string;
+  name?: string;
+  firm_name?: string;
+  review_status?: string;
+  accepted_for_workspace?: boolean;
+  present_sections?: string[];
+  missing_sections?: string[];
+  layer_count?: number;
+  title_block_count?: number;
+  label_style_count?: number;
+  symbol_count?: number;
+  report_template_count?: number;
+  cost_book_link_count?: number;
+  pipe_hook_ready?: boolean;
+  roadway_hook_ready?: boolean;
+};
+type CustomerTemplateRegistryResponse = {
+  version?: string;
+  active_template_id?: string;
+  summaries?: CustomerTemplateSummary[];
+  active_template?: Record<string, unknown> | null;
+  behavior?: {
+    status?: string;
+    template_behavior?: string[];
+    blockers?: string[];
+    active_template?: CustomerTemplateSummary | null;
+  };
+  policy?: {
+    truth_label?: string;
+    customer_standard_only?: boolean;
+    jurisdiction_compliance_claim?: boolean;
+  };
+};
+type BillingStatusV1 = {
+  version?: string;
+  status?: string;
+  paid_pilot_mode?: boolean;
+  real_charging_enabled?: boolean;
+  charging_config_requested?: boolean;
+  legal_business_docs_ready?: boolean;
+  blocked?: boolean;
+  blocked_reasons?: string[];
+  plan?: {
+    code?: string;
+    label?: string;
+    access?: string;
+    gates?: Record<string, string>;
+  };
+  usage_limits?: {
+    monthly_projects?: number;
+    monthly_exports?: number;
+    monthly_jobs?: number;
+    enforcement?: string;
+  };
+  provider?: {
+    provider?: string;
+    configured?: boolean;
+    charging_enabled?: boolean;
+    status?: string;
+    missing?: string[];
+  };
+  invoice?: {
+    status?: string;
+    provider?: string;
+    message?: string;
+  };
+  payment?: {
+    status?: string;
+    message?: string;
+  };
+  legal?: {
+    terms_url?: string;
+    privacy_url?: string;
+    order_form_url?: string;
+    required?: string[];
   };
 };
 const hasAddressCoordinates = (
@@ -2196,6 +2275,8 @@ function PerformanceAIDashboardView({
   const [utilityCatalog, setUtilityCatalog] = useState<UtilityCatalogResponse | null>(null);
   const [utilityCatalogStatus, setUtilityCatalogStatus] = useState("Catalog not loaded");
   const [utilityCatalogNetworkFilter, setUtilityCatalogNetworkFilter] = useState("all");
+  const [customerTemplates, setCustomerTemplates] = useState<CustomerTemplateRegistryResponse | null>(null);
+  const [customerTemplateStatus, setCustomerTemplateStatus] = useState("Templates not loaded");
   const [assistedEnabled, setAssistedEnabled] = useState(false);
   const [drainageForcedInlets, setDrainageForcedInlets] = useState<
     Array<{ x: number; y: number; name?: string }>
@@ -2578,10 +2659,13 @@ function PerformanceAIDashboardView({
     if (!token) {
       setUtilityCatalog(null);
       setUtilityCatalogStatus("Sign in to load utility catalogs");
+      setCustomerTemplates(null);
+      setCustomerTemplateStatus("Sign in to load templates");
       return;
     }
     let cancelled = false;
     setUtilityCatalogStatus("Loading utility catalogs");
+    setCustomerTemplateStatus("Loading templates");
     void getJson<UtilityCatalogResponse>("/api/utility-catalogs", { token })
       .then((data) => {
         if (cancelled) return;
@@ -2597,6 +2681,23 @@ function PerformanceAIDashboardView({
         if (cancelled) return;
         setUtilityCatalog(null);
         setUtilityCatalogStatus(error instanceof Error ? error.message : "Catalog load failed");
+      });
+    void getJson<CustomerTemplateRegistryResponse>("/api/customer-templates", { token })
+      .then((data) => {
+        if (cancelled) return;
+        setCustomerTemplates(data);
+        const active = data.behavior?.active_template;
+        const blockerCount = Number(data.behavior?.blockers?.length ?? 0);
+        setCustomerTemplateStatus(
+          active
+            ? `${active.name || "Company template"} active${blockerCount ? `, ${blockerCount} item(s) need review` : ""}`
+            : "No company template active",
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setCustomerTemplates(null);
+        setCustomerTemplateStatus(error instanceof Error ? error.message : "Template load failed");
       });
     return () => {
       cancelled = true;
@@ -6870,7 +6971,7 @@ function PerformanceAIDashboardView({
         const uiPanel = chatCommandPayload.ui_navigation_target ?? chatMetadata.ui_navigation_target;
         const uiMode = chatCommandPayload.requested_ui_mode ?? chatMetadata.requested_ui_mode;
         const validPanels: SidePanelKey[] = [
-          "projects", "dashboard", "model", "site_existing", "import_survey", "objects", "generate", "grading", "drainage", "sanitary", "water", "utilities", "roadway", "landscape", "details", "layers", "analysis", "reports", "quantities", "deliverables", "files", "standards", "libraries", "data", "settings", "chat", "system_grading", "system_storm", "system_sanitary", "system_water", "system_roadway", "system_utilities", "system_landscape",
+          "projects", "dashboard", "model", "site_existing", "import_survey", "objects", "generate", "grading", "drainage", "sanitary", "water", "utilities", "roadway", "landscape", "details", "layers", "analysis", "reports", "quantities", "deliverables", "files", "standards", "templates", "libraries", "data", "settings", "chat", "system_grading", "system_storm", "system_sanitary", "system_water", "system_roadway", "system_utilities", "system_landscape",
         ];
         const validModes: WorkspaceMode[] = ["dashboard", "setup", "canvas", "layers", "review", "deliver", "data", "settings"];
         if (uiMode && validModes.includes(uiMode as WorkspaceMode)) {
@@ -13771,6 +13872,7 @@ function PerformanceAIDashboardView({
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
     jobs: { title: "Async Jobs", desc: "Inspect background runs, retries, review holds, exports, and artifact history." },
     standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
+    templates: { title: "Template Manager", desc: "Manage firm templates for layers, title blocks, labels, symbols, reports, cost links, pipes, and roadway hooks." },
     catalogs: { title: "Utility Catalogs", desc: "Manage source-traced pipe and parts catalogs for storm, sanitary, and water networks." },
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
     data: { title: "Data", desc: "Configure survey, terrain, GIS, parcels, standards sources, imported utilities, and confidence labels." },
@@ -13811,6 +13913,9 @@ function PerformanceAIDashboardView({
     ? utilityCatalogParts
     : utilityCatalogParts.filter((item) => item.network === utilityCatalogNetworkFilter);
   const utilityCatalogReviewCount = Number(utilityCatalog?.summary?.review_required_count ?? 0);
+  const customerTemplateSummaries = customerTemplates?.summaries ?? [];
+  const activeCustomerTemplate = customerTemplates?.behavior?.active_template ?? null;
+  const customerTemplateBlockerCount = Number(customerTemplates?.behavior?.blockers?.length ?? 0);
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
@@ -13836,6 +13941,7 @@ function PerformanceAIDashboardView({
     files: "data",
     jobs: "review",
     standards: "data",
+    templates: "data",
     catalogs: "data",
     libraries: "data",
     data: "data",
@@ -13889,6 +13995,7 @@ function PerformanceAIDashboardView({
       files: "Deliverables",
       jobs: "Review",
       standards: "Review",
+      templates: "Review",
       catalogs: "Review",
       libraries: "Concept",
       data: "Concept",
@@ -13978,6 +14085,9 @@ function PerformanceAIDashboardView({
     }
     if (target === "standards") {
       return minSlopePct || maxRoadGradePct || pipeMinSlopePct || maxAdaCrossSlopePct ? "ok" : "review";
+    }
+    if (target === "templates") {
+      return customerTemplateBlockerCount > 0 ? "review" : customerTemplates ? "ok" : "idle";
     }
     if (target === "catalogs") {
       return Number(utilityCatalog?.summary?.review_required_count ?? 0) > 0 ? "review" : utilityCatalog ? "ok" : "idle";
@@ -16038,6 +16148,7 @@ function PerformanceAIDashboardView({
                           ["import_survey", "Survey / Terrain"],
                           ["files", "Files"],
                           ["standards", "Standards Sources"],
+                          ["templates", "Templates"],
                           ["catalogs", "Utility Catalogs"],
                           ["libraries", "Libraries"],
                         ] as Array<[SidePanelKey, string]>).map(([panel, label]) => (
@@ -18852,6 +18963,122 @@ function PerformanceAIDashboardView({
                             No generated artifacts have been recorded yet.
                           </p>
                         )}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {sidePanelForRender === "templates" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Firm template registry</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{customerTemplateStatus}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          customerTemplateBlockerCount > 0 ? "bg-amber-50 text-amber-700" : customerTemplates ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {customerTemplateBlockerCount > 0 ? "Review" : customerTemplates ? "Loaded" : "Pending"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                        {[
+                          ["Templates", customerTemplateSummaries.length],
+                          ["Layer sets", activeCustomerTemplate?.layer_count ?? 0],
+                          ["Label styles", activeCustomerTemplate?.label_style_count ?? 0],
+                          ["Symbols", activeCustomerTemplate?.symbol_count ?? 0],
+                          ["Reports", activeCustomerTemplate?.report_template_count ?? 0],
+                          ["Cost links", activeCustomerTemplate?.cost_book_link_count ?? 0],
+                          ["Pipe hooks", activeCustomerTemplate?.pipe_hook_ready ? "Ready" : "Missing"],
+                          ["Road hooks", activeCustomerTemplate?.roadway_hook_ready ? "Ready" : "Missing"],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                            <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                        {customerTemplates?.policy?.truth_label || "Templates are user/company standards only and do not create legal compliance evidence."}
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!token) return;
+                            void postJson<Record<string, unknown>>("/api/customer-templates/activate", { template_id: "" }, { token })
+                              .then((result) => {
+                                const registry = result.registry as CustomerTemplateRegistryResponse | undefined;
+                                if (registry) setCustomerTemplates(registry);
+                                setCustomerTemplateStatus("Company template activated");
+                              })
+                              .catch((error) => setCustomerTemplateStatus(error instanceof Error ? error.message : "Template activation failed"));
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Use Company Template
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!token) return;
+                            void getJson<Record<string, unknown>>("/api/customer-templates/export", { token })
+                              .then(() => setCustomerTemplateStatus("Template JSON export prepared"))
+                              .catch((error) => setCustomerTemplateStatus(error instanceof Error ? error.message : "Template export failed"));
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                        >
+                          Export JSON
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Registered templates</p>
+                      <div className="mt-3 space-y-2">
+                        {customerTemplateSummaries.map((item) => (
+                          <div key={item.template_id || item.name} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-900">{item.name || "Company template"}</p>
+                                <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                  {item.firm_name || "Firm"} / {item.review_status || "needs_review"}
+                                </p>
+                                <p className="mt-2 text-xs text-slate-500">
+                                  Present: {(item.present_sections ?? []).map((value) => toReadableLabel(value)).join(", ") || "No sections"}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  Missing: {(item.missing_sections ?? []).map((value) => toReadableLabel(value)).join(", ") || "None"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!token || !item.template_id) return;
+                                  void postJson<Record<string, unknown>>("/api/customer-templates/activate", { template_id: item.template_id }, { token })
+                                    .then((result) => {
+                                      const registry = result.registry as CustomerTemplateRegistryResponse | undefined;
+                                      if (registry) setCustomerTemplates(registry);
+                                      setCustomerTemplateStatus(`${item.name || "Template"} activated`);
+                                    })
+                                    .catch((error) => setCustomerTemplateStatus(error instanceof Error ? error.message : "Template activation failed"));
+                                }}
+                                className={`shrink-0 rounded-lg border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  item.template_id === customerTemplates?.active_template_id
+                                    ? "border-slate-950 bg-slate-950 text-white"
+                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                {item.template_id === customerTemplates?.active_template_id ? "Active" : "Use"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {!customerTemplateSummaries.length ? (
+                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-500">
+                            No firm templates are registered yet.
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </div>

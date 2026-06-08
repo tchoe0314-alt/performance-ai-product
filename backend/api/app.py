@@ -112,6 +112,13 @@ from backend.application.standards_workflows import (
     standards_live_source_policy_response as application_standards_live_source_policy_response,
     standards_review_packet_response as application_standards_review_packet_response,
 )
+from backend.application.template_workflows import (
+    activate_customer_template_response as application_activate_customer_template_response,
+    customer_template_registry_response as application_customer_template_registry_response,
+    explain_missing_customer_template_response as application_explain_missing_customer_template_response,
+    export_customer_templates_response as application_export_customer_templates_response,
+    import_customer_template_response as application_import_customer_template_response,
+)
 from backend.application.professional_workflows import (
     professional_release_response as application_professional_release_response,
     validate_professional_release_response as application_validate_professional_release_response,
@@ -439,6 +446,25 @@ class UtilityPartCatalogPayload(BaseModel):
 class UtilityCatalogValidationPayload(BaseModel):
     network: str = ""
     features: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class CustomerTemplateImportPayload(BaseModel):
+    template_id: str = ""
+    name: str = ""
+    firm_id: str = ""
+    firm_name: str = ""
+    company: str = ""
+    version: str = ""
+    review_status: str = "needs_review"
+    accepted_by: str = ""
+    accepted_date: str = ""
+    source_reference: str = ""
+    sections: Dict[str, Any] = Field(default_factory=dict)
+    notes: List[str] = Field(default_factory=list)
+
+
+class CustomerTemplateActivatePayload(BaseModel):
+    template_id: str = ""
 
 
 class SurveySlopePayload(BaseModel):
@@ -1297,6 +1323,60 @@ def utility_catalog_validate_network(
 ) -> Dict[str, Any]:
     _ = current_user
     return GLOBAL_UTILITY_CATALOG_MANAGER.validate_network(_model_to_dict(payload))
+
+
+@app.get("/api/customer-templates")
+def customer_template_registry(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_customer_template_registry_response()
+
+
+@app.get("/api/customer-templates/export")
+def customer_template_export(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_export_customer_templates_response()
+
+
+@app.get("/api/customer-templates/missing")
+def customer_template_missing(
+    template_id: str = "",
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_explain_missing_customer_template_response(template_id)
+
+
+@app.post("/api/customer-templates/import")
+def customer_template_import(
+    payload: CustomerTemplateImportPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    result = application_import_customer_template_response(_model_to_dict(payload))
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@app.post("/api/customer-templates/activate")
+def customer_template_activate(
+    payload: CustomerTemplateActivatePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("planner")),
+) -> Dict[str, Any]:
+    _ = current_user
+    result = application_activate_customer_template_response(payload.template_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result)
+    return result
 
 
 @app.post("/api/golden-scenarios/run")
