@@ -9,6 +9,7 @@ from core.professional_release import validate_professional_release
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 from .smart_fix import build_smart_fix_recommendations
 from .production_evidence import build_production_evidence
+from .review_issue_tracker import build_review_issue_tracker
 
 
 REVIEW_PACKAGE_VERSION = "engineer_review_package_v1"
@@ -800,7 +801,7 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
     reviewer_comments_by_severity = _comments_by_key(reviewer_comments, "severity")
     reviewer_comments_by_discipline = _comments_by_key(reviewer_comments, "discipline")
 
-    return {
+    package = {
         "version": REVIEW_PACKAGE_VERSION,
         "project_id": _project_id(plan_or_meta, meta),
         "generated_at": _generated_at(),
@@ -849,6 +850,10 @@ def build_engineer_review_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any
         "external_engineer_approval": external_engineer_approval,
         "truth_label": f"{RESPONSIBILITY_TRUTH_LABEL} Inferred, missing, stale, and review-only evidence remains explicit.",
     }
+    tracker_meta = deepcopy(meta)
+    tracker_meta[REVIEW_PACKAGE_VERSION] = package
+    package["review_issue_tracker_v1"] = build_review_issue_tracker(plan_or_meta if isinstance(plan_or_meta, dict) else {}, meta=tracker_meta)
+    return package
 
 
 __all__ = ["REVIEW_PACKAGE_VERSION", "build_engineer_review_package"]

@@ -727,6 +727,50 @@ export type DesignAlternativesV1 = {
   truth_label?: string;
 };
 
+export type ReviewIssue = {
+  issue_id: string;
+  source_key?: string;
+  source_code?: string;
+  title?: string;
+  description?: string;
+  status?: "open" | "in_review" | "resolved" | "reopened" | "waived_review_required" | string;
+  severity?: "blocker" | "critical" | "error" | "warning" | "review" | "info" | string;
+  discipline?: string;
+  assigned_role?: string;
+  assigned_to?: string;
+  created_at?: string;
+  updated_at?: string;
+  next_action?: string;
+  links?: {
+    object_ids?: string[];
+    sheet_ids?: string[];
+    system_ids?: string[];
+    source_keys?: string[];
+  };
+  comments?: Array<Record<string, unknown>>;
+  history?: Array<Record<string, unknown>>;
+  waiver_record?: Record<string, unknown>;
+  review_required?: boolean;
+  field_use_allowed?: boolean;
+};
+
+export type ReviewIssueTrackerV1 = {
+  version?: "review_issue_tracker_v1" | string;
+  generated_at?: string;
+  issue_count?: number;
+  open_count?: number;
+  needs_review_count?: number;
+  by_status?: Record<string, number>;
+  by_severity?: Record<string, number>;
+  by_discipline?: Record<string, number>;
+  issues?: ReviewIssue[];
+  open_issues?: ReviewIssue[];
+  engineer_review_queue?: Array<Record<string, unknown>>;
+  status_values?: string[];
+  field_use_allowed?: boolean;
+  truth_label?: string;
+};
+
 export type SourceConfidenceEntry = {
   entry_id: string;
   label?: string;
@@ -1096,6 +1140,7 @@ export type PlanMeta = {
   export_audit?: Record<string, unknown>;
   candidate_review_inbox_v1?: CandidateReviewInbox;
   design_alternatives_v1?: DesignAlternativesV1;
+  review_issue_tracker_v1?: ReviewIssueTrackerV1;
   source_confidence_map_v1?: SourceConfidenceMap;
   plan_pdf_analysis_v1?: PlanPdfAnalysis;
   plan_pdf_analyses_v1?: PlanPdfAnalysis[];

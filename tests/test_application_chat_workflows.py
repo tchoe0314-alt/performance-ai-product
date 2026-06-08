@@ -258,6 +258,103 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("separate licensing", result["assistant_message"])
         self.assertNotIn("verified Civil 3D", result["assistant_message"])
 
+    def test_chat_reports_open_review_issues(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"].update(
+            {
+                "blockers": [
+                    {
+                        "area": "drainage",
+                        "field": "outfall",
+                        "reason": "Drainage outfall is missing.",
+                    }
+                ],
+                "export_package_report_v1": {"blocked_reasons": ["sheet_index_missing"]},
+            }
+        )
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "what issues are open?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "reported_review_issue_tracker")
+        self.assertIn("Open review issues", result["assistant_message"])
+        tracker = result["response_metadata"]["command_payload"]["review_issue_tracker_v1"]
+        self.assertGreaterEqual(tracker["open_count"], 2)
+        self.assertFalse(tracker["field_use_allowed"])
+
+    def test_chat_filters_drainage_blockers_and_engineer_queue(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"].update(
+            {
+                "blockers": [
+                    {"area": "drainage", "field": "outfall", "reason": "Drainage outfall is missing."},
+                    {"area": "grading", "field": "surface", "reason": "Grading surface is missing."},
+                ]
+            }
+        )
+        store = RecordingProjectStore(record)
+
+        drainage = decide_chat(
+            {"message": "show drainage blockers", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertIn("Drainage blockers", drainage["assistant_message"])
+        self.assertIn("Drainage outfall", drainage["assistant_message"])
+
+        queue = decide_chat(
+            {"message": "what does the engineer need to review?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertIn("Engineer review queue", queue["assistant_message"])
+
+    def test_chat_resolves_and_reopens_review_issue(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"].update(
+            {"blockers": [{"area": "drainage", "field": "outfall", "reason": "Drainage outfall is missing."}]}
+        )
+        store = RecordingProjectStore(record)
+        listed = decide_chat(
+            {"message": "what issues are open?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        issue_id = listed["response_metadata"]["command_payload"]["review_issue_tracker_v1"]["open_issues"][0]["issue_id"]
+
+        resolved = decide_chat(
+            {"message": f"resolve issue {issue_id}", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertEqual(resolved["action_taken"], "resolve_review_issue")
+        tracker = resolved["response_metadata"]["command_payload"]["review_issue_tracker_v1"]
+        resolved_issue = [item for item in tracker["issues"] if item["issue_id"] == issue_id][0]
+        self.assertEqual(resolved_issue["status"], "resolved")
+        self.assertFalse(resolved_issue["field_use_allowed"])
+
+        reopened = decide_chat(
+            {"message": f"reopen issue {issue_id}", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        reopened_issue = [
+            item
+            for item in reopened["response_metadata"]["command_payload"]["review_issue_tracker_v1"]["issues"]
+            if item["issue_id"] == issue_id
+        ][0]
+        self.assertEqual(reopened_issue["status"], "reopened")
+
     def test_chat_explains_civil3d_requirements(self):
         result = decide_chat(
             {"message": "what do I need for Civil3D?", "context": {"current_project": {"project_id": "project_123"}}},

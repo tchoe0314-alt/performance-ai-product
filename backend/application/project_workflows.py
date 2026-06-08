@@ -22,6 +22,7 @@ from backend.planning.design_alternatives import (
     select_design_alternative,
 )
 from backend.planning.progress_timeline import build_progress_timeline
+from backend.planning.review_issue_tracker import build_review_issue_tracker
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -564,6 +565,10 @@ def artifact_summary(
         final_meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=final_meta)
         final_plan["meta"] = final_meta
         result_data["final_plan"] = final_plan
+    if final_plan and "review_issue_tracker_v1" not in final_meta:
+        final_meta["review_issue_tracker_v1"] = build_review_issue_tracker(final_plan, meta=final_meta)
+        final_plan["meta"] = final_meta
+        result_data["final_plan"] = final_plan
     request_metadata = dict(result_data.get("request_metadata") or {})
     release_review = dict(request_metadata.get("release_review") or final_meta.get("release_review") or {})
     blocked_reasons = [str(item) for item in list(release_review.get("blocked_reasons") or []) if str(item)]
@@ -771,8 +776,10 @@ def _with_smart_fix_result(latest_result: Dict[str, Any]) -> Dict[str, Any]:
     meta = dict(final_plan.get("meta") or {})
     if "smart_fix_recommendations_v1" not in meta:
         meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=meta)
-        final_plan["meta"] = meta
-        result["final_plan"] = final_plan
+    if "review_issue_tracker_v1" not in meta:
+        meta["review_issue_tracker_v1"] = build_review_issue_tracker(final_plan, meta=meta)
+    final_plan["meta"] = meta
+    result["final_plan"] = final_plan
     return result
 
 

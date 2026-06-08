@@ -37,6 +37,12 @@ from backend.planning.review_issue_tracker import (
     build_review_issue_tracker,
     select_review_issues,
 )
+from backend.planning.review_issue_tracker import (
+    ISSUE_TRACKER_VERSION,
+    apply_review_issue_update,
+    build_review_issue_tracker,
+    select_review_issues,
+)
 from backend.planning.smart_fix import build_smart_fix_recommendations
 from backend.planning.setup_wizard import build_setup_wizard_state
 from backend.planning.source_confidence_map import (
@@ -152,6 +158,7 @@ def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_
         )
         meta["source_confidence_map_v1"] = build_source_confidence_map(meta, project_input=project_input)
         meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=meta)
+        meta[ISSUE_TRACKER_VERSION] = build_review_issue_tracker(final_plan, meta=meta)
         meta[ISSUE_TRACKER_VERSION] = build_review_issue_tracker(final_plan, meta=meta)
         final_plan["meta"] = meta
         latest_result["final_plan"] = final_plan
@@ -1713,6 +1720,201 @@ def _candidate_chat_response(
         command_payload_updates={"candidate_review_inbox_v1": decision["candidate_review_inbox_v1"], "ui_navigation_target": "data", "requested_ui_mode": "data"},
         outcome="understood_and_executed",
         state_changed=True,
+    )
+
+
+def _issue_selector_from_message(normalized: str) -> str:
+    text = normalized
+    for phrase in (
+        "resolve this issue",
+        "resolve issue",
+        "reopen issue",
+        "waive issue",
+        "put issue in review",
+        "mark issue in review",
+        "show",
+        "what issues are",
+        "what issue is",
+        "what does the engineer need to review",
+    ):
+        text = text.replace(phrase, " ")
+    text = re.sub(r"\b(open|opened|resolved|reopened|grading|drainage|storm|water|sanitary|roadway|utility|utilities|blockers?|review|required|need|needs|engineer|to|the|a|an|are|is|what|does)\b", " ", text)
+    return " ".join(text.split())
+
+
+def _issue_tracker_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_open = any(phrase in normalized for phrase in ("what issues are open", "open issues", "what issue is open"))
+    asks_engineer_queue = "what does the engineer need to review" in normalized or "engineer need to review" in normalized
+    asks_drainage = "drainage" in normalized and ("blocker" in normalized or "issue" in normalized)
+    wants_resolve = "resolve" in normalized and "issue" in normalized
+    wants_reopen = "reopen" in normalized and ("issue" in normalized or "grading" in normalized or "drainage" in normalized)
+    wants_waive = "waive" in normalized and "issue" in normalized
+    wants_in_review = ("in review" in normalized or "review this issue" in normalized) and "issue" in normalized
+    if not any((asks_open, asks_engineer_queue, asks_drainage, wants_resolve, wants_reopen, wants_waive, wants_in_review)):
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project result before I can show review issues.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_issue_tracker_project",
+            action_blocked_reason="No saved project record is available for review issues.",
+            required_missing_inputs=["saved project with review evidence"],
+            affected_systems=["review"],
+            assumptions=[],
+            next_best_action="Save or load a project result, then ask for open issues again.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="No saved project record is available for review issues.",
+        )
+    latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    if not final_plan:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a planner result before I can build the review issue tracker.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_issue_tracker_plan",
+            action_blocked_reason="Saved project has no final plan.",
+            required_missing_inputs=["saved planner result"],
+            affected_systems=["review"],
+            assumptions=[],
+            next_best_action="Run or load a design first, then ask for issues.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="Saved project has no final plan.",
+        )
+    meta = _safe_dict(final_plan.get("meta"))
+    tracker = _safe_dict(meta.get(ISSUE_TRACKER_VERSION)) or build_review_issue_tracker(final_plan, meta=meta)
+    action = ""
+    if wants_resolve:
+        action = "resolve"
+    elif wants_reopen:
+        action = "reopen"
+    elif wants_waive:
+        action = "waive"
+    elif wants_in_review:
+        action = "in_review"
+    discipline = ""
+    for candidate in ("grading", "drainage", "storm", "water", "sanitary", "roadway", "utilities"):
+        if candidate in normalized:
+            discipline = "drainage" if candidate == "storm" else candidate
+            break
+    selector = _issue_selector_from_message(normalized)
+    if action:
+        matches = select_review_issues(tracker, selector, discipline=discipline)
+        if not matches and not selector and not discipline:
+            matches = select_review_issues(tracker, status="open")
+        if len(matches) != 1:
+            return _truthful_decision_update(
+                {},
+                assistant_message=(
+                    "I found multiple matching review issues. Please include an issue id or a more specific discipline/title."
+                    if matches
+                    else "I could not find a matching review issue."
+                ),
+                intent="conversation",
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=True,
+                action_taken="blocked_ambiguous_review_issue_update" if matches else "blocked_review_issue_not_found",
+                action_blocked_reason="Review issue update needs exactly one matching issue.",
+                required_missing_inputs=["specific review issue id or title"],
+                affected_systems=["review"],
+                assumptions=[],
+                next_best_action="Ask “what issues are open?” and include the issue id in the follow-up.",
+                command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="Review issue update needs exactly one matching issue.",
+            )
+        if not (project_store and user_id):
+            return None
+        matched = _safe_dict(matches[0])
+        update = apply_review_issue_update(
+            meta,
+            action=action,
+            issue_id=safe_str(matched.get("issue_id")),
+            actor=user_id,
+            note=message,
+            discipline=discipline,
+        )
+        meta = _safe_dict(update.get("updated_meta"))
+        tracker = _safe_dict(update.get(ISSUE_TRACKER_VERSION))
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        _save_project_record(
+            project_store,
+            {**record, "_user_id": user_id},
+            project_input=deepcopy(_safe_dict(record.get("project_input"))),
+            latest_result=latest_result,
+        )
+        status = safe_str(update.get("status"))
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                f"Updated {safe_str(matched.get('issue_id'))} to {status}. "
+                "This changes the issue workflow only; review requirements and field-use boundaries remain visible."
+            ),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken=f"{action}_review_issue",
+            action_blocked_reason="",
+            affected_systems=[safe_str(matched.get("discipline"), "review")],
+            assumptions=[],
+            next_best_action="Review the remaining open issues before relying on outputs.",
+            command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
+            outcome="understood_and_executed",
+            state_changed=True,
+        )
+
+    if asks_engineer_queue:
+        visible = [_safe_dict(item) for item in _safe_list(tracker.get("engineer_review_queue"))]
+        heading = "Engineer review queue"
+    elif asks_drainage:
+        visible = select_review_issues(tracker, discipline="drainage", status="open")
+        heading = "Drainage blockers"
+    else:
+        visible = select_review_issues(tracker, status="open")
+        heading = "Open review issues"
+    if visible:
+        lines = [
+            f"{safe_str(item.get('issue_id'))}: {safe_str(item.get('severity'))} {safe_str(item.get('discipline'))} - {safe_str(item.get('title'))}"
+            for item in visible[:8]
+        ]
+        assistant = f"{heading}: {len(visible)} item{'s' if len(visible) != 1 else ''}.\n" + "\n".join(f"- {line}" for line in lines)
+    else:
+        assistant = f"{heading}: no matching open items are recorded. Review-required boundaries still apply to generated outputs."
+    return _truthful_decision_update(
+        {},
+        assistant_message=assistant,
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken="reported_review_issue_tracker",
+        action_blocked_reason="",
+        affected_systems=["review"],
+        assumptions=[],
+        next_best_action="Resolve, reopen, waive with a review-required record, or assign visible issues as work progresses.",
+        command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
+        outcome="understood_and_answered",
+        state_changed=False,
     )
 
 

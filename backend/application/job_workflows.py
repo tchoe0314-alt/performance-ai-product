@@ -12,6 +12,7 @@ from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
 )
+from backend.planning.review_issue_tracker import build_review_issue_tracker
 from backend.planning.smart_fix import build_smart_fix_recommendations
 from core.utils import safe_bool
 from core.config import POND_RADIUS
@@ -1212,6 +1213,7 @@ def build_orchestrate_job_runner(
             final_meta["blockers"] = blocked_reasons or blocked_exports
             final_meta["blocker_details"] = blocker_explanations(list(blocked_reasons) + list(blocked_exports))
             final_meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=final_meta)
+            final_meta["review_issue_tracker_v1"] = build_review_issue_tracker(final_plan, meta=final_meta)
             final_meta["export_ready"] = not bool(blocked_reasons or blocked_exports or failed_deliverables or manual_failures)
             final_meta["release_ready"] = bool(reliability.get("release_ready"))
             final_meta["release_status"] = release_status
