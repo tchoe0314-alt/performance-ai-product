@@ -2279,6 +2279,8 @@ function PerformanceAIDashboardView({
   const [utilityCatalogNetworkFilter, setUtilityCatalogNetworkFilter] = useState("all");
   const [customerTemplates, setCustomerTemplates] = useState<CustomerTemplateRegistryResponse | null>(null);
   const [customerTemplateStatus, setCustomerTemplateStatus] = useState("Templates not loaded");
+  const [billingStatus, setBillingStatus] = useState<BillingStatusV1 | null>(null);
+  const [billingStatusMessage, setBillingStatusMessage] = useState("Billing not loaded");
   const [assistedEnabled, setAssistedEnabled] = useState(false);
   const [drainageForcedInlets, setDrainageForcedInlets] = useState<
     Array<{ x: number; y: number; name?: string }>
@@ -2663,11 +2665,14 @@ function PerformanceAIDashboardView({
       setUtilityCatalogStatus("Sign in to load utility catalogs");
       setCustomerTemplates(null);
       setCustomerTemplateStatus("Sign in to load templates");
+      setBillingStatus(null);
+      setBillingStatusMessage("Sign in to load billing status");
       return;
     }
     let cancelled = false;
     setUtilityCatalogStatus("Loading utility catalogs");
     setCustomerTemplateStatus("Loading templates");
+    setBillingStatusMessage("Loading billing status");
     void getJson<UtilityCatalogResponse>("/api/utility-catalogs", { token })
       .then((data) => {
         if (cancelled) return;
@@ -2700,6 +2705,24 @@ function PerformanceAIDashboardView({
         if (cancelled) return;
         setCustomerTemplates(null);
         setCustomerTemplateStatus(error instanceof Error ? error.message : "Template load failed");
+      });
+    void getJson<BillingStatusV1>("/api/billing/status", { token })
+      .then((data) => {
+        if (cancelled) return;
+        setBillingStatus(data);
+        const reasons = data.blocked_reasons ?? [];
+        setBillingStatusMessage(
+          data.real_charging_enabled
+            ? "Provider configured; charges still require an explicit payment flow"
+            : reasons.length
+              ? `Blocked: ${reasons.map((value) => toReadableLabel(value)).join(", ")}`
+              : "Billing status loaded",
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setBillingStatus(null);
+        setBillingStatusMessage(error instanceof Error ? error.message : "Billing status load failed");
       });
     return () => {
       cancelled = true;
@@ -15203,6 +15226,50 @@ function PerformanceAIDashboardView({
                       >
                         Save project identity
 	                      </button>
+	                    </div>
+	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="billing-status-panel">
+	                      <div className="flex items-start justify-between gap-3">
+	                        <div>
+	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Billing</p>
+	                          <p className="mt-1 text-base font-semibold text-slate-950">
+	                            {billingStatus?.plan?.label || "Paid pilot foundation"}
+	                          </p>
+	                          <p className="mt-1 text-xs leading-5 text-slate-500">{billingStatusMessage}</p>
+	                        </div>
+	                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+	                          billingStatus?.real_charging_enabled
+	                            ? "bg-amber-50 text-amber-700"
+	                            : billingStatus?.blocked
+	                              ? "bg-red-50 text-red-600"
+	                              : "bg-emerald-50 text-emerald-700"
+	                        }`}>
+	                          {billingStatus?.real_charging_enabled ? "Configured" : billingStatus?.blocked ? "Blocked" : "Ready"}
+	                        </span>
+	                      </div>
+	                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+	                        {[
+	                          ["Pilot mode", billingStatus?.paid_pilot_mode ? "On" : "Off"],
+	                          ["Provider", billingStatus?.provider?.provider || "None"],
+	                          ["Charges", billingStatus?.real_charging_enabled ? "Configured" : "Off"],
+	                          ["Docs", billingStatus?.legal_business_docs_ready ? "Ready" : "Missing"],
+	                          ["Projects/mo", billingStatus?.usage_limits?.monthly_projects ?? "Hook"],
+	                          ["Exports/mo", billingStatus?.usage_limits?.monthly_exports ?? "Hook"],
+	                        ].map(([label, value]) => (
+	                          <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+	                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+	                            <p className="mt-1 font-semibold text-slate-800">{String(value)}</p>
+	                          </div>
+	                        ))}
+	                      </div>
+	                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+	                        <p className="font-semibold text-slate-800">Invoice/payment</p>
+	                        <p>{billingStatus?.invoice?.message || "Invoice and payment records are placeholders until a provider is explicitly configured."}</p>
+	                        {billingStatus?.blocked_reasons?.length ? (
+	                          <p className="mt-1 font-semibold text-red-600">
+	                            {billingStatus.blocked_reasons.map((reason) => toReadableLabel(reason)).join("; ")}
+	                          </p>
+	                        ) : null}
+	                      </div>
 	                    </div>
 	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="progress-timeline-dashboard">
 	                      <div className="flex items-start justify-between gap-3">
