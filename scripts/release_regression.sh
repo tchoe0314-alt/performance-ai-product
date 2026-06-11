@@ -188,17 +188,23 @@ fi
 
 printf '\nRelease regression summary\n'
 printf 'Passed: %s\n' "${#PASSED[@]}"
-for item in "${PASSED[@]}"; do
-  printf '  PASS %s\n' "$item"
-done
+if [[ ${#PASSED[@]} -gt 0 ]]; then
+  for item in "${PASSED[@]}"; do
+    printf '  PASS %s\n' "$item"
+  done
+fi
 printf 'Skipped: %s\n' "${#SKIPPED[@]}"
-for item in "${SKIPPED[@]}"; do
-  printf '  SKIP %s\n' "$item"
-done
+if [[ ${#SKIPPED[@]} -gt 0 ]]; then
+  for item in "${SKIPPED[@]}"; do
+    printf '  SKIP %s\n' "$item"
+  done
+fi
 printf 'Failed: %s\n' "${#FAILED[@]}"
-for item in "${FAILED[@]}"; do
-  printf '  FAIL %s\n' "$item"
-done
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  for item in "${FAILED[@]}"; do
+    printf '  FAIL %s\n' "$item"
+  done
+fi
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
   exit 1
