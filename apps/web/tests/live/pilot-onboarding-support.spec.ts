@@ -29,5 +29,5 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
 
   await page.locator("button").filter({ hasText: "Deliver" }).filter({ hasText: "Sheets and exports" }).first().click();
   await expect(rightPanel.getByText("What is the review package?")).toBeVisible();
-  await expect(rightPanel.getByText("External licensed engineer approval is required")).toBeVisible();
+  await expect(rightPanel.getByText("External licensed engineer review required")).toBeVisible();
 });
