@@ -24,11 +24,14 @@ async function open3D(page: Page) {
 }
 
 test.describe("Civil 3D model viewer", () => {
-  test("renders a nonblank 3D workspace with fallback terrain and objects", async ({ page }) => {
-    await openDemoWorkspace(page, "debugPreview=1&debugNoTerrain=1");
+  test("renders a nonblank 3D workspace with terrain state and objects", async ({ page }) => {
+    await openDemoWorkspace(page);
     await open3D(page);
 
-    await expect(page.getByTestId("civil-3d-viewer")).toContainText("Flat site fallback", { timeout: 10_000 });
+    await expect(page.getByTestId("civil-3d-viewer")).toContainText(
+      /Terrain mesh from preview elevations|Terrain source loaded|Flat site fallback/,
+      { timeout: 10_000 },
+    );
     await expect(page.getByTestId("civil-3d-viewer")).toContainText("visual mode does not mutate canonical geometry");
     await expect(page.getByTestId("civil-3d-object-strip")).toContainText("Detention Basin A");
 

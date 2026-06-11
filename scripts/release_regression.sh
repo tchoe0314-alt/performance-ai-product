@@ -131,7 +131,7 @@ else
       record_fail "frontend build" "exit $build_status"
     fi
 
-    run_step "frontend lint" bash -lc "cd '$WEB_DIR' && npm run lint"
+    run_step "frontend lint" bash -c "cd \"\$1\" && npm run lint" bash "$WEB_DIR"
 
     if [[ $build_status -ne 0 ]]; then
       record_skip "selected Playwright" "frontend release build failed"
@@ -183,7 +183,16 @@ if ! has_command python3; then
 elif ! python3 -m pytest --version >/dev/null 2>&1; then
   record_skip "backend smoke" "pytest is not installed for python3"
 else
-  run_step "backend smoke" python3 -m pytest "${BACKEND_SMOKE_TESTS[@]}"
+  (
+    cd "$ROOT_DIR" &&
+      python3 -m pytest "${BACKEND_SMOKE_TESTS[@]}"
+  )
+  backend_status=$?
+  if [[ $backend_status -eq 0 ]]; then
+    record_pass "backend smoke"
+  else
+    record_fail "backend smoke" "exit $backend_status"
+  fi
 fi
 
 printf '\nRelease regression summary\n'
