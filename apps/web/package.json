@@ -11,6 +11,7 @@
     "start": "next start",
     "serve:test": "npm run build && next start --hostname 127.0.0.1 --port 3000",
     "lint": "eslint",
+    "release:regression": "../../scripts/release_regression.sh",
     "test:live": "npm run clean:next && playwright test --config=playwright.config.ts",
     "test:live:chat34": "node tests/live/chat34-controlled-pilot-readiness.js",
     "test:live:staged": "playwright test --config=playwright.config.ts tests/live/staged-regression.spec.ts",
