@@ -59,6 +59,12 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
             product_mode="private_alpha",
             user_count=3,
             storage="postgres",
+            deployment={
+                "frontend_status": "reachable",
+                "api_base_url": "https://api.example.test",
+                "build_version": "abc123",
+                "last_deploy_time": "2026-06-10T12:00:00Z",
+            },
             runtime_monitoring={
                 "status": "healthy",
                 "rss_mb": 128.0,
@@ -87,6 +93,14 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertEqual(data["operational_summary"]["pending_count"], 0)
         self.assertEqual(data["operational_summary"]["failed_count"], 0)
         self.assertEqual(data["operational_summary"]["timeout_count"], 0)
+        self.assertEqual(data["deployment"]["frontend_status"], "reachable")
+        self.assertEqual(data["deployment"]["backend_status"], "online")
+        self.assertEqual(data["deployment"]["api_base_url"], "https://api.example.test")
+        self.assertEqual(data["deployment"]["auth_status"], "enabled")
+        self.assertEqual(data["deployment"]["queue_status"], "ready")
+        self.assertEqual(data["deployment"]["build_version"], "abc123")
+        self.assertEqual(data["deployment"]["last_deploy_time"], "2026-06-10T12:00:00Z")
+        self.assertEqual(data["deployment"]["user_safe_messages"], ["All visible deployment checks are reachable."])
 
     def test_runtime_monitoring_reports_process_restart_risk(self):
         previous = {

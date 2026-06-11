@@ -37,6 +37,7 @@ def health_response(
     storage: str = "sqlite",
     runtime_monitoring: Dict[str, Any] | None = None,
     release_guard: Dict[str, Any] | None = None,
+    deployment: Dict[str, Any] | None = None,
 ) -> Dict[str, object]:
     normalized_mode = _normalize_product_mode(product_mode)
     normalized_storage = str(storage or "sqlite").strip().lower() or "sqlite"
@@ -56,6 +57,22 @@ def health_response(
     else:
         operational_status = "degraded"
     queue_evidence = alpha_monitoring_report.get("job_queue_monitoring_evidence") or {}
+    queue_status = str(queue_evidence.get("status") or monitoring.get("job_queue", {}).get("status") or "unknown")
+    deployment_meta = deployment or {}
+    build_version = str(deployment_meta.get("build_version") or app_version or "").strip()
+    last_deploy_time = str(deployment_meta.get("last_deploy_time") or "").strip()
+    api_base_url = str(deployment_meta.get("api_base_url") or "").strip()
+    frontend_status = str(deployment_meta.get("frontend_status") or "unknown").strip() or "unknown"
+    backend_status = "online" if operational_status in {"healthy", "degraded"} else "down"
+    service_messages = []
+    if backend_status == "down":
+        service_messages.append("Backend health checks are blocked. Some workspace actions may be unavailable.")
+    if queue_status not in {"healthy", "ready", "ok"}:
+        service_messages.append("Background jobs may be delayed. Queued runs can be retried when service recovers.")
+    if not api_base_url:
+        service_messages.append("The API base URL is not published in health metadata.")
+    if not service_messages:
+        service_messages.append("All visible deployment checks are reachable.")
     return {
         "success": True,
         "message": "Civora AI backend is running.",
@@ -67,6 +84,20 @@ def health_response(
         "auth_enabled": True,
         "storage": normalized_storage,
         "user_count": int(user_count),
+        "deployment": {
+            "frontend_status": frontend_status,
+            "backend_status": backend_status,
+            "api_base_url": api_base_url,
+            "auth_status": "enabled",
+            "queue_status": queue_status,
+            "build_version": build_version,
+            "commit_sha": str(deployment_meta.get("commit_sha") or "").strip(),
+            "commit_ref": str(deployment_meta.get("commit_ref") or "").strip(),
+            "environment": str(deployment_meta.get("environment") or "").strip(),
+            "provider": str(deployment_meta.get("provider") or "").strip(),
+            "last_deploy_time": last_deploy_time,
+            "user_safe_messages": service_messages,
+        },
         "alpha_review_guard": {
             "review_only": review_only,
             "construction_release_enabled": bool(release.get("construction_release_enabled")) and not review_only,
@@ -92,6 +123,7 @@ def health_response(
             "alpha_monitoring_status": str(alpha_monitoring_report.get("readiness") or ""),
             "alpha_monitoring_blocker_count": len(alpha_monitoring_report.get("blockers") or []),
             "job_queue_evidence_status": str(queue_evidence.get("status") or ""),
+            "queue_status": queue_status,
             "job_queue_monitoring_ready": bool(queue_evidence.get("queue_monitoring_ready")),
             "async_jobs_enabled": bool(queue_evidence.get("async_jobs_enabled", True)),
             "timeout_count": queue_evidence.get("timeout_count"),
