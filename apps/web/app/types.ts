@@ -1080,7 +1080,6 @@ export type UploadPlanPdfResponse = {
   plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
   plan_pdf_changed_elements_v1?: PlanPdfChangedElements;
   candidate_review_inbox_v1?: CandidateReviewInbox;
-  design_alternatives_v1?: DesignAlternativesV1;
 };
 
 export type PlanMeta = {
@@ -2015,6 +2014,7 @@ export type ChatDecisionResponse = {
     assumptions?: string[];
     next_best_action?: string;
     design_alternatives_v1?: DesignAlternativesV1;
+    review_issue_tracker_v1?: ReviewIssueTrackerV1;
     command_payload?: Record<string, unknown>;
   };
   required_missing_inputs?: string[];

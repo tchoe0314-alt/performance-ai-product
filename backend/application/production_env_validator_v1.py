@@ -1,0 +1,285 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, Mapping, Optional
+from urllib.parse import urlparse
+
+
+VALID_PRODUCT_MODES = {"development", "local", "private_alpha", "public_beta", "production"}
+PRODUCTION_MODES = {"public_beta", "production"}
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+SECRET_MARKERS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "DATABASE_URL", "POSTGRES", "REDIS_URL")
+
+
+@dataclass(frozen=True)
+class EnvVarSpec:
+    name: str
+    category: str
+    required_modes: tuple[str, ...] = ()
+    optional: bool = False
+    secret: bool = False
+    description: str = ""
+
+
+ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
+    EnvVarSpec("CIVORA_PRODUCT_MODE", "mode", ("private_alpha", "public_beta", "production"), description="Runtime product stage."),
+    EnvVarSpec("CIVORA_DEPLOYMENT_TARGET", "mode", (), optional=True, description="Expected platform: local, vercel, railway, or split."),
+    EnvVarSpec("CIVORA_FRONTEND_PUBLIC_URL", "frontend", (), optional=True, description="Browser app origin used to cross-check CORS."),
+    EnvVarSpec("NEXT_PUBLIC_API_BASE_URL", "frontend", ("public_beta", "production"), description="Browser-facing backend base URL."),
+    EnvVarSpec("CIVORA_PUBLIC_API_BASE_URL", "backend", ("public_beta", "production"), description="Public backend URL."),
+    EnvVarSpec("CORS_ALLOW_ORIGINS", "cors", ("private_alpha", "public_beta", "production"), description="Comma-separated browser origins."),
+    EnvVarSpec("CIVORA_SESSION_SECRET", "auth", ("public_beta", "production"), secret=True, description="Shared app secret for session-capable deployments."),
+    EnvVarSpec("CIVORA_CRON_SECRET", "auth", (), optional=True, secret=True, description="Secret for scheduled backend maintenance routes."),
+    EnvVarSpec("DATABASE_URL", "storage", (), optional=True, secret=True, description="Postgres URL. SQLite is allowed for private alpha."),
+    EnvVarSpec("PERFORMANCE_AI_STORAGE_DIR", "storage", ("private_alpha", "public_beta", "production"), description="Persistent upload/artifact directory."),
+    EnvVarSpec("MAPBOX_TOKEN", "mapbox", (), optional=True, secret=True, description="Backend Mapbox token for geocode and terrain lookups."),
+    EnvVarSpec("NEXT_PUBLIC_MAPBOX_TOKEN", "mapbox", (), optional=True, description="Frontend Mapbox token for map rendering."),
+    EnvVarSpec("CIVORA_AI_PROVIDER", "ai", ("public_beta", "production"), description="AI provider: none, openai, ollama, or local."),
+    EnvVarSpec("OPENAI_API_KEY", "ai", (), optional=True, secret=True, description="Required when CIVORA_AI_PROVIDER=openai."),
+    EnvVarSpec("CIVORA_OLLAMA_BASE_URL", "ai", (), optional=True, description="Required when CIVORA_AI_PROVIDER is ollama/local."),
+    EnvVarSpec("CIVORA_JOB_TIMEOUT_SECONDS", "queue", (), optional=True, description="Maximum in-process job runtime."),
+    EnvVarSpec("CIVORA_MEMORY_WARN_MB", "monitoring", (), optional=True, description="Runtime memory warning threshold."),
+    EnvVarSpec("CIVORA_RUNTIME_DEBUG_BEARER_TOKEN", "monitoring", (), optional=True, secret=True, description="Audit token for runtime sampling tools."),
+    EnvVarSpec("CIVORA_BILLING_PROVIDER", "billing", (), optional=True, description="Billing provider name. Defaults to none."),
+    EnvVarSpec("CIVORA_ENABLE_REAL_CHARGING", "billing", (), optional=True, description="Must remain explicit; validator never enables it."),
+    EnvVarSpec("CIVORA_BILLING_LEGAL_DOCS_READY", "billing", (), optional=True, description="Business-doc gate for paid pilot."),
+    EnvVarSpec("STRIPE_PUBLISHABLE_KEY", "billing", (), optional=True, description="Stripe browser key when billing provider is stripe."),
+    EnvVarSpec("STRIPE_SECRET_KEY", "billing", (), optional=True, secret=True, description="Stripe API key when billing provider is stripe."),
+    EnvVarSpec("STRIPE_PILOT_PRICE_ID", "billing", (), optional=True, description="Stripe price id when billing provider is stripe."),
+    EnvVarSpec("STRIPE_WEBHOOK_SECRET", "billing", (), optional=True, secret=True, description="Stripe webhook secret when billing provider is stripe."),
+    EnvVarSpec("CIVORA_OCR_ENGINE", "ocr_pdf", (), optional=True, description="OCR engine for plan PDF parsing."),
+    EnvVarSpec("CIVORA_OCR_LANG", "ocr_pdf", (), optional=True, description="OCR language."),
+    EnvVarSpec("CIVORA_PDF_RENDERER", "ocr_pdf", (), optional=True, description="PDF preview renderer hint."),
+    EnvVarSpec("CIVORA_GIS_PROVIDER_REGISTRY_URL", "gis", (), optional=True, description="Source registry for GIS providers."),
+    EnvVarSpec("CIVORA_REQUIRE_GIS_PROVIDERS", "gis", (), optional=True, description="Promote missing GIS providers to blockers in stricter modes."),
+    EnvVarSpec("PORT", "railway", (), optional=True, description="Railway-provided port. Backend must bind to it."),
+    EnvVarSpec("RAILWAY_PUBLIC_DOMAIN", "railway", (), optional=True, description="Railway public domain."),
+    EnvVarSpec("VERCEL", "vercel", (), optional=True, description="Set by Vercel builds."),
+    EnvVarSpec("VERCEL_ENV", "vercel", (), optional=True, description="Vercel environment."),
+    EnvVarSpec("CIVORA_ALPHA_REVIEW_ONLY", "safety", (), optional=True, description="Keeps alpha modes review-only."),
+    EnvVarSpec("CIVORA_ENABLE_PUBLIC_ACCESS", "safety", (), optional=True, description="Explicit public access flag."),
+)
+
+
+def _normalize_mode(value: str) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    aliases = {"alpha": "private_alpha", "beta": "public_beta", "prod": "production"}
+    return aliases.get(normalized, normalized or "private_alpha")
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _clean_url(value: str) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _parse_origins(value: str) -> list[str]:
+    return [_clean_url(item) for item in str(value or "").split(",") if _clean_url(item)]
+
+
+def _is_url(value: str) -> bool:
+    parsed = urlparse(_clean_url(value))
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _hostname(value: str) -> str:
+    return str(urlparse(_clean_url(value)).hostname or "").lower()
+
+
+def _is_local_url(value: str) -> bool:
+    return _hostname(value) in LOCAL_HOSTS
+
+
+def _secret_like(name: str) -> bool:
+    upper = name.upper()
+    return any(marker in upper for marker in SECRET_MARKERS)
+
+
+def _redacted_value(name: str, value: str) -> Dict[str, Any]:
+    raw = str(value or "")
+    if not raw:
+        return {"present": False}
+    if _secret_like(name):
+        return {"present": True, "redacted": True, "length": len(raw)}
+    if _is_url(raw):
+        parsed = urlparse(_clean_url(raw))
+        return {"present": True, "scheme": parsed.scheme, "host": parsed.hostname or "", "path_present": bool(parsed.path and parsed.path != "/")}
+    return {"present": True, "value": raw if len(raw) <= 80 else f"{raw[:32]}...{raw[-8:]}", "redacted": False}
+
+
+def _first_env(env: Mapping[str, str], names: Iterable[str]) -> str:
+    for name in names:
+        value = str(env.get(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _issue(severity: str, code: str, message: str, *, env_vars: Optional[list[str]] = None) -> Dict[str, Any]:
+    return {"severity": severity, "code": code, "message": message, "env_vars": env_vars or []}
+
+
+def build_env_contract() -> Dict[str, list[Dict[str, Any]]]:
+    required: list[Dict[str, Any]] = []
+    optional: list[Dict[str, Any]] = []
+    for spec in ENV_VAR_SPECS:
+        target = optional if spec.optional or not spec.required_modes else required
+        target.append(
+            {
+                "name": spec.name,
+                "category": spec.category,
+                "required_modes": list(spec.required_modes),
+                "secret": spec.secret,
+                "description": spec.description,
+            }
+        )
+    return {"required": required, "optional": optional}
+
+
+def validate_production_env_v1(
+    env: Optional[Mapping[str, str]] = None,
+    *,
+    deployment_target: str = "",
+    include_diagnostics: bool = True,
+) -> Dict[str, Any]:
+    env = dict(os.environ if env is None else env)
+    mode = _normalize_mode(env.get("CIVORA_PRODUCT_MODE") or env.get("PERFORMANCE_AI_PRODUCT_MODE") or "private_alpha")
+    target = str(deployment_target or env.get("CIVORA_DEPLOYMENT_TARGET") or "").strip().lower()
+    if not target:
+        if env.get("VERCEL"):
+            target = "vercel"
+        elif env.get("RAILWAY_ENVIRONMENT") or env.get("RAILWAY_PUBLIC_DOMAIN"):
+            target = "railway"
+        else:
+            target = "local"
+
+    blockers: list[Dict[str, Any]] = []
+    warnings: list[Dict[str, Any]] = []
+    info: list[Dict[str, Any]] = []
+
+    if mode not in VALID_PRODUCT_MODES:
+        blockers.append(_issue("blocker", "invalid_product_mode", f"CIVORA_PRODUCT_MODE must be one of {sorted(VALID_PRODUCT_MODES)}.", env_vars=["CIVORA_PRODUCT_MODE"]))
+    if target not in {"local", "vercel", "railway", "split", "render"}:
+        warnings.append(_issue("warning", "unknown_deployment_target", "Deployment target is not recognized; platform checks will be conservative.", env_vars=["CIVORA_DEPLOYMENT_TARGET"]))
+
+    for spec in ENV_VAR_SPECS:
+        if mode in spec.required_modes and not str(env.get(spec.name) or "").strip():
+            blockers.append(_issue("blocker", "missing_required_env", f"{spec.name} is required for {mode}.", env_vars=[spec.name]))
+
+    frontend_url = _clean_url(env.get("NEXT_PUBLIC_API_BASE_URL", ""))
+    frontend_origin = _clean_url(env.get("CIVORA_FRONTEND_PUBLIC_URL", ""))
+    if not frontend_origin and env.get("VERCEL_URL"):
+        frontend_origin = _clean_url(str(env.get("VERCEL_URL") or ""))
+        if frontend_origin and not frontend_origin.startswith(("http://", "https://")):
+            frontend_origin = f"https://{frontend_origin}"
+    backend_url = _clean_url(_first_env(env, ("CIVORA_PUBLIC_API_BASE_URL", "PUBLIC_API_BASE_URL", "RAILWAY_STATIC_URL", "RAILWAY_PUBLIC_DOMAIN")))
+    if backend_url and not backend_url.startswith(("http://", "https://")):
+        backend_url = f"https://{backend_url}"
+
+    if frontend_url:
+        if not _is_url(frontend_url):
+            blockers.append(_issue("blocker", "invalid_frontend_api_base_url", "NEXT_PUBLIC_API_BASE_URL must be an absolute http(s) URL.", env_vars=["NEXT_PUBLIC_API_BASE_URL"]))
+        elif mode in PRODUCTION_MODES and _is_local_url(frontend_url):
+            blockers.append(_issue("blocker", "frontend_api_base_url_localhost", "NEXT_PUBLIC_API_BASE_URL cannot point at localhost in public_beta or production.", env_vars=["NEXT_PUBLIC_API_BASE_URL"]))
+    if backend_url:
+        if not _is_url(backend_url):
+            blockers.append(_issue("blocker", "invalid_backend_public_url", "Backend public URL must be an absolute http(s) URL.", env_vars=["CIVORA_PUBLIC_API_BASE_URL", "RAILWAY_PUBLIC_DOMAIN"]))
+        elif mode in PRODUCTION_MODES and _is_local_url(backend_url):
+            blockers.append(_issue("blocker", "backend_public_url_localhost", "Backend public URL cannot point at localhost in public_beta or production.", env_vars=["CIVORA_PUBLIC_API_BASE_URL"]))
+
+    cors_raw = str(env.get("CORS_ALLOW_ORIGINS") or "").strip()
+    cors_origins = _parse_origins(cors_raw)
+    if cors_raw == "*" and mode not in {"development", "local"}:
+        blockers.append(_issue("blocker", "wildcard_cors_not_allowed", "Wildcard CORS is only allowed in local/development mode.", env_vars=["CORS_ALLOW_ORIGINS"]))
+    elif mode in PRODUCTION_MODES and not cors_origins:
+        blockers.append(_issue("blocker", "missing_cors_origins", "CORS_ALLOW_ORIGINS must list deployed frontend origins.", env_vars=["CORS_ALLOW_ORIGINS"]))
+    if frontend_origin:
+        if not _is_url(frontend_origin):
+            blockers.append(_issue("blocker", "invalid_frontend_public_url", "CIVORA_FRONTEND_PUBLIC_URL must be an absolute http(s) URL.", env_vars=["CIVORA_FRONTEND_PUBLIC_URL"]))
+        elif cors_origins and frontend_origin not in cors_origins:
+            blockers.append(_issue("blocker", "frontend_origin_not_in_cors", "Frontend public origin is not listed in CORS_ALLOW_ORIGINS.", env_vars=["CIVORA_FRONTEND_PUBLIC_URL", "CORS_ALLOW_ORIGINS"]))
+
+    storage_dir = str(env.get("PERFORMANCE_AI_STORAGE_DIR") or env.get("PERFORMANCE_AI_DATA_DIR") or "").strip()
+    database_url = str(env.get("DATABASE_URL") or "").strip()
+    if mode == "production" and not database_url:
+        warnings.append(_issue("warning", "production_sqlite_storage", "DATABASE_URL is missing; backend will use SQLite/local storage.", env_vars=["DATABASE_URL"]))
+    if mode in PRODUCTION_MODES and storage_dir and storage_dir.startswith("./"):
+        warnings.append(_issue("warning", "relative_storage_dir", "Persistent storage should use an absolute mounted path on deploy platforms.", env_vars=["PERFORMANCE_AI_STORAGE_DIR"]))
+
+    ai_provider = str(env.get("CIVORA_AI_PROVIDER") or env.get("CIVORA_LLM_PROVIDER") or "none").strip().lower()
+    if ai_provider == "openai" and not str(env.get("OPENAI_API_KEY") or "").strip():
+        blockers.append(_issue("blocker", "openai_key_missing", "OPENAI_API_KEY is required when CIVORA_AI_PROVIDER=openai.", env_vars=["CIVORA_AI_PROVIDER", "OPENAI_API_KEY"]))
+    elif ai_provider in {"ollama", "local"} and not str(env.get("CIVORA_OLLAMA_BASE_URL") or "").strip():
+        blockers.append(_issue("blocker", "ollama_url_missing", "CIVORA_OLLAMA_BASE_URL is required for local/ollama provider mode.", env_vars=["CIVORA_AI_PROVIDER", "CIVORA_OLLAMA_BASE_URL"]))
+    elif ai_provider in {"none", "disabled", "off"} and mode == "production":
+        warnings.append(_issue("warning", "ai_provider_disabled", "AI provider is disabled in production; deterministic fallbacks only.", env_vars=["CIVORA_AI_PROVIDER"]))
+
+    if mode in PRODUCTION_MODES and not (env.get("MAPBOX_TOKEN") or env.get("NEXT_PUBLIC_MAPBOX_TOKEN")):
+        warnings.append(_issue("warning", "mapbox_missing", "Mapbox/geocode config is missing; address lookup should return blocked responses.", env_vars=["MAPBOX_TOKEN", "NEXT_PUBLIC_MAPBOX_TOKEN"]))
+
+    if _truthy(env.get("CIVORA_REQUIRE_GIS_PROVIDERS")) and not str(env.get("CIVORA_GIS_PROVIDER_REGISTRY_URL") or "").strip():
+        blockers.append(_issue("blocker", "gis_registry_missing", "GIS provider registry is required by CIVORA_REQUIRE_GIS_PROVIDERS.", env_vars=["CIVORA_GIS_PROVIDER_REGISTRY_URL"]))
+    elif mode == "production" and not str(env.get("CIVORA_GIS_PROVIDER_REGISTRY_URL") or "").strip():
+        warnings.append(_issue("warning", "gis_registry_missing", "GIS provider registry is not configured; GIS features remain manual/import-only.", env_vars=["CIVORA_GIS_PROVIDER_REGISTRY_URL"]))
+
+    billing_provider = str(env.get("CIVORA_BILLING_PROVIDER") or "none").strip().lower()
+    charging_requested = _truthy(env.get("CIVORA_ENABLE_REAL_CHARGING"))
+    if charging_requested:
+        if billing_provider == "none":
+            blockers.append(_issue("blocker", "charging_requested_without_provider", "Charging was requested but no billing provider is configured.", env_vars=["CIVORA_ENABLE_REAL_CHARGING", "CIVORA_BILLING_PROVIDER"]))
+        if not _truthy(env.get("CIVORA_BILLING_LEGAL_DOCS_READY")):
+            blockers.append(_issue("blocker", "charging_requested_without_business_docs", "Charging was requested but billing business-document readiness is false.", env_vars=["CIVORA_ENABLE_REAL_CHARGING", "CIVORA_BILLING_LEGAL_DOCS_READY"]))
+    if billing_provider == "stripe":
+        missing_stripe = [name for name in ("STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_PILOT_PRICE_ID", "STRIPE_WEBHOOK_SECRET") if not str(env.get(name) or "").strip()]
+        if missing_stripe:
+            blockers.append(_issue("blocker", "stripe_config_incomplete", "Stripe billing provider is selected but required Stripe config is missing.", env_vars=missing_stripe))
+
+    if target == "railway":
+        if not env.get("PORT"):
+            warnings.append(_issue("warning", "railway_port_unset_locally", "PORT is usually injected by Railway; local validation can only check that the Docker CMD uses it.", env_vars=["PORT"]))
+        if str(env.get("CIVORA_RAILWAY_HEALTHCHECK_PATH") or "/api/health").strip() != "/api/health":
+            blockers.append(_issue("blocker", "railway_healthcheck_path_mismatch", "Railway healthcheck path must be /api/health.", env_vars=["CIVORA_RAILWAY_HEALTHCHECK_PATH"]))
+    if target == "vercel":
+        if mode in PRODUCTION_MODES and not frontend_url:
+            blockers.append(_issue("blocker", "vercel_api_base_missing", "Vercel builds need NEXT_PUBLIC_API_BASE_URL.", env_vars=["NEXT_PUBLIC_API_BASE_URL"]))
+        if str(env.get("CIVORA_VERCEL_ROOT") or "apps/web").strip() != "apps/web":
+            warnings.append(_issue("warning", "vercel_root_expected_apps_web", "Vercel project root should be apps/web.", env_vars=["CIVORA_VERCEL_ROOT"]))
+
+    if mode == "production" and _truthy(env.get("CIVORA_ALPHA_REVIEW_ONLY")):
+        blockers.append(_issue("blocker", "production_review_only_flag_enabled", "Production mode conflicts with CIVORA_ALPHA_REVIEW_ONLY=true.", env_vars=["CIVORA_PRODUCT_MODE", "CIVORA_ALPHA_REVIEW_ONLY"]))
+    if mode in {"private_alpha", "development", "local"} and _truthy(env.get("CIVORA_ENABLE_PUBLIC_ACCESS")):
+        blockers.append(_issue("blocker", "public_access_enabled_in_restricted_mode", "Public access flag cannot be enabled in local/development/private_alpha.", env_vars=["CIVORA_ENABLE_PUBLIC_ACCESS"]))
+
+    if not env.get("CIVORA_OCR_ENGINE"):
+        warnings.append(_issue("warning", "ocr_engine_missing", "OCR/PDF extraction provider is not configured; PDF workflows should degrade gracefully.", env_vars=["CIVORA_OCR_ENGINE"]))
+
+    status = "blocked" if blockers else "warning" if warnings else "ready"
+    diagnostics = {
+        spec.name: _redacted_value(spec.name, str(env.get(spec.name) or ""))
+        for spec in ENV_VAR_SPECS
+        if include_diagnostics
+    }
+    info.append(_issue("info", "billing_not_auto_enabled", "Validator reports billing config only; it does not enable billing or charging."))
+    return {
+        "version": "production_env_validator_v1",
+        "status": status,
+        "release_blocked": bool(blockers),
+        "product_mode": mode,
+        "deployment_target": target,
+        "blockers": blockers,
+        "warnings": warnings,
+        "info": info,
+        "diagnostics": diagnostics,
+        "required_env_vars": build_env_contract()["required"],
+        "optional_env_vars": build_env_contract()["optional"],
+        "checks": {
+            "vercel": {"root": "apps/web", "api_base_url_present": bool(frontend_url), "frontend_origin_present": bool(frontend_origin), "localhost_blocked_in_prod": mode in PRODUCTION_MODES},
+            "railway": {"port_env": "${PORT:-8002}", "healthcheck_path": "/api/health", "public_url_present": bool(backend_url)},
+        },
+    }
+
+
+__all__ = ["ENV_VAR_SPECS", "build_env_contract", "validate_production_env_v1"]

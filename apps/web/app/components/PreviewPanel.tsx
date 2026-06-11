@@ -341,6 +341,7 @@ export default function PreviewPanel({
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
+  onSetPreviewLabelDensity,
   onQueuePreviewRefresh,
   preview3DEffectiveItems,
   usingAnnotation3D,
@@ -4382,6 +4383,28 @@ export default function PreviewPanel({
               >
                 High
               </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <span>Labels</span>
+              {(["low", "standard", "high"] as const).map((density) => (
+                <button
+                  key={density}
+                  type="button"
+                  data-testid={`preview-label-density-${density}`}
+                  onClick={() => {
+                    if (previewLabelDensity === density) return;
+                    onQueuePreviewRefresh(`Requesting ${density} label density...`);
+                    onSetPreviewLabelDensity(density);
+                  }}
+                  className={`rounded-lg border px-2.5 py-1 ${
+                    previewLabelDensity === density
+                      ? "border-slate-900 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {density === "standard" ? "Std" : density}
+                </button>
+              ))}
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Legend</span>

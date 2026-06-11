@@ -125,6 +125,7 @@ from backend.application.professional_workflows import (
     professional_release_response as application_professional_release_response,
     validate_professional_release_response as application_validate_professional_release_response,
 )
+from backend.application.production_env_validator_v1 import validate_production_env_v1
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
 from backend.services.billing import build_billing_status, usage_gate
@@ -903,6 +904,46 @@ def _runtime_debug_payload() -> Dict[str, Any]:
     }
 
 
+def _first_env_value(*names: str) -> str:
+    for name in names:
+        value = str(os.getenv(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _public_api_base_url() -> str:
+    configured = _first_env_value("CIVORA_PUBLIC_API_BASE_URL", "PUBLIC_API_BASE_URL", "NEXT_PUBLIC_API_BASE_URL")
+    if configured:
+        return configured.rstrip("/")
+    railway_domain = _first_env_value("RAILWAY_PUBLIC_DOMAIN", "RAILWAY_STATIC_URL")
+    if railway_domain:
+        if railway_domain.startswith("http://") or railway_domain.startswith("https://"):
+            return railway_domain.rstrip("/")
+        return f"https://{railway_domain.rstrip('/')}"
+    return "https://api.civoraai.com" if PRODUCT_MODE not in {"development", "local"} else ""
+
+
+def _deployment_metadata() -> Dict[str, str]:
+    commit_sha = _first_env_value("VERCEL_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA", "RENDER_GIT_COMMIT", "GIT_COMMIT_SHA")
+    return {
+        "frontend_status": "unknown",
+        "api_base_url": _public_api_base_url(),
+        "build_version": _first_env_value("CIVORA_BUILD_VERSION", "VERCEL_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA")[:12] or APP_VERSION,
+        "commit_sha": commit_sha[:12] if commit_sha else "",
+        "commit_ref": _first_env_value("VERCEL_GIT_COMMIT_REF", "RAILWAY_GIT_BRANCH", "RENDER_GIT_BRANCH", "GIT_BRANCH"),
+        "environment": _first_env_value("VERCEL_ENV", "RAILWAY_ENVIRONMENT_NAME", "RENDER_SERVICE_TYPE", "CIVORA_ENVIRONMENT", "NODE_ENV"),
+        "provider": "vercel" if os.getenv("VERCEL") else "railway" if os.getenv("RAILWAY_ENVIRONMENT") else "render" if os.getenv("RENDER") else "",
+        "last_deploy_time": _first_env_value(
+            "CIVORA_LAST_DEPLOY_TIME",
+            "VERCEL_DEPLOYMENT_CREATED_AT",
+            "RAILWAY_DEPLOYMENT_CREATED_AT",
+            "RAILWAY_DEPLOYMENT_START_TIME",
+            "RENDER_DEPLOYMENT_CREATED_AT",
+        ),
+    }
+
+
 def _log_runtime_event(event: str, **fields: Any) -> None:
     print(
         json.dumps(
@@ -1010,6 +1051,7 @@ def health(_rate_limit: None = Depends(rate_limit("health"))) -> Dict[str, Any]:
         storage=DB.storage_kind,
         runtime_monitoring=runtime_payload["monitoring"],
         release_guard=runtime_payload["construction_release_guard"],
+        deployment=_deployment_metadata(),
     )
 
 
@@ -1020,6 +1062,15 @@ def debug_runtime(
 ) -> Dict[str, Any]:
     _ = current_user
     return _runtime_debug_payload()
+
+
+@app.get("/api/debug/production-env")
+def debug_production_env(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("debug")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return validate_production_env_v1()
 
 
 @app.get("/api/auth/status")

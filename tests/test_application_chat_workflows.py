@@ -668,6 +668,98 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("No configured local GIS provider is registered for buildings", result["assistant_message"])
         self.assertIn("will not report source success", result["assistant_message"])
 
+    def test_chat_reports_configured_gis_provider_registry(self):
+        record = _record()
+        record["project_input"]["meta"] = {
+            "site_inputs": {
+                "local_gis_provider_registry_v1": {
+                    "version": "local_gis_provider_registry_v1",
+                    "providers": [
+                        {
+                            "id": "parcel-provider",
+                            "name": "County parcel provider",
+                            "source_type": "parcels",
+                            "jurisdiction_level": "county",
+                            "provider_kind": "arcgis_rest",
+                            "service_url": "https://county.example/arcgis/rest/services/Parcels/MapServer",
+                            "arcgis": {"service_url": "https://county.example/arcgis/rest/services/Parcels/MapServer", "layer_id": 0},
+                            "status": "configured",
+                            "health": {"status": "unchecked"},
+                            "freshness": {"status": "unknown"},
+                        }
+                    ],
+                }
+            }
+        }
+
+        result = decide_chat(
+            {"message": "what online sources are configured?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=RecordingProjectStore(record),
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "reported_local_gis_provider_registry")
+        self.assertIn("County parcel provider", result["assistant_message"])
+        self.assertIn("review-required", result["assistant_message"])
+
+    def test_chat_adds_parcel_provider_record(self):
+        store = RecordingProjectStore(_record())
+
+        result = decide_chat(
+            {
+                "message": "add a parcel provider https://county.example/arcgis/rest/services/Parcels/MapServer",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "added_local_gis_provider")
+        saved_registry = store.saved[-1]["project_input"]["meta"]["site_inputs"]["local_gis_provider_registry_v1"]
+        self.assertTrue(any(item["source_type"] == "parcels" for item in saved_registry["providers"]))
+        self.assertIn("not survey-backed", result["assistant_message"])
+
+    def test_chat_checks_provider_health_without_source_success(self):
+        record = _record()
+        record["project_input"]["meta"] = {
+            "site_inputs": {
+                "local_gis_provider_registry_v1": {
+                    "version": "local_gis_provider_registry_v1",
+                    "providers": [
+                        {
+                            "id": "building-provider",
+                            "name": "City building provider",
+                            "source_type": "buildings",
+                            "provider_kind": "arcgis_rest",
+                            "service_url": "https://city.example/arcgis/rest/services/Buildings/MapServer",
+                            "arcgis": {"service_url": "https://city.example/arcgis/rest/services/Buildings/MapServer", "layer_id": 0},
+                            "status": "configured",
+                        }
+                    ],
+                }
+            }
+        }
+        fake_health = {
+            "version": "local_gis_provider_registry_v1",
+            "provider_count": 1,
+            "healthy_provider_count": 1,
+            "stale_provider_count": 1,
+            "providers": [],
+        }
+        with patch("backend.application.chat_workflows.check_registry_health", return_value=fake_health):
+            result = decide_chat(
+                {"message": "check provider health", "context": {"current_project": {"project_id": "project_123"}}},
+                decide_chat_message=decide_chat_message,
+                project_store=RecordingProjectStore(record),
+                user_id="user_1",
+            )
+
+        self.assertEqual(result["action_taken"], "checked_local_gis_provider_health")
+        self.assertIn("1 of 1 healthy", result["assistant_message"])
+        self.assertIn("reachability/config only", result["assistant_message"])
+
     def test_chat_fetches_and_persists_online_discovery_from_address(self):
         store = RecordingProjectStore()
         fake_result = {

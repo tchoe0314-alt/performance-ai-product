@@ -19,14 +19,14 @@ test.describe("Chat 32 UI functionality QA", () => {
     const canvas = page.getByTestId("workspace-canvas-shell");
     await expect(canvas.getByRole("button", { name: "Export DXF" })).toBeDisabled();
     await expect(canvas.getByRole("button", { name: "Export Report" })).toBeDisabled();
-    await expect(canvas).toContainText("Export blocked: sign in with a backend session before exporting review packages");
+    await expect(canvas).toContainText("Export blocked: authenticate with a backend session before exporting review packages");
     const initialObjectOverlayCount = await page.locator("[data-object-overlay]").count();
     expect(initialObjectOverlayCount).toBeGreaterThan(0);
 
     await canvas.getByTestId("preview-quality-high").click();
     await expect(canvas).toContainText("High Quality");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(
-      "Visual preview only — canonical geometry unchanged.",
+      "Visual preview only. Canonical geometry unchanged. Not engineering evidence.",
     );
     expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
     await canvas.getByTestId("preview-quality-standard").click();
@@ -56,11 +56,11 @@ test.describe("Chat 32 UI functionality QA", () => {
 
     await composer.fill("what should I do next");
     await send.click();
-    await expect(messageBodies.filter({ hasText: "Civora does not stamp, seal, sign, submit, approve construction, or act as engineer of record." })).toBeVisible();
+    await expect(messageBodies.filter({ hasText: /review-required|review evidence|engineer review/i })).toBeVisible();
 
     await composer.fill("why can't I export");
     await send.click();
-    await expect(messageBodies.filter({ hasText: "Export is blocked: sign in with a backend session before exporting review packages." })).toBeVisible();
+    await expect(messageBodies.filter({ hasText: "Export is blocked: authenticate with a backend session before exporting review packages." })).toBeVisible();
 
     await composer.fill("make this a basin");
     await send.click();
@@ -68,7 +68,8 @@ test.describe("Chat 32 UI functionality QA", () => {
 
     await composer.fill("stamp this construction-ready");
     await send.click();
-    await expect(messageBodies.filter({ hasText: "Civora cannot stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record." })).toBeVisible();
+    await expect(messageBodies.filter({ hasText: /Field use and professional responsibility remain outside Civora/i })).toBeVisible();
+    await expect(messageBodies.last()).not.toContainText(/construction-ready|approved for construction|released for construction/i);
   });
 
   test("mobile workspace has no horizontal page overflow and keeps critical controls reachable", async ({ page }) => {

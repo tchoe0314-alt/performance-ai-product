@@ -18,7 +18,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
-import { deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
+import { API_BASE_URL, deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
 
 import type {
   Assumption,
@@ -2033,6 +2033,43 @@ function formatTimestamp(value?: number): string {
   }
 }
 
+function formatDeployTime(value?: string): string {
+  if (!value) return "Not published";
+  const numeric = Number(value);
+  const timestamp = Number.isFinite(numeric)
+    ? new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000)
+    : new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return value;
+  return timestamp.toLocaleString();
+}
+
+function shortBuildValue(value?: string): string {
+  const cleaned = String(value || "").trim();
+  return cleaned ? cleaned.slice(0, 12) : "Not published";
+}
+
+function statusPillClass(status?: string): string {
+  const normalized = String(status || "").toLowerCase();
+  if (["healthy", "online", "ok", "ready", "enabled", "reachable"].includes(normalized)) {
+    return "bg-emerald-50 text-emerald-700";
+  }
+  if (["degraded", "warning", "unknown", "checking"].includes(normalized)) {
+    return "bg-amber-50 text-amber-700";
+  }
+  return "bg-red-50 text-red-600";
+}
+
+function statusTextClass(status?: string): string {
+  const normalized = String(status || "").toLowerCase();
+  if (["healthy", "online", "ok", "ready", "enabled", "reachable"].includes(normalized)) {
+    return "text-emerald-700";
+  }
+  if (["degraded", "warning", "unknown", "checking"].includes(normalized)) {
+    return "text-amber-700";
+  }
+  return "text-red-600";
+}
+
 function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
   if (!job?.updated_at) return false;
   const status = String(job.status || "").toLowerCase();
@@ -2056,6 +2093,34 @@ type ArtifactJobResult = {
     download_path?: string;
     review_only?: boolean;
     construction_release_allowed?: boolean;
+  };
+};
+
+type DeploymentHealth = {
+  success?: boolean;
+  version?: string;
+  auth_enabled?: boolean;
+  operational_summary?: {
+    status?: string;
+    ready_for_ui?: boolean;
+    queue_status?: string;
+    job_queue_evidence_status?: string;
+    pending_count?: number;
+    failed_recent_count?: number;
+  };
+  deployment?: {
+    frontend_status?: string;
+    backend_status?: string;
+    api_base_url?: string;
+    auth_status?: string;
+    queue_status?: string;
+    build_version?: string;
+    commit_sha?: string;
+    commit_ref?: string;
+    environment?: string;
+    provider?: string;
+    last_deploy_time?: string;
+    user_safe_messages?: string[];
   };
 };
 
@@ -2497,6 +2562,9 @@ function PerformanceAIDashboardView({
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobToasts, setJobToasts] = useState<JobToast[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
+  const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealth | null>(null);
+  const [deploymentHealthError, setDeploymentHealthError] = useState("");
+  const [deploymentHealthLoading, setDeploymentHealthLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
@@ -2668,6 +2736,45 @@ function PerformanceAIDashboardView({
   useEffect(() => {
     setDemoWorkspaceEnabled(forceDemoWorkspace || isDemoWorkspaceQuery());
   }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled]);
+
+  useEffect(() => {
+    if (!clientMounted) return;
+    let cancelled = false;
+    const loadDeploymentHealth = async () => {
+      setDeploymentHealthLoading(true);
+      try {
+        const data = await getJson<DeploymentHealth>("/api/health");
+        if (cancelled) return;
+        setDeploymentHealth({
+          ...data,
+          deployment: {
+            ...(data.deployment ?? {}),
+            frontend_status: "reachable",
+            api_base_url: API_BASE_URL,
+          },
+        });
+        setDeploymentHealthError("");
+      } catch (error) {
+        if (cancelled) return;
+        setDeploymentHealth(null);
+        setDeploymentHealthError(
+          error instanceof Error
+            ? error.message
+            : "Civora AI could not load deployment health.",
+        );
+      } finally {
+        if (!cancelled) setDeploymentHealthLoading(false);
+      }
+    };
+    void loadDeploymentHealth();
+    const interval = window.setInterval(() => {
+      void loadDeploymentHealth();
+    }, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [clientMounted]);
 
   useEffect(() => {
     if (!token) {
@@ -3537,28 +3644,34 @@ function PerformanceAIDashboardView({
     const stored = currentPlanMeta.review_issue_tracker_v1;
     if (stored?.issues?.length || stored?.open_issues?.length) return stored;
     const fallbackIssues: ReviewIssue[] = [
-      ...issues.map((issue, index) => ({
-        issue_id: `ui_issue_${index + 1}`,
-        title: issue.message,
-        description: issue.message,
-        status: "open",
-        severity: issue.severity || "warning",
-        discipline: String(issue.context?.system ?? issue.context?.discipline ?? "qa"),
-        assigned_role: "qa_reviewer",
-        next_action: "Review and resolve the recorded QA item.",
-        links: { system_ids: issue.context?.system ? [String(issue.context.system)] : [], source_keys: ["ui_issues"] },
-      })),
-      ...analysisIssues.map((issue, index) => ({
-        issue_id: `analysis_issue_${index + 1}`,
-        title: issue,
-        description: issue,
-        status: "open",
-        severity: "review",
-        discipline: "qa",
-        assigned_role: "qa_reviewer",
-        next_action: "Review the analysis item and rerun affected checks.",
-        links: { system_ids: ["analysis"], source_keys: ["analysis_issues"] },
-      })),
+      ...issues.map((issue, index): ReviewIssue => {
+        const message = typeof issue.message === "string" ? issue.message : JSON.stringify(issue.message ?? "Review issue");
+        return {
+          issue_id: `ui_issue_${index + 1}`,
+          title: message,
+          description: message,
+          status: "open",
+          severity: issue.severity || "warning",
+          discipline: String(issue.context?.system ?? issue.context?.discipline ?? "qa"),
+          assigned_role: "qa_reviewer",
+          next_action: "Review and resolve the recorded QA item.",
+          links: { system_ids: issue.context?.system ? [String(issue.context.system)] : [], source_keys: ["ui_issues"] },
+        };
+      }),
+      ...analysisIssues.map((issue, index): ReviewIssue => {
+        const message = typeof issue === "string" ? issue : JSON.stringify(issue ?? "Analysis issue");
+        return {
+          issue_id: `analysis_issue_${index + 1}`,
+          title: message,
+          description: message,
+          status: "open",
+          severity: "review",
+          discipline: "qa",
+          assigned_role: "qa_reviewer",
+          next_action: "Review the analysis item and rerun affected checks.",
+          links: { system_ids: ["analysis"], source_keys: ["analysis_issues"] },
+        };
+      }),
     ];
     const openIssues = fallbackIssues.filter((item) => ["open", "in_review", "reopened"].includes(String(item.status ?? "open")));
     return {
@@ -3773,6 +3886,82 @@ function PerformanceAIDashboardView({
       }
     },
     [currentProject?.project_id, projectId, token],
+  );
+  const handleDesignAlternativesAction = useCallback(
+    async (action: "generate" | "compare" | "choose" | "merge" | "revise", optionNumber?: number) => {
+      const activeProjectId = projectId || currentProject?.project_id;
+      if (!token || !activeProjectId) {
+        setStatusMessage("Save or load a project before working with design alternatives.");
+        return;
+      }
+      try {
+        setStatusMessage(
+          action === "generate"
+            ? "Generating review-required design alternatives..."
+            : action === "compare"
+              ? "Comparing alternatives..."
+              : action === "revise"
+                ? "Adding another review-required layout..."
+                : "Selecting draft alternative direction...",
+        );
+        const data = await postJson<{
+          success: boolean;
+          project?: ProjectRecord;
+          design_alternatives_v1?: DesignAlternativesV1;
+          truth_label?: string;
+        }>(
+          `/api/projects/${activeProjectId}/design-alternatives`,
+          {
+            action,
+            requested_count: Math.max(3, designAlternativeItems.length || 3),
+            option_number: optionNumber,
+            reason:
+              action === "generate"
+                ? "Generated from Alternatives panel."
+                : action === "compare"
+                  ? "Compared from Alternatives panel."
+                  : action === "revise"
+                    ? "Requested another layout from Alternatives panel."
+                    : `Selected option ${optionNumber ?? ""} from Alternatives panel.`,
+          },
+          { token },
+        );
+        if (data.project) {
+          setCurrentProject(data.project);
+          if (data.project.latest_result) {
+            setBackendResult(data.project.latest_result);
+          }
+        } else if (data.design_alternatives_v1) {
+          setBackendResult((prev) => {
+            if (!prev?.final_plan) return prev;
+            return {
+              ...prev,
+              final_plan: {
+                ...prev.final_plan,
+                meta: {
+                  ...(prev.final_plan.meta ?? {}),
+                  design_alternatives_v1: data.design_alternatives_v1,
+                },
+              },
+            };
+          });
+        }
+        setActiveWorkspaceMode("review");
+        setActiveSidePanel("reports");
+        setStatusMessage(
+          action === "generate"
+            ? "Alternatives generated for review."
+            : action === "compare"
+              ? "Alternatives compared for review."
+              : action === "revise"
+                ? "Another layout concept was added for review."
+                : "Alternative selected as a draft review direction.",
+        );
+      } catch (error) {
+        setStatusMessage(error instanceof Error ? error.message : "Design alternatives update failed.");
+      }
+    },
+    [currentProject?.project_id, designAlternativeItems.length, projectId, token],
   );
   const reactiveChangedSystems = useMemo<EngineeringSystemKey[]>(
     () =>
@@ -7058,7 +7247,7 @@ function PerformanceAIDashboardView({
         const uiPanel = chatCommandPayload.ui_navigation_target ?? chatMetadata.ui_navigation_target;
         const uiMode = chatCommandPayload.requested_ui_mode ?? chatMetadata.requested_ui_mode;
         const validPanels: SidePanelKey[] = [
-          "projects", "dashboard", "model", "site_existing", "import_survey", "objects", "generate", "grading", "drainage", "sanitary", "water", "utilities", "roadway", "landscape", "details", "layers", "analysis", "reports", "quantities", "deliverables", "files", "standards", "templates", "libraries", "data", "settings", "chat", "system_grading", "system_storm", "system_sanitary", "system_water", "system_roadway", "system_utilities", "system_landscape",
+          "projects", "dashboard", "model", "site_existing", "import_survey", "objects", "generate", "grading", "drainage", "sanitary", "water", "utilities", "roadway", "landscape", "details", "layers", "analysis", "reports", "quantities", "deliverables", "files", "standards", "templates", "catalogs", "libraries", "data", "settings", "chat", "system_grading", "system_storm", "system_sanitary", "system_water", "system_roadway", "system_utilities", "system_landscape",
         ];
         const validModes: WorkspaceMode[] = ["dashboard", "setup", "canvas", "layers", "review", "deliver", "data", "settings"];
         if (uiMode && validModes.includes(uiMode as WorkspaceMode)) {
@@ -14865,6 +15054,30 @@ function PerformanceAIDashboardView({
       : sidePanelForRender
         ? sidePanelCopy[sidePanelForRender].desc
         : "";
+  const deployment = deploymentHealth?.deployment;
+  const deploymentBackendStatus =
+    deploymentHealthError
+      ? "down"
+      : deployment?.backend_status || deploymentHealth?.operational_summary?.status || (deploymentHealthLoading ? "checking" : "unknown");
+  const deploymentQueueStatus =
+    deployment?.queue_status ||
+    deploymentHealth?.operational_summary?.queue_status ||
+    deploymentHealth?.operational_summary?.job_queue_evidence_status ||
+    "unknown";
+  const deploymentAuthStatus = deployment?.auth_status || (deploymentHealth?.auth_enabled ? "enabled" : "unknown");
+  const deploymentMessages = deploymentHealthError
+    ? [deploymentHealthError]
+    : deployment?.user_safe_messages?.length
+      ? deployment.user_safe_messages
+      : deploymentHealthLoading
+        ? ["Checking deployment health..."]
+        : ["Deployment health has not reported yet."];
+  const frontendBuildVersion =
+    process.env.NEXT_PUBLIC_BUILD_VERSION ||
+    process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
+    deployment?.build_version ||
+    deploymentHealth?.version ||
+    "";
 
   if (!clientMounted) {
     return (
@@ -14951,7 +15164,7 @@ function PerformanceAIDashboardView({
             <button
               type="button"
               onClick={() => {
-                void refreshProjects();
+                if (token) void refreshProjects(token);
                 handleOpenSidePanel("projects");
               }}
               aria-label="Open projects"
@@ -15374,6 +15587,52 @@ function PerformanceAIDashboardView({
 	                        {billingStatus?.blocked_reasons?.length ? (
 	                          <p className="mt-1 font-semibold text-red-600">
 	                            {billingStatus.blocked_reasons.map((reason) => toReadableLabel(reason)).join("; ")}
+	                          </p>
+	                        ) : null}
+	                      </div>
+	                    </div>
+	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deployment-health-panel">
+	                      <div className="flex items-start justify-between gap-3">
+	                        <div>
+	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Deployment Health</p>
+	                          <p className="mt-1 text-base font-semibold text-slate-950">
+	                            {deploymentHealthError ? "Service check failed" : deploymentHealthLoading ? "Checking services" : "Runtime visibility"}
+	                          </p>
+	                          <p className="mt-1 break-all text-xs leading-5 text-slate-500">
+	                            API: {deployment?.api_base_url || API_BASE_URL || "Not configured"}
+	                          </p>
+	                        </div>
+	                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${statusPillClass(deploymentBackendStatus)}`}>
+	                          {deploymentBackendStatus}
+	                        </span>
+	                      </div>
+	                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+	                        {[
+	                          ["Frontend", deploymentHealthError ? "reachable" : deployment?.frontend_status || "reachable"],
+	                          ["Backend", deploymentBackendStatus],
+	                          ["Auth", deploymentAuthStatus],
+	                          ["Queue", deploymentQueueStatus],
+	                          ["Build", shortBuildValue(frontendBuildVersion)],
+	                          ["Deploy", formatDeployTime(deployment?.last_deploy_time)],
+	                        ].map(([label, value]) => (
+	                          <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+	                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+	                            <p className={`mt-1 break-words font-semibold ${["Frontend", "Backend", "Auth", "Queue"].includes(String(label)) ? statusTextClass(String(value)) : "text-slate-800"}`}>
+	                              {String(value)}
+	                            </p>
+	                          </div>
+	                        ))}
+	                      </div>
+	                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+	                        <p className="font-semibold text-slate-800">User-safe service messages</p>
+	                        <ul className="mt-1 space-y-1">
+	                          {deploymentMessages.slice(0, 3).map((message) => (
+	                            <li key={message}>{message}</li>
+	                          ))}
+	                        </ul>
+	                        {(deployment?.commit_ref || deployment?.environment || deployment?.provider) ? (
+	                          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+	                            {[deployment?.provider, deployment?.environment, deployment?.commit_ref].filter(Boolean).join(" / ")}
 	                          </p>
 	                        ) : null}
 	                      </div>

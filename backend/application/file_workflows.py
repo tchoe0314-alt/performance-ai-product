@@ -349,6 +349,7 @@ def existing_conditions_online_sources(
         "source_type": "online_source_registry",
         "sources": build_online_source_urls(address=address, bbox=bbox, parcel_service_url=parcel_service_url),
         "local_gis_provider_registry_v1": registry,
+        "configured_provider_count": registry.get("configured_provider_count", 0),
         "truth_label": "Online data sources can provide planning context. Production truth still requires survey, utility locate/as-built, jurisdiction confirmation, and engineer review.",
     }
 
@@ -416,11 +417,15 @@ def fetch_existing_conditions_online(
         "dem_lidar": canonical.get("dem_lidar"),
         "location_context": result.get("location_context"),
         "online_existing_conditions_discovery_v1": result.get("online_existing_conditions_discovery_v1"),
+        "local_gis_provider_registry_v1": registry,
         "map_feature_detection_report_v1": result.get("map_feature_detection_report_v1"),
     }
     summary = summarize_existing_conditions({"meta": package_meta})
     package_meta["existing_conditions_summary"] = summary
     result["existing_conditions_summary"] = summary
+    if isinstance(result.get("online_existing_conditions_discovery_v1"), dict):
+        result["online_existing_conditions_discovery_v1"]["local_gis_provider_registry_v1"] = registry
+        result["online_existing_conditions_discovery_v1"]["configured_provider_count"] = registry.get("configured_provider_count", 0)
     result["existing_conditions_package"] = build_existing_conditions_package({"meta": package_meta})
     return result
 
