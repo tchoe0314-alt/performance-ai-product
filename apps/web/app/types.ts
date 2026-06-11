@@ -1080,7 +1080,6 @@ export type UploadPlanPdfResponse = {
   plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
   plan_pdf_changed_elements_v1?: PlanPdfChangedElements;
   candidate_review_inbox_v1?: CandidateReviewInbox;
-  design_alternatives_v1?: DesignAlternativesV1;
 };
 
 export type PlanMeta = {
@@ -1152,6 +1151,7 @@ export type PlanMeta = {
     feature_candidates?: Array<Record<string, unknown>>;
   };
   online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
+  local_gis_provider_registry_v1?: LocalGisProviderRegistry;
   existing_conditions_package?: Record<string, unknown>;
   existing_conditions_summary?: Record<string, unknown>;
   candidate_rule_report?: {
@@ -1248,8 +1248,42 @@ export type OnlineExistingConditionsDiscovery = {
   failed_sources?: Array<Record<string, unknown>>;
   blockers?: string[];
   survey_control?: Record<string, unknown>;
+  local_gis_provider_registry_v1?: LocalGisProviderRegistry;
+  configured_provider_count?: number;
   review_required?: boolean;
   acceptance_status?: string;
+  truth_label?: string;
+};
+
+export type LocalGisProvider = {
+  id?: string;
+  name?: string;
+  source_type?: "parcels" | "buildings" | "roads_row" | "utilities" | "contours" | "floodplain" | "wetlands" | string;
+  jurisdiction_level?: string;
+  jurisdiction?: Record<string, unknown>;
+  provider_kind?: string;
+  service_url?: string;
+  arcgis?: {
+    service_url?: string;
+    service_kind?: string;
+    layer_id?: number;
+    query_url?: string;
+  };
+  status?: string;
+  health?: Record<string, unknown>;
+  freshness?: Record<string, unknown>;
+  review_required?: boolean;
+  survey_backed?: boolean;
+  truth_label?: string;
+};
+
+export type LocalGisProviderRegistry = {
+  version?: "local_gis_provider_registry_v1" | string;
+  status?: string;
+  provider_count?: number;
+  configured_provider_count?: number;
+  source_types?: string[];
+  providers?: LocalGisProvider[];
   truth_label?: string;
 };
 
@@ -1267,6 +1301,7 @@ export type SiteInputs = {
   };
   location_context?: Record<string, unknown>;
   online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
+  local_gis_provider_registry_v1?: LocalGisProviderRegistry;
   map_feature_detection_report_v1?: Record<string, unknown>;
   existing_conditions_package?: Record<string, unknown>;
   viewport_bounds?: {
@@ -1979,6 +2014,7 @@ export type ChatDecisionResponse = {
     assumptions?: string[];
     next_best_action?: string;
     design_alternatives_v1?: DesignAlternativesV1;
+    review_issue_tracker_v1?: ReviewIssueTrackerV1;
     command_payload?: Record<string, unknown>;
   };
   required_missing_inputs?: string[];

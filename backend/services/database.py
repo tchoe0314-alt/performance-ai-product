@@ -151,9 +151,6 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_projects_user_updated
         ON projects(user_id, updated_at DESC);
 
-        CREATE INDEX IF NOT EXISTS idx_projects_organization_updated
-        ON projects(organization_id, updated_at DESC);
-
         CREATE TABLE IF NOT EXISTS organizations (
             organization_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -294,9 +291,6 @@ class Database:
 
         CREATE INDEX IF NOT EXISTS idx_projects_user_updated
         ON projects(user_id, updated_at DESC);
-
-        CREATE INDEX IF NOT EXISTS idx_projects_organization_updated
-        ON projects(organization_id, updated_at DESC);
 
         CREATE TABLE IF NOT EXISTS organizations (
             organization_id TEXT PRIMARY KEY,
@@ -482,6 +476,12 @@ class Database:
                 else:
                     if "organization_id" not in columns:
                         connection.execute("ALTER TABLE projects ADD COLUMN organization_id TEXT")
+                connection.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_projects_organization_updated
+                    ON projects(organization_id, updated_at DESC)
+                    """
+                )
                 connection.commit()
             finally:
                 connection.close()

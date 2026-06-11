@@ -29,14 +29,14 @@ from backend.planning.design_alternatives import (
 )
 from backend.planning.dwg_compatibility import dwg_strategy_from_meta
 from backend.planning.existing_conditions_online import fetch_online_existing_conditions
+from backend.planning.gis_provider_registry import (
+    build_arcgis_provider_record,
+    build_provider_registry,
+    check_registry_health,
+    normalize_source_type,
+)
 from backend.planning.map_feature_detection import build_map_feature_detection_report
 from backend.planning.progress_timeline import build_progress_timeline
-from backend.planning.review_issue_tracker import (
-    ISSUE_TRACKER_VERSION,
-    apply_review_issue_update,
-    build_review_issue_tracker,
-    select_review_issues,
-)
 from backend.planning.review_issue_tracker import (
     ISSUE_TRACKER_VERSION,
     apply_review_issue_update,
@@ -49,6 +49,7 @@ from backend.planning.source_confidence_map import (
     attach_source_confidence_map,
     build_source_confidence_map,
 )
+from backend.planning.customer_templates import GLOBAL_CUSTOMER_TEMPLATE_MANAGER
 from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE as PLAN_PDF_SOURCE_CONFIDENCE,
@@ -158,7 +159,6 @@ def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_
         )
         meta["source_confidence_map_v1"] = build_source_confidence_map(meta, project_input=project_input)
         meta["smart_fix_recommendations_v1"] = build_smart_fix_recommendations(final_plan, meta=meta)
-        meta[ISSUE_TRACKER_VERSION] = build_review_issue_tracker(final_plan, meta=meta)
         meta[ISSUE_TRACKER_VERSION] = build_review_issue_tracker(final_plan, meta=meta)
         final_plan["meta"] = meta
         latest_result["final_plan"] = final_plan
@@ -578,6 +578,103 @@ def _utility_catalog_chat_response(message: str, context: Dict[str, Any]) -> Opt
             "Hydrant catalog entry added with its source/review metadata. It is usable for validation only when its review status is accepted for this workspace.",
             "added_hydrant_catalog",
             metadata_updates={"catalog_result": result},
+        )
+
+    return None
+
+
+def _customer_template_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    mentions_template = "template" in lowered or "company standard" in lowered or "firm standard" in lowered
+    if not mentions_template:
+        return None
+    mentions_company = "company" in lowered or "firm" in lowered or "my" in lowered
+    asks_active = "what template is active" in lowered or "active template" in lowered or "which template" in lowered
+    asks_missing = "why is template missing" in lowered or ("template" in lowered and "missing" in lowered)
+    asks_use = (
+        "use my company template" in lowered
+        or "use our company template" in lowered
+        or "use my firm template" in lowered
+        or ("use" in lowered and mentions_company and "template" in lowered)
+    )
+    asks_export = "export" in lowered and "template" in lowered
+    if not any((asks_active, asks_missing, asks_use, asks_export)):
+        return None
+
+    def _response(text: str, action_taken: str, *, data: Optional[Dict[str, Any]] = None, changed: bool = False) -> Dict[str, Any]:
+        metadata = {
+            "action_taken": action_taken,
+            "state_changed": changed,
+            "affected_systems": ["templates", "layers", "labels", "reports", "cost_books", "pipes", "roadway"],
+            "template_policy": "Templates are user/company standards only; Civora does not infer legal compliance or field-use readiness from them.",
+            "ui_navigation_target": "templates",
+            "requested_ui_mode": "data",
+            "confidence": 0.97,
+        }
+        if data:
+            metadata["template_result"] = data
+        return {
+            "intent": "conversation",
+            "run_mode": "none",
+            "design_prompt": "",
+            "needs_clarification": False,
+            "assistant_message": text,
+            "reason": "Handled by customer template chat support.",
+            "confidence": 0.97,
+            "response_metadata": metadata,
+        }
+
+    if asks_use:
+        result = GLOBAL_CUSTOMER_TEMPLATE_MANAGER.activate(str(context.get("template_id") or ""))
+        if not result.get("success"):
+            return _response(
+                "I could not activate a company template because no matching firm template is registered. Import a template JSON or select one in the Template Manager, then I can make it active.",
+                "blocked_customer_template_missing",
+                data=result,
+            )
+        behavior = _safe_dict(_safe_dict(result.get("registry")).get("behavior"))
+        status = str(behavior.get("status") or "active_needs_review")
+        caution = " It still needs workspace acceptance before Civora treats it as an accepted company standard." if status == "active_needs_review" else ""
+        return _response(
+            f"Active company template set to {safe_str(_safe_dict(result.get('template')).get('name'))}.{caution}",
+            "activated_customer_template",
+            data=result,
+            changed=True,
+        )
+
+    if asks_active:
+        registry = GLOBAL_CUSTOMER_TEMPLATE_MANAGER.snapshot()
+        active = _safe_dict(registry.get("active_template"))
+        if not active:
+            return _response(
+                "No company template is active. Generated layers, labels, reports, cost links, pipe hooks, and roadway hooks are using Civora workspace defaults.",
+                "answered_active_template_missing",
+                data=registry,
+            )
+        summary = _safe_dict(_safe_dict(registry.get("behavior")).get("active_template"))
+        accepted = "accepted for workspace" if active.get("accepted_for_workspace") else "needs workspace acceptance"
+        return _response(
+            f"Active template: {safe_str(active.get('name'))} from {safe_str(active.get('firm_name'))}, {accepted}. Present sections: {', '.join(_safe_list(summary.get('present_sections')))}.",
+            "answered_active_template",
+            data=registry,
+        )
+
+    if asks_missing:
+        result = GLOBAL_CUSTOMER_TEMPLATE_MANAGER.explain_missing(str(context.get("template_id") or ""))
+        blockers = _safe_list(_safe_dict(result.get("behavior")).get("blockers"))
+        blocker_text = ", ".join(str(item) for item in blockers[:8]) or "no missing sections recorded"
+        return _response(
+            f"Template status: {safe_str(result.get('status'))}. Missing or blocking items: {blocker_text}. Templates are firm standards only, not legal compliance evidence unless separately accepted where required.",
+            "answered_customer_template_missing_reason",
+            data=result,
+        )
+
+    if asks_export:
+        result = GLOBAL_CUSTOMER_TEMPLATE_MANAGER.export_json()
+        return _response(
+            "Template registry JSON is ready to export. It includes the active template, section summaries, and the no-compliance policy label.",
+            "prepared_customer_template_export",
+            data=result,
         )
 
     return None
@@ -1464,6 +1561,9 @@ def _online_discovery_chat_response(
             zoning_layer_id=int(os.getenv("CIVORA_ZONING_ARCGIS_LAYER_ID") or "0"),
             utilities_service_url=safe_str(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_SERVICE_URL")),
             utilities_layer_id=int(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_LAYER_ID") or "0"),
+            contours_service_url=safe_str(os.getenv("CIVORA_CONTOURS_ARCGIS_SERVICE_URL")),
+            contours_layer_id=int(os.getenv("CIVORA_CONTOURS_ARCGIS_LAYER_ID") or "0"),
+            provider_registry=_provider_registry_from_record(record),
         )
         discovery = _safe_dict(result.get("online_existing_conditions_discovery_v1"))
         latest_result = deepcopy(_safe_dict(record.get("latest_result")))
@@ -1520,6 +1620,264 @@ def _online_discovery_chat_response(
         outcome="understood_and_answered" if discovery else "understood_but_blocked",
         state_changed=False,
         blocker="" if discovery else "No online discovery report is saved for this project.",
+    )
+
+
+def _provider_registry_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    project_input = _safe_dict(record.get("project_input"))
+    project_meta = _safe_dict(project_input.get("meta"))
+    site_inputs = _safe_dict(project_meta.get("site_inputs"))
+    latest_result = _safe_dict(record.get("latest_result"))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    plan_meta = _safe_dict(final_plan.get("meta"))
+    discovery = _safe_dict(site_inputs.get("online_existing_conditions_discovery_v1") or plan_meta.get("online_existing_conditions_discovery_v1"))
+    registry = (
+        _safe_dict(site_inputs.get("local_gis_provider_registry_v1"))
+        or _safe_dict(plan_meta.get("local_gis_provider_registry_v1"))
+        or _safe_dict(discovery.get("local_gis_provider_registry_v1"))
+    )
+    return build_provider_registry(providers=_safe_list(registry.get("providers")) if registry else None)
+
+
+def _summarize_provider_registry(registry: Dict[str, Any]) -> str:
+    providers = [_safe_dict(item) for item in _safe_list(registry.get("providers")) if _safe_dict(item)]
+    configured = [item for item in providers if safe_str(item.get("service_url")) and safe_str(item.get("status")) != "unconfigured"]
+    if not configured:
+        return "No local GIS ArcGIS providers are configured yet. Built-in public context sources may still be listed for floodplain/wetlands, but parcel/building/road/utility/contour providers need local service URLs."
+    lines = [
+        f"Configured GIS providers: {len(configured)} total. These are context sources and remain review-required.",
+    ]
+    for item in configured[:8]:
+        freshness = _safe_dict(item.get("freshness"))
+        health = _safe_dict(item.get("health"))
+        lines.append(
+            f"- {safe_str(item.get('source_type'))}: {safe_str(item.get('name') or item.get('id'))}; "
+            f"{safe_str(item.get('jurisdiction_level'), 'jurisdiction')}; health {safe_str(health.get('status'), 'unchecked')}; "
+            f"freshness {safe_str(freshness.get('status'), 'unknown')}."
+        )
+    return "\n".join(lines)
+
+
+def _extract_arcgis_url(message: str) -> str:
+    match = re.search(r"https?://\S+", message)
+    return match.group(0).rstrip(".,;)") if match else ""
+
+
+def _provider_source_type_from_message(message: str) -> str:
+    normalized = _normalized_text(message)
+    if "building" in normalized:
+        return "buildings"
+    if "road" in normalized or "right of way" in normalized or "row" in normalized:
+        return "roads_row"
+    if "utilit" in normalized:
+        return "utilities"
+    if "contour" in normalized:
+        return "contours"
+    if "flood" in normalized:
+        return "floodplain"
+    if "wetland" in normalized:
+        return "wetlands"
+    return "parcels" if "parcel" in normalized else ""
+
+
+def _provider_registry_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_configured = any(
+        phrase in normalized
+        for phrase in (
+            "what online sources are configured",
+            "configured online sources",
+            "configured gis sources",
+            "provider registry",
+            "gis providers",
+        )
+    )
+    asks_health = "check provider health" in normalized or ("provider" in normalized and "health" in normalized)
+    asks_add = ("add" in normalized or "configure" in normalized) and "provider" in normalized
+    missing_source_type = _provider_source_type_from_message(message)
+    asks_missing_source = bool(missing_source_type) and (
+        "why" in normalized
+        and (
+            "didn't" in normalized
+            or "didnt" in normalized
+            or "did not" in normalized
+            or "not find" in normalized
+            or "missing" in normalized
+        )
+    )
+    if not any((asks_configured, asks_health, asks_add, asks_missing_source)):
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project before I can manage local GIS providers.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_provider_registry_project",
+            action_blocked_reason="No saved project record is available for GIS provider registry updates.",
+            required_missing_inputs=["saved canonical project record"],
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Save or load a project, then ask about configured GIS providers.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="No saved project record is available for GIS provider registry updates.",
+        )
+    registry = _provider_registry_from_record(record)
+    if asks_missing_source and not asks_add and not _safe_list(registry.get("providers")):
+        return None
+    if asks_missing_source and not asks_add:
+        providers = [
+            _safe_dict(item)
+            for item in _safe_list(registry.get("providers"))
+            if safe_str(_safe_dict(item).get("source_type")) == missing_source_type
+        ]
+        configured = [
+            item
+            for item in providers
+            if safe_str(item.get("service_url") or _safe_dict(item.get("arcgis")).get("service_url"))
+            and safe_str(item.get("status")) != "unconfigured"
+        ]
+        if not configured:
+            reason = f"No configured local GIS provider is registered for {missing_source_type}."
+            next_action = f"Add a {missing_source_type} ArcGIS REST provider, then re-apply the address."
+        else:
+            statuses = ", ".join(
+                f"{safe_str(item.get('name') or item.get('id'))}: {safe_str(_safe_dict(item.get('health')).get('status'), 'unchecked')}"
+                for item in configured[:4]
+            )
+            reason = (
+                f"{len(configured)} {missing_source_type} provider record(s) are configured, but the last discovery did not return candidate features. "
+                f"Health/status: {statuses or 'unchecked'}."
+            )
+            next_action = "Run provider health and confirm the configured ArcGIS layer has query access and features inside the address search area."
+        return _truthful_decision_update(
+            {},
+            assistant_message=f"{reason} Civora will not report source success when a provider is missing, unhealthy, stale/unknown, or returns no candidates.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="explained_missing_local_gis_source",
+            action_blocked_reason=reason,
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action=next_action,
+            command_payload_updates={"local_gis_provider_registry_v1": registry, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+    if asks_add:
+        source_type = _provider_source_type_from_message(message)
+        url = _extract_arcgis_url(message)
+        if not source_type or not url:
+            missing = []
+            if not source_type:
+                missing.append("provider source type")
+            if not url:
+                missing.append("ArcGIS REST service URL")
+            return _truthful_decision_update(
+                {},
+                assistant_message="I can add the provider once you include the source type and ArcGIS REST service URL.",
+                intent="conversation",
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=True,
+                action_taken="blocked_provider_add_missing_config",
+                action_blocked_reason="Provider source type or ArcGIS REST service URL is missing.",
+                required_missing_inputs=missing,
+                affected_systems=["site", "data"],
+                assumptions=[],
+                next_best_action="Send something like: add a parcel provider https://county.example/arcgis/rest/services/Parcels/MapServer",
+                outcome="understood_needs_more_info",
+                state_changed=False,
+                blocker="Provider source type or ArcGIS REST service URL is missing.",
+            )
+        providers = _safe_list(registry.get("providers"))
+        provider = build_arcgis_provider_record(
+            source_type=normalize_source_type(source_type),
+            service_url=url,
+            layer_id=0,
+            name=f"Chat configured {normalize_source_type(source_type).replace('_', '/')} provider",
+            jurisdiction_level="jurisdiction",
+            notes="Added from chat; layer and freshness should be reviewed.",
+        )
+        providers.append(provider)
+        updated_registry = build_provider_registry(providers=providers)
+        latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+        final_plan = _safe_dict(latest_result.get("final_plan"))
+        meta = _safe_dict(final_plan.get("meta"))
+        meta["local_gis_provider_registry_v1"] = updated_registry
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        project_input = deepcopy(_safe_dict(record.get("project_input")))
+        project_meta = _safe_dict(project_input.get("meta"))
+        site_inputs = _safe_dict(project_meta.get("site_inputs"))
+        site_inputs["local_gis_provider_registry_v1"] = updated_registry
+        project_meta["site_inputs"] = site_inputs
+        project_input["meta"] = project_meta
+        if project_store and user_id:
+            _save_project_record(project_store, {**record, "_user_id": user_id}, project_input=project_input, latest_result=latest_result)
+        return _truthful_decision_update(
+            {},
+            assistant_message=f"Added a {provider['source_type']} ArcGIS provider record. It is configured but unchecked, review-required, and not survey-backed.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="added_local_gis_provider",
+            action_blocked_reason="",
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Run provider health, then re-apply the address to fetch candidates from configured sources.",
+            command_payload_updates={"local_gis_provider_registry_v1": updated_registry, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_executed",
+            state_changed=True,
+        )
+    if asks_health:
+        health = check_registry_health(registry)
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                f"Provider health checked: {health.get('healthy_provider_count', 0)} of {health.get('provider_count', 0)} healthy; "
+                f"{health.get('stale_provider_count', 0)} stale/unknown freshness. Health is reachability/config only."
+            ),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="checked_local_gis_provider_health",
+            action_blocked_reason="",
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Review failed or stale providers before re-running online source discovery.",
+            command_payload_updates={"local_gis_provider_registry_health_v1": health, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+    return _truthful_decision_update(
+        {},
+        assistant_message=_summarize_provider_registry(registry),
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken="reported_local_gis_provider_registry",
+        action_blocked_reason="",
+        affected_systems=["site", "data"],
+        assumptions=[],
+        next_best_action="Add missing parcel/building/road/utility/contour providers or check provider health.",
+        command_payload_updates={"local_gis_provider_registry_v1": registry, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+        outcome="understood_and_answered",
+        state_changed=False,
     )
 
 
@@ -1720,201 +2078,6 @@ def _candidate_chat_response(
         command_payload_updates={"candidate_review_inbox_v1": decision["candidate_review_inbox_v1"], "ui_navigation_target": "data", "requested_ui_mode": "data"},
         outcome="understood_and_executed",
         state_changed=True,
-    )
-
-
-def _issue_selector_from_message(normalized: str) -> str:
-    text = normalized
-    for phrase in (
-        "resolve this issue",
-        "resolve issue",
-        "reopen issue",
-        "waive issue",
-        "put issue in review",
-        "mark issue in review",
-        "show",
-        "what issues are",
-        "what issue is",
-        "what does the engineer need to review",
-    ):
-        text = text.replace(phrase, " ")
-    text = re.sub(r"\b(open|opened|resolved|reopened|grading|drainage|storm|water|sanitary|roadway|utility|utilities|blockers?|review|required|need|needs|engineer|to|the|a|an|are|is|what|does)\b", " ", text)
-    return " ".join(text.split())
-
-
-def _issue_tracker_chat_response(
-    *,
-    message: str,
-    record: Optional[Dict[str, Any]],
-    project_store: Optional[Any],
-    user_id: Optional[str],
-) -> Optional[Dict[str, Any]]:
-    normalized = _normalized_text(message)
-    asks_open = any(phrase in normalized for phrase in ("what issues are open", "open issues", "what issue is open"))
-    asks_engineer_queue = "what does the engineer need to review" in normalized or "engineer need to review" in normalized
-    asks_drainage = "drainage" in normalized and ("blocker" in normalized or "issue" in normalized)
-    wants_resolve = "resolve" in normalized and "issue" in normalized
-    wants_reopen = "reopen" in normalized and ("issue" in normalized or "grading" in normalized or "drainage" in normalized)
-    wants_waive = "waive" in normalized and "issue" in normalized
-    wants_in_review = ("in review" in normalized or "review this issue" in normalized) and "issue" in normalized
-    if not any((asks_open, asks_engineer_queue, asks_drainage, wants_resolve, wants_reopen, wants_waive, wants_in_review)):
-        return None
-    if not record:
-        return _truthful_decision_update(
-            {},
-            assistant_message="I need a saved project result before I can show review issues.",
-            intent="conversation",
-            run_mode="none",
-            design_prompt="",
-            needs_clarification=True,
-            action_taken="blocked_missing_issue_tracker_project",
-            action_blocked_reason="No saved project record is available for review issues.",
-            required_missing_inputs=["saved project with review evidence"],
-            affected_systems=["review"],
-            assumptions=[],
-            next_best_action="Save or load a project result, then ask for open issues again.",
-            outcome="understood_but_blocked",
-            state_changed=False,
-            blocker="No saved project record is available for review issues.",
-        )
-    latest_result = deepcopy(_safe_dict(record.get("latest_result")))
-    final_plan = _safe_dict(latest_result.get("final_plan"))
-    if not final_plan:
-        return _truthful_decision_update(
-            {},
-            assistant_message="I need a planner result before I can build the review issue tracker.",
-            intent="conversation",
-            run_mode="none",
-            design_prompt="",
-            needs_clarification=True,
-            action_taken="blocked_missing_issue_tracker_plan",
-            action_blocked_reason="Saved project has no final plan.",
-            required_missing_inputs=["saved planner result"],
-            affected_systems=["review"],
-            assumptions=[],
-            next_best_action="Run or load a design first, then ask for issues.",
-            outcome="understood_but_blocked",
-            state_changed=False,
-            blocker="Saved project has no final plan.",
-        )
-    meta = _safe_dict(final_plan.get("meta"))
-    tracker = _safe_dict(meta.get(ISSUE_TRACKER_VERSION)) or build_review_issue_tracker(final_plan, meta=meta)
-    action = ""
-    if wants_resolve:
-        action = "resolve"
-    elif wants_reopen:
-        action = "reopen"
-    elif wants_waive:
-        action = "waive"
-    elif wants_in_review:
-        action = "in_review"
-    discipline = ""
-    for candidate in ("grading", "drainage", "storm", "water", "sanitary", "roadway", "utilities"):
-        if candidate in normalized:
-            discipline = "drainage" if candidate == "storm" else candidate
-            break
-    selector = _issue_selector_from_message(normalized)
-    if action:
-        matches = select_review_issues(tracker, selector, discipline=discipline)
-        if not matches and not selector and not discipline:
-            matches = select_review_issues(tracker, status="open")
-        if len(matches) != 1:
-            return _truthful_decision_update(
-                {},
-                assistant_message=(
-                    "I found multiple matching review issues. Please include an issue id or a more specific discipline/title."
-                    if matches
-                    else "I could not find a matching review issue."
-                ),
-                intent="conversation",
-                run_mode="none",
-                design_prompt="",
-                needs_clarification=True,
-                action_taken="blocked_ambiguous_review_issue_update" if matches else "blocked_review_issue_not_found",
-                action_blocked_reason="Review issue update needs exactly one matching issue.",
-                required_missing_inputs=["specific review issue id or title"],
-                affected_systems=["review"],
-                assumptions=[],
-                next_best_action="Ask “what issues are open?” and include the issue id in the follow-up.",
-                command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
-                outcome="understood_but_blocked",
-                state_changed=False,
-                blocker="Review issue update needs exactly one matching issue.",
-            )
-        if not (project_store and user_id):
-            return None
-        matched = _safe_dict(matches[0])
-        update = apply_review_issue_update(
-            meta,
-            action=action,
-            issue_id=safe_str(matched.get("issue_id")),
-            actor=user_id,
-            note=message,
-            discipline=discipline,
-        )
-        meta = _safe_dict(update.get("updated_meta"))
-        tracker = _safe_dict(update.get(ISSUE_TRACKER_VERSION))
-        final_plan["meta"] = meta
-        latest_result["final_plan"] = final_plan
-        _save_project_record(
-            project_store,
-            {**record, "_user_id": user_id},
-            project_input=deepcopy(_safe_dict(record.get("project_input"))),
-            latest_result=latest_result,
-        )
-        status = safe_str(update.get("status"))
-        return _truthful_decision_update(
-            {},
-            assistant_message=(
-                f"Updated {safe_str(matched.get('issue_id'))} to {status}. "
-                "This changes the issue workflow only; review requirements and field-use boundaries remain visible."
-            ),
-            intent="conversation",
-            run_mode="none",
-            design_prompt="",
-            needs_clarification=False,
-            action_taken=f"{action}_review_issue",
-            action_blocked_reason="",
-            affected_systems=[safe_str(matched.get("discipline"), "review")],
-            assumptions=[],
-            next_best_action="Review the remaining open issues before relying on outputs.",
-            command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
-            outcome="understood_and_executed",
-            state_changed=True,
-        )
-
-    if asks_engineer_queue:
-        visible = [_safe_dict(item) for item in _safe_list(tracker.get("engineer_review_queue"))]
-        heading = "Engineer review queue"
-    elif asks_drainage:
-        visible = select_review_issues(tracker, discipline="drainage", status="open")
-        heading = "Drainage blockers"
-    else:
-        visible = select_review_issues(tracker, status="open")
-        heading = "Open review issues"
-    if visible:
-        lines = [
-            f"{safe_str(item.get('issue_id'))}: {safe_str(item.get('severity'))} {safe_str(item.get('discipline'))} - {safe_str(item.get('title'))}"
-            for item in visible[:8]
-        ]
-        assistant = f"{heading}: {len(visible)} item{'s' if len(visible) != 1 else ''}.\n" + "\n".join(f"- {line}" for line in lines)
-    else:
-        assistant = f"{heading}: no matching open items are recorded. Review-required boundaries still apply to generated outputs."
-    return _truthful_decision_update(
-        {},
-        assistant_message=assistant,
-        intent="conversation",
-        run_mode="none",
-        design_prompt="",
-        needs_clarification=False,
-        action_taken="reported_review_issue_tracker",
-        action_blocked_reason="",
-        affected_systems=["review"],
-        assumptions=[],
-        next_best_action="Resolve, reopen, waive with a review-required record, or assign visible issues as work progresses.",
-        command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
-        outcome="understood_and_answered",
-        state_changed=False,
     )
 
 
@@ -2755,6 +2918,14 @@ def decide_chat(
     )
     if plan_pdf_decision is not None:
         return _enrich_response_contract(plan_pdf_decision, message=message)
+    provider_registry_decision = _provider_registry_chat_response(
+        message=message,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if provider_registry_decision is not None:
+        return _enrich_response_contract(provider_registry_decision, message=message)
     online_discovery_decision = _online_discovery_chat_response(
         message=message,
         record=record,
@@ -2766,6 +2937,9 @@ def decide_chat(
     utility_catalog_decision = _utility_catalog_chat_response(message, context)
     if utility_catalog_decision is not None:
         return _enrich_response_contract(utility_catalog_decision, message=message)
+    customer_template_decision = _customer_template_chat_response(message, context)
+    if customer_template_decision is not None:
+        return _enrich_response_contract(customer_template_decision, message=message)
     issue_tracker_decision = _issue_tracker_chat_response(
         message=message,
         record=record,

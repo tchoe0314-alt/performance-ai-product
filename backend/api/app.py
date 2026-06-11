@@ -45,6 +45,8 @@ from backend.application.cost_workflows import (
     validate_unit_price_book_response as application_validate_unit_price_book_response,
 )
 from backend.application.file_workflows import (
+    build_local_gis_provider_registry as application_build_local_gis_provider_registry,
+    check_local_gis_provider_registry as application_check_local_gis_provider_registry,
     download_artifact_response as application_download_artifact_response,
     existing_conditions_online_sources as application_existing_conditions_online_sources,
     fetch_existing_conditions_online as application_fetch_existing_conditions_online,
@@ -123,6 +125,7 @@ from backend.application.professional_workflows import (
     professional_release_response as application_professional_release_response,
     validate_professional_release_response as application_validate_professional_release_response,
 )
+from backend.application.production_env_validator_v1 import validate_production_env_v1
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
 from backend.services.billing import build_billing_status, usage_gate
@@ -475,6 +478,7 @@ class ExistingConditionsOnlineSourcesPayload(BaseModel):
     address: str = ""
     bbox: Optional[Dict[str, Any]] = None
     parcel_service_url: str = ""
+    provider_registry: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ExistingConditionsOnlineFetchPayload(BaseModel):
@@ -482,10 +486,27 @@ class ExistingConditionsOnlineFetchPayload(BaseModel):
     bbox: Optional[Dict[str, Any]] = None
     parcel_service_url: str = ""
     parcel_layer_id: int = 0
+    building_footprints_service_url: str = ""
+    building_footprints_layer_id: int = 0
+    roads_service_url: str = ""
+    roads_layer_id: int = 0
+    utilities_service_url: str = ""
+    utilities_layer_id: int = 0
+    contours_service_url: str = ""
+    contours_layer_id: int = 0
+    provider_registry: Dict[str, Any] = Field(default_factory=dict)
     include_floodplain: bool = True
     include_wetlands: bool = True
     include_parcels: bool = True
+    include_building_footprints: bool = True
+    include_roads: bool = True
+    include_utilities: bool = True
+    include_contours: bool = True
     include_elevation: bool = True
+
+
+class LocalGisProviderRegistryPayload(BaseModel):
+    providers: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class StandardsDiscoveryPayload(BaseModel):
@@ -1043,6 +1064,15 @@ def debug_runtime(
     return _runtime_debug_payload()
 
 
+@app.get("/api/debug/production-env")
+def debug_production_env(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("debug")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return validate_production_env_v1()
+
+
 @app.get("/api/auth/status")
 def auth_status(_rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, Any]:
     connection = DB.connect()
@@ -1174,6 +1204,7 @@ def existing_conditions_online_sources(
         address=payload.address,
         bbox=payload.bbox,
         parcel_service_url=payload.parcel_service_url,
+        provider_registry=payload.provider_registry,
     )
 
 
@@ -1189,11 +1220,44 @@ def fetch_existing_conditions_online(
         bbox=payload.bbox,
         parcel_service_url=payload.parcel_service_url,
         parcel_layer_id=payload.parcel_layer_id,
+        building_footprints_service_url=payload.building_footprints_service_url,
+        building_footprints_layer_id=payload.building_footprints_layer_id,
+        roads_service_url=payload.roads_service_url,
+        roads_layer_id=payload.roads_layer_id,
+        utilities_service_url=payload.utilities_service_url,
+        utilities_layer_id=payload.utilities_layer_id,
+        contours_service_url=payload.contours_service_url,
+        contours_layer_id=payload.contours_layer_id,
+        provider_registry=payload.provider_registry,
         include_floodplain=payload.include_floodplain,
         include_wetlands=payload.include_wetlands,
         include_parcels=payload.include_parcels,
+        include_building_footprints=payload.include_building_footprints,
+        include_roads=payload.include_roads,
+        include_utilities=payload.include_utilities,
+        include_contours=payload.include_contours,
         include_elevation=payload.include_elevation,
     )
+
+
+@app.post("/api/existing-conditions/provider-registry")
+def local_gis_provider_registry(
+    payload: LocalGisProviderRegistryPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("geocode")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_build_local_gis_provider_registry(providers=payload.providers)
+
+
+@app.post("/api/existing-conditions/provider-registry/check-health")
+def local_gis_provider_registry_health(
+    payload: LocalGisProviderRegistryPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("geocode")),
+) -> Dict[str, Any]:
+    _ = current_user
+    return application_check_local_gis_provider_registry(providers=payload.providers)
 
 
 @app.post("/api/standards/discover")

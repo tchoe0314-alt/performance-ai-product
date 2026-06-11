@@ -26,6 +26,7 @@ from backend.planning.existing_conditions_importers import (
     merge_imported_existing_conditions,
 )
 from backend.planning.existing_conditions_online import build_online_source_urls, fetch_online_existing_conditions
+from backend.planning.gis_provider_registry import build_provider_registry, check_registry_health
 
 
 class AuthStoreProtocol(Protocol):
@@ -336,11 +337,15 @@ def existing_conditions_online_sources(
     address: str = "",
     bbox: Optional[Dict[str, Any]] = None,
     parcel_service_url: str = "",
+    provider_registry: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    registry = build_provider_registry(providers=(provider_registry or {}).get("providers", []) if isinstance(provider_registry, dict) else [])
     return {
         "success": True,
         "source_type": "online_source_registry",
         "sources": build_online_source_urls(address=address, bbox=bbox, parcel_service_url=parcel_service_url),
+        "local_gis_provider_registry_v1": registry,
+        "configured_provider_count": registry.get("configured_provider_count", 0),
         "truth_label": "Online data sources can provide planning context. Production truth still requires survey, utility locate/as-built, jurisdiction confirmation, and engineer review.",
     }
 
@@ -351,11 +356,25 @@ def fetch_existing_conditions_online(
     bbox: Optional[Dict[str, Any]] = None,
     parcel_service_url: str = "",
     parcel_layer_id: int = 0,
+    building_footprints_service_url: str = "",
+    building_footprints_layer_id: int = 0,
+    roads_service_url: str = "",
+    roads_layer_id: int = 0,
+    utilities_service_url: str = "",
+    utilities_layer_id: int = 0,
+    contours_service_url: str = "",
+    contours_layer_id: int = 0,
+    provider_registry: Optional[Dict[str, Any]] = None,
     include_floodplain: bool = True,
     include_wetlands: bool = True,
     include_parcels: bool = True,
+    include_building_footprints: bool = True,
+    include_roads: bool = True,
+    include_utilities: bool = True,
+    include_contours: bool = True,
     include_elevation: bool = True,
 ) -> Dict[str, Any]:
+    registry = build_provider_registry(providers=(provider_registry or {}).get("providers", []) if isinstance(provider_registry, dict) else [])
     parcel_url = parcel_service_url or str(os.getenv("CIVORA_PARCEL_ARCGIS_SERVICE_URL") or "")
     parcel_layer = parcel_layer_id if parcel_layer_id is not None else int(os.getenv("CIVORA_PARCEL_ARCGIS_LAYER_ID") or "0")
     result = fetch_online_existing_conditions(
@@ -363,21 +382,26 @@ def fetch_existing_conditions_online(
         bbox=bbox,
         parcel_service_url=parcel_url,
         parcel_layer_id=parcel_layer,
-        building_footprints_service_url=str(os.getenv("CIVORA_BUILDING_FOOTPRINTS_ARCGIS_SERVICE_URL") or ""),
-        building_footprints_layer_id=int(os.getenv("CIVORA_BUILDING_FOOTPRINTS_ARCGIS_LAYER_ID") or "0"),
-        roads_service_url=str(os.getenv("CIVORA_ROADS_ROW_ARCGIS_SERVICE_URL") or ""),
-        roads_layer_id=int(os.getenv("CIVORA_ROADS_ROW_ARCGIS_LAYER_ID") or "0"),
+        building_footprints_service_url=building_footprints_service_url or str(os.getenv("CIVORA_BUILDING_FOOTPRINTS_ARCGIS_SERVICE_URL") or ""),
+        building_footprints_layer_id=building_footprints_layer_id if building_footprints_layer_id is not None else int(os.getenv("CIVORA_BUILDING_FOOTPRINTS_ARCGIS_LAYER_ID") or "0"),
+        roads_service_url=roads_service_url or str(os.getenv("CIVORA_ROADS_ROW_ARCGIS_SERVICE_URL") or ""),
+        roads_layer_id=roads_layer_id if roads_layer_id is not None else int(os.getenv("CIVORA_ROADS_ROW_ARCGIS_LAYER_ID") or "0"),
         easements_service_url=str(os.getenv("CIVORA_EASEMENTS_ARCGIS_SERVICE_URL") or ""),
         easements_layer_id=int(os.getenv("CIVORA_EASEMENTS_ARCGIS_LAYER_ID") or "0"),
         zoning_service_url=str(os.getenv("CIVORA_ZONING_ARCGIS_SERVICE_URL") or ""),
         zoning_layer_id=int(os.getenv("CIVORA_ZONING_ARCGIS_LAYER_ID") or "0"),
-        utilities_service_url=str(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_SERVICE_URL") or ""),
-        utilities_layer_id=int(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_LAYER_ID") or "0"),
+        utilities_service_url=utilities_service_url or str(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_SERVICE_URL") or ""),
+        utilities_layer_id=utilities_layer_id if utilities_layer_id is not None else int(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_LAYER_ID") or "0"),
         include_floodplain=include_floodplain,
         include_wetlands=include_wetlands,
         include_parcels=include_parcels,
+        include_building_footprints=include_building_footprints,
+        include_roads=include_roads,
+        include_utilities=include_utilities,
         include_elevation=include_elevation,
     )
+    if include_contours and (contours_service_url or contours_layer_id):
+        result.setdefault("warnings", []).append("Configured contour ArcGIS fetch is not wired into the online fetcher yet.")
     canonical = result.get("canonical_existing_conditions") or {}
     package_meta = {
         "survey": canonical.get("survey"),
@@ -387,13 +411,25 @@ def fetch_existing_conditions_online(
         "dem_lidar": canonical.get("dem_lidar"),
         "location_context": result.get("location_context"),
         "online_existing_conditions_discovery_v1": result.get("online_existing_conditions_discovery_v1"),
+        "local_gis_provider_registry_v1": registry,
         "map_feature_detection_report_v1": result.get("map_feature_detection_report_v1"),
     }
     summary = summarize_existing_conditions({"meta": package_meta})
     package_meta["existing_conditions_summary"] = summary
     result["existing_conditions_summary"] = summary
+    if isinstance(result.get("online_existing_conditions_discovery_v1"), dict):
+        result["online_existing_conditions_discovery_v1"]["local_gis_provider_registry_v1"] = registry
+        result["online_existing_conditions_discovery_v1"]["configured_provider_count"] = registry.get("configured_provider_count", 0)
     result["existing_conditions_package"] = build_existing_conditions_package({"meta": package_meta})
     return result
+
+
+def build_local_gis_provider_registry(*, providers: Optional[list[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    return build_provider_registry(providers=providers or [])
+
+
+def check_local_gis_provider_registry(*, providers: Optional[list[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    return check_registry_health(build_provider_registry(providers=providers or []))
 
 
 def _public_existing_conditions_import(item: Dict[str, Any]) -> Dict[str, Any]:
