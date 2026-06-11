@@ -69,6 +69,8 @@ import type {
   PreviewRequestPayload,
   SiteInputs,
   OnlineExistingConditionsDiscovery,
+  LocalGisProvider,
+  LocalGisProviderRegistry,
   CanonicalGeometryHandoffV1,
   CandidateReviewInbox,
   CandidateReviewItem,
@@ -186,6 +188,10 @@ type OnlineExistingConditionsFetchResponse = {
   existing_conditions_summary?: Record<string, unknown>;
   canonical_existing_conditions?: Record<string, unknown>;
   warnings?: string[];
+};
+type LocalGisProviderRegistryResponse = LocalGisProviderRegistry & {
+  status?: string;
+  providers?: LocalGisProvider[];
 };
 type UtilityCatalogSource = {
   source_name?: string;
@@ -2437,6 +2443,10 @@ function PerformanceAIDashboardView({
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedAddressSuggestion, setSelectedAddressSuggestion] = useState<AddressSuggestion | null>(null);
   const [onlineDiscoveryBusy, setOnlineDiscoveryBusy] = useState(false);
+  const [providerSourceType, setProviderSourceType] = useState("parcels");
+  const [providerServiceUrl, setProviderServiceUrl] = useState("");
+  const [providerLayerId, setProviderLayerId] = useState("0");
+  const [providerRegistryBusy, setProviderRegistryBusy] = useState(false);
   const addressSuggestTimeoutRef = useRef<number | null>(null);
   const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "uploaded" | "detecting" | "failed">("idle");
   const [imageUploadNote, setImageUploadNote] = useState<string | null>(null);
@@ -10768,7 +10778,12 @@ function PerformanceAIDashboardView({
             include_floodplain: true,
             include_wetlands: true,
             include_parcels: true,
+            include_building_footprints: true,
+            include_roads: true,
+            include_utilities: true,
+            include_contours: true,
             include_elevation: true,
+            provider_registry: localGisProviderRegistry,
           },
           { token },
         );
@@ -10791,6 +10806,9 @@ function PerformanceAIDashboardView({
       }
       if (onlineFetch?.online_existing_conditions_discovery_v1) {
         nextSiteInputs.online_existing_conditions_discovery_v1 = onlineFetch.online_existing_conditions_discovery_v1;
+        if (onlineFetch.online_existing_conditions_discovery_v1.local_gis_provider_registry_v1) {
+          nextSiteInputs.local_gis_provider_registry_v1 = onlineFetch.online_existing_conditions_discovery_v1.local_gis_provider_registry_v1;
+        }
       }
       if (onlineFetch?.map_feature_detection_report_v1) {
         nextSiteInputs.map_feature_detection_report_v1 = onlineFetch.map_feature_detection_report_v1;
@@ -10852,6 +10870,85 @@ function PerformanceAIDashboardView({
       );
     } finally {
       setOnlineDiscoveryBusy(false);
+    }
+  };
+
+  const addLocalGisProvider = async () => {
+    if (!token) return;
+    const url = providerServiceUrl.trim();
+    if (!url) {
+      setStatusMessage("Add an ArcGIS REST service URL before saving the provider.");
+      return;
+    }
+    setProviderRegistryBusy(true);
+    try {
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const existingProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
+      const nextProvider: LocalGisProvider = {
+        id: `ui-${providerSourceType}-${Date.now()}`,
+        name: `Local ${providerSourceType.replaceAll("_", "/")} provider`,
+        source_type: providerSourceType,
+        jurisdiction_level: providerSourceType === "utilities" ? "utility" : providerSourceType === "buildings" ? "city" : "county",
+        provider_kind: "arcgis_rest",
+        service_url: url,
+        arcgis: {
+          service_url: url,
+          service_kind: url.toLowerCase().includes("featureserver") ? "FeatureServer" : "MapServer",
+          layer_id: Number.parseInt(providerLayerId || "0", 10) || 0,
+        },
+        status: "configured",
+        review_required: true,
+        survey_backed: false,
+        truth_label: "GIS provider records configure context sources only; they are not survey/control evidence.",
+      };
+      const registry = await postJson<LocalGisProviderRegistryResponse>(
+        "/api/existing-conditions/provider-registry",
+        { providers: [...existingProviders, nextProvider] },
+        { token },
+      );
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        local_gis_provider_registry_v1: registry,
+      };
+      await saveProject({
+        silent: true,
+        projectInputOverride: {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: nextSiteInputs,
+          },
+        },
+      });
+      setProviderServiceUrl("");
+      setProviderLayerId("0");
+      setStatusMessage("Local GIS provider configured. Run health or re-apply the address to fetch candidates.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not add GIS provider.");
+    } finally {
+      setProviderRegistryBusy(false);
+    }
+  };
+
+  const checkLocalGisProviders = async () => {
+    if (!token) return;
+    setProviderRegistryBusy(true);
+    try {
+      const health = await postJson<Record<string, unknown>>(
+        "/api/existing-conditions/provider-registry/check-health",
+        { providers: localGisProviders },
+        { token },
+      );
+      setStatusMessage(
+        `Provider health: ${Number(health.healthy_provider_count ?? 0)} of ${Number(health.provider_count ?? 0)} healthy; ${Number(health.stale_provider_count ?? 0)} stale/unknown freshness.`,
+      );
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Provider health check failed.");
+    } finally {
+      setProviderRegistryBusy(false);
     }
   };
 
@@ -11140,6 +11237,13 @@ function PerformanceAIDashboardView({
   const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
   const onlineMissingSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) <= 0);
   const onlineDiscoveryCandidateCount = Number(onlineDiscovery.candidate_count ?? 0);
+  const localGisProviderRegistry =
+    (siteInputs?.local_gis_provider_registry_v1 ??
+      onlineDiscovery.local_gis_provider_registry_v1 ??
+      (currentPlanMeta.local_gis_provider_registry_v1 as LocalGisProviderRegistry | undefined) ??
+      {}) as LocalGisProviderRegistry;
+  const localGisProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
+  const configuredLocalGisProviders = localGisProviders.filter((provider) => Boolean(provider.service_url || provider.arcgis?.service_url));
 
   const ensureSiteLocked = useCallback(
     (action: string) => {
@@ -16069,6 +16173,89 @@ function PerformanceAIDashboardView({
                             </div>
                           </details>
                         ) : null}
+                      </div>
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3" data-testid="gis-provider-manager">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">GIS Provider Manager</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500">
+                              {configuredLocalGisProviders.length} configured ArcGIS source{configuredLocalGisProviders.length === 1 ? "" : "s"}.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={checkLocalGisProviders}
+                            disabled={providerRegistryBusy || !localGisProviders.length}
+                            className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Check health
+                          </button>
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr_72px_auto]">
+                          <select
+                            value={providerSourceType}
+                            onChange={(event) => setProviderSourceType(event.target.value)}
+                            className="rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700"
+                            aria-label="GIS provider source type"
+                          >
+                            <option value="parcels">Parcels</option>
+                            <option value="buildings">Buildings</option>
+                            <option value="roads_row">Roads/ROW</option>
+                            <option value="utilities">Utilities</option>
+                            <option value="contours">Contours</option>
+                            <option value="floodplain">Floodplain</option>
+                            <option value="wetlands">Wetlands</option>
+                          </select>
+                          <input
+                            value={providerServiceUrl}
+                            onChange={(event) => setProviderServiceUrl(event.target.value)}
+                            placeholder="ArcGIS REST service URL"
+                            className="min-w-0 rounded-md border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700"
+                          />
+                          <input
+                            value={providerLayerId}
+                            onChange={(event) => setProviderLayerId(event.target.value)}
+                            inputMode="numeric"
+                            aria-label="ArcGIS layer id"
+                            className="rounded-md border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={addLocalGisProvider}
+                            disabled={providerRegistryBusy || !providerServiceUrl.trim()}
+                            className="rounded-md border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {configuredLocalGisProviders.length ? (
+                          <div className="mt-3 space-y-2">
+                            {configuredLocalGisProviders.slice(0, 6).map((provider) => {
+                              const health = provider.health ?? {};
+                              const freshness = provider.freshness ?? {};
+                              return (
+                                <div key={provider.id || provider.service_url} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-slate-800">{provider.name || provider.id}</p>
+                                      <p className="mt-1 truncate text-xs font-medium text-slate-500">{provider.service_url || provider.arcgis?.service_url}</p>
+                                    </div>
+                                    <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                      {provider.source_type}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-xs font-medium text-slate-500">
+                                    Health {String(health.status ?? "unchecked")} | freshness {String(freshness.status ?? "unknown")} | review required
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                            Parcel, building, road/ROW, utility, and contour sources need local ArcGIS provider records before address apply can fetch them.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <input

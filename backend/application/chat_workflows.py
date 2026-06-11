@@ -29,6 +29,12 @@ from backend.planning.design_alternatives import (
 )
 from backend.planning.dwg_compatibility import dwg_strategy_from_meta
 from backend.planning.existing_conditions_online import fetch_online_existing_conditions
+from backend.planning.gis_provider_registry import (
+    build_arcgis_provider_record,
+    build_provider_registry,
+    check_registry_health,
+    normalize_source_type,
+)
 from backend.planning.map_feature_detection import build_map_feature_detection_report
 from backend.planning.progress_timeline import build_progress_timeline
 from backend.planning.review_issue_tracker import (
@@ -1464,6 +1470,9 @@ def _online_discovery_chat_response(
             zoning_layer_id=int(os.getenv("CIVORA_ZONING_ARCGIS_LAYER_ID") or "0"),
             utilities_service_url=safe_str(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_SERVICE_URL")),
             utilities_layer_id=int(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_LAYER_ID") or "0"),
+            contours_service_url=safe_str(os.getenv("CIVORA_CONTOURS_ARCGIS_SERVICE_URL")),
+            contours_layer_id=int(os.getenv("CIVORA_CONTOURS_ARCGIS_LAYER_ID") or "0"),
+            provider_registry=_provider_registry_from_record(record),
         )
         discovery = _safe_dict(result.get("online_existing_conditions_discovery_v1"))
         latest_result = deepcopy(_safe_dict(record.get("latest_result")))
@@ -1520,6 +1529,262 @@ def _online_discovery_chat_response(
         outcome="understood_and_answered" if discovery else "understood_but_blocked",
         state_changed=False,
         blocker="" if discovery else "No online discovery report is saved for this project.",
+    )
+
+
+def _provider_registry_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    project_input = _safe_dict(record.get("project_input"))
+    project_meta = _safe_dict(project_input.get("meta"))
+    site_inputs = _safe_dict(project_meta.get("site_inputs"))
+    latest_result = _safe_dict(record.get("latest_result"))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    plan_meta = _safe_dict(final_plan.get("meta"))
+    discovery = _safe_dict(site_inputs.get("online_existing_conditions_discovery_v1") or plan_meta.get("online_existing_conditions_discovery_v1"))
+    registry = (
+        _safe_dict(site_inputs.get("local_gis_provider_registry_v1"))
+        or _safe_dict(plan_meta.get("local_gis_provider_registry_v1"))
+        or _safe_dict(discovery.get("local_gis_provider_registry_v1"))
+    )
+    return build_provider_registry(providers=_safe_list(registry.get("providers")) if registry else None)
+
+
+def _summarize_provider_registry(registry: Dict[str, Any]) -> str:
+    providers = [_safe_dict(item) for item in _safe_list(registry.get("providers")) if _safe_dict(item)]
+    configured = [item for item in providers if safe_str(item.get("service_url")) and safe_str(item.get("status")) != "unconfigured"]
+    if not configured:
+        return "No local GIS ArcGIS providers are configured yet. Built-in public context sources may still be listed for floodplain/wetlands, but parcel/building/road/utility/contour providers need local service URLs."
+    lines = [
+        f"Configured GIS providers: {len(configured)} total. These are context sources and remain review-required.",
+    ]
+    for item in configured[:8]:
+        freshness = _safe_dict(item.get("freshness"))
+        health = _safe_dict(item.get("health"))
+        lines.append(
+            f"- {safe_str(item.get('source_type'))}: {safe_str(item.get('name') or item.get('id'))}; "
+            f"{safe_str(item.get('jurisdiction_level'), 'jurisdiction')}; health {safe_str(health.get('status'), 'unchecked')}; "
+            f"freshness {safe_str(freshness.get('status'), 'unknown')}."
+        )
+    return "\n".join(lines)
+
+
+def _extract_arcgis_url(message: str) -> str:
+    match = re.search(r"https?://\S+", message)
+    return match.group(0).rstrip(".,;)") if match else ""
+
+
+def _provider_source_type_from_message(message: str) -> str:
+    normalized = _normalized_text(message)
+    if "building" in normalized:
+        return "buildings"
+    if "road" in normalized or "right of way" in normalized or "row" in normalized:
+        return "roads_row"
+    if "utilit" in normalized:
+        return "utilities"
+    if "contour" in normalized:
+        return "contours"
+    if "flood" in normalized:
+        return "floodplain"
+    if "wetland" in normalized:
+        return "wetlands"
+    return "parcels" if "parcel" in normalized else ""
+
+
+def _provider_registry_chat_response(
+    *,
+    message: str,
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    asks_configured = any(
+        phrase in normalized
+        for phrase in (
+            "what online sources are configured",
+            "configured online sources",
+            "configured gis sources",
+            "provider registry",
+            "gis providers",
+        )
+    )
+    asks_health = "check provider health" in normalized or ("provider" in normalized and "health" in normalized)
+    asks_add = ("add" in normalized or "configure" in normalized) and "provider" in normalized
+    missing_source_type = _provider_source_type_from_message(message)
+    asks_missing_source = bool(missing_source_type) and (
+        "why" in normalized
+        and (
+            "didn't" in normalized
+            or "didnt" in normalized
+            or "did not" in normalized
+            or "not find" in normalized
+            or "missing" in normalized
+        )
+    )
+    if not any((asks_configured, asks_health, asks_add, asks_missing_source)):
+        return None
+    if not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message="I need a saved project before I can manage local GIS providers.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_missing_provider_registry_project",
+            action_blocked_reason="No saved project record is available for GIS provider registry updates.",
+            required_missing_inputs=["saved canonical project record"],
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Save or load a project, then ask about configured GIS providers.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker="No saved project record is available for GIS provider registry updates.",
+        )
+    registry = _provider_registry_from_record(record)
+    if asks_missing_source and not asks_add:
+        providers = [
+            _safe_dict(item)
+            for item in _safe_list(registry.get("providers"))
+            if safe_str(_safe_dict(item).get("source_type")) == missing_source_type
+        ]
+        configured = [
+            item
+            for item in providers
+            if safe_str(item.get("service_url") or _safe_dict(item.get("arcgis")).get("service_url"))
+            and safe_str(item.get("status")) != "unconfigured"
+        ]
+        if not configured:
+            reason = f"No configured local GIS provider is registered for {missing_source_type}."
+            next_action = f"Add a {missing_source_type} ArcGIS REST provider, then re-apply the address."
+        else:
+            statuses = ", ".join(
+                f"{safe_str(item.get('name') or item.get('id'))}: {safe_str(_safe_dict(item.get('health')).get('status'), 'unchecked')}"
+                for item in configured[:4]
+            )
+            reason = (
+                f"{len(configured)} {missing_source_type} provider record(s) are configured, but the last discovery did not return candidate features. "
+                f"Health/status: {statuses or 'unchecked'}."
+            )
+            next_action = "Run provider health and confirm the configured ArcGIS layer has query access and features inside the address search area."
+        return _truthful_decision_update(
+            {},
+            assistant_message=f"{reason} Civora will not report source success when a provider is missing, unhealthy, stale/unknown, or returns no candidates.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="explained_missing_local_gis_source",
+            action_blocked_reason=reason,
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action=next_action,
+            command_payload_updates={"local_gis_provider_registry_v1": registry, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+    if asks_add:
+        source_type = _provider_source_type_from_message(message)
+        url = _extract_arcgis_url(message)
+        if not source_type or not url:
+            missing = []
+            if not source_type:
+                missing.append("provider source type")
+            if not url:
+                missing.append("ArcGIS REST service URL")
+            return _truthful_decision_update(
+                {},
+                assistant_message="I can add the provider once you include the source type and ArcGIS REST service URL.",
+                intent="conversation",
+                run_mode="none",
+                design_prompt="",
+                needs_clarification=True,
+                action_taken="blocked_provider_add_missing_config",
+                action_blocked_reason="Provider source type or ArcGIS REST service URL is missing.",
+                required_missing_inputs=missing,
+                affected_systems=["site", "data"],
+                assumptions=[],
+                next_best_action="Send something like: add a parcel provider https://county.example/arcgis/rest/services/Parcels/MapServer",
+                outcome="understood_needs_more_info",
+                state_changed=False,
+                blocker="Provider source type or ArcGIS REST service URL is missing.",
+            )
+        providers = _safe_list(registry.get("providers"))
+        provider = build_arcgis_provider_record(
+            source_type=normalize_source_type(source_type),
+            service_url=url,
+            layer_id=0,
+            name=f"Chat configured {normalize_source_type(source_type).replace('_', '/')} provider",
+            jurisdiction_level="jurisdiction",
+            notes="Added from chat; layer and freshness should be reviewed.",
+        )
+        providers.append(provider)
+        updated_registry = build_provider_registry(providers=providers)
+        latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+        final_plan = _safe_dict(latest_result.get("final_plan"))
+        meta = _safe_dict(final_plan.get("meta"))
+        meta["local_gis_provider_registry_v1"] = updated_registry
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        project_input = deepcopy(_safe_dict(record.get("project_input")))
+        project_meta = _safe_dict(project_input.get("meta"))
+        site_inputs = _safe_dict(project_meta.get("site_inputs"))
+        site_inputs["local_gis_provider_registry_v1"] = updated_registry
+        project_meta["site_inputs"] = site_inputs
+        project_input["meta"] = project_meta
+        if project_store and user_id:
+            _save_project_record(project_store, {**record, "_user_id": user_id}, project_input=project_input, latest_result=latest_result)
+        return _truthful_decision_update(
+            {},
+            assistant_message=f"Added a {provider['source_type']} ArcGIS provider record. It is configured but unchecked, review-required, and not survey-backed.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="added_local_gis_provider",
+            action_blocked_reason="",
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Run provider health, then re-apply the address to fetch candidates from configured sources.",
+            command_payload_updates={"local_gis_provider_registry_v1": updated_registry, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_executed",
+            state_changed=True,
+        )
+    if asks_health:
+        health = check_registry_health(registry)
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                f"Provider health checked: {health.get('healthy_provider_count', 0)} of {health.get('provider_count', 0)} healthy; "
+                f"{health.get('stale_provider_count', 0)} stale/unknown freshness. Health is reachability/config only."
+            ),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="checked_local_gis_provider_health",
+            action_blocked_reason="",
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Review failed or stale providers before re-running online source discovery.",
+            command_payload_updates={"local_gis_provider_registry_health_v1": health, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+    return _truthful_decision_update(
+        {},
+        assistant_message=_summarize_provider_registry(registry),
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken="reported_local_gis_provider_registry",
+        action_blocked_reason="",
+        affected_systems=["site", "data"],
+        assumptions=[],
+        next_best_action="Add missing parcel/building/road/utility/contour providers or check provider health.",
+        command_payload_updates={"local_gis_provider_registry_v1": registry, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+        outcome="understood_and_answered",
+        state_changed=False,
     )
 
 
@@ -2755,6 +3020,14 @@ def decide_chat(
     )
     if plan_pdf_decision is not None:
         return _enrich_response_contract(plan_pdf_decision, message=message)
+    provider_registry_decision = _provider_registry_chat_response(
+        message=message,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if provider_registry_decision is not None:
+        return _enrich_response_contract(provider_registry_decision, message=message)
     online_discovery_decision = _online_discovery_chat_response(
         message=message,
         record=record,

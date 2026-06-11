@@ -10,6 +10,7 @@ from backend.planning.existing_conditions_online import (
     geocode_address_census,
     online_import_to_gis_layers,
 )
+from backend.planning.gis_provider_registry import build_arcgis_provider_record, build_provider_registry
 
 
 class _Response:
@@ -182,6 +183,52 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertEqual(len(canonical["gis_layers"]["parcels"]), 1)
         self.assertTrue(canonical["dem_lidar"]["ready"])
         self.assertIn("does not replace", result["truth_label"])
+
+    def test_provider_registry_configures_local_arcgis_sources(self) -> None:
+        registry = build_provider_registry(
+            include_builtin=False,
+            providers=[
+                build_arcgis_provider_record(
+                    source_type="buildings",
+                    service_url="https://city.example/arcgis/rest/services/Buildings/MapServer",
+                    layer_id=3,
+                    jurisdiction={"city": "Example City"},
+                    jurisdiction_level="city",
+                ),
+                build_arcgis_provider_record(
+                    source_type="contours",
+                    service_url="https://county.example/arcgis/rest/services/Contours/MapServer",
+                    layer_id=4,
+                    jurisdiction={"county": "Example County"},
+                    jurisdiction_level="county",
+                ),
+            ],
+        )
+
+        session = _RoutingSession()
+        result = fetch_online_existing_conditions(
+            address="1 Main St",
+            include_parcels=False,
+            include_roads=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            include_floodplain=False,
+            include_wetlands=False,
+            include_elevation=False,
+            provider_registry=registry,
+            session=session,
+        )
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+        urls = [call["url"] for call in session.calls]
+
+        self.assertGreaterEqual(sources["building_footprints"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["contours"]["candidate_count"], 1)
+        self.assertIn("https://city.example/arcgis/rest/services/Buildings/MapServer/3/query", urls)
+        self.assertIn("https://county.example/arcgis/rest/services/Contours/MapServer/4/query", urls)
+        self.assertEqual(report["configured_provider_count"], 2)
 
     def test_online_discovery_reports_parcel_building_road_and_constraint_candidates(self) -> None:
         result = fetch_online_existing_conditions(

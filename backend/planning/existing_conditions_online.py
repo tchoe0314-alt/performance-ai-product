@@ -7,6 +7,11 @@ import requests
 
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
+from .gis_provider_registry import (
+    build_provider_registry,
+    providers_for_source_type,
+    selected_provider,
+)
 from .map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
 from .standards_discovery import discover_standards_sources
 
@@ -53,6 +58,11 @@ DISCOVERY_SOURCE_SPECS = {
         "label": "public utility layers",
         "result_keys": ("existing_utilities",),
         "layer_keys": ("existing_utilities",),
+    },
+    "contours": {
+        "label": "contours",
+        "result_keys": ("contours",),
+        "layer_keys": ("contours",),
     },
     "official_standards": {
         "label": "official standards source candidates",
@@ -141,6 +151,7 @@ def fetch_arcgis_layer_geojson(
     bbox: Dict[str, Any],
     source_type: str,
     layer_name: str,
+    provider: Optional[Dict[str, Any]] = None,
     session: Any = requests,
 ) -> Dict[str, Any]:
     if not safe_dict(bbox):
@@ -163,6 +174,7 @@ def fetch_arcgis_layer_geojson(
     except Exception as exc:
         return {"success": False, "source_type": source_type, "status": "fetch_failed", "warnings": [safe_str(exc)]}
     features = safe_list(safe_dict(payload).get("features"))
+    provider_record = safe_dict(provider)
     return {
         "success": True,
         "source": _arcgis_query_url(service_url, layer_id),
@@ -171,6 +183,9 @@ def fetch_arcgis_layer_geojson(
         "layer_name": layer_name,
         "feature_count": len(features),
         "geojson": safe_dict(payload),
+        "provider": safe_str(provider_record.get("name") or provider_record.get("id") or source_type),
+        "provider_id": safe_str(provider_record.get("id")),
+        "provider_record": provider_record,
         "truth_label": "Public GIS context layer; verify against jurisdiction records and survey before production.",
     }
 
@@ -202,8 +217,14 @@ def fetch_configured_parcels(
     *,
     service_url: str = "",
     layer_id: int = 0,
+    provider: Optional[Dict[str, Any]] = None,
     session: Any = requests,
 ) -> Dict[str, Any]:
+    provider_record = safe_dict(provider)
+    if provider_record:
+        arcgis = safe_dict(provider_record.get("arcgis"))
+        service_url = safe_str(arcgis.get("service_url") or provider_record.get("service_url") or service_url)
+        layer_id = int(arcgis.get("layer_id", layer_id) or 0)
     if not safe_str(service_url):
         return {
             "success": False,
@@ -217,6 +238,7 @@ def fetch_configured_parcels(
         bbox=bbox,
         source_type="configured_parcel_arcgis",
         layer_name="parcels",
+        provider=provider_record,
         session=session,
     )
 
@@ -252,6 +274,7 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
     layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
     layers.setdefault("building_footprints", [])
     layers.setdefault("roads", [])
+    layers.setdefault("contours", [])
     layers.setdefault("zoning", [])
     warnings: List[str] = []
     sources: List[Dict[str, Any]] = []
@@ -275,6 +298,7 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
             "existing_utilities": "existing_utilities",
             "easements": "easements",
             "row": "row",
+            "contours": "contours",
         }
         target = target_map.get(layer_name, "")
         if not target:
@@ -376,6 +400,7 @@ def build_online_existing_conditions_discovery_report(
     gis_layers: Optional[Dict[str, Any]] = None,
     location_context: Optional[Dict[str, Any]] = None,
     standards_jurisdiction: Optional[Dict[str, Any]] = None,
+    provider_registry: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     results = safe_dict(source_results)
     layers = safe_dict(gis_layers)
@@ -383,6 +408,7 @@ def build_online_existing_conditions_discovery_report(
     candidate_count = 0
     missing_sources: List[Dict[str, Any]] = []
     failed_sources: List[Dict[str, Any]] = []
+    registry = safe_dict(provider_registry) or build_provider_registry(include_builtin=True)
 
     for key, spec in DISCOVERY_SOURCE_SPECS.items():
         label = safe_str(spec.get("label"), key)
@@ -525,6 +551,13 @@ def build_online_existing_conditions_discovery_report(
             "missing_message": next((safe_list(source.get("blockers"))[0] for source in sources if source.get("key") == "public_utilities" and safe_list(source.get("blockers"))), "No public utility GIS source is configured."),
         },
         {
+            "key": "contours",
+            "provider": "Configured contour ArcGIS service",
+            "source_type": "configured_contours_arcgis",
+            "status": safe_str(next((source.get("status") for source in sources if source.get("key") == "contours"), ""), "unconfigured"),
+            "missing_message": next((safe_list(source.get("blockers"))[0] for source in sources if source.get("key") == "contours" and safe_list(source.get("blockers"))), "No contour GIS source is configured."),
+        },
+        {
             "key": "official_standards",
             "provider": "Standards discovery registry",
             "source_type": "standards_discovery_registry",
@@ -539,6 +572,8 @@ def build_online_existing_conditions_discovery_report(
         "location_context": safe_dict(location_context),
         "supported_live_providers": supported_live_providers,
         "fixture_provider_only_sources": fixture_provider_only_sources,
+        "local_gis_provider_registry_v1": registry,
+        "configured_provider_count": registry.get("configured_provider_count", 0),
         "sources": sources,
         "candidate_count": candidate_count,
         "missing_sources": missing_sources,
@@ -568,6 +603,8 @@ def fetch_online_existing_conditions(
     zoning_layer_id: int = 0,
     utilities_service_url: str = "",
     utilities_layer_id: int = 0,
+    contours_service_url: str = "",
+    contours_layer_id: int = 0,
     include_floodplain: bool = True,
     include_wetlands: bool = True,
     include_parcels: bool = True,
@@ -576,12 +613,15 @@ def fetch_online_existing_conditions(
     include_easements: bool = True,
     include_zoning: bool = True,
     include_utilities: bool = True,
+    include_contours: bool = True,
     include_elevation: bool = True,
     standards_jurisdiction: Optional[Dict[str, Any]] = None,
+    provider_registry: Optional[Dict[str, Any]] = None,
     session: Any = requests,
 ) -> Dict[str, Any]:
     source_results: Dict[str, Dict[str, Any]] = {}
     warnings: List[str] = []
+    registry = safe_dict(provider_registry) or build_provider_registry(include_builtin=True)
     working_bbox = safe_dict(bbox)
     geocode = geocode_address_census(address, session=session) if safe_str(address) else {
         "success": False,
@@ -605,6 +645,7 @@ def fetch_online_existing_conditions(
             gis_layers={layer: [] for layer in REQUIRED_GIS_LAYERS},
             location_context=location_context,
             standards_jurisdiction=standards_jurisdiction,
+            provider_registry=registry,
         )
         return {
             "success": False,
@@ -642,22 +683,29 @@ def fetch_online_existing_conditions(
         source_results["wetlands"] = wetlands
         layer_imports.append(wetlands)
     if include_parcels:
+        parcel_provider = selected_provider(registry, "parcels")
         parcels = fetch_configured_parcels(
             working_bbox,
             service_url=parcel_service_url,
             layer_id=parcel_layer_id,
+            provider=parcel_provider,
             session=session,
         )
         source_results["parcels"] = parcels
         layer_imports.append(parcels)
     if include_building_footprints:
-        if safe_str(building_footprints_service_url):
+        building_provider = selected_provider(registry, "buildings")
+        building_arcgis = safe_dict(building_provider.get("arcgis"))
+        building_url = safe_str(building_arcgis.get("service_url") or building_footprints_service_url)
+        building_layer = int(building_arcgis.get("layer_id", building_footprints_layer_id) or 0)
+        if safe_str(building_url):
             buildings = fetch_arcgis_layer_geojson(
-                service_url=building_footprints_service_url,
-                layer_id=building_footprints_layer_id,
+                service_url=building_url,
+                layer_id=building_layer,
                 bbox=working_bbox,
                 source_type="configured_building_footprints_arcgis",
                 layer_name="building_footprints",
+                provider=building_provider,
                 session=session,
             )
         else:
@@ -665,13 +713,18 @@ def fetch_online_existing_conditions(
         source_results["building_footprints"] = buildings
         layer_imports.append(buildings)
     if include_roads:
-        if safe_str(roads_service_url):
+        roads_provider = selected_provider(registry, "roads_row")
+        roads_arcgis = safe_dict(roads_provider.get("arcgis"))
+        roads_url = safe_str(roads_arcgis.get("service_url") or roads_service_url)
+        roads_layer = int(roads_arcgis.get("layer_id", roads_layer_id) or 0)
+        if safe_str(roads_url):
             roads = fetch_arcgis_layer_geojson(
-                service_url=roads_service_url,
-                layer_id=roads_layer_id,
+                service_url=roads_url,
+                layer_id=roads_layer,
                 bbox=working_bbox,
                 source_type="configured_roads_row_arcgis",
                 layer_name="roads",
+                provider=roads_provider,
                 session=session,
             )
         else:
@@ -707,19 +760,43 @@ def fetch_online_existing_conditions(
         source_results["zoning"] = zoning
         layer_imports.append(zoning)
     if include_utilities:
-        if safe_str(utilities_service_url):
+        utilities_provider = selected_provider(registry, "utilities")
+        utilities_arcgis = safe_dict(utilities_provider.get("arcgis"))
+        utilities_url = safe_str(utilities_arcgis.get("service_url") or utilities_service_url)
+        utilities_layer = int(utilities_arcgis.get("layer_id", utilities_layer_id) or 0)
+        if safe_str(utilities_url):
             utilities = fetch_arcgis_layer_geojson(
-                service_url=utilities_service_url,
-                layer_id=utilities_layer_id,
+                service_url=utilities_url,
+                layer_id=utilities_layer,
                 bbox=working_bbox,
                 source_type="configured_existing_utilities_arcgis",
                 layer_name="existing_utilities",
+                provider=utilities_provider,
                 session=session,
             )
         else:
             utilities = fetch_unconfigured_gis_source(source_type="configured_existing_utilities_arcgis", label="existing utilities")
         source_results["existing_utilities"] = utilities
         layer_imports.append(utilities)
+    if include_contours:
+        contours_provider = selected_provider(registry, "contours")
+        contours_arcgis = safe_dict(contours_provider.get("arcgis"))
+        contours_url = safe_str(contours_arcgis.get("service_url") or contours_service_url)
+        contours_layer = int(contours_arcgis.get("layer_id", contours_layer_id) or 0)
+        if safe_str(contours_url):
+            contours = fetch_arcgis_layer_geojson(
+                service_url=contours_url,
+                layer_id=contours_layer,
+                bbox=working_bbox,
+                source_type="configured_contours_arcgis",
+                layer_name="contours",
+                provider=contours_provider,
+                session=session,
+            )
+        else:
+            contours = fetch_unconfigured_gis_source(source_type="configured_contours_arcgis", label="contour")
+        source_results["contours"] = contours
+        layer_imports.append(contours)
 
     online_layers = online_import_to_gis_layers(*layer_imports)
     warnings.extend(safe_list(online_layers.get("warnings")))
@@ -746,6 +823,7 @@ def fetch_online_existing_conditions(
             {"key": key, "source_type": safe_str(result.get("source_type")), "status": safe_str(result.get("status")), "success": bool(result.get("success"))}
             for key, result in source_results.items()
         ],
+        "local_gis_provider_registry_v1": registry,
     }
     feature_report = build_map_feature_detection_report(
         location_context=location_context,
@@ -757,6 +835,7 @@ def fetch_online_existing_conditions(
         gis_layers=online_layers.get("gis_layers"),
         location_context=location_context,
         standards_jurisdiction=standards_jurisdiction,
+        provider_registry=registry,
     )
     return {
         "success": any(bool(result.get("success")) for result in source_results.values()),
