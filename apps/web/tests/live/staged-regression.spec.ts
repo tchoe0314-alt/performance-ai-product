@@ -280,17 +280,24 @@ async function waitForComposer(page: Page) {
   const composer = page.getByPlaceholder(
     "Message Civora AI with what you want to create or change...",
   );
+  const chatControls = [
+    page.getByRole("banner").getByRole("button", { name: "Chat" }),
+    page.getByRole("button", { name: "Open chat from sidebar command" }),
+    page.getByRole("button", { name: /^Chat$/ }),
+  ];
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (await ensureAppUrl(page)) {
       continue;
     }
     await page.waitForLoadState("networkidle").catch(() => null);
-    const chatButton = page.getByRole("button", { name: "Chat" });
     if (!(await composer.isVisible().catch(() => false))) {
-      if (await chatButton.isVisible().catch(() => false)) {
-        await chatButton.click();
-        await page.waitForTimeout(500);
+      for (const chatButton of chatControls) {
+        if (await chatButton.first().isVisible().catch(() => false)) {
+          await chatButton.first().click();
+          await page.waitForTimeout(500);
+          break;
+        }
       }
     }
     if (await composer.isVisible().catch(() => false)) {
