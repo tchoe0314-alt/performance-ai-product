@@ -37,6 +37,6 @@ test("setup wizard surfaces current step and blocker text", async ({ page, reque
   await expect(page.getByText("Wizard steps")).toBeVisible();
   await expect(page.getByText("Online Sources / Candidates")).toBeVisible();
   await expect(page.getByText("Survey / Terrain / Control")).toBeVisible();
-  await expect(page.getByText("Standards")).toBeVisible();
+  await expect(page.getByText("Standards", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Open|Add|Review|Find sources|Run systems/i }).first()).toBeVisible();
 });
