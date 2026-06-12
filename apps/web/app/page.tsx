@@ -2611,6 +2611,15 @@ function PerformanceAIDashboardView({
   const controlAutosaveTimeoutRef = useRef<number | null>(null);
   const lastAppliedSiteRef = useRef<{ w: number; h: number; lat?: number; lng?: number } | null>(null);
   const lastViewportSyncRef = useRef<{ w: number; h: number } | null>(null);
+  const scrollToDrawingSurface = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const surface = document.querySelector('[data-testid="preview-drawing-surface"]');
+        surface?.scrollIntoView({ behavior: "auto", block: "center", inline: "nearest" });
+      });
+    });
+  }, []);
   const applyingSiteRef = useRef(false);
   const sidePanelCloseTimeoutRef = useRef<number | null>(null);
 
@@ -10644,6 +10653,7 @@ function PerformanceAIDashboardView({
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setLeftSidebarOpen(false);
     }
+    scrollToDrawingSurface();
     setStatusMessage("Blank site started. Set dimensions, draw the boundary, then lock it for review.");
   }, [
     autoFitSite,
@@ -10651,6 +10661,7 @@ function PerformanceAIDashboardView({
     currentProject,
     payloadPreview,
     saveProject,
+    scrollToDrawingSurface,
   ]);
 
   const handleStartSiteBoundaryDraw = useCallback(() => {
@@ -10669,8 +10680,9 @@ function PerformanceAIDashboardView({
     setSiteSelectionMode(true);
     setPreviewInteraction("edit");
     setSiteDrawRequest((value) => value + 1);
+    scrollToDrawingSurface();
     setStatusMessage("Draw the site boundary on the canvas. Double-click or use Finish to lock it.");
-  }, [handleUnlockSite, lotHeight, lotWidth, siteScaleLocked]);
+  }, [handleUnlockSite, lotHeight, lotWidth, scrollToDrawingSurface, siteScaleLocked]);
 
   useEffect(() => {
     if (siteScaleLocked) return;
@@ -10761,6 +10773,7 @@ function PerformanceAIDashboardView({
       setSiteScaleLocked(false);
     }
     applyingSiteRef.current = true;
+    const currentInput = currentProject?.project_input ?? payloadPreview;
     const visibleWidth = parsePositiveNumber(lotWidth);
     const visibleHeight = parsePositiveNumber(lotHeight);
     const width = visibleWidth ?? viewportFootprint?.widthFt;
@@ -10773,6 +10786,90 @@ function PerformanceAIDashboardView({
     const selectedAreaAcres = siteAreaAcresFromSize(width, height);
     if (selectedAreaAcres > SITE_WARNING_ACRES) {
       setStatusMessage(OVERSIZED_SITE_MESSAGE);
+      applyingSiteRef.current = false;
+      return;
+    }
+    const existingSite = buildingPlacements.find((item) => item.type === "site");
+    if (existingSite && !existingSite.locked) {
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        site_alignment_locked: true,
+        site_boundary_state: "locked_canonical",
+        site_boundary_source:
+          currentInput?.meta?.site_inputs?.site_boundary_source ??
+          existingSite.source ??
+          "dimensions",
+      };
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+        manual_fields: {
+          ...(currentInput?.manual_fields ?? {}),
+          lot: {
+            x: existingSite.x ?? 0,
+            y: existingSite.y ?? 0,
+            w: width,
+            h: height,
+          },
+        },
+      };
+      setSiteScaleLocked(true);
+      setShowSiteBounds(false);
+      setSiteSelectionMode(false);
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      setSidePanelVisible(false);
+      setFitToSiteRequest((value) => value + 1);
+      setBuildingPlacements((prevPlacements) =>
+        prevPlacements.map((item) =>
+          item.type === "site"
+            ? {
+                ...item,
+                locked: true,
+                meta: {
+                  ...(item.meta ?? {}),
+                  site_boundary_state: "locked_canonical",
+                  engineering_status: "review_required",
+                  construction_release_allowed: false,
+                },
+                capabilities: {
+                  ...item.capabilities,
+                  movable: false,
+                  resizable: false,
+                  rotatable: false,
+                },
+              }
+            : item,
+        ),
+      );
+      setCurrentProject((project) =>
+        project
+          ? {
+              ...project,
+              project_input: nextProjectInput,
+              has_result: false,
+              latest_result: undefined,
+            }
+          : project,
+      );
+      await saveProject({
+        silent: true,
+        projectInputOverride: nextProjectInput,
+      });
+      lastAppliedSiteRef.current = {
+        w: width,
+        h: height,
+        lat: viewportCenter?.lat,
+        lng: viewportCenter?.lng,
+      };
+      setStatusMessage("Site boundary locked for engineer review.");
       applyingSiteRef.current = false;
       return;
     }
@@ -10792,7 +10889,6 @@ function PerformanceAIDashboardView({
     autoFitSite(width, height, "Site Boundary", undefined, false, true);
     setShowSiteBounds(false);
     setSiteScaleLocked(true);
-    const currentInput = currentProject?.project_input ?? payloadPreview;
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
       site_alignment_locked: true,
@@ -10862,6 +10958,7 @@ function PerformanceAIDashboardView({
     applyingSiteRef.current = false;
   }, [
     autoFitSite,
+    buildingPlacements,
     currentProject,
     lotHeight,
     lotWidth,

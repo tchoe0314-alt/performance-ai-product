@@ -4437,7 +4437,7 @@ export default function PreviewPanel({
             </div>
           </div>
           {previewMode === "2d" ? (
-            <div className="mb-3 hidden min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 md:flex">
+            <div className="relative z-40 mb-3 hidden min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 md:flex">
               <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                 <span className="mr-1">Draw</span>
                 {drawModeButtons.map((item) => {
@@ -4457,6 +4457,13 @@ export default function PreviewPanel({
                         clearDraftGeometry();
                         if (item.mode !== "select") {
                           onSetPreviewInteraction("edit");
+                          window.requestAnimationFrame(() => {
+                            previewRef.current?.scrollIntoView({
+                              behavior: "auto",
+                              block: "center",
+                              inline: "nearest",
+                            });
+                          });
                         }
                       }}
                       className={`inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2 py-1 transition ${
@@ -4569,7 +4576,7 @@ export default function PreviewPanel({
                         onClick={finishDraftGeometry}
                         disabled={draftPointCount < finishDraftMinPoints}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                        className="inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="relative z-20 inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         Finish
                       </button>
@@ -5061,6 +5068,13 @@ export default function PreviewPanel({
                             clearDraftGeometry();
                             if (item.mode !== "select") {
                               onSetPreviewInteraction("edit");
+                              window.requestAnimationFrame(() => {
+                                previewRef.current?.scrollIntoView({
+                                  behavior: "auto",
+                                  block: "center",
+                                  inline: "nearest",
+                                });
+                              });
                             }
                           }}
                           className={`inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-[11px] font-semibold transition ${
@@ -5084,7 +5098,7 @@ export default function PreviewPanel({
                         onClick={finishDraftGeometry}
                         disabled={draftPointCount < finishDraftMinPoints}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                        className="min-h-10 flex-1 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="relative z-20 min-h-10 flex-1 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         Finish
                       </button>

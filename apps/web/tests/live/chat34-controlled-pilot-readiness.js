@@ -498,6 +498,7 @@ async function sendChat(page, message, patterns, name) {
 
 async function clickSurfaceAt(page, xRatio, yRatio) {
   const surface = page.getByTestId("preview-drawing-surface");
+  await surface.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => null);
   const box = await surface.boundingBox();
   if (!box) throw new Error("preview drawing surface missing");
   await page.mouse.click(box.x + box.width * xRatio, box.y + box.height * yRatio);
@@ -672,16 +673,24 @@ async function runProductWorkflow() {
       await clickSurfaceAt(page, 0.5, 0.52);
       await clickSurfaceAt(page, 0.66, 0.58);
       await clickSurfaceAt(page, 0.58, 0.72);
-      await canvas.getByRole("button", { name: "Finish" }).click({ timeoutMs: 5000 });
+      await canvas.getByRole("button", { name: "Finish" }).click({ timeout: 5000, force: true });
       await page.waitForTimeout(300);
       await canvas.getByRole("button", { name: "Add Line" }).click({ timeoutMs: 5000 });
       await clickSurfaceAt(page, 0.24, 0.74);
       await clickSurfaceAt(page, 0.5, 0.82);
-      await canvas.getByRole("button", { name: "Finish" }).click({ timeoutMs: 5000 });
-      await page.waitForTimeout(300);
+      await canvas.getByRole("button", { name: "Finish" }).click({ timeout: 5000, force: true });
+      await page.waitForFunction(
+        (expected) => document.querySelectorAll("[data-object-overlay]").length >= expected,
+        before + 3,
+        { timeout: 5000 },
+      ).catch(() => null);
       await canvas.getByRole("button", { name: "Add Point" }).click({ timeoutMs: 5000 });
       await clickSurfaceAt(page, 0.78, 0.72);
-      await page.waitForTimeout(600);
+      await page.waitForFunction(
+        (expected) => document.querySelectorAll("[data-object-overlay]").length >= expected,
+        before + 4,
+        { timeout: 5000 },
+      ).catch(() => null);
       const after = await page.locator("[data-object-overlay]").count();
       return { ok: after >= before + 4, detail: `before ${before}, after ${after}` };
     });
