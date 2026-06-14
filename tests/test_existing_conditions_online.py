@@ -11,6 +11,7 @@ from backend.planning.existing_conditions_online import (
     online_import_to_gis_layers,
 )
 from backend.planning.gis_provider_registry import build_arcgis_provider_record, build_provider_registry
+from backend.planning.gis_provider_registry import build_known_provider_record
 
 
 class _Response:
@@ -83,6 +84,24 @@ class _GretnaRoutingSession:
         if "NFHL/MapServer/28/query" in url:
             return _Response({"type": "FeatureCollection", "features": [{"id": "flood-1", "properties": {"FLD_ZONE": "X"}, "geometry": {"type": "Polygon", "coordinates": []}}]})
         return _Response({"type": "FeatureCollection", "features": []})
+
+
+class _MultiMarketRoutingSession:
+    def __init__(self, address):
+        self.address = address
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append({"url": url, "params": params, "timeout": timeout})
+        if "geocoder" in url:
+            if "Austin" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "301 W 2ND ST, AUSTIN, TX, 78701", "coordinates": {"x": -97.747, "y": 30.265}}]}})
+            if "Atlanta" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "55 TRINITY AVE SW, ATLANTA, GA, 30303", "coordinates": {"x": -84.3903, "y": 33.7488}}]}})
+            return _Response({"result": {"addressMatches": [{"matchedAddress": "100 MAIN ST, MADISON, WI, 53703", "coordinates": {"x": -89.384, "y": 43.074}}]}})
+        if "epqs" in url:
+            return _Response({"value": {"elevation": 700.0}})
+        return _Response({"type": "FeatureCollection", "features": [{"id": "feature-1", "properties": {}, "geometry": {"type": "Polygon", "coordinates": []}}]})
 
 
 class _AddressRoutingSession:
@@ -282,8 +301,91 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/42/query", urls)
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/3/query", urls)
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/SanitarySewerNetwork/MapServer/10/query", urls)
-        self.assertEqual(report["configured_provider_count"], 6)
+        self.assertEqual(report["configured_provider_count"], 8)
         self.assertTrue(all(item["review_required"] for item in report["sources"]))
+
+    def test_austin_provider_pack_selects_local_queryable_sources(self) -> None:
+        session = _MultiMarketRoutingSession("301 W 2nd St, Austin, TX")
+        result = fetch_online_existing_conditions(address="301 W 2nd St, Austin, TX", session=session)
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+        urls = [call["url"] for call in session.calls]
+
+        self.assertEqual(report["provider_packs"][0]["pack_id"], "austin_tx_city")
+        self.assertGreaterEqual(sources["parcel_site_boundary"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["building_footprints"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["road_row"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["contours"]["candidate_count"], 1)
+        self.assertIn("https://maps.austintexas.gov/gis/rest/Shared/AppraisalDistricts/MapServer/0/query", urls)
+        self.assertIn("https://maps.austintexas.gov/gis/rest/Shared/PlanimetricsSurvey_1/MapServer/0/query", urls)
+
+    def test_atlanta_pack_reports_explicit_missing_local_buildings_and_utilities(self) -> None:
+        session = _MultiMarketRoutingSession("55 Trinity Ave SW, Atlanta, GA")
+        result = fetch_online_existing_conditions(address="55 Trinity Ave SW, Atlanta, GA", session=session)
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+
+        self.assertEqual(report["provider_packs"][0]["pack_id"], "atlanta_fulton_ga")
+        self.assertGreaterEqual(sources["parcel_site_boundary"]["candidate_count"], 1)
+        self.assertEqual(sources["building_footprints"]["candidate_count"], 0)
+        self.assertIn("no verified queryable local provider", " ".join(sources["building_footprints"]["blockers"]).lower())
+        self.assertEqual(sources["public_utilities"]["candidate_count"], 0)
+        self.assertIn("No verified queryable Fulton/Atlanta utility", " ".join(sources["public_utilities"]["blockers"]))
+
+    def test_federal_fallback_sources_work_without_local_pack(self) -> None:
+        session = _MultiMarketRoutingSession("100 Main St, Madison, WI")
+        result = fetch_online_existing_conditions(
+            address="100 Main St, Madison, WI",
+            include_parcels=True,
+            include_building_footprints=True,
+            include_roads=True,
+            include_utilities=True,
+            include_contours=True,
+            session=session,
+        )
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+
+        self.assertEqual(report["provider_packs"], [])
+        self.assertGreaterEqual(sources["terrain_dem_lidar"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["gis_constraints"]["candidate_count"], 1)
+        self.assertEqual(sources["parcel_site_boundary"]["status"], "unconfigured")
+        self.assertEqual(sources["building_footprints"]["status"], "unconfigured")
+        self.assertIn("No building footprint GIS source is configured.", sources["building_footprints"]["blockers"])
+
+    def test_non_queryable_vector_tile_contours_are_reported_not_queryable(self) -> None:
+        registry = build_provider_registry(
+            include_builtin=False,
+            providers=[
+                build_known_provider_record(
+                    source_type="contours",
+                    service_url="https://tiles.example/arcgis/rest/services/Contours/VectorTileServer",
+                    name="County contour vector tiles",
+                    provider_kind="vector_tile",
+                )
+            ],
+        )
+        result = fetch_online_existing_conditions(
+            address="1 Main St",
+            include_elevation=False,
+            include_floodplain=False,
+            include_wetlands=False,
+            include_parcels=False,
+            include_building_footprints=False,
+            include_roads=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            provider_registry=registry,
+            session=_RoutingSession(),
+        )
+
+        sources = {item["key"]: item for item in result[ONLINE_DISCOVERY_VERSION]["sources"]}
+        self.assertEqual(sources["contours"]["status"], "known_not_queryable")
+        self.assertIn("not queryable", " ".join(sources["contours"]["blockers"]))
 
     def test_online_discovery_reports_parcel_building_road_and_constraint_candidates(self) -> None:
         result = fetch_online_existing_conditions(

@@ -9,6 +9,8 @@ from .common import safe_dict, safe_float, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
 from .gis_provider_registry import (
     build_provider_registry,
+    normalize_source_type,
+    provider_packs_for_location,
     providers_for_source_type,
     selected_provider,
     target_market_known_gaps,
@@ -160,6 +162,17 @@ def fetch_arcgis_layer_geojson(
 ) -> Dict[str, Any]:
     if not safe_dict(bbox):
         return {"success": False, "source_type": source_type, "status": "blocked", "warnings": ["Lat/lng bbox is required for online GIS layer fetch."]}
+    provider_record = safe_dict(provider)
+    if provider_record and provider_record.get("queryable") is False:
+        return {
+            "success": False,
+            "source_type": source_type,
+            "status": "known_not_queryable",
+            "warnings": [f"{safe_str(provider_record.get('name'), layer_name)} is known but not queryable for candidate extraction."],
+            "provider": safe_str(provider_record.get("name") or provider_record.get("id") or source_type),
+            "provider_id": safe_str(provider_record.get("id")),
+            "provider_record": provider_record,
+        }
     params = {
         "f": "geojson",
         "where": "1=1",
@@ -178,7 +191,6 @@ def fetch_arcgis_layer_geojson(
     except Exception as exc:
         return {"success": False, "source_type": source_type, "status": "fetch_failed", "warnings": [safe_str(exc)]}
     features = safe_list(safe_dict(payload).get("features"))
-    provider_record = safe_dict(provider)
     return {
         "success": True,
         "source": _arcgis_query_url(service_url, layer_id),
@@ -252,8 +264,33 @@ def fetch_unconfigured_gis_source(*, source_type: str, label: str) -> Dict[str, 
         "success": False,
         "source_type": source_type,
         "status": "unconfigured",
-        "warnings": [f"No {label} GIS source is configured. Configure/import an official source before detection."],
+        "warnings": [
+            f"No {label} GIS source is configured.",
+            "Configure/import an official source before detection.",
+        ],
     }
+
+
+def _missing_configured_source(*, registry: Dict[str, Any], source_type: str, result_source_type: str, label: str) -> Dict[str, Any]:
+    known = [
+        safe_dict(item)
+        for item in safe_list(safe_dict(registry).get("providers"))
+        if normalize_source_type(safe_str(safe_dict(item).get("source_type"))) == normalize_source_type(source_type)
+    ]
+    nonqueryable = [item for item in known if item.get("queryable") is False or safe_str(item.get("status")) == "known_not_queryable"]
+    if nonqueryable:
+        first = nonqueryable[0]
+        return {
+            "success": False,
+            "source_type": result_source_type,
+            "status": "known_not_queryable",
+            "source": safe_str(first.get("service_url")),
+            "provider": safe_str(first.get("name") or first.get("id")),
+            "provider_id": safe_str(first.get("id")),
+            "provider_record": first,
+            "warnings": [f"{safe_str(first.get('name'), label)} is known but not queryable for candidate extraction."],
+        }
+    return fetch_unconfigured_gis_source(source_type=result_source_type, label=label)
 
 
 def bbox_around_point(lat: float, lng: float, *, buffer_deg: float = 0.002) -> Dict[str, float]:
@@ -286,7 +323,15 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
         rec = safe_dict(item)
         if not rec:
             continue
-        sources.append({"source": safe_str(rec.get("source")), "source_type": safe_str(rec.get("source_type")), "success": bool(rec.get("success"))})
+        sources.append(
+            {
+                "source": safe_str(rec.get("source")),
+                "source_type": safe_str(rec.get("source_type")),
+                "provider": safe_str(rec.get("provider")),
+                "provider_id": safe_str(rec.get("provider_id")),
+                "success": bool(rec.get("success")),
+            }
+        )
         warnings.extend(safe_list(rec.get("warnings")))
         if not rec.get("success"):
             continue
@@ -315,6 +360,9 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
                     "properties": safe_dict(safe_dict(feature).get("properties")),
                     "source": safe_str(rec.get("source")),
                     "source_type": safe_str(rec.get("source_type")),
+                    "source_name": safe_str(rec.get("provider") or rec.get("source_type")),
+                    "provider": safe_str(rec.get("provider")),
+                    "provider_id": safe_str(rec.get("provider_id")),
                 }
             )
     return {
@@ -478,7 +526,10 @@ def build_online_existing_conditions_discovery_report(
         for gap in known_gaps:
             gap_rec = safe_dict(gap)
             if normalize_gap := safe_str(gap_rec.get("source_type")):
-                if normalize_gap == safe_str(spec.get("result_keys", ("",))[0]) or normalize_gap in spec.get("layer_keys", ()):
+                normalized_gap = normalize_source_type(normalize_gap)
+                normalized_results = {normalize_source_type(safe_str(item)) for item in spec.get("result_keys", ())}
+                normalized_layers = {normalize_source_type(safe_str(item)) for item in spec.get("layer_keys", ())}
+                if normalized_gap in normalized_results or normalized_gap in normalized_layers:
                     if not count:
                         message = safe_str(gap_rec.get("message"))
                         if message and message not in record["blockers"]:
@@ -588,7 +639,9 @@ def build_online_existing_conditions_discovery_report(
         "supported_live_providers": supported_live_providers,
         "fixture_provider_only_sources": fixture_provider_only_sources,
         "local_gis_provider_registry_v1": registry,
+        "provider_packs": safe_list(registry.get("provider_packs")),
         "configured_provider_count": registry.get("configured_provider_count", 0),
+        "queryable_provider_count": registry.get("queryable_provider_count", 0),
         "sources": sources,
         "candidate_count": candidate_count,
         "missing_sources": missing_sources,
@@ -646,21 +699,25 @@ def fetch_online_existing_conditions(
     }
     source_results["geocode"] = geocode
     location_context = location_context_from_geocode(address=address, geocode=geocode)
-    target_records = target_market_provider_records(
+    provider_packs = provider_packs_for_location(
         address=address,
         lat=safe_float(geocode.get("lat")) if geocode.get("success") else None,
         lng=safe_float(geocode.get("lng")) if geocode.get("success") else None,
     )
+    target_records = [provider for pack in provider_packs for provider in safe_list(safe_dict(pack).get("providers"))]
     if target_records:
         registry = build_provider_registry(
             providers=safe_list(registry.get("providers")) + target_records,
             include_builtin=False,
         )
+        registry["provider_packs"] = provider_packs
         registry["known_gaps"] = target_market_known_gaps(
             address=address,
             lat=safe_float(geocode.get("lat")) if geocode.get("success") else None,
             lng=safe_float(geocode.get("lng")) if geocode.get("success") else None,
         )
+    elif provider_packs:
+        registry["provider_packs"] = provider_packs
     if not working_bbox and geocode.get("success"):
         working_bbox = bbox_around_point(safe_float(geocode.get("lat")), safe_float(geocode.get("lng")))
     if not working_bbox:
@@ -705,11 +762,37 @@ def fetch_online_existing_conditions(
 
     layer_imports: List[Dict[str, Any]] = []
     if include_floodplain:
-        floodplain = fetch_fema_floodplain(working_bbox, session=session)
+        floodplain_provider = selected_provider(registry, "floodplain")
+        floodplain_arcgis = safe_dict(floodplain_provider.get("arcgis"))
+        if safe_str(floodplain_arcgis.get("service_url")) and safe_str(floodplain_provider.get("jurisdiction_level")) != "federal":
+            floodplain = fetch_arcgis_layer_geojson(
+                service_url=safe_str(floodplain_arcgis.get("service_url")),
+                layer_id=int(floodplain_arcgis.get("layer_id") or 0),
+                bbox=working_bbox,
+                source_type="configured_floodplain_arcgis",
+                layer_name="floodplain",
+                provider=floodplain_provider,
+                session=session,
+            )
+        else:
+            floodplain = fetch_fema_floodplain(working_bbox, session=session)
         source_results["floodplain"] = floodplain
         layer_imports.append(floodplain)
     if include_wetlands:
-        wetlands = fetch_usfws_wetlands(working_bbox, session=session)
+        wetlands_provider = selected_provider(registry, "wetlands")
+        wetlands_arcgis = safe_dict(wetlands_provider.get("arcgis"))
+        if safe_str(wetlands_arcgis.get("service_url")) and safe_str(wetlands_provider.get("jurisdiction_level")) != "federal":
+            wetlands = fetch_arcgis_layer_geojson(
+                service_url=safe_str(wetlands_arcgis.get("service_url")),
+                layer_id=int(wetlands_arcgis.get("layer_id") or 0),
+                bbox=working_bbox,
+                source_type="configured_wetlands_arcgis",
+                layer_name="wetlands",
+                provider=wetlands_provider,
+                session=session,
+            )
+        else:
+            wetlands = fetch_usfws_wetlands(working_bbox, session=session)
         source_results["wetlands"] = wetlands
         layer_imports.append(wetlands)
     if include_parcels:
@@ -739,7 +822,7 @@ def fetch_online_existing_conditions(
                 session=session,
             )
         else:
-            buildings = fetch_unconfigured_gis_source(source_type="configured_building_footprints_arcgis", label="building footprint")
+            buildings = _missing_configured_source(registry=registry, source_type="buildings", result_source_type="configured_building_footprints_arcgis", label="building footprint")
         source_results["building_footprints"] = buildings
         layer_imports.append(buildings)
     if include_roads:
@@ -758,7 +841,7 @@ def fetch_online_existing_conditions(
                 session=session,
             )
         else:
-            roads = fetch_unconfigured_gis_source(source_type="configured_roads_row_arcgis", label="roads/right-of-way")
+            roads = _missing_configured_source(registry=registry, source_type="roads_row", result_source_type="configured_roads_row_arcgis", label="roads/right-of-way")
         source_results["roads_row"] = roads
         layer_imports.append(roads)
     if include_easements:
@@ -805,7 +888,7 @@ def fetch_online_existing_conditions(
                 session=session,
             )
         else:
-            utilities = fetch_unconfigured_gis_source(source_type="configured_existing_utilities_arcgis", label="existing utilities")
+            utilities = _missing_configured_source(registry=registry, source_type="utilities", result_source_type="configured_existing_utilities_arcgis", label="existing utilities")
         source_results["existing_utilities"] = utilities
         layer_imports.append(utilities)
     if include_contours:
@@ -824,7 +907,7 @@ def fetch_online_existing_conditions(
                 session=session,
             )
         else:
-            contours = fetch_unconfigured_gis_source(source_type="configured_contours_arcgis", label="contour")
+            contours = _missing_configured_source(registry=registry, source_type="contours", result_source_type="configured_contours_arcgis", label="contour")
         source_results["contours"] = contours
         layer_imports.append(contours)
 

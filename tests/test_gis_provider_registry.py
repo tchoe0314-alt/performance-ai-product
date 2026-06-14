@@ -2,9 +2,11 @@ import unittest
 
 from backend.planning.gis_provider_registry import (
     build_arcgis_provider_record,
+    build_known_provider_record,
     build_provider_registry,
     check_registry_health,
     provider_freshness_status,
+    provider_packs_for_location,
     providers_for_source_type,
     target_market_known_gaps,
     target_market_provider_records,
@@ -99,6 +101,35 @@ class GisProviderRegistryTests(unittest.TestCase):
         self.assertTrue(all(item["review_required"] and not item["survey_backed"] for item in registry["providers"]))
         self.assertIn("VectorTileServer", gaps[0]["source_url"])
         self.assertIn("queryable", gaps[0]["message"])
+
+    def test_provider_pack_selection_supports_multiple_markets(self) -> None:
+        gretna = provider_packs_for_location(address="20525 Margo St, Gretna, NE", lat=41.185240483552, lng=-96.237022515225)
+        austin = provider_packs_for_location(address="301 W 2nd St, Austin, TX", lat=30.265, lng=-97.747)
+        atlanta = provider_packs_for_location(address="55 Trinity Ave SW, Atlanta, GA", lat=33.7488, lng=-84.3903)
+
+        self.assertEqual(gretna[0]["pack_id"], "gretna_ne_sarpy_county")
+        self.assertEqual(austin[0]["pack_id"], "austin_tx_city")
+        self.assertEqual(atlanta[0]["pack_id"], "atlanta_fulton_ga")
+        self.assertTrue(any(item["source_type"] == "buildings" for item in austin[0]["providers"]))
+        self.assertTrue(any(item["source_type"] == "parcels" for item in atlanta[0]["providers"]))
+        self.assertTrue(any(item["source_type"] == "buildings" for item in atlanta[0]["known_gaps"]))
+
+    def test_non_queryable_vector_tile_source_is_known_but_not_selected(self) -> None:
+        vector = build_known_provider_record(
+            source_type="contours",
+            service_url="https://tiles.example/arcgis/rest/services/Contours/VectorTileServer",
+            name="County contour vector tiles",
+            jurisdiction={"county": "Example County", "state": "NE"},
+            jurisdiction_level="county",
+            provider_kind="vector_tile",
+        )
+        registry = build_provider_registry(include_builtin=False, providers=[vector])
+
+        self.assertEqual(registry["configured_provider_count"], 1)
+        self.assertEqual(registry["queryable_provider_count"], 0)
+        self.assertEqual(providers_for_source_type(registry, "contours"), [])
+        self.assertFalse(registry["providers"][0]["queryable"])
+        self.assertEqual(registry["providers"][0]["arcgis"]["service_kind"], "VectorTileServer")
 
 
 if __name__ == "__main__":

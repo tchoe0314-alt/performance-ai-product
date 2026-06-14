@@ -12,10 +12,12 @@ from .common import safe_dict, safe_int, safe_list, safe_str
 
 
 GIS_PROVIDER_REGISTRY_VERSION = "local_gis_provider_registry_v1"
-GIS_SOURCE_TYPES = ("parcels", "buildings", "roads_row", "utilities", "contours", "floodplain", "wetlands")
+GIS_SOURCE_TYPES = ("parcels", "buildings", "roads_row", "utilities", "contours", "elevation", "floodplain", "wetlands", "zoning")
 JURISDICTION_LEVELS = ("jurisdiction", "county", "city", "state", "federal", "utility")
 DEFAULT_STALE_AFTER_DAYS = 90
 SARPY_COUNTY_BBOX = {"west": -96.3426, "south": 40.9837, "east": -95.8407, "north": 41.2048}
+AUSTIN_BBOX = {"west": -97.94, "south": 30.05, "east": -97.56, "north": 30.52}
+FULTON_COUNTY_BBOX = {"west": -84.85, "south": 33.50, "east": -84.05, "north": 34.25}
 
 
 def _utc_now_iso() -> str:
@@ -51,6 +53,8 @@ def _provider_id(*, source_type: str, service_url: str, jurisdiction: Dict[str, 
 
 def _arcgis_service_kind(service_url: str) -> str:
     lowered = safe_str(service_url).lower()
+    if "/vectortileserver" in lowered:
+        return "VectorTileServer"
     if "/featureserver" in lowered:
         return "FeatureServer"
     if "/mapserver" in lowered:
@@ -110,11 +114,12 @@ def build_arcgis_provider_record(
         "jurisdiction": juris,
         "provider_kind": provider_kind,
         "service_url": url,
+        "queryable": bool(url and "/vectortileserver" not in url.lower() and provider_kind != "vector_tile"),
         "arcgis": {
             "service_url": url,
             "service_kind": _arcgis_service_kind(url),
             "layer_id": layer,
-            "query_url": f"{url.rstrip('/')}/{layer}/query" if url else "",
+            "query_url": f"{url.rstrip('/')}/{layer}/query" if url and "/vectortileserver" not in url.lower() else "",
             "out_sr": 4326,
             "in_sr": 4326,
         },
@@ -130,6 +135,44 @@ def build_arcgis_provider_record(
         "notes": safe_str(notes),
     }
     return record
+
+
+def build_known_provider_record(
+    *,
+    source_type: str,
+    service_url: str,
+    name: str,
+    jurisdiction: Optional[Dict[str, Any]] = None,
+    jurisdiction_level: str = "jurisdiction",
+    provider_kind: str = "known_nonqueryable",
+    status: str = "known_not_queryable",
+    notes: str = "",
+) -> Dict[str, Any]:
+    normalized_type = normalize_source_type(source_type)
+    juris = safe_dict(jurisdiction)
+    url = safe_str(service_url)
+    service_kind = _arcgis_service_kind(url)
+    return {
+        "id": _provider_id(source_type=normalized_type, service_url=url, jurisdiction=juris, layer_id=0),
+        "name": safe_str(name) or f"Known {normalized_type} source",
+        "source_type": normalized_type,
+        "jurisdiction_level": safe_str(jurisdiction_level, "jurisdiction"),
+        "jurisdiction": juris,
+        "provider_kind": provider_kind,
+        "service_url": url,
+        "queryable": False,
+        "arcgis": {"service_url": url, "service_kind": service_kind, "layer_id": 0, "query_url": "", "out_sr": 4326, "in_sr": 4326},
+        "status": status,
+        "health": {"status": "not_queryable", "checked_at": "", "ok": False, "message": f"{service_kind} is known but cannot be queried for candidate extraction."},
+        "freshness": provider_freshness_status({}),
+        "freshness_date": "",
+        "stale_after_days": DEFAULT_STALE_AFTER_DAYS,
+        "fixture_only": False,
+        "review_required": True,
+        "survey_backed": False,
+        "truth_label": "Known GIS source metadata is context only; it is not survey/control evidence.",
+        "notes": safe_str(notes) or f"{service_kind} is not usable for candidate extraction.",
+    }
 
 
 def provider_freshness_status(provider: Dict[str, Any], *, now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -159,6 +202,40 @@ def provider_freshness_status(provider: Dict[str, Any], *, now: Optional[datetim
 def builtin_provider_records() -> List[Dict[str, Any]]:
     federal = {"level": "federal", "country": "US"}
     return [
+        {
+            "id": "us-census-geocoder-location-context",
+            "name": "US Census Geocoder location context",
+            "source_type": "location_context",
+            "jurisdiction_level": "federal",
+            "jurisdiction": federal,
+            "provider_kind": "census_geocoder",
+            "service_url": "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
+            "queryable": True,
+            "status": "configured",
+            "health": {"status": "unchecked", "checked_at": "", "message": "Health check has not run."},
+            "freshness": provider_freshness_status({}),
+            "review_required": True,
+            "survey_backed": False,
+            "truth_label": "Geocoder context is not survey/control evidence.",
+            "notes": "National address/location context fallback.",
+        },
+        {
+            "id": "usgs-3dep-epqs-elevation",
+            "name": "USGS 3DEP EPQS point elevation",
+            "source_type": "elevation",
+            "jurisdiction_level": "federal",
+            "jurisdiction": federal,
+            "provider_kind": "usgs_epqs",
+            "service_url": "https://epqs.nationalmap.gov/v1/json",
+            "queryable": True,
+            "status": "configured",
+            "health": {"status": "unchecked", "checked_at": "", "message": "Health check has not run."},
+            "freshness": provider_freshness_status({}),
+            "review_required": True,
+            "survey_backed": False,
+            "truth_label": "Public DEM elevation is not a topographic survey.",
+            "notes": "National point elevation fallback where available.",
+        },
         build_arcgis_provider_record(
             source_type="floodplain",
             service_url="https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer",
@@ -184,19 +261,41 @@ def builtin_provider_records() -> List[Dict[str, Any]]:
     ]
 
 
-def target_market_provider_records(*, address: str = "", lat: Any = None, lng: Any = None) -> List[Dict[str, Any]]:
+def _point_in_bbox(lat: Any, lng: Any, bbox: Dict[str, float]) -> bool:
+    try:
+        y = float(lat)
+        x = float(lng)
+    except (TypeError, ValueError):
+        return False
+    return bbox["south"] <= y <= bbox["north"] and bbox["west"] <= x <= bbox["east"]
+
+
+def _pack_record(pack_id: str, label: str, jurisdiction: Dict[str, Any], providers: List[Dict[str, Any]], known_gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "pack_id": pack_id,
+        "label": label,
+        "jurisdiction": jurisdiction,
+        "providers": providers,
+        "known_gaps": known_gaps,
+        "review_required": True,
+        "survey_backed": False,
+        "truth_label": "Provider packs configure candidate public context sources only; they are not survey/control.",
+    }
+
+
+def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any = None, location_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     text = safe_str(address).lower()
-    point_in_sarpy = (
-        lat not in (None, "")
-        and lng not in (None, "")
-        and SARPY_COUNTY_BBOX["south"] <= float(lat) <= SARPY_COUNTY_BBOX["north"]
-        and SARPY_COUNTY_BBOX["west"] <= float(lng) <= SARPY_COUNTY_BBOX["east"]
-    )
+    loc = safe_dict(location_context)
+    if lat in (None, ""):
+        lat = safe_dict(loc.get("coordinates")).get("lat") or safe_dict(loc.get("geocode")).get("lat")
+    if lng in (None, ""):
+        lng = safe_dict(loc.get("coordinates")).get("lng") or safe_dict(loc.get("geocode")).get("lng")
+    packs: List[Dict[str, Any]] = []
+    point_in_sarpy = _point_in_bbox(lat, lng, SARPY_COUNTY_BBOX)
     address_in_sarpy = "gretna" in text and (" ne" in text or "nebraska" in text)
-    if not (point_in_sarpy or address_in_sarpy):
-        return []
-    sarpy = {"level": "county", "county": "Sarpy County", "state": "NE", "city": "Gretna", "target_market": "gretna_ne"}
-    return [
+    if point_in_sarpy or address_in_sarpy:
+        sarpy = {"level": "county", "county": "Sarpy County", "state": "NE", "city": "Gretna", "target_market": "gretna_ne"}
+        providers = [
         build_arcgis_provider_record(
             source_type="parcels",
             service_url="https://services.arcgis.com/OiG7dbwhQEWoy77N/arcgis/rest/services/Sarpy_Parcels_WFL1/FeatureServer",
@@ -234,24 +333,66 @@ def target_market_provider_records(*, address: str = "", lat: Any = None, lng: A
             jurisdiction_level="utility",
             notes="Partial public sanitary layer only; does not replace utility-owner records, one-call locates, or field verification.",
         ),
-    ]
+        ]
+        gaps = [
+            {
+                "source_type": "contours",
+                "label": "contours",
+                "status": "known_source_not_query_configured",
+                "message": (
+                    "Sarpy/Omaha metro contours were found as a VectorTileServer, not a queryable ArcGIS FeatureServer/MapServer layer. "
+                    "Configure a queryable contour service URL/API or import contours before reporting contour candidates."
+                ),
+                "source_url": "https://tiles.arcgis.com/tiles/OiG7dbwhQEWoy77N/arcgis/rest/services/Contours_Metro/VectorTileServer",
+            }
+        ]
+        packs.append(_pack_record("gretna_ne_sarpy_county", "Gretna/Sarpy County, NE provider pack", sarpy, providers, gaps))
+    address_in_austin = "austin" in text and (" tx" in text or "texas" in text)
+    if _point_in_bbox(lat, lng, AUSTIN_BBOX) or address_in_austin:
+        austin = {"level": "city", "city": "Austin", "county": "Travis County", "state": "TX", "target_market": "austin_tx"}
+        providers = [
+            build_arcgis_provider_record(source_type="parcels", service_url="https://maps.austintexas.gov/gis/rest/Shared/AppraisalDistricts/MapServer", layer_id=0, name="City of Austin TCAD parcels", jurisdiction=austin, jurisdiction_level="county", notes="Austin Property Profile Appraisal Districts layer; candidate parcel context only."),
+            build_arcgis_provider_record(source_type="buildings", service_url="https://maps.austintexas.gov/gis/rest/Shared/PlanimetricsSurvey_1/MapServer", layer_id=0, name="City of Austin building footprints 2023", jurisdiction=austin, jurisdiction_level="city", notes="Austin planimetrics building footprints; candidate context only."),
+            build_arcgis_provider_record(source_type="roads_row", service_url="https://maps.austintexas.gov/gis/rest/Shared/Property/MapServer", layer_id=1, name="City of Austin streets", jurisdiction=austin, jurisdiction_level="city", notes="Street centerline/context layer; not ROW survey."),
+            build_arcgis_provider_record(source_type="utilities", service_url="https://maps.austintexas.gov/gis/rest/PropertyProfile/AustinWater/MapServer", layer_id=3, name="Austin Water service area", jurisdiction=austin, jurisdiction_level="utility", notes="Utility service area context only; not utility as-built, locate, or owner clearance."),
+            build_arcgis_provider_record(source_type="floodplain", service_url="https://maps.austintexas.gov/gis/rest/Shared/Environmental_2/MapServer", layer_id=1, name="City of Austin FEMA floodplain", jurisdiction=austin, jurisdiction_level="city", notes="Local floodplain context; FEMA NFHL remains available as national fallback."),
+            build_arcgis_provider_record(source_type="contours", service_url="https://maps.austintexas.gov/gis/rest/Shared/PlanimetricsSurvey_2/MapServer", layer_id=0, name="City of Austin contours 2021", jurisdiction=austin, jurisdiction_level="city", notes="Public contour context only; not topographic survey/control."),
+            build_arcgis_provider_record(source_type="zoning", service_url="https://maps.austintexas.gov/gis/rest/Shared/Zoning_1/MapServer", layer_id=0, name="City of Austin zoning", jurisdiction=austin, jurisdiction_level="city", notes="Zoning context requires jurisdiction review."),
+        ]
+        gaps = [
+            {"source_type": "wetlands", "label": "local wetlands", "status": "local_provider_unknown", "message": "No verified queryable local Austin wetlands provider is configured; use USFWS NWI as national candidate fallback where available."},
+        ]
+        packs.append(_pack_record("austin_tx_city", "Austin, TX provider pack", austin, providers, gaps))
+    address_in_atlanta = ("atlanta" in text or "fulton" in text) and (" ga" in text or "georgia" in text)
+    if _point_in_bbox(lat, lng, FULTON_COUNTY_BBOX) or address_in_atlanta:
+        fulton = {"level": "county", "city": "Atlanta", "county": "Fulton County", "state": "GA", "target_market": "atlanta_fulton_ga"}
+        providers = [
+            build_arcgis_provider_record(source_type="parcels", service_url="https://gismaps.fultoncountyga.gov/arcgispub2/rest/services/PropertyMapViewer/PropertyMapViewer/MapServer", layer_id=11, name="Fulton County tax parcels", jurisdiction=fulton, jurisdiction_level="county", notes="Fulton County Property Map Viewer tax parcel layer; candidate context only."),
+            build_arcgis_provider_record(source_type="contours", service_url="https://gismaps.fultoncountyga.gov/arcgispub2/rest/services/PropertyMapViewer/PropertyMapViewer/MapServer", layer_id=25, name="Fulton County elevation contours", jurisdiction=fulton, jurisdiction_level="county", notes="Fulton County contour context only; not topographic survey/control."),
+            build_arcgis_provider_record(source_type="zoning", service_url="https://gismaps.fultoncountyga.gov/arcgispub2/rest/services/PropertyMapViewer/PropertyMapViewer/MapServer", layer_id=34, name="Fulton County zoning", jurisdiction=fulton, jurisdiction_level="county", notes="Zoning context requires jurisdiction review."),
+        ]
+        gaps = [
+            {"source_type": "buildings", "label": "building footprints", "status": "local_provider_unknown", "message": "Fulton/Atlanta building footprint open-data references were found, but no verified queryable local provider is configured for candidate extraction."},
+            {"source_type": "roads_row", "label": "roads/right-of-way", "status": "local_provider_unknown", "message": "No verified queryable Fulton/Atlanta road/ROW provider is configured."},
+            {"source_type": "utilities", "label": "existing utilities", "status": "local_provider_unknown", "message": "No verified queryable Fulton/Atlanta utility owner/jurisdiction provider is configured."},
+            {"source_type": "wetlands", "label": "local wetlands", "status": "local_provider_unknown", "message": "No verified queryable local wetlands provider is configured; use USFWS NWI as national candidate fallback where available."},
+        ]
+        packs.append(_pack_record("atlanta_fulton_ga", "Atlanta/Fulton County, GA provider pack", fulton, providers, gaps))
+    return packs
+
+
+def target_market_provider_records(*, address: str = "", lat: Any = None, lng: Any = None) -> List[Dict[str, Any]]:
+    providers: List[Dict[str, Any]] = []
+    for pack in provider_packs_for_location(address=address, lat=lat, lng=lng):
+        providers.extend(safe_list(safe_dict(pack).get("providers")))
+    return providers
 
 
 def target_market_known_gaps(*, address: str = "", lat: Any = None, lng: Any = None) -> List[Dict[str, Any]]:
-    if not target_market_provider_records(address=address, lat=lat, lng=lng):
-        return []
-    return [
-        {
-            "source_type": "contours",
-            "label": "contours",
-            "status": "known_source_not_query_configured",
-            "message": (
-                "Sarpy/Omaha metro contours were found as a VectorTileServer, not a queryable ArcGIS FeatureServer/MapServer layer. "
-                "Configure a queryable contour service URL/API or import contours before reporting contour candidates."
-            ),
-            "source_url": "https://tiles.arcgis.com/tiles/OiG7dbwhQEWoy77N/arcgis/rest/services/Contours_Metro/VectorTileServer",
-        }
-    ]
+    gaps: List[Dict[str, Any]] = []
+    for pack in provider_packs_for_location(address=address, lat=lat, lng=lng):
+        gaps.extend(safe_list(safe_dict(pack).get("known_gaps")))
+    return gaps
 
 
 def env_provider_records(env: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
@@ -303,7 +444,9 @@ def build_provider_registry(
     for item in rows:
         source_type = normalize_source_type(safe_str(item.get("source_type")))
         record = item
-        if safe_str(item.get("provider_kind")) == "arcgis_rest" or safe_str(safe_dict(item.get("arcgis")).get("service_url") or item.get("service_url")):
+        if safe_str(item.get("queryable")) == "False" or item.get("queryable") is False or safe_str(item.get("provider_kind")) in {"known_nonqueryable", "vector_tile"}:
+            record = deepcopy(item)
+        elif safe_str(item.get("provider_kind")) == "arcgis_rest" or safe_str(safe_dict(item.get("arcgis")).get("service_url") or item.get("service_url")):
             arcgis = safe_dict(item.get("arcgis"))
             record = build_arcgis_provider_record(
                 source_type=source_type,
@@ -333,11 +476,13 @@ def build_provider_registry(
         record["id"] = key
         normalized.append(record)
     configured = [item for item in normalized if safe_str(item.get("status")) != "unconfigured" and safe_str(item.get("service_url"))]
+    queryable = [item for item in configured if item.get("queryable") is not False and safe_str(item.get("status")) != "known_not_queryable"]
     return {
         "version": GIS_PROVIDER_REGISTRY_VERSION,
         "status": "configured" if configured else "unconfigured",
         "provider_count": len(normalized),
         "configured_provider_count": len(configured),
+        "queryable_provider_count": len(queryable),
         "source_types": list(GIS_SOURCE_TYPES),
         "providers": normalized,
         "truth_label": "Provider registry configures GIS context sources. No provider record is survey-backed unless separate survey/control evidence exists.",
@@ -351,6 +496,8 @@ def providers_for_source_type(registry: Dict[str, Any], source_type: str) -> Lis
         for item in safe_list(safe_dict(registry).get("providers"))
         if normalize_source_type(safe_str(safe_dict(item).get("source_type"))) == wanted
         and safe_str(safe_dict(item).get("status")) != "unconfigured"
+        and safe_str(safe_dict(item).get("status")) != "known_not_queryable"
+        and safe_dict(item).get("queryable") is not False
         and safe_str(safe_dict(item).get("service_url"))
     ]
 
@@ -366,6 +513,8 @@ def check_provider_health(provider: Dict[str, Any], *, session: Any = requests) 
     checked_at = _utc_now_iso()
     if not url:
         return {"status": "unconfigured", "checked_at": checked_at, "ok": False, "message": "Provider service URL is not configured."}
+    if rec.get("queryable") is False or safe_str(rec.get("status")) == "known_not_queryable":
+        return {"status": "not_queryable", "checked_at": checked_at, "ok": False, "message": "Provider is known but not usable for candidate extraction."}
     try:
         response = session.get(url.rstrip("/"), params={"f": "json"}, timeout=10)
         response.raise_for_status()
@@ -411,10 +560,12 @@ __all__ = [
     "GIS_PROVIDER_REGISTRY_VERSION",
     "GIS_SOURCE_TYPES",
     "build_arcgis_provider_record",
+    "build_known_provider_record",
     "build_provider_registry",
     "check_provider_health",
     "check_registry_health",
     "provider_freshness_status",
+    "provider_packs_for_location",
     "providers_for_source_type",
     "selected_provider",
     "target_market_known_gaps",
