@@ -29,7 +29,10 @@ def test_billing_status_disabled_by_default_blocks_real_charging() -> None:
 
     assert status["version"] == "billing_status_v1"
     assert status["paid_pilot_mode"] is False
+    assert status["operational_state"] == "blocked"
     assert status["real_charging_enabled"] is False
+    assert status["charging_guard"]["real_charging_allowed"] is False
+    assert "Real charging is blocked" in status["charging_guard"]["user_safe_message"]
     assert status["provider"]["configured"] is False
     assert "legal_business_docs_missing" in status["blocked_reasons"]
     assert "paid_pilot_mode_disabled" in status["blocked_reasons"]
@@ -43,6 +46,7 @@ def test_paid_pilot_mode_without_legal_docs_stays_blocked() -> None:
     )
 
     assert status["status"] == "blocked"
+    assert status["operational_state"] == "blocked"
     assert status["plan"]["access"] == "pilot"
     assert status["real_charging_enabled"] is False
     assert "legal_business_docs_missing" in status["blocked_reasons"]
@@ -62,6 +66,7 @@ def test_real_charging_flag_alone_is_not_enough() -> None:
 
     assert status["charging_config_requested"] is True
     assert status["real_charging_enabled"] is False
+    assert status["operational_state"] == "blocked"
     assert "provider_disabled" in status["blocked_reasons"]
 
 

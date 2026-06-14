@@ -64,6 +64,8 @@ def health_response(
     api_base_url = str(deployment_meta.get("api_base_url") or "").strip()
     frontend_status = str(deployment_meta.get("frontend_status") or "unknown").strip() or "unknown"
     backend_status = "online" if operational_status in {"healthy", "degraded"} else "down"
+    api_status = "configured" if api_base_url else "missing_url"
+    build_status = "known" if build_version else "unknown"
     service_messages = []
     if backend_status == "down":
         service_messages.append("Backend health checks are blocked. Some workspace actions may be unavailable.")
@@ -87,9 +89,11 @@ def health_response(
         "deployment": {
             "frontend_status": frontend_status,
             "backend_status": backend_status,
+            "api_status": api_status,
             "api_base_url": api_base_url,
             "auth_status": "enabled",
             "queue_status": queue_status,
+            "build_status": build_status,
             "build_version": build_version,
             "commit_sha": str(deployment_meta.get("commit_sha") or "").strip(),
             "commit_ref": str(deployment_meta.get("commit_ref") or "").strip(),

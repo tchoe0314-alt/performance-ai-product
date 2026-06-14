@@ -3,7 +3,7 @@ set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/apps/web"
-RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next}"
+RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression}"
 PLAYWRIGHT_SPECS=(
   "tests/live/ui-functionality-chat32.spec.ts"
   "tests/live/civil-3d-viewer.spec.ts"
@@ -103,6 +103,12 @@ raise SystemExit(1)
 PY
 }
 
+release_artifacts_ready() {
+  [[ -f "$WEB_DIR/$RELEASE_DIST_DIR/BUILD_ID" ]] &&
+    [[ -f "$WEB_DIR/$RELEASE_DIST_DIR/required-server-files.json" ]] &&
+    [[ -f "$WEB_DIR/$RELEASE_DIST_DIR/server/pages-manifest.json" ]]
+}
+
 printf 'Civora release regression\n'
 printf 'Root: %s\n' "$ROOT_DIR"
 printf 'Frontend release distDir: %s\n' "$RELEASE_DIST_DIR"
@@ -123,6 +129,7 @@ else
     (
       cd "$WEB_DIR" &&
         NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}" \
+        NEXT_DIST_DIR="$RELEASE_DIST_DIR" \
         NEXT_PRODUCTION_BROWSER_SOURCE_MAPS=0 \
         npm run build
     )
@@ -134,6 +141,11 @@ else
     fi
 
     run_step "frontend lint" bash -c "cd \"\$1\" && npm run lint" bash "$WEB_DIR"
+
+    if [[ $build_status -eq 0 ]] && ! release_artifacts_ready; then
+      record_fail "frontend build" "release artifacts missing in $RELEASE_DIST_DIR"
+      build_status=1
+    fi
 
     if [[ $build_status -ne 0 ]]; then
       record_skip "selected Playwright" "frontend release build failed"
@@ -154,7 +166,8 @@ else
         printf '\n[run] selected Playwright server on http://127.0.0.1:%s\n' "$PORT"
         (
           cd "$WEB_DIR" &&
-            npx next start --hostname 127.0.0.1 --port "$PORT"
+            NEXT_DIST_DIR="$RELEASE_DIST_DIR" \
+              npx next start --hostname 127.0.0.1 --port "$PORT"
         ) &
         SERVER_PID=$!
 

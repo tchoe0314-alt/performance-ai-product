@@ -1,11 +1,16 @@
 import os
 import unittest
 import importlib
+from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from fastapi import UploadFile
 from fastapi.testclient import TestClient
+from starlette.datastructures import Headers
 
+from backend.application.file_workflows import _copy_upload_with_limit, _validate_upload_metadata
 from backend.api.app import (
     ChatLearningCronPayload,
     GeocodePayload,
@@ -232,6 +237,33 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
         self.assertEqual(second.json()["detail"], "Rate limit exceeded. Try again later.")
+
+    def test_upload_type_error_names_allowed_extensions(self) -> None:
+        upload = UploadFile(filename="site.bmp", file=BytesIO(b"not-an-image"), headers=Headers({"content-type": "image/bmp"}))
+
+        with self.assertRaises(HTTPException) as ctx:
+            _validate_upload_metadata(
+                file=upload,
+                safe_name="site.bmp",
+                allowed_extensions={".png", ".jpg", ".jpeg", ".webp"},
+                allowed_content_types={"image/png", "image/jpeg", "image/webp"},
+            )
+
+        self.assertEqual(ctx.exception.status_code, 415)
+        self.assertIn("Unsupported upload file type", str(ctx.exception.detail))
+        self.assertIn(".png", str(ctx.exception.detail))
+
+    def test_upload_size_error_names_limit(self) -> None:
+        target = Path(os.getcwd()) / "_tmp_upload_limit_test.bin"
+        upload = UploadFile(filename="site.png", file=BytesIO(b"x" * 8))
+        try:
+            with self.assertRaises(HTTPException) as ctx:
+                _copy_upload_with_limit(file=upload, target=target, max_bytes=4)
+        finally:
+            target.unlink(missing_ok=True)
+
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertIn("Maximum allowed size", str(ctx.exception.detail))
 
 
 if __name__ == "__main__":

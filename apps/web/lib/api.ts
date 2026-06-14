@@ -91,12 +91,24 @@ export async function readJsonResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const detail =
+    const rawDetail =
       typeof payload?.detail === "string"
         ? payload.detail
         : typeof payload?.message === "string"
           ? payload.message
           : `Request failed with status ${response.status}`;
+    const detail =
+      response.status === 401
+        ? "Your session could not be verified. Sign in again to continue."
+        : response.status === 403
+          ? rawDetail || "This account does not have access to that action."
+          : response.status === 413
+            ? rawDetail || "That file is too large for the current upload limit."
+            : response.status === 415
+              ? rawDetail || "That file type is not supported for this upload."
+              : response.status === 429
+                ? "Too many requests. Wait a minute, then try again."
+                : rawDetail;
     throw new Error(detail);
   }
 
@@ -214,12 +226,18 @@ export async function postBinary(
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    const detail =
+    const rawDetail =
       typeof payload?.detail === "string"
         ? payload.detail
         : typeof payload?.message === "string"
           ? payload.message
           : `Request failed with status ${response.status}`;
+    const detail =
+      response.status === 401
+        ? "Your session could not be verified. Sign in again to continue."
+        : response.status === 429
+          ? "Too many requests. Wait a minute, then try again."
+          : rawDetail;
     throw new Error(detail);
   }
 

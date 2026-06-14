@@ -90,6 +90,15 @@ def _upload_limit_bytes(kind: str) -> int:
     return _env_int(f"CIVORA_MAX_{kind.upper()}_UPLOAD_BYTES", defaults[kind])
 
 
+def _format_bytes(value: int) -> str:
+    mib = value / MI_B
+    return f"{mib:.0f} MiB" if mib.is_integer() else f"{mib:.1f} MiB"
+
+
+def _allowed_extension_text(values: set[str]) -> str:
+    return ", ".join(sorted(values))
+
+
 def _validate_upload_metadata(
     *,
     file: UploadFile,
@@ -99,10 +108,22 @@ def _validate_upload_metadata(
 ) -> str:
     suffix = Path(safe_name).suffix.lower()
     if suffix not in allowed_extensions:
-        raise HTTPException(status_code=415, detail="Unsupported upload file type.")
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"Unsupported upload file type '{suffix or 'none'}'. "
+                f"Use one of: {_allowed_extension_text(allowed_extensions)}."
+            ),
+        )
     content_type = str(getattr(file, "content_type", "") or "").split(";")[0].strip().lower()
     if content_type and content_type not in allowed_content_types:
-        raise HTTPException(status_code=415, detail="Unsupported upload content type.")
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"Unsupported upload content type '{content_type}'. "
+                f"Allowed file extensions: {_allowed_extension_text(allowed_extensions)}."
+            ),
+        )
     return suffix
 
 
@@ -116,7 +137,10 @@ def _copy_upload_with_limit(*, file: UploadFile, target: Path, max_bytes: int) -
                     break
                 total += len(chunk)
                 if total > max_bytes:
-                    raise HTTPException(status_code=413, detail="Uploaded file is too large.")
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Uploaded file is too large. Maximum allowed size is {_format_bytes(max_bytes)}.",
+                    )
                 buffer.write(chunk)
     except HTTPException:
         try:

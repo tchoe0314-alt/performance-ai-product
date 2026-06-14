@@ -188,11 +188,28 @@ def build_billing_status(
         status = "not_enrolled"
     if not config.paid_pilot_mode:
         status = "disabled"
+    operational_state = "enabled" if real_charging_allowed else "blocked" if blocked_reasons else "disabled"
+    charging_guard = {
+        "state": operational_state,
+        "real_charging_allowed": real_charging_allowed,
+        "requires_explicit_flags": [
+            "CIVORA_PAID_PILOT_MODE=true",
+            "CIVORA_ENABLE_REAL_CHARGING=true",
+            "CIVORA_BILLING_LEGAL_DOCS_READY=true",
+            "configured billing provider",
+        ],
+        "user_safe_message": (
+            "Real charging is enabled by explicit billing, legal, and provider flags."
+            if real_charging_allowed
+            else "Real charging is blocked. No payment is collected unless legal docs, paid pilot mode, charging, and provider configuration are all explicit."
+        ),
+    }
 
     return {
         "version": BILLING_STATUS_VERSION,
         "success": True,
         "status": status,
+        "operational_state": operational_state,
         "paid_pilot_mode": config.paid_pilot_mode,
         "real_charging_enabled": real_charging_allowed,
         "charging_config_requested": config.charging_enabled,
@@ -222,6 +239,7 @@ def build_billing_status(
             "status": "disabled" if not real_charging_allowed else "configured_but_not_started",
             "message": "No real charges are created by this API without explicit charging configuration and legal/business readiness.",
         },
+        "charging_guard": charging_guard,
         "legal": {
             "terms_url": config.terms_url,
             "privacy_url": config.privacy_url,
