@@ -1895,8 +1895,8 @@ export default function PreviewPanel({
     return Number.isFinite(parsed) ? parsed : fallback;
   }, []);
   const transformSelectedCadObjects = useCallback(
-    (kind: "move" | "rotate" | "scale") => {
-      const amount = parseCadNumber(cadTransformValue, kind === "scale" ? 1 : 0);
+    (kind: "move" | "rotate" | "scale", valueOverride?: string) => {
+      const amount = parseCadNumber(valueOverride ?? cadTransformValue, kind === "scale" ? 1 : 0);
       selectedCadIds.forEach((id) => {
         const target = buildingPlacements.find((item) => item.id === id);
         if (!target || target.locked || target.type === "site") return;
@@ -1960,6 +1960,19 @@ export default function PreviewPanel({
   const offsetSelectedCadObject = useCallback(() => {
     if (!selectedCadObject) return;
     const distance = parseCadNumber(cadOffsetDistance, 0);
+    if (!distance) return;
+    const updates: Partial<BuildingPlacement> = {
+      x: (selectedCadObject.x ?? 0) + distance,
+      y: (selectedCadObject.y ?? 0) + distance,
+    };
+    if (Array.isArray(selectedCadObject.geometry)) {
+      updates.geometry = translateSiteGeometry(selectedCadObject.geometry as Array<[number, number]>, { x: distance, y: distance });
+    }
+    updateCadObject(selectedCadObject, updates, "Offset");
+  }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
+  const offsetSelectedCadObjectBy = useCallback((valueOverride?: string) => {
+    if (!selectedCadObject) return;
+    const distance = parseCadNumber(valueOverride ?? cadOffsetDistance, 0);
     if (!distance) return;
     const updates: Partial<BuildingPlacement> = {
       x: (selectedCadObject.x ?? 0) + distance,
@@ -2134,13 +2147,13 @@ export default function PreviewPanel({
     }
     if (["move", "rotate", "scale"].includes(command)) {
       setCadTransformValue(value);
-      transformSelectedCadObjects(command as "move" | "rotate" | "scale");
+      transformSelectedCadObjects(command as "move" | "rotate" | "scale", value);
       setCadCommandStatus(`${command.toUpperCase()} applied to selected CAD object(s).`);
       return;
     }
     if (command === "offset") {
       setCadOffsetDistance(value);
-      offsetSelectedCadObject();
+      offsetSelectedCadObjectBy(value);
       setCadCommandStatus("OFFSET applied to the selected CAD object.");
       return;
     }
@@ -2161,7 +2174,7 @@ export default function PreviewPanel({
     cadCommandDraft,
     cadTransformValue,
     filletSelectedCadObject,
-    offsetSelectedCadObject,
+    offsetSelectedCadObjectBy,
     onSetPreviewInteraction,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
@@ -5288,7 +5301,7 @@ export default function PreviewPanel({
             </div>
           ) : null}
           {previewMode === "2d" ? (
-            <div className="relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.1fr_1fr_1fr]" data-testid="cad-precision-tools">
+            <div className="relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
               <section className="min-w-0">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
@@ -5357,6 +5370,23 @@ export default function PreviewPanel({
                     XY
                   </button>
                 </div>
+                <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                  <input
+                    aria-label="CAD command input"
+                    value={cadCommandDraft}
+                    onChange={(event) => setCadCommandDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        runCadCommand();
+                      }
+                    }}
+                    placeholder="line, box, move 10"
+                    className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  />
+                  <button type="button" onClick={runCadCommand} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white">Run</button>
+                </div>
+                <p className="mt-2 text-[11px] font-medium text-slate-500">{cadCommandStatus}</p>
               </section>
               <section className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Readout / transform</p>
@@ -5385,6 +5415,25 @@ export default function PreviewPanel({
                   <button type="button" aria-label="Rotate selected CAD objects" onClick={() => transformSelectedCadObjects("rotate")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RotateCw className="h-4 w-4" /></button>
                   <button type="button" aria-label="Scale selected CAD objects" onClick={() => transformSelectedCadObjects("scale")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scale className="h-4 w-4" /></button>
                 </div>
+                <div className="mt-3 grid grid-cols-[auto_1fr_auto] gap-2">
+                  <select
+                    aria-label="CAD dimension mode"
+                    value={cadDimensionMode}
+                    onChange={(event) => setCadDimensionMode(event.target.value as CadDimensionMode)}
+                    className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  >
+                    <option value="linear">Linear</option>
+                    <option value="aligned">Aligned</option>
+                  </select>
+                  <input
+                    aria-label="CAD dimension label"
+                    value={cadDimensionLabelDraft}
+                    onChange={(event) => setCadDimensionLabelDraft(event.target.value)}
+                    placeholder="Editable dimension label"
+                    className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  />
+                  <button type="button" onClick={applySelectedCadDimension} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 disabled:opacity-40">Dim</button>
+                </div>
               </section>
               <section className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Modify / layers</p>
@@ -5406,12 +5455,58 @@ export default function PreviewPanel({
                     onChange={(event) => setCadLayerDraft(event.target.value)}
                     className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
                   >
-                    {["C-DRAFT", "C-SITE", "C-ROAD", "C-UTIL", "C-DRAIN", "C-BLDG"].map((layer) => (
+                    {cadLayerOptions.map((layer) => (
                       <option key={layer} value={layer}>{layer}</option>
                     ))}
                   </select>
                   <button type="button" onClick={applySelectedCadLayer} disabled={!selectedCadIds.length} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Layer</button>
                 </div>
+                <div className="mt-3 grid max-h-24 gap-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  {cadLayerOptions.map((layer) => {
+                    const hidden = hiddenCadLayers.includes(layer);
+                    return (
+                      <button
+                        key={`layer-toggle-${layer}`}
+                        type="button"
+                        onClick={() => toggleCadLayerVisibility(layer)}
+                        className="flex min-h-8 items-center justify-between gap-2 rounded-md bg-white px-2 text-left text-[11px] font-semibold text-slate-600"
+                      >
+                        <span className="truncate">{layer}</span>
+                        {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+              <section className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Symbols / properties</p>
+                <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                  <select
+                    aria-label="CAD symbol"
+                    value={cadSymbolDraft}
+                    onChange={(event) => setCadSymbolDraft(event.target.value as CadSymbolKind)}
+                    className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  >
+                    <option value="hydrant">Hydrant</option>
+                    <option value="inlet">Inlet</option>
+                    <option value="manhole">Manhole</option>
+                    <option value="tree">Tree</option>
+                    <option value="utility_marker">Utility marker</option>
+                    <option value="note_callout">Note / callout</option>
+                  </select>
+                  <button type="button" onClick={insertCadSymbol} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Insert</button>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <input aria-label="CAD object name" value={cadPropertyDraft.name} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <input aria-label="CAD object type" value={cadPropertyDraft.type} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, type: event.target.value }))} placeholder="Type" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <input aria-label="CAD object layer property" value={cadPropertyDraft.layer} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))} placeholder="Layer" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <button type="button" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  <input aria-label="CAD source note" value={cadPropertyDraft.sourceNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, sourceNote: event.target.value }))} placeholder="Source note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <input aria-label="CAD review note" value={cadPropertyDraft.reviewNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, reviewNote: event.target.value }))} placeholder="Review note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                </div>
+                <p className="mt-2 text-[11px] font-medium text-slate-500">Snap priority: endpoint, midpoint, intersection, perpendicular, then ortho.</p>
               </section>
             </div>
           ) : null}
