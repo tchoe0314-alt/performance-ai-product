@@ -23296,19 +23296,21 @@ function PerformanceAIDashboardView({
               </div>
             </div>
 	          </main>
-          <PinnedCommandBar
-            prompt={prompt}
-            imageName={imageName}
-            onPromptChange={setPrompt}
-            onPromptKeyDown={handlePromptKeyDown}
-            onSendMessage={handleSendMessage}
-            onOpenHistory={() => handleOpenSidePanel("chat")}
-            busy={busy}
-            hasVisibleActiveJob={Boolean(visibleActiveJob)}
-            activePlanTool={activePlanTool}
-            thinkingState={thinkingState}
-            statusText={chatSummary || statusMessage}
-          />
+          {activeSidePanel !== "chat" ? (
+            <PinnedCommandBar
+              prompt={prompt}
+              imageName={imageName}
+              onPromptChange={setPrompt}
+              onPromptKeyDown={handlePromptKeyDown}
+              onSendMessage={handleSendMessage}
+              onOpenHistory={() => handleOpenSidePanel("chat")}
+              busy={busy}
+              hasVisibleActiveJob={Boolean(visibleActiveJob)}
+              activePlanTool={activePlanTool}
+              thinkingState={thinkingState}
+              statusText={chatSummary || statusMessage}
+            />
+          ) : null}
         </div>
       </div>
     </div>

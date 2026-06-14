@@ -42,7 +42,8 @@ export default function PinnedCommandBar({
 
   return (
     <div
-      data-testid="pinned-civora-command-bar"
+      data-testid="floating-command-bar"
+      data-command-bar-id="pinned-civora-command-bar"
       className="civora-motion-command-bar fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto w-auto max-w-3xl rounded-xl border border-slate-200 bg-white/96 p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.62)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:w-[calc(100vw-2rem)]"
     >
       {isWorking ? (

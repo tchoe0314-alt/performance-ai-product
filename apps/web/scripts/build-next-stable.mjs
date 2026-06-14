@@ -2,14 +2,21 @@ import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const nextDir = resolve(process.cwd(), ".next");
-const generatedArtifactPattern = /\.next\/(?:dev\/)?(?:server\/)?(?:pages-manifest|routes-manifest|build-manifest|app-build-manifest)\.json/;
+const distDir = process.env.NEXT_DIST_DIR || ".next";
+const nextDir = resolve(process.cwd(), distDir);
+const generatedArtifactPattern =
+  /(?:^|\/)\.next(?:[^/]*)\/(?:dev\/)?(?:server\/)?(?:pages-manifest|routes-manifest|build-manifest|app-build-manifest|required-server-files)\.json/;
+const buildEnv = {
+  ...process.env,
+  NEXT_PRODUCTION_BROWSER_SOURCE_MAPS: process.env.NEXT_PRODUCTION_BROWSER_SOURCE_MAPS ?? "0",
+  NODE_OPTIONS: process.env.NODE_OPTIONS ?? "--max-old-space-size=8192",
+};
 
 async function run(command, args) {
   return new Promise((resolveRun) => {
     let combined = "";
     const child = spawn(command, args, {
-      env: process.env,
+      env: buildEnv,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -28,14 +35,14 @@ async function run(command, args) {
   });
 }
 
-for (let attempt = 1; attempt <= 2; attempt += 1) {
+for (let attempt = 1; attempt <= 3; attempt += 1) {
   const result = await run("next", ["build", "--webpack"]);
   if (result.code === 0) {
     process.exit(0);
   }
 
   const canRetry =
-    attempt === 1 &&
+    attempt < 3 &&
     result.output.includes("ENOENT") &&
     generatedArtifactPattern.test(result.output);
 
@@ -43,8 +50,12 @@ for (let attempt = 1; attempt <= 2; attempt += 1) {
     process.exit(result.code);
   }
 
-  console.warn("[build-next-stable] Generated Next artifact was missing during build; cleaning .next and retrying once.");
-  await rm(nextDir, { force: true, recursive: true });
+  if (attempt === 1) {
+    console.warn("[build-next-stable] Generated Next artifact was missing during build; cleaning .next and retrying.");
+    await rm(nextDir, { force: true, recursive: true });
+  } else {
+    console.warn("[build-next-stable] Generated Next artifact was missing again; retrying once with warmed artifacts.");
+  }
 }
 
 process.exit(1);

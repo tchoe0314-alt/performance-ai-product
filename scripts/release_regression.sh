@@ -3,7 +3,7 @@ set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/apps/web"
-RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression}"
+RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next}"
 PLAYWRIGHT_SPECS=(
   "tests/live/ui-functionality-chat32.spec.ts"
   "tests/live/civil-3d-viewer.spec.ts"
@@ -106,7 +106,7 @@ PY
 printf 'Civora release regression\n'
 printf 'Root: %s\n' "$ROOT_DIR"
 printf 'Frontend release distDir: %s\n' "$RELEASE_DIST_DIR"
-printf 'Note: this command does not remove .next; it builds into the release distDir above.\n'
+printf 'Note: this command uses the frontend stable build wrapper so generated Next artifacts are cleaned and retried consistently.\n'
 
 if [[ ! -d "$WEB_DIR" ]]; then
   record_skip "frontend build/lint/playwright" "apps/web is missing"
@@ -122,7 +122,9 @@ else
   else
     (
       cd "$WEB_DIR" &&
-        NEXT_DIST_DIR="$RELEASE_DIST_DIR" npx next build --webpack
+        NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}" \
+        NEXT_PRODUCTION_BROWSER_SOURCE_MAPS=0 \
+        npm run build
     )
     build_status=$?
     if [[ $build_status -eq 0 ]]; then
@@ -152,7 +154,7 @@ else
         printf '\n[run] selected Playwright server on http://127.0.0.1:%s\n' "$PORT"
         (
           cd "$WEB_DIR" &&
-            NEXT_DIST_DIR="$RELEASE_DIST_DIR" npx next start --hostname 127.0.0.1 --port "$PORT"
+            npx next start --hostname 127.0.0.1 --port "$PORT"
         ) &
         SERVER_PID=$!
 
