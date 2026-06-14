@@ -68,6 +68,7 @@ from backend.application.memory_logging import (
     runtime_process_monitoring_snapshot,
 )
 from backend.application.plan_pdf_workflows import (
+    build_plan_pdf_analysis_job_runner as application_build_plan_pdf_analysis_job_runner,
     download_project_plan_pdf_report as application_download_project_plan_pdf_report,
     get_project_plan_pdf_report as application_get_project_plan_pdf_report,
     update_project_plan_pdf_element as application_update_project_plan_pdf_element,
@@ -1021,6 +1022,14 @@ def _register_job_handlers() -> None:
             export_kind="report",
         ),
     )
+    JOB_QUEUE.register_handler(
+        "plan_pdf_analysis",
+        application_build_plan_pdf_analysis_job_runner(
+            upload_dir=UPLOAD_DIR,
+            project_store=PROJECT_STORE,
+            update_job_progress=JOB_QUEUE.update_job_progress,
+        ),
+    )
     log_memory("startup_complete")
 
 
@@ -1189,6 +1198,7 @@ async def upload_plan_pdf(
         file=file,
         current_user=current_user,
         project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
         project_id=project_id,
     )
 
@@ -2174,10 +2184,16 @@ def delete_project(project_id: str, current_user: Dict[str, Any] = Depends(get_c
 
 
 @app.get("/api/jobs")
-def list_jobs(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+def list_jobs(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> Dict[str, Any]:
+    page = JOB_QUEUE.list_jobs_page(user_id=current_user["user_id"], limit=limit, offset=offset)
     return {
         "success": True,
-        "jobs": JOB_QUEUE.list_jobs(user_id=current_user["user_id"]),
+        "jobs": page["jobs"],
+        "pagination": page["pagination"],
     }
 
 

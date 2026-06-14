@@ -589,6 +589,47 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(jobs["job_queued_1"]["running_count"], 1)
         self.assertEqual(jobs["job_queued_2"]["queue_position"], 2)
 
+    def test_list_jobs_page_bounds_large_histories(self):
+        connection = self.db.connect()
+        try:
+            for index in range(12):
+                connection.execute(
+                    """
+                    INSERT INTO jobs (
+                        job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                        stage, stage_detail, progress, payload_json, result_json, error_text
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"job_page_{index:02d}",
+                        self.user_id,
+                        "orchestrate",
+                        "completed",
+                        float(index + 1),
+                        float(index + 1),
+                        None,
+                        "Completed",
+                        "Done",
+                        100,
+                        "{}",
+                        '{"job_progress":{"stage":"Completed","detail":"Done","progress":100}}',
+                        None,
+                    ),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+
+        page = self.queue.list_jobs_page(user_id=self.user_id, limit=5, offset=5)
+
+        self.assertEqual(len(page["jobs"]), 5)
+        self.assertEqual(page["pagination"]["total_count"], 12)
+        self.assertTrue(page["pagination"]["has_more"])
+        self.assertEqual(page["pagination"]["next_offset"], 10)
+        self.assertEqual(page["jobs"][0]["job_id"], "job_page_06")
+        self.assertEqual(page["jobs"][-1]["job_id"], "job_page_02")
+
     def test_cancel_queued_job_marks_cancelled_and_retryable(self):
         created = self.queue.submit_job(
             user_id=self.user_id,

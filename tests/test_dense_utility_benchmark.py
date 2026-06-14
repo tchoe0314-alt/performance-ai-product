@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import resource
 import time
 import unittest
@@ -16,9 +17,10 @@ from backend.planning.export_validation import (
 )
 from core.geometry_core import ProjectModel
 from engines.quantity_engine import compute_plan_quantities
+from engines.surface_engine import SurfaceEngine, SurveyPoint
 
 
-REPORT_PATH = Path("reports/benchmarks/chat50_dense_utility_benchmark.json")
+REPORT_PATH = Path("reports/benchmarks/chat145_dense_utility_benchmark.json")
 
 
 def _polyline_length(points: List[List[float]]) -> float:
@@ -71,7 +73,7 @@ def _make_segment(prefix: str, index: int, y: float, *, layer_offset: float = 0.
     }
 
 
-def _dense_project(storm_count: int = 36, sanitary_count: int = 28, water_count: int = 32) -> Dict[str, Any]:
+def _dense_project(storm_count: int = 1000, sanitary_count: int = 800, water_count: int = 1000) -> Dict[str, Any]:
     project = ProjectModel(name="Chat 50 Dense Utility Benchmark")
     storm_segments = [_make_segment("storm", index, 120.0) for index in range(1, storm_count + 1)]
     sanitary_segments = [_make_segment("san", index, 90.0, layer_offset=1.25) for index in range(1, sanitary_count + 1)]
@@ -201,6 +203,54 @@ def _dense_project(storm_count: int = 36, sanitary_count: int = 28, water_count:
     }
 
 
+def _large_terrain_benchmark(point_side: int = 31, grid_side: int = 100) -> Dict[str, Any]:
+    points = [
+        SurveyPoint(
+            x=float(col * 10.0),
+            y=float(row * 10.0),
+            z=100.0 + math.sin(col / 5.0) * 2.0 + math.cos(row / 7.0) * 2.0,
+            point_id=f"pt-{row:03d}-{col:03d}",
+            source="synthetic_scale_fixture",
+            confidence="survey-unverified",
+        )
+        for row in range(point_side)
+        for col in range(point_side)
+    ]
+    tin_started = time.perf_counter()
+    tin_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    tin = SurfaceEngine(points, control_verified=False, source_type="survey-unverified").build_tin()
+    tin_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    grid_started = time.perf_counter()
+    terrain_grid_values = [
+        [100.0 + math.sin(col / 8.0) * 1.5 + math.cos(row / 9.0) * 1.5 for col in range(grid_side)]
+        for row in range(grid_side)
+    ]
+    grid_runtime_ms = round((time.perf_counter() - grid_started) * 1000.0, 3)
+    return {
+        "tin": {
+            "point_count": len(points),
+            "triangle_count": len(tin.triangles),
+            "runtime_ms": round((time.perf_counter() - tin_started) * 1000.0, 3),
+            "memory_delta_mb": round(max(0.0, _rss_to_mb(tin_after) - _rss_to_mb(tin_before)), 3),
+            "control_verified": tin.control_verified,
+            "source_type": tin.source_type,
+            "truth_label": tin.metadata["truth_label"],
+        },
+        "terrain_grid": {
+            "sample_count": grid_side * grid_side,
+            "runtime_ms": grid_runtime_ms,
+            "min_elevation": round(min(min(row) for row in terrain_grid_values), 3),
+            "max_elevation": round(max(max(row) for row in terrain_grid_values), 3),
+            "review_required": True,
+            "construction_release_allowed": False,
+        },
+        "blockers": [
+            "TIN builds above roughly 2500 points exceeded 10 seconds in local probing and must stay async or be replaced with a proven triangulation/indexing path before public beta.",
+            "Synthetic terrain scale fixtures verify runtime shape only; they are not survey/control evidence.",
+        ],
+    }
+
+
 def run_dense_utility_benchmark(write_report: bool = False) -> Dict[str, Any]:
     fixture = _dense_project()
     project: ProjectModel = fixture["project"]
@@ -245,6 +295,7 @@ def run_dense_utility_benchmark(write_report: bool = False) -> Dict[str, Any]:
         ],
     }
     export_report = build_export_package_report_v1(plan, export_type="dxf", generated_at="2026-06-06T00:00:00Z")
+    terrain_report = _large_terrain_benchmark()
     after_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     runtime_ms = round((time.perf_counter() - started) * 1000.0, 3)
 
@@ -267,7 +318,7 @@ def run_dense_utility_benchmark(write_report: bool = False) -> Dict[str, Any]:
     quantity_audit = quantities.explain.get("quantity_audit", {})
     export_ids = set(export_report["canonical_ids_included"])
     report = {
-        "benchmark": "chat50_dense_utility_benchmark",
+        "benchmark": "chat145_dense_utility_benchmark",
         "benchmark_design": {
             "storm_segments": len(fixture["storm_segments"]),
             "sanitary_segments": len(fixture["sanitary_segments"]),
@@ -277,10 +328,14 @@ def run_dense_utility_benchmark(write_report: bool = False) -> Dict[str, Any]:
             "unsupported_structures": {"water_hydrants": len(fixture["hydrants"])},
         },
         "runtime_ms": runtime_ms,
+        "terrain_runtime_ms": terrain_report["tin"]["runtime_ms"] + terrain_report["terrain_grid"]["runtime_ms"],
         "memory_mb": {
             "ru_maxrss_before": _rss_to_mb(before_mem),
             "ru_maxrss_after": _rss_to_mb(after_mem),
             "delta": round(max(0.0, _rss_to_mb(after_mem) - _rss_to_mb(before_mem)), 3),
+        },
+        "terrain_memory_mb": {
+            "tin_delta": terrain_report["tin"]["memory_delta_mb"],
         },
         "input_object_counts": {key: len(value) for key, value in expected.items()} | {"water_hydrants_unsupported": len(fixture["hydrants"])},
         "output_object_counts": {key: len(value) for key, value in output.items()},
@@ -303,9 +358,12 @@ def run_dense_utility_benchmark(write_report: bool = False) -> Dict[str, Any]:
         },
         "blockers": [
             "Water hydrants are accepted in the dense input fixture but are not yet represented by canonical_utility_actions; benchmark reports them as unsupported instead of counting them as a pass."
-        ],
+        ]
+        + terrain_report["blockers"],
+        "terrain": terrain_report,
         "engine_scale_limit": {
-            "supported_dense_scale_verified": "36 storm segments, 28 sanitary segments, 32 water segments, 36 inlets, 28 sanitary manholes",
+            "supported_dense_scale_verified": "1000 storm segments, 800 sanitary segments, 1000 water segments, 1000 inlets, 800 sanitary manholes",
+            "supported_tin_scale_verified": "961 survey-unverified TIN points and 10000 terrain grid samples",
             "unsupported_at_this_scale": "8 water hydrants lack canonical output support",
         },
     }
@@ -330,8 +388,11 @@ class DenseUtilityBenchmarkTest(unittest.TestCase):
         self.assertEqual(report["validation"]["coordination_unresolved_conflict_count"], 0)
         self.assertTrue(all(not missing for missing in report["dropped_missing_objects"].values()), report)
         self.assertEqual(report["output_object_counts"], {key: value for key, value in report["input_object_counts"].items() if not key.endswith("_unsupported")})
-        self.assertLess(report["runtime_ms"], 250.0, report)
-        self.assertLess(report["memory_mb"]["delta"], 64.0, report)
+        self.assertLess(report["runtime_ms"], 15000.0, report)
+        self.assertGreaterEqual(report["terrain"]["tin"]["point_count"], 900, report)
+        self.assertGreaterEqual(report["terrain"]["terrain_grid"]["sample_count"], 10000, report)
+        self.assertLess(report["terrain"]["tin"]["runtime_ms"], 10000.0, report)
+        self.assertLess(report["memory_mb"]["delta"], 96.0, report)
 
 
 if __name__ == "__main__":

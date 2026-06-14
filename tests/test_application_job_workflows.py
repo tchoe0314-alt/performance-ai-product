@@ -1,4 +1,8 @@
 import unittest
+import tempfile
+from io import BytesIO
+from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -11,6 +15,7 @@ from backend.application.job_workflows import (
     queue_orchestrate_job,
     retry_existing_job,
 )
+from backend.application.plan_pdf_workflows import upload_plan_pdf_file
 
 
 class FakeProjectStore:
@@ -128,6 +133,13 @@ class FakeJobQueue:
         if job_id == "missing":
             return None
         return dict(self.jobs.get(job_id) or {})
+
+
+class FakeUploadFile:
+    def __init__(self, filename: str, content: bytes, content_type: str = "application/pdf"):
+        self.filename = filename
+        self.content_type = content_type
+        self.file = BytesIO(content)
 
 
 class ApplicationJobWorkflowsTest(unittest.TestCase):
@@ -277,6 +289,28 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(queue.submitted["payload"]["export_kind"], "report")
         self.assertFalse(response["operational_summary"]["construction_release_allowed"])
         self.assertTrue(response["operational_summary"]["review_only"])
+
+    def test_large_plan_pdf_upload_queues_analysis_without_sync_parse(self):
+        queue = FakeJobQueue()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict("os.environ", {"CIVORA_PLAN_PDF_ASYNC_THRESHOLD_BYTES": "32"}):
+                response = upload_plan_pdf_file(
+                    upload_dir=Path(tmpdir),
+                    file=FakeUploadFile("large-plan.pdf", b"%PDF-1.4\n" + (b"x" * 64)),
+                    current_user={"user_id": "u1"},
+                    project_store=None,
+                    job_queue=queue,
+                    project_id="p1",
+                )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(response["plan_pdf_analysis_status"], "queued")
+        self.assertEqual(queue.submitted["job_type"], "plan_pdf_analysis")
+        self.assertEqual(queue.submitted["project_id"], "p1")
+        self.assertEqual(queue.submitted["payload"]["original_filename"], "large-plan.pdf")
+        self.assertIn("analysis_pending_async_job", response["plan_pdf_analysis_blockers"])
+        self.assertFalse(response["construction_release_allowed"])
+        self.assertFalse(response["operational_summary"]["construction_release_allowed"])
 
     def test_build_artifact_export_job_runner_returns_download_metadata(self):
         updates = []

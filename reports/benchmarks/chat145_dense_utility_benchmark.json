@@ -1,0 +1,152 @@
+{
+  "benchmark": "chat145_dense_utility_benchmark",
+  "benchmark_design": {
+    "crossings_and_conflicts": 14,
+    "sanitary_segments": 800,
+    "storm_segments": 1000,
+    "supported_structures": {
+      "inlets": 1000,
+      "sanitary_manholes": 800
+    },
+    "unsupported_structures": {
+      "water_hydrants": 8
+    },
+    "water_segments": 1000
+  },
+  "blockers": [
+    "Water hydrants are accepted in the dense input fixture but are not yet represented by canonical_utility_actions; benchmark reports them as unsupported instead of counting them as a pass.",
+    "TIN builds above roughly 2500 points exceeded 10 seconds in local probing and must stay async or be replaced with a proven triangulation/indexing path before public beta.",
+    "Synthetic terrain scale fixtures verify runtime shape only; they are not survey/control evidence."
+  ],
+  "dropped_missing_objects": {
+    "inlets": [],
+    "sanitary_manholes": [],
+    "sanitary_segments": [],
+    "storm_segments": [],
+    "water_segments": []
+  },
+  "engine_scale_limit": {
+    "supported_dense_scale_verified": "1000 storm segments, 800 sanitary segments, 1000 water segments, 1000 inlets, 800 sanitary manholes",
+    "supported_tin_scale_verified": "961 survey-unverified TIN points and 10000 terrain grid samples",
+    "unsupported_at_this_scale": "8 water hydrants lack canonical output support"
+  },
+  "input_object_counts": {
+    "inlets": 1000,
+    "sanitary_manholes": 800,
+    "sanitary_segments": 800,
+    "storm_segments": 1000,
+    "water_hydrants_unsupported": 8,
+    "water_segments": 1000
+  },
+  "memory_mb": {
+    "delta": 13.828,
+    "ru_maxrss_after": 33.516,
+    "ru_maxrss_before": 19.688
+  },
+  "output_object_counts": {
+    "inlets": 1000,
+    "sanitary_manholes": 800,
+    "sanitary_segments": 800,
+    "storm_segments": 1000,
+    "water_segments": 1000
+  },
+  "runtime_ms": 9017.316,
+  "terrain": {
+    "blockers": [
+      "TIN builds above roughly 2500 points exceeded 10 seconds in local probing and must stay async or be replaced with a proven triangulation/indexing path before public beta.",
+      "Synthetic terrain scale fixtures verify runtime shape only; they are not survey/control evidence."
+    ],
+    "terrain_grid": {
+      "construction_release_allowed": false,
+      "max_elevation": 103.0,
+      "min_elevation": 97.0,
+      "review_required": true,
+      "runtime_ms": 5.164,
+      "sample_count": 10000
+    },
+    "tin": {
+      "control_verified": false,
+      "memory_delta_mb": 5.641,
+      "point_count": 961,
+      "runtime_ms": 6902.199,
+      "source_type": "survey-unverified",
+      "triangle_count": 1800,
+      "truth_label": "TIN surface is built from supplied points and breakline samples; DEM/LiDAR is not survey-backed without verified control."
+    }
+  },
+  "terrain_memory_mb": {
+    "tin_delta": 5.641
+  },
+  "terrain_runtime_ms": 6907.362999999999,
+  "unexpected_output_objects": {
+    "inlets": [],
+    "sanitary_manholes": [],
+    "sanitary_segments": [],
+    "storm_segments": [],
+    "water_segments": []
+  },
+  "validation": {
+    "coordination_resolved_conflict_count": 14,
+    "coordination_unresolved_conflict_count": 0,
+    "drainage": {
+      "flow_path_count": 0,
+      "grading_export_ready": true,
+      "inadequate_basin_count": 0,
+      "low_point_count": 0,
+      "primary_basin_count": 1,
+      "primary_basin_ids": [
+        "basin-primary-001"
+      ],
+      "ready": true,
+      "reasons": [],
+      "selected_basin_name": "PRIMARY DETENTION",
+      "storm_pipe_count": 1000,
+      "surface_alignment": {
+        "drainage_low_point_count": 0,
+        "grading_flow_sample_count": 0,
+        "grading_low_point_count": 0,
+        "matched_low_points": 0,
+        "min_low_point_distance_ft": null,
+        "sampled_drainage_low_point_count": 0,
+        "sampled_grading_low_point_count": 0,
+        "threshold_ft": 40.0
+      },
+      "surface_controls": {
+        "has_primary_drainage_direction": true,
+        "primary_low_point": {
+          "id": "lp-1",
+          "x": 180.0,
+          "y": 155.0
+        }
+      },
+      "total_basin_runoff_cfs": 0.0,
+      "total_contributing_area_sf": 0.0,
+      "total_estimated_inlet_flow_cfs": 0.0,
+      "validation_basin_count": 1,
+      "weak_geometry_basin_count": 0
+    },
+    "export_trace_contains_all_supported_ids": true,
+    "quantities_success": true,
+    "quantity_trace_contains_all_segment_ids": {
+      "sanitary": true,
+      "storm": true,
+      "water": true
+    },
+    "quantity_traceability_complete": true,
+    "storm": {
+      "ready": true,
+      "reasons": [],
+      "segment_count": 1000
+    },
+    "utility": {
+      "gravity_slope_issue_count": 0,
+      "post_validation_valid": true,
+      "ready": true,
+      "reasons": [],
+      "route_count": 1000,
+      "segment_count": 1000,
+      "shallow_segment_count": 0,
+      "utility_related_unresolved_conflict_count": 0
+    }
+  }
+}

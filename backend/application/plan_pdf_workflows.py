@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import Response
@@ -42,8 +43,37 @@ class ProjectStoreProtocol(Protocol):
         ...
 
 
+class JobQueueProtocol(Protocol):
+    def submit_job(
+        self,
+        *,
+        user_id: str,
+        job_type: str,
+        payload: Dict[str, Any],
+        project_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        ...
+
+
 PDF_ALLOWED_EXTENSIONS = {".pdf"}
 PDF_ALLOWED_CONTENT_TYPES = {"application/pdf", "application/octet-stream", "binary/octet-stream"}
+
+
+def _large_pdf_queue_threshold_bytes() -> int:
+    raw = str(os.getenv("CIVORA_PLAN_PDF_ASYNC_THRESHOLD_BYTES") or "").strip()
+    try:
+        value = int(raw) if raw else 8 * 1024 * 1024
+    except Exception:
+        value = 8 * 1024 * 1024
+    return max(1, value)
+
+
+def _safe_uploaded_path(upload_dir: Path, stored_filename: str) -> Path:
+    base = upload_dir.resolve()
+    candidate = (base / Path(stored_filename).name).resolve()
+    if base not in candidate.parents and candidate != base:
+        raise ValueError("Stored PDF path is outside the upload directory.")
+    return candidate
 
 
 def _save_project_with_meta(
@@ -81,6 +111,7 @@ def upload_plan_pdf_file(
     file: UploadFile,
     current_user: Dict[str, Any],
     project_store: Optional[ProjectStoreProtocol] = None,
+    job_queue: Optional[JobQueueProtocol] = None,
     project_id: str = "",
 ) -> Dict[str, Any]:
     filename = file.filename or "plan.pdf"
@@ -95,6 +126,47 @@ def upload_plan_pdf_file(
     stored_name = f"{safe_prefix}_{safe_name}"
     target = upload_dir / stored_name
     byte_count = _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("existing_conditions"))
+    if job_queue is not None and byte_count >= _large_pdf_queue_threshold_bytes():
+        job = job_queue.submit_job(
+            user_id=str(current_user["user_id"]),
+            job_type="plan_pdf_analysis",
+            project_id=project_id or None,
+            payload={
+                "stored_filename": stored_name,
+                "original_filename": safe_name,
+                "file_url": f"/api/uploads/{stored_name}",
+                "content_type": str(getattr(file, "content_type", "") or "application/pdf"),
+                "byte_count": int(byte_count),
+            },
+        )
+        return {
+            "success": True,
+            "message": "Large plan PDF stored. Analysis and editable report extraction are queued.",
+            "filename": safe_name,
+            "stored_filename": stored_name,
+            "file_url": f"/api/uploads/{stored_name}",
+            "source_confidence": SOURCE_CONFIDENCE,
+            "review_required": True,
+            "construction_release_allowed": False,
+            "truth_label": TRUTH_LABEL,
+            "plan_pdf_analysis_status": "queued",
+            "plan_pdf_analysis_blockers": [
+                "analysis_pending_async_job",
+                "field_use_release_blocked:pdf_import_is_source_imagery_only",
+            ],
+            "job": job,
+            "operational_summary": {
+                "status": str(job.get("status") or "queued"),
+                "job_type": str(job.get("job_type") or "plan_pdf_analysis"),
+                "job_bound": bool(job.get("job_id")),
+                "project_bound": bool(project_id),
+                "project_id": project_id or None,
+                "job_id": job.get("job_id"),
+                "retryable": True,
+                "review_only": True,
+                "construction_release_allowed": False,
+            },
+        }
     analysis = analyze_plan_pdf(
         target,
         original_filename=safe_name,
@@ -131,6 +203,70 @@ def upload_plan_pdf_file(
         response["project"] = saved
         response["candidate_review_inbox_v1"] = dict(saved.get("latest_result", {}).get("final_plan", {}).get("meta", {}).get("candidate_review_inbox_v1") or {})
     return response
+
+
+def build_plan_pdf_analysis_job_runner(
+    *,
+    upload_dir: Path,
+    project_store: Optional[ProjectStoreProtocol] = None,
+    update_job_progress: Optional[Callable[..., None]] = None,
+) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    def _progress(job_id: str, *, stage: str, detail: str, progress: int) -> None:
+        if update_job_progress is not None:
+            update_job_progress(job_id, stage=stage, detail=detail, progress=progress)
+
+    def runner(job: Dict[str, Any]) -> Dict[str, Any]:
+        job_id = str(job.get("job_id") or "")
+        user_id = str(job.get("user_id") or "")
+        project_id = str(job.get("project_id") or "").strip()
+        payload = dict(job.get("payload") or {})
+        stored_filename = str(payload.get("stored_filename") or "").strip()
+        original_filename = str(payload.get("original_filename") or stored_filename or "plan.pdf").strip()
+        if not stored_filename:
+            raise RuntimeError("Plan PDF analysis job is missing stored_filename.")
+
+        _progress(job_id, stage="Plan PDF Analysis", detail="Validating stored upload before extraction.", progress=24)
+        path = _safe_uploaded_path(upload_dir, stored_filename)
+        if not path.exists():
+            raise RuntimeError("Stored plan PDF is missing; upload must be retried.")
+
+        _progress(job_id, stage="Plan PDF Analysis", detail="Extracting pages, text evidence, and editable sheet candidates.", progress=48)
+        analysis = analyze_plan_pdf(
+            path,
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            file_url=str(payload.get("file_url") or f"/api/uploads/{stored_filename}"),
+            content_type=str(payload.get("content_type") or "application/pdf"),
+            byte_count=int(payload.get("byte_count") or path.stat().st_size),
+        )
+        result: Dict[str, Any] = {
+            "success": True,
+            "review_required": True,
+            "construction_release_allowed": False,
+            "truth_label": TRUTH_LABEL,
+            "plan_pdf_analysis_v1": analysis,
+            "plan_pdf_editable_sheet_v1": analysis.get("editable_sheet"),
+        }
+        if project_id and project_store is not None:
+            _progress(job_id, stage="Plan PDF Analysis", detail="Saving review-required PDF evidence to the project.", progress=78)
+            record = project_store.get_project(user_id=user_id, project_id=project_id)
+            if record is None:
+                raise RuntimeError("Project not found while saving plan PDF analysis.")
+            latest_result = dict(record.get("latest_result") or {})
+            final_plan = dict(latest_result.get("final_plan") or {})
+            meta = dict(final_plan.get("meta") or {})
+            merged_meta = merge_plan_pdf_analysis_into_meta(meta, analysis)
+            saved = _save_project_with_meta(project_store=project_store, record=record, meta=merged_meta)
+            result["project_id"] = project_id
+            result["project"] = saved
+            result["candidate_review_inbox_v1"] = dict(
+                saved.get("latest_result", {}).get("final_plan", {}).get("meta", {}).get("candidate_review_inbox_v1") or {}
+            )
+
+        _progress(job_id, stage="Plan PDF Analysis", detail="Plan PDF extraction report is ready for review.", progress=96)
+        return result
+
+    return runner
 
 
 def update_project_plan_pdf_element(

@@ -356,20 +356,34 @@ class JobQueueService:
             failed_count += 1
         return failed_count
 
-    def list_jobs(self, *, user_id: str) -> List[Dict[str, Any]]:
+    def list_jobs(self, *, user_id: str, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
         self._ensure_workers_alive()
         self.fail_timed_out_jobs()
+        safe_limit = None if limit is None else max(1, min(500, int(limit or 100)))
+        safe_offset = max(0, int(offset or 0))
         connection = self.db.connect()
         try:
-            rows = connection.execute(
-                """
-                SELECT job_id, job_type, status, created_at, updated_at, project_id, stage, stage_detail, progress, error_text
-                FROM jobs
-                WHERE user_id = ?
-                ORDER BY updated_at DESC
-                """,
-                (user_id,),
-            ).fetchall()
+            if safe_limit is None:
+                rows = connection.execute(
+                    """
+                    SELECT job_id, job_type, status, created_at, updated_at, project_id, stage, stage_detail, progress, error_text
+                    FROM jobs
+                    WHERE user_id = ?
+                    ORDER BY updated_at DESC
+                    """,
+                    (user_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT job_id, job_type, status, created_at, updated_at, project_id, stage, stage_detail, progress, error_text
+                    FROM jobs
+                    WHERE user_id = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (user_id, safe_limit, safe_offset),
+                ).fetchall()
             queue_stats = self._queue_stats(connection, user_id=user_id)
             return [
                 self._job_summary(self._row_to_record(row), queue_stats=queue_stats)
@@ -377,6 +391,33 @@ class JobQueueService:
             ]
         finally:
             connection.close()
+
+    def list_jobs_page(self, *, user_id: str, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+        safe_limit = max(1, min(500, int(limit or 100)))
+        safe_offset = max(0, int(offset or 0))
+        jobs = self.list_jobs(user_id=user_id, limit=safe_limit, offset=safe_offset)
+        connection = self.db.connect()
+        try:
+            total_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM jobs WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()[0]
+            )
+        finally:
+            connection.close()
+        next_offset = safe_offset + len(jobs)
+        return {
+            "jobs": jobs,
+            "pagination": {
+                "limit": safe_limit,
+                "offset": safe_offset,
+                "returned_count": len(jobs),
+                "total_count": total_count,
+                "has_more": next_offset < total_count,
+                "next_offset": next_offset if next_offset < total_count else None,
+            },
+        }
 
     def get_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         self._ensure_workers_alive()
