@@ -4329,13 +4329,67 @@ export default function PreviewPanel({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
           <div className="relative z-40 mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm">
             <div className="flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="relative z-[120] flex min-w-0 flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
                   Canvas
                 </span>
                 <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                   {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} / {coordinateModeLabel(coordinateMode)}
                 </span>
+                <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  <button
+                    type="button"
+                    data-testid="preview-quality-standard"
+                    onClick={() => {
+                      if (previewQuality === "standard") return;
+                      onQueuePreviewRefresh("Requesting standard-quality preview...");
+                      onSetPreviewQuality("standard");
+                    }}
+                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                      previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="preview-quality-high"
+                    onClick={() => {
+                      if (previewQuality === "high") return;
+                      onQueuePreviewRefresh("Requesting high-quality preview...");
+                      onSetPreviewQuality("high");
+                    }}
+                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                      previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    High
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="preview-mode-2d"
+                    onClick={() => onSetPreviewMode("2d")}
+                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                      previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    2D
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="preview-mode-3d"
+                    onClick={() => {
+                      if (!canUse3D) return;
+                      onSetPreviewMode("3d");
+                    }}
+                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                      previewMode === "3d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                    disabled={!canUse3D}
+                  >
+                    3D
+                  </button>
+                </div>
                 {isHighQuality ? (
                   <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
                     Visual preview only. Canonical geometry unchanged. Not engineering evidence.
@@ -4402,7 +4456,7 @@ export default function PreviewPanel({
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
                 <button
                   type="button"
-                  data-testid="preview-mode-2d"
+                  data-testid="preview-toolbar-mode-2d"
                   onClick={() => onSetPreviewMode("2d")}
                   className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
                     previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
@@ -4412,7 +4466,7 @@ export default function PreviewPanel({
                 </button>
                 <button
                   type="button"
-                  data-testid="preview-mode-3d"
+                  data-testid="preview-toolbar-mode-3d"
                   onClick={() => {
                     if (!canUse3D) return;
                     onSetPreviewMode("3d");
@@ -4426,7 +4480,7 @@ export default function PreviewPanel({
                 </button>
                 <button
                   type="button"
-                  data-testid="preview-quality-standard"
+                  data-testid="preview-toolbar-quality-standard"
                   onClick={() => {
                     if (previewQuality === "standard") return;
                     onQueuePreviewRefresh("Requesting standard-quality preview...");
@@ -4440,7 +4494,7 @@ export default function PreviewPanel({
                 </button>
                 <button
                   type="button"
-                  data-testid="preview-quality-high"
+                  data-testid="preview-toolbar-quality-high"
                   onClick={() => {
                     if (previewQuality === "high") return;
                     onQueuePreviewRefresh("Requesting high-quality preview...");
@@ -5581,11 +5635,20 @@ export default function PreviewPanel({
                 {previewMode === "2d" ? (
                   <>
                     <div className="pointer-events-none absolute left-4 top-4 z-[45] flex items-start gap-2">
-                      <div className="flex h-16 w-12 flex-col items-center justify-center rounded-lg border border-slate-300 bg-white/92 text-slate-800 shadow-sm backdrop-blur">
+                      <div
+                        aria-label="Plan north arrow"
+                        data-testid="plan-north-arrow"
+                        role="img"
+                        className="flex h-16 w-12 flex-col items-center justify-center rounded-lg border border-slate-300 bg-white/92 text-slate-800 shadow-sm backdrop-blur"
+                      >
                         <Navigation className="h-5 w-5 -rotate-45" />
                         <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em]">N</span>
                       </div>
-                      <div className="hidden rounded-lg border border-slate-300 bg-white/92 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur sm:block">
+                      <div
+                        aria-label="Plan scale bar"
+                        data-testid="plan-scale-bar"
+                        className="rounded-lg border border-slate-300 bg-white/92 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur"
+                      >
                         <div className="mb-1 flex items-center justify-between gap-4">
                           <span>Scale</span>
                           <span>{planScaleBar.lengthFt} ft</span>
@@ -5633,7 +5696,11 @@ export default function PreviewPanel({
                         <RotateCcw className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="pointer-events-none absolute bottom-4 left-4 z-[45] rounded-lg border border-slate-300 bg-white/92 px-3 py-2 font-mono text-[11px] text-slate-700 shadow-sm backdrop-blur">
+                    <div
+                      aria-label="Canvas coordinate readout"
+                      data-testid="canvas-coordinate-readout"
+                      className="pointer-events-none absolute bottom-4 left-4 z-[45] rounded-lg border border-slate-300 bg-white/92 px-3 py-2 font-mono text-[11px] text-slate-700 shadow-sm backdrop-blur"
+                    >
                       <div>ZOOM {Math.round(canvasView.scale * 100)}%</div>
                       <div>
                         X {cursorSitePoint ? cursorSitePoint.x.toFixed(1) : "--"} ft / Y{" "}

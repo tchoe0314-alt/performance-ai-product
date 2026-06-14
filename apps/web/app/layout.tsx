@@ -13,11 +13,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const enableSpeedInsights = Boolean(process.env.VERCEL);
+
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         {children}
-        <SpeedInsights />
+        {enableSpeedInsights ? <SpeedInsights /> : null}
       </body>
     </html>
   );
