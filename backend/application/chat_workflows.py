@@ -57,6 +57,7 @@ from backend.planning.source_confidence_map import (
     build_source_confidence_map,
 )
 from backend.planning.customer_templates import GLOBAL_CUSTOMER_TEMPLATE_MANAGER, template_behavior
+from backend.planning.annotation_standards import annotation_chat_response_payload
 from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE as PLAN_PDF_SOURCE_CONFIDENCE,
@@ -120,6 +121,37 @@ def _customer_template_chat_response(message: str) -> Optional[Dict[str, Any]]:
     metadata["template_policy"] = safe_str(_safe_dict(behavior.get("policy")).get("truth_label"))
     decision["response_metadata"] = metadata
     return decision
+
+
+def _annotation_standards_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    payload = annotation_chat_response_payload(message, _meta_from_chat_context(context))
+    if payload is None:
+        return None
+    trace = _safe_dict(payload.get("trace"))
+    return _truthful_decision_update(
+        {},
+        assistant_message=safe_str(payload.get("assistant_message")),
+        intent="annotation_standards",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken=f"answered_annotation_{safe_str(payload.get('action'), 'request')}",
+        affected_systems=["annotation", "sheets", "dxf_export"],
+        assumptions=[],
+        next_best_action="Apply the annotation change in the sheet/editor workflow, then review the export trace before relying on it.",
+        command_payload_updates={
+            "annotation_standard_request_v1": {
+                "action": safe_str(payload.get("action")),
+                "trace": trace,
+                "review_required": True,
+                "construction_release_allowed": False,
+            },
+            "ui_navigation_target": "sheets",
+            "requested_ui_mode": "sheet_review",
+        },
+        outcome="understood_and_answered",
+        state_changed=False,
+    )
 
 
 def _truthful_decision_update(
@@ -3435,6 +3467,9 @@ def decide_chat(
     customer_template_decision = _customer_template_chat_response(message)
     if customer_template_decision is not None:
         return _enrich_response_contract(customer_template_decision, message=message)
+    annotation_standards_decision = _annotation_standards_chat_response(message, context)
+    if annotation_standards_decision is not None:
+        return _enrich_response_contract(annotation_standards_decision, message=message)
     decision = decide_chat_message(payload)
     if safe_str(decision.get("action_taken")) == "answered_from_project_context" and safe_str(context.get("next_best_action")):
         metadata = _safe_dict(decision.get("response_metadata"))

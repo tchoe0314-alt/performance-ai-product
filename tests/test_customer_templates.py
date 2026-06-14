@@ -16,6 +16,17 @@ def accepted_template_payload():
             "layer_standards": {"layers": [{"name": "C-ROAD"}, {"name": "C-PIPE-STORM"}]},
             "title_block": {"sheet_size": "24x36", "fields": ["project_name", "revision"]},
             "label_style": {"styles": [{"key": "pipe", "format": "{diameter_in} in {material}"}]},
+            "annotation_standards": {
+                "dimension_styles": [
+                    {"key": "linear", "kind": "linear", "precision": 2, "units": "ft", "suffix": "'"},
+                    {"key": "aligned", "kind": "aligned", "precision": 2, "units": "ft", "suffix": "'"},
+                    {"key": "angular", "kind": "angular", "precision": 1, "units": "deg", "suffix": " deg"},
+                ],
+                "text_styles": [{"key": "company_label", "family": "Inter", "size": 0.12, "alignment": "middle_center"}],
+                "leader_callout_styles": [{"key": "object_callout", "connected_to_objects": True}],
+                "hatch_fill_styles": [{"target": "pavement", "pattern": "ANSI31"}],
+                "linetype_styles": [{"target": "utility", "linetype": "DASHED"}],
+            },
             "symbol_library": {"blocks": [{"block_id": "inlet", "name": "Storm inlet"}]},
             "report_template": {"reports": [{"key": "review_summary", "sections": ["inputs", "open_items"]}]},
             "cost_book_link": {"links": [{"label": "ACME book", "cost_book_id": "acme_costs"}]},
@@ -36,6 +47,8 @@ def test_template_registry_import_activate_and_export_json():
     assert registry["active_template_id"] == "acme_site_template"
     assert registry["behavior"]["status"] == "active_reviewed"
     assert registry["behavior"]["blockers"] == []
+    assert registry["summaries"][0]["dimension_style_count"] == 3
+    assert registry["summaries"][0]["hatch_style_count"] == 5
     exported = manager.export_json()
     assert exported["version"] == "customer_template_export_v1"
     assert exported["registry"]["active_template"]["template_id"] == "acme_site_template"
@@ -94,3 +107,29 @@ def test_chat_answers_active_and_missing_template_questions():
     assert active["response_metadata"]["action_taken"] == "answered_active_template"
     assert missing["run_mode"] == "none"
     assert missing["response_metadata"]["action_taken"] == "answered_customer_template_missing_reason"
+
+
+def test_chat_answers_annotation_standard_requests_without_release_claims():
+    phrases = [
+        "add dimensions",
+        "make labels bigger",
+        "use my company label style",
+        "show proposed utilities dashed",
+        "add hatch to parking",
+    ]
+
+    for phrase in phrases:
+        decision = decide_chat(
+            {"message": phrase, "context": {}},
+            decide_chat_message=lambda payload: {"intent": "generate", "run_mode": "run"},
+        )
+
+        assert decision["run_mode"] == "none"
+        assert decision["response_metadata"]["action_taken"].startswith("answered_annotation_")
+        trace = decision["response_metadata"]["command_payload"]["annotation_standard_request_v1"]["trace"]
+        assert trace["engineer_review_required"] is True
+        assert trace["construction_release_allowed"] is False
+        assert "linear" in trace["supported_annotation_styles"]["dimension_kinds"]
+        assert "pavement" in trace["supported_annotation_styles"]["hatch_targets"]
+        assert "utility" in trace["supported_annotation_styles"]["linetype_targets"]
+        assert "construction-ready" not in decision["assistant_message"].lower()
