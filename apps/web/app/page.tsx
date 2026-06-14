@@ -695,7 +695,7 @@ function RoadwayCorridorWorkbench({
         ))}
       </div>
 
-      {activeTab === "alignment" && (
+      {activeTab === "alignment" ? (
         <div className="mt-4 space-y-3">
           <RoadwayMiniPlot points={data.alignmentPoints} variant="plan" />
           <div className="grid grid-cols-2 gap-2 text-xs">
@@ -714,9 +714,9 @@ function RoadwayCorridorWorkbench({
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => handleGenerateSystem("roads")} className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800">Rebuild roads</button>
             <button type="button" onClick={() => handleGenerateSystem("parking")} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50">Update parking</button>
-            </div>
           </div>
-      )}
+        </div>
+      ) : null}
 
       {activeTab === "profile" ? (
         <div className="mt-4 space-y-3">
@@ -15904,7 +15904,7 @@ function PerformanceAIDashboardView({
 
         <div className="flex h-[calc(100svh-4rem)] min-h-0 w-full max-w-full flex-col overflow-hidden lg:h-[calc(100vh-4rem)] lg:flex-row">
           {sidebarRendered ? (
-          <aside
+		          <aside
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
@@ -21929,7 +21929,7 @@ function PerformanceAIDashboardView({
               </div>
             </aside>
           ) : null}
-	          <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+          <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
 	            <div className="flex w-full max-w-full flex-1 flex-col gap-3 px-2 pb-36 pt-3 sm:gap-4 sm:px-4 sm:pb-40 md:px-5 lg:pb-4 lg:pt-4">
 	              <div className="flex w-full flex-col">
 	                <div className="mx-auto mb-3 w-full max-w-[1600px] rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm">
@@ -23295,7 +23295,7 @@ function PerformanceAIDashboardView({
                 </div>
               </div>
             </div>
-          </main>
+	          </main>
           <PinnedCommandBar
             prompt={prompt}
             imageName={imageName}

@@ -211,7 +211,7 @@ body,
 
 .civora-motion-command-bar {
   opacity: 1;
-  transform: translate(-50%, 0);
+  transform: translateY(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -234,6 +234,6 @@ body,
   }
 
   .civora-motion-command-bar {
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }

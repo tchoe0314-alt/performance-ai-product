@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { AlertTriangle, CornerUpLeft, CornerUpRight, Download, Droplets, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X } from "lucide-react";
+import { AlertTriangle, CornerUpLeft, CornerUpRight, Download, Droplets, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Navigation, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X, ZoomIn, ZoomOut } from "lucide-react";
 
 import type {
   Preview3DItem,
@@ -705,6 +705,47 @@ export default function PreviewPanel({
     [lotHeight, lotWidth],
   );
   const isHighQuality = previewQuality === "high";
+  const cadPlanGrid = useMemo(() => {
+    const major = 20;
+    const minor = 10;
+    const verticalMinor: number[] = [];
+    const verticalMajor: number[] = [];
+    const horizontalMinor: number[] = [];
+    const horizontalMajor: number[] = [];
+    for (let x = minor; x < currentSiteSize.width; x += minor) {
+      const pct = (x / currentSiteSize.width) * 100;
+      if (Math.abs(x % major) < 0.001) verticalMajor.push(pct);
+      else verticalMinor.push(pct);
+    }
+    for (let y = minor; y < currentSiteSize.height; y += minor) {
+      const pct = (y / currentSiteSize.height) * 100;
+      if (Math.abs(y % major) < 0.001) horizontalMajor.push(pct);
+      else horizontalMinor.push(pct);
+    }
+    return { verticalMinor, verticalMajor, horizontalMinor, horizontalMajor };
+  }, [currentSiteSize.height, currentSiteSize.width]);
+  const planScaleBar = useMemo(() => {
+    const span = Math.max(currentSiteSize.width, currentSiteSize.height, 1);
+    const target = span / 5;
+    const candidates = [10, 20, 25, 40, 50, 100, 200, 400, 500, 1000];
+    const lengthFt = candidates.find((candidate) => candidate >= target) ?? candidates[candidates.length - 1];
+    const widthPct = Math.min(36, Math.max(12, (lengthFt / currentSiteSize.width) * 100));
+    return { lengthFt, widthPct };
+  }, [currentSiteSize.height, currentSiteSize.width]);
+  const planLabelObjects = useMemo(
+    () =>
+      [...buildingPlacements, ...suggestedPlacements]
+        .filter(
+          (item) =>
+            item.type !== "site" &&
+            item.placed &&
+            Number.isFinite(item.x) &&
+            Number.isFinite(item.y) &&
+            Boolean(item.label),
+        )
+        .slice(0, previewLabelDensity === "high" ? 28 : previewLabelDensity === "standard" ? 16 : 8),
+    [buildingPlacements, previewLabelDensity, suggestedPlacements],
+  );
   const resolveVisualKind = useCallback((item: BuildingPlacement) => {
     const type = String(item.type || "building");
     if (type.includes("building") || type === "pad" || !item.type) return "building";
@@ -4132,7 +4173,7 @@ export default function PreviewPanel({
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements, updateFocusTransform]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
+    <div className="flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
       <div className="mb-3 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -4356,7 +4397,7 @@ export default function PreviewPanel({
                 ) : null}
               </div>
             </div>
-            <div className="flex min-w-0 flex-wrap items-stretch gap-2 px-3 py-2">
+            <div className="relative z-[80] flex min-w-0 flex-wrap items-stretch gap-2 px-3 py-2">
               <section className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
                 <button
@@ -4935,7 +4976,7 @@ export default function PreviewPanel({
             </div>
           ) : null}
           {previewMode === "2d" ? (
-            <div className="mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.1fr_1fr_1fr]" data-testid="cad-precision-tools">
+            <div className="relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.1fr_1fr_1fr]" data-testid="cad-precision-tools">
               <section className="min-w-0">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
@@ -5371,8 +5412,8 @@ export default function PreviewPanel({
               }}
             >
               {previewMode === "2d" ? (
-                <div className="absolute inset-x-2 bottom-2 z-[70] rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur md:hidden">
-                  <div className="grid grid-cols-4 gap-1.5 pb-1">
+                <div className="absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 sm:bottom-2 md:hidden">
+                  <div className="grid grid-cols-4 gap-1.5 pb-1 min-[420px]:grid-cols-7">
                     {drawModeButtons.map((item) => {
                       const Icon = item.icon;
                       const active = drawMode === item.mode;
@@ -5425,7 +5466,7 @@ export default function PreviewPanel({
                       );
                     })}
                   </div>
-                  <div className="mt-1 flex items-center gap-2">
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
                     {draftPoints.length && drawMode !== "rect" ? (
                       <button
                         type="button"
@@ -5437,10 +5478,26 @@ export default function PreviewPanel({
                         Finish
                       </button>
                     ) : null}
+                    {siteLocked && onUnlockSite ? (
+                      <button
+                        type="button"
+                        title="Unlock the site boundary for editing"
+                        aria-label="Change Site Boundary"
+                        onClick={() => {
+                          onUnlockSite();
+                          clearDraftGeometry();
+                          setDrawMode("select");
+                          onSetPreviewInteraction("edit");
+                        }}
+                        className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
+                      >
+                        Change Site
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
-                      className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
+                      className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
                     >
                       Reset
                     </button>
@@ -5460,7 +5517,7 @@ export default function PreviewPanel({
                         }
                         onRemoveBuilding(selectedDeletableObject.id);
                       }}
-                      className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
+                      className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
                     >
                       Delete
                     </button>
@@ -5521,6 +5578,70 @@ export default function PreviewPanel({
                     {showMap3D ? "3D Map" : "2D Map"} · N ↑ {typeof siteRotationDeg === "number" ? `${siteRotationDeg.toFixed(1)}°` : "0°"}
                   </div>
                 ) : null}
+                {previewMode === "2d" ? (
+                  <>
+                    <div className="pointer-events-none absolute left-4 top-4 z-[45] flex items-start gap-2">
+                      <div className="flex h-16 w-12 flex-col items-center justify-center rounded-lg border border-slate-300 bg-white/92 text-slate-800 shadow-sm backdrop-blur">
+                        <Navigation className="h-5 w-5 -rotate-45" />
+                        <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em]">N</span>
+                      </div>
+                      <div className="hidden rounded-lg border border-slate-300 bg-white/92 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur sm:block">
+                        <div className="mb-1 flex items-center justify-between gap-4">
+                          <span>Scale</span>
+                          <span>{planScaleBar.lengthFt} ft</span>
+                        </div>
+                        <div className="flex h-3 w-28 overflow-hidden rounded-sm border border-slate-800 bg-white">
+                          {[0, 1, 2, 3].map((segment) => (
+                            <span
+                              key={`scale-segment-${segment}`}
+                              className={`h-full flex-1 ${segment % 2 === 0 ? "bg-slate-900" : "bg-white"}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      className="absolute right-4 top-4 z-[45] flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white/92 shadow-sm backdrop-blur"
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        aria-label="Zoom in canvas"
+                        title="Zoom in canvas"
+                        onClick={() => setCanvasView((prev) => ({ ...prev, scale: Math.min(prev.scale + 0.15, 4) }))}
+                        className="inline-flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <ZoomIn className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Zoom out canvas"
+                        title="Zoom out canvas"
+                        onClick={() => setCanvasView((prev) => ({ ...prev, scale: Math.max(prev.scale - 0.15, 0.55) }))}
+                        className="inline-flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <ZoomOut className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Reset canvas view"
+                        title="Reset canvas view"
+                        onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
+                        className="inline-flex h-9 w-9 items-center justify-center text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="pointer-events-none absolute bottom-4 left-4 z-[45] rounded-lg border border-slate-300 bg-white/92 px-3 py-2 font-mono text-[11px] text-slate-700 shadow-sm backdrop-blur">
+                      <div>ZOOM {Math.round(canvasView.scale * 100)}%</div>
+                      <div>
+                        X {cursorSitePoint ? cursorSitePoint.x.toFixed(1) : "--"} ft / Y{" "}
+                        {cursorSitePoint ? cursorSitePoint.y.toFixed(1) : "--"} ft
+                      </div>
+                    </div>
+                  </>
+                ) : null}
                 {showGeneratedPlan && planPreviewUrl && !showMap ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -5566,6 +5687,104 @@ export default function PreviewPanel({
                         preserveAspectRatio="none"
                         style={viewportTransformStyle}
                       >
+                        <g data-testid="cad-plan-grid" opacity={isHighQuality ? 0.9 : 0.62}>
+                          <rect
+                            x={0}
+                            y={0}
+                            width={100}
+                            height={100}
+                            fill={isHighQuality ? "rgba(248,250,252,0.62)" : "rgba(255,255,255,0.5)"}
+                            stroke={isHighQuality ? "rgba(15,23,42,0.56)" : "rgba(100,116,139,0.42)"}
+                            strokeWidth={0.32}
+                          />
+                          {cadPlanGrid.verticalMinor.map((x) => (
+                            <line
+                              key={`grid-v-minor-${x.toFixed(2)}`}
+                              x1={x}
+                              y1={0}
+                              x2={x}
+                              y2={100}
+                              stroke="rgba(148,163,184,0.18)"
+                              strokeWidth={0.08}
+                            />
+                          ))}
+                          {cadPlanGrid.horizontalMinor.map((y) => (
+                            <line
+                              key={`grid-h-minor-${y.toFixed(2)}`}
+                              x1={0}
+                              y1={y}
+                              x2={100}
+                              y2={y}
+                              stroke="rgba(148,163,184,0.18)"
+                              strokeWidth={0.08}
+                            />
+                          ))}
+                          {cadPlanGrid.verticalMajor.map((x) => (
+                            <line
+                              key={`grid-v-major-${x.toFixed(2)}`}
+                              x1={x}
+                              y1={0}
+                              x2={x}
+                              y2={100}
+                              stroke="rgba(100,116,139,0.28)"
+                              strokeWidth={0.13}
+                            />
+                          ))}
+                          {cadPlanGrid.horizontalMajor.map((y) => (
+                            <line
+                              key={`grid-h-major-${y.toFixed(2)}`}
+                              x1={0}
+                              y1={y}
+                              x2={100}
+                              y2={y}
+                              stroke="rgba(100,116,139,0.28)"
+                              strokeWidth={0.13}
+                            />
+                          ))}
+                          <rect
+                            x={1.2}
+                            y={1.2}
+                            width={97.6}
+                            height={97.6}
+                            fill="none"
+                            stroke={isHighQuality ? "rgba(15,23,42,0.78)" : "rgba(51,65,85,0.58)"}
+                            strokeWidth={0.38}
+                            strokeDasharray={siteLocked ? undefined : "2 1.2"}
+                          />
+                          <text x={2.2} y={4.2} fontSize="2.2" fill="#475569" fontWeight={700}>
+                            SITE EXTENT
+                          </text>
+                          <line
+                            x1={4}
+                            y1={95}
+                            x2={4 + planScaleBar.widthPct}
+                            y2={95}
+                            stroke="#0f172a"
+                            strokeWidth={0.72}
+                          />
+                          <line x1={4} y1={93.7} x2={4} y2={96.3} stroke="#0f172a" strokeWidth={0.44} />
+                          <line
+                            x1={4 + planScaleBar.widthPct}
+                            y1={93.7}
+                            x2={4 + planScaleBar.widthPct}
+                            y2={96.3}
+                            stroke="#0f172a"
+                            strokeWidth={0.44}
+                          />
+                          <text x={4} y={92.4} fontSize="2.15" fill="#0f172a" fontWeight={700}>
+                            0
+                          </text>
+                          <text
+                            x={4 + planScaleBar.widthPct}
+                            y={92.4}
+                            fontSize="2.15"
+                            fill="#0f172a"
+                            fontWeight={700}
+                            textAnchor="end"
+                          >
+                            {planScaleBar.lengthFt} FT
+                          </text>
+                        </g>
                         {showEarthworkUx && gradingEarthworkUx ? (
                           <g data-testid="earthwork-ux-overlay">
                             {gradingEarthworkUx.heatmapCells.map((cell) => (
@@ -5968,6 +6187,49 @@ export default function PreviewPanel({
                               />
                             );
                           })}
+                        {planLabelObjects.length ? (
+                          <g data-testid="cad-plan-labels">
+                            {planLabelObjects.map((item) => {
+                              const [x, y] = siteTupleToPercent(
+                                [(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2],
+                                currentSiteSize,
+                              );
+                              const kind = resolveVisualKind(item);
+                              const color =
+                                selectedBuildingId === item.id
+                                  ? "#b45309"
+                                  : kind === "road"
+                                    ? "#1f2937"
+                                    : kind === "water"
+                                      ? "#0369a1"
+                                      : kind === "utility"
+                                        ? "#6d28d9"
+                                        : "#334155";
+                              return (
+                                <g key={`plan-label-${item.id}`}>
+                                  <line
+                                    x1={x}
+                                    y1={y}
+                                    x2={Math.min(x + 4, 96)}
+                                    y2={Math.max(y - 3, 4)}
+                                    stroke={color}
+                                    strokeWidth={0.18}
+                                    strokeOpacity={0.55}
+                                  />
+                                  <text
+                                    x={Math.min(x + 4.6, 96)}
+                                    y={Math.max(y - 3.4, 4)}
+                                    fontSize={previewLabelDensity === "high" ? "2.45" : "2.25"}
+                                    fill={color}
+                                    fontWeight={700}
+                                  >
+                                    {String(item.label).slice(0, 28)}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </g>
+                        ) : null}
                         {waterFireFlow.hasData ? (
                           <g>
                             {waterFireFlow.pressureZones.map((zone) => {
@@ -6063,15 +6325,29 @@ export default function PreviewPanel({
                             {surfaceModel.contours.map((contour, idx) => {
                               const points = contour.points.map((pt) => siteTupleToPercent(pt, currentSiteSize).join(",")).join(" ");
                               if (!points) return null;
+                              const isIndexContour = idx % 5 === 0;
                               return (
-                                <polyline
-                                  key={`surface-contour-${idx}`}
-                                  points={points}
-                                  fill="none"
-                                  stroke="#475569"
-                                  strokeWidth={0.32}
-                                  strokeOpacity={0.72}
-                                />
+                                <g key={`surface-contour-${idx}`}>
+                                  <polyline
+                                    points={points}
+                                    fill="none"
+                                    stroke={isHighQuality ? "#334155" : "#475569"}
+                                    strokeWidth={isIndexContour ? 0.46 : 0.28}
+                                    strokeOpacity={isIndexContour ? 0.78 : 0.52}
+                                    strokeDasharray={isIndexContour ? undefined : "1.2 0.8"}
+                                  />
+                                  {isIndexContour && previewLabelDensity !== "low" && contour.points[0] ? (
+                                    <text
+                                      x={siteTupleToPercent(contour.points[0], currentSiteSize)[0] + 0.8}
+                                      y={siteTupleToPercent(contour.points[0], currentSiteSize)[1] - 0.8}
+                                      fontSize="2"
+                                      fill="#334155"
+                                      fontWeight={700}
+                                    >
+                                      {contour.level.toFixed(0)}
+                                    </text>
+                                  ) : null}
+                                </g>
                               );
                             })}
                             {surfaceModel.flowPaths.map((path) => {
@@ -6493,12 +6769,31 @@ export default function PreviewPanel({
                               className={`h-full w-full rounded-[8px] shadow-sm transition ${
                                 showBox ? `border ${borderColor}` : ""
                               } ${
-                                showBox && isSelected ? "ring-2 ring-amber-300" : ""
+                                showBox && isSelected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-white/80 shadow-[0_0_0_6px_rgba(251,191,36,0.14)]" : ""
                               } ${showBox && isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
                               style={{
                                 ...(showBox ? objectBoxStyle : { backgroundColor: "transparent", borderColor: outlineColor || undefined }),
                               }}
                             />
+                            {isSelected && showBox ? (
+                              <>
+                                <div className="pointer-events-none absolute inset-0 rounded-[8px] border border-amber-500/80" />
+                                {[
+                                  "left-0 top-0 -translate-x-1/2 -translate-y-1/2",
+                                  "right-0 top-0 translate-x-1/2 -translate-y-1/2",
+                                  "bottom-0 right-0 translate-x-1/2 translate-y-1/2",
+                                  "bottom-0 left-0 -translate-x-1/2 translate-y-1/2",
+                                ].map((position) => (
+                                  <span
+                                    key={`box-grip-${item.id}-${position}`}
+                                    className={`pointer-events-none absolute h-2.5 w-2.5 rounded-sm border border-white bg-amber-400 shadow ${position}`}
+                                  />
+                                ))}
+                                <div className="pointer-events-none absolute -top-7 left-1/2 max-w-[160px] -translate-x-1/2 truncate rounded-md border border-amber-200 bg-white/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
+                                  {item.label || "Selected"}
+                                </div>
+                              </>
+                            ) : null}
                             {showBox && isHighQuality && visualKind === "building" ? (
                               <div className="pointer-events-none absolute inset-x-[16%] top-1/2 h-px -translate-y-1/2 bg-white/35" />
                             ) : null}
