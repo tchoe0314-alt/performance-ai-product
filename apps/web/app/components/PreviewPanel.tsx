@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { AlertTriangle, CornerUpLeft, CornerUpRight, Download, Droplets, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Navigation, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X, ZoomIn, ZoomOut } from "lucide-react";
+import { AlertTriangle, CornerUpLeft, CornerUpRight, Download, Droplets, Eye, EyeOff, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Navigation, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X, ZoomIn, ZoomOut } from "lucide-react";
 
 import type {
   Preview3DItem,
@@ -38,6 +38,8 @@ type EngineeringSystemStatuses = Record<
 type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
 type CadSnapKind = "endpoint" | "midpoint" | "intersection" | "perpendicular" | "orthogonal";
 type CadPoint = { x: number; y: number };
+type CadSymbolKind = "hydrant" | "inlet" | "manhole" | "tree" | "utility_marker" | "note_callout";
+type CadDimensionMode = "linear" | "aligned";
 type CadHistoryEntry = {
   id: string;
   label: string;
@@ -232,6 +234,7 @@ type PreviewPanelProps = {
     mode: "polyline" | "polygon" | "rect" | "point";
     points: Array<[number, number]>;
     label?: string;
+    meta?: Record<string, unknown>;
   }) => void;
   onCreateSiteBoundary?: (payload: { points: Array<[number, number]> }) => void;
   onUnlockSite?: () => void;
@@ -559,6 +562,19 @@ export default function PreviewPanel({
   const [cadLayerDraft, setCadLayerDraft] = useState("C-DRAFT");
   const [cadCoordinateDraft, setCadCoordinateDraft] = useState({ x: "", y: "" });
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
+  const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
+  const [cadCommandDraft, setCadCommandDraft] = useState("");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: line, box, move, rotate, scale, offset, trim, extend, fillet.");
+  const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
+  const [cadDimensionMode, setCadDimensionMode] = useState<CadDimensionMode>("linear");
+  const [cadDimensionLabelDraft, setCadDimensionLabelDraft] = useState("");
+  const [cadPropertyDraft, setCadPropertyDraft] = useState({
+    name: "",
+    type: "",
+    layer: "C-DRAFT",
+    sourceNote: "",
+    reviewNote: "",
+  });
   const [cadHistory, setCadHistory] = useState<CadHistoryEntry[]>([]);
   const [cadRedoStack, setCadRedoStack] = useState<CadHistoryEntry[]>([]);
   const [activeSnapPoint, setActiveSnapPoint] = useState<(CadPoint & { kind: CadSnapKind }) | null>(null);
@@ -1378,6 +1394,21 @@ export default function PreviewPanel({
     ];
   }, []);
 
+  const getCadLayer = useCallback((item: BuildingPlacement) => {
+    return String(item.meta?.cad_layer || item.meta?.layer || (item.type === "site" ? "C-SITE" : "C-DRAFT")).toUpperCase();
+  }, []);
+
+  const cadLayerOptions = useMemo(() => {
+    const layers = new Set(["C-DRAFT", "C-SITE", "C-ROAD", "C-UTIL", "C-DRAIN", "C-BLDG", "C-SYMB", "C-ANNO"]);
+    [...buildingPlacements, ...suggestedPlacements].forEach((item) => layers.add(getCadLayer(item)));
+    return Array.from(layers).sort();
+  }, [buildingPlacements, getCadLayer, suggestedPlacements]);
+
+  const visibleCadObjects = useMemo(
+    () => buildingPlacements.filter((item) => !hiddenCadLayers.includes(getCadLayer(item))),
+    [buildingPlacements, getCadLayer, hiddenCadLayers],
+  );
+
   const distanceBetweenPoints = useCallback((a: CadPoint, b: CadPoint) => Math.hypot(a.x - b.x, a.y - b.y), []);
 
   const segmentIntersection = useCallback((a: CadPoint, b: CadPoint, c: CadPoint, d: CadPoint): CadPoint | null => {
@@ -1391,7 +1422,7 @@ export default function PreviewPanel({
 
   const cadSegments = useMemo(() => {
     const segments: Array<{ a: CadPoint; b: CadPoint }> = [];
-    [...buildingPlacements, ...suggestedPlacements].forEach((item) => {
+    [...visibleCadObjects, ...suggestedPlacements].forEach((item) => {
       const points = getObjectGeometryPoints(item);
       if (points.length < 2) return;
       points.forEach((pt, idx) => {
@@ -1405,7 +1436,7 @@ export default function PreviewPanel({
       });
     });
     return segments;
-  }, [buildingPlacements, getObjectGeometryPoints, suggestedPlacements]);
+  }, [getObjectGeometryPoints, suggestedPlacements, visibleCadObjects]);
 
   const resolveCadSnapPoint = useCallback(
     (point: CadPoint, basePoint?: CadPoint | null): (CadPoint & { kind: CadSnapKind }) => {
@@ -1473,10 +1504,15 @@ export default function PreviewPanel({
         meta: {
           ...(target.meta ?? {}),
           ...(updates.meta ?? {}),
+          source: "manual_drawn",
           classification_status: target.meta?.classification_status ?? "draft_review_required",
           engineering_status: target.meta?.engineering_status ?? "draft_review_required",
+          review_status: target.meta?.review_status ?? "engineer_review_required",
+          handoff_status: target.meta?.handoff_status ?? "draft_review_required",
+          construction_release_allowed: false,
         },
-        source: target.source ?? "manual_drawn",
+        source: "manual_drawn",
+        generated: false,
         placed: true,
       };
       setCadHistory((prev) => [
@@ -1802,9 +1838,23 @@ export default function PreviewPanel({
       totalLength: segments.reduce((sum, segment) => sum + segment.length, 0),
       firstLength: segments[0]?.length ?? 0,
       firstAngle: segments[0]?.angle ?? 0,
-      layer: String(selectedCadObject.meta?.cad_layer || selectedCadObject.meta?.layer || "C-DRAFT"),
+      layer: getCadLayer(selectedCadObject),
     };
-  }, [getObjectGeometryPoints, selectedCadObject]);
+  }, [getCadLayer, getObjectGeometryPoints, selectedCadObject]);
+
+  useEffect(() => {
+    if (!selectedCadObject) return;
+    const layer = getCadLayer(selectedCadObject);
+    setCadLayerDraft(layer);
+    setCadDimensionLabelDraft(String(selectedCadObject.meta?.cad_dimension_label || ""));
+    setCadPropertyDraft({
+      name: selectedCadObject.label || "",
+      type: selectedCadObject.type || "custom",
+      layer,
+      sourceNote: String(selectedCadObject.meta?.source_note || ""),
+      reviewNote: String(selectedCadObject.meta?.review_note || ""),
+    });
+  }, [getCadLayer, selectedCadObject]);
   const selectedCadIds = useMemo(
     () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...cadSelectionSet])),
     [cadSelectionSet, selectedBuildingId],
@@ -1985,6 +2035,137 @@ export default function PreviewPanel({
       "Fillet",
     );
   }, [cadFilletRadius, parseCadNumber, selectedCadObject, selectedVertex, updateCadObject]);
+
+  const applySelectedCadDimension = useCallback(() => {
+    if (!selectedCadObject || selectedCadMetrics === null) return;
+    const defaultLabel =
+      cadDimensionMode === "linear"
+        ? `${selectedCadMetrics.firstLength.toFixed(1)} ft`
+        : `${selectedCadMetrics.firstLength.toFixed(1)} ft @ ${selectedCadMetrics.firstAngle.toFixed(1)} deg`;
+    updateCadObject(
+      selectedCadObject,
+      {
+        meta: {
+          ...(selectedCadObject.meta ?? {}),
+          cad_dimension_mode: cadDimensionMode,
+          cad_dimension_label: cadDimensionLabelDraft.trim() || defaultLabel,
+        },
+      },
+      "Dimension",
+    );
+  }, [cadDimensionLabelDraft, cadDimensionMode, selectedCadMetrics, selectedCadObject, updateCadObject]);
+
+  const applyCadProperties = useCallback(() => {
+    if (!selectedCadObject) return;
+    const safeName = cadPropertyDraft.name.trim() || selectedCadObject.label || "CAD object";
+    const safeLayer = cadPropertyDraft.layer.trim().toUpperCase() || "C-DRAFT";
+    const safeType = cadPropertyDraft.type.trim() || selectedCadObject.type || "custom";
+    updateCadObject(
+      selectedCadObject,
+      {
+        label: safeName,
+        type: safeType as BuildingPlacement["type"],
+        meta: {
+          ...(selectedCadObject.meta ?? {}),
+          cad_layer: safeLayer,
+          source_note: cadPropertyDraft.sourceNote.trim(),
+          review_note: cadPropertyDraft.reviewNote.trim(),
+          source: "manual_drawn",
+          engineering_status: "draft_review_required",
+          review_status: "engineer_review_required",
+        },
+      },
+      "Properties",
+    );
+  }, [cadPropertyDraft, selectedCadObject, updateCadObject]);
+
+  const insertCadSymbol = useCallback(() => {
+    const x = clampValue(parseCadNumber(cadCoordinateDraft.x, lotWidth / 2), 0, lotWidth);
+    const y = clampValue(parseCadNumber(cadCoordinateDraft.y, lotHeight / 2), 0, lotHeight);
+    const labels: Record<CadSymbolKind, string> = {
+      hydrant: "Hydrant",
+      inlet: "Inlet",
+      manhole: "Manhole",
+      tree: "Tree",
+      utility_marker: "Utility Marker",
+      note_callout: "Note / Callout",
+    };
+    onCreateCustomGeometry({
+      mode: "point",
+      points: [[x, y]],
+      label: labels[cadSymbolDraft],
+      meta: {
+        cad_symbol: cadSymbolDraft,
+        cad_layer: cadSymbolDraft === "tree" || cadSymbolDraft === "note_callout" ? "C-ANNO" : "C-SYMB",
+        symbol_review_required: true,
+        engineering_status: "draft_review_required",
+        review_status: "engineer_review_required",
+        source: "manual_drawn",
+      },
+    });
+    setCadCommandStatus(`${labels[cadSymbolDraft]} symbol inserted for draft review.`);
+  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, cadSymbolDraft, lotHeight, lotWidth, onCreateCustomGeometry, parseCadNumber]);
+
+  const toggleCadLayerVisibility = useCallback((layer: string) => {
+    setHiddenCadLayers((prev) => prev.includes(layer) ? prev.filter((item) => item !== layer) : [...prev, layer]);
+  }, []);
+
+  const runCadCommand = useCallback(() => {
+    const raw = cadCommandDraft.trim();
+    if (!raw) return;
+    const [commandRaw, valueRaw] = raw.split(/\s+/);
+    const command = commandRaw.toLowerCase();
+    const value = valueRaw ?? cadTransformValue;
+    if (command === "line") {
+      setDraftPoints([]);
+      setDraftPreviewPoint(null);
+      setDrawMode("polyline");
+      onSetPreviewInteraction("edit");
+      setCadCommandStatus("LINE active. Pick two or more points, then Finish.");
+      return;
+    }
+    if (command === "box" || command === "rect") {
+      setDraftPoints([]);
+      setDraftPreviewPoint(null);
+      setDrawMode("rect");
+      onSetPreviewInteraction("edit");
+      setCadCommandStatus("BOX active. Pick opposite corners, then Finish.");
+      return;
+    }
+    if (["move", "rotate", "scale"].includes(command)) {
+      setCadTransformValue(value);
+      transformSelectedCadObjects(command as "move" | "rotate" | "scale");
+      setCadCommandStatus(`${command.toUpperCase()} applied to selected CAD object(s).`);
+      return;
+    }
+    if (command === "offset") {
+      setCadOffsetDistance(value);
+      offsetSelectedCadObject();
+      setCadCommandStatus("OFFSET applied to the selected CAD object.");
+      return;
+    }
+    if (command === "trim" || command === "extend") {
+      setCadTransformValue(value);
+      trimExtendSelectedCadObject(command);
+      setCadCommandStatus(`${command.toUpperCase()} applied where feasible.`);
+      return;
+    }
+    if (command === "fillet") {
+      setCadFilletRadius(value);
+      filletSelectedCadObject();
+      setCadCommandStatus("FILLET applied where a selected vertex is feasible.");
+      return;
+    }
+    setCadCommandStatus(`Unknown command: ${command}. Try line, box, move, rotate, scale, offset, trim, extend, or fillet.`);
+  }, [
+    cadCommandDraft,
+    cadTransformValue,
+    filletSelectedCadObject,
+    offsetSelectedCadObject,
+    onSetPreviewInteraction,
+    transformSelectedCadObjects,
+    trimExtendSelectedCadObject,
+  ]);
 
   useEffect(() => {
     const handleCadShortcuts = (event: KeyboardEvent) => {
@@ -4180,6 +4361,71 @@ export default function PreviewPanel({
             <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
               Design Canvas
             </span>
+            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                data-testid="preview-quality-standard"
+                onClick={() => {
+                  if (previewQuality === "standard") return;
+                  onQueuePreviewRefresh("Requesting standard-quality preview...");
+                  onSetPreviewQuality("standard");
+                }}
+                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                  previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                data-testid="preview-quality-high"
+                onClick={() => {
+                  if (previewQuality === "high") return;
+                  onQueuePreviewRefresh("Requesting high-quality preview...");
+                  onSetPreviewQuality("high");
+                }}
+                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                  previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                High
+              </button>
+              <button
+                type="button"
+                data-testid="preview-mode-2d"
+                onClick={() => onSetPreviewMode("2d")}
+                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                  previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                2D
+              </button>
+              <button
+                type="button"
+                data-testid="preview-mode-3d"
+                onClick={() => {
+                  if (!canUse3D) return;
+                  onSetPreviewMode("3d");
+                }}
+                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                  previewMode === "3d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+                disabled={!canUse3D}
+              >
+                3D
+              </button>
+              <button
+                type="button"
+                data-testid="preview-interaction-edit"
+                aria-label="Use canvas edit tool"
+                onClick={() => onSetPreviewInteraction("edit")}
+                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                  allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                Edit
+              </button>
+            </div>
             <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               {previewQuality === "high" ? "High Quality" : "Standard"}
             </span>
@@ -4327,9 +4573,9 @@ export default function PreviewPanel({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
-          <div className="relative z-40 mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm">
-            <div className="flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
-              <div className="relative z-[120] flex min-w-0 flex-wrap items-center gap-2">
+          <div className="relative isolate z-40 mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
+            <div className="pointer-events-none flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
+              <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
                   Canvas
                 </span>
@@ -4339,7 +4585,7 @@ export default function PreviewPanel({
                 <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
                   <button
                     type="button"
-                    data-testid="preview-quality-standard"
+                    data-testid="preview-inner-quality-standard"
                     onClick={() => {
                       if (previewQuality === "standard") return;
                       onQueuePreviewRefresh("Requesting standard-quality preview...");
@@ -4353,7 +4599,7 @@ export default function PreviewPanel({
                   </button>
                   <button
                     type="button"
-                    data-testid="preview-quality-high"
+                    data-testid="preview-inner-quality-high"
                     onClick={() => {
                       if (previewQuality === "high") return;
                       onQueuePreviewRefresh("Requesting high-quality preview...");
@@ -4367,7 +4613,7 @@ export default function PreviewPanel({
                   </button>
                   <button
                     type="button"
-                    data-testid="preview-mode-2d"
+                    data-testid="preview-inner-mode-2d"
                     onClick={() => onSetPreviewMode("2d")}
                     className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
                       previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
@@ -4377,7 +4623,7 @@ export default function PreviewPanel({
                   </button>
                   <button
                     type="button"
-                    data-testid="preview-mode-3d"
+                    data-testid="preview-inner-mode-3d"
                     onClick={() => {
                       if (!canUse3D) return;
                       onSetPreviewMode("3d");
@@ -4388,6 +4634,17 @@ export default function PreviewPanel({
                     disabled={!canUse3D}
                   >
                     3D
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="preview-inner-interaction-edit"
+                    aria-label="Use canvas edit tool"
+                    onClick={() => onSetPreviewInteraction("edit")}
+                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                      allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    Edit
                   </button>
                 </div>
                 {isHighQuality ? (
@@ -4401,7 +4658,7 @@ export default function PreviewPanel({
                   </span>
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="pointer-events-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 {showMap ? (
                   <button
                     type="button"
@@ -4451,8 +4708,8 @@ export default function PreviewPanel({
                 ) : null}
               </div>
             </div>
-            <div className="relative z-[80] flex min-w-0 flex-wrap items-stretch gap-2 px-3 py-2">
-              <section className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <div className="pointer-events-none relative z-[20] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
+              <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
                 <button
                   type="button"
@@ -4508,7 +4765,7 @@ export default function PreviewPanel({
                 </button>
               </section>
               {previewMode === "2d" ? (
-                <section className="hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
+                <section className="pointer-events-auto hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Tools</span>
                   {drawModeButtons.map((item) => {
                     const Icon = item.icon;
@@ -4545,11 +4802,11 @@ export default function PreviewPanel({
                 </section>
               ) : null}
               {previewMode === "2d" ? (
-                <section className="hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
+                <section className="pointer-events-auto hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Modify</span>
                   <button
                     type="button"
-                    data-testid="preview-interaction-edit"
+                    data-testid="preview-toolbar-interaction-edit"
                     aria-label="Use canvas edit tool"
                     onClick={() => onSetPreviewInteraction("edit")}
                     className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold ${
@@ -4603,7 +4860,7 @@ export default function PreviewPanel({
                   ) : null}
                 </section>
               ) : null}
-              <section className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Snaps</span>
                 <label className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700">
                   <input type="checkbox" checked={cadSnapEnabled} onChange={(event) => setCadSnapEnabled(event.target.checked)} className="h-4 w-4 accent-slate-950" />
@@ -4617,7 +4874,7 @@ export default function PreviewPanel({
                   {activeSnapPoint ? activeSnapPoint.kind : "No snap"}
                 </span>
               </section>
-              <section className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Layers</span>
                 <select
                   aria-label="CAD layer"
@@ -4648,7 +4905,7 @@ export default function PreviewPanel({
                   </button>
                 ))}
               </section>
-              <section className="ml-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <section className="pointer-events-auto ml-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Export</span>
                 {planPreviewUrl || showMap ? (
                   <button type="button" onClick={onOpenFullscreen} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
@@ -4950,6 +5207,7 @@ export default function PreviewPanel({
                 </button>
                 <button
                   type="button"
+                  data-testid="preview-strip-interaction-edit"
                   aria-label="Use canvas edit tool"
                   onClick={() => onSetPreviewInteraction("edit")}
                   className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2 ${
