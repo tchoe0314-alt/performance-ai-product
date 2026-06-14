@@ -2168,7 +2168,7 @@ def update_project_plan_pdf_element(
         user_id=current_user["user_id"],
         project_id=project_id,
         element_id=element_id,
-        updates=_model_to_dict(payload),
+        updates={key: value for key, value in _model_to_dict(payload).items() if value is not None},
     )
 
 

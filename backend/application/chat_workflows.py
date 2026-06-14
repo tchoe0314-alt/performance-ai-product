@@ -195,6 +195,9 @@ def _truthful_decision_update(
     else:
         metadata.setdefault("referenced_geometry_ids", [])
     updated["response_metadata"] = metadata
+    payload_source_confidence = safe_str(_safe_dict(metadata.get("command_payload")).get("source_confidence"))
+    if payload_source_confidence:
+        updated["source_confidence"] = payload_source_confidence
     updated["required_missing_inputs"] = list(metadata.get("required_missing_inputs") or [])
     updated["action_taken"] = action_taken
     updated["action_blocked_reason"] = action_blocked_reason
@@ -3197,7 +3200,7 @@ def _plan_pdf_chat_response(
     if wants_move and "to" not in normalized and "target" not in normalized and " at " not in f" {normalized} ":
         return _truthful_decision_update(
             {},
-            assistant_message="I can move a PDF-derived label only with an explicit target. Give me PDF coordinates like: move this label to x0 120, y0 640.",
+            assistant_message="I can move a PDF-derived label only with an explicit target x0/y0. Give me PDF coordinates like: move this label to x0 120, y0 640.",
             intent="plan_pdf_edit",
             run_mode="none",
             needs_clarification=True,
@@ -3206,10 +3209,15 @@ def _plan_pdf_chat_response(
             required_missing_inputs=["explicit PDF coordinate target"],
             affected_systems=["editable_sheet"],
             next_best_action="Select a PDF-derived label and provide target x0/y0 coordinates.",
+            command_payload_updates={"source_confidence": PLAN_PDF_SOURCE_CONFIDENCE},
             confidence=0.55,
             blocker="Moving a PDF-derived element requires explicit target x0/y0 coordinates.",
         )
-    wants_edit = any(token in normalized for token in ("change", "edit", "accept", "reject", "make this detail editable", "move"))
+    wants_change_summary = "what changed" in normalized
+    wants_edit = (
+        not wants_change_summary
+        and any(token in normalized for token in ("change", "edit", "accept", "reject", "make this detail editable", "move"))
+    )
     if wants_edit and project_store and user_id:
         element = _plan_pdf_target_element(meta, message)
         if element:
@@ -3224,6 +3232,26 @@ def _plan_pdf_chat_response(
                 updates["review_status"] = "accepted"
             elif replacement:
                 updates["text"] = replacement
+            if not updates:
+                return _truthful_decision_update(
+                    {},
+                    assistant_message=(
+                        "I found a PDF-derived element to edit, but I need the exact replacement text or value first. "
+                        "For example: change pool deck elevation to \"POOL DECK ELEVATION 103.00\". "
+                        "Any edit remains imported_pdf_review_required and must be reviewed before use."
+                    ),
+                    intent="plan_pdf_edit",
+                    run_mode="none",
+                    needs_clarification=True,
+                    action_taken="blocked_pdf_edit_missing_replacement",
+                    action_blocked_reason="PDF-derived edit request did not include replacement text or a supported review action.",
+                    required_missing_inputs=["exact replacement text or value"],
+                    affected_systems=["editable_sheet"],
+                    next_best_action="Provide exact replacement text or use the sheet inspector Save/Accept/Reject controls.",
+                    command_payload_updates={"source_confidence": PLAN_PDF_SOURCE_CONFIDENCE},
+                    confidence=0.55,
+                    blocker="PDF-derived edit request needs exact replacement text or value.",
+                )
             if updates:
                 try:
                     updated_meta = update_editable_sheet_element(meta, safe_str(element.get("element_id")), updates)
@@ -3233,7 +3261,7 @@ def _plan_pdf_chat_response(
                     updated_latest["final_plan"] = updated_plan
                     _save_project_record(
                         project_store,
-                        record,
+                        {**record, "_user_id": user_id},
                         project_input=deepcopy(_safe_dict(record.get("project_input"))),
                         latest_result=updated_latest,
                     )
@@ -3248,6 +3276,7 @@ def _plan_pdf_chat_response(
                         action_blocked_reason=str(exc),
                         affected_systems=["editable_sheet"],
                         next_best_action="Use another extracted element or update it from the sheet inspector.",
+                        command_payload_updates={"source_confidence": PLAN_PDF_SOURCE_CONFIDENCE},
                         confidence=0.4,
                         blocker=str(exc),
                     )
@@ -3264,14 +3293,14 @@ def _plan_pdf_chat_response(
                     action_taken="updated_pdf_derived_sheet_element",
                     affected_systems=["editable_sheet", "candidate_review_inbox"],
                     next_best_action="Review and accept/reject the updated extraction candidate before relying on it.",
-                    command_payload_updates={"ui_navigation_target": "data", "requested_ui_mode": "data"},
+                    command_payload_updates={"ui_navigation_target": "data", "requested_ui_mode": "data", "source_confidence": PLAN_PDF_SOURCE_CONFIDENCE},
                     state_changed=True,
                     referenced_object_ids=[safe_str(element.get("element_id"))],
                     confidence=0.72,
                 )
     summary = _safe_dict(analysis.get("summary"))
     blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
-    if "what changed" in normalized:
+    if wants_change_summary:
         lines = _plan_pdf_changed_lines(meta)
     elif "what can you not read" in normalized or "what could you not read" in normalized or "unreadable" in normalized or "blocker" in normalized:
         lines = _plan_pdf_unreadable_lines(meta)

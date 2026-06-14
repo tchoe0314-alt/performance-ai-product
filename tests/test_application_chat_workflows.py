@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.application.chat_workflows import decide_chat
+from backend.planning.plan_pdf_understanding import SOURCE_CONFIDENCE
 from parsers.chat_intent_parser import decide_chat_message
 
 
@@ -1544,6 +1545,50 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertTaxonomyMetadata(result, "understood_but_blocked")
         self.assertIn("cannot approve, stamp, seal", result["assistant_message"])
         self.assertNotIn("construction-ready", result["assistant_message"])
+
+    def test_plan_pdf_vague_edit_requires_exact_replacement(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"]["plan_pdf_analysis_v1"] = {
+            "version": "plan_pdf_analysis_v1",
+            "page_count": 1,
+            "source_confidence": SOURCE_CONFIDENCE,
+            "summary": {"elevation_callout_count": 1},
+            "source_pdf": {"filename": "Pool Geometric.pdf"},
+            "blockers": ["vector_geometry_extraction_blocked:no_vector_parser_configured"],
+        }
+        record["latest_result"]["final_plan"]["meta"]["plan_pdf_editable_sheet_v1"] = {
+            "version": "plan_pdf_editable_sheet_v1",
+            "review_required": True,
+            "construction_release_allowed": False,
+            "elements": [
+                {
+                    "element_id": "pse_pool_elevation",
+                    "type": "elevation_callout",
+                    "text": "POOL DECK ELEVATION 102.50",
+                    "original_text": "POOL DECK ELEVATION 102.50",
+                    "bbox": {"x0": 72, "y0": 680, "x1": 260, "y1": 692},
+                    "review_status": "pending",
+                    "review_required": True,
+                    "source_confidence": SOURCE_CONFIDENCE,
+                    "editable": True,
+                    "construction_release_allowed": False,
+                }
+            ],
+            "summary": {"element_count": 1, "editable_count": 1},
+        }
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "change pool deck elevation", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "blocked_pdf_edit_missing_replacement")
+        self.assertTrue(result["needs_clarification"])
+        self.assertIn("exact replacement", result["assistant_message"])
+        self.assertIn(SOURCE_CONFIDENCE, result["assistant_message"])
 
     def test_missing_standards_export_requirements_report_real_blockers(self):
         store = RecordingProjectStore(

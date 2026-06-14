@@ -330,6 +330,15 @@ def test_chat_answers_pdf_questions_and_edits_review_required_element(tmp_path: 
     elements = store.record["latest_result"]["final_plan"]["meta"]["plan_pdf_editable_sheet_v1"]["elements"]
     assert any(item.get("text") == "NEW OWNER" and item.get("review_required") for item in elements)
 
+    changed = decide_chat(
+        {"message": "what changed?", "context": {"current_project": {"project_id": "project_1"}}},
+        decide_chat_message=lambda payload: {},
+        project_store=store,
+        user_id="user_1",
+    )
+    assert changed["action_taken"] == "answered_plan_pdf_understanding_question"
+    assert "changed PDF-derived element" in changed["assistant_message"]
+
 
 def test_select_edit_pdf_text_candidate_records_changed_elements(tmp_path: Path) -> None:
     pdf = tmp_path / "pool.pdf"

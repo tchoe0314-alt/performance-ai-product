@@ -311,7 +311,14 @@ def get_project_plan_pdf_report(
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     meta = dict(record.get("latest_result", {}).get("final_plan", {}).get("meta", {}) or {})
-    return {"success": True, "report": plan_pdf_report(meta)}
+    return {
+        "success": True,
+        "source_confidence": SOURCE_CONFIDENCE,
+        "review_required": True,
+        "construction_release_allowed": False,
+        "truth_label": TRUTH_LABEL,
+        "report": plan_pdf_report(meta),
+    }
 
 
 def download_project_plan_pdf_report(
