@@ -642,6 +642,15 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             warnings=["No quantity result is attached to the plan."],
             explain={"pricing": pricing_meta, "traceability_complete": False},
         )
+    quantity_workflow = _safe_dict(quantities.get("workflow_review"))
+    upstream_blocked_systems = _safe_list(_safe_dict(quantities.get("stale_or_reactive_status")).get("upstream_blocked_systems"))
+    quantity_engine_blockers = _safe_list(quantities.get("engine_blockers")) + _safe_list(quantity_workflow.get("blockers"))
+    if upstream_blocked_systems:
+        warnings.append(
+            "Upstream blocked systems prevent production quantity/cost readiness; cost output is review-only until rerun from current canonical systems."
+        )
+    if quantity_engine_blockers:
+        warnings.append("Quantity workflow blockers remain unresolved; cost output cannot be production-ready.")
     if quantities.get("success") is not True:
         warnings.append("Quantity engine is not explicitly production-successful; cost estimate is for review only.")
     quantity_model_reference = _quantity_model_reference(quantities)
@@ -713,7 +722,8 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
         warnings.append("No positive priced quantities were found.")
 
     pricing_coverage_complete = not bool(pricing_coverage_gaps)
-    calculation_complete = bool(line_items) and traceability_complete and quantities.get("success") is True
+    upstream_clear = not upstream_blocked_systems and not quantity_engine_blockers
+    calculation_complete = bool(line_items) and traceability_complete and quantities.get("success") is True and upstream_clear
     production_pricing_ready = bool(pricing_meta["production_usable"] and pricing_coverage_complete)
     success = calculation_complete and production_pricing_ready
     result_totals = {
@@ -755,6 +765,9 @@ def compute_cost_estimate(plan_or_meta: Dict[str, Any]) -> CostResult:
             "pricing_coverage_gaps": pricing_coverage_gaps,
             "quantity_model_reference": quantity_model_reference,
             "cost_estimate_reference": cost_reference,
+            "upstream_blocked_systems": upstream_blocked_systems,
+            "quantity_engine_blockers": quantity_engine_blockers,
+            "upstream_clear": upstream_clear,
             "truth_label": "Cost estimates are only as reliable as quantity traceability and the attached unit-price book.",
         },
     )

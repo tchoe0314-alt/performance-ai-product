@@ -6,7 +6,8 @@ from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 from core.civil_design import civil_design_readiness
 
 from .common import readiness_issue_explanations
-from .depth_validators import validate_grading_depth, validate_profile_section_depth, validate_roadway_corridor_depth, validate_stormwater_depth
+from .discipline_depth_proof import build_engine_proof_contract
+from .depth_validators import validate_grading_depth, validate_profile_section_depth, validate_roadway_corridor_depth, validate_stormwater_depth, validate_water_system_depth
 from .engine_contracts import EngineContract, engine_contracts
 from .ai_orchestration_evidence import validate_ai_orchestration_evidence
 from .production_evidence import build_production_evidence
@@ -257,7 +258,8 @@ def _depth_validation_for_engine(engine_id: str, meta: Dict[str, Any]) -> Dict[s
     if engine_id == "storm_pipe":
         return _safe_dict(validations.get("stormwater")) or (validate_stormwater_depth(meta) if has_storm_or_drainage else {})
     if engine_id == "water":
-        return _safe_dict(validations.get("water"))
+        water = _safe_dict(meta.get("water") or meta.get("water_summary") or meta.get("utilities") or meta.get("utility_summary"))
+        return _safe_dict(validations.get("water")) or (validate_water_system_depth(meta) if water else {})
     if engine_id == "grading":
         return _safe_dict(validations.get("grading")) or (validate_grading_depth(meta) if has_grading_depth else {})
     if engine_id == "roadway_corridor":
@@ -665,6 +667,14 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
 
         production_ready = status == "production_ready"
         review_state = _review_state_from_status(status)
+        proof_contract = build_engine_proof_contract(
+            contract.engine_id,
+            meta=meta,
+            evidence=evidence,
+            blockers=[*missing, *production_gaps, *warnings],
+            classification="production-depth" if production_ready else "review" if status in {"needs_engineering_review", "concept_ready_needs_production_depth"} else "concept",
+            status=status,
+        )
         engine_rows[contract.engine_id] = {
             "engine_id": contract.engine_id,
             "name": contract.name,
@@ -685,6 +695,10 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             "warning_details": readiness_issue_explanations(warnings),
             "production_blockers": production_gaps,
             "production_blocker_details": readiness_issue_explanations(production_gaps),
+            "discipline_depth_proof": proof_contract,
+            "proof_checklist": proof_contract["proof_checklist"],
+            "missing_proof": proof_contract["missing_proof"],
+            "exact_fixes": proof_contract["exact_fixes"],
             "manual_mode_forbidden": list(contract.manual_mode_forbidden),
             "production_gate_status": _contract_gate_status(
                 contract,

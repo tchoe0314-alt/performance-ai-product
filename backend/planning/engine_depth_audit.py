@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
+from .discipline_depth_proof import build_engine_proof_contract
 from .engine_contracts import EngineContract, engine_contracts
 from .engine_depth_dashboard import build_engine_depth_dashboard
 from .engine_readiness import evaluate_engine_readiness
@@ -309,6 +310,13 @@ def _engine_report_row(
     row_blockers = _blockers_for_engine(contract.engine_id, blockers, readiness_engine_row) if required else []
     first_failing_layer = _first_failing_layer(row_checks, row_blockers)
     evidence = safe_list(readiness_engine_row.get("evidence"))
+    proof_contract = safe_dict(readiness_engine_row.get("discipline_depth_proof")) or build_engine_proof_contract(
+        contract.engine_id,
+        evidence=evidence,
+        blockers=row_blockers,
+        classification=classification,
+        status=safe_str(readiness_engine_row.get("status"), "not_audited" if not required else "missing"),
+    )
     score = CLASSIFICATION_SCORES.get(classification, 0.0)
     if required and (not checks_passed or classification == CLASS_CONCEPT):
         score = min(score, 25.0)
@@ -345,6 +353,10 @@ def _engine_report_row(
         "status": safe_str(readiness_engine_row.get("status"), "not_audited" if not required else "missing"),
         "review_state": safe_str(readiness_engine_row.get("review_state"), "not_audited" if not required else "blocked"),
         "evidence": evidence,
+        "discipline_depth_proof": proof_contract,
+        "proof_checklist": safe_list(proof_contract.get("proof_checklist")),
+        "missing_proof": safe_list(proof_contract.get("missing_proof")),
+        "exact_fixes": safe_list(proof_contract.get("exact_fixes")),
         "first_missing_or_blocker": (safe_list(readiness_engine_row.get("missing_requirements")) or safe_list(readiness_engine_row.get("production_blockers")) or [{}])[0],
         "truth_label": "Engine depth row is deterministic backend evidence for CI and chat handoff; it is not construction approval.",
     }
@@ -490,6 +502,24 @@ def _engine_depth_summary(
                 if safe_str(item)
             }
         )
+        proof_checklist = [
+            item
+            for row in scenario_rows
+            for item in safe_list(row.get("proof_checklist"))
+        ]
+        missing_proof = [
+            item
+            for row in scenario_rows
+            for item in safe_list(row.get("missing_proof"))
+        ]
+        exact_fixes = sorted(
+            {
+                safe_str(item)
+                for row in scenario_rows
+                for item in safe_list(row.get("exact_fixes"))
+                if safe_str(item)
+            }
+        )
         checks_passed = all(bool(check.get("passed")) for check in checks) if checks else not required_scenarios
         score_rows = [row for row in scenario_rows if row.get("classification") != CLASS_NOT_APPLICABLE]
         score = (
@@ -519,6 +549,16 @@ def _engine_depth_summary(
                 "failed_check_count": len([check for check in checks if not bool(check.get("passed"))]),
                 "blockers": blockers,
                 "evidence": evidence,
+                "proof_checklist": proof_checklist,
+                "missing_proof": missing_proof,
+                "exact_fixes": exact_fixes,
+                "discipline_depth_proof": build_engine_proof_contract(
+                    contract.engine_id,
+                    evidence=evidence,
+                    blockers=blockers,
+                    classification=actual,
+                    status=actual,
+                ),
                 "blocker_details": readiness_issue_explanations(blockers),
                 "first_failing_layer": _first_failing_layer(checks, blockers),
                 "confidence": round(confidence, 3),

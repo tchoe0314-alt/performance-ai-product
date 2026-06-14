@@ -90,6 +90,8 @@ def build_engine_depth_dashboard(
     for row in sorted(engine_rows, key=lambda item: (float(item.get("score") or 0.0), safe_str(item.get("engine_id")))):
         row_blockers = [safe_dict(item) for item in safe_list(row.get("blockers"))]
         required_scenarios = safe_list(row.get("required_scenario_ids"))
+        proof_checklist = [safe_dict(item) for item in safe_list(row.get("proof_checklist"))]
+        missing_proof = [safe_dict(item) for item in safe_list(row.get("missing_proof"))]
         per_engine.append(
             {
                 "engine_id": safe_str(row.get("engine_id")),
@@ -103,6 +105,11 @@ def build_engine_depth_dashboard(
                 "launch_gate": safe_str(row.get("launch_gate")),
                 "confidence": float(row.get("confidence") or 0.0),
                 "first_failing_layer": safe_str(row.get("first_failing_layer")),
+                "proof_checklist": proof_checklist,
+                "missing_proof": missing_proof,
+                "exact_fixes": safe_list(row.get("exact_fixes")),
+                "engineer_review_required": True,
+                "proof_status": "missing_proof" if missing_proof else "proof_present",
                 "fix_link": _engine_fix_link(safe_str(row.get("engine_id")), row_blockers),
             }
         )
@@ -137,6 +144,25 @@ def build_engine_depth_dashboard(
         )
 
     proof_items = [_proof_item_from_blocker(blocker, index) for index, blocker in enumerate(blockers)]
+    proof_index = len(proof_items)
+    for row in engine_rows:
+        for missing in safe_list(row.get("missing_proof")):
+            rec = safe_dict(missing)
+            proof_items.append(
+                {
+                    "id": f"missing-proof:{safe_str(row.get('engine_id'))}:{safe_str(rec.get('id'))}:{proof_index}",
+                    "engine_id": safe_str(row.get("engine_id")),
+                    "scenario_id": ",".join(safe_list(row.get("required_scenario_ids"))),
+                    "label": f"Missing {safe_str(rec.get('label'), 'discipline proof')}",
+                    "status": "missing",
+                    "severity": "blocker",
+                    "why_needed": "Discipline depth cannot be treated as production-depth without this proof surface.",
+                    "suggested_next_action": (safe_list(row.get("exact_fixes")) or ["Provide missing proof and rerun the engine depth audit."])[0],
+                    "target_panel": _target_panel_for_engine(safe_str(row.get("engine_id"))),
+                    "blocker_anchor": f"{safe_str(row.get('engine_id'))}:{safe_str(rec.get('id'))}",
+                }
+            )
+            proof_index += 1
     for index, check in enumerate(failed_checks):
         if safe_str(check.get("engine_id")):
             proof_items.append(

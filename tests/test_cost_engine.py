@@ -433,6 +433,41 @@ class CostEngineTests(unittest.TestCase):
         self.assertIn("Quantity engine is not explicitly production-successful", result.warnings[0])
         self.assertIsNone(result.explain["quantity_model_reference"]["quantity_success"])
 
+    def test_cost_engine_blocks_production_when_quantities_are_upstream_stale(self) -> None:
+        result = compute_cost_estimate(
+            {
+                "meta": {
+                    "cost_pricing": {
+                        "source_name": "company_2026_bid_book",
+                        "source_type": "company_bid_book",
+                        "location": "Austin, TX",
+                        "effective_date": "2026-05-01",
+                        "accepted_by": "Alpha Estimator",
+                        "approval_date": "2026-05-02",
+                        "unit_prices": {
+                            "pipe_length_ft": {
+                                "item": "RCP storm pipe",
+                                "category": "storm",
+                                "unit": "ft",
+                                "unit_cost": 100.0,
+                                "source_item_id": "ST-100",
+                            }
+                        },
+                    },
+                    "quantities": {
+                        "success": True,
+                        "totals": {"pipe_length_ft": 50.0},
+                        "stale_or_reactive_status": {"upstream_blocked_systems": ["grading", "storm"]},
+                        "explain": {"quantity_audit": {"pipe_length_ft": {"source_object_ids": ["P-1"]}}},
+                    },
+                }
+            }
+        )
+
+        self.assertFalse(result.success)
+        self.assertFalse(result.totals["production_usable"])
+        self.assertEqual(result.explain["upstream_blocked_systems"], ["grading", "storm"])
+
     def test_build_plan_attaches_cost_estimate(self) -> None:
         plan = planner.build_plan(
             {

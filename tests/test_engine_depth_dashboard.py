@@ -42,6 +42,9 @@ def _audit_report(score: float = 70.0) -> dict:
                 "launch_gate": "blocked",
                 "confidence": 0.2,
                 "first_failing_layer": "expected_vs_actual_engine_depth",
+                "proof_checklist": [{"id": "terrain_tin_dependency", "label": "Terrain/TIN dependency", "status": "missing"}],
+                "missing_proof": [{"id": "terrain_tin_dependency", "label": "Terrain/TIN dependency", "status": "missing"}],
+                "exact_fixes": ["Provide terrain/TIN dependency proof and rerun grading depth validation."],
             },
             {
                 "engine_id": "storm_pipe",
@@ -84,6 +87,8 @@ class EngineDepthDashboardTests(unittest.TestCase):
         self.assertIs(dashboard["construction_release_allowed"], False)
         self.assertEqual(dashboard["per_engine_scores"][0]["engine_id"], "grading")
         self.assertEqual(dashboard["per_engine_scores"][0]["fix_link"]["target_panel"], "grading")
+        self.assertEqual(dashboard["per_engine_scores"][0]["proof_status"], "missing_proof")
+        self.assertTrue(dashboard["per_engine_scores"][0]["engineer_review_required"])
         self.assertEqual(dashboard["scenario_coverage"][0]["coverage_percent"], 50.0)
         self.assertEqual(dashboard["missing_proof_checklist"][0]["target_panel"], "grading")
         self.assertEqual(dashboard["fix_links"][0]["suggested_next_action"], "Restore grading depth evidence and rerun the audit.")

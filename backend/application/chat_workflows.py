@@ -28,6 +28,7 @@ from backend.planning.design_alternatives import (
     select_design_alternative,
 )
 from backend.planning.dwg_compatibility import dwg_strategy_from_meta
+from backend.planning.discipline_depth_proof import build_engine_proof_contract
 from backend.planning.existing_conditions_online import fetch_online_existing_conditions
 from backend.planning.gis_provider_registry import (
     build_arcgis_provider_record,
@@ -386,6 +387,94 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
             "dwg_strategy": strategy,
         },
         confidence=0.92,
+    )
+
+
+def _discipline_from_message(message: str) -> str:
+    lowered = _normalized_text(message)
+    aliases = {
+        "grading": ("grading", "grade", "cut/fill", "cut fill", "slope"),
+        "storm_pipe": ("storm", "drainage", "inlet", "hgl", "egl", "detention", "outfall", "overflow"),
+        "sanitary": ("sanitary", "sewer", "manhole", "lateral"),
+        "water": ("water", "fire flow", "fire-flow", "hydrant", "pressure"),
+        "roadway_corridor": ("roadway", "road", "profile", "crown", "curb", "ada"),
+        "quantity": ("quantity", "quantities", "cost", "price", "pricing"),
+    }
+    for engine_id, tokens in aliases.items():
+        if any(token in lowered for token in tokens):
+            return engine_id
+    return ""
+
+
+def _discipline_depth_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    explicit_depth_request = (
+        "proof" in lowered
+        or "depth" in lowered
+        or "readiness" in lowered
+        or "exact fix" in lowered
+        or "ready for production" in lowered
+        or "production depth" in lowered
+    )
+    if not explicit_depth_request and "exact fix" not in lowered:
+        return None
+    engine_id = _discipline_from_message(message)
+    if not engine_id:
+        return None
+    meta = _meta_from_chat_context(context)
+    if not meta:
+        return None
+    readiness = _safe_dict(meta.get("engine_readiness"))
+    engine_row = _safe_dict(_safe_dict(readiness.get("engines")).get(engine_id))
+    if not engine_row:
+        return None
+    evidence = _safe_list(engine_row.get("evidence"))
+    blockers = _safe_list(engine_row.get("missing_requirements")) + _safe_list(engine_row.get("production_blockers"))
+    proof = _safe_dict(engine_row.get("discipline_depth_proof")) or build_engine_proof_contract(
+        engine_id,
+        meta=meta,
+        evidence=evidence,
+        blockers=blockers,
+        classification="production-depth" if engine_row.get("status") == "production_ready" else "review",
+        status=safe_str(engine_row.get("status"), "unknown"),
+    )
+    missing = [safe_str(_safe_dict(item).get("label")) for item in _safe_list(proof.get("missing_proof")) if safe_str(_safe_dict(item).get("label"))]
+    exact_fixes = [safe_str(item) for item in _safe_list(proof.get("exact_fixes")) if safe_str(item)]
+    blocker_text = [
+        safe_str(_safe_dict(item).get("message") or _safe_dict(item).get("reason") or _safe_dict(item).get("field"))
+        for item in blockers
+        if safe_str(_safe_dict(item).get("message") or _safe_dict(item).get("reason") or _safe_dict(item).get("field"))
+    ]
+    if not missing and not blocker_text and safe_str(engine_row.get("status")) == "production_ready":
+        summary = f"{engine_id.replace('_', ' ').title()} has production-depth backend evidence, but it is still engineer-review-required."
+    else:
+        summary = f"{engine_id.replace('_', ' ').title()} is blocked or review-depth because required proof is missing."
+    lines = [summary]
+    if blocker_text:
+        lines.append("Blockers: " + "; ".join(blocker_text[:4]) + ".")
+    if missing:
+        lines.append("Missing proof: " + ", ".join(missing[:6]) + ".")
+    if exact_fixes:
+        lines.append("Exact fix: " + exact_fixes[0])
+    lines.append("Civora does not stamp, seal, certify, approve construction, submit construction documents, or act as engineer of record.")
+    return _truthful_decision_update(
+        {},
+        assistant_message="\n".join(lines),
+        intent="explain",
+        run_mode="none",
+        needs_clarification=False,
+        action_taken="answered_discipline_depth_blocker",
+        affected_systems=[engine_id],
+        assumptions=["Answer uses saved engine readiness and discipline proof records only."],
+        next_best_action=exact_fixes[0] if exact_fixes else "Review the discipline proof checklist and rerun the engine depth audit after inputs are corrected.",
+        command_payload_updates={
+            "ui_navigation_target": "analysis",
+            "requested_ui_mode": "review",
+            "engine_id": engine_id,
+            "discipline_depth_proof": proof,
+        },
+        confidence=0.91,
+        blocker="; ".join(blocker_text[:4] or missing[:4]),
     )
 
 
@@ -3061,6 +3150,9 @@ def decide_chat(
     dwg_decision = _dwg_compatibility_chat_response(message, context)
     if dwg_decision is not None:
         return _enrich_response_contract(dwg_decision, message=message)
+    discipline_depth_decision = _discipline_depth_chat_response(message, context)
+    if discipline_depth_decision is not None:
+        return _enrich_response_contract(discipline_depth_decision, message=message)
     plan_pdf_decision = _plan_pdf_chat_response(
         message=message,
         record=record,

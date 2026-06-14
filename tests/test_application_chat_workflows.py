@@ -316,6 +316,56 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         )
         self.assertIn("Engineer review queue", queue["assistant_message"])
 
+    def test_chat_answers_discipline_depth_blocker_with_exact_fix(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"].update(
+            {
+                "engine_readiness": {
+                    "engines": {
+                        "storm_pipe": {
+                            "status": "concept_ready_needs_production_depth",
+                            "evidence": ["storm_segments"],
+                            "production_blockers": [
+                                {
+                                    "area": "storm_depth",
+                                    "field": "depth_validation",
+                                    "message": "Storm depth needs HGL and EGL profiles from production hydraulic evidence.",
+                                }
+                            ],
+                            "discipline_depth_proof": {
+                                "version": "discipline_depth_proof_v1",
+                                "engine_id": "storm_pipe",
+                                "engineer_review_required": True,
+                                "proof_checklist": [
+                                    {"id": "hgl_egl", "label": "HGL/EGL evidence", "status": "missing"}
+                                ],
+                                "missing_proof": [
+                                    {"id": "hgl_egl", "label": "HGL/EGL evidence", "status": "missing"}
+                                ],
+                                "exact_fixes": [
+                                    "Provide hgl/egl evidence proof and rerun storm pipe depth validation."
+                                ],
+                            },
+                        }
+                    }
+                }
+            }
+        )
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "why is storm blocked and what is the exact fix?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_discipline_depth_blocker")
+        self.assertIn("HGL/EGL evidence", result["assistant_message"])
+        self.assertIn("Exact fix", result["assistant_message"])
+        self.assertIn("does not stamp, seal, certify", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["command_payload"]["engine_id"], "storm_pipe")
+
     def test_chat_resolves_and_reopens_review_issue(self):
         record = _record()
         record["latest_result"]["final_plan"]["meta"].update(

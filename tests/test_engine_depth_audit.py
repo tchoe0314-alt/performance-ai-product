@@ -487,6 +487,10 @@ class EngineDepthAuditTests(unittest.TestCase):
         self.assertEqual(sanitary["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
         self.assertEqual(sanitary["score"], 100.0)
         self.assertEqual(sanitary["first_failing_layer"], "")
+        proof_ids = {item["id"] for item in sanitary["proof_checklist"]}
+        self.assertIn("service_coverage", proof_ids)
+        self.assertIn("reroute_recalculation", proof_ids)
+        self.assertTrue(sanitary["discipline_depth_proof"]["engineer_review_required"])
         for evidence in (
             "service_coverage",
             "tie_in_validation",
