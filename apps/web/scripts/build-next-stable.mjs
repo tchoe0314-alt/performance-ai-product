@@ -8,7 +8,7 @@ const generatedArtifactPattern =
   /(?:^|\/)\.next(?:[^/]*)\/(?:dev\/)?(?:server\/)?(?:pages-manifest|routes-manifest|build-manifest|app-build-manifest|required-server-files|export-detail)\.json/;
 const generatedNextJsonPattern = /(?:^|\/)\.next(?:[^/]*)\/.*\.json/;
 const generatedPageModulePattern =
-  /(?:PageNotFoundError|Cannot find module for page:|Failed to collect page data for)/;
+  /(?:PageNotFoundError|Cannot find module for page:|Failed to collect page data for|Could not find a production build|next-export-no-build-id)/;
 const buildEnv = {
   ...process.env,
   NEXT_PRODUCTION_BROWSER_SOURCE_MAPS: process.env.NEXT_PRODUCTION_BROWSER_SOURCE_MAPS ?? "0",
