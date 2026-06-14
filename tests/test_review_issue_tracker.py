@@ -125,6 +125,25 @@ class ReviewIssueTrackerTests(unittest.TestCase):
         self.assertTrue(waived_issue["waiver_record"]["review_required"])
         self.assertFalse(waived_issue["waiver_record"]["field_use_allowed"])
 
+    def test_assignment_records_comment_history_without_approval(self):
+        meta = _meta()
+        issue = select_review_issues(build_review_issue_tracker({"meta": meta}), discipline="drainage", status="open")[0]
+
+        assigned = apply_review_issue_update(
+            meta,
+            action="assign",
+            issue_id=issue["issue_id"],
+            actor="admin@example.com",
+            assigned_to="reviewer@example.com",
+            note="Assign drainage issue to reviewer.",
+        )
+        assigned_issue = select_review_issues(assigned["review_issue_tracker_v1"], issue["issue_id"])[0]
+
+        self.assertEqual(assigned_issue["status"], "in_review")
+        self.assertEqual(assigned_issue["assigned_to"], "reviewer@example.com")
+        self.assertEqual(assigned_issue["history"][-1]["action"], "assign")
+        self.assertFalse(assigned_issue["field_use_allowed"])
+
 
 if __name__ == "__main__":
     unittest.main()

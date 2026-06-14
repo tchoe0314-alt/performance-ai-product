@@ -35,6 +35,8 @@ from backend.planning.smart_fix import build_smart_fix_recommendations
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.job_workflows import JobQueueProtocol
 
+PROJECT_VERSION_HISTORY_VERSION = "project_version_history_v1"
+
 
 class ProjectStoreProtocol(Protocol):
     def list_projects(self, *, user_id: str) -> list[Dict[str, Any]]:
@@ -464,6 +466,178 @@ def build_workflow_review_dashboard(*, runs: list[Dict[str, Any]], artifacts: li
     }
 
 
+def _stable_json(value: Any) -> str:
+    import json
+
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except Exception:
+        return str(value)
+
+
+def _walk_records(value: Any, *, limit: int = 250) -> list[Dict[str, Any]]:
+    records: list[Dict[str, Any]] = []
+
+    def visit(item: Any, path: str) -> None:
+        if len(records) >= limit:
+            return
+        if isinstance(item, dict):
+            object_id = str(
+                item.get("object_id")
+                or item.get("canonical_id")
+                or item.get("id")
+                or item.get("pipe_id")
+                or item.get("structure_id")
+                or ""
+            ).strip()
+            if object_id:
+                records.append({"object_id": object_id, "path": path, "fingerprint": _stable_json(item)})
+            for key, child in item.items():
+                if key in {"meta", "metadata", "source_record", "history", "comments"}:
+                    continue
+                visit(child, f"{path}.{key}" if path else str(key))
+        elif isinstance(item, list):
+            for index, child in enumerate(item[:limit]):
+                visit(child, f"{path}[{index}]")
+
+    visit(value, "")
+    deduped: Dict[str, Dict[str, Any]] = {}
+    for record in records:
+        deduped.setdefault(record["object_id"], record)
+    return list(deduped.values())[:limit]
+
+
+def _quantity_snapshot(meta: Dict[str, Any]) -> Dict[str, Any]:
+    quantities: Dict[str, Any] = {}
+    for source_key in ("quantity_takeoff_review_report_v1", "quantity_explain", "quantity_audit", "quantities"):
+        source = meta.get(source_key)
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                quantities[str(key)] = value
+            elif isinstance(value, dict):
+                for subkey in ("quantity", "current_quantity", "total", "value", "amount"):
+                    if isinstance(value.get(subkey), (int, float)) and not isinstance(value.get(subkey), bool):
+                        quantities[f"{key}.{subkey}"] = value[subkey]
+                        break
+    return quantities
+
+
+def _blocker_snapshot(meta: Dict[str, Any]) -> list[str]:
+    tracker = dict(meta.get("review_issue_tracker_v1") or {})
+    blocker_values = [
+        str(item.get("issue_id") or item.get("title") or "")
+        for item in list(tracker.get("open_issues") or tracker.get("issues") or [])
+        if isinstance(item, dict) and str(item.get("status") or "open") in {"open", "in_review", "reopened"}
+    ]
+    for source_key in ("blockers", "release_blockers"):
+        blocker_values.extend(str(item) for item in list(meta.get(source_key) or []) if str(item))
+    return list(dict.fromkeys(item for item in blocker_values if item))
+
+
+def project_version_snapshot(
+    latest_result: Dict[str, Any],
+    *,
+    revision_id: str,
+    created_at: Any,
+    reason: str,
+) -> Dict[str, Any]:
+    final_plan = dict(latest_result.get("final_plan") or {})
+    meta = dict(final_plan.get("meta") or {})
+    objects = _walk_records(final_plan)
+    return {
+        "revision_id": revision_id,
+        "created_at": created_at,
+        "reason": reason,
+        "object_count": len(objects),
+        "objects": objects,
+        "blockers": _blocker_snapshot(meta),
+        "quantities": _quantity_snapshot(meta),
+        "review_package_ids": [
+            str(value)
+            for value in (
+                dict(meta.get("engineer_review_package_v1") or {}).get("package_id"),
+                dict(meta.get("review_package_manifest") or {}).get("manifest_id"),
+            )
+            if value
+        ],
+        "truth_label": "Project versions are workflow snapshots for comparison and audit; they are not engineering approval records.",
+    }
+
+
+def compare_project_versions(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+    before_objects = {str(item.get("object_id")): item for item in list(before.get("objects") or []) if isinstance(item, dict)}
+    after_objects = {str(item.get("object_id")): item for item in list(after.get("objects") or []) if isinstance(item, dict)}
+    before_ids = set(before_objects)
+    after_ids = set(after_objects)
+    changed = [
+        object_id
+        for object_id in sorted(before_ids & after_ids)
+        if str(before_objects[object_id].get("fingerprint")) != str(after_objects[object_id].get("fingerprint"))
+    ]
+    before_blockers = set(str(item) for item in list(before.get("blockers") or []))
+    after_blockers = set(str(item) for item in list(after.get("blockers") or []))
+    before_quantities = dict(before.get("quantities") or {})
+    after_quantities = dict(after.get("quantities") or {})
+    quantity_changes = []
+    for key in sorted(set(before_quantities) | set(after_quantities)):
+        if before_quantities.get(key) != after_quantities.get(key):
+            quantity_changes.append({"key": key, "before": before_quantities.get(key), "after": after_quantities.get(key)})
+    return {
+        "version": "project_version_comparison_v1",
+        "from_revision_id": str(before.get("revision_id") or ""),
+        "to_revision_id": str(after.get("revision_id") or ""),
+        "added_objects": sorted(after_ids - before_ids),
+        "removed_objects": sorted(before_ids - after_ids),
+        "changed_objects": changed,
+        "added_blockers": sorted(after_blockers - before_blockers),
+        "removed_blockers": sorted(before_blockers - after_blockers),
+        "changed_quantities": quantity_changes,
+        "truth_label": "Version comparison is an audit/workflow aid only and does not certify, seal, stamp, or approve construction documents.",
+    }
+
+
+def update_project_version_history(
+    metadata: Dict[str, Any],
+    latest_result: Dict[str, Any],
+    *,
+    reason: str,
+    artifact_summary: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    if not dict(latest_result.get("final_plan") or {}):
+        return metadata
+    workflow = dict(metadata.get("workflow") or {})
+    history = dict(workflow.get("version_history") or {})
+    snapshots = [dict(item) for item in list(history.get("snapshots") or []) if isinstance(item, dict)]
+    revision_id = f"rev_{len(snapshots) + 1}"
+    snapshot = project_version_snapshot(latest_result, revision_id=revision_id, created_at=now_ts(), reason=reason)
+    if snapshots and _stable_json({k: snapshot.get(k) for k in ("objects", "blockers", "quantities")}) == _stable_json(
+        {k: snapshots[0].get(k) for k in ("objects", "blockers", "quantities")}
+    ):
+        return metadata
+    snapshots.insert(0, snapshot)
+    snapshots = snapshots[:20]
+    latest_comparison = compare_project_versions(snapshots[1], snapshots[0]) if len(snapshots) >= 2 else {}
+    package_history = [dict(item) for item in list(history.get("review_package_history") or []) if isinstance(item, dict)]
+    if artifact_summary:
+        artifact = dict(artifact_summary)
+        artifact["revision_id"] = revision_id
+        package_history.insert(0, artifact)
+        package_history = package_history[:40]
+    history = {
+        "version": PROJECT_VERSION_HISTORY_VERSION,
+        "latest_revision_id": revision_id,
+        "snapshots": snapshots,
+        "latest_comparison": latest_comparison,
+        "review_package_history": package_history,
+        "truth_label": "Snapshots and package history are workflow/audit records only; external stamps may be stored only as customer-provided metadata.",
+    }
+    workflow["version_history"] = history
+    metadata["workflow"] = workflow
+    return metadata
+
+
 def _record_with_operational_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     enriched = dict(record)
     enriched["operational_summary"] = _project_operational_summary(record)
@@ -496,6 +670,7 @@ def merge_project_metadata(
     *,
     run_summary: Optional[Dict[str, Any]] = None,
     artifact_summary: Optional[Dict[str, Any]] = None,
+    latest_result: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     metadata = dict(existing_metadata or {})
     workflow = dict(metadata.get("workflow") or {})
@@ -519,6 +694,13 @@ def merge_project_metadata(
     workflow["summary"] = _build_workflow_summary(runs=runs, artifacts=artifacts)
     workflow["review_dashboard"] = build_workflow_review_dashboard(runs=runs, artifacts=artifacts)
     metadata["workflow"] = workflow
+    if latest_result:
+        metadata = update_project_version_history(
+            metadata,
+            dict(latest_result),
+            reason="artifact_generated" if artifact_summary else "planner_run",
+            artifact_summary=artifact_summary,
+        )
     return metadata
 
 
@@ -537,6 +719,7 @@ def save_project_workflow_update(
         dict(existing.get("metadata") or {}),
         run_summary=run_summary,
         artifact_summary=artifact_summary,
+        latest_result=dict(existing.get("latest_result") or {}),
     )
     return project_store.save_project(
         user_id=user_id,
@@ -1054,7 +1237,10 @@ def save_project_record(
                 source="project_save",
                 project_id=project_id,
             ),
+            latest_result=latest_result,
         )
+    elif latest_result:
+        metadata = update_project_version_history(metadata, latest_result, reason="project_save")
     latest_result = _with_progress_timeline_result(
         latest_result,
         project_input=project_input,

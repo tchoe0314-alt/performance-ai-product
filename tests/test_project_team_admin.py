@@ -105,6 +105,37 @@ class ProjectTeamAdminTest(unittest.TestCase):
                 role="viewer",
             )
 
+    def test_reviewer_can_review_but_cannot_edit_or_manage_access(self):
+        project = self.projects.save_project(
+            user_id=self.owner["user_id"],
+            project_id=None,
+            name="Review Site",
+            description="",
+        )
+        self.projects.invite_project_member(
+            actor_user_id=self.owner["user_id"],
+            project_id=project["project_id"],
+            email=self.viewer["email"],
+            role="reviewer",
+        )
+
+        admin_surface = self.projects.project_admin_surface(
+            user_id=self.viewer["user_id"],
+            project_id=project["project_id"],
+        )
+        self.assertEqual(admin_surface["current_user_role"], "reviewer")
+        self.assertTrue(admin_surface["permissions"]["can_view"])
+        self.assertTrue(admin_surface["permissions"]["can_review"])
+        self.assertFalse(admin_surface["permissions"]["can_edit"])
+        self.assertFalse(admin_surface["permissions"]["can_manage_access"])
+        with self.assertRaises(ValueError):
+            self.projects.save_project(
+                user_id=self.viewer["user_id"],
+                project_id=project["project_id"],
+                name="Reviewer Should Not Save",
+                description="",
+            )
+
     def test_admin_can_remove_non_owner_member(self):
         project = self.projects.save_project(
             user_id=self.owner["user_id"],

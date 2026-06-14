@@ -93,6 +93,7 @@ class RecordingProjectStore:
             **self.record,
             "project_input": kwargs["project_input"],
             "latest_result": kwargs["latest_result"],
+            "metadata": kwargs.get("metadata", self.record.get("metadata", {})),
         }
         return self.record
 
@@ -404,6 +405,93 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
             if item["issue_id"] == issue_id
         ][0]
         self.assertEqual(reopened_issue["status"], "reopened")
+
+    def test_chat_assigns_issue_and_reports_review_owner(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"].update(
+            {"blockers": [{"area": "drainage", "field": "outfall", "reason": "Drainage outfall is missing."}]}
+        )
+        store = RecordingProjectStore(record)
+
+        assigned = decide_chat(
+            {"message": "assign drainage issue to reviewer", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(assigned["action_taken"], "assign_review_issue")
+        tracker = assigned["response_metadata"]["command_payload"]["review_issue_tracker_v1"]
+        issue = [item for item in tracker["issues"] if item["discipline"] == "drainage"][0]
+        self.assertEqual(issue["assigned_to"], "reviewer")
+        self.assertEqual(issue["history"][-1]["action"], "assign")
+        self.assertFalse(issue["field_use_allowed"])
+
+        who = decide_chat(
+            {"message": "who needs to review this?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertEqual(who["action_taken"], "reported_review_issue_tracker")
+        self.assertIn("Review assignments", who["assistant_message"])
+        self.assertIn("reviewer", who["assistant_message"])
+
+    def test_chat_reports_version_changes_and_review_history(self):
+        record = _record()
+        record["metadata"] = {
+            "workflow": {
+                "version_history": {
+                    "version": "project_version_history_v1",
+                    "latest_revision_id": "rev_2",
+                    "snapshots": [{"revision_id": "rev_2"}, {"revision_id": "rev_1"}],
+                    "latest_comparison": {
+                        "added_objects": ["inlet-1"],
+                        "removed_objects": [],
+                        "changed_objects": ["pipe-1"],
+                        "added_blockers": ["issue-grading"],
+                        "removed_blockers": ["issue-drainage"],
+                        "changed_quantities": [{"key": "pipe_length_ft", "before": 80, "after": 120}],
+                        "truth_label": "Version comparison is an audit/workflow aid only.",
+                    },
+                    "review_package_history": [{"artifact_id": "artifact_1", "revision_id": "rev_2"}],
+                }
+            }
+        }
+        record["latest_result"]["final_plan"]["meta"].update(
+            {
+                "blockers": [{"area": "drainage", "field": "outfall", "reason": "Drainage outfall is missing."}],
+                "candidate_review_inbox_v1": {
+                    "version": "candidate_review_inbox_v1",
+                    "candidates": [],
+                },
+                "candidate_review_decisions_v1": [{"action": "accept", "candidate_id": "cand-1", "reviewer_id": "user_1"}],
+            }
+        )
+        store = RecordingProjectStore(record)
+
+        changes = decide_chat(
+            {"message": "what changed since last version?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertEqual(changes["action_taken"], "reported_project_version_comparison")
+        self.assertIn("1 added object", changes["assistant_message"])
+        self.assertIn("1 quantity change", changes["assistant_message"])
+        self.assertIn("project_version_history_v1", changes["response_metadata"]["command_payload"])
+
+        history = decide_chat(
+            {"message": "show review history", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertEqual(history["action_taken"], "reported_project_review_history")
+        payload = history["response_metadata"]["command_payload"]["project_review_history_v1"]
+        self.assertEqual(len(payload["candidate_audit"]), 1)
+        self.assertEqual(len(payload["review_package_history"]), 1)
+        self.assertIn("not Civora approval", payload["truth_label"])
 
     def test_chat_explains_civil3d_requirements(self):
         result = decide_chat(

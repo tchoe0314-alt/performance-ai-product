@@ -7,11 +7,13 @@ from fastapi import HTTPException
 from backend.application.project_workflows import (
     artifact_summary,
     build_workflow_review_dashboard,
+    compare_project_versions,
     delete_project_record,
     get_project_detail,
     get_project_result,
     list_projects,
     merge_project_metadata,
+    project_version_snapshot,
     result_from_payload,
     save_project_record,
     save_project_workflow_update,
@@ -372,6 +374,59 @@ class ApplicationProjectWorkflowsTest(unittest.TestCase):
         summary = merged["workflow"]["summary"]
         self.assertFalse(summary["latest_release_ready"])
         self.assertEqual(summary["latest_release_blockers"], ["construction_package_blocked"])
+
+    def test_project_version_snapshots_compare_objects_blockers_quantities_and_packages(self):
+        before_result = {
+            "final_plan": {
+                "objects": [{"id": "pipe-1", "length_ft": 80}],
+                "meta": {
+                    "review_issue_tracker_v1": {
+                        "issues": [{"issue_id": "issue-drainage", "status": "open", "title": "Drainage missing"}]
+                    },
+                    "quantities": {"pipe_length_ft": 80},
+                    "engineer_review_package_v1": {"package_id": "pkg-1"},
+                },
+            }
+        }
+        after_result = {
+            "final_plan": {
+                "objects": [{"id": "pipe-1", "length_ft": 120}, {"id": "inlet-1", "rim": 100.0}],
+                "meta": {
+                    "review_issue_tracker_v1": {
+                        "issues": [{"issue_id": "issue-grading", "status": "open", "title": "Grading missing"}]
+                    },
+                    "quantities": {"pipe_length_ft": 120},
+                    "engineer_review_package_v1": {"package_id": "pkg-2"},
+                },
+            }
+        }
+        before = project_version_snapshot(before_result, revision_id="rev_1", created_at=1, reason="unit")
+        after = project_version_snapshot(after_result, revision_id="rev_2", created_at=2, reason="unit")
+        comparison = compare_project_versions(before, after)
+
+        self.assertEqual(comparison["added_objects"], ["inlet-1"])
+        self.assertEqual(comparison["changed_objects"], ["pipe-1"])
+        self.assertEqual(comparison["added_blockers"], ["issue-grading"])
+        self.assertEqual(comparison["removed_blockers"], ["issue-drainage"])
+        self.assertEqual(comparison["changed_quantities"][0]["key"], "pipe_length_ft")
+        self.assertIn("not certify", comparison["truth_label"])
+
+    def test_merge_project_metadata_records_version_and_links_artifact_revision(self):
+        first_result = {"final_plan": {"objects": [{"id": "pipe-1", "length_ft": 80}], "meta": {}}}
+        second_result = {"final_plan": {"objects": [{"id": "pipe-1", "length_ft": 120}], "meta": {}}}
+        metadata = merge_project_metadata({}, run_summary={"run_id": "run_1"}, latest_result=first_result)
+        metadata = merge_project_metadata(
+            metadata,
+            artifact_summary={"artifact_id": "artifact_1", "kind": "review_package"},
+            latest_result=second_result,
+        )
+        history = metadata["workflow"]["version_history"]
+
+        self.assertEqual(history["version"], "project_version_history_v1")
+        self.assertEqual(len(history["snapshots"]), 2)
+        self.assertEqual(history["latest_comparison"]["changed_objects"], ["pipe-1"])
+        self.assertEqual(history["review_package_history"][0]["artifact_id"], "artifact_1")
+        self.assertEqual(history["review_package_history"][0]["revision_id"], history["latest_revision_id"])
 
     def test_merge_project_metadata_blocks_release_when_requested_deliverable_is_missing(self):
         merged = merge_project_metadata(

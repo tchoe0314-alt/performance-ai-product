@@ -2328,16 +2328,56 @@ def _issue_selector_from_message(normalized: str) -> str:
         "resolve issue",
         "reopen issue",
         "waive issue",
+        "assign this issue",
+        "assign issue",
+        "assign",
         "put issue in review",
         "mark issue in review",
+        "show review history",
+        "review history",
         "show",
         "what issues are",
         "what issue is",
         "what does the engineer need to review",
+        "who needs to review this",
     ):
         text = text.replace(phrase, " ")
-    text = re.sub(r"\b(open|opened|resolved|reopened|grading|drainage|storm|water|sanitary|roadway|utility|utilities|blockers?|review|required|need|needs|engineer|to|the|a|an|are|is|what|does)\b", " ", text)
+    text = re.sub(r"\b(open|opened|resolved|reopened|grading|drainage|storm|water|sanitary|roadway|utility|utilities|blockers?|review|required|need|needs|engineer|reviewer|owner|admin|editor|viewer|to|the|a|an|are|is|what|does|who|this)\b", " ", text)
     return " ".join(text.split())
+
+
+
+def _review_history_summary(meta: Dict[str, Any], tracker: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
+    workflow = _safe_dict(metadata.get("workflow"))
+    version_history = _safe_dict(workflow.get("version_history"))
+    candidate_inbox = build_candidate_review_inbox(meta)
+    candidate_audit = _safe_list(meta.get("candidate_review_decisions_v1"))
+    for candidate in _safe_list(candidate_inbox.get("candidates")):
+        candidate_audit.extend(_safe_list(_safe_dict(candidate).get("audit_trail")))
+    issue_events: List[Dict[str, Any]] = []
+    for issue in _safe_list(tracker.get("issues")):
+        rec = _safe_dict(issue)
+        for event in _safe_list(rec.get("history")):
+            event_rec = _safe_dict(event)
+            issue_events.append(
+                {
+                    "issue_id": safe_str(rec.get("issue_id")),
+                    "title": safe_str(rec.get("title")),
+                    "action": safe_str(event_rec.get("action")),
+                    "actor": safe_str(event_rec.get("actor")),
+                    "status": safe_str(event_rec.get("status")),
+                    "created_at": event_rec.get("created_at"),
+                    "note": safe_str(event_rec.get("note")),
+                }
+            )
+    return {
+        "version": "project_review_history_v1",
+        "issue_events": issue_events[-20:],
+        "candidate_audit": candidate_audit[-20:],
+        "version_history": version_history,
+        "review_package_history": _safe_list(version_history.get("review_package_history")),
+        "truth_label": "Review history is workflow/audit evidence only; it is not Civora approval, certification, stamp, seal, or engineer-of-record action.",
+    }
 
 
 def _issue_tracker_chat_response(
@@ -2350,12 +2390,16 @@ def _issue_tracker_chat_response(
     normalized = _normalized_text(message)
     asks_open = any(phrase in normalized for phrase in ("what issues are open", "open issues", "what issue is open"))
     asks_engineer_queue = "what does the engineer need to review" in normalized or "engineer need to review" in normalized
+    asks_who_reviews = "who needs to review this" in normalized or "who needs to review" in normalized
+    asks_review_history = "show review history" in normalized or "review history" in normalized
+    asks_version_changes = "what changed since last version" in normalized or "changed since last version" in normalized
     asks_drainage = "drainage" in normalized and ("blocker" in normalized or "issue" in normalized)
     wants_resolve = "resolve" in normalized and "issue" in normalized
     wants_reopen = "reopen" in normalized and ("issue" in normalized or "grading" in normalized or "drainage" in normalized)
     wants_waive = "waive" in normalized and "issue" in normalized
+    wants_assign = "assign" in normalized and "issue" in normalized
     wants_in_review = ("in review" in normalized or "review this issue" in normalized) and "issue" in normalized
-    if not any((asks_open, asks_engineer_queue, asks_drainage, wants_resolve, wants_reopen, wants_waive, wants_in_review)):
+    if not any((asks_open, asks_engineer_queue, asks_who_reviews, asks_review_history, asks_version_changes, asks_drainage, wants_resolve, wants_reopen, wants_waive, wants_assign, wants_in_review)):
         return None
     if not record:
         return _truthful_decision_update(
@@ -2396,6 +2440,7 @@ def _issue_tracker_chat_response(
             blocker="Saved project has no final plan.",
         )
     meta = _safe_dict(final_plan.get("meta"))
+    project_metadata = _safe_dict(record.get("metadata"))
     tracker = _safe_dict(meta.get(ISSUE_TRACKER_VERSION)) or build_review_issue_tracker(final_plan, meta=meta)
     action = ""
     if wants_resolve:
@@ -2404,6 +2449,8 @@ def _issue_tracker_chat_response(
         action = "reopen"
     elif wants_waive:
         action = "waive"
+    elif wants_assign:
+        action = "assign"
     elif wants_in_review:
         action = "in_review"
     discipline = ""
@@ -2412,8 +2459,69 @@ def _issue_tracker_chat_response(
             discipline = "drainage" if candidate == "storm" else candidate
             break
     selector = _issue_selector_from_message(normalized)
+    assigned_to = ""
+    if wants_assign:
+        assigned_to = normalized.rsplit(" to ", 1)[-1].strip() if " to " in normalized else "reviewer"
+        assigned_to = assigned_to or "reviewer"
+    if asks_version_changes:
+        version_history = _safe_dict(_safe_dict(project_metadata.get("workflow")).get("version_history"))
+        comparison = _safe_dict(version_history.get("latest_comparison"))
+        if comparison:
+            assistant = (
+                "Since the last project version: "
+                f"{len(_safe_list(comparison.get('added_objects')))} added object(s), "
+                f"{len(_safe_list(comparison.get('removed_objects')))} removed, "
+                f"{len(_safe_list(comparison.get('changed_objects')))} changed; "
+                f"{len(_safe_list(comparison.get('added_blockers')))} blocker(s) added, "
+                f"{len(_safe_list(comparison.get('removed_blockers')))} removed; "
+                f"{len(_safe_list(comparison.get('changed_quantities')))} quantity change(s) recorded."
+            )
+        else:
+            assistant = "I do not have two project version snapshots to compare yet."
+        return _truthful_decision_update(
+            {},
+            assistant_message=assistant,
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="reported_project_version_comparison",
+            action_blocked_reason="",
+            affected_systems=["review"],
+            assumptions=[],
+            next_best_action="Generate or save another major project update to create a new comparison snapshot.",
+            command_payload_updates={"project_version_history_v1": version_history, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+    if asks_review_history:
+        history = _review_history_summary(meta, tracker, project_metadata)
+        assistant = (
+            f"Review history: {len(_safe_list(history.get('issue_events')))} issue event(s), "
+            f"{len(_safe_list(history.get('candidate_audit')))} candidate decision(s), "
+            f"{len(_safe_list(_safe_dict(history.get('version_history')).get('snapshots')))} version snapshot(s), "
+            f"{len(_safe_list(history.get('review_package_history')))} package artifact(s)."
+        )
+        return _truthful_decision_update(
+            {},
+            assistant_message=assistant,
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="reported_project_review_history",
+            action_blocked_reason="",
+            affected_systems=["review"],
+            assumptions=[],
+            next_best_action="Use the Review/Admin surfaces to inspect the linked audit records.",
+            command_payload_updates={"project_review_history_v1": history, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
     if action:
         matches = select_review_issues(tracker, selector, discipline=discipline)
+        if not matches and discipline:
+            matches = select_review_issues(tracker, discipline=discipline, status="open")
         if not matches and not selector and not discipline:
             matches = select_review_issues(tracker, status="open")
         if len(matches) != 1:
@@ -2449,6 +2557,7 @@ def _issue_tracker_chat_response(
             actor=user_id,
             note=message,
             discipline=discipline,
+            assigned_to=assigned_to,
         )
         meta = _safe_dict(update.get("updated_meta"))
         tracker = _safe_dict(update.get(ISSUE_TRACKER_VERSION))
@@ -2484,6 +2593,9 @@ def _issue_tracker_chat_response(
     if asks_engineer_queue:
         visible = [_safe_dict(item) for item in _safe_list(tracker.get("engineer_review_queue"))]
         heading = "Engineer review queue"
+    elif asks_who_reviews:
+        visible = [_safe_dict(item) for item in _safe_list(tracker.get("engineer_review_queue"))]
+        heading = "Review assignments"
     elif asks_drainage:
         visible = select_review_issues(tracker, discipline="drainage", status="open")
         heading = "Drainage blockers"
@@ -2492,7 +2604,7 @@ def _issue_tracker_chat_response(
         heading = "Open review issues"
     if visible:
         lines = [
-            f"{safe_str(item.get('issue_id'))}: {safe_str(item.get('severity'))} {safe_str(item.get('discipline'))} - {safe_str(item.get('title'))}"
+            f"{safe_str(item.get('issue_id'))}: {safe_str(item.get('severity'))} {safe_str(item.get('discipline'))} - {safe_str(item.get('title'))} ({safe_str(item.get('assigned_to') or item.get('assigned_role') or 'project_reviewer')})"
             for item in visible[:8]
         ]
         assistant = f"{heading}: {len(visible)} item{'s' if len(visible) != 1 else ''}.\n" + "\n".join(f"- {line}" for line in lines)
@@ -2961,6 +3073,8 @@ def _plan_pdf_chat_response(
             "what changed",
         )
     )
+    if "since last version" in normalized:
+        asks_pdf = False
     if not asks_pdf:
         return None
     if not record:

@@ -431,6 +431,7 @@ def build_review_issue_tracker(final_plan_or_meta: Optional[Dict[str, Any]] = No
             "discipline": issue["discipline"],
             "severity": issue["severity"],
             "assigned_role": issue["assigned_role"],
+            "assigned_to": issue.get("assigned_to", ""),
             "next_action": issue["next_action"],
         }
         for issue in open_issues
@@ -524,6 +525,7 @@ def apply_review_issue_update(
         "reopen": "reopened",
         "in_review": "in_review",
         "waive": "waived_review_required",
+        "assign": "in_review",
     }
     if action not in status_by_action:
         raise ValueError("Unsupported issue action.")
@@ -533,7 +535,10 @@ def apply_review_issue_update(
     for issue in safe_list(tracker.get("issues")):
         rec = deepcopy(safe_dict(issue))
         if safe_str(rec.get("issue_id")) in target_ids:
-            rec["status"] = next_status
+            if action == "assign" and safe_str(rec.get("status")) not in OPEN_STATUSES:
+                rec["status"] = safe_str(rec.get("status"), next_status)
+            else:
+                rec["status"] = next_status
             rec["updated_at"] = now
             if assigned_to:
                 rec["assigned_to"] = assigned_to
@@ -544,6 +549,8 @@ def apply_review_issue_update(
                 if action == "reopen"
                 else "Review-required waiver recorded; field use remains outside Civora."
                 if action == "waive"
+                else f"Issue assigned to {assigned_to} for workflow review."
+                if action == "assign" and assigned_to
                 else "Issue moved into review."
             )
             rec.setdefault("comments", [])
