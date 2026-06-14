@@ -55,6 +55,36 @@ class _RoutingSession:
         return _Response({"type": "FeatureCollection", "features": [{"id": "A", "properties": {}, "geometry": {"type": "Polygon", "coordinates": []}}]})
 
 
+class _GretnaRoutingSession:
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append({"url": url, "params": params, "timeout": timeout})
+        if "geocoder" in url:
+            return _Response(
+                {
+                    "result": {
+                        "addressMatches": [
+                            {
+                                "matchedAddress": "20525 MARGO ST, GRETNA, NE, 68028",
+                                "coordinates": {"x": -96.237022515225, "y": 41.185240483552},
+                            }
+                        ]
+                    }
+                }
+            )
+        if "epqs" in url:
+            return _Response({"value": 1291.9334764960693, "attributes": {"AcquisitionDate": "2/4/2017"}})
+        if "Sarpy_Parcels_WFL1" in url:
+            return _Response({"type": "FeatureCollection", "features": [{"id": "parcel-1", "properties": {"SITEADDRESS": "20525 MARGO ST"}, "geometry": {"type": "Polygon", "coordinates": []}}]})
+        if "LandRecordsDynamic/MapServer/3/query" in url:
+            return _Response({"type": "FeatureCollection", "features": [{"id": "road-1", "properties": {"FULLNAME": "Margo St"}, "geometry": {"type": "LineString", "coordinates": []}}]})
+        if "NFHL/MapServer/28/query" in url:
+            return _Response({"type": "FeatureCollection", "features": [{"id": "flood-1", "properties": {"FLD_ZONE": "X"}, "geometry": {"type": "Polygon", "coordinates": []}}]})
+        return _Response({"type": "FeatureCollection", "features": []})
+
+
 class _AddressRoutingSession:
     def get(self, url, params=None, timeout=None):
         address = (params or {}).get("address", "")
@@ -229,6 +259,31 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertIn("https://city.example/arcgis/rest/services/Buildings/MapServer/3/query", urls)
         self.assertIn("https://county.example/arcgis/rest/services/Contours/MapServer/4/query", urls)
         self.assertEqual(report["configured_provider_count"], 2)
+
+    def test_gretna_target_market_address_uses_real_configured_provider_records(self) -> None:
+        session = _GretnaRoutingSession()
+        result = fetch_online_existing_conditions(address="20525 Margo St, Gretna, NE", session=session)
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+        urls = [call["url"] for call in session.calls]
+
+        self.assertEqual(result["source_results"]["geocode"]["matched_address"], "20525 MARGO ST, GRETNA, NE, 68028")
+        self.assertGreaterEqual(sources["parcel_site_boundary"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["road_row"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["gis_constraints"]["candidate_count"], 1)
+        self.assertEqual(sources["building_footprints"]["candidate_count"], 0)
+        self.assertIn("provider responded but returned no features", " ".join(sources["building_footprints"]["blockers"]))
+        self.assertEqual(sources["public_utilities"]["candidate_count"], 0)
+        self.assertIn("provider responded but returned no features", " ".join(sources["public_utilities"]["blockers"]))
+        self.assertEqual(sources["contours"]["candidate_count"], 0)
+        self.assertIn("VectorTileServer", " ".join(sources["contours"]["blockers"]))
+        self.assertIn("https://services.arcgis.com/OiG7dbwhQEWoy77N/arcgis/rest/services/Sarpy_Parcels_WFL1/FeatureServer/0/query", urls)
+        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/42/query", urls)
+        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/3/query", urls)
+        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/SanitarySewerNetwork/MapServer/10/query", urls)
+        self.assertEqual(report["configured_provider_count"], 6)
+        self.assertTrue(all(item["review_required"] for item in report["sources"]))
 
     def test_online_discovery_reports_parcel_building_road_and_constraint_candidates(self) -> None:
         result = fetch_online_existing_conditions(

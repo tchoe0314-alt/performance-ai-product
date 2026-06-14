@@ -797,6 +797,142 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(saved_meta["online_existing_conditions_discovery_v1"]["candidate_count"], 1)
         self.assertEqual(saved_site_inputs["online_existing_conditions_discovery_v1"]["candidate_count"], 1)
 
+    def test_chat_answers_gretna_online_source_and_candidate_review_prompts(self):
+        record = _record()
+        discovery = {
+            "version": "online_existing_conditions_discovery_v1",
+            "candidate_count": 2,
+            "configured_provider_count": 6,
+            "local_gis_provider_registry_v1": {
+                "version": "local_gis_provider_registry_v1",
+                "providers": [
+                    {
+                        "id": "sarpy-parcels",
+                        "name": "Sarpy County tax parcels",
+                        "source_type": "parcels",
+                        "jurisdiction_level": "county",
+                        "provider_kind": "arcgis_rest",
+                        "service_url": "https://services.arcgis.com/OiG7dbwhQEWoy77N/arcgis/rest/services/Sarpy_Parcels_WFL1/FeatureServer",
+                        "arcgis": {
+                            "service_url": "https://services.arcgis.com/OiG7dbwhQEWoy77N/arcgis/rest/services/Sarpy_Parcels_WFL1/FeatureServer",
+                            "layer_id": 0,
+                        },
+                        "status": "configured",
+                        "health": {"status": "unchecked"},
+                        "freshness": {"status": "stale"},
+                    },
+                    {
+                        "id": "sarpy-buildings",
+                        "name": "Sarpy County building footprints",
+                        "source_type": "buildings",
+                        "jurisdiction_level": "county",
+                        "provider_kind": "arcgis_rest",
+                        "service_url": "https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer",
+                        "arcgis": {
+                            "service_url": "https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer",
+                            "layer_id": 42,
+                        },
+                        "status": "configured",
+                        "health": {"status": "unchecked"},
+                        "freshness": {"status": "unknown"},
+                    },
+                ],
+            },
+            "sources": [
+                {
+                    "key": "parcel_site_boundary",
+                    "label": "parcel/site boundary",
+                    "provider": "Sarpy County tax parcels",
+                    "status": "candidates_found",
+                    "candidate_count": 1,
+                    "blockers": ["parcel/site boundary candidates are review-required and not survey-backed."],
+                    "review_required": True,
+                },
+                {
+                    "key": "road_row",
+                    "label": "road/ROW data",
+                    "provider": "Sarpy County road centerlines",
+                    "status": "candidates_found",
+                    "candidate_count": 1,
+                    "blockers": ["road/ROW data candidates are review-required and not survey-backed."],
+                    "review_required": True,
+                },
+                {
+                    "key": "building_footprints",
+                    "label": "building footprints",
+                    "provider": "Sarpy County building footprints",
+                    "status": "ready",
+                    "candidate_count": 0,
+                    "blockers": ["building footprints provider responded but returned no features inside the address search area."],
+                    "review_required": True,
+                },
+            ],
+        }
+        record["project_input"]["meta"] = {
+            "site_inputs": {
+                "address": "20525 Margo St, Gretna, NE",
+                "online_existing_conditions_discovery_v1": discovery,
+                "local_gis_provider_registry_v1": discovery["local_gis_provider_registry_v1"],
+            }
+        }
+        record["latest_result"]["final_plan"]["meta"].update(
+            {
+                "online_existing_conditions_discovery_v1": discovery,
+                "local_gis_provider_registry_v1": discovery["local_gis_provider_registry_v1"],
+                "map_feature_detection_report_v1": {
+                    "version": "map_feature_detection_report_v1",
+                    "feature_candidates": [
+                        {
+                            "candidate_id": "gis-parcel-1",
+                            "feature_type": "parcel_or_site_boundary",
+                            "source_type": "official_gis",
+                            "source_name": "Sarpy County tax parcels",
+                            "source_url": "https://services.arcgis.com/OiG7dbwhQEWoy77N/arcgis/rest/services/Sarpy_Parcels_WFL1/FeatureServer/0/query",
+                            "confidence": 0.88,
+                            "acceptance_status": "pending",
+                            "blockers": ["Official GIS source is candidate evidence until reviewed."],
+                        }
+                    ],
+                },
+            }
+        )
+        store = RecordingProjectStore(record)
+
+        configured = decide_chat(
+            {"message": "what online sources are configured?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        found = decide_chat(
+            {"message": "what did you find online?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        buildings = decide_chat(
+            {"message": "why didn't it find buildings?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        parcel = decide_chat(
+            {"message": "use the parcel boundary", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertIn("Sarpy County tax parcels", configured["assistant_message"])
+        self.assertIn("review-required", configured["assistant_message"])
+        self.assertIn("parcel/site boundary", found["assistant_message"])
+        self.assertIn("building footprints provider responded but returned no features", found["assistant_message"])
+        self.assertIn("provider record(s) are configured", buildings["assistant_message"])
+        self.assertIn("will not report source success", buildings["assistant_message"])
+        self.assertEqual(parcel["action_taken"], "accepted_candidate_review_items")
+        self.assertIn("accepted as draft/review-required evidence", parcel["assistant_message"])
+        self.assertNotIn("construction-ready", parcel["assistant_message"].lower())
+
     def test_object_creation_command_creates_draft_geometry_and_truthful_action(self):
         store = RecordingProjectStore()
 

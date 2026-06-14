@@ -6,6 +6,8 @@ from backend.planning.gis_provider_registry import (
     check_registry_health,
     provider_freshness_status,
     providers_for_source_type,
+    target_market_known_gaps,
+    target_market_provider_records,
 )
 
 
@@ -83,6 +85,20 @@ class GisProviderRegistryTests(unittest.TestCase):
         self.assertEqual(health["healthy_provider_count"], 1)
         self.assertEqual(health["stale_provider_count"], 1)
         self.assertEqual(provider_freshness_status(provider)["status"], "stale")
+
+    def test_gretna_target_market_records_are_real_review_required_providers(self) -> None:
+        providers = target_market_provider_records(address="20525 Margo St, Gretna, NE", lat=41.185240483552, lng=-96.237022515225)
+        registry = build_provider_registry(include_builtin=False, providers=providers)
+        gaps = target_market_known_gaps(address="20525 Margo St, Gretna, NE", lat=41.185240483552, lng=-96.237022515225)
+
+        self.assertEqual(registry["configured_provider_count"], 4)
+        self.assertEqual(providers_for_source_type(registry, "parcels")[0]["arcgis"]["layer_id"], 0)
+        self.assertEqual(providers_for_source_type(registry, "buildings")[0]["arcgis"]["layer_id"], 42)
+        self.assertEqual(providers_for_source_type(registry, "roads_row")[0]["arcgis"]["layer_id"], 3)
+        self.assertEqual(providers_for_source_type(registry, "utilities")[0]["arcgis"]["layer_id"], 10)
+        self.assertTrue(all(item["review_required"] and not item["survey_backed"] for item in registry["providers"]))
+        self.assertIn("VectorTileServer", gaps[0]["source_url"])
+        self.assertIn("queryable", gaps[0]["message"])
 
 
 if __name__ == "__main__":

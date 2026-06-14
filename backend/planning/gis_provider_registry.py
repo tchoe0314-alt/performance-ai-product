@@ -15,6 +15,7 @@ GIS_PROVIDER_REGISTRY_VERSION = "local_gis_provider_registry_v1"
 GIS_SOURCE_TYPES = ("parcels", "buildings", "roads_row", "utilities", "contours", "floodplain", "wetlands")
 JURISDICTION_LEVELS = ("jurisdiction", "county", "city", "state", "federal", "utility")
 DEFAULT_STALE_AFTER_DAYS = 90
+SARPY_COUNTY_BBOX = {"west": -96.3426, "south": 40.9837, "east": -95.8407, "north": 41.2048}
 
 
 def _utc_now_iso() -> str:
@@ -160,7 +161,7 @@ def builtin_provider_records() -> List[Dict[str, Any]]:
     return [
         build_arcgis_provider_record(
             source_type="floodplain",
-            service_url="https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer",
+            service_url="https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer",
             layer_id=28,
             name="FEMA NFHL floodplain",
             jurisdiction=federal,
@@ -180,6 +181,76 @@ def builtin_provider_records() -> List[Dict[str, Any]]:
             status="configured",
             notes="National wetlands context layer.",
         ),
+    ]
+
+
+def target_market_provider_records(*, address: str = "", lat: Any = None, lng: Any = None) -> List[Dict[str, Any]]:
+    text = safe_str(address).lower()
+    point_in_sarpy = (
+        lat not in (None, "")
+        and lng not in (None, "")
+        and SARPY_COUNTY_BBOX["south"] <= float(lat) <= SARPY_COUNTY_BBOX["north"]
+        and SARPY_COUNTY_BBOX["west"] <= float(lng) <= SARPY_COUNTY_BBOX["east"]
+    )
+    address_in_sarpy = "gretna" in text and (" ne" in text or "nebraska" in text)
+    if not (point_in_sarpy or address_in_sarpy):
+        return []
+    sarpy = {"level": "county", "county": "Sarpy County", "state": "NE", "city": "Gretna", "target_market": "gretna_ne"}
+    return [
+        build_arcgis_provider_record(
+            source_type="parcels",
+            service_url="https://services.arcgis.com/OiG7dbwhQEWoy77N/arcgis/rest/services/Sarpy_Parcels_WFL1/FeatureServer",
+            layer_id=0,
+            name="Sarpy County tax parcels",
+            jurisdiction=sarpy,
+            jurisdiction_level="county",
+            freshness_date="2023-12-09T00:00:00Z",
+            notes="Public Sarpy County parcel polygons; candidate context only, not survey control.",
+        ),
+        build_arcgis_provider_record(
+            source_type="buildings",
+            service_url="https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer",
+            layer_id=42,
+            name="Sarpy County building footprints",
+            jurisdiction=sarpy,
+            jurisdiction_level="county",
+            notes="Public Sarpy County building footprint layer. Empty responses are reported as missing candidates, not inferred buildings.",
+        ),
+        build_arcgis_provider_record(
+            source_type="roads_row",
+            service_url="https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer",
+            layer_id=3,
+            name="Sarpy County road centerlines",
+            jurisdiction=sarpy,
+            jurisdiction_level="county",
+            notes="Road centerlines only; not a right-of-way survey or construction control source.",
+        ),
+        build_arcgis_provider_record(
+            source_type="utilities",
+            service_url="https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/SanitarySewerNetwork/MapServer",
+            layer_id=10,
+            name="Sarpy County sanitary gravity mains",
+            jurisdiction=sarpy,
+            jurisdiction_level="utility",
+            notes="Partial public sanitary layer only; does not replace utility-owner records, one-call locates, or field verification.",
+        ),
+    ]
+
+
+def target_market_known_gaps(*, address: str = "", lat: Any = None, lng: Any = None) -> List[Dict[str, Any]]:
+    if not target_market_provider_records(address=address, lat=lat, lng=lng):
+        return []
+    return [
+        {
+            "source_type": "contours",
+            "label": "contours",
+            "status": "known_source_not_query_configured",
+            "message": (
+                "Sarpy/Omaha metro contours were found as a VectorTileServer, not a queryable ArcGIS FeatureServer/MapServer layer. "
+                "Configure a queryable contour service URL/API or import contours before reporting contour candidates."
+            ),
+            "source_url": "https://tiles.arcgis.com/tiles/OiG7dbwhQEWoy77N/arcgis/rest/services/Contours_Metro/VectorTileServer",
+        }
     ]
 
 
@@ -346,4 +417,6 @@ __all__ = [
     "provider_freshness_status",
     "providers_for_source_type",
     "selected_provider",
+    "target_market_known_gaps",
+    "target_market_provider_records",
 ]

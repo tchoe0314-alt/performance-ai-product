@@ -11,6 +11,8 @@ from .gis_provider_registry import (
     build_provider_registry,
     providers_for_source_type,
     selected_provider,
+    target_market_known_gaps,
+    target_market_provider_records,
 )
 from .map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
 from .standards_discovery import discover_standards_sources
@@ -18,7 +20,7 @@ from .standards_discovery import discover_standards_sources
 
 CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 USGS_EPQS_URL = "https://epqs.nationalmap.gov/v1/json"
-FEMA_NFHL_MAPSERVER_URL = "https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer"
+FEMA_NFHL_MAPSERVER_URL = "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer"
 USFWS_WETLANDS_MAPSERVER_URL = "https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer"
 ONLINE_DISCOVERY_VERSION = "online_existing_conditions_discovery_v1"
 
@@ -115,8 +117,9 @@ def fetch_usgs_elevation_point(lat: float, lng: float, *, units: str = "Feet", s
         payload = _json_get(session, USGS_EPQS_URL, params)
     except Exception as exc:
         return {"success": False, "source_type": "usgs_3dep_epqs", "status": "fetch_failed", "warnings": [safe_str(exc)]}
-    value = safe_dict(payload.get("value"))
-    elevation = value.get("elevation")
+    raw_value = payload.get("value")
+    value = safe_dict(raw_value)
+    elevation = raw_value if isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool) else value.get("elevation")
     if elevation in (None, "", -1000000):
         return {"success": False, "source_type": "usgs_3dep_epqs", "status": "no_elevation", "warnings": ["USGS elevation query returned no usable elevation."]}
     return {
@@ -128,6 +131,7 @@ def fetch_usgs_elevation_point(lat: float, lng: float, *, units: str = "Feet", s
         "lng": lng,
         "elevation": safe_float(elevation),
         "units": units,
+        "source_date": safe_str(safe_dict(payload.get("attributes")).get("AcquisitionDate") or value.get("date")),
         "truth_label": "Public DEM point elevation; not a topographic survey.",
     }
 
@@ -343,6 +347,8 @@ def _source_blockers(*, label: str, result_records: List[Dict[str, Any]], candid
         blockers.append(f"{label} candidates are review-required and not survey-backed.")
     if not result_records:
         blockers.append(f"{label} source is missing/unavailable.")
+    if not candidate_count and any(result.get("success") for result in result_records):
+        blockers.append(f"{label} provider responded but returned no features inside the address search area.")
     for result in result_records:
         status = safe_str(result.get("status"), "missing")
         warnings = [safe_str(item) for item in safe_list(result.get("warnings")) if safe_str(item)]
@@ -409,6 +415,7 @@ def build_online_existing_conditions_discovery_report(
     missing_sources: List[Dict[str, Any]] = []
     failed_sources: List[Dict[str, Any]] = []
     registry = safe_dict(provider_registry) or build_provider_registry(include_builtin=True)
+    known_gaps = safe_list(registry.get("known_gaps"))
 
     for key, spec in DISCOVERY_SOURCE_SPECS.items():
         label = safe_str(spec.get("label"), key)
@@ -468,6 +475,14 @@ def build_online_existing_conditions_discovery_report(
                 count = sum(len(safe_list(safe_dict(result.get("geojson")).get("features"))) for result in result_records)
         blockers = _source_blockers(label=label, result_records=result_records, candidate_count=count)
         record = _source_record(key=key, label=label, result_records=result_records, candidate_count=count, blockers=blockers)
+        for gap in known_gaps:
+            gap_rec = safe_dict(gap)
+            if normalize_gap := safe_str(gap_rec.get("source_type")):
+                if normalize_gap == safe_str(spec.get("result_keys", ("",))[0]) or normalize_gap in spec.get("layer_keys", ()):
+                    if not count:
+                        message = safe_str(gap_rec.get("message"))
+                        if message and message not in record["blockers"]:
+                            blockers.append(message)
         sources.append(record)
         candidate_count += count
         if not count:
@@ -631,6 +646,21 @@ def fetch_online_existing_conditions(
     }
     source_results["geocode"] = geocode
     location_context = location_context_from_geocode(address=address, geocode=geocode)
+    target_records = target_market_provider_records(
+        address=address,
+        lat=safe_float(geocode.get("lat")) if geocode.get("success") else None,
+        lng=safe_float(geocode.get("lng")) if geocode.get("success") else None,
+    )
+    if target_records:
+        registry = build_provider_registry(
+            providers=safe_list(registry.get("providers")) + target_records,
+            include_builtin=False,
+        )
+        registry["known_gaps"] = target_market_known_gaps(
+            address=address,
+            lat=safe_float(geocode.get("lat")) if geocode.get("success") else None,
+            lng=safe_float(geocode.get("lng")) if geocode.get("success") else None,
+        )
     if not working_bbox and geocode.get("success"):
         working_bbox = bbox_around_point(safe_float(geocode.get("lat")), safe_float(geocode.get("lng")))
     if not working_bbox:
