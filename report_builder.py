@@ -432,6 +432,7 @@ def _report_export_trace(final_plan: Dict[str, Any]) -> Dict[str, Any]:
     quantity_rows = deepcopy(_safe_list(report.get("quantity_line_items")))
     profile_packages = deepcopy(_safe_list(report.get("profile_packages")))
     section_packages = deepcopy(_safe_list(report.get("section_packages")))
+    annotation_trace = deepcopy(_safe_dict(report.get("annotation_standard_trace")))
     stale_outputs = deepcopy(_safe_list(report.get("stale_outputs_detected")))
     return {
         "source": "report_export_trace_v1",
@@ -456,6 +457,15 @@ def _report_export_trace(final_plan: Dict[str, Any]) -> Dict[str, Any]:
             "sections": section_packages,
             "profile_count": len(profile_packages),
             "section_count": len(section_packages),
+            "review_package_only": True,
+            "engineer_review_required": True,
+            "construction_release_allowed": False,
+        },
+        "annotation_export": {
+            "trace": annotation_trace,
+            "supported_annotation_styles": deepcopy(_safe_dict(annotation_trace.get("supported_annotation_styles"))),
+            "template_backed_behavior": deepcopy(_safe_dict(annotation_trace.get("template_backed_behavior"))),
+            "export_support": deepcopy(_safe_dict(annotation_trace.get("export_support"))),
             "review_package_only": True,
             "engineer_review_required": True,
             "construction_release_allowed": False,
@@ -610,6 +620,7 @@ class ReportBuilder:
                 "export_trace": deepcopy(export_trace),
                 "quantity_report": deepcopy(export_trace["quantity_report"]),
                 "profile_section_export": deepcopy(export_trace["profile_section_export"]),
+                "annotation_export": deepcopy(export_trace["annotation_export"]),
             },
             release=release,
             sections=sections,

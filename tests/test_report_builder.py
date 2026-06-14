@@ -290,6 +290,10 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertEqual(export_trace["civil3d_external_verification_status"], "not_verified")
         self.assertEqual(export_trace["dwg_support_status"], "unsupported_no_native_writer")
         self.assertFalse(export_trace["profile_section_export"]["construction_release_allowed"])
+        self.assertIn("annotation_export", report["exports"])
+        self.assertIn("linear", report["exports"]["annotation_export"]["supported_annotation_styles"]["dimension_kinds"])
+        self.assertIn("pavement", report["exports"]["annotation_export"]["supported_annotation_styles"]["hatch_targets"])
+        self.assertFalse(report["exports"]["annotation_export"]["construction_release_allowed"])
 
     def test_build_report_blocks_stale_export_package_report(self):
         final_plan = _plan()

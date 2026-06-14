@@ -622,6 +622,30 @@ def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
             ),
         ),
     }
+    formats["dxf"]["preservation_contract"] = {
+        "layers": "verified_by_local_parse_when_export_exists",
+        "object_types": "verified_by_local_parse_for_supported_entities",
+        "blocks_symbols": "placeholder_preservation_checked_when_present",
+        "text_labels": "verified_by_local_parse_when_present",
+        "dimensions": "verified_where_supported_by_exporter",
+        "canonical_ids": "required_via_sidecar_and_export_audit_traceability",
+    }
+    formats["landxml"]["workflow_states"] = ["not_verified", "blocked_needs_review", "externally_verified_review_only"]
+    formats["landxml"]["workflow_state"] = "not_verified"
+    formats["civil3d"]["workflow_states"] = ["not_verified", "blocked_needs_review", "externally_verified_review_only"]
+    formats["civil3d"]["workflow_state"] = "not_verified"
+    formats["civil3d"]["required_external_record"] = [
+        "verifier_identity",
+        "verification_date",
+        "tool",
+        "tool_version",
+        "source_artifact_hashes",
+        "import_result",
+        "observed_limitations",
+    ]
+    formats["dwg"]["native_writer"] = False
+    formats["dwg"]["external_conversion_opt_in_required"] = True
+    formats["dwg"]["review_artifact_only"] = True
     return {
         "source": "review_package_export_confidence_v1",
         "export_audit_present": bool(audit),

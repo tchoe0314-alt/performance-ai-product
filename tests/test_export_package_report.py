@@ -72,6 +72,41 @@ def _plan() -> dict:
                     "profile_length_ft": {"source_object_ids": ["profile-canon-1"]},
                 }
             },
+            "active_customer_template": {
+                "template_id": "acme_site_template",
+                "review_status": "accepted_for_workspace",
+                "accepted_for_workspace": True,
+                "sections": {
+                    "layer_standards": {"layers": [{"name": "C-ANNO-DIMS"}, {"name": "C-UTIL"}]},
+                    "label_style": {"styles": [{"key": "company_label", "format": "{label}"}]},
+                    "symbol_library": {"blocks": [{"block_id": "inlet", "name": "Storm inlet"}]},
+                    "annotation_standards": {
+                        "dimension_styles": [
+                            {"key": "linear", "kind": "linear", "precision": 2, "units": "ft", "suffix": "'"},
+                            {"key": "aligned", "kind": "aligned", "precision": 2, "units": "ft", "suffix": "'"},
+                            {"key": "angular", "kind": "angular", "precision": 1, "units": "deg", "suffix": " deg"},
+                        ],
+                        "text_styles": [{"key": "company_label", "family": "Inter", "size": 0.12}],
+                        "leader_callout_styles": [{"key": "object_callout", "connected_to_objects": True}],
+                        "hatch_fill_styles": [
+                            {"target": "pavement", "pattern": "ANSI31"},
+                            {"target": "building", "pattern": "SOLID"},
+                            {"target": "basin", "pattern": "GRAVEL"},
+                            {"target": "landscape", "pattern": "AR-SAND"},
+                            {"target": "easement_constraint", "pattern": "DOTS"},
+                        ],
+                        "linetype_styles": [
+                            {"target": "existing", "linetype": "CONTINUOUS"},
+                            {"target": "proposed", "linetype": "CONTINUOUS"},
+                            {"target": "utility", "linetype": "DASHED"},
+                            {"target": "row", "linetype": "PHANTOM"},
+                            {"target": "easement", "linetype": "HIDDEN"},
+                            {"target": "existing_contours", "linetype": "DASHED"},
+                            {"target": "proposed_contours", "linetype": "CONTINUOUS"},
+                        ],
+                    },
+                },
+            },
             "construction_readiness": {
                 "ready": True,
                 "status": "construction_ready",
@@ -115,6 +150,16 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertEqual(report["quantity_line_items"][0]["canonical_ids"], ["storm-1"])
         self.assertEqual(report["profile_packages"][0]["canonical_ids"], ["profile-canon-1", "align-1", "profile-1"])
         self.assertEqual(report["section_packages"][0]["canonical_ids"], ["section-canon-1", "align-1", "section-1"])
+        annotation_trace = report["annotation_standard_trace"]
+        self.assertEqual(annotation_trace["source"], "customer_template")
+        self.assertEqual(annotation_trace["template_id"], "acme_site_template")
+        self.assertTrue(annotation_trace["engineer_review_required"])
+        self.assertFalse(annotation_trace["construction_release_allowed"])
+        self.assertEqual(annotation_trace["supported_annotation_styles"]["dimension_kinds"], ["linear", "aligned", "angular"])
+        self.assertIn("pavement", annotation_trace["supported_annotation_styles"]["hatch_targets"])
+        self.assertIn("utility", annotation_trace["supported_annotation_styles"]["linetype_targets"])
+        self.assertTrue(annotation_trace["template_backed_behavior"]["uses_customer_label_styles_when_present"])
+        self.assertEqual(annotation_trace["export_support"]["dxf"].split(";")[0], "supported_where_exporter_maps layers, linetypes, text, blocks, and hatch records")
 
     def test_stale_canonical_revision_blocks_export_readiness(self) -> None:
         plan = _plan()
@@ -179,6 +224,14 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertEqual(report["external_verification"]["civil3d"]["status"], "not_verified")
         self.assertTrue(report["profile_packages"])
         self.assertTrue(report["section_packages"])
+        self.assertEqual(report["dxf_compatibility_matrix"]["layers"], "verified_by_local_parse_when_export_exists")
+        self.assertEqual(report["dxf_compatibility_matrix"]["canonical_ids"], "required_via_sidecar_and_export_audit_traceability")
+        self.assertEqual(report["external_workflow_requirements"]["landxml"]["current_state"], "not_verified")
+        self.assertEqual(report["external_workflow_requirements"]["civil3d"]["current_state"], "not_verified")
+        self.assertTrue(report["external_workflow_requirements"]["dwg"]["external_conversion_hook_required"])
+        self.assertFalse(report["external_workflow_requirements"]["dwg"]["native_supported"])
+        self.assertIn("no native DWG writer", report["cad_interop_blockers"]["dwg"])
+        self.assertIn("target workflow record", report["cad_interop_blockers"]["civil3d"])
 
     def test_unsupported_civil3d_and_dwg_are_labeled_honestly(self) -> None:
         plan = _plan()
@@ -194,6 +247,10 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertIn("dwg_capability_matrix", report)
         self.assertEqual(report["dwg_capability_matrix"]["dwg_native"]["status"], "unsupported_no_native_writer")
         self.assertFalse(report["dwg_capability_matrix"]["dwg_native"]["native_writer"])
+        self.assertFalse(report["dwg_strategy"]["dwg_native_export_supported"])
+        self.assertFalse(report["dwg_strategy"]["dwg_external_conversion_review_artifact_available"])
+        self.assertEqual(report["dwg_capability_matrix"]["landxml_exchange"]["workflow_states"], ["not_verified", "blocked_needs_review", "externally_verified_review_only"])
+        self.assertEqual(report["dwg_capability_matrix"]["civil3d_native_package"]["workflow_states"], ["not_verified", "blocked_needs_review", "externally_verified_review_only"])
         self.assertGreaterEqual(len(report["dwg_provider_options"]), 3)
         self.assertFalse(any(option["civora_native_support"] for option in report["dwg_provider_options"]))
 
@@ -226,6 +283,9 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertTrue(verified["supported_deliverables"]["dwg"]["available"])
         self.assertTrue(verified["supported_deliverables"]["dwg"]["review_ready"])
         self.assertFalse(verified["supported_deliverables"]["dwg"]["native_writer"])
+        self.assertTrue(verified["supported_deliverables"]["dwg"]["review_artifact_only"])
+        self.assertFalse(verified["dwg_strategy"]["dwg_native_export_supported"])
+        self.assertTrue(verified["dwg_strategy"]["dwg_external_conversion_review_artifact_available"])
         self.assertTrue(verified["dwg_strategy"]["external_workflow_record_present"])
 
     def test_failed_external_civil3d_verification_is_blocked_needs_review(self) -> None:

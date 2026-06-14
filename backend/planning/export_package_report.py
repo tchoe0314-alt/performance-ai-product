@@ -11,6 +11,7 @@ from .production_depth import build_cad_interop_metadata
 from .export_external_verification import normalize_external_verification_record
 from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
 from .smart_fix import build_smart_fix_recommendations
+from .annotation_standards import build_annotation_standards_trace
 
 
 def _utc_now_iso() -> str:
@@ -383,15 +384,36 @@ def _format_matrix(cad_interop: Dict[str, Any], export_audit_ready: bool) -> Dic
             "construction_ready": False,
             "status": safe_str(row.get("status"), "not_available"),
         }
+    formats["dxf"]["preservation_contract"] = {
+        "layers": "verified_by_local_parse_when_export_exists",
+        "object_types": "verified_by_local_parse_for_supported_entities",
+        "blocks_symbols": "placeholder_preservation_checked_when_present",
+        "text_labels": "verified_by_local_parse_when_present",
+        "dimensions": "verified_where_supported_by_exporter",
+        "canonical_ids": "required_via_sidecar_and_export_audit_traceability",
+    }
+    formats["dxf"]["verification_scope"] = "Civora DXF export -> local parse -> Civora verification"
     formats["civil3d"]["available"] = False
     formats["civil3d"]["review_ready"] = False
     formats["civil3d"]["status"] = "not_verified"
+    formats["civil3d"]["workflow_state"] = "not_verified"
+    formats["civil3d"]["required_external_record"] = {
+        "verifier_identity": True,
+        "verification_date": True,
+        "tool": True,
+        "tool_version": True,
+        "source_artifact_hashes": True,
+        "import_result": True,
+        "observed_limitations": True,
+    }
     dwg_strategy = safe_dict(cad_interop.get("dwg_strategy"))
     formats["dwg"]["available"] = bool(dwg_strategy.get("dwg_export_supported"))
     formats["dwg"]["review_ready"] = bool(dwg_strategy.get("dwg_review_ready"))
     formats["dwg"]["status"] = safe_str(dwg_strategy.get("dwg_status"), DWG_UNSUPPORTED_STATUS)
     formats["dwg"]["native_writer"] = False
     formats["dwg"]["requires_external_workflow_record"] = True
+    formats["dwg"]["external_conversion_opt_in_required"] = True
+    formats["dwg"]["review_artifact_only"] = True
     if not export_audit_ready:
         formats["dxf"]["review_ready"] = False
         if formats["dxf"]["status"] in {"", "ready", "review_ready", "available"}:
@@ -417,12 +439,14 @@ def _apply_external_verification_to_formats(
         status = safe_str(safe_dict(external_verification.get(format_id)).get("status"), "not_verified")
         if status in {"blocked_needs_review", "externally_verified_review_only", "not_verified"}:
             updated.setdefault(format_id, {})["status"] = status
+            updated.setdefault(format_id, {})["workflow_state"] = status
         updated.setdefault(format_id, {})["construction_ready"] = False
     dwg_status = safe_str(safe_dict(external_verification.get("dwg")).get("status"))
     if dwg_status:
         updated.setdefault("dwg", {})["status"] = dwg_status
     updated.setdefault("dwg", {})["construction_ready"] = False
     updated.setdefault("dwg", {})["native_writer"] = False
+    updated.setdefault("dwg", {})["review_artifact_only"] = True
     return updated
 
 
@@ -472,6 +496,7 @@ def build_export_package_report_v1(
     external_verification = _external_verification_hooks(meta)
     formats = _apply_external_verification_to_formats(formats, external_verification)
     civil3d_compatibility = _civil3d_compatibility_status(external_verification)
+    annotation_trace = build_annotation_standards_trace(meta, export_type=safe_str(export_type))
     review_blocked = bool(audit_blocked or gate_blocked or stale)
     deliverable_confidence = (
         "construction_blocked"
@@ -507,6 +532,7 @@ def build_export_package_report_v1(
         "construction_release_blocker_details": blocker_explanations(_unique(construction_blockers + safe_list(export_audit.get("blocked_reasons")))),
         "smart_fix_recommendations_v1": build_smart_fix_recommendations(plan, meta=meta),
         "canonical_ids_included": canonical_ids,
+        "annotation_standard_trace": annotation_trace,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
         "deliverable_confidence": deliverable_confidence,
         "quantity_line_items": _quantity_line_items(meta, safe_str(export_type)),
@@ -514,6 +540,31 @@ def build_export_package_report_v1(
         "section_packages": _deliverable_records(meta, "cross_sections", safe_str(export_type)),
         "external_verification": external_verification,
         "supported_deliverables": deepcopy(formats),
+        "dxf_compatibility_matrix": deepcopy(formats["dxf"].get("preservation_contract")),
+        "external_workflow_requirements": {
+            "landxml": {
+                "workflow_states": ["not_verified", "blocked_needs_review", "externally_verified_review_only"],
+                "current_state": safe_str(formats["landxml"].get("workflow_state") or formats["landxml"].get("status"), "not_verified"),
+                "review_only": True,
+            },
+            "civil3d": {
+                "workflow_states": ["not_verified", "blocked_needs_review", "externally_verified_review_only"],
+                "current_state": civil3d_compatibility,
+                "required_record": deepcopy(formats["civil3d"].get("required_external_record")),
+                "review_only": True,
+            },
+            "dwg": {
+                "native_supported": False,
+                "external_conversion_hook_required": True,
+                "external_workflow_record_required": True,
+                "current_state": dwg_strategy["dwg_status"],
+                "review_only": True,
+            },
+        },
+        "cad_interop_blockers": {
+            "dwg": dwg_strategy["dwg_unsupported_reason"],
+            "civil3d": "Civil 3D remains not_verified until a target workflow record documents tool/version, source hashes, import result, and limitations.",
+        },
         "dwg_strategy": dwg_strategy,
         "dwg_capability_matrix": dwg_strategy["capability_matrix"],
         "dwg_provider_options": dwg_strategy["provider_options"],

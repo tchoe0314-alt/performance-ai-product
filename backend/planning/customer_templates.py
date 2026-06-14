@@ -14,6 +14,7 @@ TEMPLATE_TYPES = {
     "layer_standards",
     "title_block",
     "label_style",
+    "annotation_standards",
     "symbol_library",
     "report_template",
     "cost_book_link",
@@ -201,6 +202,34 @@ def sample_customer_template() -> Dict[str, Any]:
                     {"key": "spot_grade", "format": "FG {elevation_ft}"},
                 ]
             },
+            "annotation_standards": {
+                "dimension_styles": [
+                    {"key": "linear_feet", "kind": "linear", "precision": 2, "units": "ft", "suffix": "'", "layer": "C-ANNO-DIMS"},
+                    {"key": "aligned_feet", "kind": "aligned", "precision": 2, "units": "ft", "suffix": "'", "layer": "C-ANNO-DIMS"},
+                    {"key": "angular_degrees", "kind": "angular", "precision": 1, "units": "deg", "suffix": " deg", "layer": "C-ANNO-DIMS"},
+                ],
+                "text_styles": [
+                    {"key": "plan_label", "family": "Arial", "size": 0.10, "size_units": "in_paper", "alignment": "middle_center"},
+                    {"key": "callout", "family": "Arial", "size": 0.12, "size_units": "in_paper", "alignment": "left"},
+                ],
+                "leader_callout_styles": [{"key": "object_callout", "connected_to_objects": True, "arrowhead": "closed_filled"}],
+                "hatch_fill_styles": [
+                    {"target": "pavement", "pattern": "ANSI31"},
+                    {"target": "building", "pattern": "SOLID"},
+                    {"target": "basin", "pattern": "GRAVEL"},
+                    {"target": "landscape", "pattern": "AR-SAND"},
+                    {"target": "easement_constraint", "pattern": "DOTS"},
+                ],
+                "linetype_styles": [
+                    {"target": "existing", "linetype": "CONTINUOUS"},
+                    {"target": "proposed", "linetype": "CONTINUOUS"},
+                    {"target": "utility", "linetype": "DASHED"},
+                    {"target": "row", "linetype": "PHANTOM"},
+                    {"target": "easement", "linetype": "HIDDEN"},
+                    {"target": "existing_contours", "linetype": "DASHED"},
+                    {"target": "proposed_contours", "linetype": "CONTINUOUS"},
+                ],
+            },
             "symbol_library": {
                 "blocks": [
                     {"block_id": "storm_inlet_plan", "name": "Storm inlet"},
@@ -243,6 +272,10 @@ def summarize_template(template: Dict[str, Any]) -> Dict[str, Any]:
         "layer_count": len(_safe_list(_section(template, "layer_standards").get("layers"))),
         "title_block_count": 1 if _section(template, "title_block") else 0,
         "label_style_count": len(_safe_list(_section(template, "label_style").get("styles"))),
+        "dimension_style_count": len(_safe_list(_section(template, "annotation_standards").get("dimension_styles"))),
+        "text_style_count": len(_safe_list(_section(template, "annotation_standards").get("text_styles"))),
+        "hatch_style_count": len(_safe_list(_section(template, "annotation_standards").get("hatch_fill_styles"))),
+        "linetype_style_count": len(_safe_list(_section(template, "annotation_standards").get("linetype_styles"))),
         "symbol_count": len(_safe_list(_section(template, "symbol_library").get("blocks"))),
         "report_template_count": len(_safe_list(_section(template, "report_template").get("reports"))),
         "cost_book_link_count": len(_safe_list(_section(template, "cost_book_link").get("links"))),
@@ -273,6 +306,7 @@ def template_behavior(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             "Layer standards guide generated CAD layer names, colors, and lineweights where matching systems exist.",
             "Title block templates provide sheet metadata fields for deliverable setup.",
             "Label style templates guide plan labels and callouts.",
+            "Annotation standards guide dimensions, text, leaders/callouts, hatches, linetypes, scale behavior, and annotation layer assignment as review/drafting aids.",
             "Symbol/block libraries expose reusable firm blocks for plan objects.",
             "Report templates select report sections and ordering.",
             "Cost book template links connect estimates to firm price-book references after separate cost-book review.",

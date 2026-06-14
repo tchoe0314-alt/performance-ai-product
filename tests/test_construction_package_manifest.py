@@ -81,8 +81,15 @@ class ConstructionPackageManifestTests(unittest.TestCase):
         self.assertEqual(formats["dxf"]["status"], "audited_review_ready")
         self.assertTrue(formats["dxf"]["review_ready"])
         self.assertEqual(formats["landxml"]["status"], "pipe_network_contract_review_ready_not_civil3d_verified")
+        self.assertEqual(formats["landxml"]["workflow_state"], "not_verified")
         self.assertEqual(formats["civil3d"]["status"], "not_verified")
+        self.assertEqual(formats["civil3d"]["workflow_states"], ["not_verified", "blocked_needs_review", "externally_verified_review_only"])
+        self.assertIn("source_artifact_hashes", formats["civil3d"]["required_external_record"])
         self.assertEqual(formats["dwg"]["status"], "unsupported_no_native_writer")
+        self.assertFalse(formats["dwg"]["native_writer"])
+        self.assertTrue(formats["dwg"]["external_conversion_opt_in_required"])
+        self.assertTrue(formats["dwg"]["review_artifact_only"])
+        self.assertEqual(formats["dxf"]["preservation_contract"]["canonical_ids"], "required_via_sidecar_and_export_audit_traceability")
 
     def test_review_package_manifest_blocks_missing_export_audit(self) -> None:
         meta = {

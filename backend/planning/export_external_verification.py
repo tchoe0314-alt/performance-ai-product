@@ -71,6 +71,9 @@ EXTERNAL_VERIFICATION_STATUS_PASSED = "externally_verified_review_only"
 
 _PASSED_RESULTS = {"pass", "passed", "success", "successful", "accepted", "verified"}
 _FAILED_RESULTS = {"fail", "failed", "blocked", "rejected", "error", "needs_review", "needs review"}
+_DXF_TEXT_TYPES = {"TEXT", "MTEXT", "ATTRIB", "ATTDEF"}
+_DXF_DIMENSION_TYPES = {"DIMENSION", "LEADER", "MLEADER"}
+_DXF_BLOCK_TYPES = {"INSERT"}
 
 
 def _unique(values: Iterable[Any]) -> List[str]:
@@ -255,6 +258,77 @@ def _profile_section_linkage_check(plan: Dict[str, Any], sidecar: Dict[str, Any]
     }
 
 
+def _dxf_entity_value(entity: Any, name: str, default: str = "") -> str:
+    try:
+        return safe_str(getattr(entity.dxf, name), default)
+    except Exception:
+        return default
+
+
+def _dxf_preservation_check(doc: Any, sidecar: Dict[str, Any], trace_check: Dict[str, Any]) -> Dict[str, Any]:
+    entity_types: Dict[str, int] = {}
+    entity_layers: Dict[str, List[str]] = {}
+    text_values: List[str] = []
+    block_names: List[str] = []
+    dimension_count = 0
+    handles: List[str] = []
+    for layout in doc.layouts:
+        for entity in layout:
+            entity_type = safe_str(entity.dxftype()).upper()
+            if not entity_type:
+                continue
+            entity_types[entity_type] = entity_types.get(entity_type, 0) + 1
+            layer = _dxf_entity_value(entity, "layer")
+            if layer:
+                entity_layers.setdefault(entity_type, [])
+                if layer not in entity_layers[entity_type]:
+                    entity_layers[entity_type].append(layer)
+            handle = _dxf_entity_value(entity, "handle")
+            if handle:
+                handles.append(handle)
+            if entity_type in _DXF_TEXT_TYPES:
+                plain_text = getattr(entity, "plain_text", None)
+                text = safe_str(plain_text() if callable(plain_text) else "")
+                if not text:
+                    text = _dxf_entity_value(entity, "text")
+                if text:
+                    text_values.append(text)
+            if entity_type in _DXF_BLOCK_TYPES:
+                name = _dxf_entity_value(entity, "name")
+                if name:
+                    block_names.append(name)
+            if entity_type in _DXF_DIMENSION_TYPES:
+                dimension_count += 1
+
+    report = _package_report_from_plan_or_sidecar({}, sidecar)
+    expected_ids = safe_list(report.get("canonical_ids_included")) or safe_list(trace_check.get("canonical_ids"))
+    sidecar_text = json.dumps(sidecar, sort_keys=True)
+    traced_ids = [safe_str(item) for item in expected_ids if safe_str(item) and safe_str(item) in sidecar_text]
+    layers_present = bool(entity_layers)
+    object_types_present = bool(entity_types)
+    text_present = bool(text_values)
+    canonical_trace_present = bool(trace_check.get("present") and traced_ids)
+    return {
+        "source": "dxf_preservation_check_v1",
+        "layer_preservation": "passed" if layers_present else "not_found",
+        "object_type_preservation": "passed" if object_types_present else "not_found",
+        "block_symbol_placeholder_preservation": "passed" if block_names else "not_present_in_export",
+        "text_label_preservation": "passed" if text_present else "not_found",
+        "dimension_preservation": "passed" if dimension_count else "not_present_or_not_supported_by_export",
+        "canonical_id_traceability": "passed" if canonical_trace_present else "failed",
+        "entity_type_counts": entity_types,
+        "entity_layers": {key: sorted(values) for key, values in entity_layers.items()},
+        "text_label_count": len(text_values),
+        "sample_text_labels": _unique(text_values)[:12],
+        "block_symbol_placeholder_count": len(block_names),
+        "block_symbol_names": _unique(block_names),
+        "dimension_entity_count": dimension_count,
+        "entity_handle_count": len(_unique(handles)),
+        "traced_canonical_ids": _unique(traced_ids),
+        "review_scope": "local_dxf_parse_only",
+    }
+
+
 def verify_dxf_export(
     artifact_path: Path,
     *,
@@ -270,6 +344,7 @@ def verify_dxf_export(
     parseable = False
     used_layers: List[str] = []
     table_layers: List[str] = []
+    preservation_check: Dict[str, Any] = {}
     failures: List[str] = []
     try:
         import ezdxf
@@ -285,6 +360,7 @@ def verify_dxf_export(
                 if safe_str(getattr(entity.dxf, "layer", ""))
             }
         )
+        preservation_check = _dxf_preservation_check(doc, sidecar, _canonical_trace_check(plan, sidecar))
     except Exception as exc:
         failures.append(f"dxf_parse_failed:{safe_str(exc)}")
 
@@ -295,6 +371,8 @@ def verify_dxf_export(
     sidecar_current_check = _sidecar_current_check(plan, sidecar_check)
     trace_check = _canonical_trace_check(plan, sidecar)
     linkage_check = _profile_section_linkage_check(plan, sidecar)
+    if parseable:
+        preservation_check = _dxf_preservation_check(doc, sidecar, trace_check)
     local_contract_ok = (
         parseable
         and not unknown_layers
@@ -304,6 +382,7 @@ def verify_dxf_export(
         and not sidecar_check["stale_export_blocked"]
         and sidecar_current_check["matches_current_canonical"]
         and trace_check["present"]
+        and safe_str(preservation_check.get("canonical_id_traceability")) == "passed"
         and sidecar_check["construction_release_allowed"] is False
     )
     if not sidecar_check["present"]:
@@ -318,12 +397,26 @@ def verify_dxf_export(
         failures.append("sidecar_canonical_reference_mismatch")
     if not trace_check["present"]:
         failures.append("canonical_id_traceability_missing")
+    if parseable and safe_str(preservation_check.get("canonical_id_traceability")) != "passed":
+        failures.append("dxf_roundtrip_canonical_traceability_failed")
     return {
         "source": "export_external_verification_v1",
         "format": "dxf",
         "artifact_path": str(artifact_path),
         "local_parse_status": "passed" if parseable else "failed",
+        "roundtrip_parse_status": "passed" if parseable and not any(item.startswith("dxf_parse_failed") for item in failures) else "failed",
         "layer_contract_status": "passed" if parseable and not unknown_layers else "failed",
+        "preservation_check": preservation_check,
+        "compatibility_matrix": {
+            "layers": safe_str(preservation_check.get("layer_preservation"), "failed"),
+            "object_types": safe_str(preservation_check.get("object_type_preservation"), "failed"),
+            "blocks_symbols": safe_str(preservation_check.get("block_symbol_placeholder_preservation"), "failed"),
+            "text_labels": safe_str(preservation_check.get("text_label_preservation"), "failed"),
+            "dimensions": safe_str(preservation_check.get("dimension_preservation"), "failed"),
+            "canonical_ids": safe_str(preservation_check.get("canonical_id_traceability"), "failed"),
+            "civil3d": EXTERNAL_VERIFICATION_STATUS_NOT_VERIFIED,
+            "dwg": DWG_UNSUPPORTED_STATUS,
+        },
         "used_layers": used_layers,
         "declared_layers": table_layers,
         "unknown_layers": unknown_layers,

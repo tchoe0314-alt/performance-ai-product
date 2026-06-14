@@ -74,7 +74,18 @@ class ExportExternalVerificationTests(unittest.TestCase):
             result = verify_dxf_export(artifact_path, plan=plan)
 
         self.assertEqual(result["local_parse_status"], "passed")
+        self.assertEqual(result["roundtrip_parse_status"], "passed")
         self.assertEqual(result["layer_contract_status"], "passed")
+        self.assertEqual(result["compatibility_matrix"]["layers"], "passed")
+        self.assertEqual(result["compatibility_matrix"]["object_types"], "passed")
+        self.assertEqual(result["compatibility_matrix"]["text_labels"], "passed")
+        self.assertIn(result["compatibility_matrix"]["dimensions"], {"passed", "not_present_or_not_supported_by_export"})
+        self.assertEqual(result["compatibility_matrix"]["canonical_ids"], "passed")
+        self.assertEqual(result["compatibility_matrix"]["civil3d"], "not_verified")
+        self.assertEqual(result["compatibility_matrix"]["dwg"], "unsupported_no_native_writer")
+        self.assertIn("LINE", result["preservation_check"]["entity_type_counts"])
+        self.assertGreaterEqual(result["preservation_check"]["text_label_count"], 1)
+        self.assertIn("storm-1", result["preservation_check"]["traced_canonical_ids"])
         self.assertTrue(result["sidecar_metadata"]["present"])
         self.assertTrue(result["sidecar_metadata"]["artifact_path_matches"])
         self.assertTrue(result["sidecar_metadata"]["export_package_report_present"])
@@ -92,6 +103,27 @@ class ExportExternalVerificationTests(unittest.TestCase):
         self.assertFalse(result["externally_verified"])
         self.assertFalse(result["construction_release_allowed"])
         self.assertTrue(result["construction_release_blocked"])
+
+    def test_dxf_roundtrip_reports_supported_and_limited_preservation_without_civil3d_claim(self) -> None:
+        plan = _plan()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "roundtrip-preservation.dxf"
+            save_dxf(plan, filename=str(artifact_path))
+
+            result = verify_dxf_export(artifact_path, plan=plan)
+
+        matrix = result["compatibility_matrix"]
+        preservation = result["preservation_check"]
+        self.assertEqual(matrix["layers"], "passed")
+        self.assertEqual(matrix["object_types"], "passed")
+        self.assertEqual(matrix["blocks_symbols"], "passed")
+        self.assertEqual(matrix["text_labels"], "passed")
+        self.assertEqual(matrix["canonical_ids"], "passed")
+        self.assertEqual(preservation["review_scope"], "local_dxf_parse_only")
+        self.assertGreaterEqual(preservation["block_symbol_placeholder_count"], 1)
+        self.assertFalse(result["externally_verified"])
+        self.assertEqual(result["civil3d_external_verification_status"], "not_verified")
 
     def test_dxf_verification_fails_without_sidecar_metadata(self) -> None:
         plan = _plan()
