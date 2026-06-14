@@ -27,6 +27,18 @@ import {
   translateSiteGeometry,
   coordinateModeLabel,
 } from "../utils/geometryTransforms";
+import {
+  cleanupPolygon,
+  filletGeometry,
+  offsetGeometry,
+  resolveCadSnap,
+  transformGeometry,
+  trimOrExtendGeometry,
+  validatePolygon,
+  validateTopology,
+  type CadSegment2D,
+  type CadSnapKind,
+} from "../utils/cadGeometryKernel";
 import Preview3DCanvas from "./Preview3DCanvas";
 
 type PreviewPhaseLabel = { label: string } | null;
@@ -36,7 +48,6 @@ type EngineeringSystemStatuses = Record<
   EngineeringSystemStatus
 >;
 type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
-type CadSnapKind = "endpoint" | "midpoint" | "intersection" | "perpendicular" | "orthogonal";
 type CadPoint = { x: number; y: number };
 type CadSymbolKind = "hydrant" | "inlet" | "manhole" | "tree" | "utility_marker" | "note_callout";
 type CadDimensionMode = "linear" | "aligned";
@@ -1410,19 +1421,8 @@ export default function PreviewPanel({
     [buildingPlacements, getCadLayer, hiddenCadLayers],
   );
 
-  const distanceBetweenPoints = useCallback((a: CadPoint, b: CadPoint) => Math.hypot(a.x - b.x, a.y - b.y), []);
-
-  const segmentIntersection = useCallback((a: CadPoint, b: CadPoint, c: CadPoint, d: CadPoint): CadPoint | null => {
-    const denominator = (a.x - b.x) * (c.y - d.y) - (a.y - b.y) * (c.x - d.x);
-    if (Math.abs(denominator) < 0.0001) return null;
-    const t = ((a.x - c.x) * (c.y - d.y) - (a.y - c.y) * (c.x - d.x)) / denominator;
-    const u = -((a.x - b.x) * (a.y - c.y) - (a.y - b.y) * (a.x - c.x)) / denominator;
-    if (t < 0 || t > 1 || u < 0 || u > 1) return null;
-    return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
-  }, []);
-
   const cadSegments = useMemo(() => {
-    const segments: Array<{ a: CadPoint; b: CadPoint }> = [];
+    const segments: CadSegment2D[] = [];
     [...visibleCadObjects, ...suggestedPlacements].forEach((item) => {
       const points = getObjectGeometryPoints(item);
       if (points.length < 2) return;
@@ -1433,6 +1433,9 @@ export default function PreviewPanel({
         segments.push({
           a: { x: pt[0], y: pt[1] },
           b: { x: next[0], y: next[1] },
+          objectId: item.id,
+          segmentIndex: idx,
+          closed: item.geometryType !== "polyline",
         });
       });
     });
@@ -1441,60 +1444,15 @@ export default function PreviewPanel({
 
   const resolveCadSnapPoint = useCallback(
     (point: CadPoint, basePoint?: CadPoint | null): (CadPoint & { kind: CadSnapKind }) => {
-      if (!cadSnapEnabled) {
-        if (cadOrthoEnabled && basePoint) {
-          const dx = Math.abs(point.x - basePoint.x);
-          const dy = Math.abs(point.y - basePoint.y);
-          return dx >= dy
-            ? { x: point.x, y: basePoint.y, kind: "orthogonal" }
-            : { x: basePoint.x, y: point.y, kind: "orthogonal" };
-        }
-        return { ...point, kind: "endpoint" };
-      }
-      const threshold = Math.max(lotWidth, lotHeight, 1) * 0.018;
-      const candidates: Array<CadPoint & { kind: CadSnapKind }> = [];
-      cadSegments.forEach((segment, index) => {
-        candidates.push({ ...segment.a, kind: "endpoint" });
-        candidates.push({ ...segment.b, kind: "endpoint" });
-        candidates.push({
-          x: (segment.a.x + segment.b.x) / 2,
-          y: (segment.a.y + segment.b.y) / 2,
-          kind: "midpoint",
-        });
-        for (let otherIndex = index + 1; otherIndex < cadSegments.length; otherIndex += 1) {
-          const hit = segmentIntersection(segment.a, segment.b, cadSegments[otherIndex].a, cadSegments[otherIndex].b);
-          if (hit) candidates.push({ ...hit, kind: "intersection" });
-        }
-        if (basePoint) {
-          const dx = segment.b.x - segment.a.x;
-          const dy = segment.b.y - segment.a.y;
-          const lenSq = dx * dx + dy * dy;
-          if (lenSq > 0) {
-            const t = ((point.x - segment.a.x) * dx + (point.y - segment.a.y) * dy) / lenSq;
-            if (t >= 0 && t <= 1) {
-              candidates.push({
-                x: segment.a.x + t * dx,
-                y: segment.a.y + t * dy,
-                kind: "perpendicular",
-              });
-            }
-          }
-        }
+      return resolveCadSnap(point, cadSegments, {
+        enabled: cadSnapEnabled,
+        ortho: cadOrthoEnabled,
+        basePoint,
+        threshold: Math.max(lotWidth, lotHeight, 1) * 0.018,
+        gridSize: 5,
       });
-      let best = candidates
-        .map((candidate) => ({ candidate, distance: distanceBetweenPoints(point, candidate) }))
-        .filter((entry) => entry.distance <= threshold)
-        .sort((a, b) => a.distance - b.distance)[0]?.candidate;
-      if (!best && cadOrthoEnabled && basePoint) {
-        const dx = Math.abs(point.x - basePoint.x);
-        const dy = Math.abs(point.y - basePoint.y);
-        best = dx >= dy
-          ? { x: point.x, y: basePoint.y, kind: "orthogonal" }
-          : { x: basePoint.x, y: point.y, kind: "orthogonal" };
-      }
-      return best ?? { ...point, kind: "endpoint" };
     },
-    [cadOrthoEnabled, cadSegments, cadSnapEnabled, distanceBetweenPoints, lotHeight, lotWidth, segmentIntersection],
+    [cadOrthoEnabled, cadSegments, cadSnapEnabled, lotHeight, lotWidth],
   );
 
   const updateCadObject = useCallback(
@@ -1842,6 +1800,19 @@ export default function PreviewPanel({
       layer: getCadLayer(selectedCadObject),
     };
   }, [getCadLayer, getObjectGeometryPoints, selectedCadObject]);
+  const topologyIssues = useMemo(
+    () => validateTopology(visibleCadObjects.map((item) => ({
+      id: item.id,
+      type: item.type,
+      geometryType: item.geometryType,
+      geometry: Array.isArray(item.geometry) ? (item.geometry as Array<[number, number]>) : undefined,
+      x: item.x,
+      y: item.y,
+      w: item.w,
+      d: item.d,
+    }))).slice(0, 8),
+    [visibleCadObjects],
+  );
 
   useEffect(() => {
     if (!selectedCadObject) return;
@@ -1898,39 +1869,81 @@ export default function PreviewPanel({
   const transformSelectedCadObjects = useCallback(
     (kind: "move" | "rotate" | "scale", valueOverride?: string) => {
       const amount = parseCadNumber(valueOverride ?? cadTransformValue, kind === "scale" ? 1 : 0);
+      let applied = 0;
+      let blocked = 0;
       selectedCadIds.forEach((id) => {
         const target = buildingPlacements.find((item) => item.id === id);
-        if (!target || target.locked || target.type === "site") return;
+        if (!target || target.locked || target.type === "site") {
+          blocked += 1;
+          return;
+        }
         if (kind === "move") {
-          const delta = { x: amount, y: amount };
           const updates: Partial<BuildingPlacement> = {
-            x: (target.x ?? 0) + delta.x,
-            y: (target.y ?? 0) + delta.y,
+            x: (target.x ?? 0) + amount,
+            y: (target.y ?? 0) + amount,
           };
           if (Array.isArray(target.geometry)) {
-            updates.geometry = translateSiteGeometry(target.geometry as Array<[number, number]>, delta);
+            const moved = transformGeometry(target.geometry as Array<[number, number]>, "move", amount);
+            if (!moved.ok) {
+              blocked += 1;
+              setCadCommandStatus(`MOVE blocked: ${moved.reason}`);
+              return;
+            }
+            updates.geometry = moved.value;
           }
           updateCadObject(target, updates, "Move");
+          applied += 1;
           return;
         }
         if (kind === "rotate") {
-          updateCadObject(target, { rotation: ((target.rotation ?? 0) + amount + 360) % 360 }, "Rotate");
+          const updates: Partial<BuildingPlacement> = { rotation: ((target.rotation ?? 0) + amount + 360) % 360 };
+          if (Array.isArray(target.geometry)) {
+            const rotated = transformGeometry(target.geometry as Array<[number, number]>, "rotate", amount);
+            if (!rotated.ok) {
+              blocked += 1;
+              setCadCommandStatus(`ROTATE blocked: ${rotated.reason}`);
+              return;
+            }
+            updates.geometry = rotated.value;
+            const nextBounds = boundsForSiteGeometry(rotated.value);
+            updates.x = nextBounds.minX;
+            updates.y = nextBounds.minY;
+            updates.w = Math.max(5, nextBounds.width);
+            updates.d = Math.max(5, nextBounds.height);
+          }
+          updateCadObject(target, updates, "Rotate");
+          applied += 1;
           return;
         }
-        const factor = amount > 0 ? amount : 1;
+        const factor = amount;
+        if (factor <= 0) {
+          blocked += 1;
+          setCadCommandStatus("SCALE blocked: scale requires a positive factor.");
+          return;
+        }
         const nextW = Math.max(1, target.w * factor);
         const nextD = Math.max(1, target.d * factor);
         const updates: Partial<BuildingPlacement> = { w: nextW, d: nextD };
         if (Array.isArray(target.geometry)) {
-          updates.geometry = resizeSiteGeometryFromOrigin(
-            target.geometry as Array<[number, number]>,
-            { x: target.x ?? 0, y: target.y ?? 0 },
-            { width: target.w, height: target.d },
-            { width: nextW, height: nextD },
-          );
+          const scaled = transformGeometry(target.geometry as Array<[number, number]>, "scale", factor);
+          if (!scaled.ok) {
+            blocked += 1;
+            setCadCommandStatus(`SCALE blocked: ${scaled.reason}`);
+            return;
+          }
+          updates.geometry = scaled.value;
+          const nextBounds = boundsForSiteGeometry(scaled.value);
+          updates.x = nextBounds.minX;
+          updates.y = nextBounds.minY;
+          updates.w = Math.max(5, nextBounds.width);
+          updates.d = Math.max(5, nextBounds.height);
         }
         updateCadObject(target, updates, "Scale");
+        applied += 1;
       });
+      if (applied || blocked) {
+        setCadCommandStatus(`${kind.toUpperCase()} ${applied ? `applied to ${applied}` : "blocked for all"} selected object${applied === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked` : ""}.`);
+      }
     },
     [buildingPlacements, cadTransformValue, parseCadNumber, selectedCadIds, updateCadObject],
   );
@@ -1962,50 +1975,92 @@ export default function PreviewPanel({
     if (!selectedCadObject) return;
     const distance = parseCadNumber(cadOffsetDistance, 0);
     if (!distance) return;
-    const updates: Partial<BuildingPlacement> = {
-      x: (selectedCadObject.x ?? 0) + distance,
-      y: (selectedCadObject.y ?? 0) + distance,
-    };
-    if (Array.isArray(selectedCadObject.geometry)) {
-      updates.geometry = translateSiteGeometry(selectedCadObject.geometry as Array<[number, number]>, { x: distance, y: distance });
+    if (!Array.isArray(selectedCadObject.geometry)) {
+      setCadCommandStatus("OFFSET blocked: selected object has no editable line or polygon vertices.");
+      return;
     }
+    const result = offsetGeometry(
+      selectedCadObject.geometry as Array<[number, number]>,
+      distance,
+      selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect",
+    );
+    if (!result.ok) {
+      setCadCommandStatus(`OFFSET blocked: ${result.reason}`);
+      return;
+    }
+    const nextBounds = boundsForSiteGeometry(result.value);
+    const updates: Partial<BuildingPlacement> = {
+      geometry: result.value,
+      x: nextBounds.minX,
+      y: nextBounds.minY,
+      w: Math.max(5, nextBounds.width),
+      d: Math.max(5, nextBounds.height),
+      meta: {
+        ...(selectedCadObject.meta ?? {}),
+        cad_offset_distance_ft: distance,
+        geometry_kernel_warnings: result.warnings ?? [],
+      },
+    };
     updateCadObject(selectedCadObject, updates, "Offset");
+    setCadCommandStatus(`OFFSET applied ${distance} ft as draft review geometry.`);
   }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
   const offsetSelectedCadObjectBy = useCallback((valueOverride?: string) => {
     if (!selectedCadObject) return;
     const distance = parseCadNumber(valueOverride ?? cadOffsetDistance, 0);
     if (!distance) return;
-    const updates: Partial<BuildingPlacement> = {
-      x: (selectedCadObject.x ?? 0) + distance,
-      y: (selectedCadObject.y ?? 0) + distance,
-    };
-    if (Array.isArray(selectedCadObject.geometry)) {
-      updates.geometry = translateSiteGeometry(selectedCadObject.geometry as Array<[number, number]>, { x: distance, y: distance });
+    if (!Array.isArray(selectedCadObject.geometry)) {
+      setCadCommandStatus("OFFSET blocked: selected object has no editable line or polygon vertices.");
+      return;
     }
+    const result = offsetGeometry(
+      selectedCadObject.geometry as Array<[number, number]>,
+      distance,
+      selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect",
+    );
+    if (!result.ok) {
+      setCadCommandStatus(`OFFSET blocked: ${result.reason}`);
+      return;
+    }
+    const nextBounds = boundsForSiteGeometry(result.value);
+    const updates: Partial<BuildingPlacement> = {
+      geometry: result.value,
+      x: nextBounds.minX,
+      y: nextBounds.minY,
+      w: Math.max(5, nextBounds.width),
+      d: Math.max(5, nextBounds.height),
+      meta: {
+        ...(selectedCadObject.meta ?? {}),
+        cad_offset_distance_ft: distance,
+        geometry_kernel_warnings: result.warnings ?? [],
+      },
+    };
     updateCadObject(selectedCadObject, updates, "Offset");
+    setCadCommandStatus(`OFFSET applied ${distance} ft as draft review geometry.`);
   }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
   const trimExtendSelectedCadObject = useCallback(
     (kind: "trim" | "extend") => {
       if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) return;
       const geometry = selectedCadObject.geometry as Array<[number, number]>;
-      if (geometry.length < 2) return;
       const amount = Math.max(1, parseCadNumber(cadTransformValue, 10));
-      const nextGeometry = geometry.map((pt) => [pt[0], pt[1]] as [number, number]);
-      const last = nextGeometry[nextGeometry.length - 1];
-      const prev = nextGeometry[nextGeometry.length - 2];
-      const dx = last[0] - prev[0];
-      const dy = last[1] - prev[1];
-      const len = Math.max(Math.hypot(dx, dy), 0.001);
-      const signed = kind === "trim" ? -amount : amount;
-      nextGeometry[nextGeometry.length - 1] = [
-        clampValue(last[0] + (dx / len) * signed, 0, lotWidth),
-        clampValue(last[1] + (dy / len) * signed, 0, lotHeight),
-      ];
-      const nextBounds = boundsForSiteGeometry(nextGeometry);
+      if (selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect") {
+        setCadCommandStatus(`${kind.toUpperCase()} blocked: polygon trim/extend needs an explicit cutting edge and is not applied automatically.`);
+        return;
+      }
+      const result = trimOrExtendGeometry(geometry, kind, cadSegments, {
+        amountFt: amount,
+        selectedObjectId: selectedCadObject.id,
+        siteWidth: lotWidth,
+        siteHeight: lotHeight,
+      });
+      if (!result.ok) {
+        setCadCommandStatus(`${kind.toUpperCase()} blocked: ${result.reason}`);
+        return;
+      }
+      const nextBounds = boundsForSiteGeometry(result.value);
       updateCadObject(
         selectedCadObject,
         {
-          geometry: nextGeometry,
+          geometry: result.value,
           x: nextBounds.minX,
           y: nextBounds.minY,
           w: Math.max(5, nextBounds.width),
@@ -2013,41 +2068,44 @@ export default function PreviewPanel({
         },
         kind === "trim" ? "Trim" : "Extend",
       );
+      setCadCommandStatus(`${kind.toUpperCase()} applied to terminal segment as draft review geometry.`);
     },
-    [cadTransformValue, lotHeight, lotWidth, parseCadNumber, selectedCadObject, updateCadObject],
+    [cadSegments, cadTransformValue, lotHeight, lotWidth, parseCadNumber, selectedCadObject, updateCadObject],
   );
   const filletSelectedCadObject = useCallback(() => {
     if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) return;
     const geometry = selectedCadObject.geometry as Array<[number, number]>;
-    if (geometry.length < 3) return;
     const radius = Math.max(1, parseCadNumber(cadFilletRadius, 5));
-    const nextGeometry = geometry.map((pt) => [pt[0], pt[1]] as [number, number]);
     const index = selectedVertex?.id === selectedCadObject.id ? selectedVertex.index : 1;
-    const current = nextGeometry[index];
-    const prev = nextGeometry[Math.max(index - 1, 0)];
-    const next = nextGeometry[Math.min(index + 1, nextGeometry.length - 1)];
-    const toward = (from: [number, number], to: [number, number]) => {
-      const dx = to[0] - from[0];
-      const dy = to[1] - from[1];
-      const len = Math.max(Math.hypot(dx, dy), 0.001);
-      const step = Math.min(radius, len / 2);
-      return [from[0] + (dx / len) * step, from[1] + (dy / len) * step] as [number, number];
-    };
-    const before = toward(current, prev);
-    const after = toward(current, next);
-    nextGeometry.splice(index, 1, before, after);
-    const nextBounds = boundsForSiteGeometry(nextGeometry);
+    const result = filletGeometry(
+      geometry,
+      radius,
+      index,
+      selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect",
+    );
+    if (!result.ok) {
+      setCadCommandStatus(`FILLET blocked: ${result.reason}`);
+      return;
+    }
+    const nextBounds = boundsForSiteGeometry(result.value);
     updateCadObject(
       selectedCadObject,
       {
-        geometry: nextGeometry,
+        geometry: result.value,
         x: nextBounds.minX,
         y: nextBounds.minY,
         w: Math.max(5, nextBounds.width),
         d: Math.max(5, nextBounds.height),
+        meta: {
+          ...(selectedCadObject.meta ?? {}),
+          cad_fillet_radius_ft: radius,
+          cad_fillet_storage: "tangent_chord_vertices",
+          geometry_kernel_warnings: result.warnings ?? [],
+        },
       },
       "Fillet",
     );
+    setCadCommandStatus("FILLET applied as tangent chord draft geometry.");
   }, [cadFilletRadius, parseCadNumber, selectedCadObject, selectedVertex, updateCadObject]);
 
   const applySelectedCadDimension = useCallback(() => {
@@ -2155,19 +2213,16 @@ export default function PreviewPanel({
     if (command === "offset") {
       setCadOffsetDistance(value);
       offsetSelectedCadObjectBy(value);
-      setCadCommandStatus("OFFSET applied to the selected CAD object.");
       return;
     }
     if (command === "trim" || command === "extend") {
       setCadTransformValue(value);
       trimExtendSelectedCadObject(command);
-      setCadCommandStatus(`${command.toUpperCase()} applied where feasible.`);
       return;
     }
     if (command === "fillet") {
       setCadFilletRadius(value);
       filletSelectedCadObject();
-      setCadCommandStatus("FILLET applied where a selected vertex is feasible.");
       return;
     }
     setCadCommandStatus(`Unknown command: ${command}. Try line, box, move, rotate, scale, offset, trim, extend, or fillet.`);
@@ -2281,11 +2336,37 @@ export default function PreviewPanel({
         : draftPoints;
     const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
     if (effectivePoints.length < minPoints) return;
-    if (drawMode === "site") {
-      onCreateSiteBoundary?.({ points: effectivePoints });
-    } else {
-      onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
+    if (drawMode === "site" || drawMode === "polygon") {
+      const cleaned = cleanupPolygon(effectivePoints, 0.5);
+      if (!cleaned.ok) {
+        setCadCommandStatus(`POLYGON blocked: ${cleaned.reason}`);
+        return;
+      }
+      const validation = validatePolygon(cleaned.value);
+      if (!validation.ok) {
+        setCadCommandStatus(`POLYGON blocked: ${validation.issues.join(", ")}`);
+        return;
+      }
+      if (drawMode === "site") {
+        onCreateSiteBoundary?.({ points: cleaned.value });
+      } else {
+        onCreateCustomGeometry({
+          mode: drawMode,
+          points: cleaned.value,
+          meta: {
+            geometry_cleanup: "duplicate_vertices_removed_and_gap_closed_within_tolerance",
+            polygon_holes_supported: false,
+            polygon_holes_blocked_reason: "Canvas polygon editor supports one exterior ring only.",
+          },
+        });
+      }
+      setCadCommandStatus("POLYGON cleaned and stored as draft review geometry.");
+      setDraftPoints([]);
+      setDraftPreviewPoint(null);
+      setDrawMode("select");
+      return;
     }
+    onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
     clearDraftGeometry();
     setDrawMode("select");
   }, [
@@ -5508,6 +5589,22 @@ export default function PreviewPanel({
                   <input aria-label="CAD review note" value={cadPropertyDraft.reviewNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, reviewNote: event.target.value }))} placeholder="Review note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                 </div>
                 <p className="mt-2 text-[11px] font-medium text-slate-500">Snap priority: endpoint, midpoint, intersection, perpendicular, then ortho.</p>
+                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold text-slate-600" data-testid="cad-topology-status">
+                  {topologyIssues.length ? (
+                    <>
+                      <p className="text-amber-700">Topology review blockers</p>
+                      <ul className="mt-1 space-y-1">
+                        {topologyIssues.slice(0, 3).map((issue) => (
+                          <li key={`${issue.code}-${issue.objectIds.join("-")}`} className="break-words">
+                            {issue.code.replace(/_/g, " ")}: {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p>Topology checks: no visible CAD blockers.</p>
+                  )}
+                </div>
               </section>
             </div>
           ) : null}

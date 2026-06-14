@@ -143,15 +143,63 @@ test.describe("drawn site boundary Finish workflow", () => {
     await page.getByText("Custom Line 1").first().click();
     await expect(cadTools).toContainText("Length");
     await expect(cadTools).toContainText("Angle");
+    await expect(page.getByTestId("cad-topology-status")).toContainText("Topology");
     await cadTools.getByLabel("CAD transform value").fill("15");
     await cadTools.getByRole("button", { name: "Move selected CAD objects" }).click();
     await expect(cadTools).toContainText("Move");
     await cadTools.getByRole("button", { name: "Undo CAD command" }).click();
     await cadTools.getByRole("button", { name: "Redo CAD command" }).click();
 
+    await cadTools.getByLabel("CAD command input").fill("offset 10");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("OFFSET applied 10 ft");
+    await cadTools.getByLabel("CAD transform value").fill("8");
+    await cadTools.getByRole("button", { name: "Extend selected CAD object" }).click();
+    await expect(cadTools).toContainText("EXTEND applied");
+    await cadTools.getByRole("button", { name: "Trim selected CAD object" }).click();
+    await expect(cadTools).toContainText("TRIM applied");
+    await cadTools.getByLabel("CAD command input").fill("fillet 4");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("FILLET blocked");
+
+    await page.getByText("Custom Area 2").first().click();
+    await cadTools.getByLabel("CAD command input").fill("fillet 4");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("FILLET applied");
+    await page.getByText("Custom Line 1").first().click();
+
     await cadTools.getByLabel("CAD layer").selectOption("C-UTIL");
     await cadTools.getByRole("button", { name: "Layer" }).click();
     await expect(cadTools).toContainText("Layer");
+    await cadTools.getByLabel("CAD dimension mode").selectOption("aligned");
+    await cadTools.getByLabel("CAD dimension label").fill("130.0 ft review");
+    await cadTools.getByRole("button", { name: "Dim" }).click();
+    await expect(page.getByTestId("cad-dimension-label")).toContainText("130.0 ft review");
+
+    await cadTools.getByLabel("CAD command input").fill("move 5");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("MOVE applied");
+
+    await cadTools.getByLabel("CAD X coordinate").fill("300");
+    await cadTools.getByLabel("CAD Y coordinate").fill("140");
+    await cadTools.getByLabel("CAD symbol").selectOption("hydrant");
+    await cadTools.getByRole("button", { name: "Insert" }).click();
+    await expect(page.getByTestId("cad-symbol").first()).toBeVisible();
+
+    await page.getByText("Custom Line 1").first().click();
+    await cadTools.getByLabel("CAD object name").fill("Draft Utility Review Line");
+    await cadTools.getByLabel("CAD object type").fill("custom");
+    await cadTools.getByLabel("CAD object layer property").fill("C-UTIL");
+    await cadTools.getByLabel("CAD source note").fill("manual field sketch");
+    await cadTools.getByLabel("CAD review note").fill("verify before engineering use");
+    await cadTools.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByText("Draft Utility Review Line").first()).toBeVisible();
+
+    const utilityLayerToggle = cadTools.locator("button").filter({ hasText: /^C-UTIL$/ }).first();
+    await utilityLayerToggle.click();
+    await expect(page.getByText("Draft Utility Review Line").first()).toHaveCount(0);
+    await utilityLayerToggle.click();
+    await expect(page.getByText("Draft Utility Review Line").first()).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
