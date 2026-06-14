@@ -371,21 +371,42 @@ def _meta_from_chat_context(context: Dict[str, Any]) -> Dict[str, Any]:
 def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
     mentions_dwg = bool(re.search(r"\bdwg\b", lowered))
+    mentions_dxf = bool(re.search(r"\bdxf\b", lowered))
     mentions_civil3d = "civil3d" in lowered or "civil 3d" in lowered
-    if not mentions_dwg and not mentions_civil3d:
+    mentions_roundtrip = "roundtrip" in lowered or "round trip" in lowered
+    if not mentions_dwg and not mentions_civil3d and not (mentions_dxf and mentions_roundtrip):
         return None
     asks_export = "export" in lowered or "download" in lowered or "save" in lowered
+    asks_open = "open" in lowered or "load" in lowered or "import" in lowered
     asks_why = "why" in lowered or "unsupported" in lowered or "not supported" in lowered
     asks_need = "what do i need" in lowered or "what do we need" in lowered or "need for" in lowered or "civil3d" in lowered or "civil 3d" in lowered
-    if not (asks_export or asks_why or asks_need):
+    asks_preserved = "preserve" in lowered or "preserved" in lowered or "kept" in lowered
+    if not (asks_export or asks_why or asks_need or asks_open or asks_preserved or mentions_roundtrip):
         return None
 
     strategy = dwg_strategy_from_meta(_meta_from_chat_context(context))
-    if mentions_civil3d and not mentions_dwg:
+    if mentions_dxf and (mentions_roundtrip or asks_preserved):
+        assistant_message = (
+            "A Civora DXF roundtrip means Civora export -> local DXF parse -> Civora verification. It checks layer preservation, "
+            "supported object types, text/labels, block or symbol placeholders when present, dimensions where the exporter created them, "
+            "and canonical ID traceability through the sidecar/export audit. That is local review evidence only; it does not verify Civil 3D or DWG."
+        )
+        action_taken = "answered_dxf_roundtrip_preservation"
+        next_best_action = "Run the DXF export verification and review the preservation_check and compatibility_matrix fields before sharing the artifact."
+    elif mentions_civil3d and asks_open:
+        assistant_message = (
+            "It might open as a review artifact if the target Civil 3D workflow accepts the DXF or LandXML, but Civora cannot claim it will open correctly "
+            "until an external target-workflow record is attached. Civil 3D status remains not_verified without tool/version, source hashes, import result, "
+            "and observed limitations."
+        )
+        action_taken = "answered_civil3d_open_status"
+        next_best_action = "Export DXF/LandXML review artifacts and record the Civil 3D import workflow result from the target environment."
+    elif mentions_civil3d and not mentions_dwg:
         assistant_message = (
             "For Civil 3D, Civora needs a target-workflow record: tool and version, source DXF/LandXML artifact hashes, "
             "what imported successfully, what changed during import, and any limitations. Civora can provide DXF review exports "
-            "and LandXML exchange data, but it does not claim native Civil 3D package compatibility without that external record."
+            "and LandXML exchange data. Workflow state is not_verified until that record exists, blocked_needs_review if it fails or is incomplete, "
+            "and externally_verified_review_only if the target import/workflow check passes."
         )
         action_taken = "answered_civil3d_compatibility_requirements"
         next_best_action = "Generate the DXF/LandXML review artifacts, then attach a Civil 3D workflow record from the target environment."
@@ -401,7 +422,8 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
         assistant_message = (
             "No, Civora cannot export DWG natively right now. DWG status is "
             f"{strategy['dwg_status']}. You can export DXF for review, use LandXML where available, or configure an external DWG conversion hook "
-            "and attach a workflow record before Civora shows DWG as an externally converted review artifact."
+            "and attach a workflow record before Civora shows DWG as an externally converted review artifact. That hook is opt-in and review-only; "
+            "it is never native DWG writing."
         )
         action_taken = "answered_dwg_export_capability"
         next_best_action = "Open Deliver for DXF review export, or configure the external DWG conversion hook outside Civora."

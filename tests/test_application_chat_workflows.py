@@ -504,7 +504,32 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("target-workflow record", result["assistant_message"])
         self.assertIn("tool and version", result["assistant_message"])
         self.assertIn("source DXF/LandXML artifact hashes", result["assistant_message"])
-        self.assertIn("does not claim native Civil 3D package compatibility", result["assistant_message"])
+        self.assertIn("not_verified", result["assistant_message"])
+        self.assertIn("blocked_needs_review", result["assistant_message"])
+        self.assertIn("externally_verified_review_only", result["assistant_message"])
+
+    def test_chat_answers_will_this_open_in_civil3d_without_overclaiming(self):
+        result = decide_chat(
+            {"message": "will this open in Civil3D?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_civil3d_open_status")
+        self.assertIn("might open as a review artifact", result["assistant_message"])
+        self.assertIn("cannot claim it will open correctly", result["assistant_message"])
+        self.assertIn("not_verified", result["assistant_message"])
+
+    def test_chat_answers_dxf_roundtrip_preservation_scope(self):
+        result = decide_chat(
+            {"message": "what did the DXF roundtrip preserve?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_dxf_roundtrip_preservation")
+        self.assertIn("layer preservation", result["assistant_message"])
+        self.assertIn("supported object types", result["assistant_message"])
+        self.assertIn("canonical ID traceability", result["assistant_message"])
+        self.assertIn("does not verify Civil 3D or DWG", result["assistant_message"])
 
     def test_site_update_command_persists_canonical_state(self):
         store = RecordingProjectStore()
