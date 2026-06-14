@@ -41,6 +41,11 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_JOB_TIMEOUT_SECONDS", "queue", (), optional=True, description="Maximum in-process job runtime."),
     EnvVarSpec("CIVORA_MEMORY_WARN_MB", "monitoring", (), optional=True, description="Runtime memory warning threshold."),
     EnvVarSpec("CIVORA_RUNTIME_DEBUG_BEARER_TOKEN", "monitoring", (), optional=True, secret=True, description="Audit token for runtime sampling tools."),
+    EnvVarSpec("CIVORA_MAX_IMAGE_UPLOAD_BYTES", "uploads", (), optional=True, description="Image/map snapshot upload limit."),
+    EnvVarSpec("CIVORA_MAX_SURVEY_UPLOAD_BYTES", "uploads", (), optional=True, description="Survey CSV upload limit."),
+    EnvVarSpec("CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES", "uploads", (), optional=True, description="Existing-condition and plan PDF upload limit."),
+    EnvVarSpec("CIVORA_ALLOW_LOCAL_PILOT_CORS", "cors", (), optional=True, description="Temporary QA-only flag for local frontend to live backend."),
+    EnvVarSpec("CIVORA_LOCAL_PILOT_CORS_ORIGINS", "cors", (), optional=True, description="Explicit local origins allowed only when CIVORA_ALLOW_LOCAL_PILOT_CORS=true."),
     EnvVarSpec("CIVORA_BILLING_PROVIDER", "billing", (), optional=True, description="Billing provider name. Defaults to none."),
     EnvVarSpec("CIVORA_ENABLE_REAL_CHARGING", "billing", (), optional=True, description="Must remain explicit; validator never enables it."),
     EnvVarSpec("CIVORA_BILLING_LEGAL_DOCS_READY", "billing", (), optional=True, description="Business-doc gate for paid pilot."),
@@ -201,6 +206,8 @@ def validate_production_env_v1(
             blockers.append(_issue("blocker", "invalid_frontend_public_url", "CIVORA_FRONTEND_PUBLIC_URL must be an absolute http(s) URL.", env_vars=["CIVORA_FRONTEND_PUBLIC_URL"]))
         elif cors_origins and frontend_origin not in cors_origins:
             blockers.append(_issue("blocker", "frontend_origin_not_in_cors", "Frontend public origin is not listed in CORS_ALLOW_ORIGINS.", env_vars=["CIVORA_FRONTEND_PUBLIC_URL", "CORS_ALLOW_ORIGINS"]))
+    if mode in PRODUCTION_MODES and _truthy(env.get("CIVORA_ALLOW_LOCAL_PILOT_CORS")):
+        warnings.append(_issue("warning", "temporary_local_cors_enabled", "Local pilot CORS is enabled; remove it after the live QA window.", env_vars=["CIVORA_ALLOW_LOCAL_PILOT_CORS", "CIVORA_LOCAL_PILOT_CORS_ORIGINS"]))
 
     storage_dir = str(env.get("PERFORMANCE_AI_STORAGE_DIR") or env.get("PERFORMANCE_AI_DATA_DIR") or "").strip()
     database_url = str(env.get("DATABASE_URL") or "").strip()

@@ -5,7 +5,10 @@ import { resolve } from "node:path";
 const distDir = process.env.NEXT_DIST_DIR || ".next";
 const nextDir = resolve(process.cwd(), distDir);
 const generatedArtifactPattern =
-  /(?:^|\/)\.next(?:[^/]*)\/(?:dev\/)?(?:server\/)?(?:pages-manifest|routes-manifest|build-manifest|app-build-manifest|required-server-files)\.json/;
+  /(?:^|\/)\.next(?:[^/]*)\/(?:dev\/)?(?:server\/)?(?:pages-manifest|routes-manifest|build-manifest|app-build-manifest|required-server-files|export-detail)\.json/;
+const generatedNextJsonPattern = /(?:^|\/)\.next(?:[^/]*)\/.*\.json/;
+const generatedPageModulePattern =
+  /(?:PageNotFoundError|Cannot find module for page:|Failed to collect page data for)/;
 const buildEnv = {
   ...process.env,
   NEXT_PRODUCTION_BROWSER_SOURCE_MAPS: process.env.NEXT_PRODUCTION_BROWSER_SOURCE_MAPS ?? "0",
@@ -43,8 +46,9 @@ for (let attempt = 1; attempt <= 3; attempt += 1) {
 
   const canRetry =
     attempt < 3 &&
-    result.output.includes("ENOENT") &&
-    generatedArtifactPattern.test(result.output);
+    ((result.output.includes("ENOENT") && generatedArtifactPattern.test(result.output)) ||
+      (result.output.includes("ENOENT") && generatedNextJsonPattern.test(result.output)) ||
+      generatedPageModulePattern.test(result.output));
 
   if (!canRetry) {
     process.exit(result.code);
