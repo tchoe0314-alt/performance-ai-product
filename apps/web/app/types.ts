@@ -849,6 +849,7 @@ export type SmartFixRecommendation = {
   fix_mode?: "auto_supported" | "manual_input_required" | string;
   supported_action_id?: string;
   supported_action?: Record<string, unknown>;
+  exact_fix?: string;
   one_action_needed_next?: string;
   missing_user_input_or_source?: string;
   what_happens_after_fix?: string;
