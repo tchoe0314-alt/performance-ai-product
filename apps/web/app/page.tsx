@@ -1782,6 +1782,7 @@ const createDefaultPlanSheet = (index = 0, projectName = "Untitled Project"): Pl
         id: `viewport-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         label: "Site plan viewport",
         source: "Current model preview",
+        target: "Overall site plan",
         scale: "1:40",
         x: 7,
         y: 15,
@@ -2054,6 +2055,7 @@ import type {
   PlanSheetScale,
   PlanSheetSet,
   PlanSheetTitleBlock,
+  PlanSheetViewport,
 } from "./components/PlanSheetEditor";
 import useChatPersistence from "./hooks/useChatPersistence";
 import usePreviewReview from "./hooks/usePreviewReview";
@@ -12721,6 +12723,38 @@ function PerformanceAIDashboardView({
     setStatusMessage(`Changed sheet viewport scale to ${scale}.`);
   };
 
+  const clampSheetPercent = (value: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+
+  const handlePlanSheetViewportUpdate = (viewportId: string, updates: Partial<PlanSheetViewport>) => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      viewports: sheet.viewports.map((viewport) => {
+        if (viewport.id !== viewportId) return viewport;
+        const next = { ...viewport, ...updates };
+        return {
+          ...next,
+          label: String(next.label ?? "").trim() ? next.label : viewport.label,
+          source: String(next.source ?? "").trim() ? next.source : viewport.source,
+          target: String(next.target ?? "").trim() ? next.target : (viewport.target || "Review viewport target"),
+          x: clampSheetPercent(next.x, 0, 85),
+          y: clampSheetPercent(next.y, 0, 85),
+          w: clampSheetPercent(next.w, 10, 90),
+          h: clampSheetPercent(next.h, 10, 90),
+        };
+      }),
+    }));
+    setStatusMessage("Updated active sheet viewport.");
+  };
+
+  const handlePlanSheetViewportDelete = (viewportId: string) => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      viewports: sheet.viewports.filter((viewport) => viewport.id !== viewportId),
+    }));
+    setStatusMessage("Deleted a sheet viewport. Blockers will stay visible until a viewport is added.");
+  };
+
   const addPlanSheetAnnotation = (type: PlanSheetAnnotation["type"], text: string) => {
     refreshPlanSheet((sheet) => {
       const offset = sheet.annotations.length % 5;
@@ -12754,6 +12788,7 @@ function PerformanceAIDashboardView({
           id: `viewport-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           label: `Viewport ${sheet.viewports.length + 1}`,
           source: "Model layer selection",
+          target: sheet.viewports.length % 2 === 0 ? "Enlarged site review area" : "Utility or grading review area",
           scale: "1:50",
           x: 12 + (sheet.viewports.length % 2) * 32,
           y: 18 + (sheet.viewports.length % 3) * 16,
@@ -12840,9 +12875,24 @@ function PerformanceAIDashboardView({
       schema_version: "plan_sheet_set_review_v1",
       generated_at: new Date().toISOString(),
       review_only: true,
+      engineer_review_required: true,
+      not_for_construction: true,
+      civora_limitations: [
+        "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+        "Review sheets are review-only plan-production aids and are not approved construction documents.",
+      ],
       sheet_set: {
         ...planSheetSet,
         blockers: getPlanSheetBlockers(),
+        sheets: planSheetSet.sheets.map((sheet) => ({
+          ...sheet,
+          viewports: sheet.viewports.map((viewport) => ({
+            ...viewport,
+            target: viewport.target || "Review viewport target",
+            north_arrow: true,
+            scale_bar: true,
+          })),
+        })),
       },
     };
     downloadBlob(
@@ -12880,7 +12930,11 @@ function PerformanceAIDashboardView({
     body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
     .sheet { border: 2px solid #0f172a; min-height: 720px; padding: 24px; position: relative; }
     .title { border-top: 2px solid #0f172a; margin-top: 24px; padding-top: 12px; display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
-    .viewport { border: 2px solid #334155; background: #f8fafc; padding: 12px; margin: 12px 0; min-height: 180px; }
+    .notice { border: 1px solid #f59e0b; background: #fffbeb; color: #92400e; padding: 10px; margin: 12px 0; font-weight: 700; }
+    .viewport { border: 2px solid #334155; background: #f8fafc; padding: 12px; margin: 12px 0; min-height: 180px; position: relative; }
+    .north { position: absolute; right: 16px; top: 16px; border: 1px solid #334155; border-radius: 999px; width: 42px; height: 42px; display: grid; place-items: center; font-weight: 800; }
+    .scale { position: absolute; left: 16px; bottom: 16px; font-weight: 700; }
+    .bar { width: 120px; height: 10px; border-left: 2px solid #0f172a; border-right: 2px solid #0f172a; border-bottom: 2px solid #0f172a; }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     h1, h2, p { margin: 0; }
     h1 { font-size: 22px; }
@@ -12896,11 +12950,12 @@ function PerformanceAIDashboardView({
   <div class="sheet">
     <h1>${escapeHtml(activeSheet.titleBlock.sheetTitle)}</h1>
     <p>${escapeHtml(planSheetSet.name)} · ${escapeHtml(activeSheet.size)} · Review package only</p>
+    <div class="notice">Review-required plan-production aid only. Not an approved construction document. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.</div>
     <h2>Viewports</h2>
     ${activeSheet.viewports
       .map(
         (viewport) =>
-          `<div class="viewport"><strong>${escapeHtml(viewport.label)}</strong><p>${escapeHtml(viewport.source)}</p><p>Scale ${escapeHtml(viewport.scale)}</p></div>`,
+          `<div class="viewport"><strong>${escapeHtml(viewport.label)}</strong><p>${escapeHtml(viewport.source)}</p><p>Target: ${escapeHtml(viewport.target || "Review viewport target")}</p><p>Scale ${escapeHtml(viewport.scale)} · Position ${Math.round(viewport.x)}%, ${Math.round(viewport.y)}% · Size ${Math.round(viewport.w)}% x ${Math.round(viewport.h)}%</p><div class="north">N</div><div class="scale"><div class="bar"></div><p>Scale ${escapeHtml(viewport.scale)}</p></div></div>`,
       )
       .join("")}
     <div class="grid">
@@ -21691,6 +21746,8 @@ function PerformanceAIDashboardView({
                           sheetSet={{ ...planSheetSet, blockers: getPlanSheetBlockers() }}
                           onUpdateTitleBlock={handlePlanSheetTitleBlockUpdate}
                           onChangeScale={handlePlanSheetScaleChange}
+                          onUpdateViewport={handlePlanSheetViewportUpdate}
+                          onDeleteViewport={handlePlanSheetViewportDelete}
                           onAddNote={handlePlanSheetAddNote}
                           onAddLabel={() => {
                             addPlanSheetAnnotation("label", "New sheet label");

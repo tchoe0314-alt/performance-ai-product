@@ -13,6 +13,7 @@ import {
   Table2,
   Tag,
   TextCursorInput,
+  Trash2,
 } from "lucide-react";
 
 export type PlanSheetScale = "1:10" | "1:20" | "1:30" | "1:40" | "1:50" | "1:100";
@@ -31,6 +32,7 @@ export type PlanSheetViewport = {
   id: string;
   label: string;
   source: string;
+  target: string;
   scale: PlanSheetScale;
   x: number;
   y: number;
@@ -85,6 +87,8 @@ type PlanSheetEditorProps = {
   sheetSet: PlanSheetSet;
   onUpdateTitleBlock: (updates: Partial<PlanSheetTitleBlock>) => void;
   onChangeScale: (viewportId: string, scale: PlanSheetScale) => void;
+  onUpdateViewport: (viewportId: string, updates: Partial<PlanSheetViewport>) => void;
+  onDeleteViewport: (viewportId: string) => void;
   onAddNote: (text?: string) => void;
   onAddLabel: () => void;
   onAddCallout: () => void;
@@ -112,6 +116,8 @@ export default function PlanSheetEditor({
   sheetSet,
   onUpdateTitleBlock,
   onChangeScale,
+  onUpdateViewport,
+  onDeleteViewport,
   onAddNote,
   onAddLabel,
   onAddCallout,
@@ -133,6 +139,9 @@ export default function PlanSheetEditor({
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <p className="text-sm font-semibold text-slate-700">No review sheets yet.</p>
+        <p className="mt-1 text-xs font-semibold text-amber-700">
+          Review sheets are plan-production aids only and remain review-required.
+        </p>
         <button
           type="button"
           onClick={onCreateSheet}
@@ -157,7 +166,10 @@ export default function PlanSheetEditor({
             </p>
             <p className="mt-1 text-sm font-semibold text-slate-900">{sheetSet.name}</p>
             <p className="mt-1 text-xs font-medium text-slate-500">
-              Review package sheets only. Sheet data can be edited, checked, and exported for review.
+              Review package sheets only. Sheet data can be edited, checked, plotted, and exported for licensed-review workflows.
+            </p>
+            <p className="mt-2 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+              Review-required: these sheets are not approved construction documents and Civora does not stamp, seal, sign, certify, approve construction, submit documents, or act as engineer of record.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -268,8 +280,18 @@ export default function PlanSheetEditor({
                       <div className="h-20 w-32 rounded border-2 border-slate-400 bg-white/70" />
                       <div className="absolute left-6 top-8 h-24 w-24 rounded-full border-2 border-slate-300" />
                       <div className="absolute bottom-10 right-8 h-16 w-28 rounded border-2 border-slate-300" />
+                      <div className="absolute right-3 top-3 flex h-12 w-12 items-center justify-center rounded-full border border-slate-400 bg-white text-[10px] font-black text-slate-800">
+                        N
+                        <span className="absolute -top-2 h-4 w-px bg-slate-800" />
+                      </div>
+                      <div className="absolute bottom-3 left-3">
+                        <div className="h-2 w-24 border-x-2 border-b-2 border-slate-800" />
+                        <p className="mt-1 text-[10px] font-semibold text-slate-700">Scale {viewport.scale}</p>
+                      </div>
                     </div>
-                    <p className="mt-2 truncate text-[11px] font-medium text-slate-500">{viewport.source}</p>
+                    <p className="mt-2 truncate text-[11px] font-medium text-slate-500">
+                      {viewport.source} · Target: {viewport.target || "Review viewport target"}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -330,6 +352,10 @@ export default function PlanSheetEditor({
                   </div>
                 </div>
               </div>
+
+              <div className="absolute bottom-5 left-5 max-w-[42%] rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+                Review sheet only. Not for construction.
+              </div>
             </div>
           </div>
         </div>
@@ -376,21 +402,81 @@ export default function PlanSheetEditor({
             <div className="mt-3 space-y-2">
               {activeSheet.viewports.map((viewport) => (
                 <div key={viewport.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-sm font-semibold text-slate-800">{viewport.label}</p>
-                  <p className="mt-1 text-xs text-slate-500">{viewport.source}</p>
-                  <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-500">
-                    Scale
-                    <select
-                      value={viewport.scale}
-                      onChange={(event) => onChangeScale(viewport.id, event.target.value as PlanSheetScale)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">{viewport.label}</p>
+                      <p className="mt-1 break-words text-xs text-slate-500">{viewport.source}</p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${viewport.label}`}
+                      onClick={() => onDeleteViewport(viewport.id)}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 hover:bg-red-50"
                     >
-                      {scaleOptions.map((scale) => (
-                        <option key={scale} value={scale}>
-                          {scale}
-                        </option>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    <label className="grid gap-1 text-xs font-semibold text-slate-500">
+                      Label
+                      <input
+                        value={viewport.label}
+                        onChange={(event) => onUpdateViewport(viewport.id, { label: event.target.value })}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-800"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-semibold text-slate-500">
+                      View target
+                      <input
+                        value={viewport.target || ""}
+                        onChange={(event) => onUpdateViewport(viewport.id, { target: event.target.value })}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-800"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-semibold text-slate-500">
+                      Source/layer
+                      <input
+                        value={viewport.source}
+                        onChange={(event) => onUpdateViewport(viewport.id, { source: event.target.value })}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-800"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="grid gap-1 text-xs font-semibold text-slate-500">
+                        Scale
+                        <select
+                          value={viewport.scale}
+                          onChange={(event) => onChangeScale(viewport.id, event.target.value as PlanSheetScale)}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
+                        >
+                          {scaleOptions.map((scale) => (
+                            <option key={scale} value={scale}>
+                              {scale}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {(
+                        [
+                          ["x", "X %"],
+                          ["y", "Y %"],
+                          ["w", "W %"],
+                          ["h", "H %"],
+                        ] as Array<[keyof Pick<PlanSheetViewport, "x" | "y" | "w" | "h">, string]>
+                      ).map(([key, label]) => (
+                        <label key={key} className="grid gap-1 text-xs font-semibold text-slate-500">
+                          {label}
+                          <input
+                            type="number"
+                            min={key === "w" || key === "h" ? 10 : 0}
+                            max={key === "w" || key === "h" ? 90 : 85}
+                            value={viewport[key]}
+                            onChange={(event) => onUpdateViewport(viewport.id, { [key]: Number(event.target.value) })}
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-800"
+                          />
+                        </label>
                       ))}
-                    </select>
+                    </div>
                   </div>
                 </div>
               ))}
