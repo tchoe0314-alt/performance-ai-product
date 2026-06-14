@@ -442,7 +442,7 @@ def surface_from_survey_import(import_result: Dict[str, Any], *, cell_size: floa
         surface,
         "_inferred_profile",
         {
-            "source_quality": "survey_backed" if control_verified else "survey_unverified",
+            "source_quality": "survey",
             "source_detail": "survey_csv_import_with_verified_control" if control_verified else "survey_csv_import_control_unverified",
             "source_file": safe_str(import_result.get("source")),
             "point_count": len(points),

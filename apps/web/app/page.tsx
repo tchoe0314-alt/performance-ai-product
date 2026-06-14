@@ -10791,14 +10791,19 @@ function PerformanceAIDashboardView({
     }
     const existingSite = buildingPlacements.find((item) => item.type === "site");
     if (existingSite && !existingSite.locked) {
-      const nextSiteInputs = {
+      const existingBoundarySource =
+        currentInput?.meta?.site_inputs?.site_boundary_source ?? existingSite.source;
+      const normalizedBoundarySource: SiteInputs["site_boundary_source"] =
+        existingBoundarySource === "manual_drawn" ||
+        existingBoundarySource === "map_viewport" ||
+        existingBoundarySource === "imported"
+          ? existingBoundarySource
+          : "dimensions";
+      const nextSiteInputs: SiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
         site_alignment_locked: true,
         site_boundary_state: "locked_canonical",
-        site_boundary_source:
-          currentInput?.meta?.site_inputs?.site_boundary_source ??
-          existingSite.source ??
-          "dimensions",
+        site_boundary_source: normalizedBoundarySource,
       };
       const nextProjectInput: ProjectInput = {
         ...currentInput,

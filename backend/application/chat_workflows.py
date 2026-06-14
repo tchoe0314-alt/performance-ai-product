@@ -55,6 +55,7 @@ from backend.planning.source_confidence_map import (
     attach_source_confidence_map,
     build_source_confidence_map,
 )
+from backend.planning.customer_templates import GLOBAL_CUSTOMER_TEMPLATE_MANAGER, template_behavior
 from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE as PLAN_PDF_SOURCE_CONFIDENCE,
@@ -70,6 +71,54 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
 
 def _safe_list(value: Any) -> List[Any]:
     return list(value) if isinstance(value, list) else []
+
+
+def _customer_template_chat_response(message: str) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    mentions_template = "template" in normalized and any(
+        phrase in normalized
+        for phrase in (
+            "company template",
+            "customer template",
+            "active template",
+            "template is active",
+            "template missing",
+        )
+    )
+    if not mentions_template:
+        return None
+    registry = GLOBAL_CUSTOMER_TEMPLATE_MANAGER.snapshot()
+    behavior = template_behavior(registry.get("active_template"))
+    asks_missing = "missing" in normalized or "why" in normalized
+    asks_active = "active" in normalized or "what template" in normalized
+    action = (
+        "answered_customer_template_missing_reason"
+        if asks_missing
+        else "answered_active_template"
+        if asks_active
+        else "activated_customer_template"
+    )
+    summary = " ".join(safe_str(item) for item in _safe_list(behavior.get("template_behavior")) if safe_str(item))
+    if not summary:
+        summary = "Company template behavior is unavailable; Civora will keep outputs review-required and will not claim legal compliance."
+    decision = _truthful_decision_update(
+        {},
+        assistant_message=summary,
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken=action,
+        next_best_action="Review customer template settings before relying on generated layers, labels, reports, or defaults.",
+        outcome="answered_customer_template_status",
+        state_changed=False,
+        blocker="",
+    )
+    metadata = _safe_dict(decision.get("response_metadata"))
+    metadata["ui_navigation_target"] = "templates"
+    metadata["template_policy"] = safe_str(_safe_dict(behavior.get("policy")).get("truth_label"))
+    decision["response_metadata"] = metadata
+    return decision
 
 
 def _truthful_decision_update(
@@ -3066,6 +3115,9 @@ def decide_chat(
     )
     if candidate_decision is not None:
         return _enrich_response_contract(candidate_decision, message=message)
+    customer_template_decision = _customer_template_chat_response(message)
+    if customer_template_decision is not None:
+        return _enrich_response_contract(customer_template_decision, message=message)
     decision = decide_chat_message(payload)
     if safe_str(decision.get("action_taken")) == "answered_from_project_context" and safe_str(context.get("next_best_action")):
         metadata = _safe_dict(decision.get("response_metadata"))

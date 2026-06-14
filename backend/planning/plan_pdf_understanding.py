@@ -118,7 +118,33 @@ def _fallback_page_count(path: Path) -> int:
         raw = path.read_bytes()
     except Exception:
         return 0
-    return max(0, len(re.findall(rb"/Type\s*/Page\b", raw)) - len(re.findall(rb"/Type\s*/Pages\b", raw)))
+    count_match = re.search(rb"/Count\s+(\d+)", raw)
+    if count_match:
+        try:
+            return max(0, int(count_match.group(1)))
+        except Exception:
+            pass
+    return max(0, len(re.findall(rb"/Type\s*/Page(?!s)\b", raw)))
+
+
+def _fallback_text_evidence(path: Path) -> List[_TextEvidence]:
+    try:
+        raw = path.read_bytes().decode("latin-1", errors="ignore")
+    except Exception:
+        return []
+    evidence: List[_TextEvidence] = []
+    for index, match in enumerate(re.finditer(r"\(([^()]*)\)\s*Tj", raw)):
+        text = _clean_text(match.group(1).replace(r"\(", "(").replace(r"\)", ")"))
+        if text:
+            y0 = 720.0 - (18.0 * index)
+            bbox = {
+                "x0": 72.0,
+                "y0": round(y0, 3),
+                "x1": round(72.0 + max(24.0, len(text) * 5.4), 3),
+                "y1": round(y0 + 12.0, 3),
+            }
+            evidence.append(_TextEvidence(text=text, page_index=0, bbox=bbox, source="embedded_pdf_text_fallback"))
+    return evidence
 
 
 def _extract_with_pypdf(path: Path) -> Tuple[List[Dict[str, Any]], List[_TextEvidence], List[str]]:
@@ -490,6 +516,10 @@ def analyze_plan_pdf(
     pages, text_evidence, extraction_blockers = _extract_with_pypdf(path)
     if not pages:
         fallback_count = _fallback_page_count(path)
+        if not text_evidence:
+            text_evidence = _fallback_text_evidence(path)
+        if fallback_count <= 0 and text_evidence:
+            fallback_count = max(item.page_index for item in text_evidence) + 1
         pages = [
             {
                 "page_index": idx,
@@ -498,8 +528,8 @@ def analyze_plan_pdf(
                 "height": None,
                 "rotation": 0,
                 "size_units": "unknown",
-                "embedded_text_present": False,
-                "embedded_text_excerpt": "",
+                "embedded_text_present": bool(text_evidence),
+                "embedded_text_excerpt": _truncate(" ".join(item.text for item in text_evidence if item.page_index == idx), 600),
                 "preview_url": "",
                 "preview_status": "blocked",
                 "preview_blocker": "PDF page metadata requires pypdf or another configured PDF parser.",

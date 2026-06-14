@@ -224,12 +224,13 @@ def _dem_lidar_summary(meta: Dict[str, Any], parsed: Dict[str, Any], grading: Di
     )
     source = safe_str(dem.get("source") or dem.get("file") or dem.get("provider") or source_quality)
     resolution = safe_float(dem.get("resolution_ft") or dem.get("cell_size_ft") or existing_surface.get("cell_size"), 0.0)
-    ready = bool(dem) or source_quality in {"terrain", "dem", "lidar", "survey"}
+    survey_control_verified = bool(grading.get("survey_control_verified") or existing_surface.get("survey_control_verified"))
+    ready = bool(dem) or source_quality in {"terrain", "dem", "lidar", "survey", "survey_backed", "survey_unverified"}
     return {
         "ready": ready,
         "source": source or "missing",
         "resolution_ft": round(resolution, 3) if resolution > 0.0 else None,
-        "approved_for_production": bool(dem.get("approved_for_production")) or source_quality == "survey",
+        "approved_for_production": bool(dem.get("approved_for_production")) or source_quality in {"survey", "survey_backed"} and survey_control_verified,
     }
 
 

@@ -369,13 +369,13 @@ class ProjectStore:
         minimum_role: str = "editor",
     ) -> Dict[str, Any]:
         now = _now()
+        existing = self.get_project(user_id=user_id, project_id=project_id) if project_id else None
         if project_id:
-            if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role=minimum_role):
+            if existing and not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role=minimum_role):
                 raise ValueError(f"You do not have {minimum_role} access to that project.")
         elif not organization_id:
             organization_id = self.ensure_default_organization(user_id=user_id)["organization_id"]
 
-        existing = self.get_project(user_id=user_id, project_id=project_id) if project_id else None
         existing_latest_result = dict((existing or {}).get("latest_result") or {})
         existing_project_input = dict((existing or {}).get("project_input") or {})
         incoming_latest_result = dict(latest_result or {})

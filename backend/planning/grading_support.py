@@ -254,7 +254,7 @@ def build_existing_surface(
                 profile["survey_point_count"] = len(parsed_points)
                 profile["survey_used"] = True
                 profile["survey_control_verified"] = control_verified
-                profile["source_quality"] = "survey_backed" if control_verified else "survey_unverified"
+                profile["source_quality"] = "survey"
                 profile["source_detail"] = (
                     "Survey/topo points with verified control"
                     if control_verified
