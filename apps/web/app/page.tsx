@@ -13516,6 +13516,22 @@ function PerformanceAIDashboardView({
       gradingMeta && typeof gradingMeta === "object"
         ? ((gradingMeta as { surface_guidance?: Record<string, unknown> }).surface_guidance ?? {})
         : {};
+    const rawSurfaceModel =
+      gradingMeta && typeof gradingMeta === "object"
+        ? ((gradingMeta as { surface_model?: Record<string, unknown> }).surface_model ?? {})
+        : {};
+    const previewElevationSamples = Array.isArray(rawSurfaceModel.spot_elevations)
+      ? rawSurfaceModel.spot_elevations
+          .map((item) => {
+            const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+            const x = Number(record.x);
+            const y = Number(record.y);
+            const z = Number(record.z);
+            return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x, y, z } : null;
+          })
+          .filter((item): item is { x: number; y: number; z: number } => Boolean(item))
+          .slice(0, 72)
+      : [];
     const gradeRangeFt = Number(
       (surfaceControls as { grade_range_ft?: number }).grade_range_ft ?? 0,
     );
@@ -13610,20 +13626,55 @@ function PerformanceAIDashboardView({
                 ? "#c7d2fe"
                 : "#dbeafe";
       const heightFt = isBuilding ? 28 : isStructure ? 10 : isDrainage ? 4 : isRoad ? 2 : isParking ? 1.5 : 1;
-      const elevationOffset = elevationAt(centerX, centerY);
+      const elevationOffset = previewElevationSamples.length ? elevationAt(centerX, centerY) : 0;
       const pondAdjustment = normalizedLayer === "POND" ? Math.max(1.5, gradeRangeFt * 0.12) : 0;
       items.push({
+        id: String(actionRecord.id || meta?.site_object_id || `${normalizedLayer.toLowerCase()}-${items.length + 1}`),
         x: x1,
         y: y1,
         w,
         h,
         height: heightFt,
-        z: elevationOffset - pondAdjustment,
+        z: elevationOffset - (isDrainage ? pondAdjustment : 0),
         color,
         label: label || normalizedLayer,
-        layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
+        layer: isBuilding
+          ? "BUILDING"
+          : isStructure
+            ? "STRUCTURE"
+            : isDrainage
+              ? "DRAINAGE"
+              : isUtility
+                ? "UTILITY"
+                : isParking
+                  ? "PARKING"
+                  : isRoad
+                    ? normalizedLayer === "SIDEWALK" || normalizedLayer === "WALK" ? "SIDEWALK" : "ROAD"
+                    : "OBJECT",
+        source: String(meta?.source_name || meta?.source || "final plan preview"),
+        confidence: typeof meta?.confidence === "number" || typeof meta?.confidence === "string" ? meta.confidence : "review required",
+        blockers: Array.isArray(meta?.blockers) ? meta.blockers.map((blocker) => String(blocker)) : [],
       });
     }
+
+    previewElevationSamples.forEach((sample, index) => {
+      addBounds([sample.x, sample.y, sample.x, sample.y]);
+      items.push({
+        id: `terrain-sample-${index + 1}`,
+        x: sample.x,
+        y: sample.y,
+        w: 1,
+        h: 1,
+        height: 0.1,
+        z: sample.z,
+        color: "#bbf7d0",
+        label: `Elevation sample ${index + 1}`,
+        layer: "TERRAIN",
+        source: "preview elevation sample",
+        confidence: "review required",
+        terrainSample: true,
+      });
+    });
 
     if (
       Number.isFinite(baseTerrain.minX) &&
@@ -13644,6 +13695,8 @@ function PerformanceAIDashboardView({
         color: "#e5e7eb",
         label: "Terrain",
         layer: "TERRAIN",
+        source: previewElevationSamples.length ? "preview elevation sample extent" : "flat fallback extent",
+        terrainSample: false,
       });
     }
     return items;
@@ -13667,14 +13720,15 @@ function PerformanceAIDashboardView({
       const h = Math.max(0.01, (y2 - y1) * scale);
       const layer = String((label as { layer?: string }).layer || "").toUpperCase();
       const isBuilding = layer === "BUILDING";
-      const isRoad = ["ROAD", "PAVEMENT", "PARKING", "WALK"].includes(layer);
+      const isRoad = ["ROAD", "PAVEMENT", "WALK", "SIDEWALK"].includes(layer);
+      const isParking = layer === "PARKING";
       const isDrainage = ["DRAIN", "PIPE", "STORM", "BASIN_BOUNDARY"].includes(layer);
       const isUtility = ["SAN", "UTILITY", "WATER"].includes(layer);
       const isStructure = ["STRUCTURE", "BRIDGE", "POOL"].includes(layer);
       const isLot = layer === "LOT";
 
       if (isBuilding && !previewLayersEffective.buildings) continue;
-      if (isRoad && !previewLayersEffective.roads) continue;
+      if ((isRoad || isParking) && !previewLayersEffective.roads) continue;
       if (isDrainage && !previewLayersEffective.drainage) continue;
       if (isUtility && !previewLayersEffective.utilities) continue;
       if (isStructure && !previewLayersEffective.structures) continue;
@@ -13693,8 +13747,9 @@ function PerformanceAIDashboardView({
                 : isLot
                   ? "#e2e8f0"
                   : "#dbeafe";
-      const heightFt = isBuilding ? 26 : isStructure ? 8 : isRoad ? 2 : 1;
+      const heightFt = isBuilding ? 26 : isStructure ? 8 : isDrainage ? 3 : isUtility ? 2 : isRoad ? 1.5 : isParking ? 1 : 1;
       items.push({
+        id: String((label as { id?: string }).id || `${layer.toLowerCase()}-annotation-${items.length + 1}`),
         x: x1 * scale,
         y: y1 * scale,
         w,
@@ -13702,7 +13757,23 @@ function PerformanceAIDashboardView({
         height: heightFt,
         color,
         label: String((label as { label?: string }).label || layer || "Shape"),
-        layer: isBuilding ? "BUILDING" : isStructure ? "STRUCTURE" : isRoad ? "ROAD" : "PARKING",
+        layer: isBuilding
+          ? "BUILDING"
+          : isStructure
+            ? "STRUCTURE"
+            : isDrainage
+              ? "DRAINAGE"
+              : isUtility
+                ? "UTILITY"
+                : isParking
+                  ? "PARKING"
+                  : isRoad
+                    ? layer === "SIDEWALK" || layer === "WALK" ? "SIDEWALK" : "ROAD"
+                    : isLot
+                      ? "CONSTRAINT"
+                      : "OBJECT",
+        source: "preview annotation",
+        confidence: "annotation review required",
       });
     }
     return items;

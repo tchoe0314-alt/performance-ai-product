@@ -92,10 +92,9 @@ test.describe("map anchored canvas geometry transforms", () => {
       path.resolve(process.cwd(), "app/components/PreviewPanel.tsx"),
       "utf8",
     );
-    const highQualitySection = source.slice(
-      source.indexOf('data-testid="high-quality-preview-only-label"'),
-      source.indexOf('data-testid="preview-mode-2d"'),
-    );
+    const highQualityStart = source.indexOf('data-testid="high-quality-preview-only-label"');
+    const highQualityEnd = source.indexOf('data-testid="high-quality-lite-label"', highQualityStart);
+    const highQualitySection = source.slice(highQualityStart, highQualityEnd + 2500);
 
     expect(highQualitySection).toContain("Visual preview only");
     expect(highQualitySection).toContain("Canonical geometry unchanged");
