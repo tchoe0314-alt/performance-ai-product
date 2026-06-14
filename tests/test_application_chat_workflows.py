@@ -1071,6 +1071,70 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("accepted as draft/review-required evidence", parcel["assistant_message"])
         self.assertNotIn("construction-ready", parcel["assistant_message"].lower())
 
+    def test_chat_reports_national_gis_sources_without_project(self):
+        result = decide_chat(
+            {"message": "what national sources can you use?", "context": {}},
+            decide_chat_message=decide_chat_message,
+            project_store=None,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "reported_national_gis_sources")
+        self.assertIn("US Census Geocoder", result["assistant_message"])
+        self.assertIn("USGS 3DEP", result["assistant_message"])
+        self.assertIn("FEMA NFHL", result["assistant_message"])
+        self.assertIn("USFWS NWI", result["assistant_message"])
+        self.assertIn("not survey/control", result["assistant_message"])
+
+    def test_chat_answers_gis_data_is_not_survey_control(self):
+        result = decide_chat(
+            {"message": "is this GIS data survey control?", "context": {}},
+            decide_chat_message=decide_chat_message,
+            project_store=None,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "explained_gis_not_survey_control")
+        self.assertIn("No.", result["assistant_message"])
+        self.assertIn("candidate/review-required", result["assistant_message"])
+        self.assertIn("does not establish survey control", result["assistant_message"])
+
+    def test_chat_finds_providers_for_address(self):
+        record = _record()
+        store = RecordingProjectStore(record)
+        fake_result = {
+            "online_existing_conditions_discovery_v1": {
+                "version": "online_existing_conditions_discovery_v1",
+                "candidate_count": 1,
+                "provider_packs": [{"pack_id": "austin_tx_city", "label": "Austin, TX provider pack"}],
+                "sources": [
+                    {
+                        "key": "building_footprints",
+                        "label": "building footprints",
+                        "provider": "City of Austin building footprints 2023",
+                        "status": "candidates_found",
+                        "candidate_count": 1,
+                        "blockers": ["building footprints candidates are review-required and not survey-backed."],
+                    }
+                ],
+            },
+            "map_feature_detection_report_v1": {"candidate_count": 1, "feature_candidates": []},
+            "existing_conditions_package": {"status": "blocked"},
+            "location_context": {"address": "301 W 2nd St, Austin, TX"},
+        }
+        with patch("backend.application.chat_workflows.fetch_online_existing_conditions", return_value=fake_result) as fetch:
+            result = decide_chat(
+                {"message": "find providers for this address 301 W 2nd St, Austin, TX", "context": {"current_project": {"project_id": "project_123"}}},
+                decide_chat_message=decide_chat_message,
+                project_store=store,
+                user_id="user_1",
+            )
+
+        self.assertEqual(result["action_taken"], "fetched_online_existing_conditions_candidates")
+        fetch.assert_called_once()
+        self.assertIn("Austin, TX provider pack", result["assistant_message"])
+        self.assertIn("candidate/review-required", result["assistant_message"])
+
     def test_object_creation_command_creates_draft_geometry_and_truthful_action(self):
         store = RecordingProjectStore()
 

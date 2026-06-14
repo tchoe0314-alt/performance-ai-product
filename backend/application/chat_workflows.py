@@ -1489,7 +1489,7 @@ def _online_discovery_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _address_from_online_message(message: str, record: Optional[Dict[str, Any]]) -> str:
-    cleaned = re.sub(r"(?i)\b(find site data from this address|use online sources if available|find site data|online sources|from this address)\b", "", message)
+    cleaned = re.sub(r"(?i)\b(find providers for this address|find gis providers for this address|find site data from this address|use online sources if available|find providers|find site data|online sources|from this address)\b", "", message)
     cleaned = cleaned.strip(" :-,")
     if cleaned and len(cleaned) > 4:
         return cleaned
@@ -1511,6 +1511,13 @@ def _summarize_online_discovery(discovery: Dict[str, Any], *, why_buildings: boo
         reason = safe_str(blockers[0] if blockers else "", "No building footprint source is configured or available.")
         return f"It did not find buildings because: {reason} Building footprints stay candidate/review-required until a configured provider returns features and the user reviews them."
     lines = []
+    packs = [
+        safe_str(_safe_dict(item).get("label") or _safe_dict(item).get("pack_id"))
+        for item in _safe_list(discovery.get("provider_packs"))
+        if safe_str(_safe_dict(item).get("label") or _safe_dict(item).get("pack_id"))
+    ]
+    if packs:
+        lines.append("Selected provider pack(s): " + "; ".join(packs[:4]) + ".")
     if found:
         lines.append(
             "Found candidates: "
@@ -1546,13 +1553,14 @@ def _online_discovery_chat_response(
     asks_summary = any(
         phrase in normalized
         for phrase in (
+            "what sources are available here",
             "what did you find online",
             "what did you find from online",
             "what online sources",
             "online existing conditions",
         )
     )
-    asks_find = any(phrase in normalized for phrase in ("find site data from this address", "find site data", "use online sources if available"))
+    asks_find = any(phrase in normalized for phrase in ("find providers for this address", "find gis providers for this address", "find site data from this address", "find site data", "use online sources if available"))
     asks_building_gap = "why" in normalized and any(phrase in normalized for phrase in ("didn't it find buildings", "did not find buildings", "no buildings", "building footprints"))
     if not any((asks_summary, asks_find, asks_building_gap)):
         return None
@@ -1683,26 +1691,46 @@ def _provider_registry_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
         or _safe_dict(plan_meta.get("local_gis_provider_registry_v1"))
         or _safe_dict(discovery.get("local_gis_provider_registry_v1"))
     )
-    return build_provider_registry(providers=_safe_list(registry.get("providers")) if registry else None)
+    built = build_provider_registry(providers=_safe_list(registry.get("providers")) if registry else None)
+    if registry:
+        built["provider_packs"] = _safe_list(registry.get("provider_packs"))
+        built["known_gaps"] = _safe_list(registry.get("known_gaps"))
+    return built
 
 
 def _summarize_provider_registry(registry: Dict[str, Any]) -> str:
     providers = [_safe_dict(item) for item in _safe_list(registry.get("providers")) if _safe_dict(item)]
     configured = [item for item in providers if safe_str(item.get("service_url")) and safe_str(item.get("status")) != "unconfigured"]
+    packs = [
+        safe_str(_safe_dict(item).get("label") or _safe_dict(item).get("pack_id"))
+        for item in _safe_list(registry.get("provider_packs"))
+        if safe_str(_safe_dict(item).get("label") or _safe_dict(item).get("pack_id"))
+    ]
     if not configured:
         return "No local GIS ArcGIS providers are configured yet. Built-in public context sources may still be listed for floodplain/wetlands, but parcel/building/road/utility/contour providers need local service URLs."
     lines = [
         f"Configured GIS providers: {len(configured)} total. These are context sources and remain review-required.",
     ]
+    if packs:
+        lines.append("Provider pack(s): " + "; ".join(packs[:4]) + ".")
     for item in configured[:8]:
         freshness = _safe_dict(item.get("freshness"))
         health = _safe_dict(item.get("health"))
+        queryable = "queryable" if item.get("queryable") is not False else "not queryable"
         lines.append(
             f"- {safe_str(item.get('source_type'))}: {safe_str(item.get('name') or item.get('id'))}; "
             f"{safe_str(item.get('jurisdiction_level'), 'jurisdiction')}; health {safe_str(health.get('status'), 'unchecked')}; "
-            f"freshness {safe_str(freshness.get('status'), 'unknown')}."
+            f"freshness {safe_str(freshness.get('status'), 'unknown')}; {queryable}."
         )
     return "\n".join(lines)
+
+
+def _summarize_national_gis_sources() -> str:
+    return (
+        "National GIS fallbacks available for candidate discovery: US Census Geocoder for address/location context; "
+        "USGS 3DEP EPQS for point elevation where available; FEMA NFHL ArcGIS for floodplain context; "
+        "USFWS NWI ArcGIS for wetlands context. These are candidate/review-required context sources only and are not survey/control."
+    )
 
 
 def _extract_arcgis_url(message: str) -> str:
@@ -1738,6 +1766,8 @@ def _provider_registry_chat_response(
     asks_configured = any(
         phrase in normalized
         for phrase in (
+            "what national sources can you use",
+            "national sources",
             "what online sources are configured",
             "configured online sources",
             "configured gis sources",
@@ -1746,7 +1776,9 @@ def _provider_registry_chat_response(
         )
     )
     asks_health = "check provider health" in normalized or ("provider" in normalized and "health" in normalized)
-    asks_add = ("add" in normalized or "configure" in normalized) and "provider" in normalized
+    asks_add = bool(re.search(r"\b(add|configure)\b", normalized)) and "provider" in normalized
+    asks_national = "national sources" in normalized or "federal sources" in normalized
+    asks_survey_control = "gis" in normalized and "survey control" in normalized
     missing_source_type = _provider_source_type_from_message(message)
     asks_missing_source = bool(missing_source_type) and (
         "why" in normalized
@@ -1758,8 +1790,41 @@ def _provider_registry_chat_response(
             or "missing" in normalized
         )
     )
-    if not any((asks_configured, asks_health, asks_add, asks_missing_source)):
+    if not any((asks_configured, asks_health, asks_add, asks_missing_source, asks_survey_control)):
         return None
+    if asks_survey_control:
+        return _truthful_decision_update(
+            {},
+            assistant_message="No. Online GIS data is candidate/review-required context only. It does not establish survey control, boundary control, benchmark datum, utility locate, construction approval, stamp, seal, certification, or engineer-of-record responsibility.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="explained_gis_not_survey_control",
+            action_blocked_reason="",
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Provide survey/control evidence or an engineer-review package source list before relying on geometry for production decisions.",
+            command_payload_updates={"ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+    if asks_national and not record:
+        return _truthful_decision_update(
+            {},
+            assistant_message=_summarize_national_gis_sources(),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="reported_national_gis_sources",
+            action_blocked_reason="",
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Apply an address to select local provider packs and run candidate discovery.",
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
     if not record:
         return _truthful_decision_update(
             {},
@@ -1779,6 +1844,23 @@ def _provider_registry_chat_response(
             blocker="No saved project record is available for GIS provider registry updates.",
         )
     registry = _provider_registry_from_record(record)
+    if asks_national:
+        return _truthful_decision_update(
+            {},
+            assistant_message=_summarize_national_gis_sources(),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="reported_national_gis_sources",
+            action_blocked_reason="",
+            affected_systems=["site", "data"],
+            assumptions=[],
+            next_best_action="Run online source discovery for the project address to combine local packs with national fallbacks.",
+            command_payload_updates={"local_gis_provider_registry_v1": registry, "ui_navigation_target": "site_existing", "requested_ui_mode": "setup"},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
     if asks_missing_source and not asks_add:
         providers = [
             _safe_dict(item)
