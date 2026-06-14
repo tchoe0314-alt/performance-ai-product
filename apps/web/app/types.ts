@@ -2065,6 +2065,7 @@ export type Preview3DItem = {
   source?: string;
   confidence?: number | string | null;
   blockers?: string[];
+  terrainSample?: boolean;
 };
 
 export type GradingEarthworkUx = {

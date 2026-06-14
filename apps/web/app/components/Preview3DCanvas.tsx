@@ -33,6 +33,7 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   SIDEWALK: { top: "#99f6e4", side: "#5eead4", line: "#0f766e" },
   DRAINAGE: { top: "#38bdf8", side: "#0284c7", line: "#e0f2fe" },
   UTILITY: { top: "#a78bfa", side: "#7c3aed", line: "#faf5ff" },
+  CONSTRAINT: { top: "#fda4af", side: "#fb7185", line: "#fff1f2" },
   TERRAIN: { top: "#bbf7d0", side: "#86efac", line: "#166534" },
 };
 
@@ -42,8 +43,9 @@ const normalizeLayer = (layer: string) => {
   if (key.includes("STRUCTURE")) return "STRUCTURE";
   if (key.includes("PARK")) return "PARKING";
   if (key.includes("SIDEWALK") || key.includes("WALK")) return "SIDEWALK";
-  if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM") || key.includes("WATER")) return "DRAINAGE";
-  if (key.includes("UTILITY") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
+  if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM")) return "DRAINAGE";
+  if (key.includes("UTILITY") || key.includes("WATER") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
+  if (key.includes("LOT") || key.includes("EASEMENT") || key.includes("CONSTRAINT") || key.includes("SETBACK")) return "CONSTRAINT";
   if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
   if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
   return key || "OBJECT";
@@ -148,27 +150,28 @@ export default function Preview3DCanvas({
   }, [items]);
 
   const terrainState = useMemo(() => {
-    const terrainZValues = items
-      .map((item) => (typeof item.z === "number" && Number.isFinite(item.z) ? item.z : null))
-      .filter((value): value is number => value !== null);
+    const sourceSamples = items.filter(
+      (item) => item.terrainSample && typeof item.z === "number" && Number.isFinite(item.z),
+    );
+    const terrainZValues = sourceSamples.map((item) => Number(item.z));
     const terrainZRange = terrainZValues.length ? Math.max(...terrainZValues) - Math.min(...terrainZValues) : 0;
-    if (!hasTerrainSource || !hasGradingSurface) {
+    if (!sourceSamples.length) {
       return {
         label: "Flat site fallback - terrain source missing",
-        detail: "No terrain mesh is being inferred.",
+        detail: "No preview elevation samples were supplied; no terrain is inferred.",
         mode: "fallback" as const,
       };
     }
-    if (terrainZRange < 0.5) {
+    if (!hasTerrainSource || !hasGradingSurface || terrainZRange < 0.5) {
       return {
         label: "Terrain source loaded - flat sampled surface",
-        detail: "No vertical terrain variation was provided to this preview.",
+        detail: `${sourceSamples.length} supplied elevation sample(s); vertical variation is not enough for a mesh.`,
         mode: "flat-source" as const,
       };
     }
     return {
       label: "Terrain mesh from preview elevations",
-      detail: `${terrainZValues.length} sampled object elevation(s) visible.`,
+      detail: `${sourceSamples.length} supplied preview elevation sample(s) visible.`,
       mode: "terrain" as const,
     };
   }, [hasGradingSurface, hasTerrainSource, items]);
@@ -250,7 +253,7 @@ export default function Preview3DCanvas({
     if (terrainState.mode === "terrain") {
       const positions = terrainGeometry.attributes.position;
       const samples = items
-        .filter((item) => typeof item.z === "number" && Number.isFinite(item.z))
+        .filter((item) => item.terrainSample && typeof item.z === "number" && Number.isFinite(item.z))
         .map((item) => ({
           x: item.x + item.w / 2 - centerX,
           z: item.y + item.h / 2 - centerY,
@@ -333,6 +336,25 @@ export default function Preview3DCanvas({
         utility.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, Math.max(baseY, 1.5)));
         utility.userData = object.userData;
         object.add(utility);
+      } else if (layer === "CONSTRAINT") {
+        const geometry = new THREE.BoxGeometry(Math.max(item.w, 1), 0.35, Math.max(item.h, 1));
+        const material = new THREE.MeshStandardMaterial({
+          color: palette.top,
+          roughness: 0.7,
+          transparent: true,
+          opacity: 0.42,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 0.22));
+        mesh.userData = object.userData;
+        object.add(mesh);
+
+        const outline = new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w, 1), 0.5, Math.max(item.h, 1))),
+          new THREE.LineBasicMaterial({ color: palette.line }),
+        );
+        outline.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 0.5));
+        object.add(outline);
       } else {
         const geometry = new THREE.BoxGeometry(Math.max(item.w, 1), heightFt, Math.max(item.h, 1));
         const material = new THREE.MeshStandardMaterial({
@@ -441,7 +463,7 @@ export default function Preview3DCanvas({
 
   return (
     <div
-      className="relative h-[600px] w-full min-w-0 overflow-hidden rounded-[20px] bg-white"
+      className="relative h-[min(600px,calc(100dvh-11rem))] min-h-[360px] w-full min-w-0 overflow-hidden rounded-xl bg-white md:rounded-[20px]"
       data-testid="civil-3d-viewer"
       onDoubleClick={onOpenFullscreen}
     >
@@ -453,7 +475,7 @@ export default function Preview3DCanvas({
       <div className="pointer-events-none absolute bottom-4 left-4 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm">
         Engineer-review visualization only | visual mode does not mutate canonical geometry
       </div>
-      <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-slate-900/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+      <div className="pointer-events-none absolute right-4 top-20 rounded-full bg-slate-900/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white sm:top-4">
         Orbit | Pan | Zoom
       </div>
       {objectChips.length ? (

@@ -34,6 +34,7 @@ test.describe("Civil 3D model viewer", () => {
     );
     await expect(page.getByTestId("civil-3d-viewer")).toContainText("visual mode does not mutate canonical geometry");
     await expect(page.getByTestId("civil-3d-object-strip")).toContainText("Detention Basin A");
+    await expect(page.getByTestId("civil-3d-object-strip")).toContainText(/DRAINAGE|PARKING|ROAD|UTILITY|BUILDING/);
 
     const pixelSignal = await page.getByTestId("civil-3d-canvas-mount").locator("canvas").evaluate((canvas: HTMLCanvasElement) => {
       const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true }) || canvas.getContext("webgl", { preserveDrawingBuffer: true });
