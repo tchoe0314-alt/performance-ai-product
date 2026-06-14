@@ -148,10 +148,10 @@ export default function Preview3DCanvas({
   }, [items]);
 
   const terrainState = useMemo(() => {
-    const zValues = items
+    const terrainZValues = items
       .map((item) => (typeof item.z === "number" && Number.isFinite(item.z) ? item.z : null))
       .filter((value): value is number => value !== null);
-    const zRange = zValues.length ? Math.max(...zValues) - Math.min(...zValues) : 0;
+    const terrainZRange = terrainZValues.length ? Math.max(...terrainZValues) - Math.min(...terrainZValues) : 0;
     if (!hasTerrainSource || !hasGradingSurface) {
       return {
         label: "Flat site fallback - terrain source missing",
@@ -159,7 +159,7 @@ export default function Preview3DCanvas({
         mode: "fallback" as const,
       };
     }
-    if (zRange < 0.5) {
+    if (terrainZRange < 0.5) {
       return {
         label: "Terrain source loaded - flat sampled surface",
         detail: "No vertical terrain variation was provided to this preview.",
@@ -168,7 +168,7 @@ export default function Preview3DCanvas({
     }
     return {
       label: "Terrain mesh from preview elevations",
-      detail: `${zValues.length} sampled object elevation(s) visible.`,
+      detail: `${terrainZValues.length} sampled object elevation(s) visible.`,
       mode: "terrain" as const,
     };
   }, [hasGradingSurface, hasTerrainSource, items]);
