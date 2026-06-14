@@ -562,6 +562,186 @@ def _looks_like_geometry_classification_request(message: str) -> bool:
     return bool(re.search(r"\b(turn|make|classify)\s+(this|that)\b", lowered))
 
 
+def _geometry_edit_kind_from_message(message: str) -> str:
+    lowered = _normalized_text(message)
+    if "why" in lowered and "polygon" in lowered and ("close" in lowered or "closing" in lowered):
+        return "polygon_close_explain"
+    if "fix" in lowered and "geometry" in lowered:
+        return "fix_geometry"
+    if re.search(r"\btrim\b", lowered):
+        return "trim"
+    if re.search(r"\bextend\b", lowered):
+        return "extend"
+    if re.search(r"\boffset\b", lowered):
+        return "offset"
+    if re.search(r"\bfillet\b", lowered):
+        return "fillet"
+    return ""
+
+
+def _geometry_edit_distance_from_message(message: str) -> Optional[float]:
+    match = re.search(r"(-?\d+(?:\.\d+)?)\s*(?:ft|feet|foot)?", _normalized_text(message))
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _drawn_geometry_edit_chat_response(
+    decision: Dict[str, Any],
+    *,
+    message: str,
+    context: Dict[str, Any],
+    project_input: Dict[str, Any],
+    latest_result: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    edit_kind = _geometry_edit_kind_from_message(message)
+    if not edit_kind:
+        return None
+    handoffs = _canonical_geometry_handoffs(project_input, latest_result)
+    selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
+    matches = _matching_handoffs(handoffs, selected_object_ids, selected_geometry_ids)
+    operation_labels = {
+        "trim": "Trim",
+        "extend": "Extend",
+        "offset": "Offset",
+        "fillet": "Fillet",
+        "fix_geometry": "Fix geometry if safe",
+        "polygon_close_explain": "Explain polygon closure",
+    }
+    if not selected_object_ids and not selected_geometry_ids:
+        return _truthful_decision_update(
+            decision,
+            assistant_message=(
+                f"{operation_labels[edit_kind]} needs a selected drawn CAD object. Select one draft/manual geometry item in the canvas, then ask again. "
+                "Civora will keep it draft_review_required and will not run engineering generation from the edit."
+            ),
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_geometry_edit_missing_selection",
+            action_blocked_reason="No selected or referenced drawn geometry was provided.",
+            required_missing_inputs=["selected drawn geometry"],
+            affected_systems=["cad_geometry"],
+            next_best_action="Select one editable drawn object in the canvas and retry the CAD edit.",
+            outcome="understood_needs_more_info",
+            state_changed=False,
+        )
+    if len(matches) != 1:
+        return _truthful_decision_update(
+            decision,
+            assistant_message="I need exactly one selected drawn geometry item for that edit so I do not mutate the wrong evidence.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_geometry_edit_ambiguous_selection",
+            action_blocked_reason=f"Referenced geometry was ambiguous: {len(matches)} matching handoffs found.",
+            required_missing_inputs=["one unambiguous selected drawn geometry"],
+            affected_systems=["cad_geometry"],
+            next_best_action="Select a single CAD object or vertex and retry the edit.",
+            outcome="understood_needs_more_info",
+            state_changed=False,
+            referenced_object_ids=selected_object_ids,
+            referenced_geometry_ids=selected_geometry_ids,
+        )
+    handoff = matches[0]
+    blockers = _handoff_blockers(handoff)
+    referenced_object_ids = [str(handoff.get("object_id") or "").strip()]
+    referenced_geometry_ids = [str(handoff.get("geometry_id") or "").strip()]
+    if blockers:
+        reason = "; ".join(blockers)
+        return _truthful_decision_update(
+            decision,
+            assistant_message=f"I found the selected geometry, but the CAD edit is blocked: {reason}.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_invalid_geometry_handoff",
+            action_blocked_reason=reason,
+            required_missing_inputs=["valid canonical_geometry_handoff_v1"],
+            affected_systems=["cad_geometry"],
+            next_best_action="Fix the drawn geometry handoff blockers before applying CAD edits.",
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker=reason,
+            referenced_object_ids=referenced_object_ids,
+            referenced_geometry_ids=referenced_geometry_ids,
+        )
+    distance = _geometry_edit_distance_from_message(message)
+    if edit_kind == "offset" and (distance is None or abs(distance) <= 0):
+        return _truthful_decision_update(
+            decision,
+            assistant_message="Offset needs a non-zero distance, for example: offset this line 10 feet.",
+            intent="conversation",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=True,
+            action_taken="blocked_geometry_edit_missing_distance",
+            action_blocked_reason="Offset distance was missing or zero.",
+            required_missing_inputs=["offset distance"],
+            affected_systems=["cad_geometry"],
+            next_best_action="Provide the offset distance in feet.",
+            outcome="understood_needs_more_info",
+            state_changed=False,
+            referenced_object_ids=referenced_object_ids,
+            referenced_geometry_ids=referenced_geometry_ids,
+        )
+    if edit_kind == "polygon_close_explain":
+        message_text = (
+            "A polygon may fail to close when it has fewer than three usable vertices, duplicate/zero-length edges, a gap beyond tolerance, "
+            "or a self-intersection. The canvas cleanup can remove duplicate vertices and close small gaps, but it blocks self-intersections "
+            "and polygon holes because the editor currently supports one exterior ring only. The result remains review-required."
+        )
+        action_taken = "explained_polygon_close_blockers"
+    elif edit_kind == "fix_geometry":
+        message_text = (
+            "I can attempt safe cleanup in the canvas: remove duplicate vertices, close small gaps, preserve source confidence and canonical IDs, "
+            "then leave the geometry draft_review_required. I will block instead of editing if cleanup would collapse the polygon, hide a hole, "
+            "or leave a self-intersection."
+        )
+        action_taken = "answered_safe_geometry_fix_path"
+    else:
+        extra = f" with {distance:g} ft" if edit_kind == "offset" and distance is not None else ""
+        message_text = (
+            f"Use the CAD canvas {operation_labels[edit_kind].lower()} control{extra} on the selected draft geometry. "
+            "The edit stays manual_drawn/user_drawn_review_required, keeps canonical IDs where available, marks geometry dirty for downstream rerun review, "
+            "and does not trigger engineering generation or construction-document success."
+        )
+        action_taken = f"answered_cad_{edit_kind}_edit_path"
+    return _truthful_decision_update(
+        decision,
+        assistant_message=message_text,
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken=action_taken,
+        action_blocked_reason="",
+        affected_systems=["cad_geometry"],
+        assumptions=["CAD geometry edits are client-side draft operations unless explicitly accepted and rerun later."],
+        next_best_action="Apply the edit in the canvas, then review topology blockers before rerunning affected systems.",
+        command_payload_updates={
+            "cad_geometry_edit": {
+                "operation": edit_kind,
+                "distance_ft": distance,
+                "object_id": referenced_object_ids[0],
+                "geometry_id": referenced_geometry_ids[0],
+                "review_required": True,
+                "construction_release_allowed": False,
+            }
+        },
+        outcome="understood_and_executed",
+        state_changed=False,
+        referenced_object_ids=referenced_object_ids,
+        referenced_geometry_ids=referenced_geometry_ids,
+    )
+
+
 def _collect_selected_ids(context: Dict[str, Any]) -> tuple[List[str], List[str]]:
     object_ids: List[str] = []
     geometry_ids: List[str] = []
@@ -1143,6 +1323,16 @@ def _apply_chat_command_execution(
             outcome="understood_and_executed",
             state_changed=True,
         )
+
+    geometry_edit_response = _drawn_geometry_edit_chat_response(
+        decision,
+        message=message,
+        context=context,
+        project_input=project_input,
+        latest_result=latest_result,
+    )
+    if geometry_edit_response is not None:
+        return geometry_edit_response
 
     if command_intent == "object_or_layout_command":
         object_type = str(command_payload.get("object_type") or "")
@@ -2272,201 +2462,6 @@ def _issue_selector_from_message(normalized: str) -> str:
         "resolve issue",
         "reopen issue",
         "waive issue",
-        "put issue in review",
-        "mark issue in review",
-        "show",
-        "what issues are",
-        "what issue is",
-        "what does the engineer need to review",
-    ):
-        text = text.replace(phrase, " ")
-    text = re.sub(r"\b(open|opened|resolved|reopened|grading|drainage|storm|water|sanitary|roadway|utility|utilities|blockers?|review|required|need|needs|engineer|to|the|a|an|are|is|what|does)\b", " ", text)
-    return " ".join(text.split())
-
-
-def _issue_tracker_chat_response(
-    *,
-    message: str,
-    record: Optional[Dict[str, Any]],
-    project_store: Optional[Any],
-    user_id: Optional[str],
-) -> Optional[Dict[str, Any]]:
-    normalized = _normalized_text(message)
-    asks_open = any(phrase in normalized for phrase in ("what issues are open", "open issues", "what issue is open"))
-    asks_engineer_queue = "what does the engineer need to review" in normalized or "engineer need to review" in normalized
-    asks_drainage = "drainage" in normalized and ("blocker" in normalized or "issue" in normalized)
-    wants_resolve = "resolve" in normalized and "issue" in normalized
-    wants_reopen = "reopen" in normalized and ("issue" in normalized or "grading" in normalized or "drainage" in normalized)
-    wants_waive = "waive" in normalized and "issue" in normalized
-    wants_in_review = ("in review" in normalized or "review this issue" in normalized) and "issue" in normalized
-    if not any((asks_open, asks_engineer_queue, asks_drainage, wants_resolve, wants_reopen, wants_waive, wants_in_review)):
-        return None
-    if not record:
-        return _truthful_decision_update(
-            {},
-            assistant_message="I need a saved project result before I can show review issues.",
-            intent="conversation",
-            run_mode="none",
-            design_prompt="",
-            needs_clarification=True,
-            action_taken="blocked_missing_issue_tracker_project",
-            action_blocked_reason="No saved project record is available for review issues.",
-            required_missing_inputs=["saved project with review evidence"],
-            affected_systems=["review"],
-            assumptions=[],
-            next_best_action="Save or load a project result, then ask for open issues again.",
-            outcome="understood_but_blocked",
-            state_changed=False,
-            blocker="No saved project record is available for review issues.",
-        )
-    latest_result = deepcopy(_safe_dict(record.get("latest_result")))
-    final_plan = _safe_dict(latest_result.get("final_plan"))
-    if not final_plan:
-        return _truthful_decision_update(
-            {},
-            assistant_message="I need a planner result before I can build the review issue tracker.",
-            intent="conversation",
-            run_mode="none",
-            design_prompt="",
-            needs_clarification=True,
-            action_taken="blocked_missing_issue_tracker_plan",
-            action_blocked_reason="Saved project has no final plan.",
-            required_missing_inputs=["saved planner result"],
-            affected_systems=["review"],
-            assumptions=[],
-            next_best_action="Run or load a design first, then ask for issues.",
-            outcome="understood_but_blocked",
-            state_changed=False,
-            blocker="Saved project has no final plan.",
-        )
-    meta = _safe_dict(final_plan.get("meta"))
-    tracker = _safe_dict(meta.get(ISSUE_TRACKER_VERSION)) or build_review_issue_tracker(final_plan, meta=meta)
-    action = ""
-    if wants_resolve:
-        action = "resolve"
-    elif wants_reopen:
-        action = "reopen"
-    elif wants_waive:
-        action = "waive"
-    elif wants_in_review:
-        action = "in_review"
-    discipline = ""
-    for candidate in ("grading", "drainage", "storm", "water", "sanitary", "roadway", "utilities"):
-        if candidate in normalized:
-            discipline = "drainage" if candidate == "storm" else candidate
-            break
-    selector = _issue_selector_from_message(normalized)
-    if action:
-        matches = select_review_issues(tracker, selector, discipline=discipline)
-        if not matches and not selector and not discipline:
-            matches = select_review_issues(tracker, status="open")
-        if len(matches) != 1:
-            return _truthful_decision_update(
-                {},
-                assistant_message=(
-                    "I found multiple matching review issues. Please include an issue id or a more specific discipline/title."
-                    if matches
-                    else "I could not find a matching review issue."
-                ),
-                intent="conversation",
-                run_mode="none",
-                design_prompt="",
-                needs_clarification=True,
-                action_taken="blocked_ambiguous_review_issue_update" if matches else "blocked_review_issue_not_found",
-                action_blocked_reason="Review issue update needs exactly one matching issue.",
-                required_missing_inputs=["specific review issue id or title"],
-                affected_systems=["review"],
-                assumptions=[],
-                next_best_action="Ask “what issues are open?” and include the issue id in the follow-up.",
-                command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
-                outcome="understood_but_blocked",
-                state_changed=False,
-                blocker="Review issue update needs exactly one matching issue.",
-            )
-        if not (project_store and user_id):
-            return None
-        matched = _safe_dict(matches[0])
-        update = apply_review_issue_update(
-            meta,
-            action=action,
-            issue_id=safe_str(matched.get("issue_id")),
-            actor=user_id,
-            note=message,
-            discipline=discipline,
-        )
-        meta = _safe_dict(update.get("updated_meta"))
-        tracker = _safe_dict(update.get(ISSUE_TRACKER_VERSION))
-        final_plan["meta"] = meta
-        latest_result["final_plan"] = final_plan
-        _save_project_record(
-            project_store,
-            {**record, "_user_id": user_id},
-            project_input=deepcopy(_safe_dict(record.get("project_input"))),
-            latest_result=latest_result,
-        )
-        status = safe_str(update.get("status"))
-        return _truthful_decision_update(
-            {},
-            assistant_message=(
-                f"Updated {safe_str(matched.get('issue_id'))} to {status}. "
-                "This changes the issue workflow only; review requirements and field-use boundaries remain visible."
-            ),
-            intent="conversation",
-            run_mode="none",
-            design_prompt="",
-            needs_clarification=False,
-            action_taken=f"{action}_review_issue",
-            action_blocked_reason="",
-            affected_systems=[safe_str(matched.get("discipline"), "review")],
-            assumptions=[],
-            next_best_action="Review the remaining open issues before relying on outputs.",
-            command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
-            outcome="understood_and_executed",
-            state_changed=True,
-        )
-
-    if asks_engineer_queue:
-        visible = [_safe_dict(item) for item in _safe_list(tracker.get("engineer_review_queue"))]
-        heading = "Engineer review queue"
-    elif asks_drainage:
-        visible = select_review_issues(tracker, discipline="drainage", status="open")
-        heading = "Drainage blockers"
-    else:
-        visible = select_review_issues(tracker, status="open")
-        heading = "Open review issues"
-    if visible:
-        lines = [
-            f"{safe_str(item.get('issue_id'))}: {safe_str(item.get('severity'))} {safe_str(item.get('discipline'))} - {safe_str(item.get('title'))}"
-            for item in visible[:8]
-        ]
-        assistant = f"{heading}: {len(visible)} item{'s' if len(visible) != 1 else ''}.\n" + "\n".join(f"- {line}" for line in lines)
-    else:
-        assistant = f"{heading}: no matching open items are recorded. Review-required boundaries still apply to generated outputs."
-    return _truthful_decision_update(
-        {},
-        assistant_message=assistant,
-        intent="conversation",
-        run_mode="none",
-        design_prompt="",
-        needs_clarification=False,
-        action_taken="reported_review_issue_tracker",
-        action_blocked_reason="",
-        affected_systems=["review"],
-        assumptions=[],
-        next_best_action="Resolve, reopen, waive with a review-required record, or assign visible issues as work progresses.",
-        command_payload_updates={ISSUE_TRACKER_VERSION: tracker, "ui_navigation_target": "reports", "requested_ui_mode": "review"},
-        outcome="understood_and_answered",
-        state_changed=False,
-    )
-
-
-def _issue_selector_from_message(normalized: str) -> str:
-    text = normalized
-    for phrase in (
-        "resolve this issue",
-        "resolve issue",
-        "reopen issue",
-        "waive issue",
         "assign this issue",
         "assign issue",
         "assign",
@@ -2481,9 +2476,8 @@ def _issue_selector_from_message(normalized: str) -> str:
         "who needs to review this",
     ):
         text = text.replace(phrase, " ")
-    text = re.sub(r"\b(open|opened|resolved|reopened|grading|drainage|storm|water|sanitary|roadway|utility|utilities|blockers?|review|required|need|needs|engineer|reviewer|owner|admin|editor|viewer|to|the|a|an|are|is|what|does|who|this)\b", " ", text)
+    text = re.sub(r"\b(open|opened|resolved|reopened|grading|drainage|storm|water|sanitary|roadway|utility|utilities|issue|issues|blockers?|review|required|need|needs|engineer|reviewer|owner|admin|editor|viewer|to|the|a|an|are|is|what|does|who|this)\b", " ", text)
     return " ".join(text.split())
-
 
 
 def _review_history_summary(meta: Dict[str, Any], tracker: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -3426,6 +3420,17 @@ def decide_chat(
     if record:
         context = _canonical_chat_context(context, record)
         payload["context"] = context
+    early_project_input = _safe_dict(record.get("project_input")) if record else _safe_dict(context.get("project_input"))
+    early_latest_result = _safe_dict(record.get("latest_result")) if record else _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
+    geometry_edit_decision = _drawn_geometry_edit_chat_response(
+        {},
+        message=message,
+        context=context,
+        project_input=early_project_input,
+        latest_result=early_latest_result,
+    )
+    if geometry_edit_decision is not None:
+        return _enrich_response_contract(geometry_edit_decision, message=message)
     dwg_decision = _dwg_compatibility_chat_response(message, context)
     if dwg_decision is not None:
         return _enrich_response_contract(dwg_decision, message=message)

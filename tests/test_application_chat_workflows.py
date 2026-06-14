@@ -1392,6 +1392,72 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(update["confidence"], "user_drawn_review_required")
         self.assertEqual(update["engineering_status"], "draft_review_required")
 
+    def test_cad_geometry_edit_chat_answers_selected_draft_operations(self):
+        phrases = [
+            ("trim this", "answered_cad_trim_edit_path", "trim"),
+            ("offset this line 10 feet", "answered_cad_offset_edit_path", "offset"),
+            ("fillet this corner", "answered_cad_fillet_edit_path", "fillet"),
+            ("why can't this polygon close?", "explained_polygon_close_blockers", "self-intersection"),
+            ("fix the geometry if you can", "answered_safe_geometry_fix_path", "cleanup"),
+        ]
+        for message, action, expected_text in phrases:
+            with self.subTest(message=message):
+                store = RecordingProjectStore(_record_with_handoffs([_handoff("drawn-cad", "geom-cad")]))
+
+                result = decide_chat(
+                    {
+                        "message": message,
+                        "context": {
+                            "current_project": {"project_id": "project_123"},
+                            "selected_object_ids": ["drawn-cad"],
+                            "selected_geometry_ids": ["geom-cad"],
+                        },
+                    },
+                    decide_chat_message=decide_chat_message,
+                    project_store=store,
+                    user_id="user_1",
+                )
+
+                self.assertEqual(result["action_taken"], action)
+                self.assertTaxonomyMetadata(result, "understood_and_executed")
+                self.assertEqual(result["run_mode"], "none")
+                self.assertFalse(result["response_metadata"]["state_changed"])
+                self.assertIn(expected_text, result["assistant_message"].lower())
+                self.assertIn("review", result["assistant_message"].lower())
+                self.assertNotIn("construction-ready", result["assistant_message"].lower())
+                self.assertEqual(store.saved, [])
+
+    def test_cad_geometry_edit_blocks_missing_selection_and_distance(self):
+        store = RecordingProjectStore(_record_with_handoffs([_handoff("drawn-cad", "geom-cad")]))
+
+        missing_selection = decide_chat(
+            {"message": "trim this", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        missing_distance = decide_chat(
+            {
+                "message": "offset this line",
+                "context": {
+                    "current_project": {"project_id": "project_123"},
+                    "selected_object_ids": ["drawn-cad"],
+                    "selected_geometry_ids": ["geom-cad"],
+                },
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(missing_selection["action_taken"], "blocked_geometry_edit_missing_selection")
+        self.assertTaxonomyMetadata(missing_selection, "understood_needs_more_info")
+        self.assertEqual(missing_distance["action_taken"], "blocked_geometry_edit_missing_distance")
+        self.assertTaxonomyMetadata(missing_distance, "understood_needs_more_info")
+        self.assertFalse(missing_selection["response_metadata"]["state_changed"])
+        self.assertFalse(missing_distance["response_metadata"]["state_changed"])
+        self.assertEqual(store.saved, [])
+
     def test_ambiguous_this_asks_for_selected_geometry(self):
         store = RecordingProjectStore(_record_with_handoffs([_handoff("drawn-1", "geom-1")]))
 

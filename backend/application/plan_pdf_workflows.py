@@ -9,6 +9,7 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import Response
 
 from backend.application.file_workflows import _copy_upload_with_limit, _upload_limit_bytes, _validate_upload_metadata
+from backend.planning.common import safe_str
 from backend.planning.candidate_review_inbox import build_candidate_review_inbox
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE,
@@ -283,8 +284,15 @@ def update_project_plan_pdf_element(
     latest_result = dict(record.get("latest_result") or {})
     final_plan = dict(latest_result.get("final_plan") or {})
     meta = dict(final_plan.get("meta") or {})
+    cleaned_updates = dict(updates or {})
+    if "review_status" in cleaned_updates and safe_str(cleaned_updates.get("review_status")) == "":
+        cleaned_updates.pop("review_status", None)
+    if "bbox" in cleaned_updates and cleaned_updates.get("bbox") is None:
+        cleaned_updates.pop("bbox", None)
+    if "move_target" in cleaned_updates and cleaned_updates.get("move_target") is None:
+        cleaned_updates.pop("move_target", None)
     try:
-        updated_meta = update_editable_sheet_element(meta, element_id, updates)
+        updated_meta = update_editable_sheet_element(meta, element_id, cleaned_updates)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     saved = _save_project_with_meta(project_store=project_store, record=record, meta=updated_meta)

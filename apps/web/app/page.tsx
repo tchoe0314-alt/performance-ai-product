@@ -6609,6 +6609,7 @@ function PerformanceAIDashboardView({
       mode: "polyline" | "polygon" | "rect" | "point";
       points: Array<[number, number]>;
       label?: string;
+      meta?: Record<string, unknown>;
     }) => {
       clearGeneratedPreview();
       if (!siteScaleLocked) {
@@ -6686,7 +6687,15 @@ function PerformanceAIDashboardView({
           deletable: true,
         },
         systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-        meta: buildCustomGeometryMeta(nextId, nextLabel, payload.mode, geometry, units || "ft"),
+        meta: {
+          ...buildCustomGeometryMeta(nextId, nextLabel, payload.mode, geometry, units || "ft"),
+          ...(payload.meta ?? {}),
+          source: "manual_drawn",
+          engineering_status: "draft_review_required",
+          review_status: "engineer_review_required",
+          handoff_status: "draft_review_required",
+          construction_release_allowed: false,
+        },
       };
       if (isLine) {
         nextPlacement.capabilities = {
@@ -8178,7 +8187,7 @@ function PerformanceAIDashboardView({
     if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "No. Civora cannot stamp, seal, sign, certify, submit, approve construction, make construction-ready claims, or act as engineer of record. Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review.",
+        "No. Civora cannot stamp, seal, sign, certify, submit, approve construction, or act as engineer of record. Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field use and professional responsibility remain outside Civora.",
         "status",
       );
       return true;
