@@ -754,13 +754,14 @@ export default function PreviewPanel({
         .filter(
           (item) =>
             item.type !== "site" &&
+            !hiddenCadLayers.includes(String(item.meta?.cad_layer || item.meta?.layer || "C-DRAFT").toUpperCase()) &&
             item.placed &&
             Number.isFinite(item.x) &&
             Number.isFinite(item.y) &&
             Boolean(item.label),
         )
         .slice(0, previewLabelDensity === "high" ? 28 : previewLabelDensity === "standard" ? 16 : 8),
-    [buildingPlacements, previewLabelDensity, suggestedPlacements],
+    [buildingPlacements, hiddenCadLayers, previewLabelDensity, suggestedPlacements],
   );
   const resolveVisualKind = useCallback((item: BuildingPlacement) => {
     const type = String(item.type || "building");
@@ -6442,7 +6443,7 @@ export default function PreviewPanel({
                             })}
                           </g>
                         ) : null}
-                        {buildingPlacements
+                        {visibleCadObjects
                           .filter((item) => item.geometryType === "polyline" && Array.isArray(item.geometry))
                           .map((item) => {
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
@@ -6493,7 +6494,7 @@ export default function PreviewPanel({
                               </g>
                             );
                           })}
-                        {buildingPlacements
+                        {visibleCadObjects
                           .filter((item) => item.geometryType === "polygon" && Array.isArray(item.geometry))
                           .map((item) => {
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
@@ -6511,7 +6512,60 @@ export default function PreviewPanel({
                               />
                             );
                           })}
-                        {buildingPlacements
+                        {visibleCadObjects
+                          .filter((item) => item.geometryType === "point" && item.meta?.cad_symbol)
+                          .map((item) => {
+                            const symbol = String(item.meta?.cad_symbol || "utility_marker") as CadSymbolKind;
+                            const glyph: Record<CadSymbolKind, string> = {
+                              hydrant: "H",
+                              inlet: "I",
+                              manhole: "M",
+                              tree: "T",
+                              utility_marker: "U",
+                              note_callout: "N",
+                            };
+                            const [x, y] = siteTupleToPercent(
+                              Array.isArray(item.geometry) && item.geometry[0]
+                                ? item.geometry[0]
+                                : [(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2],
+                              currentSiteSize,
+                            );
+                            return (
+                              <g key={`cad-symbol-${item.id}`} data-testid="cad-symbol">
+                                <circle cx={x} cy={y} r={1.55} fill="#ffffff" stroke="#0f172a" strokeWidth={0.42} />
+                                <text x={x} y={y + 0.72} textAnchor="middle" fontSize="2.3" fill="#0f172a" fontWeight={800}>
+                                  {glyph[symbol] ?? "U"}
+                                </text>
+                                <text x={Math.min(x + 2.1, 96)} y={Math.max(y - 2, 3)} fontSize="2.05" fill="#334155" fontWeight={700}>
+                                  {String(item.label).slice(0, 18)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        {visibleCadObjects
+                          .filter((item) => item.meta?.cad_dimension_label && getObjectGeometryPoints(item).length >= 2)
+                          .map((item) => {
+                            const points = getObjectGeometryPoints(item);
+                            const [a, b] = points;
+                            const mode = String(item.meta?.cad_dimension_mode || "linear");
+                            const start: [number, number] = mode === "linear" ? [a[0], Math.max(a[1], b[1]) + 8] : a;
+                            const end: [number, number] = mode === "linear" ? [b[0], Math.max(a[1], b[1]) + 8] : b;
+                            const [x1, y1] = siteTupleToPercent(start, currentSiteSize);
+                            const [x2, y2] = siteTupleToPercent(end, currentSiteSize);
+                            const labelX = (x1 + x2) / 2;
+                            const labelY = (y1 + y2) / 2 - 1.1;
+                            return (
+                              <g key={`cad-dim-${item.id}`} data-testid="cad-dimension-label">
+                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0f766e" strokeWidth={0.35} strokeDasharray="1 0.7" />
+                                <circle cx={x1} cy={y1} r={0.42} fill="#0f766e" />
+                                <circle cx={x2} cy={y2} r={0.42} fill="#0f766e" />
+                                <text x={labelX} y={Math.max(labelY, 3)} textAnchor="middle" fontSize="2.2" fill="#0f766e" fontWeight={800}>
+                                  {String(item.meta?.cad_dimension_label).slice(0, 24)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        {visibleCadObjects
                           .filter((item) => item.type === "parking" && item.placed)
                           .flatMap((item) =>
                             buildParkingModules(item, accessPointsForParking).map((module, idx) => {
@@ -7102,7 +7156,7 @@ export default function PreviewPanel({
                           />
                         );
                       })}
-                      {buildingPlacements
+                      {visibleCadObjects
                       .filter(
                         (item) =>
                           item.type !== "site" &&
@@ -7955,7 +8009,7 @@ export default function PreviewPanel({
                           </div>
                         ))
                       : null}
-                    {buildingPlacements
+                    {visibleCadObjects
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       // eslint-disable-next-line react-hooks/refs
                       .map((item) => {
