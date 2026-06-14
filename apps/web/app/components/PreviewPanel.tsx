@@ -4286,12 +4286,351 @@ export default function PreviewPanel({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
-          <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
+          <div className="relative z-40 mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm">
+            <div className="flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
+                  Canvas
+                </span>
+                <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} / {coordinateModeLabel(coordinateMode)}
+                </span>
+                {isHighQuality ? (
+                  <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+                    Visual preview only. Canonical geometry unchanged. Not engineering evidence.
+                  </span>
+                ) : null}
+                {useLightHighQuality ? (
+                  <span className="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-800">
+                    High Quality Lite
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {showMap ? (
+                  <button
+                    type="button"
+                    onClick={() => setMapLocked((prev) => !prev)}
+                    className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+                      mapLocked
+                        ? "border-slate-900 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {mapLocked ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                    {mapLocked ? "Unlock Map" : "Lock Map"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusTransform(null);
+                    onResetView?.();
+                  }}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={onRefreshPreview}
+                  disabled={busy}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </button>
+                {analysisHighlight ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFocusTransform(null);
+                      onClearHighlights?.();
+                    }}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <X className="h-4 w-4" />
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-stretch gap-2 px-3 py-2">
+              <section className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
+                <button
+                  type="button"
+                  data-testid="preview-mode-2d"
+                  onClick={() => onSetPreviewMode("2d")}
+                  className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                    previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  2D
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-mode-3d"
+                  onClick={() => {
+                    if (!canUse3D) return;
+                    onSetPreviewMode("3d");
+                  }}
+                  className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                    previewMode === "3d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                  disabled={!canUse3D}
+                >
+                  3D
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-quality-standard"
+                  onClick={() => {
+                    if (previewQuality === "standard") return;
+                    onQueuePreviewRefresh("Requesting standard-quality preview...");
+                    onSetPreviewQuality("standard");
+                  }}
+                  className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                    previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  Standard
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-quality-high"
+                  onClick={() => {
+                    if (previewQuality === "high") return;
+                    onQueuePreviewRefresh("Requesting high-quality preview...");
+                    onSetPreviewQuality("high");
+                  }}
+                  className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                    previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  High
+                </button>
+              </section>
+              {previewMode === "2d" ? (
+                <section className="hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
+                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Tools</span>
+                  {drawModeButtons.map((item) => {
+                    const Icon = item.icon;
+                    const active = drawMode === item.mode;
+                    const disabled = Boolean(item.disabled);
+                    return (
+                      <button
+                        key={`grouped-${item.mode}`}
+                        type="button"
+                        title={disabled ? item.disabledLabel ?? item.label : item.label}
+                        aria-label={item.label}
+                        disabled={disabled}
+                        onClick={() => {
+                          if (disabled) return;
+                          setDrawMode(item.mode);
+                          clearDraftGeometry();
+                          if (item.mode !== "select") {
+                            onSetPreviewInteraction("edit");
+                          }
+                        }}
+                        className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 transition ${
+                          active
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : disabled
+                              ? "cursor-not-allowed border-slate-200 bg-white text-slate-300"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span className="text-[10px] font-semibold leading-none">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </section>
+              ) : null}
+              {previewMode === "2d" ? (
+                <section className="hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
+                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Modify</span>
+                  <button
+                    type="button"
+                    data-testid="preview-interaction-edit"
+                    aria-label="Use canvas edit tool"
+                    onClick={() => onSetPreviewInteraction("edit")}
+                    className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold ${
+                      allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    Edit
+                  </button>
+                  <button type="button" aria-label="Move selected CAD objects" onClick={() => transformSelectedCadObjects("move")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Move className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Rotate selected CAD objects" onClick={() => transformSelectedCadObjects("rotate")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RotateCw className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Scale selected CAD objects" onClick={() => transformSelectedCadObjects("scale")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scale className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Trim selected CAD object" title="Trim selected CAD object" onClick={() => trimExtendSelectedCadObject("trim")} disabled={!selectedCadObject} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scissors className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Fillet selected CAD vertex" title="Fillet selected CAD vertex" onClick={filletSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RefreshCw className="h-4 w-4" /></button>
+                  <button
+                    type="button"
+                    disabled={!selectedDeletableObject}
+                    title={selectedObject?.locked ? "Unlock the selected object before deleting" : selectedObject ? "Delete selected object" : "Select an unlocked object to delete"}
+                    onClick={() => {
+                      if (!selectedDeletableObject) return;
+                      const targetObject = buildingPlacements.find((item) => item.id === selectedDeletableObject.id);
+                      if (targetObject) {
+                        setLastRectEdit({
+                          id: targetObject.id,
+                          snapshot: { ...targetObject },
+                          action: "delete",
+                          ts: Date.now(),
+                        });
+                      }
+                      onRemoveBuilding(selectedDeletableObject.id);
+                    }}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:cursor-not-allowed disabled:bg-white disabled:text-slate-300"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                  {siteLocked && onUnlockSite ? (
+                    <button
+                      type="button"
+                      title="Unlock the site boundary for editing"
+                      aria-label="Change Site Boundary"
+                      onClick={() => {
+                        onUnlockSite();
+                        clearDraftGeometry();
+                        setDrawMode("select");
+                        onSetPreviewInteraction("edit");
+                      }}
+                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <Unlock className="h-4 w-4" />
+                      Change Site
+                    </button>
+                  ) : null}
+                </section>
+              ) : null}
+              <section className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Snaps</span>
+                <label className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700">
+                  <input type="checkbox" checked={cadSnapEnabled} onChange={(event) => setCadSnapEnabled(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                  Snap
+                </label>
+                <label className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700">
+                  <input type="checkbox" checked={cadOrthoEnabled} onChange={(event) => setCadOrthoEnabled(event.target.checked)} className="h-4 w-4 accent-slate-950" />
+                  Ortho
+                </label>
+                <span className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  {activeSnapPoint ? activeSnapPoint.kind : "No snap"}
+                </span>
+              </section>
+              <section className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Layers</span>
+                <select
+                  aria-label="CAD layer"
+                  value={cadLayerDraft}
+                  onChange={(event) => setCadLayerDraft(event.target.value)}
+                  className="h-9 min-w-[104px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                >
+                  {["C-DRAFT", "C-SITE", "C-ROAD", "C-UTIL", "C-DRAIN", "C-BLDG"].map((layer) => (
+                    <option key={layer} value={layer}>{layer}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={applySelectedCadLayer} disabled={!selectedCadIds.length} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
+                {(["low", "standard", "high"] as const).map((density) => (
+                  <button
+                    key={density}
+                    type="button"
+                    data-testid={`preview-label-density-${density}`}
+                    onClick={() => {
+                      if (previewLabelDensity === density) return;
+                      onQueuePreviewRefresh(`Requesting ${density} label density...`);
+                      onSetPreviewLabelDensity(density);
+                    }}
+                    className={`h-9 rounded-md border px-2.5 text-xs font-semibold ${
+                      previewLabelDensity === density ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    {density === "standard" ? "Std" : density}
+                  </button>
+                ))}
+              </section>
+              <section className="ml-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Export</span>
+                {planPreviewUrl || showMap ? (
+                  <button type="button" onClick={onOpenFullscreen} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                    <Maximize2 className="h-4 w-4" />
+                    Full
+                  </button>
+                ) : null}
+                <button type="button" onClick={onExportDxf} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download a DXF review export"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Download className="h-4 w-4" />
+                  DXF
+                </button>
+                <button type="button" onClick={onExportReport} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download an engineer-review package report"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                  <FileText className="h-4 w-4" />
+                  Report
+                </button>
+              </section>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
+                {drawMode === "site" && draftPoints.length
+                  ? "Draft site boundary"
+                  : siteLocked
+                    ? "Locked canonical site"
+                    : drawMode === "site"
+                      ? "Draft site boundary mode"
+                      : draftPoints.length
+                        ? "Draft geometry"
+                        : canDrawObjects
+                          ? "Canonical project geometry after finish"
+                          : drawObjectsDisabledLabel}
+              </span>
+              {cursorSitePoint ? (
+                <span>X {cursorSitePoint.x.toFixed(1)} ft / Y {cursorSitePoint.y.toFixed(1)} ft</span>
+              ) : null}
+              <span>{Math.round(canvasView.scale * 100)}%</span>
+              <span>{cadHistory.at(-1)?.label || "No command"}</span>
+              {draftPoints.length ? (
+                <>
+                  {drawMode !== "rect" ? (
+                    <button
+                      type="button"
+                      onClick={finishDraftGeometry}
+                      disabled={draftPointCount < finishDraftMinPoints}
+                      title={finishDraftBlockedReason ?? "Finish drawn geometry"}
+                      className="relative z-20 inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-3 text-xs text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      Finish
+                    </button>
+                  ) : null}
+                  {finishDraftBlockedReason ? (
+                    <span className="max-w-56 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                      {finishDraftBlockedReason}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={clearDraftGeometry}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    aria-label="Clear draft geometry"
+                    title="Clear draft geometry"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </>
+              ) : null}
+              {exportBlockReason ? (
+                <span className="ml-auto text-amber-700">
+                  Export blocked: {exportBlockReason}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="hidden mb-3 min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Preview Mode</span>
               <button
                 type="button"
-                data-testid="preview-mode-2d"
                 onClick={() => onSetPreviewMode("2d")}
                 className={`rounded-lg border px-2.5 py-1 ${
                   previewMode === "2d"
@@ -4303,7 +4642,6 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-mode-3d"
                 onClick={() => {
                   if (!canUse3D) return;
                   onSetPreviewMode("3d");
@@ -4333,7 +4671,6 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-interaction-edit"
                 aria-label="Set preview interaction to edit"
                 onClick={() => {
                   if (previewInteraction === "edit") return;
@@ -4353,7 +4690,6 @@ export default function PreviewPanel({
               <span>Quality</span>
               <button
                 type="button"
-                data-testid="preview-quality-standard"
                 onClick={() => {
                   if (previewQuality === "standard") return;
                   onQueuePreviewRefresh("Requesting standard-quality preview...");
@@ -4369,7 +4705,6 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-quality-high"
                 onClick={() => {
                   if (previewQuality === "high") return;
                   onQueuePreviewRefresh("Requesting high-quality preview...");
@@ -4390,7 +4725,6 @@ export default function PreviewPanel({
                 <button
                   key={density}
                   type="button"
-                  data-testid={`preview-label-density-${density}`}
                   onClick={() => {
                     if (previewLabelDensity === density) return;
                     onQueuePreviewRefresh(`Requesting ${density} label density...`);
@@ -4437,7 +4771,7 @@ export default function PreviewPanel({
             </div>
           </div>
           {previewMode === "2d" ? (
-            <div className="relative z-40 mb-3 hidden min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 md:flex">
+            <div className="hidden">
               <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                 <span className="mr-1">Draw</span>
                 {drawModeButtons.map((item) => {
