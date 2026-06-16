@@ -67,12 +67,12 @@ ensure_backend_env() {
     python3 -m venv "$VENV_DIR"
   fi
 
-  if ! "$PYTHON_BIN" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+  if ! "$PYTHON_BIN" -c "import fastapi, uvicorn, pypdf" >/dev/null 2>&1; then
     echo "Installing backend dependencies..."
     "$PIP_BIN" install -r "$ROOT_DIR/requirements_backend.txt"
   fi
 
-  if ! "$PYTHON_BIN" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+  if ! "$PYTHON_BIN" -c "import fastapi, uvicorn, pypdf" >/dev/null 2>&1; then
     echo "Backend dependencies are still missing after install."
     echo "Try running: $PIP_BIN install -r $ROOT_DIR/requirements_backend.txt"
     exit 1
