@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.application.chat_workflows import decide_chat
-from backend.planning.cad_entity_model import CAD_ENTITY_MODEL_VERSION
+from backend.planning.cad_entity_model import CAD_ENTITY_MODEL_VERSION, history_event
 from backend.planning.plan_pdf_understanding import SOURCE_CONFIDENCE
 from parsers.chat_intent_parser import decide_chat_message
 
@@ -305,6 +305,73 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(len(entities), 1)
         self.assertEqual(entities[0]["linked_object_id"], "drawn-1")
         self.assertFalse(entities[0]["construction_release_allowed"])
+        history = saved_meta[CAD_ENTITY_MODEL_VERSION]["history"]
+        self.assertEqual(history[0]["event_type"], "entity_converted")
+        self.assertTrue(history[0]["review_required"])
+        self.assertFalse(history[0]["construction_release_allowed"])
+        self.assertTrue(saved_meta[CAD_ENTITY_MODEL_VERSION]["undo_redo"]["can_undo"])
+
+    def test_chat_reports_cad_history_and_revision_timeline(self):
+        record = _record()
+        entity = {
+            "id": "cad-line-1",
+            "type": "line",
+            "geometry": {"start": {"x": 0, "y": 0}, "end": {"x": 25, "y": 0}},
+            "source": "manual_drawn",
+            "source_confidence": "survey-backed",
+            "review_status": "draft_review_required",
+            "draft_review_required": True,
+            "construction_release_allowed": False,
+            "dirty": True,
+        }
+        record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION] = {
+            "entities": [entity],
+            "history": [history_event("entity_geometry_changed", "cad-line-1", actor="user_1", after=entity)],
+        }
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "what changed in CAD?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "reported_cad_revision_changes")
+        self.assertIn("cad-line-1", result["assistant_message"])
+        self.assertIn("construction_release_allowed=false", result["assistant_message"])
+        timeline = result["response_metadata"]["command_payload"]["cad_revision_timeline"]
+        self.assertEqual(timeline["changed_entities"], ["cad-line-1"])
+        self.assertFalse(timeline["construction_release_allowed"])
+
+    def test_chat_blocks_cad_undo_without_safe_replay(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION] = {
+            "entities": [
+                {
+                    "id": "cad-line-1",
+                    "type": "line",
+                    "geometry": {"start": {"x": 0, "y": 0}, "end": {"x": 25, "y": 0}},
+                    "source_confidence": "survey-backed",
+                    "review_status": "draft_review_required",
+                    "draft_review_required": True,
+                    "construction_release_allowed": False,
+                }
+            ]
+        }
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "undo last CAD edit", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "blocked_cad_undo_requires_safe_snapshot_review")
+        self.assertIn("blocked", result["assistant_message"])
+        self.assertIn("draft_review_required", result["assistant_message"])
+        self.assertFalse(result["response_metadata"]["command_payload"]["cad_undo_redo"]["construction_release_allowed"])
 
     def test_chat_reports_stale_or_invalid_cad_entities(self):
         record = _record()
