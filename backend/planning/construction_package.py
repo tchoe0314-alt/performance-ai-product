@@ -639,9 +639,14 @@ def _review_package_export_confidence(meta: Dict[str, Any]) -> Dict[str, Any]:
         "verification_date",
         "tool",
         "tool_version",
-        "source_artifact_hashes",
+        "source_artifacts",
+        "artifact_hashes",
+        "workflow_steps",
         "import_result",
-        "observed_limitations",
+        "preserved_elements",
+        "lost_limited_elements",
+        "screenshots_evidence_uri",
+        "review_only_status",
     ]
     formats["dwg"]["native_writer"] = False
     formats["dwg"]["external_conversion_opt_in_required"] = True

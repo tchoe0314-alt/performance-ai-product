@@ -334,6 +334,13 @@ class ExportPackageReportTests(unittest.TestCase):
                 "verification_date": "2026-06-06",
                 "tool": "Autodesk Civil 3D",
                 "tool_version": "2026.1",
+                "source_artifacts": ["review.landxml", "review.dxf"],
+                "artifact_hashes": {"review.landxml": "sha256-landxml", "review.dxf": "sha256-dxf"},
+                "workflow_steps": ["Import LandXML", "Open DXF overlay", "Review pipe network"],
+                "import_result": "Imported with warnings",
+                "preserved_elements": ["alignments", "pipe runs", "structure labels"],
+                "lost_limited_elements": ["Civil 3D styles require remapping"],
+                "screenshots_evidence_uri": "s3://evidence/civil3d-landxml-2026-06-06.png",
                 "result": "passed",
                 "notes": "LandXML import and workflow check completed.",
             }
@@ -342,12 +349,16 @@ class ExportPackageReportTests(unittest.TestCase):
         report = build_export_package_report_v1(plan, export_type="landxml", generated_at="2026-06-06T00:00:00Z")
 
         self.assertEqual(report["external_verification"]["civil3d"]["status"], "externally_verified_review_only")
-        self.assertEqual(report["civil3d_compatibility"], "externally_verified_for_import_workflow_only")
+        self.assertEqual(report["civil3d_compatibility"], "externally_verified_review_only")
         self.assertEqual(report["supported_deliverables"]["civil3d"]["status"], "externally_verified_review_only")
         self.assertEqual(report["external_verification"]["civil3d"]["verifier_identity"], "External Engineer")
         self.assertEqual(report["external_verification"]["civil3d"]["verification_date"], "2026-06-06")
         self.assertEqual(report["external_verification"]["civil3d"]["tool"], "Autodesk Civil 3D")
         self.assertEqual(report["external_verification"]["civil3d"]["tool_version"], "2026.1")
+        self.assertEqual(report["external_verification"]["civil3d"]["artifact_hashes"]["review.landxml"], "sha256-landxml")
+        self.assertIn("pipe runs", report["external_verification"]["civil3d"]["preserved_elements"])
+        self.assertIn("Civil 3D styles require remapping", report["external_verification"]["civil3d"]["lost_limited_elements"])
+        self.assertEqual(report["external_workflow_requirements"]["civil3d"]["current_state"], "externally_verified_review_only")
         self.assertFalse(report["construction_release_allowed"])
         self.assertFalse(report["supported_deliverables"]["civil3d"]["construction_ready"])
 
@@ -375,6 +386,11 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertNotIn("construction-ready", labels)
         self.assertNotIn("stamp", labels)
         self.assertNotIn("seal", labels)
+        self.assertEqual(report["external_verification"]["civil3d"]["status"], "blocked_needs_review")
+        self.assertEqual(
+            report["external_verification"]["civil3d"]["failure_reason"],
+            "external_verification_workflow_evidence_incomplete",
+        )
 
     def test_civora_never_approves_signs_or_seals_construction_deliverables(self) -> None:
         plan = _plan()

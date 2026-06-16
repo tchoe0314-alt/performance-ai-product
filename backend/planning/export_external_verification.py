@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
@@ -110,8 +111,33 @@ def normalize_external_verification_record(
     tool_version = safe_str(raw.get("tool_version") or raw.get("version"))
     notes = safe_str(raw.get("notes") or raw.get("summary"))
     record_id = safe_str(raw.get("verification_record_id") or raw.get("record_id") or raw.get("id"))
-    evidence_uri = safe_str(raw.get("evidence_uri") or raw.get("result_uri") or raw.get("upload_uri") or raw.get("source"))
+    source_artifacts = safe_list(raw.get("source_artifacts") or raw.get("source_files") or raw.get("artifacts"))
+    source_artifact = safe_str(raw.get("source_artifact") or raw.get("artifact"))
+    if source_artifact:
+        source_artifacts.append(source_artifact)
+    artifact_hashes = raw.get("artifact_hashes") or raw.get("source_artifact_hashes") or raw.get("source_hashes")
+    if not isinstance(artifact_hashes, (dict, list)):
+        source_hash = safe_str(raw.get("source_artifact_hash") or raw.get("artifact_hash") or raw.get("source_hash"))
+        artifact_hashes = [source_hash] if source_hash else []
+    workflow_steps = safe_list(raw.get("workflow_steps") or raw.get("steps") or raw.get("import_steps"))
+    import_result = safe_str(raw.get("import_result") or raw.get("workflow_result") or raw.get("import_status"))
+    preserved_elements = safe_list(raw.get("preserved_elements") or raw.get("preserved") or raw.get("elements_preserved"))
+    lost_limited_elements = safe_list(
+        raw.get("lost_limited_elements")
+        or raw.get("lost_or_limited_elements")
+        or raw.get("lost_elements")
+        or raw.get("limited_elements")
+        or raw.get("observed_limitations")
+    )
+    evidence_uri = safe_str(
+        raw.get("screenshots_evidence_uri")
+        or raw.get("evidence_uri")
+        or raw.get("result_uri")
+        or raw.get("upload_uri")
+        or raw.get("source")
+    )
     required_present = bool(verifier and verification_date and tool_name and tool_version and verification_result)
+    workflow_evidence_present = bool((source_artifacts or artifact_hashes) and workflow_steps and import_result)
 
     if not raw:
         status = EXTERNAL_VERIFICATION_STATUS_NOT_VERIFIED
@@ -119,6 +145,9 @@ def normalize_external_verification_record(
     elif not required_present:
         status = EXTERNAL_VERIFICATION_STATUS_BLOCKED
         failure_reason = "external_verification_record_incomplete"
+    elif verification_result in _PASSED_RESULTS and not workflow_evidence_present:
+        status = EXTERNAL_VERIFICATION_STATUS_BLOCKED
+        failure_reason = "external_verification_workflow_evidence_incomplete"
     elif verification_result in _PASSED_RESULTS:
         status = EXTERNAL_VERIFICATION_STATUS_PASSED
         failure_reason = ""
@@ -141,9 +170,17 @@ def normalize_external_verification_record(
         "verification_date": verification_date,
         "tool": tool_name,
         "tool_version": tool_version,
+        "source_artifacts": source_artifacts,
+        "artifact_hashes": deepcopy(artifact_hashes) if isinstance(artifact_hashes, dict) else safe_list(artifact_hashes),
+        "workflow_steps": workflow_steps,
+        "import_result": import_result,
+        "preserved_elements": preserved_elements,
+        "lost_limited_elements": lost_limited_elements,
         "result": safe_str(raw.get("result") or raw.get("status")),
         "notes": notes,
         "evidence_uri": evidence_uri,
+        "screenshots_evidence_uri": evidence_uri,
+        "review_only_status": status,
         "failure_reason": failure_reason,
         "scope": "import_workflow_only",
         "construction_release_allowed": False,

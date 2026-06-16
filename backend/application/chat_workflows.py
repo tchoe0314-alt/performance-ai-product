@@ -485,10 +485,21 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
     asks_why = "why" in lowered or "unsupported" in lowered or "not supported" in lowered
     asks_need = "what do i need" in lowered or "what do we need" in lowered or "need for" in lowered or "civil3d" in lowered or "civil 3d" in lowered
     asks_preserved = "preserve" in lowered or "preserved" in lowered or "kept" in lowered
-    if not (asks_export or asks_why or asks_need or asks_open or asks_preserved or mentions_roundtrip):
+    asks_ready = "ready" in lowered or "good to use" in lowered or "can i use" in lowered
+    if not (asks_export or asks_why or asks_need or asks_open or asks_preserved or asks_ready or mentions_roundtrip):
         return None
 
-    strategy = dwg_strategy_from_meta(_meta_from_chat_context(context))
+    meta = _meta_from_chat_context(context)
+    strategy = dwg_strategy_from_meta(meta)
+    export_report = _safe_dict(meta.get("export_package_report_v1"))
+    civil3d_record = _safe_dict(_safe_dict(export_report.get("external_verification")).get("civil3d"))
+    civil3d_status = str(
+        civil3d_record.get("status")
+        or _safe_dict(_safe_dict(meta.get("external_verification")).get("civil3d")).get("status")
+        or "not_verified"
+    )
+    if civil3d_status not in {"not_verified", "blocked_needs_review", "externally_verified_review_only"}:
+        civil3d_status = "not_verified"
     if mentions_dxf and (mentions_roundtrip or asks_preserved):
         assistant_message = (
             "A Civora DXF roundtrip means Civora export -> local DXF parse -> Civora verification. It checks layer preservation, "
@@ -505,12 +516,38 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
         )
         action_taken = "answered_civil3d_open_status"
         next_best_action = "Export DXF/LandXML review artifacts and record the Civil 3D import workflow result from the target environment."
+    elif mentions_civil3d and asks_preserved:
+        preserved = [str(item) for item in _safe_list(civil3d_record.get("preserved_elements")) if str(item)]
+        limited = [str(item) for item in _safe_list(civil3d_record.get("lost_limited_elements")) if str(item)]
+        if civil3d_status == "externally_verified_review_only" and (preserved or limited):
+            preserved_text = ", ".join(preserved[:6]) if preserved else "no preserved elements were listed"
+            limited_text = ", ".join(limited[:6]) if limited else "no lost or limited elements were listed"
+            assistant_message = (
+                f"The attached Civil 3D workflow record is externally_verified_review_only. It says Civil 3D preserved: {preserved_text}. "
+                f"Lost or limited elements: {limited_text}. This is import/workflow evidence only; engineer review is still required."
+            )
+        else:
+            assistant_message = (
+                "Civil 3D preservation is not_verified because no accepted external workflow record is attached. Civora can report what the DXF/LandXML "
+                "review artifacts contain, but it cannot say what Civil 3D preserved until the target workflow record lists preserved_elements and "
+                "lost_limited_elements."
+            )
+        action_taken = "answered_civil3d_preservation_status"
+        next_best_action = "Attach the Civil 3D workflow record with preserved_elements, lost_limited_elements, screenshots/evidence URI, and source artifact hashes."
+    elif mentions_civil3d and asks_ready:
+        assistant_message = (
+            f"No. This is not Civil3D-ready or construction-ready from Civora. Civil 3D workflow status is {civil3d_status}. "
+            "DXF and LandXML remain the exchange paths unless an external workflow record exists; even externally_verified_review_only means review-only "
+            "import/workflow evidence, not approval, stamping, sealing, certification, or submission readiness."
+        )
+        action_taken = "answered_civil3d_ready_status"
+        next_best_action = "Use DXF/LandXML review artifacts and attach a target Civil 3D workflow record before describing any external import evidence."
     elif mentions_civil3d and not mentions_dwg:
         assistant_message = (
-            "For Civil 3D, Civora needs a target-workflow record: tool and version, source DXF/LandXML artifact hashes, "
-            "what imported successfully, what changed during import, and any limitations. Civora can provide DXF review exports "
-            "and LandXML exchange data. Workflow state is not_verified until that record exists, blocked_needs_review if it fails or is incomplete, "
-            "and externally_verified_review_only if the target import/workflow check passes."
+            "For Civil 3D, Civora needs a target-workflow record with verifier identity, date, tool and version, source artifacts, "
+            "artifact hashes, workflow steps, import result, preserved elements, lost/limited elements, screenshots/evidence URI, and review-only status. "
+            "Civora can provide DXF review exports and LandXML exchange data. Workflow state is not_verified until that record exists, "
+            "blocked_needs_review if it fails or is incomplete, and externally_verified_review_only if the target import/workflow check passes."
         )
         action_taken = "answered_civil3d_compatibility_requirements"
         next_best_action = "Generate the DXF/LandXML review artifacts, then attach a Civil 3D workflow record from the target environment."
@@ -546,6 +583,8 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
             "ui_navigation_target": "deliverables",
             "requested_ui_mode": "deliver",
             "dwg_strategy": strategy,
+            "civil3d_status": civil3d_status,
+            "civil3d_external_verification_record": civil3d_record,
         },
         confidence=0.92,
     )

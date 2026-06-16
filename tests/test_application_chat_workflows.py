@@ -502,8 +502,12 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
 
         self.assertEqual(result["action_taken"], "answered_civil3d_compatibility_requirements")
         self.assertIn("target-workflow record", result["assistant_message"])
+        self.assertIn("verifier identity", result["assistant_message"])
         self.assertIn("tool and version", result["assistant_message"])
-        self.assertIn("source DXF/LandXML artifact hashes", result["assistant_message"])
+        self.assertIn("source artifacts", result["assistant_message"])
+        self.assertIn("artifact hashes", result["assistant_message"])
+        self.assertIn("workflow steps", result["assistant_message"])
+        self.assertIn("screenshots/evidence URI", result["assistant_message"])
         self.assertIn("not_verified", result["assistant_message"])
         self.assertIn("blocked_needs_review", result["assistant_message"])
         self.assertIn("externally_verified_review_only", result["assistant_message"])
@@ -518,6 +522,45 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("might open as a review artifact", result["assistant_message"])
         self.assertIn("cannot claim it will open correctly", result["assistant_message"])
         self.assertIn("not_verified", result["assistant_message"])
+
+    def test_chat_answers_civil3d_preserved_elements_from_external_record(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"]["export_package_report_v1"] = {
+            "external_verification": {
+                "civil3d": {
+                    "status": "externally_verified_review_only",
+                    "preserved_elements": ["alignments", "pipe runs", "structure labels"],
+                    "lost_limited_elements": ["Civil 3D styles require remapping"],
+                }
+            }
+        }
+        store = RecordingProjectStore(record)
+
+        result = decide_chat(
+            {"message": "what did Civil3D preserve?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "answered_civil3d_preservation_status")
+        self.assertIn("externally_verified_review_only", result["assistant_message"])
+        self.assertIn("pipe runs", result["assistant_message"])
+        self.assertIn("Civil 3D styles require remapping", result["assistant_message"])
+        self.assertIn("engineer review is still required", result["assistant_message"])
+
+    def test_chat_answers_civil3d_ready_without_overclaiming(self):
+        result = decide_chat(
+            {"message": "is this Civil3D ready?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "answered_civil3d_ready_status")
+        self.assertIn("not Civil3D-ready", result["assistant_message"])
+        self.assertIn("not_verified", result["assistant_message"])
+        self.assertIn("DXF and LandXML remain the exchange paths", result["assistant_message"])
+        self.assertIn("not approval", result["assistant_message"])
+        self.assertNotIn("is Civil3D-ready", result["assistant_message"])
 
     def test_chat_answers_dxf_roundtrip_preservation_scope(self):
         result = decide_chat(

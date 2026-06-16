@@ -52,6 +52,13 @@ class ExportExternalVerificationTests(unittest.TestCase):
                 "verification_date": "2026-06-06",
                 "tool": "Autodesk Civil 3D",
                 "tool_version": "2026.1",
+                "source_artifacts": ["review.landxml", "review.dxf"],
+                "artifact_hashes": {"review.landxml": "sha256-landxml", "review.dxf": "sha256-dxf"},
+                "workflow_steps": ["Import LandXML", "Open DXF overlay", "Review pipe network"],
+                "import_result": "Imported with warnings",
+                "preserved_elements": ["alignments", "pipe runs", "structure labels"],
+                "lost_limited_elements": ["Civil 3D styles require remapping"],
+                "screenshots_evidence_uri": "s3://evidence/civil3d-check-1.png",
                 "result": "passed",
                 "notes": "Imported LandXML and completed target workflow check.",
             },
@@ -62,7 +69,29 @@ class ExportExternalVerificationTests(unittest.TestCase):
         self.assertEqual(record["status"], "externally_verified_review_only")
         self.assertTrue(record["verified"])
         self.assertEqual(record["scope"], "import_workflow_only")
+        self.assertEqual(record["artifact_hashes"]["review.landxml"], "sha256-landxml")
+        self.assertIn("pipe runs", record["preserved_elements"])
+        self.assertIn("Civil 3D styles require remapping", record["lost_limited_elements"])
+        self.assertEqual(record["screenshots_evidence_uri"], "s3://evidence/civil3d-check-1.png")
+        self.assertEqual(record["review_only_status"], "externally_verified_review_only")
         self.assertFalse(record["construction_release_allowed"])
+
+    def test_passed_external_civil3d_verification_without_workflow_evidence_is_blocked(self) -> None:
+        record = normalize_external_verification_record(
+            {
+                "verifier_identity": "External Engineer",
+                "verification_date": "2026-06-06",
+                "tool": "Autodesk Civil 3D",
+                "tool_version": "2026.1",
+                "result": "passed",
+            },
+            format_id="civil3d",
+            target_tool="Civil3D",
+        )
+
+        self.assertEqual(record["status"], "blocked_needs_review")
+        self.assertEqual(record["failure_reason"], "external_verification_workflow_evidence_incomplete")
+        self.assertFalse(record["verified"])
 
     def test_dxf_export_is_parseable_layer_checked_and_traceable_but_not_civil3d_verified(self) -> None:
         plan = _plan()

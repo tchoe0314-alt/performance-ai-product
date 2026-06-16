@@ -403,9 +403,14 @@ def _format_matrix(cad_interop: Dict[str, Any], export_audit_ready: bool) -> Dic
         "verification_date": True,
         "tool": True,
         "tool_version": True,
-        "source_artifact_hashes": True,
+        "source_artifacts": True,
+        "artifact_hashes": True,
+        "workflow_steps": True,
         "import_result": True,
-        "observed_limitations": True,
+        "preserved_elements": True,
+        "lost_limited_elements": True,
+        "screenshots_evidence_uri": True,
+        "review_only_status": True,
     }
     dwg_strategy = safe_dict(cad_interop.get("dwg_strategy"))
     formats["dwg"]["available"] = bool(dwg_strategy.get("dwg_export_supported"))
@@ -425,7 +430,7 @@ def _format_matrix(cad_interop: Dict[str, Any], export_audit_ready: bool) -> Dic
 def _civil3d_compatibility_status(external_verification: Dict[str, Dict[str, Any]]) -> str:
     status = safe_str(safe_dict(external_verification.get("civil3d")).get("status"), "not_verified")
     if status == "externally_verified_review_only":
-        return "externally_verified_for_import_workflow_only"
+        return "externally_verified_review_only"
     if status == "blocked_needs_review":
         return "blocked_needs_review"
     return "not_verified"
@@ -562,7 +567,7 @@ def build_export_package_report_v1(
             },
             "civil3d": {
                 "workflow_states": ["not_verified", "blocked_needs_review", "externally_verified_review_only"],
-                "current_state": civil3d_compatibility,
+                "current_state": safe_str(formats["civil3d"].get("workflow_state") or civil3d_compatibility, "not_verified"),
                 "required_record": deepcopy(formats["civil3d"].get("required_external_record")),
                 "review_only": True,
             },
@@ -576,7 +581,7 @@ def build_export_package_report_v1(
         },
         "cad_interop_blockers": {
             "dwg": dwg_strategy["dwg_unsupported_reason"],
-            "civil3d": "Civil 3D remains not_verified until a target workflow record documents tool/version, source hashes, import result, and limitations.",
+            "civil3d": "Civil 3D remains not_verified until a target workflow record documents verifier/date, tool/version, source artifacts and hashes, workflow steps, import result, preserved elements, limitations, and screenshots/evidence URI.",
         },
         "dwg_strategy": dwg_strategy,
         "dwg_capability_matrix": dwg_strategy["capability_matrix"],
