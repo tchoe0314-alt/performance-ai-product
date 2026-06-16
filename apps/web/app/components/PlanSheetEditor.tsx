@@ -4,6 +4,7 @@ import {
   Download,
   FileJson,
   FileText,
+  History,
   Layers,
   LayoutPanelTop,
   Maximize2,
@@ -34,6 +35,10 @@ export type PlanSheetViewport = {
   source: string;
   target: string;
   scale: PlanSheetScale;
+  scaleLocked: boolean;
+  layerVisibility: Record<string, boolean>;
+  northArrow: boolean;
+  scaleBar: boolean;
   x: number;
   y: number;
   w: number;
@@ -73,12 +78,30 @@ export type PlanSheet = {
   references: PlanSheetReference[];
 };
 
+export type PlanSheetPlotStyles = {
+  mappings: Array<{ layer: string; color: string; lineweight: string; linetype: string }>;
+  grayscale: boolean;
+  reviewWatermark: string;
+};
+
+export type PlanSheetRevision = {
+  id: string;
+  revision: string;
+  note: string;
+  date: string;
+  reviewer: string;
+};
+
 export type PlanSheetSet = {
   id: string;
   name: string;
   status: "draft" | "review";
+  mode: "model_space" | "sheet_layout";
   sheets: PlanSheet[];
   activeSheetId: string;
+  sheetIndex: Array<{ sheetNumber: string; title: string }>;
+  plotStyles: PlanSheetPlotStyles;
+  revisions: PlanSheetRevision[];
   blockers: string[];
   updatedAt: string;
 };
@@ -94,6 +117,10 @@ type PlanSheetEditorProps = {
   onAddCallout: () => void;
   onAddDimension: () => void;
   onAddViewport: () => void;
+  onToggleViewportLayer: (viewportId: string, layer: string) => void;
+  onToggleViewportScaleLock: (viewportId: string) => void;
+  onToggleGrayscale: () => void;
+  onAddRevision: () => void;
   onAddTable: () => void;
   onAddDetailBlock: () => void;
   onAddReference: (kind: PlanSheetReference["kind"]) => void;
@@ -123,6 +150,10 @@ export default function PlanSheetEditor({
   onAddCallout,
   onAddDimension,
   onAddViewport,
+  onToggleViewportLayer,
+  onToggleViewportScaleLock,
+  onToggleGrayscale,
+  onAddRevision,
   onAddTable,
   onAddDetailBlock,
   onAddReference,
@@ -195,8 +226,8 @@ export default function PlanSheetEditor({
           {[
             ["Sheets", sheetSet.sheets.length.toLocaleString()],
             ["Viewports", activeSheet.viewports.length.toLocaleString()],
+            ["Mode", sheetSet.mode === "sheet_layout" ? "Sheet/Layout" : "Model"],
             ["Notes", activeSheet.annotations.filter((item) => item.type === "note").length.toLocaleString()],
-            ["Blockers", blockerCount.toLocaleString()],
           ].map(([label, value]) => (
             <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
               <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
@@ -266,6 +297,7 @@ export default function PlanSheetEditor({
                       <p className="truncate text-xs font-semibold text-slate-800">{viewport.label}</p>
                       <select
                         value={viewport.scale}
+                        disabled={viewport.scaleLocked}
                         onChange={(event) => onChangeScale(viewport.id, event.target.value as PlanSheetScale)}
                         className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
                       >
@@ -287,6 +319,9 @@ export default function PlanSheetEditor({
                       <div className="absolute bottom-3 left-3">
                         <div className="h-2 w-24 border-x-2 border-b-2 border-slate-800" />
                         <p className="mt-1 text-[10px] font-semibold text-slate-700">Scale {viewport.scale}</p>
+                      </div>
+                      <div className="absolute left-3 top-3 rounded border border-slate-300 bg-white/90 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                        {viewport.scaleLocked ? "Scale locked" : "Scale editable"}
                       </div>
                     </div>
                     <p className="mt-2 truncate text-[11px] font-medium text-slate-500">
@@ -446,6 +481,7 @@ export default function PlanSheetEditor({
                         Scale
                         <select
                           value={viewport.scale}
+                          disabled={viewport.scaleLocked}
                           onChange={(event) => onChangeScale(viewport.id, event.target.value as PlanSheetScale)}
                           className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
                         >
@@ -455,6 +491,15 @@ export default function PlanSheetEditor({
                             </option>
                           ))}
                         </select>
+                      </label>
+                      <label className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={viewport.scaleLocked}
+                          onChange={() => onToggleViewportScaleLock(viewport.id)}
+                          className="mb-0.5 h-3.5 w-3.5"
+                        />
+                        Locked scale
                       </label>
                       {(
                         [
@@ -476,6 +521,24 @@ export default function PlanSheetEditor({
                           />
                         </label>
                       ))}
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        Viewport Layers
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {Object.entries(viewport.layerVisibility).map(([layer, visible]) => (
+                          <label key={layer} className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                            <input
+                              type="checkbox"
+                              checked={visible}
+                              onChange={() => onToggleViewportLayer(viewport.id, layer)}
+                              className="h-3.5 w-3.5"
+                            />
+                            {layer}
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -562,7 +625,57 @@ export default function PlanSheetEditor({
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-slate-500" />
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Sheet Blockers
+                Plot Styles
+              </p>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <input type="checkbox" checked={sheetSet.plotStyles.grayscale} onChange={onToggleGrayscale} />
+              Grayscale review plot
+            </label>
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+              {sheetSet.plotStyles.reviewWatermark}
+            </p>
+            <div className="mt-3 space-y-1 text-[11px]">
+              {sheetSet.plotStyles.mappings.map((mapping) => (
+                <div key={mapping.layer} className="grid grid-cols-[1fr_58px_68px_72px] gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
+                  <span className="font-semibold text-slate-800">{mapping.layer}</span>
+                  <span>{mapping.color}</span>
+                  <span>{mapping.lineweight}</span>
+                  <span>{mapping.linetype}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4 text-slate-500" />
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Revision History
+                </p>
+              </div>
+              <button type="button" onClick={onAddRevision} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                <Plus className="h-3.5 w-3.5" />
+                Revision
+              </button>
+            </div>
+            <div className="mt-3 space-y-2 text-xs">
+              {sheetSet.revisions.map((revision) => (
+                <div key={revision.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <p className="font-semibold text-slate-800">{revision.revision} · {revision.date}</p>
+                  <p className="mt-1 text-slate-600">{revision.note}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-slate-400">Reviewer: {revision.reviewer}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-slate-500" />
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Sheet Blockers ({blockerCount})
               </p>
             </div>
             <div className="mt-3 space-y-2 text-xs text-slate-600">

@@ -68,6 +68,20 @@ class ReportBuilderTest(unittest.TestCase):
         self.assertEqual(len(release_sections), 1)
         self.assertEqual(release_sections[0]["content"]["release_status"], "blocked")
 
+    def test_build_report_surfaces_paper_model_plotting_trace(self):
+        plan = _plan()
+
+        report = report_builder.build_report(final_plan=plan)
+
+        plotting = report["exports"]["export_trace"]["plotting_export"]
+        self.assertTrue(plotting["review_package_only"])
+        self.assertFalse(plotting["construction_release_allowed"])
+        self.assertTrue(plotting["model_space"]["editable_geometry_space"])
+        self.assertTrue(plotting["sheet_layout"]["plotted_sheet_space"])
+        self.assertTrue(plotting["sheet_manager"]["sheet_index"])
+        self.assertEqual(plotting["plot_styles"]["review_watermark"], "REVIEW ONLY - NOT FOR CONSTRUCTION")
+        self.assertFalse(plotting["exports"]["approved_construction_documents"])
+
     def test_build_report_keeps_release_ready_false_when_metadata_has_blockers(self):
         report = report_builder.build_report(
             final_plan={

@@ -1794,6 +1794,16 @@ const createDefaultPlanSheet = (index = 0, projectName = "Untitled Project"): Pl
         source: "Current model preview",
         target: "Overall site plan",
         scale: "1:40",
+        scaleLocked: true,
+        layerVisibility: {
+          "C-ANNO": true,
+          "C-ROAD": true,
+          "C-PIPE-STORM": true,
+          "C-UTIL": true,
+          "X-REFERENCE": true,
+        },
+        northArrow: true,
+        scaleBar: true,
         x: 7,
         y: 15,
         w: 56,
@@ -1839,8 +1849,29 @@ const createDefaultPlanSheetSet = (projectName = "Untitled Project"): PlanSheetS
     id: `sheet-set-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: `${projectName} Review Sheet Package`,
     status: "draft",
+    mode: "sheet_layout",
     sheets: [firstSheet],
     activeSheetId: firstSheet.id,
+    sheetIndex: [{ sheetNumber: firstSheet.titleBlock.sheetNumber, title: firstSheet.titleBlock.sheetTitle }],
+    plotStyles: {
+      mappings: [
+        { layer: "C-ROAD", color: "black", lineweight: "0.35mm", linetype: "CONTINUOUS" },
+        { layer: "C-PIPE-STORM", color: "green", lineweight: "0.25mm", linetype: "DASHED" },
+        { layer: "C-UTIL", color: "blue", lineweight: "0.25mm", linetype: "DASHED" },
+        { layer: "C-ANNO", color: "black", lineweight: "0.18mm", linetype: "CONTINUOUS" },
+      ],
+      grayscale: false,
+      reviewWatermark: "REVIEW ONLY - NOT FOR CONSTRUCTION",
+    },
+    revisions: [
+      {
+        id: "revision-initial-review",
+        revision: "REV-REVIEW",
+        note: "Initial review sheet package. Verify before package handoff.",
+        date: new Date().toISOString().slice(0, 10),
+        reviewer: "Reviewer",
+      },
+    ],
     blockers: ["Model preview has not been linked to a reviewed source package."],
     updatedAt: new Date().toISOString(),
   };
@@ -7890,7 +7921,7 @@ function PerformanceAIDashboardView({
       planSheetSet.sheets.find((sheet) => sheet.id === planSheetSet.activeSheetId) ??
       planSheetSet.sheets[0];
 
-    if (/(make|create|build).*(review\s+)?sheet|review sheet package|plan sheet/i.test(normalized)) {
+    if (/(make|create|build).*((review\s+)?sheet|sheet set)|review sheet package|plan sheet/i.test(normalized)) {
       handleCreateReviewSheet();
       return true;
     }
@@ -7914,6 +7945,15 @@ function PerformanceAIDashboardView({
       return true;
     }
 
+    if (/add revision note|revision note/i.test(normalized)) {
+      const noteText =
+        message.match(/revision note(?: that says| saying|:)?\s*["“]?([^"”]+)["”]?/i)?.[1]?.trim() ||
+        "Review revision note added; verify before package handoff.";
+      handlePlanSheetAddRevision(noteText);
+      appendChatMessage("assistant", `Added revision note: ${noteText}`, "status");
+      return true;
+    }
+
     if (/add note|new note|sheet note/i.test(normalized)) {
       const noteText =
         message.match(/(?:add|new)\s+(?:a\s+)?note(?: that says| saying|:)?\s*["“]?([^"”]+)["”]?/i)?.[1]?.trim() ||
@@ -7923,8 +7963,10 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/change scale|set scale|scale/i.test(normalized)) {
-      const scaleMatch = message.match(/1\s*:\s*(10|20|30|40|50|100)/i);
+    if (/change scale|set scale|viewport scale|scale/i.test(normalized)) {
+      const scaleMatch =
+        message.match(/1\s*:\s*(10|20|30|40|50|100)/i) ||
+        message.match(/1\s*(?:inch|in|")?\s*(?:equals|=)\s*(10|20|30|40|50|100)\s*(?:feet|foot|ft|')?/i);
       const scale = scaleMatch ? (`1:${scaleMatch[1]}` as PlanSheetScale) : null;
       const viewportId = activeSheet?.viewports[0]?.id;
       if (scale && viewportId) {
@@ -7933,6 +7975,21 @@ function PerformanceAIDashboardView({
       } else {
         appendChatMessage("assistant", "Tell me a supported scale like 1:20, 1:40, or 1:100.", "status");
       }
+      return true;
+    }
+
+    if (/plot this review set|plot.*review set|review pdf|print package/i.test(normalized)) {
+      handlePlanSheetExportPdf();
+      appendChatMessage("assistant", "Opened the review PDF print package with review-only watermark and plotting standards.", "status");
+      return true;
+    }
+
+    if (/why is this not for construction|not for construction/i.test(normalized)) {
+      appendChatMessage(
+        "assistant",
+        "This is not for construction because sheets and plots are review-only production aids. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+        "status",
+      );
       return true;
     }
 
@@ -12837,6 +12894,9 @@ function PerformanceAIDashboardView({
     if (!activeSheet.titleBlock.sheetTitle.trim()) blockers.add("Fill in the sheet title.");
     if (!activeSheet.titleBlock.sheetNumber.trim()) blockers.add("Fill in the sheet number.");
     if (!activeSheet.viewports.length) blockers.add("Add at least one viewport.");
+    if (activeSheet.viewports.some((viewport) => !viewport.scaleLocked)) blockers.add("Lock viewport scales before plotting.");
+    if (!planSheetSet.sheetIndex.length) blockers.add("Build the sheet index/table of contents.");
+    if (!planSheetSet.revisions.length) blockers.add("Add a revision/review history entry.");
     if (!planPreviewUrl && !backendResult) blockers.add("Link a generated model preview or source package.");
     if (issues.length || analysisIssues.length) blockers.add("Resolve or acknowledge current model review issues.");
     if (previewBlockedReasons.length) blockers.add(previewBlockedReasons[0]);
@@ -12854,10 +12914,20 @@ function PerformanceAIDashboardView({
   };
 
   const handlePlanSheetTitleBlockUpdate = (updates: Partial<PlanSheetTitleBlock>) => {
-    refreshPlanSheet((sheet) => ({
-      ...sheet,
-      titleBlock: { ...sheet.titleBlock, ...updates },
-    }));
+    setPlanSheetSet((current) => {
+      const sheets = current.sheets.map((sheet) =>
+        sheet.id === current.activeSheetId ? { ...sheet, titleBlock: { ...sheet.titleBlock, ...updates } } : sheet,
+      );
+      return {
+        ...current,
+        sheets,
+        sheetIndex: sheets.map((sheet) => ({
+          sheetNumber: sheet.titleBlock.sheetNumber,
+          title: sheet.titleBlock.sheetTitle,
+        })),
+        updatedAt: new Date().toISOString(),
+      };
+    });
     setStatusMessage("Updated sheet title block fields.");
   };
 
@@ -12865,10 +12935,68 @@ function PerformanceAIDashboardView({
     refreshPlanSheet((sheet) => ({
       ...sheet,
       viewports: sheet.viewports.map((viewport) =>
-        viewport.id === viewportId ? { ...viewport, scale } : viewport,
+        viewport.id === viewportId ? { ...viewport, scale, scaleLocked: true } : viewport,
       ),
     }));
     setStatusMessage(`Changed sheet viewport scale to ${scale}.`);
+  };
+
+  const handlePlanSheetViewportLayerToggle = (viewportId: string, layer: string) => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      viewports: sheet.viewports.map((viewport) =>
+        viewport.id === viewportId
+          ? {
+              ...viewport,
+              layerVisibility: {
+                ...viewport.layerVisibility,
+                [layer]: !viewport.layerVisibility[layer],
+              },
+            }
+          : viewport,
+      ),
+    }));
+    setStatusMessage(`Updated ${layer} viewport visibility.`);
+  };
+
+  const handlePlanSheetViewportScaleLockToggle = (viewportId: string) => {
+    refreshPlanSheet((sheet) => ({
+      ...sheet,
+      viewports: sheet.viewports.map((viewport) =>
+        viewport.id === viewportId ? { ...viewport, scaleLocked: !viewport.scaleLocked } : viewport,
+      ),
+    }));
+    setStatusMessage("Updated viewport scale lock.");
+  };
+
+  const handlePlanSheetGrayscaleToggle = () => {
+    setPlanSheetSet((current) => ({
+      ...current,
+      plotStyles: {
+        ...current.plotStyles,
+        grayscale: !current.plotStyles.grayscale,
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+    setStatusMessage("Updated review plot grayscale option.");
+  };
+
+  const handlePlanSheetAddRevision = (note = "Review revision note added; verify before package handoff.") => {
+    setPlanSheetSet((current) => ({
+      ...current,
+      revisions: [
+        ...current.revisions,
+        {
+          id: `revision-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          revision: `REV-${current.revisions.length + 1}`,
+          note,
+          date: new Date().toISOString().slice(0, 10),
+          reviewer: "Reviewer",
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    }));
+    setStatusMessage("Added review revision history note.");
   };
 
   const clampSheetPercent = (value: number, min: number, max: number) =>
@@ -12938,6 +13066,16 @@ function PerformanceAIDashboardView({
           source: "Model layer selection",
           target: sheet.viewports.length % 2 === 0 ? "Enlarged site review area" : "Utility or grading review area",
           scale: "1:50",
+          scaleLocked: true,
+          layerVisibility: {
+            "C-ANNO": true,
+            "C-ROAD": true,
+            "C-PIPE-STORM": true,
+            "C-UTIL": true,
+            "X-REFERENCE": sheet.viewports.length % 2 === 0,
+          },
+          northArrow: true,
+          scaleBar: true,
           x: 12 + (sheet.viewports.length % 2) * 32,
           y: 18 + (sheet.viewports.length % 3) * 16,
           w: 30,
@@ -12998,11 +13136,16 @@ function PerformanceAIDashboardView({
     setPlanSheetSet((current) => {
       const projectName = siteName || currentProject?.name || "Untitled Project";
       const nextSheet = createDefaultPlanSheet(current.sheets.length, projectName);
+      const sheets = [...current.sheets, nextSheet];
       return {
         ...current,
         name: `${projectName} Review Sheet Package`,
-        sheets: [...current.sheets, nextSheet],
+        sheets,
         activeSheetId: nextSheet.id,
+        sheetIndex: sheets.map((sheet) => ({
+          sheetNumber: sheet.titleBlock.sheetNumber,
+          title: sheet.titleBlock.sheetTitle,
+        })),
         updatedAt: new Date().toISOString(),
       };
     });
@@ -13031,14 +13174,29 @@ function PerformanceAIDashboardView({
       ],
       sheet_set: {
         ...planSheetSet,
+        mode: "sheet_layout",
         blockers: getPlanSheetBlockers(),
+        sheetIndex: planSheetSet.sheets.map((sheet) => ({
+          sheetNumber: sheet.titleBlock.sheetNumber,
+          title: sheet.titleBlock.sheetTitle,
+        })),
+        model_space: {
+          purpose: "Source civil geometry and annotations in model coordinates.",
+          review_required: true,
+        },
+        sheet_layout: {
+          purpose: "Paper/layout composition with locked viewports into model space.",
+          review_required: true,
+        },
         sheets: planSheetSet.sheets.map((sheet) => ({
           ...sheet,
           viewports: sheet.viewports.map((viewport) => ({
             ...viewport,
             target: viewport.target || "Review viewport target",
-            north_arrow: true,
-            scale_bar: true,
+            scale_locked: viewport.scaleLocked,
+            layer_visibility: viewport.layerVisibility,
+            north_arrow: viewport.northArrow,
+            scale_bar: viewport.scaleBar,
           })),
         })),
       },
@@ -13080,6 +13238,7 @@ function PerformanceAIDashboardView({
     .title { border-top: 2px solid #0f172a; margin-top: 24px; padding-top: 12px; display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
     .notice { border: 1px solid #f59e0b; background: #fffbeb; color: #92400e; padding: 10px; margin: 12px 0; font-weight: 700; }
     .viewport { border: 2px solid #334155; background: #f8fafc; padding: 12px; margin: 12px 0; min-height: 180px; position: relative; }
+    .watermark { position: absolute; inset: 45% 8%; transform: rotate(-18deg); color: rgba(180,83,9,.16); font-size: 48px; font-weight: 900; text-align: center; pointer-events: none; }
     .north { position: absolute; right: 16px; top: 16px; border: 1px solid #334155; border-radius: 999px; width: 42px; height: 42px; display: grid; place-items: center; font-weight: 800; }
     .scale { position: absolute; left: 16px; bottom: 16px; font-weight: 700; }
     .bar { width: 120px; height: 10px; border-left: 2px solid #0f172a; border-right: 2px solid #0f172a; border-bottom: 2px solid #0f172a; }
@@ -13096,6 +13255,7 @@ function PerformanceAIDashboardView({
 <body>
   <button onclick="window.print()">Print review PDF</button>
   <div class="sheet">
+    <div class="watermark">${escapeHtml(planSheetSet.plotStyles.reviewWatermark)}</div>
     <h1>${escapeHtml(activeSheet.titleBlock.sheetTitle)}</h1>
     <p>${escapeHtml(planSheetSet.name)} · ${escapeHtml(activeSheet.size)} · Review package only</p>
     <div class="notice">Review-required plan-production aid only. Not an approved construction document. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.</div>
@@ -13103,9 +13263,17 @@ function PerformanceAIDashboardView({
     ${activeSheet.viewports
       .map(
         (viewport) =>
-          `<div class="viewport"><strong>${escapeHtml(viewport.label)}</strong><p>${escapeHtml(viewport.source)}</p><p>Target: ${escapeHtml(viewport.target || "Review viewport target")}</p><p>Scale ${escapeHtml(viewport.scale)} · Position ${Math.round(viewport.x)}%, ${Math.round(viewport.y)}% · Size ${Math.round(viewport.w)}% x ${Math.round(viewport.h)}%</p><div class="north">N</div><div class="scale"><div class="bar"></div><p>Scale ${escapeHtml(viewport.scale)}</p></div></div>`,
+          `<div class="viewport"><strong>${escapeHtml(viewport.label)}</strong><p>${escapeHtml(viewport.source)}</p><p>Target: ${escapeHtml(viewport.target || "Review viewport target")}</p><p>Scale ${escapeHtml(viewport.scale)} · ${viewport.scaleLocked ? "Locked scale" : "Scale editable"} · Position ${Math.round(viewport.x)}%, ${Math.round(viewport.y)}% · Size ${Math.round(viewport.w)}% x ${Math.round(viewport.h)}%</p><p>Visible layers: ${escapeHtml(Object.entries(viewport.layerVisibility).filter(([, visible]) => visible).map(([layer]) => layer).join(", ") || "none")}</p><div class="north">N</div><div class="scale"><div class="bar"></div><p>Scale ${escapeHtml(viewport.scale)}</p></div></div>`,
       )
       .join("")}
+    <h2>Sheet Index</h2>
+    <table>${planSheetSet.sheetIndex.map((item) => `<tr><td>${escapeHtml(item.sheetNumber)}</td><td>${escapeHtml(item.title)}</td></tr>`).join("")}</table>
+    <h2>Plot Styles</h2>
+    <table>${planSheetSet.plotStyles.mappings
+      .map((item) => `<tr><td>${escapeHtml(item.layer)}</td><td>${escapeHtml(item.color)}</td><td>${escapeHtml(item.lineweight)}</td><td>${escapeHtml(item.linetype)}</td></tr>`)
+      .join("")}<tr><td>Grayscale</td><td colspan="3">${planSheetSet.plotStyles.grayscale ? "Enabled" : "Optional"}</td></tr></table>
+    <h2>Revision History</h2>
+    <ul>${planSheetSet.revisions.map((item) => `<li>${escapeHtml(item.revision)} ${escapeHtml(item.date)}: ${escapeHtml(item.note)} (${escapeHtml(item.reviewer)})</li>`).join("")}</ul>
     <div class="grid">
       <div>
         <h2>Notes and Callouts</h2>
@@ -22010,6 +22178,10 @@ function PerformanceAIDashboardView({
                             setStatusMessage("Added a dimension note.");
                           }}
                           onAddViewport={handlePlanSheetAddViewport}
+                          onToggleViewportLayer={handlePlanSheetViewportLayerToggle}
+                          onToggleViewportScaleLock={handlePlanSheetViewportScaleLockToggle}
+                          onToggleGrayscale={handlePlanSheetGrayscaleToggle}
+                          onAddRevision={() => handlePlanSheetAddRevision()}
                           onAddTable={handlePlanSheetAddTable}
                           onAddDetailBlock={handlePlanSheetAddDetailBlock}
                           onAddReference={handlePlanSheetAddReference}

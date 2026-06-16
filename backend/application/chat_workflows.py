@@ -65,6 +65,7 @@ from backend.planning.plan_pdf_understanding import (
     plan_pdf_report,
     update_editable_sheet_element,
 )
+from backend.planning.plotting_standards import build_plotting_standards
 from parsers.chat_intent_parser import build_chat_memory_summary
 
 
@@ -547,6 +548,84 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
             "dwg_strategy": strategy,
         },
         confidence=0.92,
+    )
+
+
+def _plotting_sheet_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    asks_sheet_set = bool(re.search(r"\b(make|create|build)\s+(a\s+)?sheet\s+set\b", lowered))
+    asks_viewport_scale = "viewport" in lowered and "scale" in lowered
+    asks_revision = "revision note" in lowered or re.search(r"\badd\s+revision\b", lowered)
+    asks_plot = "plot this review set" in lowered or ("plot" in lowered and "review set" in lowered)
+    asks_not_for_construction = "why is this not for construction" in lowered or "not for construction" in lowered
+    if not any([asks_sheet_set, asks_viewport_scale, asks_revision, asks_plot, asks_not_for_construction]):
+        return None
+
+    meta = _meta_from_chat_context(context)
+    standards = build_plotting_standards(meta)
+    base_payload = {
+        "paper_model_plotting_standards_v1": standards,
+        "ui_navigation_target": "deliverables",
+        "requested_ui_mode": "sheet_review",
+        "review_only": True,
+        "engineer_review_required": True,
+        "construction_release_allowed": False,
+    }
+    scale_match = re.search(r"1\s*(?:inch|in|\")?\s*(?:equals|=|:)\s*(\d+(?:\.\d+)?)(?=\s*(?:feet|foot|ft|'|$))", lowered)
+    if asks_sheet_set:
+        message_text = (
+            "I can make a review sheet set with separate model-space source geometry and sheet/layout viewports, a sheet index, title block fields, "
+            "viewport scale locks, north arrows, scale bars, plot styles, a revision block, and review PDF/sheet JSON export metadata. "
+            "It remains a review-only production aid, not an approved construction document."
+        )
+        action_taken = "answered_make_review_sheet_set"
+        payload = {**base_payload, "sheet_action": "make_sheet_set"}
+    elif asks_viewport_scale:
+        scale_value = scale_match.group(1) if scale_match else "50"
+        if "." in scale_value:
+            scale_value = scale_value.rstrip("0").rstrip(".")
+        requested_scale = f"1:{scale_value}"
+        message_text = (
+            f"Set the active sheet viewport scale to {requested_scale} and keep the viewport scale locked. "
+            "Layer visibility, view target, north arrow, and scale bar stay viewport-specific for review plotting."
+        )
+        action_taken = "answered_set_viewport_scale"
+        payload = {**base_payload, "sheet_action": "set_viewport_scale", "viewport_scale": requested_scale, "scale_locked": True}
+    elif asks_revision:
+        note_match = re.search(r"revision note(?:\s+that says|\s+saying|:)?\s*[\"]?(.+?)[\"]?$", message, flags=re.IGNORECASE)
+        note = safe_str(note_match.group(1) if note_match else "", "Review revision note added; verify before package handoff.")
+        message_text = (
+            f"Added a review revision note: {note}. The revision block records review history only and is not Civora approval, signature, seal, or construction release."
+        )
+        action_taken = "answered_add_revision_note"
+        payload = {**base_payload, "sheet_action": "add_revision_note", "revision_note": note}
+    elif asks_plot:
+        message_text = (
+            "Plot the active review set as a review PDF/print package and sheet JSON with lineweight/color/linetype mapping, optional grayscale, "
+            "and the REVIEW ONLY - NOT FOR CONSTRUCTION watermark. This does not create submission-ready or construction-ready documents."
+        )
+        action_taken = "answered_plot_review_set"
+        payload = {**base_payload, "sheet_action": "plot_review_set", "exports": standards["exports"], "plot_styles": standards["plot_styles"]}
+    else:
+        message_text = (
+            "This is not for construction because Civora has only review-package evidence: sheets and plots are production aids that require external licensed/user review. "
+            "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record."
+        )
+        action_taken = "answered_not_for_construction_sheet_limit"
+        payload = {**base_payload, "sheet_action": "explain_not_for_construction", "limitations": standards["limitations"]}
+
+    return _truthful_decision_update(
+        {},
+        assistant_message=message_text,
+        intent="sheet_plotting",
+        run_mode="none",
+        needs_clarification=False,
+        action_taken=action_taken,
+        affected_systems=["sheets", "plotting", "deliverables"],
+        assumptions=["Sheet and plot actions are review-package workflow aids only."],
+        next_best_action="Open the sheet/layout editor, review blockers, then export review PDF or sheet JSON if appropriate.",
+        command_payload_updates=payload,
+        confidence=0.9,
     )
 
 
@@ -3537,6 +3616,9 @@ def decide_chat(
     dwg_decision = _dwg_compatibility_chat_response(message, context)
     if dwg_decision is not None:
         return _enrich_response_contract(dwg_decision, message=message)
+    plotting_decision = _plotting_sheet_chat_response(message, context)
+    if plotting_decision is not None:
+        return _enrich_response_contract(plotting_decision, message=message)
     discipline_depth_decision = _discipline_depth_chat_response(message, context)
     if discipline_depth_decision is not None:
         return _enrich_response_contract(discipline_depth_decision, message=message)

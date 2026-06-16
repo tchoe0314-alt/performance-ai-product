@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from backend.planning.common import blocker_explanations, construction_package_record
 from backend.planning.export_package_report import build_export_package_report_v1
+from backend.planning.plotting_standards import build_plotting_standards
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -433,6 +434,10 @@ def _report_export_trace(final_plan: Dict[str, Any]) -> Dict[str, Any]:
     profile_packages = deepcopy(_safe_list(report.get("profile_packages")))
     section_packages = deepcopy(_safe_list(report.get("section_packages")))
     annotation_trace = deepcopy(_safe_dict(report.get("annotation_standard_trace")))
+    plotting_standards = deepcopy(
+        _safe_dict(report.get("paper_model_plotting_standards_v1"))
+        or build_plotting_standards(meta)
+    )
     stale_outputs = deepcopy(_safe_list(report.get("stale_outputs_detected")))
     return {
         "source": "report_export_trace_v1",
@@ -466,6 +471,17 @@ def _report_export_trace(final_plan: Dict[str, Any]) -> Dict[str, Any]:
             "supported_annotation_styles": deepcopy(_safe_dict(annotation_trace.get("supported_annotation_styles"))),
             "template_backed_behavior": deepcopy(_safe_dict(annotation_trace.get("template_backed_behavior"))),
             "export_support": deepcopy(_safe_dict(annotation_trace.get("export_support"))),
+            "review_package_only": True,
+            "engineer_review_required": True,
+            "construction_release_allowed": False,
+        },
+        "plotting_export": {
+            "standards": plotting_standards,
+            "model_space": deepcopy(_safe_dict(plotting_standards.get("workspace_modes")).get("model_space")),
+            "sheet_layout": deepcopy(_safe_dict(plotting_standards.get("workspace_modes")).get("sheet_layout")),
+            "sheet_manager": deepcopy(_safe_dict(plotting_standards.get("sheet_manager"))),
+            "plot_styles": deepcopy(_safe_dict(plotting_standards.get("plot_styles"))),
+            "exports": deepcopy(_safe_dict(plotting_standards.get("exports"))),
             "review_package_only": True,
             "engineer_review_required": True,
             "construction_release_allowed": False,

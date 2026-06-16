@@ -161,6 +161,22 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertTrue(annotation_trace["template_backed_behavior"]["uses_customer_label_styles_when_present"])
         self.assertEqual(annotation_trace["export_support"]["dxf"].split(";")[0], "supported_where_exporter_maps layers, linetypes, text, blocks, and hatch records")
 
+        plotting = report["paper_model_plotting_standards_v1"]
+        self.assertEqual(plotting["workspace_modes"]["model_space"]["editable_geometry_space"], True)
+        self.assertEqual(plotting["workspace_modes"]["sheet_layout"]["plotted_sheet_space"], True)
+        self.assertTrue(plotting["sheet_manager"]["sheets"])
+        self.assertTrue(plotting["sheet_manager"]["table_of_contents"])
+        self.assertTrue(plotting["viewports"][0]["scale_locked"])
+        self.assertTrue(plotting["viewports"][0]["north_arrow"])
+        self.assertTrue(plotting["viewports"][0]["scale_bar"])
+        self.assertIn("layer_visibility", plotting["viewports"][0])
+        self.assertTrue(plotting["plot_styles"]["grayscale_option"])
+        self.assertEqual(plotting["plot_styles"]["review_watermark"], "REVIEW ONLY - NOT FOR CONSTRUCTION")
+        self.assertIn("project_name", plotting["title_block"]["fields"])
+        self.assertTrue(plotting["revision_block"]["history"])
+        self.assertFalse(plotting["exports"]["approved_construction_documents"])
+        self.assertFalse(plotting["exports"]["submission_ready"])
+        self.assertFalse(report["plot_package"]["construction_release_allowed"])
     def test_stale_canonical_revision_blocks_export_readiness(self) -> None:
         plan = _plan()
         plan["meta"]["last_exported_canonical_hash"] = "hash-rev-1"

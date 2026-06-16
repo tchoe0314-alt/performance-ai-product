@@ -531,6 +531,34 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("canonical ID traceability", result["assistant_message"])
         self.assertIn("does not verify Civil 3D or DWG", result["assistant_message"])
 
+    def test_chat_answers_sheet_plotting_commands_without_construction_claims(self):
+        messages = [
+            ("make a sheet set", "answered_make_review_sheet_set"),
+            ("set viewport scale to 1 inch equals 50 feet", "answered_set_viewport_scale"),
+            ("add revision note revise storm callouts", "answered_add_revision_note"),
+            ("plot this review set", "answered_plot_review_set"),
+            ("why is this not for construction?", "answered_not_for_construction_sheet_limit"),
+        ]
+        for message, action in messages:
+            with self.subTest(message=message):
+                result = decide_chat(
+                    {"message": message, "context": {"current_project": {"project_id": "project_123"}}},
+                    decide_chat_message=decide_chat_message,
+                )
+                self.assertEqual(result["action_taken"], action)
+                payload = result["response_metadata"]["command_payload"]
+                self.assertFalse(payload["construction_release_allowed"])
+                self.assertTrue(payload["engineer_review_required"])
+                self.assertIn("paper_model_plotting_standards_v1", payload)
+                self.assertIn("review", result["assistant_message"].lower())
+                self.assertNotIn("approved construction document", result["assistant_message"].replace("not an approved construction document", ""))
+                if action == "answered_set_viewport_scale":
+                    self.assertEqual(payload["viewport_scale"], "1:50")
+                    self.assertTrue(payload["scale_locked"])
+                if action == "answered_plot_review_set":
+                    self.assertFalse(payload["exports"]["approved_construction_documents"])
+                    self.assertEqual(payload["plot_styles"]["review_watermark"], "REVIEW ONLY - NOT FOR CONSTRUCTION")
+
     def test_site_update_command_persists_canonical_state(self):
         store = RecordingProjectStore()
 

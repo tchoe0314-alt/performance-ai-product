@@ -9,6 +9,7 @@ from .dwg_compatibility import DWG_UNSUPPORTED_STATUS, dwg_strategy_from_meta
 from .production_evidence import build_production_evidence
 from .production_depth import build_cad_interop_metadata
 from .export_external_verification import normalize_external_verification_record
+from .plotting_standards import build_plotting_standards
 from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
 from .smart_fix import build_smart_fix_recommendations
 from .annotation_standards import build_annotation_standards_trace
@@ -497,6 +498,7 @@ def build_export_package_report_v1(
     formats = _apply_external_verification_to_formats(formats, external_verification)
     civil3d_compatibility = _civil3d_compatibility_status(external_verification)
     annotation_trace = build_annotation_standards_trace(meta, export_type=safe_str(export_type))
+    plotting_standards = build_plotting_standards(meta)
     review_blocked = bool(audit_blocked or gate_blocked or stale)
     deliverable_confidence = (
         "construction_blocked"
@@ -534,6 +536,17 @@ def build_export_package_report_v1(
         "canonical_ids_included": canonical_ids,
         "annotation_standard_trace": annotation_trace,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
+        "paper_model_plotting_standards_v1": plotting_standards,
+        "sheet_manager": deepcopy(plotting_standards["sheet_manager"]),
+        "plot_package": {
+            "review_pdf_print_package": True,
+            "sheet_json": True,
+            "review_watermark": plotting_standards["plot_styles"]["review_watermark"],
+            "approved_construction_documents": False,
+            "submission_ready": False,
+            "engineer_review_required": True,
+            "construction_release_allowed": False,
+        },
         "deliverable_confidence": deliverable_confidence,
         "quantity_line_items": _quantity_line_items(meta, safe_str(export_type)),
         "profile_packages": _deliverable_records(meta, "profiles", safe_str(export_type)),
