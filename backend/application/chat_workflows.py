@@ -735,7 +735,7 @@ def _drawn_geometry_edit_chat_response(
                 "construction_release_allowed": False,
             }
         },
-        outcome="understood_and_executed",
+        outcome="understood_and_answered",
         state_changed=False,
         referenced_object_ids=referenced_object_ids,
         referenced_geometry_ids=referenced_geometry_ids,

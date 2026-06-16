@@ -1419,7 +1419,7 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
                 )
 
                 self.assertEqual(result["action_taken"], action)
-                self.assertTaxonomyMetadata(result, "understood_and_executed")
+                self.assertTaxonomyMetadata(result, "understood_and_answered")
                 self.assertEqual(result["run_mode"], "none")
                 self.assertFalse(result["response_metadata"]["state_changed"])
                 self.assertIn(expected_text, result["assistant_message"].lower())
