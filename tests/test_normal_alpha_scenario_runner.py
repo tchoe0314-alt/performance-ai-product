@@ -59,7 +59,7 @@ class NormalAlphaScenarioRunnerTests(unittest.TestCase):
         self.assertEqual(result["version"], REAL_PROJECT_SUITE_VERSION)
         self.assertEqual(result["runner_version"], RUNNER_VERSION)
         self.assertEqual(result["status"], "completed_with_blockers")
-        self.assertEqual(result["scenario_count"], 5)
+        self.assertEqual(result["scenario_count"], 6)
         self.assertFalse(result["construction_release_allowed"])
         self.assertTrue(result["construction_release_blocked"])
 
@@ -71,6 +71,7 @@ class NormalAlphaScenarioRunnerTests(unittest.TestCase):
                 "dem_backed_drainage_detention_site",
                 "utility_heavy_site",
                 "roadway_corridor",
+                "quantities_cost_blocked_site",
                 "incomplete_bad_input_case",
             },
         )
@@ -92,6 +93,13 @@ class NormalAlphaScenarioRunnerTests(unittest.TestCase):
             self.assertIn("standards_status", scenario)
             self.assertIn("systems_completed", scenario)
             self.assertIn("systems_blocked", scenario)
+            self.assertEqual(scenario["source_confidence"], "deterministic_fixture_not_external_acceptance")
+            self.assertTrue(scenario["engineer_review_required"])
+            self.assertEqual(scenario["standards_dependency"], "adopted_jurisdictional_standards_required")
+            self.assertEqual(scenario["survey_control_dependency"], "accepted_project_survey_control_required")
+            self.assertFalse(scenario["calculation_fixture_proofs"]["grading"]["construction_release_allowed"])
+            self.assertFalse(scenario["calculation_fixture_proofs"]["storm"]["construction_release_allowed"])
+            self.assertFalse(scenario["calculation_fixture_proofs"]["quantities_cost"]["construction_release_allowed"])
             self.assertEqual(scenario["engine_depth_summary"]["contract_version"], "engine_contracts_v1")
             self.assertEqual(scenario["export_package_report_v1"]["source"], "export_package_report_v1")
             self.assertEqual(scenario["engineer_review_package_v1"]["version"], "engineer_review_package_v1")
@@ -107,6 +115,28 @@ class NormalAlphaScenarioRunnerTests(unittest.TestCase):
             }
             self.assertIn(LICENSED_ENGINEER_REVIEW_BLOCKER, blocker_fields)
             self.assertIn(HEAVY_EXPORT_BLOCKER, blocker_fields)
+
+    def test_civil_calculation_fixture_expansion_surfaces_per_discipline_proof_and_blockers(self) -> None:
+        result = run_real_project_scenario_suite()
+        rows = {row["scenario_id"]: row for row in result["scenarios"]}
+
+        commercial = rows["survey_backed_commercial_pad"]
+        proofs = commercial["calculation_fixture_proofs"]
+        self.assertIn("TIN terrain fixture carries existing/proposed surface IDs.", proofs["grading"]["production_depth_proves"])
+        self.assertIn("Tailwater/backwater evidence is surfaced in the storm hydraulic trace.", proofs["storm"]["production_depth_proves"])
+        self.assertIn("Slope, cover, tie-in, capacity, manhole spacing, service coverage, and post-reroute recalculation are explicit.", proofs["sanitary"]["production_depth_proves"])
+        self.assertIn("Hydrant spacing, source pressure, residual pressure, fire-flow demand, pressure zones, velocities, looping, and dead-end checks are computed.", proofs["water_fire_flow"]["production_depth_proves"])
+        self.assertIn("Alignment, profile, cross section, crown/cross-slope, curb return, sidewalk/ADA, and max-grade controls are explicit.", proofs["roadway_corridor"]["production_depth_proves"])
+        self.assertIn("Cost package exposes approved/current cost-book metadata, coverage, hash, and upstream blocked-system gates.", proofs["quantities_cost"]["production_depth_proves"])
+        for proof in proofs.values():
+            self.assertTrue(proof["engineer_review_required"])
+            self.assertFalse(proof["construction_release_allowed"])
+
+        cost = rows["quantities_cost_blocked_site"]
+        self.assertIn("stale_cost_book_refresh_required", cost["systems_blocked"])
+        self.assertIn("effective_date", cost["exact_blockers"])
+        self.assertFalse(cost["plan"]["meta"]["cost_package_status"]["production_usable"])
+        self.assertTrue(cost["plan"]["meta"]["cost_package_status"]["price_source"]["stale"])
 
     def test_real_project_scenario_suite_does_not_claim_standards_or_survey_control_readiness(self) -> None:
         result = run_real_project_scenario_suite()
