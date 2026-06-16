@@ -17,6 +17,15 @@ from backend.planning.candidate_review_inbox import (
     apply_candidate_review_decision,
     build_candidate_review_inbox,
 )
+from backend.planning.cad_entity_model import (
+    CAD_ENTITY_MODEL_VERSION,
+    attach_cad_entity_model_to_result,
+    build_cad_entity_model,
+    cad_entities_to_site_object_candidates,
+    history_event,
+    manual_drawn_objects_to_cad_entities,
+    normalize_cad_entity,
+)
 from backend.planning.common import safe_float, safe_str
 from backend.planning.design_alternatives import (
     ALTERNATIVES_VERSION,
@@ -518,6 +527,7 @@ def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_
         meta[ISSUE_TRACKER_VERSION] = build_review_issue_tracker(final_plan, meta=meta)
         final_plan["meta"] = meta
         latest_result["final_plan"] = final_plan
+    latest_result = attach_cad_entity_model_to_result(latest_result, project_input=project_input)
     latest_result = attach_source_confidence_map(latest_result, project_input=project_input)
     project_store.save_project(
         user_id=record.get("_user_id"),
@@ -631,6 +641,190 @@ def _meta_from_chat_context(context: Dict[str, Any]) -> Dict[str, Any]:
     latest_result = _safe_dict(current_project.get("latest_result"))
     final_plan = _safe_dict(latest_result.get("final_plan"))
     return _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
+
+
+def _cad_entity_chat_response(
+    *,
+    message: str,
+    context: Dict[str, Any],
+    record: Optional[Dict[str, Any]],
+    project_store: Optional[Any],
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    mentions_cad_entity = "cad entit" in lowered or "cad object" in lowered or "drawn object" in lowered
+    asks_list = any(phrase in lowered for phrase in ("what cad entities", "list cad entities", "cad entities are in", "what cad objects"))
+    asks_review_only = "why" in lowered and ("review-only" in lowered or "review only" in lowered or "cad object" in lowered or "cad entity" in lowered)
+    asks_stale_invalid = ("stale" in lowered or "invalid" in lowered) and ("cad" in lowered or "entity" in lowered or "object" in lowered)
+    asks_convert_drawn = "convert" in lowered and "drawn object" in lowered and "cad entit" in lowered
+    asks_candidate = "convert" in lowered and "site object" in lowered and ("cad" in lowered or "entity" in lowered)
+    if not (mentions_cad_entity or asks_list or asks_review_only or asks_stale_invalid or asks_convert_drawn or asks_candidate):
+        return None
+
+    if record:
+        project_input = deepcopy(_safe_dict(record.get("project_input")))
+        latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+    else:
+        project_input = _safe_dict(context.get("project_input"))
+        latest_result = _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    meta = _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
+    model = build_cad_entity_model(meta, project_input=project_input)
+    entities = [_safe_dict(item) for item in _safe_list(model.get("entities"))]
+
+    if asks_convert_drawn:
+        if not (record and project_store and user_id):
+            return _truthful_decision_update(
+                {},
+                assistant_message="I can convert drawn geometry to CAD entities only after a saved project is loaded, so the review-only entity model can be persisted.",
+                intent="cad_entity_model",
+                run_mode="none",
+                needs_clarification=True,
+                action_taken="blocked_cad_entity_conversion_missing_project",
+                action_blocked_reason="No saved canonical project record is available.",
+                required_missing_inputs=["saved project"],
+                affected_systems=["cad_entity_model"],
+                next_best_action="Save or load the project, then retry the drawn-object conversion.",
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="No saved canonical project record is available.",
+            )
+        selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
+        converted = manual_drawn_objects_to_cad_entities(project_input, latest_result, created_by=user_id or "user")
+        if selected_object_ids or selected_geometry_ids:
+            selected = set(selected_object_ids + selected_geometry_ids)
+            converted = [
+                entity
+                for entity in converted
+                if safe_str(entity.get("linked_object_id")) in selected
+                or safe_str(_safe_dict(entity.get("canonical_geometry_handoff")).get("geometry_id")) in selected
+                or safe_str(_safe_dict(entity.get("canonical_geometry_handoff")).get("object_id")) in selected
+            ]
+        existing_by_id = {safe_str(entity.get("id")): entity for entity in entities if safe_str(entity.get("id"))}
+        created_ids: List[str] = []
+        for entity in converted:
+            entity_id = safe_str(entity.get("id"))
+            if not entity_id:
+                continue
+            existing_by_id[entity_id] = normalize_cad_entity(entity, created_by=user_id or "user")
+            created_ids.append(entity_id)
+        if not created_ids:
+            return _truthful_decision_update(
+                {},
+                assistant_message="I did not find a valid manual drawn canonical geometry handoff to convert into a CAD entity.",
+                intent="cad_entity_model",
+                run_mode="none",
+                needs_clarification=True,
+                action_taken="blocked_no_drawn_geometry_for_cad_entity_conversion",
+                action_blocked_reason="No matching manual_drawn canonical_geometry_handoff_v1 was found.",
+                required_missing_inputs=["manual drawn geometry handoff"],
+                affected_systems=["cad_entity_model"],
+                next_best_action="Select or draw one review geometry object, then retry conversion.",
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="No matching manual_drawn canonical_geometry_handoff_v1 was found.",
+            )
+        source_model = _safe_dict(meta.get(CAD_ENTITY_MODEL_VERSION))
+        source_model["entities"] = list(existing_by_id.values())
+        source_model["history"] = _safe_list(source_model.get("history")) + [
+            history_event("entity_converted", entity_id, actor=user_id or "user", details={"from": "manual_drawn", "review_required": True})
+            for entity_id in created_ids
+        ]
+        meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: source_model}, project_input=project_input)
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        _save_project_record(project_store, {**record, "_user_id": user_id}, project_input=project_input, latest_result=latest_result)
+        model = meta[CAD_ENTITY_MODEL_VERSION]
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                f"Converted {len(created_ids)} manual drawn object(s) into persistent CAD entities for drafting/review. "
+                "They remain draft_review_required, dirty for downstream review, and construction_release_allowed is false."
+            ),
+            intent="cad_entity_model",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="converted_drawn_object_to_cad_entity",
+            affected_systems=["cad_entity_model", "cad_geometry"],
+            assumptions=["Manual drawn geometry conversion preserves review-required status and does not mutate engineering evidence."],
+            next_best_action="Review CAD entity validation/source confidence before converting any entity into a site object candidate.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model, "converted_entity_ids": created_ids},
+            outcome="understood_and_executed",
+            state_changed=True,
+        )
+
+    if asks_candidate:
+        candidates = cad_entities_to_site_object_candidates(model)
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                f"{len(candidates)} CAD entity candidate(s) can be presented as review-required site object candidates. "
+                "None are accepted as engineering evidence or construction-ready from the CAD conversion alone."
+            ),
+            intent="cad_entity_model",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="reported_cad_entity_site_object_candidates",
+            affected_systems=["cad_entity_model", "candidate_review"],
+            next_best_action="Send candidates through review/acceptance before any engine uses them as project draft evidence.",
+            command_payload_updates={"cad_site_object_candidates_v1": candidates, CAD_ENTITY_MODEL_VERSION: model},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+
+    validation = _safe_dict(model.get("validation"))
+    stale_invalid = [
+        entity
+        for entity in entities
+        if entity.get("validation_status") == "invalid" or entity.get("dirty") or entity.get("stale") or entity.get("review_status") == "stale"
+    ]
+    if asks_stale_invalid:
+        lines = ["CAD entities that are stale or invalid:"]
+        if stale_invalid:
+            for entity in stale_invalid[:10]:
+                blockers = ", ".join(safe_str(item) for item in _safe_list(entity.get("validation_blockers")) if safe_str(item))
+                lines.append(f"- {safe_str(entity.get('id'))} ({safe_str(entity.get('type'))}): {blockers or 'stale/dirty rerun review required'}")
+        else:
+            lines.append("- None visible in the current CAD entity model.")
+        lines.append("CAD entities remain review-only and cannot create construction release.")
+        action_taken = "reported_stale_invalid_cad_entities"
+    elif asks_review_only:
+        lines = [
+            "This CAD object is review-only because CAD/manual/imported geometry is drafting evidence, not survey-backed or engineer-approved evidence by itself.",
+            "It needs valid geometry, source-confidence review, accepted source evidence where applicable, and external professional/user review before downstream reliance.",
+            "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+        ]
+        action_taken = "explained_cad_entity_review_only"
+    else:
+        lines = [f"CAD entities in this project: {len(entities)}."]
+        if entities:
+            for entity in entities[:12]:
+                lines.append(
+                    f"- {safe_str(entity.get('id'))}: {safe_str(entity.get('type'))}, layer={safe_str(entity.get('layer_id'))}, "
+                    f"source_confidence={safe_str(entity.get('source_confidence'))}, review_status={safe_str(entity.get('review_status'))}"
+                )
+        else:
+            lines.append("- No persistent CAD entities are saved yet.")
+        if validation.get("blockers"):
+            lines.append(f"Blockers: {len(_safe_list(validation.get('blockers')))} validation/source/stale blocker(s).")
+        lines.append("All CAD entities are drafting/review objects with construction_release_allowed=false.")
+        action_taken = "reported_cad_entities"
+
+    return _truthful_decision_update(
+        {},
+        assistant_message="\n".join(lines),
+        intent="cad_entity_model",
+        run_mode="none",
+        needs_clarification=False,
+        action_taken=action_taken,
+        affected_systems=["cad_entity_model"],
+        assumptions=["CAD entity answers use saved project metadata only."],
+        next_best_action="Use CAD entities for command-line, snaps, grips, layers, dimensions, blocks, plotting, and DXF review workflows after validation.",
+        command_payload_updates={CAD_ENTITY_MODEL_VERSION: model},
+        outcome="understood_and_answered",
+        state_changed=False,
+        blocker="; ".join(safe_str(item.get("reason")) for item in _safe_list(validation.get("blockers"))[:4] if isinstance(item, dict)),
+    )
 
 
 def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -3860,6 +4054,15 @@ def decide_chat(
         payload["context"] = context
     early_project_input = _safe_dict(record.get("project_input")) if record else _safe_dict(context.get("project_input"))
     early_latest_result = _safe_dict(record.get("latest_result")) if record else _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
+    cad_entity_decision = _cad_entity_chat_response(
+        message=message,
+        context=context,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if cad_entity_decision is not None:
+        return _enrich_response_contract(cad_entity_decision, message=message)
     cad_command_line_decision = _cad_command_line_chat_response(message, context)
     if cad_command_line_decision is not None:
         return _enrich_response_contract(cad_command_line_decision, message=message)

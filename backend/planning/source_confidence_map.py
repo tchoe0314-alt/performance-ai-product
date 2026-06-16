@@ -330,6 +330,29 @@ def _standards_entries(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _drawn_imported_entries(meta: Dict[str, Any], project_input: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     entries: List[Dict[str, Any]] = []
     project_input = safe_dict(project_input)
+    cad_model = safe_dict(meta.get("cad_entity_model_v1"))
+    for entity in safe_list(cad_model.get("entities")):
+        rec = safe_dict(entity)
+        confidence = safe_str(rec.get("source_confidence"), "missing")
+        source_type = "imported CAD" if confidence == "imported CAD" or "import" in safe_str(rec.get("source")).lower() else "user-drawn" if "drawn" in confidence or rec.get("source") == "manual_drawn" else confidence
+        entries.append(
+            _entry(
+                entry_id=_stable_id("cad_entity", rec.get("id")),
+                label=safe_str(rec.get("label") or rec.get("type"), "CAD entity"),
+                category="cad_entity",
+                object_id=safe_str(rec.get("id")),
+                layer=safe_str(rec.get("layer_id")),
+                source_type=source_type if source_type in CONFIDENCE_LABELS else "inferred",
+                source_name=safe_str(rec.get("source"), "cad_entity"),
+                status=safe_str(rec.get("review_status"), "draft_review_required"),
+                evidence=rec,
+                needs_survey_control=True,
+                stale=bool(rec.get("stale")),
+                dirty=bool(rec.get("dirty")),
+                reasons=safe_list(rec.get("validation_blockers")) + ["CAD entities are drafting/review objects unless backed by accepted source evidence."],
+                next_action="Review CAD entity geometry/source confidence and tie it to accepted evidence before converting to site objects.",
+            )
+        )
     manual = safe_dict(project_input.get("manual_fields"))
     handoffs = safe_list(manual.get("canonical_geometry_handoff_v1")) + safe_list(project_input.get("canonical_geometry_handoff_v1"))
     for source in (manual, project_input, meta):

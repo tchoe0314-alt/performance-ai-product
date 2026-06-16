@@ -14,6 +14,7 @@ from backend.planning.candidate_review_inbox import (
     apply_candidate_review_decision,
     build_candidate_review_inbox,
 )
+from backend.planning.cad_entity_model import attach_cad_entity_model_to_result
 from backend.planning.design_alternatives import (
     ALTERNATIVES_VERSION,
     append_revised_design_alternative,
@@ -1227,6 +1228,7 @@ def save_project_record(
         if existing_project_input:
             project_input = _merge_project_input(existing_project_input, project_input)
     if latest_result:
+        latest_result = attach_cad_entity_model_to_result(latest_result, project_input=project_input)
         latest_result = attach_source_confidence_map(latest_result, project_input=project_input)
     if latest_result and build_run_summary:
         latest_result = _with_smart_fix_result(latest_result)
