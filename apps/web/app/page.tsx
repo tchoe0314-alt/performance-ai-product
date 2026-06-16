@@ -16244,6 +16244,7 @@ function PerformanceAIDashboardView({
 	                    <button
 	                      key={item.key}
 	                      type="button"
+	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : undefined}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
 	                      className={`min-h-20 rounded-lg border px-2.5 py-2 text-left transition ${
@@ -16461,6 +16462,7 @@ function PerformanceAIDashboardView({
                   <button
                     key={item.target}
                     type="button"
+                    aria-label={item.target === "canvas" ? "Open canvas from sidebar" : undefined}
                     onClick={() => handleOpenWorkspaceMode(item.target)}
                     className={`flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${
                       isActive
@@ -22465,14 +22467,14 @@ function PerformanceAIDashboardView({
                       ))}
                     </div>
                     <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                      <table className="w-full min-w-[760px] border-collapse text-left text-xs">
+                      <table className="w-full min-w-0 border-collapse text-left text-xs md:min-w-[760px]">
                         <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.12em] text-slate-500">
                           <tr>
                             <th className="w-[28%] px-3 py-2 font-semibold">ID/name</th>
                             <th className="w-[22%] px-3 py-2 font-semibold">Discipline/source</th>
                             <th className="w-[16%] px-3 py-2 font-semibold">Severity/status</th>
                             <th className="w-[18%] px-3 py-2 font-semibold">Assigned/updated</th>
-                            <th className="w-[16%] px-3 py-2 font-semibold">Action</th>
+                            <th className="hidden w-[16%] px-3 py-2 font-semibold md:table-cell">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
@@ -22482,7 +22484,7 @@ function PerformanceAIDashboardView({
                                 <p className="break-words font-semibold text-slate-900">{row.name}</p>
                                 <p className="mt-1 break-all text-[11px] font-medium text-slate-400">{row.id}</p>
                               </td>
-                              <td className="px-3 py-3">
+                              <td className="hidden px-3 py-3 md:table-cell">
                                 <p className="break-words font-semibold text-slate-700">{row.source}</p>
                               </td>
                               <td className="px-3 py-3">
@@ -22494,7 +22496,7 @@ function PerformanceAIDashboardView({
                                 <p className="font-semibold text-slate-700">{row.assigned}</p>
                                 <p className="mt-1 text-[11px] text-slate-500">{row.updated}</p>
                               </td>
-                              <td className="px-3 py-3">
+                              <td className="hidden px-3 py-3 md:table-cell">
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSidePanel(row.panel)}
