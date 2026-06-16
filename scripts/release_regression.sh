@@ -4,9 +4,15 @@ set -u
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/apps/web"
 RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression}"
-PLAYWRIGHT_SPECS=(
-  "tests/live/ui-functionality-chat32.spec.ts"
-  "tests/live/civil-3d-viewer.spec.ts"
+PLAYWRIGHT_CASES=(
+  "tests/live/ui-functionality-chat32.spec.ts:11"
+  "tests/live/ui-functionality-chat32.spec.ts:49"
+  "tests/live/ui-functionality-chat32.spec.ts:75"
+  "tests/live/civil-3d-viewer.spec.ts:27"
+  "tests/live/civil-3d-viewer.spec.ts:62"
+  "tests/live/civil-3d-viewer.spec.ts:73"
+  "tests/live/civil-3d-viewer.spec.ts:91"
+  "tests/live/civil-3d-viewer.spec.ts:101"
 )
 BACKEND_SMOKE_TESTS=(
   "tests/test_release_gates.py"
@@ -172,14 +178,22 @@ else
         SERVER_PID=$!
 
         if wait_for_url "http://127.0.0.1:$PORT"; then
-          (
-            cd "$WEB_DIR" &&
-              PLAYWRIGHT_BASE_URL="http://127.0.0.1:$PORT" \
-              PLAYWRIGHT_SKIP_WEBSERVER=1 \
-              PLAYWRIGHT_OUTPUT_DIR="test-results/release-regression" \
-              npx playwright test --config=playwright.config.ts "${PLAYWRIGHT_SPECS[@]}"
-          )
-          playwright_status=$?
+          playwright_status=0
+          for case_path in "${PLAYWRIGHT_CASES[@]}"; do
+            safe_case_name="${case_path//[^[:alnum:]]/-}"
+            (
+              cd "$WEB_DIR" &&
+                PLAYWRIGHT_BASE_URL="http://127.0.0.1:$PORT" \
+                PLAYWRIGHT_SKIP_WEBSERVER=1 \
+                PLAYWRIGHT_OUTPUT_DIR="test-results/release-regression/$safe_case_name" \
+                npx playwright test --config=playwright.config.ts --workers=1 "$case_path"
+            )
+            case_status=$?
+            if [[ $case_status -ne 0 ]]; then
+              playwright_status=$case_status
+              break
+            fi
+          done
           if [[ $playwright_status -eq 0 ]]; then
             record_pass "selected Playwright"
           else
