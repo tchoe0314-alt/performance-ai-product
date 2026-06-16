@@ -6124,14 +6124,17 @@ function PerformanceAIDashboardView({
       if (geometryType && geometry?.length) {
         nextUpdates.source = "manual_drawn";
         nextUpdates.generated = false;
-        nextUpdates.meta = buildCustomGeometryMeta(
-          target.id,
-          updates.label ?? target.label,
-          geometryType,
-          geometry,
-          units || "ft",
-          target.meta,
-        );
+        nextUpdates.meta = {
+          ...buildCustomGeometryMeta(
+            target.id,
+            updates.label ?? target.label,
+            geometryType,
+            geometry,
+            units || "ft",
+            target.meta,
+          ),
+          ...(updates.meta ?? {}),
+        };
       }
     }
     if (target?.type === "parking") {

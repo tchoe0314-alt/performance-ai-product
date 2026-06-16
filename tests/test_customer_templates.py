@@ -27,7 +27,17 @@ def accepted_template_payload():
                 "hatch_fill_styles": [{"target": "pavement", "pattern": "ANSI31"}],
                 "linetype_styles": [{"target": "utility", "linetype": "DASHED"}],
             },
-            "symbol_library": {"blocks": [{"block_id": "inlet", "name": "Storm inlet"}]},
+            "symbol_library": {
+                "blocks": [
+                    {
+                        "block_id": "inlet",
+                        "kind": "inlet",
+                        "name": "Storm inlet",
+                        "attribute_fields": ["id", "label", "elevation", "material", "size", "source", "review_note"],
+                    },
+                    {"block_id": "sign", "kind": "sign", "name": "Site sign"},
+                ]
+            },
             "report_template": {"reports": [{"key": "review_summary", "sections": ["inputs", "open_items"]}]},
             "cost_book_link": {"links": [{"label": "ACME book", "cost_book_id": "acme_costs"}]},
             "pipe_template_hook": {"defaults": {"storm": {"layer": "C-PIPE-STORM"}}},
@@ -49,6 +59,9 @@ def test_template_registry_import_activate_and_export_json():
     assert registry["behavior"]["blockers"] == []
     assert registry["summaries"][0]["dimension_style_count"] == 3
     assert registry["summaries"][0]["hatch_style_count"] == 5
+    assert "hydrant" in registry["summaries"][0]["symbol_library_kinds"]
+    assert "review_note" in registry["summaries"][0]["symbol_attribute_fields"]
+    assert registry["summaries"][0]["symbol_library_supported_count"] >= 10
     exported = manager.export_json()
     assert exported["version"] == "customer_template_export_v1"
     assert exported["registry"]["active_template"]["template_id"] == "acme_site_template"
@@ -107,6 +120,20 @@ def test_chat_answers_active_and_missing_template_questions():
     assert active["response_metadata"]["action_taken"] == "answered_active_template"
     assert missing["run_mode"] == "none"
     assert missing["response_metadata"]["action_taken"] == "answered_customer_template_missing_reason"
+
+
+def test_chat_answers_template_symbol_library_question():
+    result = decide_chat(
+        {"message": "what symbols are in my template?", "context": {}},
+        decide_chat_message=lambda payload: {"intent": "generate", "run_mode": "run"},
+    )
+
+    assert result["run_mode"] == "none"
+    assert result["response_metadata"]["action_taken"] == "answered_template_symbol_library"
+    payload = result["response_metadata"]["command_payload"]["symbol_block_library_v1"]
+    assert "hydrant" in payload["supported_symbol_kinds"]
+    assert "review_note" in payload["attribute_fields"]
+    assert payload["manager_behavior"]["native_dwg_block_parity"] is False
 
 
 def test_chat_answers_annotation_standard_requests_without_release_claims():

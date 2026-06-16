@@ -79,7 +79,16 @@ def _plan() -> dict:
                 "sections": {
                     "layer_standards": {"layers": [{"name": "C-ANNO-DIMS"}, {"name": "C-UTIL"}]},
                     "label_style": {"styles": [{"key": "company_label", "format": "{label}"}]},
-                    "symbol_library": {"blocks": [{"block_id": "inlet", "name": "Storm inlet"}]},
+                    "symbol_library": {
+                        "blocks": [
+                            {
+                                "block_id": "hydrant_plan",
+                                "kind": "hydrant",
+                                "name": "Hydrant",
+                                "attribute_fields": ["id", "label", "elevation", "material", "size", "source", "review_note"],
+                            }
+                        ]
+                    },
                     "annotation_standards": {
                         "dimension_styles": [
                             {"key": "linear", "kind": "linear", "precision": 2, "units": "ft", "suffix": "'"},
@@ -107,6 +116,37 @@ def _plan() -> dict:
                     },
                 },
             },
+            "symbol_instances": [
+                {
+                    "kind": "hydrant",
+                    "attributes": {
+                        "id": "HYD-1",
+                        "label": "Hydrant 1",
+                        "elevation": "101.2",
+                        "material": "ductile iron",
+                        "size": "6 in",
+                        "source": "manual_drawn",
+                        "review_note": "Draft hydrant marker.",
+                    },
+                }
+            ],
+            "converted_symbol_candidates": [
+                {
+                    "candidate_id": "gis-valve-1",
+                    "kind": "valve",
+                    "label": "Valve candidate",
+                    "source": "GIS",
+                    "confidence": "candidate_review_required",
+                }
+            ],
+            "reference_underlays": [
+                {
+                    "reference_id": "pdf-underlay-1",
+                    "file_type": "pdf",
+                    "source": "upload://site-plan.pdf",
+                    "source_confidence": "source_underlay_review_required",
+                }
+            ],
             "construction_readiness": {
                 "ready": True,
                 "status": "construction_ready",
@@ -160,6 +200,15 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertIn("utility", annotation_trace["supported_annotation_styles"]["linetype_targets"])
         self.assertTrue(annotation_trace["template_backed_behavior"]["uses_customer_label_styles_when_present"])
         self.assertEqual(annotation_trace["export_support"]["dxf"].split(";")[0], "supported_where_exporter_maps layers, linetypes, text, blocks, and hatch records")
+        symbol_trace = report["symbol_block_reference_trace"]
+        self.assertIn("hydrant", symbol_trace["supported_symbols"])
+        self.assertEqual(symbol_trace["attribute_fields"], ["id", "label", "elevation", "material", "size", "source", "review_note"])
+        self.assertEqual(symbol_trace["symbol_instances"][0]["attributes"]["id"], "HYD-1")
+        self.assertTrue(symbol_trace["symbol_instances"][1]["converted_from_candidate"])
+        self.assertEqual(symbol_trace["symbol_instances"][1]["engineering_status"], "draft_review_required")
+        self.assertTrue(symbol_trace["reference_underlays"][0]["not_editable"])
+        self.assertFalse(symbol_trace["native_dwg_block_parity"])
+        self.assertFalse(symbol_trace["native_xref_parity"])
 
         plotting = report["paper_model_plotting_standards_v1"]
         self.assertEqual(plotting["workspace_modes"]["model_space"]["editable_geometry_space"], True)

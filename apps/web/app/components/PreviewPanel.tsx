@@ -49,7 +49,7 @@ type EngineeringSystemStatuses = Record<
 >;
 type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
 type CadPoint = { x: number; y: number };
-type CadSymbolKind = "hydrant" | "inlet" | "manhole" | "tree" | "utility_marker" | "note_callout";
+type CadSymbolKind = "hydrant" | "inlet" | "manhole" | "valve" | "tree" | "light" | "sign" | "utility_marker" | "benchmark" | "note_callout";
 type CadDimensionMode = "linear" | "aligned";
 type CadHistoryEntry = {
   id: string;
@@ -587,9 +587,14 @@ export default function PreviewPanel({
   const [cadDimensionMode, setCadDimensionMode] = useState<CadDimensionMode>("linear");
   const [cadDimensionLabelDraft, setCadDimensionLabelDraft] = useState("");
   const [cadPropertyDraft, setCadPropertyDraft] = useState({
+    id: "",
     name: "",
     type: "",
     layer: "C-DRAFT",
+    elevation: "",
+    material: "",
+    size: "",
+    source: "",
     sourceNote: "",
     reviewNote: "",
   });
@@ -1826,10 +1831,16 @@ export default function PreviewPanel({
     const layer = getCadLayer(selectedCadObject);
     setCadLayerDraft(layer);
     setCadDimensionLabelDraft(String(selectedCadObject.meta?.cad_dimension_label || ""));
+    const symbolAttributes = (selectedCadObject.meta?.symbol_attributes ?? {}) as Record<string, unknown>;
     setCadPropertyDraft({
+      id: String(symbolAttributes.id || selectedCadObject.meta?.symbol_id || selectedCadObject.id || ""),
       name: selectedCadObject.label || "",
       type: selectedCadObject.type || "custom",
       layer,
+      elevation: String(symbolAttributes.elevation || selectedCadObject.meta?.elevation || ""),
+      material: String(symbolAttributes.material || selectedCadObject.meta?.material || ""),
+      size: String(symbolAttributes.size || selectedCadObject.meta?.size || ""),
+      source: String(symbolAttributes.source || selectedCadObject.meta?.source || "manual_drawn"),
       sourceNote: String(selectedCadObject.meta?.source_note || ""),
       reviewNote: String(selectedCadObject.meta?.review_note || ""),
     });
@@ -2269,7 +2280,17 @@ export default function PreviewPanel({
           cad_layer: safeLayer,
           source_note: cadPropertyDraft.sourceNote.trim(),
           review_note: cadPropertyDraft.reviewNote.trim(),
-          source: "manual_drawn",
+          source: cadPropertyDraft.source.trim() || "manual_drawn",
+          symbol_id: cadPropertyDraft.id.trim() || selectedCadObject.id,
+          symbol_attributes: {
+            id: cadPropertyDraft.id.trim() || selectedCadObject.id,
+            label: safeName,
+            elevation: cadPropertyDraft.elevation.trim(),
+            material: cadPropertyDraft.material.trim(),
+            size: cadPropertyDraft.size.trim(),
+            source: cadPropertyDraft.source.trim() || "manual_drawn",
+            review_note: cadPropertyDraft.reviewNote.trim(),
+          },
           engineering_status: "draft_review_required",
           review_status: "engineer_review_required",
         },
@@ -2281,12 +2302,17 @@ export default function PreviewPanel({
   const insertCadSymbol = useCallback(() => {
     const x = clampValue(parseCadNumber(cadCoordinateDraft.x, lotWidth / 2), 0, lotWidth);
     const y = clampValue(parseCadNumber(cadCoordinateDraft.y, lotHeight / 2), 0, lotHeight);
+    const symbolInstanceId = `${cadSymbolDraft}-${Date.now()}`;
     const labels: Record<CadSymbolKind, string> = {
       hydrant: "Hydrant",
       inlet: "Inlet",
       manhole: "Manhole",
+      valve: "Valve",
       tree: "Tree",
+      light: "Light",
+      sign: "Sign",
       utility_marker: "Utility Marker",
+      benchmark: "Benchmark",
       note_callout: "Note / Callout",
     };
     onCreateCustomGeometry({
@@ -2295,7 +2321,17 @@ export default function PreviewPanel({
       label: labels[cadSymbolDraft],
       meta: {
         cad_symbol: cadSymbolDraft,
+        symbol_id: symbolInstanceId,
         cad_layer: cadSymbolDraft === "tree" || cadSymbolDraft === "note_callout" ? "C-ANNO" : "C-SYMB",
+        symbol_attributes: {
+          id: symbolInstanceId,
+          label: labels[cadSymbolDraft],
+          elevation: "",
+          material: "",
+          size: "",
+          source: "manual_drawn",
+          review_note: "Inserted symbol remains draft/review-required.",
+        },
         symbol_review_required: true,
         engineering_status: "draft_review_required",
         review_status: "engineer_review_required",
@@ -5875,19 +5911,28 @@ export default function PreviewPanel({
                     <option value="hydrant">Hydrant</option>
                     <option value="inlet">Inlet</option>
                     <option value="manhole">Manhole</option>
+                    <option value="valve">Valve</option>
                     <option value="tree">Tree</option>
+                    <option value="light">Light</option>
+                    <option value="sign">Sign</option>
                     <option value="utility_marker">Utility marker</option>
+                    <option value="benchmark">Benchmark</option>
                     <option value="note_callout">Note / callout</option>
                   </select>
-                  <button type="button" onClick={insertCadSymbol} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Insert</button>
+                  <button type="button" aria-label="Insert CAD symbol" onClick={insertCadSymbol} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Insert</button>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
+                  <input aria-label="CAD symbol attribute ID" value={cadPropertyDraft.id} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, id: event.target.value }))} placeholder="ID" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD object name" value={cadPropertyDraft.name} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD object type" value={cadPropertyDraft.type} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, type: event.target.value }))} placeholder="Type" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD object layer property" value={cadPropertyDraft.layer} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))} placeholder="Layer" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-                  <button type="button" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
+                  <input aria-label="CAD symbol elevation attribute" value={cadPropertyDraft.elevation} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, elevation: event.target.value }))} placeholder="Elevation" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <input aria-label="CAD symbol material attribute" value={cadPropertyDraft.material} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, material: event.target.value }))} placeholder="Material" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <input aria-label="CAD symbol size attribute" value={cadPropertyDraft.size} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, size: event.target.value }))} placeholder="Size" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <button type="button" aria-label="Apply CAD symbol properties" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
                 </div>
                 <div className="mt-3 grid gap-2">
+                  <input aria-label="CAD symbol source attribute" value={cadPropertyDraft.source} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, source: event.target.value }))} placeholder="Source" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD source note" value={cadPropertyDraft.sourceNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, sourceNote: event.target.value }))} placeholder="Source note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD review note" value={cadPropertyDraft.reviewNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, reviewNote: event.target.value }))} placeholder="Review note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                 </div>
@@ -6920,8 +6965,12 @@ export default function PreviewPanel({
                               hydrant: "H",
                               inlet: "I",
                               manhole: "M",
+                              valve: "V",
                               tree: "T",
+                              light: "L",
+                              sign: "S",
                               utility_marker: "U",
+                              benchmark: "B",
                               note_callout: "N",
                             };
                             const [x, y] = siteTupleToPercent(

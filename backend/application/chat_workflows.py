@@ -59,6 +59,13 @@ from backend.planning.source_confidence_map import (
 from backend.planning.standards_package import build_standards_package
 from backend.planning.customer_templates import GLOBAL_CUSTOMER_TEMPLATE_MANAGER, template_behavior
 from backend.planning.annotation_standards import annotation_chat_response_payload
+from backend.planning.symbol_block_library import (
+    SYMBOL_ATTRIBUTE_FIELDS,
+    SUPPORTED_SYMBOL_KINDS,
+    build_reference_underlay,
+    build_symbol_instance,
+    normalize_symbol_library,
+)
 from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
 from backend.planning.plan_pdf_understanding import (
     SOURCE_CONFIDENCE as PLAN_PDF_SOURCE_CONFIDENCE,
@@ -257,6 +264,160 @@ def _standards_rules_chat_response(
         state_changed=changed,
         blocker=blocker_text,
     )
+
+
+def _symbol_kind_from_message(message: str) -> str:
+    lowered = _normalized_text(message)
+    aliases = {
+        "note_callout": ("note/callout", "note callout", "callout", "note"),
+        "utility_marker": ("utility marker", "utility"),
+    }
+    for kind, tokens in aliases.items():
+        if any(token in lowered for token in tokens):
+            return kind
+    for kind in SUPPORTED_SYMBOL_KINDS:
+        if kind.replace("_", " ") in lowered or kind in lowered:
+            return kind
+    return ""
+
+
+def _symbol_block_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    normalized = _normalized_text(message)
+    mentions_symbol = any(token in normalized for token in ("symbol", "block", "xref", "underlay", "reference"))
+    asks_template_symbols = "symbols" in normalized and "template" in normalized
+    wants_insert = any(token in normalized for token in ("insert", "place", "add")) and ("symbol" in normalized or _symbol_kind_from_message(message))
+    wants_attribute_edit = "attribute" in normalized and any(token in normalized for token in ("edit", "change", "update", "set", "this block", "this symbol"))
+    wants_underlay = "underlay" in normalized or ("attach" in normalized and any(token in normalized for token in ("pdf", "dxf", "image", "reference", "xref")))
+    if not any((asks_template_symbols, wants_insert, wants_attribute_edit, wants_underlay)) or not mentions_symbol and not wants_underlay and not wants_insert:
+        return None
+
+    meta = _meta_from_chat_context(context)
+    template = _safe_dict(meta.get("active_customer_template")) or _safe_dict(GLOBAL_CUSTOMER_TEMPLATE_MANAGER.snapshot().get("active_template"))
+    library = normalize_symbol_library(template)
+
+    if asks_template_symbols:
+        names = [
+            f"{safe_str(item.get('kind'))}: {safe_str(item.get('name'))}"
+            for item in _safe_list(library.get("blocks"))
+            if safe_str(item.get("kind"))
+        ]
+        assistant_message = (
+            "Template symbol library includes: "
+            + "; ".join(names[:12])
+            + ". These are drafting/review aids with editable ID, label, elevation, material, size, source, and review-note attributes."
+        )
+        return _truthful_decision_update(
+            {},
+            assistant_message=assistant_message,
+            intent="symbol_library",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="answered_template_symbol_library",
+            affected_systems=["cad_symbols", "customer_templates"],
+            assumptions=["Customer template symbol libraries do not prove survey, engineering, or construction status."],
+            next_best_action="Open the symbol/block library manager or select a symbol in object properties to edit review attributes.",
+            command_payload_updates={
+                "symbol_block_library_v1": library,
+                "ui_navigation_target": "canvas",
+                "requested_ui_mode": "symbol_library",
+            },
+            outcome="understood_and_answered",
+            state_changed=False,
+            confidence=0.93,
+        )
+
+    if wants_underlay:
+        file_type = "pdf" if "pdf" in normalized else "dxf" if "dxf" in normalized else "image" if "image" in normalized else "external"
+        reference = build_reference_underlay({"file_type": file_type, "source_confidence": "source_underlay_review_required"})
+        assistant_message = (
+            f"I can attach the {file_type.upper()} as a source-only underlay/reference. It stays not-editable where applicable, carries source confidence, "
+            "and does not become survey-backed or construction-release evidence by being attached."
+        )
+        return _truthful_decision_update(
+            {},
+            assistant_message=assistant_message,
+            intent="symbol_reference",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="prepared_reference_underlay_attachment",
+            affected_systems=["cad_references", "export_trace"],
+            assumptions=["The file source/path must be supplied by the upload or CAD reference UI."],
+            next_best_action="Attach the source file in the underlay/reference panel, then review alignment and source confidence.",
+            command_payload_updates={
+                "reference_underlay_v1": reference,
+                "ui_navigation_target": "canvas",
+                "requested_ui_mode": "reference_underlay",
+            },
+            outcome="understood_and_answered",
+            state_changed=False,
+            confidence=0.91,
+        )
+
+    if wants_attribute_edit:
+        selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
+        assistant_message = (
+            "Block/symbol attributes can be edited in object properties: ID, label, elevation, material, size, source, and review note. "
+            "The edit remains draft_review_required and does not validate the symbol as survey-backed or engineer-reviewed."
+        )
+        return _truthful_decision_update(
+            {},
+            assistant_message=assistant_message,
+            intent="symbol_attributes",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=not bool(selected_object_ids or selected_geometry_ids),
+            action_taken="answered_block_attribute_edit_path",
+            affected_systems=["cad_symbols", "object_properties"],
+            assumptions=["Attribute edits update review metadata only."],
+            next_best_action="Select the symbol/block and edit its attributes in object properties.",
+            command_payload_updates={
+                "symbol_attribute_edit_v1": {
+                    "editable_fields": list(SYMBOL_ATTRIBUTE_FIELDS),
+                    "review_required": True,
+                    "construction_release_allowed": False,
+                },
+                "ui_navigation_target": "canvas",
+                "requested_ui_mode": "object_properties",
+            },
+            outcome="understood_and_answered",
+            state_changed=False,
+            referenced_object_ids=selected_object_ids,
+            referenced_geometry_ids=selected_geometry_ids,
+            confidence=0.9,
+        )
+
+    symbol_kind = _symbol_kind_from_message(message)
+    if wants_insert and symbol_kind:
+        symbol = build_symbol_instance(symbol_kind)
+        assistant_message = (
+            f"Prepared a {symbol['label']} symbol insert as a draft/review-required block-like object. "
+            "Its editable attributes are ID, label, elevation, material, size, source, and review note; native DWG block parity is not claimed."
+        )
+        return _truthful_decision_update(
+            {},
+            assistant_message=assistant_message,
+            intent="symbol_insert",
+            run_mode="none",
+            design_prompt="",
+            needs_clarification=False,
+            action_taken="prepared_symbol_insert",
+            affected_systems=["cad_symbols", "object_properties", "export_trace"],
+            assumptions=["Insertion creates a drafting/review aid until source evidence and reviewer checks are accepted outside the insert action."],
+            next_best_action="Place the symbol on the canvas, then edit its attributes in object properties.",
+            command_payload_updates={
+                "symbol_insert_v1": symbol,
+                "symbol_block_library_v1": library,
+                "ui_navigation_target": "canvas",
+                "requested_ui_mode": "symbol_insert",
+            },
+            outcome="understood_and_answered",
+            state_changed=False,
+            confidence=0.93,
+        )
+    return None
+
 
 def _truthful_decision_update(
     decision: Dict[str, Any],
@@ -3681,6 +3842,9 @@ def decide_chat(
     discipline_depth_decision = _discipline_depth_chat_response(message, context)
     if discipline_depth_decision is not None:
         return _enrich_response_contract(discipline_depth_decision, message=message)
+    symbol_block_decision = _symbol_block_chat_response(message, context)
+    if symbol_block_decision is not None:
+        return _enrich_response_contract(symbol_block_decision, message=message)
     plan_pdf_decision = _plan_pdf_chat_response(
         message=message,
         record=record,
