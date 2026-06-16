@@ -1486,6 +1486,40 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertFalse(missing_distance["response_metadata"]["state_changed"])
         self.assertEqual(store.saved, [])
 
+    def test_cad_command_line_chat_explains_commands_and_blockers_without_mutation(self):
+        help_result = decide_chat(
+            {
+                "message": "What CAD command line commands are available?",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=RecordingProjectStore(_record_with_handoffs([_handoff("drawn-cad", "geom-cad")])),
+            user_id="user_1",
+        )
+        blocked_result = decide_chat(
+            {
+                "message": "Why is MOVE selected blocked in the CAD command line?",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=RecordingProjectStore(_record_with_handoffs([_handoff("drawn-cad", "geom-cad")])),
+            user_id="user_1",
+        )
+
+        self.assertEqual(help_result["action_taken"], "answered_cad_command_line_help")
+        self.assertTaxonomyMetadata(help_result, "understood_and_answered")
+        self.assertIn("LINE", help_result["assistant_message"])
+        self.assertIn("manual_drawn", help_result["assistant_message"])
+        self.assertIn("draft_review_required", help_result["assistant_message"])
+        self.assertFalse(help_result["response_metadata"]["state_changed"])
+        self.assertEqual(blocked_result["action_taken"], "answered_cad_command_line_blocked_reason")
+        self.assertTaxonomyMetadata(blocked_result, "understood_needs_more_info")
+        self.assertIn("selected", blocked_result["assistant_message"].lower())
+        self.assertIn("20,0", blocked_result["assistant_message"])
+        self.assertNotIn("construction-ready", blocked_result["assistant_message"].lower())
+        self.assertFalse(blocked_result["response_metadata"]["state_changed"])
+
+
     def test_ambiguous_this_asks_for_selected_geometry(self):
         store = RecordingProjectStore(_record_with_handoffs([_handoff("drawn-1", "geom-1")]))
 

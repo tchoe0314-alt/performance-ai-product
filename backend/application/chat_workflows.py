@@ -771,6 +771,62 @@ def _geometry_edit_distance_from_message(message: str) -> Optional[float]:
         return None
 
 
+def _cad_command_line_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    mentions_command_line = (
+        "command line" in lowered
+        or "typed command" in lowered
+        or "cad command" in lowered
+        or "autocad" in lowered
+        or re.search(r"\b(line|pline|rectangle|circle|arc|offset|trim|extend|fillet|move|rotate|scale|copy|delete|dim|text|layer|snap|ortho)\b", lowered)
+    )
+    if not mentions_command_line:
+        return None
+    asks_available = any(phrase in lowered for phrase in ("what commands", "available commands", "commands are available", "how do i use", "help"))
+    asks_blocked = any(token in lowered for token in ("blocked", "can't", "cannot", "wont", "won't", "why"))
+    if not asks_available and not asks_blocked and "command line" not in lowered and "cad command" not in lowered and "autocad" not in lowered:
+        return None
+
+    selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
+    selected_count = len(selected_object_ids) + len(selected_geometry_ids)
+    blocked_reasons: List[str] = []
+    if any(token in lowered for token in ("offset", "trim", "extend", "fillet", "move", "rotate", "scale", "copy", "delete", "dim")) and selected_count == 0:
+        blocked_reasons.append("selected-object commands need one or more selected editable draft CAD objects")
+    if "offset" in lowered and (_geometry_edit_distance_from_message(message) is None):
+        blocked_reasons.append("OFFSET needs a non-zero distance, for example OFFSET 10")
+    if ("move" in lowered and "selected" in lowered and not re.search(r"-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?", lowered)):
+        blocked_reasons.append("MOVE selected needs a displacement vector, for example MOVE selected 20,0")
+
+    command_summary = (
+        "The CAD command input supports LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MOVE, ROTATE, SCALE, COPY, "
+        "DELETE, DIM, TEXT, LAYER, SNAP, and ORTHO. Simple forms include LINE 0,0 100,0; PLINE 0,0 50,0 50,50; "
+        "RECTANGLE 0,0 100,60; OFFSET 10; MOVE selected 20,0; ROTATE selected 45; and SCALE selected 1.2."
+    )
+    if blocked_reasons:
+        command_summary += " Blocked reason: " + "; ".join(blocked_reasons) + "."
+    command_summary += (
+        " These are drafting/review actions only: created or edited geometry remains manual_drawn and draft_review_required, "
+        "and command-line edits do not certify evidence, approve construction, or trigger engineering success."
+    )
+    return _truthful_decision_update(
+        {},
+        assistant_message=command_summary,
+        intent="conversation",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=bool(blocked_reasons),
+        action_taken="answered_cad_command_line_help" if not blocked_reasons else "answered_cad_command_line_blocked_reason",
+        action_blocked_reason="; ".join(blocked_reasons),
+        required_missing_inputs=blocked_reasons,
+        affected_systems=["cad_geometry"],
+        assumptions=["Typed CAD commands are drafting/review commands only and do not mutate engineering evidence from chat."],
+        next_best_action="Use the canvas command input, then review topology/source blockers before rerunning affected systems.",
+        outcome="understood_needs_more_info" if blocked_reasons else "understood_and_answered",
+        state_changed=False,
+    )
+
+
+
 def _drawn_geometry_edit_chat_response(
     decision: Dict[str, Any],
     *,
@@ -3604,6 +3660,9 @@ def decide_chat(
         payload["context"] = context
     early_project_input = _safe_dict(record.get("project_input")) if record else _safe_dict(context.get("project_input"))
     early_latest_result = _safe_dict(record.get("latest_result")) if record else _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
+    cad_command_line_decision = _cad_command_line_chat_response(message, context)
+    if cad_command_line_decision is not None:
+        return _enrich_response_contract(cad_command_line_decision, message=message)
     geometry_edit_decision = _drawn_geometry_edit_chat_response(
         {},
         message=message,

@@ -58,6 +58,12 @@ type CadHistoryEntry = {
   before: BuildingPlacement;
   after: BuildingPlacement;
 };
+type CadCommandHistoryEntry = {
+  id: string;
+  command: string;
+  status: "applied" | "blocked" | "info";
+  message: string;
+};
 type StormHydrologyOverlay = {
   inletChecks?: Array<{
     id: string;
@@ -575,7 +581,8 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: line, box, move, rotate, scale, offset, trim, extend, fillet.");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
+  const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
   const [cadDimensionMode, setCadDimensionMode] = useState<CadDimensionMode>("linear");
   const [cadDimensionLabelDraft, setCadDimensionLabelDraft] = useState("");
@@ -1866,8 +1873,72 @@ export default function PreviewPanel({
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
   }, []);
+  const pushCadCommandFeedback = useCallback((command: string, status: CadCommandHistoryEntry["status"], message: string) => {
+    setCadCommandStatus(message);
+    setCadCommandHistory((prev) => [
+      ...prev.slice(-11),
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        command: command || "COMMAND",
+        status,
+        message,
+      },
+    ]);
+  }, []);
+  const parseCadPointToken = useCallback((token: string): [number, number] | null => {
+    const match = token.trim().match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
+    if (!match) return null;
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+  }, []);
+  const parseCadPointTokens = useCallback(
+    (tokens: string[]) => tokens.map((token) => parseCadPointToken(token)).filter((point): point is [number, number] => Boolean(point)),
+    [parseCadPointToken],
+  );
+  const reviewRequiredCommandMeta = useCallback((command: string, extra: Record<string, unknown> = {}) => ({
+    cad_command: command.toUpperCase(),
+    cad_command_source: "typed_command_line",
+    source: "manual_drawn",
+    engineering_status: "draft_review_required",
+    review_status: "engineer_review_required",
+    handoff_status: "draft_review_required",
+    construction_release_allowed: false,
+    ...extra,
+  }), []);
+  const createCadCommandGeometry = useCallback(
+    (
+      command: string,
+      mode: "polyline" | "polygon" | "rect" | "point",
+      points: Array<[number, number]>,
+      options: { label?: string; meta?: Record<string, unknown>; minPoints?: number } = {},
+    ) => {
+      const minPoints = options.minPoints ?? (mode === "point" ? 1 : mode === "rect" ? 2 : mode === "polygon" ? 3 : 2);
+      if (!canDrawObjects) {
+        pushCadCommandFeedback(command, "blocked", `${command.toUpperCase()} blocked: lock a scaled site boundary before creating draft CAD geometry.`);
+        return false;
+      }
+      if (points.length < minPoints) {
+        pushCadCommandFeedback(command, "blocked", `${command.toUpperCase()} blocked: expected at least ${minPoints} coordinate point${minPoints === 1 ? "" : "s"}.`);
+        return false;
+      }
+      onCreateCustomGeometry({
+        mode,
+        points,
+        label: options.label,
+        meta: reviewRequiredCommandMeta(command, options.meta),
+      });
+      pushCadCommandFeedback(command, "applied", `${command.toUpperCase()} created manual_drawn draft_review_required geometry. Review and rerun affected systems before relying on it.`);
+      return true;
+    },
+    [canDrawObjects, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta],
+  );
   const transformSelectedCadObjects = useCallback(
     (kind: "move" | "rotate" | "scale", valueOverride?: string) => {
+      if (!selectedCadIds.length) {
+        pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: select one or more editable draft CAD objects first.`);
+        return;
+      }
       const amount = parseCadNumber(valueOverride ?? cadTransformValue, kind === "scale" ? 1 : 0);
       let applied = 0;
       let blocked = 0;
@@ -1886,7 +1957,7 @@ export default function PreviewPanel({
             const moved = transformGeometry(target.geometry as Array<[number, number]>, "move", amount);
             if (!moved.ok) {
               blocked += 1;
-              setCadCommandStatus(`MOVE blocked: ${moved.reason}`);
+              pushCadCommandFeedback("MOVE", "blocked", `MOVE blocked: ${moved.reason}`);
               return;
             }
             updates.geometry = moved.value;
@@ -1901,7 +1972,7 @@ export default function PreviewPanel({
             const rotated = transformGeometry(target.geometry as Array<[number, number]>, "rotate", amount);
             if (!rotated.ok) {
               blocked += 1;
-              setCadCommandStatus(`ROTATE blocked: ${rotated.reason}`);
+              pushCadCommandFeedback("ROTATE", "blocked", `ROTATE blocked: ${rotated.reason}`);
               return;
             }
             updates.geometry = rotated.value;
@@ -1918,7 +1989,7 @@ export default function PreviewPanel({
         const factor = amount;
         if (factor <= 0) {
           blocked += 1;
-          setCadCommandStatus("SCALE blocked: scale requires a positive factor.");
+          pushCadCommandFeedback("SCALE", "blocked", "SCALE blocked: scale requires a positive factor.");
           return;
         }
         const nextW = Math.max(1, target.w * factor);
@@ -1928,7 +1999,7 @@ export default function PreviewPanel({
           const scaled = transformGeometry(target.geometry as Array<[number, number]>, "scale", factor);
           if (!scaled.ok) {
             blocked += 1;
-            setCadCommandStatus(`SCALE blocked: ${scaled.reason}`);
+            pushCadCommandFeedback("SCALE", "blocked", `SCALE blocked: ${scaled.reason}`);
             return;
           }
           updates.geometry = scaled.value;
@@ -1942,10 +2013,50 @@ export default function PreviewPanel({
         applied += 1;
       });
       if (applied || blocked) {
-        setCadCommandStatus(`${kind.toUpperCase()} ${applied ? `applied to ${applied}` : "blocked for all"} selected object${applied === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked` : ""}.`);
+        pushCadCommandFeedback(
+          kind,
+          applied ? "applied" : "blocked",
+          `${kind.toUpperCase()} ${applied ? `applied to ${applied}` : "blocked for all"} selected object${applied === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked` : ""}.`,
+        );
       }
     },
-    [buildingPlacements, cadTransformValue, parseCadNumber, selectedCadIds, updateCadObject],
+    [buildingPlacements, cadTransformValue, parseCadNumber, pushCadCommandFeedback, selectedCadIds, updateCadObject],
+  );
+  const moveSelectedCadObjectsByVector = useCallback(
+    (dx: number, dy: number) => {
+      if (!selectedCadIds.length) {
+        pushCadCommandFeedback("MOVE", "blocked", "MOVE blocked: select one or more editable draft CAD objects first.");
+        return;
+      }
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001)) {
+        pushCadCommandFeedback("MOVE", "blocked", "MOVE blocked: provide a non-zero displacement like MOVE selected 20,0.");
+        return;
+      }
+      let applied = 0;
+      let blocked = 0;
+      selectedCadIds.forEach((id) => {
+        const target = buildingPlacements.find((item) => item.id === id);
+        if (!target || target.locked || target.type === "site") {
+          blocked += 1;
+          return;
+        }
+        const updates: Partial<BuildingPlacement> = {
+          x: (target.x ?? 0) + dx,
+          y: (target.y ?? 0) + dy,
+        };
+        if (Array.isArray(target.geometry)) {
+          updates.geometry = translateSiteGeometry(target.geometry as Array<[number, number]>, { x: dx, y: dy });
+        }
+        updateCadObject(target, updates, "Move");
+        applied += 1;
+      });
+      pushCadCommandFeedback(
+        "MOVE",
+        applied ? "applied" : "blocked",
+        `MOVE ${applied ? `applied ${dx.toFixed(3).replace(/\.?0+$/, "")},${dy.toFixed(3).replace(/\.?0+$/, "")} to ${applied}` : "blocked for all"} selected draft object${applied === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked` : ""}.`,
+      );
+    },
+    [buildingPlacements, pushCadCommandFeedback, selectedCadIds, updateCadObject],
   );
   const applyCadCoordinate = useCallback(() => {
     const x = parseCadNumber(cadCoordinateDraft.x, NaN);
@@ -2005,11 +2116,17 @@ export default function PreviewPanel({
     setCadCommandStatus(`OFFSET applied ${distance} ft as draft review geometry.`);
   }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
   const offsetSelectedCadObjectBy = useCallback((valueOverride?: string) => {
-    if (!selectedCadObject) return;
+    if (!selectedCadObject) {
+      pushCadCommandFeedback("OFFSET", "blocked", "OFFSET blocked: select one editable draft CAD object first.");
+      return;
+    }
     const distance = parseCadNumber(valueOverride ?? cadOffsetDistance, 0);
-    if (!distance) return;
+    if (!distance) {
+      pushCadCommandFeedback("OFFSET", "blocked", "OFFSET blocked: provide a non-zero distance like OFFSET 10.");
+      return;
+    }
     if (!Array.isArray(selectedCadObject.geometry)) {
-      setCadCommandStatus("OFFSET blocked: selected object has no editable line or polygon vertices.");
+      pushCadCommandFeedback("OFFSET", "blocked", "OFFSET blocked: selected object has no editable line or polygon vertices.");
       return;
     }
     const result = offsetGeometry(
@@ -2018,7 +2135,7 @@ export default function PreviewPanel({
       selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect",
     );
     if (!result.ok) {
-      setCadCommandStatus(`OFFSET blocked: ${result.reason}`);
+      pushCadCommandFeedback("OFFSET", "blocked", `OFFSET blocked: ${result.reason}`);
       return;
     }
     const nextBounds = boundsForSiteGeometry(result.value);
@@ -2035,15 +2152,18 @@ export default function PreviewPanel({
       },
     };
     updateCadObject(selectedCadObject, updates, "Offset");
-    setCadCommandStatus(`OFFSET applied ${distance} ft as draft review geometry.`);
-  }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
+    pushCadCommandFeedback("OFFSET", "applied", `OFFSET applied ${distance} ft as draft review geometry.`);
+  }, [cadOffsetDistance, parseCadNumber, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
   const trimExtendSelectedCadObject = useCallback(
     (kind: "trim" | "extend") => {
-      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) return;
+      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
+        pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: select one editable line/polyline draft object first.`);
+        return;
+      }
       const geometry = selectedCadObject.geometry as Array<[number, number]>;
       const amount = Math.max(1, parseCadNumber(cadTransformValue, 10));
       if (selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect") {
-        setCadCommandStatus(`${kind.toUpperCase()} blocked: polygon trim/extend needs an explicit cutting edge and is not applied automatically.`);
+        pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: polygon trim/extend needs an explicit cutting edge and is not applied automatically.`);
         return;
       }
       const result = trimOrExtendGeometry(geometry, kind, cadSegments, {
@@ -2053,7 +2173,7 @@ export default function PreviewPanel({
         siteHeight: lotHeight,
       });
       if (!result.ok) {
-        setCadCommandStatus(`${kind.toUpperCase()} blocked: ${result.reason}`);
+        pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: ${result.reason}`);
         return;
       }
       const nextBounds = boundsForSiteGeometry(result.value);
@@ -2068,12 +2188,15 @@ export default function PreviewPanel({
         },
         kind === "trim" ? "Trim" : "Extend",
       );
-      setCadCommandStatus(`${kind.toUpperCase()} applied to terminal segment as draft review geometry.`);
+      pushCadCommandFeedback(kind, "applied", `${kind.toUpperCase()} applied to terminal segment as draft review geometry.`);
     },
-    [cadSegments, cadTransformValue, lotHeight, lotWidth, parseCadNumber, selectedCadObject, updateCadObject],
+    [cadSegments, cadTransformValue, lotHeight, lotWidth, parseCadNumber, pushCadCommandFeedback, selectedCadObject, updateCadObject],
   );
   const filletSelectedCadObject = useCallback(() => {
-    if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) return;
+    if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
+      pushCadCommandFeedback("FILLET", "blocked", "FILLET blocked: select one editable draft object with vertices first.");
+      return;
+    }
     const geometry = selectedCadObject.geometry as Array<[number, number]>;
     const radius = Math.max(1, parseCadNumber(cadFilletRadius, 5));
     const index = selectedVertex?.id === selectedCadObject.id ? selectedVertex.index : 1;
@@ -2084,7 +2207,7 @@ export default function PreviewPanel({
       selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect",
     );
     if (!result.ok) {
-      setCadCommandStatus(`FILLET blocked: ${result.reason}`);
+      pushCadCommandFeedback("FILLET", "blocked", `FILLET blocked: ${result.reason}`);
       return;
     }
     const nextBounds = boundsForSiteGeometry(result.value);
@@ -2105,11 +2228,14 @@ export default function PreviewPanel({
       },
       "Fillet",
     );
-    setCadCommandStatus("FILLET applied as tangent chord draft geometry.");
-  }, [cadFilletRadius, parseCadNumber, selectedCadObject, selectedVertex, updateCadObject]);
+    pushCadCommandFeedback("FILLET", "applied", "FILLET applied as tangent chord draft geometry.");
+  }, [cadFilletRadius, parseCadNumber, pushCadCommandFeedback, selectedCadObject, selectedVertex, updateCadObject]);
 
   const applySelectedCadDimension = useCallback(() => {
-    if (!selectedCadObject || selectedCadMetrics === null) return;
+    if (!selectedCadObject || selectedCadMetrics === null) {
+      pushCadCommandFeedback("DIM", "blocked", "DIM blocked: select one editable line/polyline draft object first.");
+      return;
+    }
     const defaultLabel =
       cadDimensionMode === "linear"
         ? `${selectedCadMetrics.firstLength.toFixed(1)} ft`
@@ -2125,7 +2251,8 @@ export default function PreviewPanel({
       },
       "Dimension",
     );
-  }, [cadDimensionLabelDraft, cadDimensionMode, selectedCadMetrics, selectedCadObject, updateCadObject]);
+    pushCadCommandFeedback("DIM", "applied", "DIM label stored on selected draft geometry for review.");
+  }, [cadDimensionLabelDraft, cadDimensionMode, pushCadCommandFeedback, selectedCadMetrics, selectedCadObject, updateCadObject]);
 
   const applyCadProperties = useCallback(() => {
     if (!selectedCadObject) return;
@@ -2185,55 +2312,215 @@ export default function PreviewPanel({
   const runCadCommand = useCallback(() => {
     const raw = cadCommandDraft.trim();
     if (!raw) return;
-    const [commandRaw, valueRaw] = raw.split(/\s+/);
-    const command = commandRaw.toLowerCase();
-    const value = valueRaw ?? cadTransformValue;
-    if (command === "line") {
-      setDraftPoints([]);
-      setDraftPreviewPoint(null);
-      setDrawMode("polyline");
-      onSetPreviewInteraction("edit");
-      setCadCommandStatus("LINE active. Pick two or more points, then Finish.");
+    const tokens = raw.split(/\s+/);
+    const [commandRaw, ...args] = tokens;
+    const command = commandRaw.toUpperCase();
+    const commandKey = command === "RECT" ? "RECTANGLE" : command;
+    const pointArgs = parseCadPointTokens(args.filter((arg) => arg.toLowerCase() !== "selected"));
+    const firstValue = args.find((arg) => arg.toLowerCase() !== "selected") ?? cadTransformValue;
+    const selectedRequested = args.some((arg) => arg.toLowerCase() === "selected");
+
+    if (commandKey === "LINE") {
+      if (pointArgs.length >= 2) {
+        createCadCommandGeometry("LINE", "polyline", pointArgs, { label: "Command Line", minPoints: 2 });
+      } else {
+        setDraftPoints([]);
+        setDraftPreviewPoint(null);
+        setDrawMode("polyline");
+        onSetPreviewInteraction("edit");
+        pushCadCommandFeedback("LINE", "info", "LINE active. Type LINE x,y x,y or pick two or more points, then Finish.");
+      }
       return;
     }
-    if (command === "box" || command === "rect") {
-      setDraftPoints([]);
-      setDraftPreviewPoint(null);
-      setDrawMode("rect");
-      onSetPreviewInteraction("edit");
-      setCadCommandStatus("BOX active. Pick opposite corners, then Finish.");
+    if (commandKey === "PLINE") {
+      if (pointArgs.length >= 2) {
+        createCadCommandGeometry("PLINE", "polyline", pointArgs, { label: "Command Polyline", minPoints: 2 });
+      } else {
+        setDraftPoints([]);
+        setDraftPreviewPoint(null);
+        setDrawMode("polyline");
+        onSetPreviewInteraction("edit");
+        pushCadCommandFeedback("PLINE", "info", "PLINE active. Type PLINE x,y x,y x,y or pick vertices, then Finish.");
+      }
       return;
     }
-    if (["move", "rotate", "scale"].includes(command)) {
-      setCadTransformValue(value);
-      transformSelectedCadObjects(command as "move" | "rotate" | "scale", value);
-      setCadCommandStatus(`${command.toUpperCase()} applied to selected CAD object(s).`);
+    if (commandKey === "RECTANGLE" || commandKey === "BOX") {
+      if (pointArgs.length >= 2) {
+        createCadCommandGeometry("RECTANGLE", "rect", pointArgs.slice(0, 2), { label: "Command Rectangle", minPoints: 2 });
+      } else {
+        setDraftPoints([]);
+        setDraftPreviewPoint(null);
+        setDrawMode("rect");
+        onSetPreviewInteraction("edit");
+        pushCadCommandFeedback("RECTANGLE", "info", "RECTANGLE active. Type RECTANGLE x,y x,y or pick opposite corners, then Finish.");
+      }
       return;
     }
-    if (command === "offset") {
-      setCadOffsetDistance(value);
-      offsetSelectedCadObjectBy(value);
+    if (commandKey === "CIRCLE") {
+      const radius = parseCadNumber(args[1] ?? args[0] ?? "", NaN);
+      const center = pointArgs[0];
+      if (!center || !Number.isFinite(radius) || radius <= 0) {
+        pushCadCommandFeedback("CIRCLE", "blocked", "CIRCLE blocked: use CIRCLE centerX,centerY radius.");
+        return;
+      }
+      const points = Array.from({ length: 32 }, (_, index) => {
+        const radians = (index / 32) * Math.PI * 2;
+        return [center[0] + Math.cos(radians) * radius, center[1] + Math.sin(radians) * radius] as [number, number];
+      });
+      createCadCommandGeometry("CIRCLE", "polygon", points, {
+        label: "Command Circle",
+        meta: { cad_curve_storage: "32_segment_chord_polygon", cad_radius_ft: radius },
+        minPoints: 3,
+      });
       return;
     }
-    if (command === "trim" || command === "extend") {
-      setCadTransformValue(value);
-      trimExtendSelectedCadObject(command);
+    if (commandKey === "ARC") {
+      const center = pointArgs[0];
+      const radius = parseCadNumber(args[1] ?? "", NaN);
+      const startDeg = parseCadNumber(args[2] ?? "", NaN);
+      const endDeg = parseCadNumber(args[3] ?? "", NaN);
+      if (!center || !Number.isFinite(radius) || radius <= 0 || !Number.isFinite(startDeg) || !Number.isFinite(endDeg)) {
+        pushCadCommandFeedback("ARC", "blocked", "ARC blocked: use ARC centerX,centerY radius startDeg endDeg.");
+        return;
+      }
+      const sweep = endDeg >= startDeg ? endDeg - startDeg : endDeg + 360 - startDeg;
+      const steps = Math.max(4, Math.ceil(sweep / 12));
+      const points = Array.from({ length: steps + 1 }, (_, index) => {
+        const radians = ((startDeg + (sweep * index) / steps) * Math.PI) / 180;
+        return [center[0] + Math.cos(radians) * radius, center[1] + Math.sin(radians) * radius] as [number, number];
+      });
+      createCadCommandGeometry("ARC", "polyline", points, {
+        label: "Command Arc",
+        meta: { cad_curve_storage: "sampled_chord_polyline", cad_radius_ft: radius, cad_start_deg: startDeg, cad_end_deg: endDeg },
+        minPoints: 2,
+      });
       return;
     }
-    if (command === "fillet") {
-      setCadFilletRadius(value);
+    if (commandKey === "MOVE") {
+      const vector = pointArgs[0];
+      if (selectedRequested && vector) {
+        moveSelectedCadObjectsByVector(vector[0], vector[1]);
+      } else {
+        setCadTransformValue(firstValue);
+        transformSelectedCadObjects("move", firstValue);
+      }
+      return;
+    }
+    if (commandKey === "ROTATE" || commandKey === "SCALE") {
+      setCadTransformValue(firstValue);
+      transformSelectedCadObjects(commandKey.toLowerCase() as "rotate" | "scale", firstValue);
+      return;
+    }
+    if (commandKey === "COPY") {
+      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
+        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: select one editable draft CAD object with geometry first.");
+        return;
+      }
+      const vector = pointArgs[0] ?? [10, 10];
+      const selectedGeometry = selectedCadObject.geometry as Array<[number, number]>;
+      const copiedGeometry = translateSiteGeometry(selectedGeometry, { x: vector[0], y: vector[1] }) ?? selectedGeometry;
+      createCadCommandGeometry("COPY", selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? "polygon" : "polyline", copiedGeometry, {
+        label: `${selectedCadObject.label || "CAD object"} Copy`,
+        meta: { copied_from_object_id: selectedCadObject.id },
+        minPoints: selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? 3 : 2,
+      });
+      return;
+    }
+    if (commandKey === "DELETE" || commandKey === "ERASE") {
+      if (!selectedDeletableObject) {
+        pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft CAD object first.");
+        return;
+      }
+      onRemoveBuilding(selectedDeletableObject.id);
+      pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected draft object. Downstream systems remain review-required until rerun.");
+      return;
+    }
+    if (commandKey === "OFFSET") {
+      setCadOffsetDistance(firstValue);
+      offsetSelectedCadObjectBy(firstValue);
+      return;
+    }
+    if (commandKey === "TRIM" || commandKey === "EXTEND") {
+      setCadTransformValue(firstValue);
+      trimExtendSelectedCadObject(commandKey.toLowerCase() as "trim" | "extend");
+      return;
+    }
+    if (commandKey === "FILLET") {
+      setCadFilletRadius(firstValue);
       filletSelectedCadObject();
       return;
     }
-    setCadCommandStatus(`Unknown command: ${command}. Try line, box, move, rotate, scale, offset, trim, extend, or fillet.`);
+    if (commandKey === "DIM") {
+      applySelectedCadDimension();
+      return;
+    }
+    if (commandKey === "TEXT") {
+      const point = pointArgs[0];
+      const text = args.filter((arg) => !parseCadPointToken(arg)).join(" ").trim();
+      if (!point || !text) {
+        pushCadCommandFeedback("TEXT", "blocked", "TEXT blocked: use TEXT x,y note text.");
+        return;
+      }
+      createCadCommandGeometry("TEXT", "point", [point], { label: text.slice(0, 48), meta: { cad_text: text, cad_layer: "C-ANNO" }, minPoints: 1 });
+      return;
+    }
+    if (commandKey === "LAYER") {
+      const layer = (args[0] || "").trim().toUpperCase();
+      if (!layer) {
+        pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: provide a layer name like LAYER C-UTIL.");
+        return;
+      }
+      setCadLayerDraft(layer);
+      if (selectedCadIds.length) {
+        selectedCadIds.forEach((id) => {
+          const target = buildingPlacements.find((item) => item.id === id);
+          if (!target || target.locked || target.type === "site") return;
+          updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: layer } }, "Layer");
+        });
+        pushCadCommandFeedback("LAYER", "applied", `LAYER applied ${layer} to selected draft object(s).`);
+      } else {
+        pushCadCommandFeedback("LAYER", "info", `Current draft layer set to ${layer}. Select objects to apply it.`);
+      }
+      return;
+    }
+    if (commandKey === "SNAP") {
+      const arg = (args[0] || "").toLowerCase();
+      const next = arg === "off" ? false : arg === "on" ? true : !cadSnapEnabled;
+      setCadSnapEnabled(next);
+      pushCadCommandFeedback("SNAP", "info", `SNAP ${next ? "on" : "off"}.`);
+      return;
+    }
+    if (commandKey === "ORTHO") {
+      const arg = (args[0] || "").toLowerCase();
+      const next = arg === "off" ? false : arg === "on" ? true : !cadOrthoEnabled;
+      setCadOrthoEnabled(next);
+      pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
+      return;
+    }
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, or ORTHO.`);
   }, [
+    applySelectedCadDimension,
+    buildingPlacements,
     cadCommandDraft,
+    cadOrthoEnabled,
+    cadSnapEnabled,
     cadTransformValue,
+    createCadCommandGeometry,
     filletSelectedCadObject,
+    moveSelectedCadObjectsByVector,
     offsetSelectedCadObjectBy,
     onSetPreviewInteraction,
+    onRemoveBuilding,
+    parseCadNumber,
+    parseCadPointToken,
+    parseCadPointTokens,
+    pushCadCommandFeedback,
+    selectedCadIds,
+    selectedCadObject,
+    selectedDeletableObject,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
+    updateCadObject,
   ]);
 
   useEffect(() => {
@@ -5463,12 +5750,28 @@ export default function PreviewPanel({
                         runCadCommand();
                       }
                     }}
-                    placeholder="line, box, move 10"
+                    placeholder="LINE 0,0 100,0"
                     className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
                   />
                   <button type="button" onClick={runCadCommand} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white">Run</button>
                 </div>
                 <p className="mt-2 text-[11px] font-medium text-slate-500">{cadCommandStatus}</p>
+                <div className="mt-2 max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2" data-testid="cad-command-feedback-panel" aria-live="polite">
+                  {cadCommandHistory.length ? (
+                    <ol className="space-y-1 text-[11px]">
+                      {cadCommandHistory.slice().reverse().map((entry) => (
+                        <li key={entry.id} className="grid grid-cols-[4.5rem_1fr] gap-2">
+                          <span className={entry.status === "blocked" ? "font-semibold text-amber-700" : entry.status === "applied" ? "font-semibold text-emerald-700" : "font-semibold text-slate-500"}>
+                            {entry.command}
+                          </span>
+                          <span className="min-w-0 break-words text-slate-600">{entry.message}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="text-[11px] font-medium text-slate-500">Command feedback appears here.</p>
+                  )}
+                </div>
               </section>
               <section className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Readout / transform</p>
