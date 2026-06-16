@@ -106,13 +106,48 @@ class GisProviderRegistryTests(unittest.TestCase):
         gretna = provider_packs_for_location(address="20525 Margo St, Gretna, NE", lat=41.185240483552, lng=-96.237022515225)
         austin = provider_packs_for_location(address="301 W 2nd St, Austin, TX", lat=30.265, lng=-97.747)
         atlanta = provider_packs_for_location(address="55 Trinity Ave SW, Atlanta, GA", lat=33.7488, lng=-84.3903)
+        dallas = provider_packs_for_location(address="1500 Marilla St, Dallas, TX", lat=32.7767, lng=-96.7970)
+        houston = provider_packs_for_location(address="1001 Preston St, Houston, TX", lat=29.7604, lng=-95.3698)
+        denver = provider_packs_for_location(address="201 W Colfax Ave, Denver, CO", lat=39.7392, lng=-104.9903)
+        phoenix = provider_packs_for_location(address="301 W Jefferson St, Phoenix, AZ", lat=33.4484, lng=-112.0740)
+        charlotte = provider_packs_for_location(address="600 E 4th St, Charlotte, NC", lat=35.2271, lng=-80.8431)
 
         self.assertEqual(gretna[0]["pack_id"], "gretna_ne_sarpy_county")
         self.assertEqual(austin[0]["pack_id"], "austin_tx_city")
         self.assertEqual(atlanta[0]["pack_id"], "atlanta_fulton_ga")
+        self.assertEqual(dallas[0]["pack_id"], "dallas_tx_city")
+        self.assertEqual(houston[0]["pack_id"], "houston_harris_tx")
+        self.assertEqual(denver[0]["pack_id"], "denver_co_city_county")
+        self.assertEqual(phoenix[0]["pack_id"], "phoenix_maricopa_az")
+        self.assertEqual(charlotte[0]["pack_id"], "charlotte_mecklenburg_nc")
         self.assertTrue(any(item["source_type"] == "buildings" for item in austin[0]["providers"]))
         self.assertTrue(any(item["source_type"] == "parcels" for item in atlanta[0]["providers"]))
         self.assertTrue(any(item["source_type"] == "buildings" for item in atlanta[0]["known_gaps"]))
+        self.assertTrue(any(item["source_type"] == "roads_row" for item in dallas[0]["providers"]))
+        self.assertTrue(any(item["source_type"] == "buildings" for item in houston[0]["known_gaps"]))
+        self.assertTrue(any(item["source_type"] == "buildings" for item in denver[0]["providers"]))
+        self.assertTrue(any(item["source_type"] == "floodplain" for item in phoenix[0]["providers"]))
+        self.assertTrue(any(item["source_type"] == "roads_row" for item in charlotte[0]["known_gaps"]))
+
+    def test_new_market_provider_packs_are_review_required_source_traced(self) -> None:
+        cases = [
+            ("1500 Marilla St, Dallas, TX", 32.7767, -96.7970, "https://gis.dallascityhall.com/arcgis/rest/services/Basemap/DallasTaxParcels/FeatureServer"),
+            ("1001 Preston St, Houston, TX", 29.7604, -95.3698, "https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/MapServer"),
+            ("201 W Colfax Ave, Denver, CO", 39.7392, -104.9903, "https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_PROP_PARCELS_A/FeatureServer"),
+            ("301 W Jefferson St, Phoenix, AZ", 33.4484, -112.0740, "https://gis.mcassessor.maricopa.gov/arcgis/rest/services/Parcels/MapServer"),
+            ("600 E 4th St, Charlotte, NC", 35.2271, -80.8431, "https://meckgis.mecklenburgcountync.gov/server/rest/services/TaxParcelBoundaries/FeatureServer"),
+        ]
+
+        for address, lat, lng, expected_url in cases:
+            with self.subTest(address=address):
+                providers = target_market_provider_records(address=address, lat=lat, lng=lng)
+                registry = build_provider_registry(include_builtin=False, providers=providers)
+                urls = {item["service_url"] for item in registry["providers"]}
+
+                self.assertIn(expected_url, urls)
+                self.assertTrue(all(item["review_required"] and not item["survey_backed"] for item in registry["providers"]))
+                self.assertTrue(all(item["arcgis"]["service_kind"] in {"FeatureServer", "MapServer"} for item in registry["providers"]))
+                self.assertGreaterEqual(registry["queryable_provider_count"], 2)
 
     def test_non_queryable_vector_tile_source_is_known_but_not_selected(self) -> None:
         vector = build_known_provider_record(

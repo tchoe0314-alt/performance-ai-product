@@ -18,6 +18,11 @@ DEFAULT_STALE_AFTER_DAYS = 90
 SARPY_COUNTY_BBOX = {"west": -96.3426, "south": 40.9837, "east": -95.8407, "north": 41.2048}
 AUSTIN_BBOX = {"west": -97.94, "south": 30.05, "east": -97.56, "north": 30.52}
 FULTON_COUNTY_BBOX = {"west": -84.85, "south": 33.50, "east": -84.05, "north": 34.25}
+DALLAS_BBOX = {"west": -97.04, "south": 32.55, "east": -96.52, "north": 33.03}
+HARRIS_COUNTY_BBOX = {"west": -96.04, "south": 29.49, "east": -94.91, "north": 30.17}
+DENVER_COUNTY_BBOX = {"west": -105.11, "south": 39.61, "east": -104.60, "north": 39.92}
+MARICOPA_COUNTY_BBOX = {"west": -113.34, "south": 32.50, "east": -111.04, "north": 34.05}
+MECKLENBURG_COUNTY_BBOX = {"west": -81.06, "south": 35.00, "east": -80.55, "north": 35.52}
 
 
 def _utc_now_iso() -> str:
@@ -283,6 +288,17 @@ def _pack_record(pack_id: str, label: str, jurisdiction: Dict[str, Any], provide
     }
 
 
+def _gap(source_type: str, label: str, message: str, *, status: str = "local_provider_unknown", source_url: str = "") -> Dict[str, Any]:
+    record = {"source_type": source_type, "label": label, "status": status, "message": message}
+    if source_url:
+        record["source_url"] = source_url
+    return record
+
+
+def _address_mentions(text: str, *terms: str) -> bool:
+    return any(term in text for term in terms)
+
+
 def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any = None, location_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     text = safe_str(address).lower()
     loc = safe_dict(location_context)
@@ -378,6 +394,80 @@ def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any 
             {"source_type": "wetlands", "label": "local wetlands", "status": "local_provider_unknown", "message": "No verified queryable local wetlands provider is configured; use USFWS NWI as national candidate fallback where available."},
         ]
         packs.append(_pack_record("atlanta_fulton_ga", "Atlanta/Fulton County, GA provider pack", fulton, providers, gaps))
+    address_in_dallas = _address_mentions(text, "dallas") and (" tx" in text or "texas" in text)
+    if _point_in_bbox(lat, lng, DALLAS_BBOX) or address_in_dallas:
+        dallas = {"level": "city", "city": "Dallas", "county": "Dallas County", "state": "TX", "target_market": "dallas_tx"}
+        providers = [
+            build_arcgis_provider_record(source_type="parcels", service_url="https://gis.dallascityhall.com/arcgis/rest/services/Basemap/DallasTaxParcels/FeatureServer", layer_id=0, name="City of Dallas tax parcels", jurisdiction=dallas, jurisdiction_level="city", notes="City of Dallas Basemap DallasTaxParcels FeatureServer layer 0; candidate parcel context only."),
+            build_arcgis_provider_record(source_type="roads_row", service_url="https://gis.dallascityhall.com/arcgis/rest/services/Pbw_public/ROWMSReferenceLayers/MapServer", layer_id=0, name="City of Dallas ROW centerline", jurisdiction=dallas, jurisdiction_level="city", notes="Dallas ROWMS reference ROW Centerline layer; context only, not ROW survey/control."),
+            build_arcgis_provider_record(source_type="roads_row", service_url="https://gis.dallascityhall.com/arcgis/rest/services/Basemap/DallasAreaRoads/MapServer", layer_id=2, name="City of Dallas area roads", jurisdiction=dallas, jurisdiction_level="city", notes="DallasAreaRoads streets layer; road context only."),
+        ]
+        gaps = [
+            _gap("buildings", "building footprints", "No verified queryable City of Dallas/Dallas County building-footprint provider is configured for candidate extraction."),
+            _gap("utilities", "existing utilities", "No verified queryable Dallas utility owner/jurisdiction provider is configured; require utility-owner records and locates before reliance."),
+            _gap("contours", "contours", "No verified queryable Dallas contour/elevation line provider is configured; use USGS 3DEP point elevation as national candidate fallback where available."),
+            _gap("wetlands", "local wetlands", "No verified queryable local Dallas wetlands provider is configured; use USFWS NWI as national candidate fallback where available."),
+        ]
+        packs.append(_pack_record("dallas_tx_city", "Dallas, TX provider pack", dallas, providers, gaps))
+    address_in_harris = _address_mentions(text, "houston", "harris county") and (" tx" in text or "texas" in text)
+    if _point_in_bbox(lat, lng, HARRIS_COUNTY_BBOX) or address_in_harris:
+        harris = {"level": "county", "city": "Houston", "county": "Harris County", "state": "TX", "target_market": "houston_harris_tx"}
+        providers = [
+            build_arcgis_provider_record(source_type="parcels", service_url="https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/MapServer", layer_id=0, name="Harris County HCAD parcels", jurisdiction=harris, jurisdiction_level="county", notes="Harris County HCAD Parcels MapServer layer 0; candidate parcel context only."),
+            build_arcgis_provider_record(source_type="roads_row", service_url="https://www.gis.hctx.net/arcgis/rest/services/ITC/CTS_roads/MapServer", layer_id=0, name="Harris County roads", jurisdiction=harris, jurisdiction_level="county", notes="Harris County CTS roads layer; road context only, not ROW survey/control."),
+        ]
+        gaps = [
+            _gap("buildings", "building footprints", "No verified queryable Houston/Harris building-footprint provider is configured for candidate extraction."),
+            _gap("utilities", "existing utilities", "No verified queryable Houston/Harris utility owner/jurisdiction provider is configured; require utility-owner records and locates before reliance."),
+            _gap("contours", "contours", "No verified queryable Houston/Harris contour provider is configured; use USGS 3DEP point elevation as national candidate fallback where available."),
+            _gap("wetlands", "local wetlands", "No verified queryable local Houston/Harris wetlands provider is configured; use USFWS NWI as national candidate fallback where available."),
+        ]
+        packs.append(_pack_record("houston_harris_tx", "Houston/Harris County, TX provider pack", harris, providers, gaps))
+    address_in_denver = _address_mentions(text, "denver") and (" co" in text or "colorado" in text)
+    if _point_in_bbox(lat, lng, DENVER_COUNTY_BBOX) or address_in_denver:
+        denver = {"level": "city_county", "city": "Denver", "county": "Denver County", "state": "CO", "target_market": "denver_co"}
+        providers = [
+            build_arcgis_provider_record(source_type="parcels", service_url="https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_PROP_PARCELS_A/FeatureServer", layer_id=245, name="Denver open data parcels", jurisdiction=denver, jurisdiction_level="city", notes="Denver Open Data Catalog hosted FeatureServer PROP_PARCELS_A layer; candidate parcel context only."),
+            build_arcgis_provider_record(source_type="buildings", service_url="https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_PROP_BUILDINGOUTLINES_A/FeatureServer", layer_id=111, name="Denver building outlines", jurisdiction=denver, jurisdiction_level="city", notes="Denver Open Data building outlines layer; candidate context only."),
+            build_arcgis_provider_record(source_type="roads_row", service_url="https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_TRANS_STREET_L/FeatureServer", layer_id=145, name="Denver streets", jurisdiction=denver, jurisdiction_level="city", notes="Denver street centerline/context layer; not ROW survey/control."),
+            build_arcgis_provider_record(source_type="floodplain", service_url="https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_PLAN_FEMAFLOODPLAIN_A/FeatureServer", layer_id=389, name="Denver FEMA floodplain", jurisdiction=denver, jurisdiction_level="city", notes="Denver-hosted FEMA floodplain context; FEMA NFHL remains national fallback."),
+            build_arcgis_provider_record(source_type="zoning", service_url="https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_ZONE_ZONING_A/FeatureServer", layer_id=209, name="Denver zoning", jurisdiction=denver, jurisdiction_level="city", notes="Zoning context requires jurisdiction review."),
+        ]
+        gaps = [
+            _gap("utilities", "existing utilities", "No verified queryable Denver utility owner/jurisdiction provider is configured; require utility-owner records and locates before reliance."),
+            _gap("contours", "contours", "No verified queryable Denver ground-surface contour provider is configured in this pack; use USGS 3DEP point elevation as national candidate fallback where available."),
+            _gap("wetlands", "local wetlands", "No verified queryable local Denver wetlands provider is configured; use USFWS NWI as national candidate fallback where available."),
+        ]
+        packs.append(_pack_record("denver_co_city_county", "Denver/Denver County, CO provider pack", denver, providers, gaps))
+    address_in_maricopa = _address_mentions(text, "phoenix", "maricopa") and (" az" in text or "arizona" in text)
+    if _point_in_bbox(lat, lng, MARICOPA_COUNTY_BBOX) or address_in_maricopa:
+        maricopa = {"level": "county", "city": "Phoenix", "county": "Maricopa County", "state": "AZ", "target_market": "phoenix_maricopa_az"}
+        providers = [
+            build_arcgis_provider_record(source_type="parcels", service_url="https://gis.mcassessor.maricopa.gov/arcgis/rest/services/Parcels/MapServer", layer_id=0, name="Maricopa County assessor parcels", jurisdiction=maricopa, jurisdiction_level="county", notes="Maricopa County Assessor Parcels MapServer layer 0; candidate parcel context only."),
+            build_arcgis_provider_record(source_type="roads_row", service_url="https://gis.mcassessor.maricopa.gov/arcgis/rest/services/Streets/MapServer", layer_id=0, name="Maricopa County assessor streets", jurisdiction=maricopa, jurisdiction_level="county", notes="Maricopa County Assessor Streets MapServer layer; road context only."),
+            build_arcgis_provider_record(source_type="floodplain", service_url="https://gis.mcassessor.maricopa.gov/arcgis/rest/services/Flood/MapServer", layer_id=0, name="Maricopa County assessor flood", jurisdiction=maricopa, jurisdiction_level="county", notes="Maricopa County Assessor Flood MapServer layer; flood context only, FEMA NFHL remains national fallback."),
+        ]
+        gaps = [
+            _gap("buildings", "building footprints", "No verified queryable Phoenix/Maricopa building-footprint provider is configured for candidate extraction."),
+            _gap("utilities", "existing utilities", "No verified queryable Phoenix/Maricopa utility owner/jurisdiction provider is configured; require utility-owner records and locates before reliance."),
+            _gap("contours", "contours", "No verified queryable Phoenix/Maricopa contour provider is configured; use USGS 3DEP point elevation as national candidate fallback where available."),
+            _gap("wetlands", "local wetlands", "No verified queryable local Phoenix/Maricopa wetlands provider is configured; use USFWS NWI as national candidate fallback where available."),
+        ]
+        packs.append(_pack_record("phoenix_maricopa_az", "Phoenix/Maricopa County, AZ provider pack", maricopa, providers, gaps))
+    address_in_mecklenburg = _address_mentions(text, "charlotte", "mecklenburg") and (" nc" in text or "north carolina" in text)
+    if _point_in_bbox(lat, lng, MECKLENBURG_COUNTY_BBOX) or address_in_mecklenburg:
+        mecklenburg = {"level": "county", "city": "Charlotte", "county": "Mecklenburg County", "state": "NC", "target_market": "charlotte_mecklenburg_nc"}
+        providers = [
+            build_arcgis_provider_record(source_type="parcels", service_url="https://meckgis.mecklenburgcountync.gov/server/rest/services/TaxParcelBoundaries/FeatureServer", layer_id=0, name="Mecklenburg County tax parcel boundaries", jurisdiction=mecklenburg, jurisdiction_level="county", notes="Mecklenburg County Tax Parcel Boundaries FeatureServer layer 0; candidate parcel context only."),
+            build_arcgis_provider_record(source_type="buildings", service_url="https://meckgis.mecklenburgcountync.gov/server/rest/services/BuildingFootprints/FeatureServer", layer_id=0, name="Mecklenburg County building footprints", jurisdiction=mecklenburg, jurisdiction_level="county", notes="Mecklenburg County Building Footprints FeatureServer layer 0; candidate context only."),
+        ]
+        gaps = [
+            _gap("roads_row", "roads/right-of-way", "No verified queryable Charlotte/Mecklenburg road/ROW provider is configured in this pack."),
+            _gap("utilities", "existing utilities", "No verified queryable Charlotte/Mecklenburg utility owner/jurisdiction provider is configured; require utility-owner records and locates before reliance."),
+            _gap("contours", "contours", "No verified queryable Charlotte/Mecklenburg contour provider is configured; use USGS 3DEP point elevation as national candidate fallback where available."),
+            _gap("wetlands", "local wetlands", "No verified queryable local Charlotte/Mecklenburg wetlands provider is configured; use USFWS NWI as national candidate fallback where available."),
+        ]
+        packs.append(_pack_record("charlotte_mecklenburg_nc", "Charlotte/Mecklenburg County, NC provider pack", mecklenburg, providers, gaps))
     return packs
 
 
