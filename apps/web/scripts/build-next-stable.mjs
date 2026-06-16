@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { access, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const distDir = process.env.NEXT_DIST_DIR || ".next";
 const nextDir = resolve(process.cwd(), distDir);
+const defaultNextDir = resolve(process.cwd(), ".next");
 const generatedArtifactPattern =
   /(?:^|\/)\.next(?:[^/]*)\/(?:dev\/)?(?:server\/)?(?:pages-manifest|routes-manifest|build-manifest|app-build-manifest|required-server-files|export-detail)\.json/;
 const generatedNextJsonPattern = /(?:^|\/)\.next(?:[^/]*)\/.*\.json/;
@@ -38,9 +39,27 @@ async function run(command, args) {
   });
 }
 
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function normalizeDistDir() {
+  if (nextDir === defaultNextDir || !(await exists(defaultNextDir)) || (await exists(nextDir))) {
+    return;
+  }
+  await rm(nextDir, { force: true, recursive: true });
+  await rename(defaultNextDir, nextDir);
+}
+
 for (let attempt = 1; attempt <= 3; attempt += 1) {
   const result = await run("next", ["build", "--webpack"]);
   if (result.code === 0) {
+    await normalizeDistDir();
     process.exit(0);
   }
 

@@ -40,6 +40,11 @@ Provider-conditional blockers:
 - `CIVORA_JOB_TIMEOUT_SECONDS`
 - `CIVORA_MEMORY_WARN_MB`
 - `CIVORA_RUNTIME_DEBUG_BEARER_TOKEN`
+- `CIVORA_MAX_IMAGE_UPLOAD_BYTES`
+- `CIVORA_MAX_SURVEY_UPLOAD_BYTES`
+- `CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES`
+- `CIVORA_ALLOW_LOCAL_PILOT_CORS`
+- `CIVORA_LOCAL_PILOT_CORS_ORIGINS`
 - `CIVORA_BILLING_PROVIDER`
 - `CIVORA_ENABLE_REAL_CHARGING`
 - `CIVORA_BILLING_LEGAL_DOCS_READY`
@@ -58,6 +63,7 @@ Vercel:
 - `NEXT_PUBLIC_API_BASE_URL` must be an absolute backend URL
 - `CIVORA_FRONTEND_PUBLIC_URL` or `VERCEL_URL` is checked against `CORS_ALLOW_ORIGINS` when present
 - localhost API URLs block `public_beta` and `production`
+- temporary local-to-live backend CORS is reported as a warning in `public_beta` and `production`
 
 Railway:
 
@@ -65,6 +71,7 @@ Railway:
 - healthcheck path must be `/api/health`
 - public backend URL must be absolute when supplied
 - persistent storage should be an absolute mounted path
+- upload limits should be explicit when pilot operators need a known support boundary
 
 ## Safe Debug Endpoint
 
@@ -75,3 +82,7 @@ GET /api/debug/production-env
 ```
 
 The endpoint returns the same redacted report and is rate-limited with the existing debug bucket. It does not return secret values and it does not change billing, provider, or access settings.
+
+## Public Beta Reading
+
+`status=ready` only means this env contract is satisfied. It does not mean Civora is public-beta or construction ready. Public beta still requires the operational checklist: support owner, bug intake, privacy/terms, data retention, production storage and queue decisions, billing/legal gates, deployment rollback owner, monitoring cadence, and review-only responsibility language.

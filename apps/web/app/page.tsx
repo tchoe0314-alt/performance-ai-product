@@ -280,6 +280,7 @@ type CustomerTemplateRegistryResponse = {
 type BillingStatusV1 = {
   version?: string;
   status?: string;
+  operational_state?: "disabled" | "blocked" | "enabled" | string;
   paid_pilot_mode?: boolean;
   real_charging_enabled?: boolean;
   charging_config_requested?: boolean;
@@ -313,6 +314,12 @@ type BillingStatusV1 = {
   payment?: {
     status?: string;
     message?: string;
+  };
+  charging_guard?: {
+    state?: string;
+    real_charging_allowed?: boolean;
+    requires_explicit_flags?: string[];
+    user_safe_message?: string;
   };
   legal?: {
     terms_url?: string;
@@ -2093,7 +2100,7 @@ function shortBuildValue(value?: string): string {
 
 function statusPillClass(status?: string): string {
   const normalized = String(status || "").toLowerCase();
-  if (["healthy", "online", "ok", "ready", "enabled", "reachable"].includes(normalized)) {
+  if (["healthy", "online", "ok", "ready", "enabled", "reachable", "configured", "known"].includes(normalized)) {
     return "bg-emerald-50 text-emerald-700";
   }
   if (["degraded", "warning", "unknown", "checking"].includes(normalized)) {
@@ -2104,7 +2111,7 @@ function statusPillClass(status?: string): string {
 
 function statusTextClass(status?: string): string {
   const normalized = String(status || "").toLowerCase();
-  if (["healthy", "online", "ok", "ready", "enabled", "reachable"].includes(normalized)) {
+  if (["healthy", "online", "ok", "ready", "enabled", "reachable", "configured", "known"].includes(normalized)) {
     return "text-emerald-700";
   }
   if (["degraded", "warning", "unknown", "checking"].includes(normalized)) {
@@ -2227,9 +2234,11 @@ type DeploymentHealth = {
   deployment?: {
     frontend_status?: string;
     backend_status?: string;
+    api_status?: string;
     api_base_url?: string;
     auth_status?: string;
     queue_status?: string;
+    build_status?: string;
     build_version?: string;
     commit_sha?: string;
     commit_ref?: string;
@@ -16728,14 +16737,15 @@ function PerformanceAIDashboardView({
 	                              ? "bg-red-50 text-red-600"
 	                              : "bg-emerald-50 text-emerald-700"
 	                        }`}>
-	                          {billingStatus?.real_charging_enabled ? "Configured" : billingStatus?.blocked ? "Blocked" : "Ready"}
+	                          {billingStatus?.operational_state || (billingStatus?.real_charging_enabled ? "Enabled" : billingStatus?.blocked ? "Blocked" : "Disabled")}
 	                        </span>
 	                      </div>
 	                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
 	                        {[
 	                          ["Pilot mode", billingStatus?.paid_pilot_mode ? "On" : "Off"],
 	                          ["Provider", billingStatus?.provider?.provider || "None"],
-	                          ["Charges", billingStatus?.real_charging_enabled ? "Configured" : "Off"],
+	                          ["State", billingStatus?.operational_state || "unknown"],
+	                          ["Charges", billingStatus?.real_charging_enabled ? "Enabled" : "Off"],
 	                          ["Docs", billingStatus?.legal_business_docs_ready ? "Ready" : "Missing"],
 	                          ["Projects/mo", billingStatus?.usage_limits?.monthly_projects ?? "Hook"],
 	                          ["Exports/mo", billingStatus?.usage_limits?.monthly_exports ?? "Hook"],
@@ -16748,7 +16758,7 @@ function PerformanceAIDashboardView({
 	                      </div>
 	                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
 	                        <p className="font-semibold text-slate-800">Invoice/payment</p>
-	                        <p>{billingStatus?.invoice?.message || "Invoice and payment records are placeholders until a provider is explicitly configured."}</p>
+	                        <p>{billingStatus?.charging_guard?.user_safe_message || billingStatus?.invoice?.message || "Invoice and payment records are placeholders until a provider is explicitly configured."}</p>
 	                        {billingStatus?.blocked_reasons?.length ? (
 	                          <p className="mt-1 font-semibold text-red-600">
 	                            {billingStatus.blocked_reasons.map((reason) => toReadableLabel(reason)).join("; ")}
@@ -16775,14 +16785,15 @@ function PerformanceAIDashboardView({
 	                        {[
 	                          ["Frontend", deploymentHealthError ? "reachable" : deployment?.frontend_status || "reachable"],
 	                          ["Backend", deploymentBackendStatus],
+	                          ["API", deployment?.api_status || (deployment?.api_base_url ? "configured" : "missing_url")],
 	                          ["Auth", deploymentAuthStatus],
 	                          ["Queue", deploymentQueueStatus],
-	                          ["Build", shortBuildValue(frontendBuildVersion)],
+	                          ["Build", deployment?.build_status || shortBuildValue(frontendBuildVersion)],
 	                          ["Deploy", formatDeployTime(deployment?.last_deploy_time)],
 	                        ].map(([label, value]) => (
 	                          <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
 	                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
-	                            <p className={`mt-1 break-words font-semibold ${["Frontend", "Backend", "Auth", "Queue"].includes(String(label)) ? statusTextClass(String(value)) : "text-slate-800"}`}>
+	                            <p className={`mt-1 break-words font-semibold ${["Frontend", "Backend", "API", "Auth", "Queue", "Build"].includes(String(label)) ? statusTextClass(String(value)) : "text-slate-800"}`}>
 	                              {String(value)}
 	                            </p>
 	                          </div>
@@ -16800,6 +16811,14 @@ function PerformanceAIDashboardView({
 	                            {[deployment?.provider, deployment?.environment, deployment?.commit_ref].filter(Boolean).join(" / ")}
 	                          </p>
 	                        ) : null}
+	                        <div className="mt-3 flex flex-wrap gap-2">
+	                          <a href="mailto:support@civora.ai?subject=Civora%20pilot%20support" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+	                            Contact Support
+	                          </a>
+	                          <a href="/pilot#operations" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+	                            Bug Report Flow
+	                          </a>
+	                        </div>
 	                      </div>
 	                    </div>
 	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="progress-timeline-dashboard">

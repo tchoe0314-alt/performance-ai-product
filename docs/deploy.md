@@ -20,11 +20,17 @@ Use the repo root as the Railway service source so Railway can build the root [D
 Set these Railway variables:
 
 ```bash
+CIVORA_PRODUCT_MODE=private_alpha
+CIVORA_DEPLOYMENT_TARGET=railway
+CIVORA_PUBLIC_API_BASE_URL=https://your-backend-domain.up.railway.app
 CIVORA_AI_PROVIDER=openai
 OPENAI_API_KEY=your_real_key
 PERFORMANCE_AI_STORAGE_DIR=/data
 CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app,https://civoraai.com,https://www.civoraai.com
 MAPBOX_TOKEN=your_backend_mapbox_token
+CIVORA_MAX_IMAGE_UPLOAD_BYTES=10485760
+CIVORA_MAX_SURVEY_UPLOAD_BYTES=5242880
+CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES=26214400
 ```
 
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
@@ -41,6 +47,7 @@ CIVORA_LOCAL_PILOT_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 Remove `CIVORA_ALLOW_LOCAL_PILOT_CORS` after the QA session. Local frontend to local backend does not need the live API CORS exception.
+For public beta or production, the validator warns while temporary local CORS is enabled so it is not forgotten after live QA.
 
 Attach a persistent Railway volume and mount it at:
 
@@ -72,6 +79,7 @@ Add this environment variable in Vercel:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.up.railway.app
+CIVORA_FRONTEND_PUBLIC_URL=https://your-frontend-domain.vercel.app
 ```
 
 For local frontend development against the local backend, use:
@@ -96,11 +104,14 @@ The validator blocks missing required production config, invalid public URLs, wi
 Backend:
 
 - health works at `/api/health`
+- deployment health shows frontend, backend, API URL, auth, queue, build, and deploy metadata without secrets
 - Railway `healthcheckPath` is `/api/health`; do not point it at a frontend route or a placeholder path
 - auth status works at `/api/auth/status`
-- uploads succeed
+- uploads fail clearly for unsupported file types or size limits
+- production env validator works at authenticated `GET /api/debug/production-env` and returns redacted diagnostics only
 - preview/export succeed
 - project save/load works
+- billing status shows disabled, blocked, or enabled and never charges without explicit billing/legal/provider flags
 
 Frontend:
 
@@ -139,10 +150,22 @@ If Railway has an attached persistent volume from an older build, startup must m
 ## Important current limits
 
 - this is a strong private beta deployment, not a full production platform yet
+- public beta remains blocked until owner-approved support, privacy, billing/legal, production storage/queue, monitoring, and release gates are complete
 - auth is still beta-grade app auth
 - SQLite is fine for a small beta, but not ideal for bigger multi-user scale
 - in-process jobs are fine for a small beta, but not for heavier production load
 - API success means the service responded; Civora output remains review-only and does not replace licensed engineering judgment or project source control.
+
+## Disable Or Roll Back
+
+Use this process for P0/P1 access, source-trust, billing, upload, auth, or deployment-health incidents:
+
+1. Pause new invites and tell affected users whether to stop relying on affected outputs.
+2. Disable the risky path first: remove pilot users, rotate credentials, set `CIVORA_ENABLE_PUBLIC_ACCESS=false`, set `CIVORA_PAID_PILOT_MODE=false`, set `CIVORA_ENABLE_REAL_CHARGING=false`, or stop the backend service as needed.
+3. Roll back Vercel for frontend-only incidents.
+4. Roll back or stop Railway for backend/API/auth/upload/job incidents.
+5. Preserve project IDs, logs, artifacts, screenshots, env-validator reports, and reproduction steps.
+6. Re-run health, auth, billing status, upload, project save/load, planner run, preview, and export checks before re-enabling.
 
 ## Fast local sanity check before deploy
 

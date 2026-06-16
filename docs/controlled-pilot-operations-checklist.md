@@ -54,12 +54,25 @@ Backend:
 | `CIVORA_CAD_ASSISTANT_MODEL` | Optional | Set when overriding default CAD assistant model. |
 | `CIVORA_ALLOW_LOCAL_PILOT_CORS` | Temporary only | Use only for short QA windows where local frontend calls live backend. Remove afterward. |
 | `CIVORA_LOCAL_PILOT_CORS_ORIGINS` | Temporary only | Pair with `CIVORA_ALLOW_LOCAL_PILOT_CORS`. |
+| `CIVORA_MAX_IMAGE_UPLOAD_BYTES` | Recommended | User-facing image/map upload limit. Default is 10 MiB. |
+| `CIVORA_MAX_SURVEY_UPLOAD_BYTES` | Recommended | User-facing survey CSV upload limit. Default is 5 MiB. |
+| `CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES` | Recommended | Existing-condition and plan PDF upload limit. Default is 25 MiB. |
 
 Frontend:
 
 | Variable | Required | Notes |
 | --- | --- | --- |
 | `NEXT_PUBLIC_API_BASE_URL` | Yes | Must point to the intended backend URL. |
+
+Billing:
+
+| Variable | Required before charging | Notes |
+| --- | --- | --- |
+| `CIVORA_PAID_PILOT_MODE` | Yes | Enables paid-pilot status only; it does not collect payment by itself. |
+| `CIVORA_ENABLE_REAL_CHARGING` | Yes | Must be explicit and paired with legal docs plus provider config. |
+| `CIVORA_BILLING_LEGAL_DOCS_READY` | Yes | Set only after owner/counsel approval of terms, privacy, order form, and billing language. |
+| `CIVORA_BILLING_PROVIDER` | Yes | `none` keeps payment disabled. |
+| `STRIPE_*` | If provider is `stripe` | Required for provider readiness; checkout/charging must still stay behind explicit product flow. |
 
 ## Support Contact Process
 

@@ -94,6 +94,23 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
 
         self.assertIn("gis_registry_missing", {item["code"] for item in report["blockers"]})
 
+    def test_public_beta_warns_when_temporary_local_cors_is_enabled(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "public_beta",
+                "NEXT_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CIVORA_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CORS_ALLOW_ORIGINS": "https://app.example.com",
+                "CIVORA_FRONTEND_PUBLIC_URL": "https://app.example.com",
+                "CIVORA_SESSION_SECRET": "session-secret",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_ALLOW_LOCAL_PILOT_CORS": "true",
+            }
+        )
+
+        self.assertIn("temporary_local_cors_enabled", {item["code"] for item in report["warnings"]})
+
     def test_debug_endpoint_requires_authentication(self) -> None:
         response = TestClient(app).get("/api/debug/production-env")
 
