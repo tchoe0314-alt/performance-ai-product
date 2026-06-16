@@ -29,8 +29,13 @@ CAD_HISTORY_ACTIONS = {
     "entity_created",
     "entity_updated",
     "entity_deleted",
+    "entity_restored",
     "entity_converted",
     "entity_imported",
+    "entity_layer_changed",
+    "entity_style_changed",
+    "entity_geometry_changed",
+    "entity_attribute_changed",
 }
 LOW_CONFIDENCE_LABELS = {"", "missing", "metadata-only", "metadata_only", "inferred", "GIS candidate", "map imagery candidate"}
 
@@ -55,6 +60,114 @@ def _dedupe(values: Iterable[Any]) -> List[str]:
             seen.add(text)
             out.append(text)
     return out
+
+
+def _summarize_entity(entity: Any) -> Dict[str, Any]:
+    rec = safe_dict(entity)
+    if not rec:
+        return {}
+    geometry = safe_dict(rec.get("geometry"))
+    return {
+        "id": safe_str(rec.get("id")),
+        "type": safe_str(rec.get("type")),
+        "layer_id": safe_str(rec.get("layer_id")),
+        "style_id": safe_str(rec.get("style_id")),
+        "source": safe_str(rec.get("source")),
+        "source_confidence": safe_str(rec.get("source_confidence")),
+        "review_status": safe_str(rec.get("review_status")),
+        "dirty": bool(rec.get("dirty")),
+        "stale": bool(rec.get("stale")),
+        "geometry_keys": sorted([safe_str(key) for key in geometry.keys() if safe_str(key)]),
+        "construction_release_allowed": False,
+    }
+
+
+def _changed_fields(before: Any, after: Any) -> List[str]:
+    before_rec = safe_dict(before)
+    after_rec = safe_dict(after)
+    keys = set(before_rec.keys()) | set(after_rec.keys())
+    return sorted(
+        key
+        for key in keys
+        if before_rec.get(key) != after_rec.get(key)
+        and key not in {"updated_at", "bounding_box", "validation_blockers", "validation_status"}
+    )
+
+
+def _normalize_history_event(raw_event: Dict[str, Any], *, index: int = 0) -> Dict[str, Any]:
+    rec = deepcopy(safe_dict(raw_event))
+    event_type = safe_str(rec.get("event_type") or rec.get("action"), "entity_updated")
+    if event_type not in CAD_HISTORY_ACTIONS:
+        event_type = "entity_updated"
+    entity_id = safe_str(rec.get("entity_id"))
+    timestamp = safe_str(rec.get("timestamp") or rec.get("at"), now_iso())
+    actor = safe_str(rec.get("actor") or rec.get("source"), "system")
+    before = rec.get("before_summary")
+    if before is None:
+        before = rec.get("before")
+    after = rec.get("after_summary")
+    if after is None:
+        after = rec.get("after")
+    changed = _dedupe(rec.get("changed_fields") or safe_dict(rec.get("details")).get("changed_fields") or _changed_fields(before, after))
+    event_id = safe_str(rec.get("event_id")) or _stable_id("cadevt", event_type, entity_id, timestamp, actor, index)
+    return {
+        "event_id": event_id,
+        "entity_id": entity_id,
+        "event_type": event_type,
+        "action": event_type,
+        "timestamp": timestamp,
+        "at": timestamp,
+        "actor": actor,
+        "source": actor,
+        "before_summary": _summarize_entity(before) if safe_dict(before) else safe_dict(before),
+        "after_summary": _summarize_entity(after) if safe_dict(after) else safe_dict(after),
+        "changed_fields": changed,
+        "details": deepcopy(safe_dict(rec.get("details"))),
+        "review_required": True,
+        "review_only": True,
+        "construction_release_allowed": False,
+    }
+
+
+def _normalize_history_snapshots(source_model: Dict[str, Any]) -> List[Dict[str, Any]]:
+    snapshots: List[Dict[str, Any]] = []
+    for index, item in enumerate(safe_list(source_model.get("history_snapshots") or source_model.get("undo_snapshots"))):
+        rec = safe_dict(item)
+        if not rec:
+            continue
+        snapshot_id = safe_str(rec.get("snapshot_id")) or _stable_id("cadsnap", rec.get("revision_id"), index)
+        snapshots.append(
+            {
+                "snapshot_id": snapshot_id,
+                "revision_id": safe_str(rec.get("revision_id"), snapshot_id),
+                "timestamp": safe_str(rec.get("timestamp") or rec.get("at"), now_iso()),
+                "actor": safe_str(rec.get("actor") or rec.get("source"), "system"),
+                "entity_count": len(safe_list(rec.get("entities"))),
+                "entities": deepcopy(safe_list(rec.get("entities"))),
+                "layers": deepcopy(safe_list(rec.get("layers"))),
+                "styles": deepcopy(safe_list(rec.get("styles"))),
+                "review_required": True,
+                "construction_release_allowed": False,
+            }
+        )
+    return snapshots[-25:]
+
+
+def build_cad_history_snapshot(model: Dict[str, Any], *, actor: str = "system", revision_id: Optional[str] = None) -> Dict[str, Any]:
+    rec = safe_dict(model)
+    timestamp = now_iso()
+    snapshot_revision = safe_str(revision_id) or _stable_id("cadrev", timestamp, len(safe_list(rec.get("entities"))))
+    return {
+        "snapshot_id": _stable_id("cadsnap", snapshot_revision, timestamp, actor),
+        "revision_id": snapshot_revision,
+        "timestamp": timestamp,
+        "actor": safe_str(actor, "system"),
+        "entities": deepcopy(safe_list(rec.get("entities"))),
+        "layers": deepcopy(safe_list(rec.get("layers"))),
+        "styles": deepcopy(safe_list(rec.get("styles"))),
+        "review_required": True,
+        "construction_release_allowed": False,
+    }
 
 
 def _point(value: Any) -> Optional[Dict[str, float]]:
@@ -314,11 +427,12 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         if entity["dirty"] or entity["stale"]:
             entity["review_status"] = "stale"
     selected_ids = _dedupe(source_model.get("selected_entity_ids") or [])
-    history = []
-    for item in safe_list(source_model.get("history")):
-        rec = safe_dict(item)
-        if safe_str(rec.get("action")) in CAD_HISTORY_ACTIONS:
-            history.append(rec)
+    history = [
+        _normalize_history_event(item, index=index)
+        for index, item in enumerate(safe_list(source_model.get("history")))
+        if safe_dict(item)
+    ]
+    history_snapshots = _normalize_history_snapshots(source_model)
     invalid = [item for item in validation if not item.get("valid")]
     stale = [entity for entity in entities if entity.get("dirty") or entity.get("stale") or entity.get("review_status") == "stale"]
     blockers = []
@@ -327,6 +441,46 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
             blockers.append({"entity_id": item.get("entity_id"), "reason": blocker})
     for entity in stale:
         blockers.append({"entity_id": entity.get("id"), "reason": "cad_entity_stale_or_dirty"})
+    entity_ids = {entity["id"] for entity in entities}
+    changed_entity_ids = _dedupe(event.get("entity_id") for event in history if safe_str(event.get("entity_id")))
+    added_entity_ids = _dedupe(
+        event.get("entity_id")
+        for event in history
+        if safe_str(event.get("event_type")) in {"entity_created", "entity_imported", "entity_converted", "entity_restored"}
+    )
+    removed_entity_ids = _dedupe(event.get("entity_id") for event in history if safe_str(event.get("event_type")) == "entity_deleted")
+    stale_entity_ids = _dedupe(entity.get("id") for entity in stale)
+    invalid_entity_ids = _dedupe(item.get("entity_id") for item in invalid)
+    latest_revision_id = (
+        safe_str(source_model.get("latest_revision_id") or source_model.get("revision_id") or meta.get("canonical_revision"))
+        or _stable_id("cadrev", len(history), ",".join(sorted(entity_ids)), ",".join(changed_entity_ids))
+    )
+    counts_by_type: Dict[str, int] = {}
+    for entity in entities:
+        entity_type = safe_str(entity.get("type"), "unknown")
+        counts_by_type[entity_type] = counts_by_type.get(entity_type, 0) + 1
+    review_blockers = blockers + safe_list(safe_dict(cad_source_confidence_summary(entities)).get("blockers"))
+    revision_timeline = {
+        "latest_revision_id": latest_revision_id,
+        "entity_counts": {
+            "total": len(entities),
+            "by_type": counts_by_type,
+            "valid": len(entities) - len(invalid),
+            "invalid": len(invalid),
+            "stale_or_dirty": len(stale),
+            "removed_in_history": len([entity_id for entity_id in removed_entity_ids if entity_id not in entity_ids]),
+        },
+        "changed_entities": changed_entity_ids,
+        "added_entities": added_entity_ids,
+        "removed_entities": removed_entity_ids,
+        "stale_dirty_entities": stale_entity_ids,
+        "invalid_entities": invalid_entity_ids,
+        "review_blockers": review_blockers,
+        "event_count": len(history),
+        "review_required": True,
+        "construction_release_allowed": False,
+        "truth_label": "CAD revision history tracks drafting/review changes only and does not approve construction or mutate engineering evidence.",
+    }
     return {
         "version": CAD_ENTITY_MODEL_VERSION,
         "layers": layers,
@@ -345,6 +499,17 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         },
         "source_confidence": cad_source_confidence_summary(entities),
         "history": history,
+        "history_events": history,
+        "history_snapshots": history_snapshots,
+        "revision_timeline": revision_timeline,
+        "undo_redo": {
+            "can_undo": bool(history_snapshots),
+            "can_redo": bool(safe_list(source_model.get("redo_snapshots"))),
+            "latest_undo_snapshot_id": safe_str(history_snapshots[-1].get("snapshot_id")) if history_snapshots else "",
+            "blocked_reason": "" if history_snapshots else "No persisted CAD history snapshot is available for safe undo/restore replay.",
+            "review_required": True,
+            "construction_release_allowed": False,
+        },
         "selection": {
             "selected_entity_ids": [entity_id for entity_id in selected_ids if entity_id in {entity["id"] for entity in entities}],
             "hit_test_helper": "Use hit_test_entities with entity_bounding_boxes; this helper is bbox-based until grips/snaps add precise kernels.",
@@ -369,16 +534,36 @@ def attach_cad_entity_model_to_result(latest_result: Dict[str, Any], *, project_
     return result
 
 
-def history_event(action: str, entity_id: str, *, actor: str = "system", details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    return {
-        "action": action if action in CAD_HISTORY_ACTIONS else "entity_updated",
+def history_event(
+    action: str,
+    entity_id: str,
+    *,
+    actor: str = "system",
+    details: Optional[Dict[str, Any]] = None,
+    before: Optional[Dict[str, Any]] = None,
+    after: Optional[Dict[str, Any]] = None,
+    changed_fields: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    timestamp = now_iso()
+    event_type = action if action in CAD_HISTORY_ACTIONS else "entity_updated"
+    event = {
+        "event_id": _stable_id("cadevt", event_type, entity_id, timestamp, actor),
         "entity_id": entity_id,
+        "event_type": event_type,
+        "action": event_type,
+        "timestamp": timestamp,
+        "at": timestamp,
         "actor": actor,
-        "at": now_iso(),
+        "source": actor,
+        "before_summary": _summarize_entity(before),
+        "after_summary": _summarize_entity(after),
+        "changed_fields": _dedupe(changed_fields or safe_list(safe_dict(details).get("changed_fields")) or _changed_fields(before, after)),
         "details": deepcopy(details or {}),
+        "review_required": True,
         "review_only": True,
         "construction_release_allowed": False,
     }
+    return event
 
 
 def manual_drawn_objects_to_cad_entities(project_input: Dict[str, Any], latest_result: Optional[Dict[str, Any]] = None, *, created_by: str = "user") -> List[Dict[str, Any]]:
@@ -502,9 +687,11 @@ def cad_source_confidence_summary(entities: List[Dict[str, Any]]) -> Dict[str, A
 
 __all__ = [
     "CAD_ENTITY_MODEL_VERSION",
+    "CAD_HISTORY_ACTIONS",
     "CAD_ENTITY_TYPES",
     "attach_cad_entity_model_to_result",
     "build_cad_entity_model",
+    "build_cad_history_snapshot",
     "cad_entities_to_site_object_candidates",
     "cad_source_confidence_summary",
     "entity_bounding_box",

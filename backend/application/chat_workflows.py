@@ -21,6 +21,7 @@ from backend.planning.cad_entity_model import (
     CAD_ENTITY_MODEL_VERSION,
     attach_cad_entity_model_to_result,
     build_cad_entity_model,
+    build_cad_history_snapshot,
     cad_entities_to_site_object_candidates,
     history_event,
     manual_drawn_objects_to_cad_entities,
@@ -653,12 +654,30 @@ def _cad_entity_chat_response(
 ) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
     mentions_cad_entity = "cad entit" in lowered or "cad object" in lowered or "drawn object" in lowered
+    mentions_cad = bool(re.search(r"\bcad\b", lowered)) or mentions_cad_entity
     asks_list = any(phrase in lowered for phrase in ("what cad entities", "list cad entities", "cad entities are in", "what cad objects"))
     asks_review_only = "why" in lowered and ("review-only" in lowered or "review only" in lowered or "cad object" in lowered or "cad entity" in lowered)
     asks_stale_invalid = ("stale" in lowered or "invalid" in lowered) and ("cad" in lowered or "entity" in lowered or "object" in lowered)
+    asks_history = mentions_cad and any(phrase in lowered for phrase in ("show cad history", "cad history", "revision timeline", "cad timeline"))
+    asks_changed = mentions_cad and any(phrase in lowered for phrase in ("what changed in cad", "what changed on cad", "cad changes", "changed in cad"))
+    asks_object_changed = any(phrase in lowered for phrase in ("what changed on this object", "what changed on this cad object", "show this object history", "object history"))
+    asks_undo = mentions_cad and "undo" in lowered and ("edit" in lowered or "change" in lowered or "cad" in lowered)
+    asks_restore = mentions_cad and "restore" in lowered and ("object" in lowered or "entity" in lowered or "cad" in lowered)
     asks_convert_drawn = "convert" in lowered and "drawn object" in lowered and "cad entit" in lowered
     asks_candidate = "convert" in lowered and "site object" in lowered and ("cad" in lowered or "entity" in lowered)
-    if not (mentions_cad_entity or asks_list or asks_review_only or asks_stale_invalid or asks_convert_drawn or asks_candidate):
+    if not (
+        mentions_cad_entity
+        or asks_list
+        or asks_review_only
+        or asks_stale_invalid
+        or asks_history
+        or asks_changed
+        or asks_object_changed
+        or asks_undo
+        or asks_restore
+        or asks_convert_drawn
+        or asks_candidate
+    ):
         return None
 
     if record:
@@ -725,9 +744,21 @@ def _cad_entity_chat_response(
                 blocker="No matching manual_drawn canonical_geometry_handoff_v1 was found.",
             )
         source_model = _safe_dict(meta.get(CAD_ENTITY_MODEL_VERSION))
+        prior_model = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: source_model}, project_input=project_input)
         source_model["entities"] = list(existing_by_id.values())
+        source_model["history_snapshots"] = _safe_list(source_model.get("history_snapshots")) + [
+            build_cad_history_snapshot(prior_model, actor=user_id or "user")
+        ]
         source_model["history"] = _safe_list(source_model.get("history")) + [
-            history_event("entity_converted", entity_id, actor=user_id or "user", details={"from": "manual_drawn", "review_required": True})
+            history_event(
+                "entity_converted",
+                entity_id,
+                actor=user_id or "user",
+                details={"from": "manual_drawn", "review_required": True},
+                before={},
+                after=existing_by_id.get(entity_id),
+                changed_fields=["entity", "geometry", "source", "review_status"],
+            )
             for entity_id in created_ids
         ]
         meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: source_model}, project_input=project_input)
@@ -773,11 +804,101 @@ def _cad_entity_chat_response(
         )
 
     validation = _safe_dict(model.get("validation"))
+    timeline = _safe_dict(model.get("revision_timeline"))
+    history = [_safe_dict(item) for item in _safe_list(model.get("history"))]
     stale_invalid = [
         entity
         for entity in entities
         if entity.get("validation_status") == "invalid" or entity.get("dirty") or entity.get("stale") or entity.get("review_status") == "stale"
     ]
+    selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
+    selected_ids = set(selected_object_ids + selected_geometry_ids + _safe_list(_safe_dict(model.get("selection")).get("selected_entity_ids")))
+
+    if asks_undo or asks_restore:
+        undo_redo = _safe_dict(model.get("undo_redo"))
+        lines = []
+        if asks_undo:
+            lines.append("Undo last CAD edit is blocked from chat until a safe persisted CAD snapshot replay target is selected and reviewed.")
+            action_taken = "blocked_cad_undo_requires_safe_snapshot_review"
+        else:
+            lines.append("Restore CAD object is blocked from chat until the object, revision snapshot, and review-only replay target are explicit.")
+            action_taken = "blocked_cad_restore_requires_safe_snapshot_review"
+        if undo_redo.get("can_undo"):
+            lines.append(f"Latest snapshot hook: {safe_str(undo_redo.get('latest_undo_snapshot_id'))}; it still requires explicit review before replay.")
+        else:
+            lines.append(safe_str(undo_redo.get("blocked_reason"), "No persisted CAD history snapshot is available."))
+        lines.append("Undo/restore would remain draft_review_required and construction_release_allowed=false; it would not approve or certify engineering evidence.")
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_entity_history",
+            run_mode="none",
+            needs_clarification=True,
+            action_taken=action_taken,
+            action_blocked_reason=lines[0],
+            required_missing_inputs=["explicit CAD entity id", "persisted CAD revision snapshot", "review confirmation"],
+            affected_systems=["cad_entity_model", "cad_history"],
+            assumptions=["Chat undo/restore must not silently mutate CAD or engineering evidence."],
+            next_best_action="Open CAD history, choose the entity and revision snapshot, then review the restore diff before applying it.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model, "cad_undo_redo": undo_redo},
+            outcome="understood_but_blocked",
+            state_changed=False,
+            blocker=lines[0],
+        )
+
+    if asks_history or asks_changed or asks_object_changed:
+        filtered_history = history
+        if asks_object_changed and selected_ids:
+            filtered_history = [event for event in history if safe_str(event.get("entity_id")) in selected_ids]
+        lines = [
+            f"CAD revision timeline: {safe_str(timeline.get('latest_revision_id')) or 'no revision id'}; {len(history)} history event(s).",
+            (
+                f"Entities: {safe_str(_safe_dict(timeline.get('entity_counts')).get('total'), '0')} total, "
+                f"{safe_str(_safe_dict(timeline.get('entity_counts')).get('stale_or_dirty'), '0')} stale/dirty, "
+                f"{safe_str(_safe_dict(timeline.get('entity_counts')).get('invalid'), '0')} invalid."
+            ),
+        ]
+        changed = _safe_list(timeline.get("changed_entities"))
+        added = _safe_list(timeline.get("added_entities"))
+        removed = _safe_list(timeline.get("removed_entities"))
+        if changed:
+            lines.append("Changed entities: " + ", ".join(safe_str(item) for item in changed[:10] if safe_str(item)))
+        if added:
+            lines.append("Added/imported/restored entities: " + ", ".join(safe_str(item) for item in added[:10] if safe_str(item)))
+        if removed:
+            lines.append("Removed entities: " + ", ".join(safe_str(item) for item in removed[:10] if safe_str(item)))
+        if filtered_history:
+            lines.append("Recent history:")
+            for event in filtered_history[-8:]:
+                fields = ", ".join(safe_str(field) for field in _safe_list(event.get("changed_fields")) if safe_str(field))
+                lines.append(
+                    f"- {safe_str(event.get('event_type'))} {safe_str(event.get('entity_id'))} by {safe_str(event.get('actor'))} "
+                    f"at {safe_str(event.get('timestamp'))}; fields={fields or 'summary-only'}"
+                )
+        else:
+            lines.append("- No matching CAD history events are saved yet.")
+        blockers = _safe_list(timeline.get("review_blockers"))
+        if blockers:
+            lines.append(f"Review blockers: {len(blockers)} validation/source/stale blocker(s).")
+        lines.append("CAD history is review-required and construction_release_allowed=false; it does not stamp, seal, sign, certify, approve, or submit construction documents.")
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_entity_history",
+            run_mode="none",
+            needs_clarification=asks_object_changed and not bool(selected_ids),
+            action_taken="reported_cad_entity_history" if asks_history or asks_object_changed else "reported_cad_revision_changes",
+            affected_systems=["cad_entity_model", "cad_history"],
+            assumptions=["CAD history uses saved project metadata only and remains review-only."],
+            next_best_action="Review changed CAD entities and rerun affected downstream checks before relying on drafting edits.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model, "cad_revision_timeline": timeline},
+            outcome="understood_and_answered",
+            state_changed=False,
+            referenced_object_ids=selected_object_ids,
+            referenced_geometry_ids=selected_geometry_ids,
+            blocker="; ".join(safe_str(item.get("reason")) for item in blockers[:4] if isinstance(item, dict)),
+        )
+
     if asks_stale_invalid:
         lines = ["CAD entities that are stale or invalid:"]
         if stale_invalid:
