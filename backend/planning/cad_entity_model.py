@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
-from math import isfinite
+from math import cos, isfinite, radians, sin
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .common import safe_dict, safe_float, safe_list, safe_str
@@ -37,6 +37,7 @@ CAD_HISTORY_ACTIONS = {
     "entity_geometry_changed",
     "entity_attribute_changed",
 }
+CAD_ENTITY_CHAT_OPERATION_VERSION = "cad_entity_chat_operation_v1"
 LOW_CONFIDENCE_LABELS = {"", "missing", "metadata-only", "metadata_only", "inferred", "GIS candidate", "map imagery candidate"}
 
 
@@ -566,6 +567,202 @@ def history_event(
     return event
 
 
+def cad_entity_operation_result(
+    *,
+    understood_goal: str,
+    selected_action: str,
+    target_entities: Optional[List[str]] = None,
+    missing_inputs: Optional[List[str]] = None,
+    safety_blockers: Optional[List[str]] = None,
+    created_entity_ids: Optional[List[str]] = None,
+    updated_entity_ids: Optional[List[str]] = None,
+    deleted_entity_ids: Optional[List[str]] = None,
+    next_best_action: str = "",
+) -> Dict[str, Any]:
+    return {
+        "version": CAD_ENTITY_CHAT_OPERATION_VERSION,
+        "understood_goal": safe_str(understood_goal),
+        "selected_action": safe_str(selected_action),
+        "target_entities": _dedupe(target_entities or []),
+        "missing_inputs": _dedupe(missing_inputs or []),
+        "safety_blockers": _dedupe(safety_blockers or []),
+        "created_entity_ids": _dedupe(created_entity_ids or []),
+        "updated_entity_ids": _dedupe(updated_entity_ids or []),
+        "deleted_entity_ids": _dedupe(deleted_entity_ids or []),
+        "review_required": True,
+        "construction_release_allowed": False,
+        "next_best_action": safe_str(next_best_action),
+    }
+
+
+def _safe_history(model: Dict[str, Any]) -> List[Dict[str, Any]]:
+    history: List[Dict[str, Any]] = []
+    for item in safe_list(safe_dict(model).get("history")):
+        rec = safe_dict(item)
+        if safe_str(rec.get("action") or rec.get("event_type")) in CAD_HISTORY_ACTIONS:
+            history.append(rec)
+    return history
+
+
+def _transform_point(
+    point: Dict[str, Any],
+    *,
+    dx: float = 0.0,
+    dy: float = 0.0,
+    angle_degrees: Optional[float] = None,
+    scale_factor: Optional[float] = None,
+    origin: Optional[Dict[str, float]] = None,
+) -> Dict[str, float]:
+    parsed = _point(point) or {"x": 0.0, "y": 0.0}
+    x = parsed["x"]
+    y = parsed["y"]
+    if origin and angle_degrees is not None:
+        theta = radians(angle_degrees)
+        rel_x = x - origin["x"]
+        rel_y = y - origin["y"]
+        x = origin["x"] + rel_x * cos(theta) - rel_y * sin(theta)
+        y = origin["y"] + rel_x * sin(theta) + rel_y * cos(theta)
+    if origin and scale_factor is not None:
+        x = origin["x"] + (x - origin["x"]) * scale_factor
+        y = origin["y"] + (y - origin["y"]) * scale_factor
+    return {"x": x + dx, "y": y + dy}
+
+
+def _transform_geometry(geometry: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+    rec = deepcopy(safe_dict(geometry))
+    for key in ("start", "end", "origin", "insert", "position", "center", "min"):
+        if key in rec and _point(rec.get(key)):
+            rec[key] = _transform_point(safe_dict(rec[key]), **kwargs)
+    for key in ("points", "vertices", "boundary"):
+        if key in rec:
+            rec[key] = [_transform_point(point, **kwargs) for point in _points(rec.get(key))]
+    return rec
+
+
+def _entity_transform_origin(entity: Dict[str, Any]) -> Dict[str, float]:
+    bbox = entity_bounding_box(entity) or {"min_x": 0.0, "min_y": 0.0, "max_x": 0.0, "max_y": 0.0}
+    return {"x": (bbox["min_x"] + bbox["max_x"]) / 2.0, "y": (bbox["min_y"] + bbox["max_y"]) / 2.0}
+
+
+def apply_cad_entity_operation(
+    model: Dict[str, Any],
+    operation: Dict[str, Any],
+    *,
+    actor: str = "user",
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    source_model = safe_dict(model)
+    action = safe_str(operation.get("action"))
+    understood_goal = safe_str(operation.get("understood_goal") or action)
+    target_ids = _dedupe(operation.get("target_entity_ids") or [])
+    missing_inputs = _dedupe(operation.get("missing_inputs") or [])
+    safety_blockers = _dedupe(operation.get("safety_blockers") or [])
+    if missing_inputs or safety_blockers or not action:
+        return source_model, cad_entity_operation_result(
+            understood_goal=understood_goal,
+            selected_action=action or "unsupported",
+            target_entities=target_ids,
+            missing_inputs=missing_inputs,
+            safety_blockers=safety_blockers,
+            next_best_action=safe_str(operation.get("next_best_action")),
+        )
+
+    entities = [normalize_cad_entity(item, created_by=actor) for item in safe_list(source_model.get("entities")) if safe_dict(item)]
+    by_id = {safe_str(entity.get("id")): entity for entity in entities if safe_str(entity.get("id"))}
+    created_ids: List[str] = []
+    updated_ids: List[str] = []
+    deleted_ids: List[str] = []
+    action_history: List[Dict[str, Any]] = []
+
+    if action.startswith("create_"):
+        entity = normalize_cad_entity(
+            {
+                "id": safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1),
+                "type": safe_str(operation.get("entity_type")),
+                "geometry": safe_dict(operation.get("geometry")),
+                "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID),
+                "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID),
+                "source": "chat_cad_command",
+                "source_confidence": "chat_drafted_review_required",
+                "review_status": "draft_review_required",
+                "dirty": True,
+            },
+            created_by=actor,
+        )
+        by_id[entity["id"]] = entity
+        created_ids.append(entity["id"])
+        action_history.append(history_event("entity_created", entity["id"], actor=actor, details={"source": "chat", "review_required": True}))
+    elif action == "copy_selected":
+        for index, entity_id in enumerate(target_ids):
+            entity = by_id.get(entity_id)
+            if not entity:
+                continue
+            copied = normalize_cad_entity(
+                {
+                    **deepcopy(entity),
+                    "id": _stable_id("cadcopy", entity_id, len(entities), index),
+                    "source": "chat_cad_command",
+                    "source_confidence": "chat_drafted_review_required",
+                    "geometry": _transform_geometry(safe_dict(entity.get("geometry")), dx=safe_float(operation.get("dx"), 0.0), dy=safe_float(operation.get("dy"), 0.0)),
+                    "dirty": True,
+                    "stale": True,
+                },
+                created_by=actor,
+            )
+            by_id[copied["id"]] = copied
+            created_ids.append(copied["id"])
+            action_history.append(history_event("entity_created", copied["id"], actor=actor, details={"copied_from": entity_id, "review_required": True}))
+    elif action in {"move_selected", "rotate_selected", "scale_selected", "change_layer", "change_style"}:
+        for entity_id in target_ids:
+            entity = by_id.get(entity_id)
+            if not entity:
+                continue
+            updated = deepcopy(entity)
+            if action == "move_selected":
+                updated["geometry"] = _transform_geometry(safe_dict(entity.get("geometry")), dx=safe_float(operation.get("dx"), 0.0), dy=safe_float(operation.get("dy"), 0.0))
+            elif action == "rotate_selected":
+                updated["geometry"] = _transform_geometry(
+                    safe_dict(entity.get("geometry")),
+                    angle_degrees=safe_float(operation.get("angle_degrees"), 0.0),
+                    origin=_entity_transform_origin(entity),
+                )
+            elif action == "scale_selected":
+                updated["geometry"] = _transform_geometry(
+                    safe_dict(entity.get("geometry")),
+                    scale_factor=safe_float(operation.get("scale_factor"), 1.0),
+                    origin=_entity_transform_origin(entity),
+                )
+            elif action == "change_layer":
+                updated["layer_id"] = safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID)
+            elif action == "change_style":
+                updated["style_id"] = safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID)
+            updated["dirty"] = True
+            updated["stale"] = True
+            updated["review_status"] = "draft_review_required"
+            by_id[entity_id] = normalize_cad_entity(updated, created_by=actor)
+            updated_ids.append(entity_id)
+            action_history.append(history_event("entity_updated", entity_id, actor=actor, details={"chat_action": action, "review_required": True}))
+    else:
+        safety_blockers.append(f"unsupported_cad_entity_operation:{action}")
+
+    next_model = {
+        **source_model,
+        "entities": list(by_id.values()),
+        "history": _safe_history(source_model) + action_history,
+        "selected_entity_ids": [safe_str(entity_id) for entity_id in safe_list(source_model.get("selected_entity_ids")) if safe_str(entity_id) in by_id],
+    }
+    result = cad_entity_operation_result(
+        understood_goal=understood_goal,
+        selected_action=action,
+        target_entities=target_ids,
+        safety_blockers=safety_blockers,
+        created_entity_ids=created_ids,
+        updated_entity_ids=updated_ids,
+        deleted_entity_ids=deleted_ids,
+        next_best_action=safe_str(operation.get("next_best_action"), "Review the changed CAD entities before using them in downstream workflows."),
+    )
+    return next_model, result
+
+
 def manual_drawn_objects_to_cad_entities(project_input: Dict[str, Any], latest_result: Optional[Dict[str, Any]] = None, *, created_by: str = "user") -> List[Dict[str, Any]]:
     latest_result = safe_dict(latest_result)
     manual = safe_dict(project_input.get("manual_fields"))
@@ -681,17 +878,20 @@ def cad_source_confidence_summary(entities: List[Dict[str, Any]]) -> Dict[str, A
         "counts_by_source_confidence": counts,
         "blockers": blockers,
         "construction_release_allowed": False,
-        "truth_label": "CAD entity source confidence explains drafting evidence only; it does not make CAD geometry survey-backed or construction-ready.",
+        "truth_label": "CAD entity source confidence explains drafting evidence only; it does not make CAD geometry survey-backed or approved for construction.",
     }
 
 
 __all__ = [
+    "CAD_ENTITY_CHAT_OPERATION_VERSION",
     "CAD_ENTITY_MODEL_VERSION",
     "CAD_HISTORY_ACTIONS",
     "CAD_ENTITY_TYPES",
+    "apply_cad_entity_operation",
     "attach_cad_entity_model_to_result",
     "build_cad_entity_model",
     "build_cad_history_snapshot",
+    "cad_entity_operation_result",
     "cad_entities_to_site_object_candidates",
     "cad_source_confidence_summary",
     "entity_bounding_box",
