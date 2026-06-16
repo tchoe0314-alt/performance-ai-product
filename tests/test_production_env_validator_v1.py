@@ -110,6 +110,54 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         )
 
         self.assertIn("temporary_local_cors_enabled", {item["code"] for item in report["warnings"]})
+        self.assertIn("public_beta_release_gates_not_green", {item["code"] for item in report["blockers"]})
+
+    def test_public_beta_blocks_until_ops_gates_are_configured(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "public_beta",
+                "NEXT_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CIVORA_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CORS_ALLOW_ORIGINS": "https://app.example.com",
+                "CIVORA_FRONTEND_PUBLIC_URL": "https://app.example.com",
+                "CIVORA_SESSION_SECRET": "session-secret",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_BILLING_LEGAL_DOCS_READY": "true",
+            }
+        )
+
+        codes = {item["code"] for item in report["blockers"]}
+        self.assertIn("support_contact_missing", codes)
+        self.assertIn("bug_report_url_missing", codes)
+        self.assertIn("monitoring_owner_missing", codes)
+        self.assertIn("rollback_owner_missing", codes)
+        self.assertIn("public_beta_release_gates_not_green", codes)
+
+    def test_public_beta_env_contract_can_be_ready_when_ops_gates_are_green(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "public_beta",
+                "NEXT_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CIVORA_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CORS_ALLOW_ORIGINS": "https://app.example.com",
+                "CIVORA_FRONTEND_PUBLIC_URL": "https://app.example.com",
+                "CIVORA_SESSION_SECRET": "session-secret",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_SUPPORT_CONTACT_URL": "https://support.example.com",
+                "CIVORA_BUG_REPORT_URL": "https://support.example.com/bugs",
+                "CIVORA_ESCALATION_CONTACT": "ops@example.com",
+                "CIVORA_MONITORING_OWNER": "ops@example.com",
+                "CIVORA_ROLLBACK_OWNER": "release@example.com",
+                "CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN": "true",
+                "CIVORA_BILLING_LEGAL_DOCS_READY": "true",
+                "CIVORA_OCR_ENGINE": "manual",
+            }
+        )
+
+        self.assertFalse(report["release_blocked"])
+        self.assertEqual(report["status"], "warning")
 
     def test_debug_endpoint_requires_authentication(self) -> None:
         response = TestClient(app).get("/api/debug/production-env")

@@ -38,6 +38,7 @@ def health_response(
     runtime_monitoring: Dict[str, Any] | None = None,
     release_guard: Dict[str, Any] | None = None,
     deployment: Dict[str, Any] | None = None,
+    support: Dict[str, Any] | None = None,
 ) -> Dict[str, object]:
     normalized_mode = _normalize_product_mode(product_mode)
     normalized_storage = str(storage or "sqlite").strip().lower() or "sqlite"
@@ -58,7 +59,10 @@ def health_response(
         operational_status = "degraded"
     queue_evidence = alpha_monitoring_report.get("job_queue_monitoring_evidence") or {}
     queue_status = str(queue_evidence.get("status") or monitoring.get("job_queue", {}).get("status") or "unknown")
+    monitoring_queue = monitoring.get("job_queue", {}) if isinstance(monitoring.get("job_queue", {}), dict) else {}
+    queue_counts = monitoring_queue.get("counts") if isinstance(monitoring_queue.get("counts"), dict) else {}
     deployment_meta = deployment or {}
+    support_meta = support or {}
     build_version = str(deployment_meta.get("build_version") or app_version or "").strip()
     last_deploy_time = str(deployment_meta.get("last_deploy_time") or "").strip()
     api_base_url = str(deployment_meta.get("api_base_url") or "").strip()
@@ -102,6 +106,18 @@ def health_response(
             "last_deploy_time": last_deploy_time,
             "user_safe_messages": service_messages,
         },
+        "support": {
+            "support_contact_configured": bool(support_meta.get("support_contact_configured")),
+            "support_contact": str(support_meta.get("support_contact") or "support@civora.ai").strip(),
+            "bug_report_configured": bool(support_meta.get("bug_report_configured")),
+            "bug_report_url": str(support_meta.get("bug_report_url") or "").strip(),
+            "escalation_configured": bool(support_meta.get("escalation_configured")),
+            "escalation_contact": str(support_meta.get("escalation_contact") or "").strip(),
+            "user_safe_message": str(
+                support_meta.get("user_safe_message")
+                or "Use the support contact or bug report path for pilot issues; stop relying on affected outputs when source, review, or export status is unclear."
+            ),
+        },
         "alpha_review_guard": {
             "review_only": review_only,
             "construction_release_enabled": bool(release.get("construction_release_enabled")) and not review_only,
@@ -128,6 +144,10 @@ def health_response(
             "alpha_monitoring_blocker_count": len(alpha_monitoring_report.get("blockers") or []),
             "job_queue_evidence_status": str(queue_evidence.get("status") or ""),
             "queue_status": queue_status,
+            "queue_counts": queue_counts,
+            "queued_count": queue_evidence.get("pending_count", monitoring_queue.get("queued_count", queue_counts.get("queued"))),
+            "running_count": monitoring_queue.get("running_count", queue_counts.get("running", 0)),
+            "stale_job_count": monitoring_queue.get("stale_job_count", queue_evidence.get("timeout_count", 0)),
             "job_queue_monitoring_ready": bool(queue_evidence.get("queue_monitoring_ready")),
             "async_jobs_enabled": bool(queue_evidence.get("async_jobs_enabled", True)),
             "timeout_count": queue_evidence.get("timeout_count"),
@@ -139,5 +159,7 @@ def health_response(
             "construction_release_blocked": review_only or bool(release.get("construction_release_blocked")),
             "ready_for_ui": operational_status in {"healthy", "degraded"},
             "ready_for_public_launch": False,
+            "public_beta_blocked": True,
+            "public_beta_block_reason": "Public beta remains blocked until support, bug intake, billing/legal, monitoring, rollback, production storage/queue, and release gates are green.",
         },
     }

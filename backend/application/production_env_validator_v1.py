@@ -44,6 +44,13 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_MAX_IMAGE_UPLOAD_BYTES", "uploads", (), optional=True, description="Image/map snapshot upload limit."),
     EnvVarSpec("CIVORA_MAX_SURVEY_UPLOAD_BYTES", "uploads", (), optional=True, description="Survey CSV upload limit."),
     EnvVarSpec("CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES", "uploads", (), optional=True, description="Existing-condition and plan PDF upload limit."),
+    EnvVarSpec("CIVORA_SUPPORT_CONTACT_URL", "support", (), optional=True, description="User-visible support contact or support page."),
+    EnvVarSpec("CIVORA_SUPPORT_EMAIL", "support", (), optional=True, description="Fallback user-visible support email."),
+    EnvVarSpec("CIVORA_BUG_REPORT_URL", "support", (), optional=True, description="User-visible bug report intake URL."),
+    EnvVarSpec("CIVORA_ESCALATION_CONTACT", "support", (), optional=True, description="Internal escalation contact for source-trust, safety, privacy, billing, and export incidents."),
+    EnvVarSpec("CIVORA_MONITORING_OWNER", "operations", (), optional=True, description="Named owner for deployment health, queue, auth, upload, and error monitoring."),
+    EnvVarSpec("CIVORA_ROLLBACK_OWNER", "operations", (), optional=True, description="Named owner authorized to roll back or disable Vercel/Railway services."),
+    EnvVarSpec("CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN", "safety", (), optional=True, description="Explicit owner gate. Public beta remains blocked unless this is true and operational gates are configured."),
     EnvVarSpec("CIVORA_ALLOW_LOCAL_PILOT_CORS", "cors", (), optional=True, description="Temporary QA-only flag for local frontend to live backend."),
     EnvVarSpec("CIVORA_LOCAL_PILOT_CORS_ORIGINS", "cors", (), optional=True, description="Explicit local origins allowed only when CIVORA_ALLOW_LOCAL_PILOT_CORS=true."),
     EnvVarSpec("CIVORA_BILLING_PROVIDER", "billing", (), optional=True, description="Billing provider name. Defaults to none."),
@@ -259,6 +266,27 @@ def validate_production_env_v1(
         blockers.append(_issue("blocker", "production_review_only_flag_enabled", "Production mode conflicts with CIVORA_ALPHA_REVIEW_ONLY=true.", env_vars=["CIVORA_PRODUCT_MODE", "CIVORA_ALPHA_REVIEW_ONLY"]))
     if mode in {"private_alpha", "development", "local"} and _truthy(env.get("CIVORA_ENABLE_PUBLIC_ACCESS")):
         blockers.append(_issue("blocker", "public_access_enabled_in_restricted_mode", "Public access flag cannot be enabled in local/development/private_alpha.", env_vars=["CIVORA_ENABLE_PUBLIC_ACCESS"]))
+
+    if mode in PRODUCTION_MODES:
+        support_contact = _first_env(env, ("CIVORA_SUPPORT_CONTACT_URL", "CIVORA_SUPPORT_EMAIL", "CIVORA_SUPPORT_CONTACT"))
+        public_beta_gates = {
+            "support_contact_missing": (not support_contact, ["CIVORA_SUPPORT_CONTACT_URL", "CIVORA_SUPPORT_EMAIL"]),
+            "bug_report_url_missing": (not str(env.get("CIVORA_BUG_REPORT_URL") or env.get("CIVORA_BUG_REPORT_FORM_URL") or "").strip(), ["CIVORA_BUG_REPORT_URL"]),
+            "escalation_contact_missing": (not str(env.get("CIVORA_ESCALATION_CONTACT") or "").strip(), ["CIVORA_ESCALATION_CONTACT"]),
+            "monitoring_owner_missing": (not str(env.get("CIVORA_MONITORING_OWNER") or "").strip(), ["CIVORA_MONITORING_OWNER"]),
+            "rollback_owner_missing": (not str(env.get("CIVORA_ROLLBACK_OWNER") or "").strip(), ["CIVORA_ROLLBACK_OWNER"]),
+            "public_beta_release_gates_not_green": (not _truthy(env.get("CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN")), ["CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN"]),
+        }
+        for code, (blocked, env_vars) in public_beta_gates.items():
+            if blocked:
+                blockers.append(
+                    _issue(
+                        "blocker",
+                        code,
+                        "Public beta/production remains blocked until support, bug intake, monitoring, rollback, billing/legal, production queue/storage, and release gates are owner-approved.",
+                        env_vars=env_vars,
+                    )
+                )
 
     if not env.get("CIVORA_OCR_ENGINE"):
         warnings.append(_issue("warning", "ocr_engine_missing", "OCR/PDF extraction provider is not configured; PDF workflows should degrade gracefully.", env_vars=["CIVORA_OCR_ENGINE"]))

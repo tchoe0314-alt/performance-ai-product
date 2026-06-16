@@ -236,7 +236,7 @@ class ApiReleaseSafetyTest(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
-        self.assertEqual(second.json()["detail"], "Rate limit exceeded. Try again later.")
+        self.assertEqual(second.json()["detail"], "Rate limit exceeded for auth. Wait about 60 seconds, then try again.")
 
     def test_upload_type_error_names_allowed_extensions(self) -> None:
         upload = UploadFile(filename="site.bmp", file=BytesIO(b"not-an-image"), headers=Headers({"content-type": "image/bmp"}))

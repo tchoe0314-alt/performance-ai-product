@@ -80,6 +80,12 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
                 "process": {"status": "healthy", "recent_start_count": 1, "previous_shutdown_clean": True},
             },
             release_guard={"construction_release_enabled": False, "construction_release_blocked": True},
+            support={
+                "support_contact_configured": True,
+                "support_contact": "https://support.example.test",
+                "bug_report_configured": True,
+                "bug_report_url": "https://support.example.test/bugs",
+            },
         )
 
         self.assertEqual(data["product_mode"], "private_alpha")
@@ -103,6 +109,12 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertEqual(data["deployment"]["build_version"], "abc123")
         self.assertEqual(data["deployment"]["last_deploy_time"], "2026-06-10T12:00:00Z")
         self.assertEqual(data["deployment"]["user_safe_messages"], ["All visible deployment checks are reachable."])
+        self.assertEqual(data["support"]["support_contact"], "https://support.example.test")
+        self.assertTrue(data["support"]["bug_report_configured"])
+        self.assertEqual(data["operational_summary"]["queued_count"], 0)
+        self.assertEqual(data["operational_summary"]["running_count"], 0)
+        self.assertTrue(data["operational_summary"]["public_beta_blocked"])
+        self.assertFalse(data["operational_summary"]["ready_for_public_launch"])
 
     def test_runtime_monitoring_reports_process_restart_risk(self):
         previous = {

@@ -107,7 +107,7 @@ export async function readJsonResponse<T>(response: Response): Promise<T> {
             : response.status === 415
               ? rawDetail || "That file type is not supported for this upload."
               : response.status === 429
-                ? "Too many requests. Wait a minute, then try again."
+                ? rawDetail || "Too many requests. Wait about a minute, then try again."
                 : rawDetail;
     throw new Error(detail);
   }

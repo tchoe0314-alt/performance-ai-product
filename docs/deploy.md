@@ -31,6 +31,12 @@ MAPBOX_TOKEN=your_backend_mapbox_token
 CIVORA_MAX_IMAGE_UPLOAD_BYTES=10485760
 CIVORA_MAX_SURVEY_UPLOAD_BYTES=5242880
 CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES=26214400
+CIVORA_SUPPORT_CONTACT_URL=https://your-support-page.example
+CIVORA_BUG_REPORT_URL=https://your-bug-intake-form.example
+CIVORA_ESCALATION_CONTACT=ops-owner@example.com
+CIVORA_MONITORING_OWNER=ops-owner@example.com
+CIVORA_ROLLBACK_OWNER=release-owner@example.com
+CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=false
 ```
 
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
@@ -99,12 +105,13 @@ python scripts/production_env_validator_v1.py --target railway
 python scripts/production_env_validator_v1.py --target vercel
 ```
 
-The validator blocks missing required production config, invalid public URLs, wildcard CORS outside local/development, provider mismatches, Railway healthcheck mismatch, and Vercel API-base mistakes. It prints redacted diagnostics only.
+The validator blocks missing required production config, invalid public URLs, wildcard CORS outside local/development, provider mismatches, Railway healthcheck mismatch, Vercel API-base mistakes, and public beta/production without support, bug intake, monitoring owner, rollback owner, and an explicit `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=true` owner gate. It prints redacted diagnostics only.
 
 Backend:
 
 - health works at `/api/health`
 - deployment health shows frontend, backend, API URL, auth, queue, build, and deploy metadata without secrets
+- deployment health shows support and bug-report availability without secrets
 - Railway `healthcheckPath` is `/api/health`; do not point it at a frontend route or a placeholder path
 - auth status works at `/api/auth/status`
 - uploads fail clearly for unsupported file types or size limits
@@ -151,6 +158,7 @@ If Railway has an attached persistent volume from an older build, startup must m
 
 - this is a strong private beta deployment, not a full production platform yet
 - public beta remains blocked until owner-approved support, privacy, billing/legal, production storage/queue, monitoring, and release gates are complete
+- `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=false` is the default and must stay false until all gates are externally accepted by the owner
 - auth is still beta-grade app auth
 - SQLite is fine for a small beta, but not ideal for bigger multi-user scale
 - in-process jobs are fine for a small beta, but not for heavier production load

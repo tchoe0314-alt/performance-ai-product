@@ -30,6 +30,15 @@ Provider-conditional blockers:
 - Stripe keys when `CIVORA_BILLING_PROVIDER=stripe`
 - `CIVORA_GIS_PROVIDER_REGISTRY_URL` when `CIVORA_REQUIRE_GIS_PROVIDERS=true`
 
+Public beta/production operational blockers:
+
+- `CIVORA_SUPPORT_CONTACT_URL` or `CIVORA_SUPPORT_EMAIL`
+- `CIVORA_BUG_REPORT_URL`
+- `CIVORA_ESCALATION_CONTACT`
+- `CIVORA_MONITORING_OWNER`
+- `CIVORA_ROLLBACK_OWNER`
+- `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=true`
+
 ## Optional Env Vars
 
 - `DATABASE_URL`
@@ -43,6 +52,13 @@ Provider-conditional blockers:
 - `CIVORA_MAX_IMAGE_UPLOAD_BYTES`
 - `CIVORA_MAX_SURVEY_UPLOAD_BYTES`
 - `CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES`
+- `CIVORA_SUPPORT_CONTACT_URL`
+- `CIVORA_SUPPORT_EMAIL`
+- `CIVORA_BUG_REPORT_URL`
+- `CIVORA_ESCALATION_CONTACT`
+- `CIVORA_MONITORING_OWNER`
+- `CIVORA_ROLLBACK_OWNER`
+- `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN`
 - `CIVORA_ALLOW_LOCAL_PILOT_CORS`
 - `CIVORA_LOCAL_PILOT_CORS_ORIGINS`
 - `CIVORA_BILLING_PROVIDER`
@@ -85,4 +101,4 @@ The endpoint returns the same redacted report and is rate-limited with the exist
 
 ## Public Beta Reading
 
-`status=ready` only means this env contract is satisfied. It does not mean Civora is public-beta or construction ready. Public beta still requires the operational checklist: support owner, bug intake, privacy/terms, data retention, production storage and queue decisions, billing/legal gates, deployment rollback owner, monitoring cadence, and review-only responsibility language.
+`status=ready` only means this env contract is satisfied. It does not mean Civora is construction ready. Public beta remains blocked unless support owner, bug intake, privacy/terms, data retention, production storage and queue decisions, billing/legal gates, deployment rollback owner, monitoring cadence, review-only responsibility language, and `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=true` are all accepted by the owner.

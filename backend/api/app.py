@@ -250,7 +250,10 @@ def _check_rate_limit(bucket: str, key: str, *, limit: int, window_seconds: int,
         while events and events[0] <= cutoff:
             events.popleft()
         if len(events) >= limit:
-            raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded for {bucket}. Wait about {window_seconds} seconds, then try again.",
+            )
         events.append(current)
 
 
@@ -945,6 +948,21 @@ def _deployment_metadata() -> Dict[str, str]:
     }
 
 
+def _support_metadata() -> Dict[str, Any]:
+    support_contact = _first_env_value("CIVORA_SUPPORT_CONTACT_URL", "CIVORA_SUPPORT_EMAIL", "CIVORA_SUPPORT_CONTACT")
+    bug_report_url = _first_env_value("CIVORA_BUG_REPORT_URL", "CIVORA_BUG_REPORT_FORM_URL")
+    escalation_contact = _first_env_value("CIVORA_ESCALATION_CONTACT")
+    return {
+        "support_contact_configured": bool(support_contact),
+        "support_contact": support_contact or "support@civora.ai",
+        "bug_report_configured": bool(bug_report_url),
+        "bug_report_url": bug_report_url,
+        "escalation_configured": bool(escalation_contact),
+        "escalation_contact": escalation_contact,
+        "user_safe_message": "Use the support contact or bug report path for pilot issues; stop relying on affected outputs when source, review, or export status is unclear.",
+    }
+
+
 def _log_runtime_event(event: str, **fields: Any) -> None:
     print(
         json.dumps(
@@ -1061,6 +1079,7 @@ def health(_rate_limit: None = Depends(rate_limit("health"))) -> Dict[str, Any]:
         runtime_monitoring=runtime_payload["monitoring"],
         release_guard=runtime_payload["construction_release_guard"],
         deployment=_deployment_metadata(),
+        support=_support_metadata(),
     )
 
 

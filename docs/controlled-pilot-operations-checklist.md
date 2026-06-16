@@ -57,6 +57,12 @@ Backend:
 | `CIVORA_MAX_IMAGE_UPLOAD_BYTES` | Recommended | User-facing image/map upload limit. Default is 10 MiB. |
 | `CIVORA_MAX_SURVEY_UPLOAD_BYTES` | Recommended | User-facing survey CSV upload limit. Default is 5 MiB. |
 | `CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES` | Recommended | Existing-condition and plan PDF upload limit. Default is 25 MiB. |
+| `CIVORA_SUPPORT_CONTACT_URL` or `CIVORA_SUPPORT_EMAIL` | Required before public beta | User-visible support path exposed through safe health metadata. |
+| `CIVORA_BUG_REPORT_URL` | Required before public beta | User-visible bug intake path. |
+| `CIVORA_ESCALATION_CONTACT` | Required before public beta | Internal owner for safety, source-trust, privacy, billing, and export incidents. |
+| `CIVORA_MONITORING_OWNER` | Required before public beta | Named owner for deployment health, queue, auth, upload, and error monitoring. |
+| `CIVORA_ROLLBACK_OWNER` | Required before public beta | Named owner authorized to roll back or disable Vercel/Railway services. |
+| `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN` | Required before public beta | Keep `false` until all support, privacy, billing/legal, production storage/queue, monitoring, rollback, and review-only gates are owner-accepted. |
 
 Frontend:
 
