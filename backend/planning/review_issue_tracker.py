@@ -342,6 +342,14 @@ def _source_records(meta: Dict[str, Any], final_plan: Dict[str, Any]) -> List[Di
     _extend_issues(issues, safe_list(review_package.get("missing_inputs")), source_key="engineer_review_package_v1", default_severity="review")
     _extend_issues(issues, safe_list(review_package.get("reviewer_comments")), source_key="engineer_review_package_v1", default_severity="review")
 
+    standards_package = safe_dict(meta.get("standards_package"))
+    _extend_issues(issues, safe_list(standards_package.get("blockers")), source_key="standards_package", default_severity="blocker", default_discipline="standards")
+    _extend_issues(issues, safe_list(standards_package.get("construction_release_blockers")), source_key="standards_package", default_severity="blocker", default_discipline="standards")
+    report = safe_dict(standards_package.get("standards_acceptance_report"))
+    _extend_issues(issues, safe_list(report.get("reviewer_comments")), source_key="standards_acceptance_report", default_severity="review", default_discipline="standards")
+    rule_matrix = safe_dict(standards_package.get("standards_rule_check_matrix"))
+    _extend_issues(issues, safe_list(rule_matrix.get("blockers")), source_key="standards_rule_check_matrix", default_severity="blocker", default_discipline="standards")
+
     inbox = safe_dict(meta.get("candidate_review_inbox_v1")) or build_candidate_review_inbox(meta)
     for candidate in safe_list(inbox.get("candidates")):
         rec = safe_dict(candidate)

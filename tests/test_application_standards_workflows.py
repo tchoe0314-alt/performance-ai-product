@@ -68,7 +68,10 @@ class ApplicationStandardsWorkflowsTests(unittest.TestCase):
         self.assertEqual(accepted["standards_package"]["standards_acceptance_report"]["qa_status"], "ready")
         self.assertTrue(accepted["standards_package"]["selected_standards_source"]["explicitly_selected"])
         self.assertFalse(accepted["standards_package"]["construction_release_blocked"])
+        self.assertFalse(accepted["standards_package"]["construction_release_allowed"])
+        self.assertFalse(accepted["standards_package"]["requirements_gate"]["construction_allowed"])
         self.assertEqual(accepted["standards_acceptance"]["accepted_rules"][0]["accepted_by"], "engineer-1")
+        self.assertEqual(accepted["standards_acceptance"]["accepted_rules"][0]["rule_type"], "Minimum utility cover")
         audit = {item["rule_id"]: item for item in accepted["standards_acceptance"]["audit_trail"]}
         self.assertEqual(audit["austin_cover"]["decision"], "accepted")
         self.assertEqual(accepted["company_standards"]["cad_layers"], "CIVORA")

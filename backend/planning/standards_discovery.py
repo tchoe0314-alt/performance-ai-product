@@ -1259,6 +1259,13 @@ def _accepted_candidate_rule(
         approval_metadata.get("user_id"),
     )
     accepted_at = safe_str(action.get("accepted_at") or action.get("reviewed_at") or approval_metadata.get("accepted_at"), _today())
+    effective_date = safe_str(
+        action.get("effective_date")
+        or approval_metadata.get("effective_date")
+        or candidate.get("effective_date")
+        or candidate.get("source_version_or_effective_date")
+        or candidate.get("version_or_effective_date")
+    )
     accepted = deepcopy(candidate)
     accepted.update(
         {
@@ -1269,12 +1276,26 @@ def _accepted_candidate_rule(
             "accepted_at": accepted_at,
             "accepted_date": accepted_at[:10],
             "accepted_by": accepted_by,
+            "effective_date": effective_date,
+            "stale_date": safe_str(action.get("stale_date") or approval_metadata.get("stale_date")),
+            "rule_confidence": safe_str(action.get("rule_confidence") or candidate.get("rule_confidence") or candidate.get("confidence")),
+            "rule_type": safe_str(action.get("rule_type") or candidate.get("rule_type") or candidate.get("topic")),
+            "jurisdiction": deepcopy(safe_dict(action.get("jurisdiction") or approval_metadata.get("jurisdiction") or candidate.get("jurisdiction"))),
+            "company": safe_str(action.get("company") or approval_metadata.get("company") or candidate.get("company")),
             "acceptance_note": safe_str(action.get("acceptance_note") or action.get("note") or approval_metadata.get("acceptance_note")),
             "approval_metadata": deepcopy(approval_metadata),
             "source_id": safe_str(candidate.get("source_id")),
             "source_url": safe_str(candidate.get("source_url")),
             "source_version_or_effective_date": safe_str(candidate.get("source_version_or_effective_date")),
             "candidate_rule_id": safe_str(candidate.get("rule_id")),
+            "exact_source_trace": {
+                "source_id": safe_str(candidate.get("source_id")),
+                "source_url": safe_str(candidate.get("source_url")),
+                "source_section": safe_str(candidate.get("source_section")),
+                "source_document_title": safe_str(candidate.get("source_document_title")),
+                "source_version_or_effective_date": safe_str(candidate.get("source_version_or_effective_date")),
+                "extracted_text_or_summary": safe_str(candidate.get("extracted_text_or_summary") or candidate.get("candidate_value")),
+            },
         }
     )
     return accepted
@@ -1476,14 +1497,18 @@ def accept_standards_rules(
         }
         if rule_id in accepted:
             if reviewer:
-                edited["status"] = "accepted"
-                edited["acceptance_status"] = "accepted"
-                edited["accepted_date"] = _today()
-                edited["accepted_at"] = _today()
-                edited["accepted_by"] = reviewer
-                edited["requires_user_acceptance"] = False
-                edited["needs_human_confirmation"] = False
-                accepted_rules.append(edited)
+                accepted_rules.append(
+                    _accepted_candidate_rule(
+                        edited,
+                        action={
+                            "accepted_by": reviewer,
+                            "accepted_at": _today(),
+                            "rule_type": edited.get("rule_type") or edited.get("topic"),
+                        },
+                        reviewer_id=reviewer,
+                        approval_metadata={},
+                    )
+                )
                 audit_record["decision"] = "accepted"
             else:
                 edited["status"] = "pending"
@@ -1783,17 +1808,26 @@ class _TextExtractor(HTMLParser):
 
 
 RULE_PATTERNS: Tuple[Tuple[str, str, str], ...] = (
-    ("grading", "ADA slope", r"(?i)(ADA|accessible)[^.]{0,80}(slope|cross slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
+    ("parking", "parking ratio", r"(?i)(parking)[^.]{0,80}(ratio|spaces|required)[^.]{0,80}(\d+(?:\.\d+)?)\s*(spaces|space|stalls|stall)"),
+    ("parking", "parking geometry", r"(?i)(parking)[^.]{0,80}(stall|space|aisle)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
+    ("grading", "ADA slope", r"(?i)(ADA|accessible)[^.]{0,80}(slope|running slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
+    ("grading", "ADA cross slope", r"(?i)(ADA|accessible)[^.]{0,80}(cross\s*slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
+    ("grading", "maximum grading slope", r"(?i)(maximum|max\.?)[^.]{0,80}(grading|embankment|cut|fill|slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent|h:v|:1)"),
     ("utilities", "minimum cover", r"(?i)(minimum|min\.?)[^.]{0,80}(cover)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
+    ("utilities", "pipe slope", r"(?i)(pipe|storm|sanitary|sewer)[^.]{0,80}(minimum|min\.?|slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
+    ("utilities", "pipe material", r"(?i)(pipe|storm|sanitary|water)[^.]{0,80}(material|materials)[^.]{0,80}(RCP|PVC|DIP|HDPE|CMP)"),
     ("utilities", "vertical separation", r"(?i)(vertical)[^.]{0,80}(separation)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
     ("utilities", "utility separation", r"(?i)(water|sewer|sanitary|storm)[^.]{0,80}(separation)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
     ("storm", "detention drawdown", r"(?i)(detention|retention|stormwater)[^.]{0,100}(drawdown|release)[^.]{0,80}(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr)"),
-    ("roadway", "maximum grade", r"(?i)(maximum|max\.?)[^.]{0,80}(grade|slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
+    ("storm", "inlet spread", r"(?i)(inlet|gutter)[^.]{0,80}(spread)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
+    ("roadway", "maximum road grade", r"(?i)(maximum|max\.?)[^.]{0,80}(road|street|roadway|drive)[^.]{0,80}(grade|slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
+    ("roadway", "road cross slope", r"(?i)(road|street|roadway|pavement)[^.]{0,80}(cross\s*slope)[^.]{0,80}(\d+(?:\.\d+)?)\s*(%|percent)"),
     ("sanitary", "manhole spacing", r"(?i)(manhole)[^.]{0,80}(spacing)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
     ("water", "hydrant spacing", r"(?i)(hydrant)[^.]{0,80}(spacing)[^.]{0,80}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
     ("water", "fire flow", r"(?i)(fire\s*flow)[^.]{0,80}(\d+(?:\.\d+)?)\s*(gpm|gallons per minute)"),
     ("water", "residual pressure", r"(?i)(residual\s*pressure|minimum\s*pressure)[^.]{0,80}(\d+(?:\.\d+)?)\s*(psi)"),
     ("water", "maximum velocity", r"(?i)(water)[^.]{0,80}(velocity)[^.]{0,80}(\d+(?:\.\d+)?)\s*(fps|ft/s|feet per second)"),
+    ("landscape", "landscape buffer", r"(?i)(landscape|buffer|screening)[^.]{0,100}(\d+(?:\.\d+)?)\s*(feet|foot|ft|'|inches|inch|in)"),
 )
 
 

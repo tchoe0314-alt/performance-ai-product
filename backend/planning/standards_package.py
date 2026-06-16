@@ -27,6 +27,57 @@ REQUIRED_STANDARDS_RULE_TOPICS = (
     },
 )
 
+REVIEW_CHECK_AREAS = (
+    {
+        "key": "parking_ratios_geometry",
+        "label": "Parking ratios/geometry",
+        "disciplines": ("parking", "site"),
+        "tokens": ("parking", "stall", "aisle", "space ratio", "parking ratio", "geometry"),
+    },
+    {
+        "key": "ada_slopes_cross_slopes",
+        "label": "ADA slopes/cross-slopes",
+        "disciplines": ("grading", "accessibility", "roadway"),
+        "tokens": ("ada", "accessible", "cross slope", "running slope"),
+    },
+    {
+        "key": "road_grades_cross_slope",
+        "label": "Road grades/cross-slope",
+        "disciplines": ("roadway",),
+        "tokens": ("road", "street", "roadway", "grade", "cross slope"),
+    },
+    {
+        "key": "storm_inlet_spread",
+        "label": "Storm inlet/spread",
+        "disciplines": ("storm", "drainage"),
+        "tokens": ("inlet", "spread", "gutter", "storm"),
+    },
+    {
+        "key": "pipe_cover_slope_material",
+        "label": "Pipe cover/slope/material",
+        "disciplines": ("utilities", "storm", "sanitary", "water"),
+        "tokens": ("pipe", "cover", "slope", "material", "rcp", "pvc", "dip", "hdpe"),
+    },
+    {
+        "key": "hydrant_spacing_fire_flow_residual",
+        "label": "Hydrant spacing/fire-flow residual",
+        "disciplines": ("water", "fire"),
+        "tokens": ("hydrant", "fire flow", "residual pressure"),
+    },
+    {
+        "key": "grading_max_slopes",
+        "label": "Grading max slopes",
+        "disciplines": ("grading",),
+        "tokens": ("grading", "maximum slope", "max slope", "cut slope", "fill slope", "embankment"),
+    },
+    {
+        "key": "landscape_buffer",
+        "label": "Landscape/buffer",
+        "disciplines": ("landscape", "site"),
+        "tokens": ("landscape", "buffer", "screening"),
+    },
+)
+
 
 def _blocker(field: str, reason: str, *, next_action: str = "", severity: str = "blocker") -> Dict[str, Any]:
     return {
@@ -94,6 +145,144 @@ def _accepted_rules(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
         )
         if safe_dict(item)
     ]
+
+
+def _rule_text(rule: Dict[str, Any]) -> str:
+    return " ".join(
+        safe_str(rule.get(key)).lower()
+        for key in (
+            "discipline",
+            "topic",
+            "rule_type",
+            "candidate_value",
+            "extracted_text_or_summary",
+            "source_section",
+        )
+        if safe_str(rule.get(key))
+    )
+
+
+def _rule_check_area_keys(rule: Dict[str, Any]) -> List[str]:
+    discipline = safe_str(rule.get("discipline")).lower()
+    text = _rule_text(rule)
+    keys: List[str] = []
+    for area in REVIEW_CHECK_AREAS:
+        area_key = safe_str(area.get("key"))
+        disciplines = tuple(safe_str(item).lower() for item in area.get("disciplines", ()))
+        tokens = tuple(safe_str(item).lower() for item in area.get("tokens", ()))
+        if discipline in disciplines or any(token and token in text for token in tokens):
+            keys.append(area_key)
+    return keys
+
+
+def _exact_source_trace(rule: Dict[str, Any]) -> Dict[str, Any]:
+    trace = safe_dict(rule.get("exact_source_trace"))
+    return {
+        "source_id": safe_str(trace.get("source_id") or rule.get("source_id")),
+        "source_url": safe_str(trace.get("source_url") or rule.get("source_url")),
+        "source_section": safe_str(trace.get("source_section") or rule.get("source_section")),
+        "source_document_title": safe_str(trace.get("source_document_title") or rule.get("source_document_title")),
+        "source_version_or_effective_date": safe_str(
+            trace.get("source_version_or_effective_date")
+            or rule.get("source_version_or_effective_date")
+            or rule.get("version_or_effective_date")
+        ),
+        "extracted_text_or_summary": safe_str(trace.get("extracted_text_or_summary") or rule.get("extracted_text_or_summary") or rule.get("candidate_value")),
+    }
+
+
+def _enriched_accepted_rules(rules: List[Dict[str, Any]], jurisdiction: Dict[str, Any], company: Dict[str, Any]) -> List[Dict[str, Any]]:
+    enriched: List[Dict[str, Any]] = []
+    for rule in rules:
+        rec = deepcopy(rule)
+        trace = _exact_source_trace(rec)
+        rec["rule_confidence"] = safe_str(rec.get("rule_confidence") or rec.get("confidence"), "unknown")
+        rec["rule_type"] = safe_str(rec.get("rule_type") or rec.get("topic") or "standard_rule")
+        rec["discipline_mapping"] = _rule_check_area_keys(rec)
+        rec["exact_source_trace"] = trace
+        rec["jurisdiction"] = safe_dict(rec.get("jurisdiction")) or {
+            key: safe_str(jurisdiction.get(key))
+            for key in ("agency", "city", "county", "state", "utility_provider")
+            if safe_str(jurisdiction.get(key))
+        }
+        rec["company"] = safe_str(rec.get("company") or company.get("name") or company.get("source"))
+        rec["effective_date"] = safe_str(
+            rec.get("effective_date")
+            or rec.get("source_version_or_effective_date")
+            or trace.get("source_version_or_effective_date")
+        )
+        rec["stale_date"] = safe_str(rec.get("stale_date"))
+        rec["review_check_eligible"] = (
+            rec.get("acceptance_status") == "accepted"
+            and rec.get("status") == "accepted"
+            and bool(rec["discipline_mapping"])
+            and bool(trace.get("source_url"))
+            and bool(trace.get("source_section"))
+        )
+        enriched.append(rec)
+    return enriched
+
+
+def _standards_rule_check_matrix(accepted_rules: List[Dict[str, Any]], validation: Dict[str, Any]) -> Dict[str, Any]:
+    stale_rule_ids = {
+        safe_str(item.get("rule_id"))
+        for blocker in safe_list(validation.get("blockers"))
+        for item in safe_list(safe_dict(blocker).get("rules"))
+        if safe_dict(blocker).get("field") == "standards_stale"
+    }
+    for rule in accepted_rules:
+        stale_date = _parse_date(rule.get("stale_date"))
+        if stale_date is not None and stale_date <= date.today():
+            stale_rule_ids.add(safe_str(rule.get("rule_id")))
+    matrix: List[Dict[str, Any]] = []
+    blockers: List[Dict[str, Any]] = []
+    for area in REVIEW_CHECK_AREAS:
+        area_key = safe_str(area.get("key"))
+        mapped = [
+            rule
+            for rule in accepted_rules
+            if area_key in safe_list(rule.get("discipline_mapping"))
+            and rule.get("acceptance_status") == "accepted"
+            and rule.get("status") == "accepted"
+        ]
+        stale = [safe_str(rule.get("rule_id")) for rule in mapped if safe_str(rule.get("rule_id")) in stale_rule_ids]
+        if not mapped:
+            blockers.append(
+                _blocker(
+                    f"missing_standard_{area_key}",
+                    f"Missing accepted source-traceable standard for {safe_str(area.get('label'))}.",
+                    next_action=f"Accept an official-source rule for {safe_str(area.get('label'))}, or document that this review check is not applicable.",
+                )
+            )
+        if stale:
+            blockers.append(
+                _blocker(
+                    f"stale_standard_{area_key}",
+                    f"Accepted standard for {safe_str(area.get('label'))} is stale.",
+                    next_action="Refresh the official source evidence and reaccept the affected rule before using it for review checks.",
+                )
+            )
+        matrix.append(
+            {
+                "key": area_key,
+                "label": safe_str(area.get("label")),
+                "accepted_rule_ids": [safe_str(rule.get("rule_id")) for rule in mapped if safe_str(rule.get("rule_id"))],
+                "review_check_allowed": bool(mapped and not stale),
+                "blocked": not mapped or bool(stale),
+                "blocker_fields": [
+                    item["field"]
+                    for item in blockers
+                    if item["field"] in {f"missing_standard_{area_key}", f"stale_standard_{area_key}"}
+                ],
+            }
+        )
+    return {
+        "version": "standards_rule_check_matrix_v1",
+        "checks": matrix,
+        "blockers": blockers,
+        "review_only": True,
+        "truth_label": "Accepted standards can feed review checks only; this matrix does not certify jurisdiction compliance or authorize construction.",
+    }
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -413,6 +602,10 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     jurisdiction = _jurisdiction(meta)
     accepted_rules = _accepted_rules(meta)
     validation = _validation(meta, accepted_rules)
+    accepted_rules = _enriched_accepted_rules(accepted_rules, jurisdiction, company)
+    if not validation:
+        validation = _validation(meta, accepted_rules)
+    standards_rule_check_matrix = _standards_rule_check_matrix(accepted_rules, validation)
     retrieved_date = _retrieved_date(meta, accepted_rules)
     staleness = _staleness(retrieved_date)
     source_registry = _source_registry(meta)
@@ -619,15 +812,16 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     )
     if missing_rules and status == "ready":
         status = "needs_review"
-    production_usable = status == "ready" and bool(validation.get("production_usable")) and company.get("production_usable") is True
-    construction_blockers = blockers + ([] if production_usable else [
+    review_check_usable = status == "ready" and bool(validation.get("production_usable")) and company.get("production_usable") is True
+    construction_release_allowed = False
+    construction_blockers = blockers if review_check_usable else blockers + [
         _blocker(
             "construction_release",
-            "Construction release is blocked until standards are selected, accepted, official-source traceable, current, and company-approved.",
-            next_action="Resolve standards blockers or issue the package as review-only.",
+            "Construction release remains blocked until accepted standards evidence is selected, source-traceable, current, and company-approved.",
+            next_action="Resolve standards blockers or keep the package review-only.",
         )
-    ])
-    qa_status = "ready" if production_usable else "blocked" if blockers else "needs_review"
+    ]
+    qa_status = "ready" if review_check_usable else "blocked" if blockers else "needs_review"
     reviewer_comments = _reviewer_comments(
         blockers=blockers,
         warnings=warnings,
@@ -647,31 +841,36 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             "accepted_rule_ids": deepcopy(validation.get("accepted_rule_ids") or [safe_str(rule.get("rule_id")) for rule in accepted_rules if safe_str(rule.get("rule_id"))]),
             "inferred_rule_ids": inferred_rule_ids,
             "missing_rules": missing_rules,
+            "discipline_mapping": deepcopy(standards_rule_check_matrix),
         },
         "reviewer_comments": reviewer_comments,
-        "construction_release_blocked": not production_usable,
-        "review_only": not production_usable,
+        "construction_release_blocked": not review_check_usable,
+        "review_only": not review_check_usable,
         "compliance_statement": "This report records standards acceptance evidence only. It is not a code-compliance certification and does not treat inferred/search/baseline standards as accepted.",
     }
     return {
         "version": "standards_package_v1",
         "status": status,
-        "production_usable": production_usable,
-        "review_only": not production_usable,
-        "construction_release_blocked": not production_usable,
+        "production_usable": review_check_usable,
+        "review_check_usable": review_check_usable,
+        "review_only": not review_check_usable,
+        "construction_release_blocked": not review_check_usable,
+        "construction_release_allowed": construction_release_allowed,
         "construction_release_blockers": construction_blockers,
         "requirements_gate": {
-            "status": "construction_ready" if production_usable else "construction_blocked",
+            "status": "review_ready" if review_check_usable else "review_blocked",
             "qa_status": qa_status,
             "review_allowed": bool(accepted_rules),
-            "construction_allowed": production_usable,
+            "construction_allowed": False,
+            "construction_release_allowed": construction_release_allowed,
             "missing_inputs": deepcopy(missing_inputs),
             "accepted_rule_ids": deepcopy(validation.get("accepted_rule_ids") or [safe_str(rule.get("rule_id")) for rule in accepted_rules if safe_str(rule.get("rule_id"))]),
             "inferred_rule_ids": inferred_rule_ids,
             "missing_rules": deepcopy(missing_rules),
+            "standards_rule_check_matrix": deepcopy(standards_rule_check_matrix),
             "official_source_urls": official_source_urls,
             "reviewer_comments": deepcopy(reviewer_comments),
-            "truth_label": "Review may use accepted rules, but construction is blocked unless every accepted rule is official-source traceable and jurisdiction/company standards are explicit.",
+            "truth_label": "Review may use accepted rules, but Civora does not stamp, seal, certify, approve, or authorize construction.",
         },
         "standards_acceptance_report": acceptance_report,
         "qa": {
@@ -682,6 +881,7 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             "reviewer_comments": deepcopy(reviewer_comments),
         },
         "accepted_for_qa": bool(accepted_rules),
+        "standards_rule_check_matrix": standards_rule_check_matrix,
         "selected_jurisdiction": jurisdiction,
         "selected_standards_source": source_selection,
         "source_urls": source_urls,
@@ -702,7 +902,7 @@ def build_standards_package(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         "blockers": blockers,
         "blocker_details": readiness_issue_explanations(blockers),
         "warnings": warnings,
-        "truth_label": "Standards packages are accepted rule evidence, not automatic code compliance; official source and engineer review remain required.",
+        "truth_label": "Standards packages are accepted rule evidence, not automatic code compliance; official source and engineer review remain required, and Civora does not approve construction.",
     }
 
 

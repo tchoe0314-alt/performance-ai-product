@@ -56,6 +56,7 @@ from backend.planning.source_confidence_map import (
     attach_source_confidence_map,
     build_source_confidence_map,
 )
+from backend.planning.standards_package import build_standards_package
 from backend.planning.customer_templates import GLOBAL_CUSTOMER_TEMPLATE_MANAGER, template_behavior
 from backend.planning.annotation_standards import annotation_chat_response_payload
 from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
@@ -153,6 +154,108 @@ def _annotation_standards_chat_response(message: str, context: Dict[str, Any]) -
         state_changed=False,
     )
 
+
+def _standards_rules_chat_response(
+    *,
+    message: str,
+    context: Dict[str, Any],
+    record: Optional[Dict[str, Any]],
+    project_store: Any,
+    user_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    mentions_standards = "standard" in lowered or "rule" in lowered or "compliance" in lowered or "company standard" in lowered
+    if not mentions_standards:
+        return None
+    asks_missing = "missing" in lowered or "what standards" in lowered or "what standard" in lowered
+    asks_company = "use my company standard" in lowered or "use company standard" in lowered or "company standard" in lowered
+    asks_accepted = "accepted" in lowered or "is this rule accepted" in lowered or "is the rule accepted" in lowered
+    asks_blocked = "why" in lowered and ("blocked" in lowered or "compliance" in lowered)
+    if not (asks_missing or asks_company or asks_accepted or asks_blocked):
+        return None
+
+    meta = _meta_from_chat_context(context)
+    changed = False
+    if asks_company:
+        supplied_company = _safe_dict(context.get("company_standards") or context.get("company_standard"))
+        if supplied_company and record:
+            latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+            final_plan = _safe_dict(latest_result.get("final_plan"))
+            plan_meta = _safe_dict(final_plan.get("meta"))
+            plan_meta["company_standards"] = supplied_company
+            plan_meta["standards_package"] = build_standards_package(plan_meta)
+            final_plan["meta"] = plan_meta
+            latest_result["final_plan"] = final_plan
+            if project_store and user_id:
+                _save_project_record(project_store, record, project_input=deepcopy(_safe_dict(record.get("project_input"))), latest_result=latest_result)
+            meta = plan_meta
+            changed = True
+
+    package = _safe_dict(meta.get("standards_package")) or build_standards_package(meta)
+    matrix = _safe_dict(package.get("standards_rule_check_matrix"))
+    checks = [_safe_dict(item) for item in _safe_list(matrix.get("checks"))]
+    blockers = [_safe_dict(item) for item in _safe_list(package.get("blockers")) + _safe_list(matrix.get("blockers"))]
+    accepted_rules = [_safe_dict(item) for item in _safe_list(package.get("accepted_rules"))]
+    accepted_ids = [safe_str(rule.get("rule_id")) for rule in accepted_rules if safe_str(rule.get("rule_id"))]
+
+    lines: List[str] = []
+    action_taken = "answered_standards_status"
+    if asks_company:
+        action_taken = "recorded_company_standards_for_review" if changed else "blocked_company_standards_missing_trace"
+        if changed:
+            lines.append("Company standards were attached to the project standards package for review only.")
+        else:
+            lines.append("I can use a company standard only after it includes source/approval trace such as source, approved_by, approval_date, and review status.")
+    if asks_accepted:
+        action_taken = "answered_rule_acceptance_status"
+        lines.append("Accepted rules: " + (", ".join(accepted_ids) if accepted_ids else "none."))
+        lines.extend(
+            [
+                f"{safe_str(rule.get('rule_id'))}: accepted_by={safe_str(rule.get('accepted_by')) or 'missing'}, accepted_date={safe_str(rule.get('accepted_date')) or 'missing'}, source={safe_str(rule.get('source_url')) or 'missing'}"
+                for rule in accepted_rules[:6]
+            ]
+        )
+    if asks_missing:
+        action_taken = "answered_missing_standards"
+        missing_checks = [item for item in checks if item.get("blocked")]
+        lines.append("Missing or blocked standards:")
+        if missing_checks:
+            lines.extend(
+                f"- {safe_str(item.get('label'))}: {', '.join(_safe_list(item.get('blocker_fields'))) or 'no accepted current source-traceable rule'}"
+                for item in missing_checks[:10]
+            )
+        else:
+            lines.append("- No missing review-check standards are visible in the current package.")
+    if asks_blocked:
+        action_taken = "answered_standards_compliance_blockers"
+        lines.append("Compliance is blocked because Civora has review evidence only, not jurisdiction approval or engineer-of-record certification.")
+        lines.extend(
+            f"- {safe_str(item.get('field'))}: {safe_str(item.get('reason')) or safe_str(item.get('message'))}"
+            for item in blockers[:10]
+        )
+    lines.append("Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.")
+
+    blocker_text = "; ".join(safe_str(item.get("field")) for item in blockers if safe_str(item.get("field")))
+    return _truthful_decision_update(
+        {},
+        assistant_message="\n".join(lines),
+        intent="standards_rules",
+        run_mode="none",
+        design_prompt="",
+        needs_clarification=False,
+        action_taken=action_taken,
+        affected_systems=["standards", "review"],
+        assumptions=[],
+        next_best_action="Accept official-source standards through the company/engineer workflow, refresh stale sources, and keep all outputs review-required.",
+        command_payload_updates={
+            "standards_package": package,
+            "standards_rule_check_matrix": matrix,
+            "requested_ui_mode": "data",
+        },
+        outcome="understood_and_executed" if not action_taken.startswith("blocked") else "understood_but_blocked",
+        state_changed=changed,
+        blocker=blocker_text,
+    )
 
 def _truthful_decision_update(
     decision: Dict[str, Any],
@@ -3464,6 +3567,15 @@ def decide_chat(
     utility_catalog_decision = _utility_catalog_chat_response(message, context)
     if utility_catalog_decision is not None:
         return _enrich_response_contract(utility_catalog_decision, message=message)
+    standards_rules_decision = _standards_rules_chat_response(
+        message=message,
+        context=context,
+        record=record,
+        project_store=project_store,
+        user_id=user_id,
+    )
+    if standards_rules_decision is not None:
+        return _enrich_response_contract(standards_rules_decision, message=message)
     issue_tracker_decision = _issue_tracker_chat_response(
         message=message,
         record=record,
