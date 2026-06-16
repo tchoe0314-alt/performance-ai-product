@@ -260,6 +260,43 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("separate licensing", result["assistant_message"])
         self.assertNotIn("verified Civil 3D", result["assistant_message"])
 
+    def test_chat_handles_symbol_insert_attribute_edit_and_underlay(self):
+        insert = decide_chat(
+            {"message": "insert hydrant symbol", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+        self.assertEqual(insert["action_taken"], "prepared_symbol_insert")
+        symbol_payload = insert["response_metadata"]["command_payload"]["symbol_insert_v1"]
+        self.assertEqual(symbol_payload["kind"], "hydrant")
+        self.assertEqual(symbol_payload["editable_attributes"], ["id", "label", "elevation", "material", "size", "source", "review_note"])
+        self.assertEqual(symbol_payload["engineering_status"], "draft_review_required")
+        self.assertFalse(symbol_payload["native_dwg_block_parity"])
+
+        edit = decide_chat(
+            {
+                "message": "edit this block attribute",
+                "context": {
+                    "current_project": {"project_id": "project_123"},
+                    "selected_object_id": "hydrant-1",
+                },
+            },
+            decide_chat_message=decide_chat_message,
+        )
+        self.assertEqual(edit["action_taken"], "answered_block_attribute_edit_path")
+        self.assertIn("review_note", edit["response_metadata"]["command_payload"]["symbol_attribute_edit_v1"]["editable_fields"])
+        self.assertFalse(edit["response_metadata"]["command_payload"]["symbol_attribute_edit_v1"]["construction_release_allowed"])
+
+        underlay = decide_chat(
+            {"message": "attach this PDF as underlay", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+        )
+        self.assertEqual(underlay["action_taken"], "prepared_reference_underlay_attachment")
+        reference = underlay["response_metadata"]["command_payload"]["reference_underlay_v1"]
+        self.assertEqual(reference["file_type"], "pdf")
+        self.assertTrue(reference["not_editable"])
+        self.assertTrue(reference["source_only"])
+        self.assertFalse(reference["native_xref_parity"])
+
     def test_chat_reports_open_review_issues(self):
         record = _record()
         record["latest_result"]["final_plan"]["meta"].update(

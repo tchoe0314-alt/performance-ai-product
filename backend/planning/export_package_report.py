@@ -13,6 +13,7 @@ from .plotting_standards import build_plotting_standards
 from .release_gates import construction_release_blockers_from_meta, final_plan_requires_construction_release
 from .smart_fix import build_smart_fix_recommendations
 from .annotation_standards import build_annotation_standards_trace
+from .symbol_block_library import build_symbol_block_reference_trace
 
 
 def _utc_now_iso() -> str:
@@ -503,6 +504,7 @@ def build_export_package_report_v1(
     formats = _apply_external_verification_to_formats(formats, external_verification)
     civil3d_compatibility = _civil3d_compatibility_status(external_verification)
     annotation_trace = build_annotation_standards_trace(meta, export_type=safe_str(export_type))
+    symbol_reference_trace = build_symbol_block_reference_trace(meta)
     plotting_standards = build_plotting_standards(meta)
     review_blocked = bool(audit_blocked or gate_blocked or stale)
     deliverable_confidence = (
@@ -540,6 +542,7 @@ def build_export_package_report_v1(
         "smart_fix_recommendations_v1": build_smart_fix_recommendations(plan, meta=meta),
         "canonical_ids_included": canonical_ids,
         "annotation_standard_trace": annotation_trace,
+        "symbol_block_reference_trace": symbol_reference_trace,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
         "paper_model_plotting_standards_v1": plotting_standards,
         "sheet_manager": deepcopy(plotting_standards["sheet_manager"]),

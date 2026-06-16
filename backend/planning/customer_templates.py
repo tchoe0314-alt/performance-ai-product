@@ -7,6 +7,8 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from .symbol_block_library import SYMBOL_ATTRIBUTE_FIELDS, normalize_symbol_library
+
 
 TEMPLATE_REGISTRY_VERSION = "customer_template_registry_v1"
 TEMPLATE_EXPORT_VERSION = "customer_template_export_v1"
@@ -29,7 +31,8 @@ RELEASE_LANGUAGE = (
     "seal",
     "sealed",
     "signed",
-    "sign",
+    "signature",
+    "sign-off",
     "certify",
     "certified",
     "approval",
@@ -232,8 +235,8 @@ def sample_customer_template() -> Dict[str, Any]:
             },
             "symbol_library": {
                 "blocks": [
-                    {"block_id": "storm_inlet_plan", "name": "Storm inlet"},
-                    {"block_id": "water_valve_plan", "name": "Water valve"},
+                    {"block_id": "storm_inlet_plan", "kind": "inlet", "name": "Storm inlet", "attribute_fields": SYMBOL_ATTRIBUTE_FIELDS},
+                    {"block_id": "water_valve_plan", "kind": "valve", "name": "Water valve", "attribute_fields": SYMBOL_ATTRIBUTE_FIELDS},
                 ]
             },
             "report_template": {
@@ -261,6 +264,7 @@ def summarize_template(template: Dict[str, Any]) -> Dict[str, Any]:
     sections = _safe_dict(template.get("sections"))
     present = [key for key in TEMPLATE_TYPES if _safe_dict(sections.get(key))]
     missing = [key for key in TEMPLATE_TYPES if key not in present]
+    symbol_library = normalize_symbol_library(template)
     return {
         "template_id": _safe_str(template.get("template_id")),
         "name": _safe_str(template.get("name")),
@@ -277,6 +281,9 @@ def summarize_template(template: Dict[str, Any]) -> Dict[str, Any]:
         "hatch_style_count": len(_safe_list(_section(template, "annotation_standards").get("hatch_fill_styles"))),
         "linetype_style_count": len(_safe_list(_section(template, "annotation_standards").get("linetype_styles"))),
         "symbol_count": len(_safe_list(_section(template, "symbol_library").get("blocks"))),
+        "symbol_library_supported_count": len(_safe_list(symbol_library.get("blocks"))),
+        "symbol_library_kinds": _safe_list(symbol_library.get("supported_symbol_kinds")),
+        "symbol_attribute_fields": _safe_list(symbol_library.get("attribute_fields")),
         "report_template_count": len(_safe_list(_section(template, "report_template").get("reports"))),
         "cost_book_link_count": len(_safe_list(_section(template, "cost_book_link").get("links"))),
         "pipe_hook_ready": bool(_section(template, "pipe_template_hook")),
@@ -307,7 +314,7 @@ def template_behavior(template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             "Title block templates provide sheet metadata fields for deliverable setup.",
             "Label style templates guide plan labels and callouts.",
             "Annotation standards guide dimensions, text, leaders/callouts, hatches, linetypes, scale behavior, and annotation layer assignment as review/drafting aids.",
-            "Symbol/block libraries expose reusable firm blocks for plan objects.",
+            "Symbol/block libraries expose reusable firm blocks for plan objects with editable ID, label, elevation, material, size, source, and review-note attributes.",
             "Report templates select report sections and ordering.",
             "Cost book template links connect estimates to firm price-book references after separate cost-book review.",
             "Pipe and roadway hooks provide default layer/label settings for those engines.",
