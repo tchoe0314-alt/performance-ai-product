@@ -98,6 +98,16 @@ class _MultiMarketRoutingSession:
                 return _Response({"result": {"addressMatches": [{"matchedAddress": "301 W 2ND ST, AUSTIN, TX, 78701", "coordinates": {"x": -97.747, "y": 30.265}}]}})
             if "Atlanta" in self.address:
                 return _Response({"result": {"addressMatches": [{"matchedAddress": "55 TRINITY AVE SW, ATLANTA, GA, 30303", "coordinates": {"x": -84.3903, "y": 33.7488}}]}})
+            if "Dallas" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "1500 MARILLA ST, DALLAS, TX, 75201", "coordinates": {"x": -96.7970, "y": 32.7767}}]}})
+            if "Houston" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "1001 PRESTON ST, HOUSTON, TX, 77002", "coordinates": {"x": -95.3698, "y": 29.7604}}]}})
+            if "Denver" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "201 W COLFAX AVE, DENVER, CO, 80202", "coordinates": {"x": -104.9903, "y": 39.7392}}]}})
+            if "Phoenix" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "301 W JEFFERSON ST, PHOENIX, AZ, 85003", "coordinates": {"x": -112.0740, "y": 33.4484}}]}})
+            if "Charlotte" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "600 E 4TH ST, CHARLOTTE, NC, 28202", "coordinates": {"x": -80.8431, "y": 35.2271}}]}})
             return _Response({"result": {"addressMatches": [{"matchedAddress": "100 MAIN ST, MADISON, WI, 53703", "coordinates": {"x": -89.384, "y": 43.074}}]}})
         if "epqs" in url:
             return _Response({"value": {"elevation": 700.0}})
@@ -256,7 +266,7 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
 
         session = _RoutingSession()
         result = fetch_online_existing_conditions(
-            address="1 Main St",
+            bbox={"west": -97, "south": 32, "east": -96, "north": 33},
             include_parcels=False,
             include_roads=False,
             include_easements=False,
@@ -333,6 +343,40 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertIn("no verified queryable local provider", " ".join(sources["building_footprints"]["blockers"]).lower())
         self.assertEqual(sources["public_utilities"]["candidate_count"], 0)
         self.assertIn("No verified queryable Fulton/Atlanta utility", " ".join(sources["public_utilities"]["blockers"]))
+
+    def test_denver_provider_pack_fetches_source_traced_candidates(self) -> None:
+        session = _MultiMarketRoutingSession("201 W Colfax Ave, Denver, CO")
+        result = fetch_online_existing_conditions(address="201 W Colfax Ave, Denver, CO", session=session)
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+        urls = [call["url"] for call in session.calls]
+
+        self.assertEqual(report["provider_packs"][0]["pack_id"], "denver_co_city_county")
+        self.assertGreaterEqual(sources["parcel_site_boundary"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["building_footprints"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["road_row"]["candidate_count"], 1)
+        self.assertIn("https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_PROP_PARCELS_A/FeatureServer/245/query", urls)
+        self.assertIn("https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_PROP_BUILDINGOUTLINES_A/FeatureServer/111/query", urls)
+        self.assertIn("https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_TRANS_STREET_L/FeatureServer/145/query", urls)
+        self.assertTrue(all(item["review_required"] for item in report["sources"]))
+        self.assertFalse(report["survey_control"]["survey_control_satisfied"])
+
+    def test_houston_pack_reports_missing_buildings_without_fabricating(self) -> None:
+        session = _MultiMarketRoutingSession("1001 Preston St, Houston, TX")
+        result = fetch_online_existing_conditions(address="1001 Preston St, Houston, TX", session=session)
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+        urls = [call["url"] for call in session.calls]
+
+        self.assertEqual(report["provider_packs"][0]["pack_id"], "houston_harris_tx")
+        self.assertGreaterEqual(sources["parcel_site_boundary"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["road_row"]["candidate_count"], 1)
+        self.assertEqual(sources["building_footprints"]["candidate_count"], 0)
+        self.assertIn("No verified queryable Houston/Harris building-footprint provider", " ".join(sources["building_footprints"]["blockers"]))
+        self.assertIn("https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/MapServer/0/query", urls)
+        self.assertNotIn("building", " ".join(urls).lower())
 
     def test_federal_fallback_sources_work_without_local_pack(self) -> None:
         session = _MultiMarketRoutingSession("100 Main St, Madison, WI")
