@@ -18,10 +18,13 @@ from backend.planning.candidate_review_inbox import (
     build_candidate_review_inbox,
 )
 from backend.planning.cad_entity_model import (
+    CAD_ENTITY_CHAT_OPERATION_VERSION,
     CAD_ENTITY_MODEL_VERSION,
+    apply_cad_entity_operation,
     attach_cad_entity_model_to_result,
     build_cad_entity_model,
     build_cad_history_snapshot,
+    cad_entity_operation_result,
     cad_entities_to_site_object_candidates,
     history_event,
     manual_drawn_objects_to_cad_entities,
@@ -644,6 +647,186 @@ def _meta_from_chat_context(context: Dict[str, Any]) -> Dict[str, Any]:
     return _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
 
 
+def _numeric_values_for_cad_command(message: str) -> List[float]:
+    scrubbed = re.sub(r"\bcad[-_a-z0-9]*\b", " ", message.lower())
+    return [float(item) for item in re.findall(r"(?<![a-z])-?\d+(?:\.\d+)?", scrubbed)]
+
+
+def _point_pairs(values: List[float]) -> List[Dict[str, float]]:
+    return [{"x": values[index], "y": values[index + 1]} for index in range(0, len(values) - 1, 2)]
+
+
+def _collect_selected_cad_entity_ids(context: Dict[str, Any], model: Dict[str, Any], message: str) -> List[str]:
+    entity_ids = {safe_str(item.get("id")) for item in _safe_list(model.get("entities")) if isinstance(item, dict)}
+    selected: List[str] = []
+
+    def _extend(value: Any) -> None:
+        values = value if isinstance(value, list) else [value]
+        for item in values:
+            entity_id = safe_str(item)
+            if entity_id and entity_id in entity_ids and entity_id not in selected:
+                selected.append(entity_id)
+
+    for key in (
+        "selected_cad_entity_ids",
+        "selected_entity_ids",
+        "target_entity_ids",
+        "selected_object_ids",
+        "selected_object_id",
+        "activePlacementId",
+        "active_placement_id",
+    ):
+        _extend(context.get(key))
+    for entity_id in _safe_list(model.get("selected_entity_ids")):
+        _extend(entity_id)
+    for entity_id in re.findall(r"\bcad[-_a-z0-9]+\b", message.lower()):
+        _extend(entity_id)
+    return selected
+
+
+def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], model: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lowered = _normalized_text(message)
+    if "command line" in lowered or "cad command" in lowered:
+        return None
+    if any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin")) and "cad entity" not in lowered and "cad object" not in lowered:
+        return None
+    command_tokens = (
+        "create",
+        "draw",
+        "add",
+        "move",
+        "copy",
+        "rotate",
+        "scale",
+        "set layer",
+        "change layer",
+        "change style",
+        "set style",
+        "line",
+        "polyline",
+        "rectangle",
+        "dimension",
+        "text",
+        "cad entity",
+        "cad object",
+    )
+    if not any(token in lowered for token in command_tokens):
+        return None
+    if "drawn object" in lowered and "convert" in lowered:
+        return None
+
+    release_terms = (
+        "stamp",
+        "seal",
+        "sign off",
+        "certify",
+        "approve construction",
+        "submit construction",
+        "engineer of record",
+        "construction ready",
+        "construction-ready",
+    )
+    if any(term in lowered for term in release_terms):
+        return {
+            "action": "blocked_construction_release_request",
+            "understood_goal": message,
+            "safety_blockers": ["chat_cad_commands_cannot_stamp_seal_certify_approve_submit_or_act_as_engineer_of_record"],
+            "next_best_action": "Use chat CAD commands only for drafting/review edits, then route review evidence through safe backend workflows.",
+        }
+
+    selected_ids = _collect_selected_cad_entity_ids(context, model, message)
+    explicit_persistent_cad = "cad entity" in lowered or "cad object" in lowered or bool(selected_ids)
+    values = _numeric_values_for_cad_command(message)
+    points = _point_pairs(values)
+    base = {
+        "understood_goal": message,
+        "target_entity_ids": selected_ids,
+        "next_best_action": "Review the changed CAD entities and their source confidence before downstream use.",
+    }
+
+    wants_create = any(token in lowered for token in ("create", "draw", "add"))
+    if re.search(r"\b(line|segment)\b", lowered) and wants_create:
+        if len(points) < 2:
+            return {**base, "action": "create_line", "entity_type": "line", "missing_inputs": ["line start point", "line end point"], "next_best_action": "Provide start and end coordinates, for example: create line from 0,0 to 25,0."}
+        return {**base, "action": "create_line", "entity_type": "line", "geometry": {"start": points[0], "end": points[1], "units": "ft"}}
+    if ("polyline" in lowered or "pline" in lowered) and wants_create:
+        if len(points) < 2:
+            return {**base, "action": "create_polyline", "entity_type": "polyline", "missing_inputs": ["at least two polyline points"], "next_best_action": "Provide at least two coordinate pairs for the polyline."}
+        return {**base, "action": "create_polyline", "entity_type": "polyline", "geometry": {"points": points, "closed": "closed" in lowered, "units": "ft"}}
+    if ("rectangle" in lowered or "rect" in lowered) and wants_create:
+        if len(points) < 1 or len(values) < 4:
+            return {**base, "action": "create_rectangle", "entity_type": "rectangle", "missing_inputs": ["rectangle origin", "rectangle width", "rectangle height"], "next_best_action": "Provide origin, width, and height, for example: create rectangle at 0,0 width 40 height 20."}
+        return {**base, "action": "create_rectangle", "entity_type": "rectangle", "geometry": {"origin": points[0], "width": abs(values[-2]), "height": abs(values[-1]), "units": "ft"}}
+    if "dimension" in lowered and wants_create:
+        if len(points) < 2:
+            return {**base, "action": "create_dimension", "entity_type": "dimension", "missing_inputs": ["dimension start point", "dimension end point"], "next_best_action": "Provide two measurement points for the dimension."}
+        return {**base, "action": "create_dimension", "entity_type": "dimension", "geometry": {"start": points[0], "end": points[1], "points": points[:2], "units": "ft"}}
+    if re.search(r"\btext\b", lowered) and wants_create:
+        text_match = re.search(r"['\"]([^'\"]+)['\"]", message)
+        label = text_match.group(1).strip() if text_match else ""
+        if not label or not points:
+            missing = []
+            if not label:
+                missing.append("text label")
+            if not points:
+                missing.append("text insertion point")
+            return {**base, "action": "create_text", "entity_type": "text", "missing_inputs": missing, "next_best_action": "Provide quoted text and an insertion point, for example: add text \"FFE 100.0\" at 5,5."}
+        return {**base, "action": "create_text", "entity_type": "text", "geometry": {"insert": points[0], "text": label, "height": 1.0, "units": "ft"}}
+
+    selected_action = ""
+    if "move" in lowered:
+        selected_action = "move_selected"
+    elif "copy" in lowered:
+        selected_action = "copy_selected"
+    elif "rotate" in lowered:
+        selected_action = "rotate_selected"
+    elif "scale" in lowered:
+        selected_action = "scale_selected"
+    elif "layer" in lowered and any(token in lowered for token in ("set", "change", "move")):
+        selected_action = "change_layer"
+    elif "style" in lowered and any(token in lowered for token in ("set", "change")):
+        selected_action = "change_style"
+    elif explicit_persistent_cad and any(token in lowered for token in ("trim", "extend", "fillet", "offset")):
+        unsupported = lowered.split()[0]
+        return {
+            **base,
+            "action": "unsupported",
+            "safety_blockers": [f"unsupported_persistent_cad_entity_command:{unsupported}"],
+            "next_best_action": "Use supported persistent CAD entity commands: create line/polyline/rectangle/text/dimension; move/copy/rotate/scale selected entity; change layer/style; convert drawn object; explain invalid/stale entities.",
+        }
+    if not selected_action:
+        return None
+    if not explicit_persistent_cad:
+        return None
+    if not selected_ids:
+        return {**base, "action": selected_action, "missing_inputs": ["selected CAD entity"], "next_best_action": "Select one or more persistent CAD entities, then retry the command."}
+    if selected_action in {"move_selected", "copy_selected"}:
+        if len(values) < 2:
+            return {**base, "action": selected_action, "missing_inputs": ["x offset", "y offset"], "next_best_action": "Provide an X/Y offset, for example: move selected CAD entity by 10,0."}
+        return {**base, "action": selected_action, "dx": values[0], "dy": values[1]}
+    if selected_action == "rotate_selected":
+        if not values:
+            return {**base, "action": selected_action, "missing_inputs": ["rotation angle"], "next_best_action": "Provide a rotation angle in degrees."}
+        return {**base, "action": selected_action, "angle_degrees": values[0]}
+    if selected_action == "scale_selected":
+        if not values or values[0] <= 0:
+            return {**base, "action": selected_action, "missing_inputs": ["positive scale factor"], "next_best_action": "Provide a positive scale factor, for example: scale selected CAD entity by 2."}
+        return {**base, "action": selected_action, "scale_factor": values[0]}
+    if selected_action == "change_layer":
+        match = re.search(r"(?:layer|to layer)\s+([a-zA-Z0-9_.-]+)", message)
+        layer_id = safe_str(match.group(1) if match else "")
+        if not layer_id:
+            return {**base, "action": selected_action, "missing_inputs": ["target layer"], "next_best_action": "Name the target layer, for example: change selected CAD entity to layer utility."}
+        return {**base, "action": selected_action, "layer_id": layer_id}
+    if selected_action == "change_style":
+        match = re.search(r"(?:style|to style)\s+([a-zA-Z0-9_.-]+)", message)
+        style_id = safe_str(match.group(1) if match else "")
+        if not style_id:
+            return {**base, "action": selected_action, "missing_inputs": ["target style"], "next_best_action": "Name the target style, for example: set selected CAD entity style dashed."}
+        return {**base, "action": selected_action, "style_id": style_id}
+    return None
+
+
 def _cad_entity_chat_response(
     *,
     message: str,
@@ -665,6 +848,18 @@ def _cad_entity_chat_response(
     asks_restore = mentions_cad and "restore" in lowered and ("object" in lowered or "entity" in lowered or "cad" in lowered)
     asks_convert_drawn = "convert" in lowered and "drawn object" in lowered and "cad entit" in lowered
     asks_candidate = "convert" in lowered and "site object" in lowered and ("cad" in lowered or "entity" in lowered)
+
+    if record:
+        project_input = deepcopy(_safe_dict(record.get("project_input")))
+        latest_result = deepcopy(_safe_dict(record.get("latest_result")))
+    else:
+        project_input = _safe_dict(context.get("project_input"))
+        latest_result = _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
+    final_plan = _safe_dict(latest_result.get("final_plan"))
+    meta = _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
+    model = build_cad_entity_model(meta, project_input=project_input)
+    entities = [_safe_dict(item) for item in _safe_list(model.get("entities"))]
+    chat_operation = _cad_entity_chat_command_operation(message, context, model)
     if not (
         mentions_cad_entity
         or asks_list
@@ -677,19 +872,84 @@ def _cad_entity_chat_response(
         or asks_restore
         or asks_convert_drawn
         or asks_candidate
+        or chat_operation
     ):
         return None
 
-    if record:
-        project_input = deepcopy(_safe_dict(record.get("project_input")))
-        latest_result = deepcopy(_safe_dict(record.get("latest_result")))
-    else:
-        project_input = _safe_dict(context.get("project_input"))
-        latest_result = _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
-    final_plan = _safe_dict(latest_result.get("final_plan"))
-    meta = _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
-    model = build_cad_entity_model(meta, project_input=project_input)
-    entities = [_safe_dict(item) for item in _safe_list(model.get("entities"))]
+    if chat_operation:
+        if not (record and project_store and user_id):
+            operation_result = cad_entity_operation_result(
+                understood_goal=message,
+                selected_action=safe_str(chat_operation.get("action"), "cad_entity_command"),
+                target_entities=_safe_list(chat_operation.get("target_entity_ids")),
+                missing_inputs=["saved project"],
+                next_best_action="Save or load the project, then retry the CAD entity command.",
+            )
+            return _truthful_decision_update(
+                {},
+                assistant_message="I can run CAD entity drafting commands only after a saved project is loaded, so the persistent CAD entity model can be updated without touching loose UI-only state.",
+                intent="cad_entity_command",
+                run_mode="none",
+                needs_clarification=True,
+                action_taken="blocked_cad_entity_command_missing_project",
+                action_blocked_reason="No saved canonical project record is available.",
+                required_missing_inputs=["saved project"],
+                affected_systems=["cad_entity_model"],
+                next_best_action=operation_result["next_best_action"],
+                command_payload_updates={CAD_ENTITY_CHAT_OPERATION_VERSION: operation_result, CAD_ENTITY_MODEL_VERSION: model},
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="No saved canonical project record is available.",
+            )
+        next_source_model, operation_result = apply_cad_entity_operation(model, chat_operation, actor=user_id or "user")
+        missing_inputs = _safe_list(operation_result.get("missing_inputs"))
+        safety_blockers = _safe_list(operation_result.get("safety_blockers"))
+        changed = bool(operation_result.get("created_entity_ids") or operation_result.get("updated_entity_ids") or operation_result.get("deleted_entity_ids"))
+        if changed:
+            meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: next_source_model}, project_input=project_input)
+            final_plan["meta"] = meta
+            latest_result["final_plan"] = final_plan
+            _save_project_record(project_store, {**record, "_user_id": user_id}, project_input=project_input, latest_result=latest_result)
+            model = meta[CAD_ENTITY_MODEL_VERSION]
+        if safety_blockers:
+            assistant_message = (
+                "I did not run that CAD entity command. "
+                + "; ".join(safe_str(item) for item in safety_blockers)
+                + ". Chat CAD commands are drafting/review actions only."
+            )
+            action_taken = "blocked_cad_entity_command"
+            outcome = "understood_but_blocked"
+            needs_clarification = False
+        elif missing_inputs:
+            assistant_message = "Which CAD command input should I use? Please provide: " + ", ".join(safe_str(item) for item in missing_inputs) + "."
+            action_taken = "asked_cad_entity_command_clarifying_question"
+            outcome = "understood_needs_more_info"
+            needs_clarification = True
+        else:
+            assistant_message = (
+                f"Applied CAD entity drafting command `{safe_str(operation_result.get('selected_action'))}` to the persistent CAD entity model. "
+                "The changed entities remain review_required=true and construction_release_allowed=false."
+            )
+            action_taken = "executed_cad_entity_command"
+            outcome = "understood_and_executed"
+            needs_clarification = False
+        return _truthful_decision_update(
+            {},
+            assistant_message=assistant_message,
+            intent="cad_entity_command",
+            run_mode="none",
+            needs_clarification=needs_clarification,
+            action_taken=action_taken,
+            action_blocked_reason="; ".join(safe_str(item) for item in safety_blockers),
+            required_missing_inputs=missing_inputs,
+            affected_systems=["cad_entity_model", "cad_geometry"],
+            assumptions=["Chat CAD entity commands mutate only persistent CAD drafting/review entities and do not mutate engineering evidence."],
+            next_best_action=safe_str(operation_result.get("next_best_action")),
+            command_payload_updates={CAD_ENTITY_CHAT_OPERATION_VERSION: operation_result, CAD_ENTITY_MODEL_VERSION: model},
+            outcome=outcome,
+            state_changed=changed,
+            blocker="; ".join(safe_str(item) for item in safety_blockers),
+        )
 
     if asks_convert_drawn:
         if not (record and project_store and user_id):
@@ -790,7 +1050,7 @@ def _cad_entity_chat_response(
             {},
             assistant_message=(
                 f"{len(candidates)} CAD entity candidate(s) can be presented as review-required site object candidates. "
-                "None are accepted as engineering evidence or construction-ready from the CAD conversion alone."
+                "None are accepted as engineering evidence or approved for construction from the CAD conversion alone."
             ),
             intent="cad_entity_model",
             run_mode="none",
@@ -1012,7 +1272,7 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
         next_best_action = "Attach the Civil 3D workflow record with preserved_elements, lost_limited_elements, screenshots/evidence URI, and source artifact hashes."
     elif mentions_civil3d and asks_ready:
         assistant_message = (
-            f"No. This is not Civil3D-ready or construction-ready from Civora. Civil 3D workflow status is {civil3d_status}. "
+            f"No. This is not Civil3D-ready or approved for construction by Civora. Civil 3D workflow status is {civil3d_status}. "
             "DXF and LandXML remain the exchange paths unless an external workflow record exists; even externally_verified_review_only means review-only "
             "import/workflow evidence, not approval, stamping, sealing, certification, or submission readiness."
         )
@@ -1117,7 +1377,7 @@ def _plotting_sheet_chat_response(message: str, context: Dict[str, Any]) -> Opti
     elif asks_plot:
         message_text = (
             "Plot the active review set as a review PDF/print package and sheet JSON with lineweight/color/linetype mapping, optional grayscale, "
-            "and the REVIEW ONLY - NOT FOR CONSTRUCTION watermark. This does not create submission-ready or construction-ready documents."
+            "and the REVIEW ONLY - NOT FOR CONSTRUCTION watermark. This does not create submission packages or construction approvals."
         )
         action_taken = "answered_plot_review_set"
         payload = {**base_payload, "sheet_action": "plot_review_set", "exports": standards["exports"], "plot_styles": standards["plot_styles"]}
