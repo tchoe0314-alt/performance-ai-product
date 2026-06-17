@@ -308,9 +308,86 @@ export default function Preview3DCanvas({
         confidence: describeConfidence(item.confidence),
         blockers: item.blockers || [],
         source: item.source || (layer === "UTILITY" ? "utility evidence only where supplied" : "preview object"),
+        linkedObjectId: item.linkedObjectId,
+        sourceEntityId: item.sourceEntityId,
       };
 
-      if (layer === "DRAINAGE") {
+      const cadMaterial = new THREE.MeshStandardMaterial({
+        color: item.unsupported ? "#f59e0b" : palette.top,
+        roughness: 0.64,
+        transparent: item.unsupported || layer === "CONSTRAINT",
+        opacity: item.unsupported ? 0.58 : layer === "CONSTRAINT" ? 0.68 : 1,
+      });
+      let renderedCadGeometry = false;
+      if (item.unsupported) {
+        const placeholder = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(item.w, 1), 0.7, Math.max(item.h, 1)),
+          cadMaterial,
+        );
+        placeholder.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 0.5));
+        placeholder.userData = object.userData;
+        object.add(placeholder);
+        const outline = new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w, 1), 0.82, Math.max(item.h, 1))),
+          new THREE.LineBasicMaterial({ color: "#92400e" }),
+        );
+        outline.position.copy(placeholder.position);
+        object.add(outline);
+        renderedCadGeometry = true;
+      } else if ((item.geometryType === "polyline" || item.geometryType === "polygon") && Array.isArray(item.geometry) && item.geometry.length >= 2) {
+        const points = item.geometry.map(([x, y]) => toScene(x, y, baseY + 0.55));
+        if (item.geometryType === "polygon" && points.length >= 3) {
+          const shape = new THREE.Shape();
+          item.geometry.forEach(([x, y], pointIndex) => {
+            const sx = x - centerX;
+            const sy = y - centerY;
+            if (pointIndex === 0) shape.moveTo(sx, sy);
+            else shape.lineTo(sx, sy);
+          });
+          shape.closePath();
+          const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(heightFt, 0.35), bevelEnabled: false });
+          geometry.rotateX(-Math.PI / 2);
+          const mesh = new THREE.Mesh(geometry, cadMaterial);
+          mesh.userData = object.userData;
+          object.add(mesh);
+        } else {
+          const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
+          const tube = new THREE.Mesh(
+            new THREE.TubeGeometry(curve, Math.max(points.length * 8, 8), Math.max(Math.min(item.w, item.h) * 0.015, 0.28), 8, false),
+            cadMaterial,
+          );
+          tube.userData = object.userData;
+          object.add(tube);
+        }
+        renderedCadGeometry = true;
+      } else if (item.geometryType === "circle" && typeof item.radius === "number" && item.radius > 0) {
+        const circle = new THREE.Mesh(
+          new THREE.CylinderGeometry(item.radius, item.radius, Math.max(heightFt, 0.35), 48),
+          cadMaterial,
+        );
+        circle.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + Math.max(heightFt, 0.35) / 2));
+        circle.userData = object.userData;
+        object.add(circle);
+        renderedCadGeometry = true;
+      } else if (item.geometryType === "point" && item.entityType) {
+        const marker = new THREE.Mesh(
+          new THREE.SphereGeometry(Math.max(Math.min(item.w, item.h) * 0.18, 0.75), 16, 12),
+          cadMaterial,
+        );
+        marker.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 1.25));
+        marker.userData = object.userData;
+        object.add(marker);
+        renderedCadGeometry = true;
+      }
+
+      if (renderedCadGeometry) {
+        const outline = new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w, 1), 0.08, Math.max(item.h, 1))),
+          new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.55 }),
+        );
+        outline.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + Math.max(heightFt, 0.35) + 0.08));
+        object.add(outline);
+      } else if (layer === "DRAINAGE") {
         const depth = Math.max(1.2, Math.abs(Math.min(baseY, 0)) || Math.min(heightFt, 4));
         const basin = new THREE.Mesh(
           new THREE.BoxGeometry(Math.max(item.w * 0.72, 1), Math.max(depth, 0.75), Math.max(item.h * 0.72, 1)),
