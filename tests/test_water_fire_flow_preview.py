@@ -9,10 +9,18 @@ class WaterFireFlowPreviewTest(unittest.TestCase):
         water = enrich_water_production_depth(
             {
                 "source_pressure_psi": 72.0,
+                "source_pressure_source": "hydrant_flow_test_2026_accepted",
                 "source_node": "SRC",
                 "fire_flow_node": "H-1",
+                "min_residual_pressure_psi": 20.0,
+                "residual_pressure_source": "CITY-WATER-2026 residual pressure requirement",
                 "standard_id": "CITY-WATER-2026",
                 "standard_status": "adopted",
+                "utility_owner": "City Water",
+                "utility_owner_criteria": "City Water public-main criteria 2026",
+                "utility_owner_criteria_status": "accepted",
+                "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+                "hydrant_evidence_source": "surveyed_hydrant_fixture",
                 "max_hydrant_spacing_ft": 300.0,
                 "fire_flow_demand_gpm": 1000.0,
                 "hydrants": [
@@ -39,6 +47,8 @@ class WaterFireFlowPreviewTest(unittest.TestCase):
                             "end_node": "H-1",
                             "route_points": [[0.0, 0.0], [300.0, 0.0]],
                             "diameter_in": 8.0,
+                            "material": "DIP",
+                            "source": "accepted_utility_plan",
                             "flow_gpm": 300.0,
                         },
                         {
@@ -48,6 +58,8 @@ class WaterFireFlowPreviewTest(unittest.TestCase):
                             "end_node": "SRC",
                             "route_points": [[300.0, 0.0], [0.0, 0.0]],
                             "diameter_in": 8.0,
+                            "material": "DIP",
+                            "source": "accepted_utility_plan",
                             "flow_gpm": 300.0,
                         },
                     ],
@@ -66,17 +78,30 @@ class WaterFireFlowPreviewTest(unittest.TestCase):
         self.assertTrue(review["readiness"]["fire_flow_valid"])
         self.assertTrue(review["readiness"]["hydrant_spacing_valid"])
         self.assertTrue(review["readiness"]["engineer_review_required"])
+        self.assertFalse(review["readiness"]["construction_release_allowed"])
+        self.assertEqual(review["scenario_runs"][0]["source_pressure_source"], "hydrant_flow_test_2026_accepted")
+        self.assertEqual(review["scenario_runs"][0]["utility_owner"], "City Water")
 
     def test_ui_payload_reports_low_pressure_dead_end_and_fire_flow_blockers(self) -> None:
         water = enrich_water_production_depth(
             {
                 "source_pressure_psi": 35.0,
+                "source_pressure_source": "hydrant_flow_test_2026_accepted",
                 "min_residual_pressure_psi": 50.0,
+                "residual_pressure_source": "CITY-WATER-2026 residual pressure requirement",
                 "source_node": "SRC",
                 "fire_flow_node": "H-1",
                 "standard_id": "CITY-WATER-2026",
                 "standard_status": "adopted",
+                "utility_owner": "City Water",
+                "utility_owner_criteria": "City Water public-main criteria 2026",
+                "utility_owner_criteria_status": "accepted",
+                "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+                "hydrant_evidence_source": "surveyed_hydrant_fixture",
                 "fire_flow_demand_gpm": 1500.0,
+                "pressure_zones": [
+                    {"id": "PZ-1", "source": "City Water pressure-zone map", "source_pressure_psi": 35.0, "min_pressure_psi": 50.0}
+                ],
                 "hydrants": [{"name": "H-1", "x": 300.0, "y": 0.0}],
                 "conflict_hooks": {
                     "utility_system_type": "water",
@@ -88,6 +113,8 @@ class WaterFireFlowPreviewTest(unittest.TestCase):
                             "end_node": "H-1",
                             "route_points": [[0.0, 0.0], [300.0, 0.0]],
                             "diameter_in": 6.0,
+                            "material": "DIP",
+                            "source": "accepted_utility_plan",
                             "flow_gpm": 400.0,
                         }
                     ],
@@ -110,11 +137,22 @@ class WaterFireFlowPreviewTest(unittest.TestCase):
         water = enrich_water_production_depth(
             {
                 "source_pressure_psi": 72.0,
+                "source_pressure_source": "hydrant_flow_test_2026_accepted",
                 "source_node": "SRC",
                 "fire_flow_node": "H-1",
+                "min_residual_pressure_psi": 20.0,
+                "residual_pressure_source": "CITY-WATER-2026 residual pressure requirement",
                 "standard_id": "CITY-WATER-2026",
                 "standard_status": "adopted",
+                "utility_owner": "City Water",
+                "utility_owner_criteria": "City Water public-main criteria 2026",
+                "utility_owner_criteria_status": "accepted",
+                "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+                "hydrant_evidence_source": "surveyed_hydrant_fixture",
                 "fire_flow_demand_gpm": 750.0,
+                "pressure_zones": [
+                    {"id": "PZ-1", "source": "City Water pressure-zone map", "source_pressure_psi": 72.0, "min_pressure_psi": 45.0}
+                ],
                 "hydrants": [
                     {"name": "H-1", "x": 0.0, "y": 0.0},
                     {"name": "H-2", "x": 220.0, "y": 0.0},
@@ -126,6 +164,8 @@ class WaterFireFlowPreviewTest(unittest.TestCase):
                         "start_node": "SRC",
                         "end_node": "H-1",
                         "diameter_in": 4.0,
+                        "material": "DIP",
+                        "source": "accepted_utility_plan",
                         "flow_gpm": 900.0,
                         "velocity_fps": 18.0,
                         "end_pressure_psi": 41.0,

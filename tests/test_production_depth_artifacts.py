@@ -11,7 +11,7 @@ from backend.planning.production_depth import (
     enrich_storm_production_depth,
     enrich_water_production_depth,
 )
-from backend.planning.depth_validators import validate_stormwater_depth
+from backend.planning.depth_validators import validate_stormwater_depth, validate_water_system_depth
 from core.civil_design import civil_design_readiness
 
 
@@ -318,11 +318,22 @@ class ProductionDepthArtifactTests(unittest.TestCase):
     def test_water_depth_validates_pressure_fire_flow_hydrants_and_velocity(self) -> None:
         utilities = {
             "source_pressure_psi": 72.0,
+            "source_pressure_source": "hydrant_flow_test_2026_accepted",
             "source_node": "SRC",
+            "min_residual_pressure_psi": 20.0,
+            "residual_pressure_source": "CITY-WATER-2026 fire-flow residual table",
             "standard_id": "CITY-WATER-2026",
             "standard_status": "adopted",
+            "utility_owner": "City Water",
+            "utility_owner_criteria": "City Water public-main criteria 2026",
+            "utility_owner_criteria_status": "accepted",
+            "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+            "hydrant_evidence_source": "surveyed_hydrant_fixture",
             "available_fire_flow_gpm": 1600.0,
             "fire_flow_demand_gpm": 1250.0,
+            "pressure_zones": [
+                {"id": "PZ-1", "source": "City Water pressure-zone map", "source_pressure_psi": 72.0, "min_pressure_psi": 45.0}
+            ],
             "hydrants": [
                 {"name": "H-1", "x": 0.0, "y": 0.0},
                 {"name": "H-2", "x": 280.0, "y": 0.0},
@@ -337,6 +348,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
                         "end_node": "A",
                         "route_points": [[0.0, 0.0], [220.0, 0.0]],
                         "diameter_in": 8.0,
+                        "material": "DIP",
+                        "source": "accepted_utility_plan",
                         "flow_gpm": 450.0,
                     },
                     {
@@ -346,6 +359,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
                         "end_node": "SRC",
                         "route_points": [[220.0, 0.0], [0.0, 0.0]],
                         "diameter_in": 8.0,
+                        "material": "DIP",
+                        "source": "accepted_utility_plan",
                         "flow_gpm": 300.0,
                     },
                 ],
@@ -357,6 +372,9 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertTrue(enriched["pressure_validation"]["valid"])
         self.assertTrue(enriched["fire_flow_validation"]["valid"])
         self.assertTrue(enriched["hydrant_spacing_validation"]["valid"])
+        self.assertTrue(enriched["pressure_zone_validation"]["valid"])
+        self.assertTrue(enriched["water_fire_flow_proof"]["engineer_review_required"])
+        self.assertFalse(enriched["water_fire_flow_proof"]["construction_release_allowed"])
         self.assertTrue(enriched["looped"])
         self.assertEqual(enriched["water_depth_status"], "ready")
         self.assertEqual(enriched["velocity_checks"][0]["segment"], "W-1")
@@ -366,15 +384,29 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(enriched["fire_flow_validation"]["fire_flow_margin_gpm"], 350.0)
         self.assertTrue(enriched["dead_end_validation"]["valid"])
         self.assertEqual(enriched["dead_end_validation"]["dead_end_nodes"], [])
+        validation = validate_water_system_depth({"meta": {"water_summary": enriched}})
+        self.assertTrue(validation["production_ready"])
+        self.assertIn("utility owner criteria", validation["evidence"])
 
     def test_water_depth_calculates_available_fire_flow_from_residual_pressure(self) -> None:
         utilities = {
             "source_pressure_psi": 72.0,
+            "source_pressure_source": "hydrant_flow_test_2026_accepted",
             "source_node": "SRC",
             "fire_flow_node": "H-1",
+            "min_residual_pressure_psi": 20.0,
+            "residual_pressure_source": "CITY-WATER-2026 residual pressure requirement",
             "standard_id": "CITY-WATER-2026",
             "standard_status": "adopted",
+            "utility_owner": "City Water",
+            "utility_owner_criteria": "City Water public-main criteria 2026",
+            "utility_owner_criteria_status": "accepted",
+            "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+            "hydrant_evidence_source": "surveyed_hydrant_fixture",
             "fire_flow_demand_gpm": 1000.0,
+            "pressure_zones": [
+                {"id": "PZ-1", "source": "City Water pressure-zone map", "source_pressure_psi": 72.0, "min_pressure_psi": 45.0}
+            ],
             "hydrants": [
                 {"name": "H-1", "x": 0.0, "y": 0.0},
                 {"name": "H-2", "x": 250.0, "y": 0.0},
@@ -389,6 +421,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
                         "end_node": "H-1",
                         "route_points": [[0.0, 0.0], [300.0, 0.0]],
                         "diameter_in": 8.0,
+                        "material": "DIP",
+                        "source": "accepted_utility_plan",
                         "flow_gpm": 300.0,
                     },
                     {
@@ -398,6 +432,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
                         "end_node": "SRC",
                         "route_points": [[300.0, 0.0], [0.0, 0.0]],
                         "diameter_in": 8.0,
+                        "material": "DIP",
+                        "source": "accepted_utility_plan",
                         "flow_gpm": 300.0,
                     },
                 ],
@@ -413,11 +449,22 @@ class ProductionDepthArtifactTests(unittest.TestCase):
     def test_water_depth_reports_dead_end_nodes_and_blocks_ready_status(self) -> None:
         utilities = {
             "source_pressure_psi": 72.0,
+            "source_pressure_source": "hydrant_flow_test_2026_accepted",
             "source_node": "SRC",
             "fire_flow_node": "H-1",
+            "min_residual_pressure_psi": 20.0,
+            "residual_pressure_source": "CITY-WATER-2026 residual pressure requirement",
             "standard_id": "CITY-WATER-2026",
             "standard_status": "adopted",
+            "utility_owner": "City Water",
+            "utility_owner_criteria": "City Water public-main criteria 2026",
+            "utility_owner_criteria_status": "accepted",
+            "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+            "hydrant_evidence_source": "surveyed_hydrant_fixture",
             "fire_flow_demand_gpm": 750.0,
+            "pressure_zones": [
+                {"id": "PZ-1", "source": "City Water pressure-zone map", "source_pressure_psi": 72.0, "min_pressure_psi": 45.0}
+            ],
             "hydrants": [
                 {"name": "H-1", "x": 300.0, "y": 0.0},
                 {"name": "H-2", "x": 450.0, "y": 0.0},
@@ -432,6 +479,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
                         "end_node": "H-1",
                         "route_points": [[0.0, 0.0], [300.0, 0.0]],
                         "diameter_in": 8.0,
+                        "material": "DIP",
+                        "source": "accepted_utility_plan",
                         "flow_gpm": 250.0,
                     }
                 ],
@@ -477,17 +526,29 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertFalse(enriched["fire_flow_validation"]["valid"])
         self.assertIn("source_pressure_psi", enriched["fire_flow_validation"]["missing_inputs"])
         self.assertIn("accepted_standard", enriched["fire_flow_validation"]["missing_inputs"])
+        self.assertIn("utility_owner_criteria_missing", enriched["water_depth_blockers"])
         self.assertIn("accepted_water_standard_missing", enriched["water_depth_blockers"])
 
     def test_water_hydrant_spacing_reports_expected_max_spacing_and_standard_limit(self) -> None:
         utilities = {
             "source_pressure_psi": 72.0,
+            "source_pressure_source": "hydrant_flow_test_2026_accepted",
             "source_node": "SRC",
+            "min_residual_pressure_psi": 20.0,
+            "residual_pressure_source": "CITY-WATER-2026 residual pressure requirement",
             "standard_id": "CITY-WATER-2026",
             "standard_status": "adopted",
+            "utility_owner": "City Water",
+            "utility_owner_criteria": "City Water public-main criteria 2026",
+            "utility_owner_criteria_status": "accepted",
+            "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+            "hydrant_evidence_source": "surveyed_hydrant_fixture",
             "max_hydrant_spacing_ft": 300.0,
             "available_fire_flow_gpm": 1500.0,
             "fire_flow_demand_gpm": 1000.0,
+            "pressure_zones": [
+                {"id": "PZ-1", "source": "City Water pressure-zone map", "source_pressure_psi": 72.0, "min_pressure_psi": 45.0}
+            ],
             "hydrants": [
                 {"name": "H-1", "x": 0.0, "y": 0.0},
                 {"name": "H-2", "x": 180.0, "y": 0.0},
@@ -496,8 +557,8 @@ class ProductionDepthArtifactTests(unittest.TestCase):
             "conflict_hooks": {
                 "utility_system_type": "water",
                 "utility_segments": [
-                    {"name": "W-1", "system_type": "water", "start_node": "SRC", "end_node": "A", "route_points": [[0.0, 0.0], [200.0, 0.0]], "diameter_in": 8.0, "flow_gpm": 300.0},
-                    {"name": "W-2", "system_type": "water", "start_node": "A", "end_node": "SRC", "route_points": [[200.0, 0.0], [0.0, 0.0]], "diameter_in": 8.0, "flow_gpm": 300.0},
+                    {"name": "W-1", "system_type": "water", "start_node": "SRC", "end_node": "A", "route_points": [[0.0, 0.0], [200.0, 0.0]], "diameter_in": 8.0, "material": "DIP", "source": "accepted_utility_plan", "flow_gpm": 300.0},
+                    {"name": "W-2", "system_type": "water", "start_node": "A", "end_node": "SRC", "route_points": [[200.0, 0.0], [0.0, 0.0]], "diameter_in": 8.0, "material": "DIP", "source": "accepted_utility_plan", "flow_gpm": 300.0},
                 ],
             },
         }
@@ -535,6 +596,12 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         enriched = enrich_water_production_depth(utilities)
 
         self.assertFalse(enriched["pressure_validation"]["valid"])
+        self.assertIn("source_pressure_missing", enriched["water_depth_blockers"])
+        self.assertIn("residual_target_missing", enriched["water_depth_blockers"])
+        self.assertIn("hydrant_evidence_missing", enriched["water_depth_blockers"])
+        self.assertIn("demand_fire_flow_criteria_missing", enriched["water_depth_blockers"])
+        self.assertIn("pressure_zone_missing", enriched["water_depth_blockers"])
+        self.assertIn("loop_dead_end_proof_missing", enriched["water_depth_blockers"])
         self.assertIn("pressure_inputs_missing", enriched["water_depth_blockers"])
         self.assertIn("fire_flow_not_validated", enriched["water_depth_blockers"])
         self.assertEqual(

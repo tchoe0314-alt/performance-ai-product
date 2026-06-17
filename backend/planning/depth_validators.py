@@ -84,13 +84,23 @@ def _has_valid_pressure_validation(row: Dict[str, Any]) -> bool:
     if rec.get("valid") is not True or not _row_is_production_evidence(rec):
         return False
     source_pressure = safe_float(rec.get("source_pressure_psi"), 0.0)
+    source_pressure_source = safe_str(rec.get("source_pressure_source"))
     min_pressure = safe_float(rec.get("min_pressure_psi"), -1.0)
     required = safe_float(rec.get("min_required_pressure_psi"), 0.0)
+    residual_source = safe_str(rec.get("residual_pressure_source"))
     graph = safe_dict(rec.get("pressure_graph"))
     if graph:
         if graph.get("success") is not True or not safe_dict(graph.get("node_pressures_psi")):
             return False
-    return source_pressure > 0.0 and required > 0.0 and min_pressure >= required and _has_accepted_standard(rec)
+    return (
+        source_pressure > 0.0
+        and bool(source_pressure_source)
+        and required > 0.0
+        and bool(residual_source)
+        and min_pressure >= required
+        and _has_accepted_standard(rec)
+        and rec.get("utility_owner_criteria_accepted") is True
+    )
 
 
 def _has_valid_fire_flow_validation(row: Dict[str, Any], pressure: Dict[str, Any]) -> bool:
@@ -111,7 +121,18 @@ def _has_valid_fire_flow_validation(row: Dict[str, Any], pressure: Dict[str, Any
         or bool(safe_list(rec.get("fire_flow_path")))
         or bool(safe_dict(graph.get("pressure_graph_at_available_flow")))
     )
-    return required > 0.0 and available >= required and residual >= min_required > 0.0 and has_residual_evidence and _has_accepted_standard(rec)
+    return (
+        required > 0.0
+        and bool(safe_str(rec.get("fire_flow_criteria_source")))
+        and bool(safe_str(rec.get("source_pressure_source")))
+        and bool(safe_str(rec.get("residual_pressure_source")))
+        and bool(safe_str(rec.get("hydrant_evidence_source")))
+        and available >= required
+        and residual >= min_required > 0.0
+        and has_residual_evidence
+        and _has_accepted_standard(rec)
+        and rec.get("utility_owner_criteria_accepted") is True
+    )
 
 
 def _has_valid_sizing_optimization(value: Any) -> bool:
@@ -1075,16 +1096,29 @@ def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     utilities = safe_dict(meta.get("utilities") or meta.get("utility_summary"))
     source = water or utilities
     hooks = safe_dict(source.get("conflict_hooks"))
-    segments = [safe_dict(item) for item in safe_list(source.get("segments") or hooks.get("utility_segments"))]
+    segments = [safe_dict(item) for item in safe_list(source.get("water_segments") or source.get("segments") or hooks.get("utility_segments"))]
     hydrants = safe_list(source.get("hydrants") or source.get("fire_hydrants"))
     pressure = safe_dict(source.get("pressure_validation"))
     velocity_checks = safe_list(source.get("velocity_checks"))
+    pressure_zone_validation = safe_dict(source.get("pressure_zone_validation"))
+    owner_criteria = safe_dict(source.get("water_fire_flow_proof")).get("utility_owner_criteria") or source
     looped = bool(source.get("looped") or source.get("is_looped")) or _has_cycle(segments)
     dead_end_validation = safe_dict(source.get("dead_end_validation"))
     dead_ends = safe_list(dead_end_validation.get("dead_end_nodes")) if dead_end_validation else _dead_end_nodes(segments)
     no_dead_ends = dead_end_validation.get("valid") is True if dead_end_validation else not dead_ends
     checks = [
-        _check("pressure_zones", bool(safe_list(source.get("pressure_zones")) or safe_dict(source.get("pressure_zone"))), evidence="pressure zones", blocker="Water depth needs pressure zones."),
+        _check(
+            "pressure_zones",
+            pressure_zone_validation.get("valid") is True,
+            evidence="pressure zones",
+            blocker="Water depth needs accepted pressure-zone evidence tied to source pressure.",
+        ),
+        _check(
+            "utility_owner_criteria",
+            safe_dict(owner_criteria).get("utility_owner_criteria_accepted") is True,
+            evidence="utility owner criteria",
+            blocker="Water depth needs accepted utility-owner water/fire-flow criteria.",
+        ),
         _check("hydrant_spacing", bool(hydrants and _has_valid_hydrant_spacing(source.get("hydrant_spacing_validation"))), evidence="hydrant spacing evidence", blocker="Water depth needs passing hydrant spacing coverage."),
         _check("fire_flow", _has_valid_fire_flow_validation(source.get("fire_flow_validation"), pressure), evidence="fire flow validation", blocker="Water depth needs passing fire-flow validation."),
         _check("looping", looped, evidence="looped network graph", blocker="Water depth needs looping/redundancy evidence."),
