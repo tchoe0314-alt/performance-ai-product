@@ -3,7 +3,7 @@ set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/apps/web"
-RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression}"
+RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression-$$}"
 PLAYWRIGHT_CASES=(
   "tests/live/ui-functionality-chat32.spec.ts:11"
   "tests/live/ui-functionality-chat32.spec.ts:49"

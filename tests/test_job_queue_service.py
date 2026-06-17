@@ -286,6 +286,53 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(monitoring["stale_jobs"][0]["job_id"], "job_stale")
         self.assertIn("stale_or_timed_out_jobs_present", monitoring["warnings"])
 
+    def test_runtime_stats_reports_pending_failed_and_stale_counts(self):
+        old_time = time.time() - 2000.0
+        connection = self.db.connect()
+        try:
+            for job_id, status, created_at, updated_at in (
+                ("job_pending", "queued", time.time(), time.time()),
+                ("job_failed", "failed", time.time(), time.time()),
+                ("job_stale_running", "running", old_time, old_time),
+            ):
+                connection.execute(
+                    """
+                    INSERT INTO jobs (
+                        job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                        stage, stage_detail, progress, payload_json, result_json, error_text
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        job_id,
+                        self.user_id,
+                        "orchestrate",
+                        status,
+                        created_at,
+                        updated_at,
+                        None,
+                        "Queued" if status == "queued" else "Running" if status == "running" else "Failed",
+                        "Monitoring test",
+                        12,
+                        "{}",
+                        "{}",
+                        "failed" if status == "failed" else None,
+                    ),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+
+        self.queue._job_timeout_seconds = 60.0
+        monitoring = self.queue.runtime_stats()["monitoring"]
+
+        self.assertEqual(monitoring["pending_count"], 1)
+        self.assertEqual(monitoring["queued_count"], 1)
+        self.assertEqual(monitoring["running_count"], 1)
+        self.assertEqual(monitoring["failed_count"], 1)
+        self.assertEqual(monitoring["failed_recent_count"], 1)
+        self.assertEqual(monitoring["stale_job_count"], 1)
+
     def test_get_job_detail_marks_timed_out_job_failed_with_exact_blocker(self):
         old_time = time.time() - 2000.0
         connection = self.db.connect()
