@@ -39,6 +39,7 @@ CAD_HISTORY_ACTIONS = {
 }
 CAD_ENTITY_CHAT_OPERATION_VERSION = "cad_entity_chat_operation_v1"
 LOW_CONFIDENCE_LABELS = {"", "missing", "metadata-only", "metadata_only", "inferred", "GIS candidate", "map imagery candidate"}
+PDF_SOURCE_CONFIDENCE = "imported_pdf_review_required"
 
 
 def now_iso() -> str:
@@ -417,7 +418,9 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         styles.insert(0, _normalized_style({"id": CAD_DEFAULT_STYLE_ID, "name": "By Layer"}))
     layer_ids = {item["id"] for item in layers}
     style_ids = {item["id"] for item in styles}
-    entities = [normalize_cad_entity(item) for item in safe_list(source_model.get("entities")) if safe_dict(item)]
+    source_entities = [safe_dict(item) for item in safe_list(source_model.get("entities")) if safe_dict(item)]
+    source_entities.extend(plan_pdf_elements_to_cad_entities(meta))
+    entities = [normalize_cad_entity(item) for item in source_entities if safe_dict(item)]
     validation = [validate_cad_entity(item, known_layer_ids=layer_ids, known_style_ids=style_ids) for item in entities]
     validation_by_id = {item["entity_id"]: item for item in validation}
     for entity in entities:
@@ -813,6 +816,206 @@ def manual_drawn_objects_to_cad_entities(project_input: Dict[str, Any], latest_r
     return entities
 
 
+def _pdf_bbox_geometry(bounds: Dict[str, Any], *, text: str = "", page_index: int = 0) -> Optional[Dict[str, Any]]:
+    x0 = safe_float(bounds.get("x0"), None)
+    y0 = safe_float(bounds.get("y0"), None)
+    x1 = safe_float(bounds.get("x1"), None)
+    y1 = safe_float(bounds.get("y1"), None)
+    if x0 is None or y0 is None or x1 is None or y1 is None:
+        return None
+    width = max(1.0, abs(x1 - x0))
+    height = max(1.0, abs(y1 - y0))
+    return {
+        "insert": {"x": float(min(x0, x1)), "y": float(min(y0, y1))},
+        "width": float(width),
+        "height": float(height),
+        "text": safe_str(text),
+        "units": "pdf_points",
+        "page_index": int(page_index),
+    }
+
+
+def _pdf_source_record(element: Dict[str, Any], analysis: Dict[str, Any], evidence: Dict[str, Any]) -> Dict[str, Any]:
+    source_pdf = safe_dict(analysis.get("source_pdf"))
+    return {
+        "source_pdf_id": safe_str(source_pdf.get("source_pdf_id")),
+        "filename": safe_str(source_pdf.get("filename") or source_pdf.get("stored_filename")),
+        "sha256": safe_str(source_pdf.get("sha256")),
+        "page": int(element.get("page_index") or evidence.get("page_index") or 0) + 1,
+        "page_index": int(element.get("page_index") or evidence.get("page_index") or 0),
+        "original_text": safe_str(element.get("original_text") or element.get("text") or evidence.get("text")),
+        "original_bounds": safe_dict(element.get("original_bbox") or element.get("bbox") or evidence.get("bbox")) or None,
+        "confidence": safe_str(element.get("source_confidence") or evidence.get("source_confidence"), PDF_SOURCE_CONFIDENCE),
+        "source_evidence_id": safe_str(element.get("source_evidence_id") or evidence.get("evidence_id")),
+        "extraction_source": safe_str(evidence.get("source")),
+        "imported_pdf_review_required": True,
+        "review_required": True,
+        "survey_backed": False,
+        "engineer_approved": False,
+        "construction_release_allowed": False,
+    }
+
+
+def _pdf_evidence_by_id(analysis: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for item in safe_list(analysis.get("raw_text_evidence")):
+        rec = safe_dict(item)
+        evidence_id = safe_str(rec.get("evidence_id"))
+        if evidence_id:
+            by_id[evidence_id] = rec
+    return by_id
+
+
+def _pdf_text_entity_type(element_type: str) -> str:
+    return "dimension" if element_type == "dimension" else "text"
+
+
+def _pdf_annotation_kind(element_type: str) -> str:
+    mapping = {
+        "dimension": "dimension",
+        "elevation_callout": "elevation",
+        "scale_calibration_candidate": "scale_calibration",
+        "matchline": "matchline",
+        "detail_block": "detail",
+    }
+    return mapping.get(element_type, "text")
+
+
+def _pdf_element_to_cad_entity(element: Dict[str, Any], analysis: Dict[str, Any], evidence: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    element_type = safe_str(element.get("type"))
+    if element_type in {"stamp_or_seal_source_imagery", "linework_geometry_candidate"}:
+        return None
+    if safe_str(evidence.get("source")) not in {"embedded_pdf_text", "embedded_pdf_text_fallback"}:
+        return None
+    bounds = safe_dict(element.get("original_bbox") or element.get("bbox") or evidence.get("bbox"))
+    geometry = _pdf_bbox_geometry(bounds, text=safe_str(element.get("text") or evidence.get("text")), page_index=int(element.get("page_index") or 0))
+    if geometry is None:
+        return None
+    entity_type = _pdf_text_entity_type(element_type)
+    if entity_type == "dimension":
+        insert = safe_dict(geometry.get("insert"))
+        geometry["points"] = [
+            {"x": insert["x"], "y": insert["y"]},
+            {"x": insert["x"] + safe_float(geometry.get("width"), 1.0), "y": insert["y"]},
+        ]
+        geometry["label"] = safe_str(geometry.get("text"))
+    source_record = _pdf_source_record(element, analysis, evidence)
+    return {
+        "id": _stable_id("cadpdf", source_record.get("source_pdf_id"), element.get("element_id"), source_record.get("sha256")),
+        "type": entity_type,
+        "geometry": geometry,
+        "layer_id": safe_str(element.get("cad_layer_id"), CAD_DEFAULT_LAYER_ID),
+        "style_id": safe_str(element.get("cad_style_id"), CAD_DEFAULT_STYLE_ID),
+        "source": "plan_pdf_extraction",
+        "source_confidence": PDF_SOURCE_CONFIDENCE,
+        "review_status": "imported_review_required",
+        "draft_review_required": True,
+        "dirty": True,
+        "pdf_annotation_kind": _pdf_annotation_kind(element_type),
+        "calibration": {
+            "kind": "sheet_model_scale_candidate",
+            "status": "accepted_review_required" if element_type == "scale_calibration_candidate" and safe_str(element.get("review_status")) == "accepted" else "review_required",
+            "can_calibrate_sheet_model_conversion": element_type == "scale_calibration_candidate",
+            "source_text": source_record["original_text"],
+            "review_required": True,
+            "construction_release_allowed": False,
+        }
+        if element_type == "scale_calibration_candidate"
+        else {},
+        "linked_pdf_element_id": safe_str(element.get("element_id")),
+        "source_pdf": source_record,
+        "original_text": source_record["original_text"],
+        "original_bounds": source_record["original_bounds"],
+        "page": source_record["page"],
+        "confidence": source_record["confidence"],
+        "imported_pdf_review_required": True,
+        "truth_label": "PDF-derived CAD entities are imported source evidence and review-required drafting objects only; they are not survey-backed, engineer-reviewed, or field-use release evidence.",
+    }
+
+
+def _pdf_vector_entity(candidate: Dict[str, Any], analysis: Dict[str, Any], index: int) -> Optional[Dict[str, Any]]:
+    rec = safe_dict(candidate)
+    entity_type = safe_str(rec.get("type") or rec.get("entity_type"))
+    if entity_type not in {"line", "polyline"}:
+        return None
+    confidence = safe_str(rec.get("source_confidence") or rec.get("confidence"), PDF_SOURCE_CONFIDENCE)
+    if "review_required" not in confidence:
+        confidence = PDF_SOURCE_CONFIDENCE
+    geometry = safe_dict(rec.get("geometry"))
+    if entity_type == "line" and not geometry:
+        points = _points(rec.get("points"))
+        if len(points) >= 2:
+            geometry = {"start": points[0], "end": points[1], "units": "pdf_points"}
+    if entity_type == "polyline" and not geometry:
+        points = _points(rec.get("points") or rec.get("vertices"))
+        if len(points) >= 2:
+            geometry = {"points": points, "closed": bool(rec.get("closed")), "units": "pdf_points"}
+    if not geometry:
+        return None
+    source_pdf = safe_dict(analysis.get("source_pdf"))
+    source_record = {
+        "source_pdf_id": safe_str(source_pdf.get("source_pdf_id")),
+        "filename": safe_str(source_pdf.get("filename") or source_pdf.get("stored_filename")),
+        "sha256": safe_str(source_pdf.get("sha256")),
+        "page": int(rec.get("page_index") or 0) + 1,
+        "page_index": int(rec.get("page_index") or 0),
+        "original_text": safe_str(rec.get("original_text") or rec.get("text")),
+        "original_bounds": safe_dict(rec.get("original_bounds") or rec.get("bounds") or rec.get("bbox")) or None,
+        "confidence": confidence,
+        "imported_pdf_review_required": True,
+        "review_required": True,
+        "survey_backed": False,
+        "engineer_approved": False,
+        "construction_release_allowed": False,
+    }
+    return {
+        "id": safe_str(rec.get("id")) or _stable_id("cadpdfvec", source_record.get("source_pdf_id"), index, geometry, source_record.get("sha256")),
+        "type": entity_type,
+        "geometry": geometry,
+        "source": "plan_pdf_vector_extraction",
+        "source_confidence": confidence,
+        "review_status": "imported_review_required",
+        "draft_review_required": True,
+        "dirty": True,
+        "source_pdf": source_record,
+        "original_text": source_record["original_text"],
+        "original_bounds": source_record["original_bounds"],
+        "page": source_record["page"],
+        "confidence": confidence,
+        "imported_pdf_review_required": True,
+        "truth_label": "PDF vector-derived CAD entities are review-required imported drafting objects only.",
+    }
+
+
+def plan_pdf_elements_to_cad_entities(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    analysis = safe_dict(meta.get("plan_pdf_analysis_v1"))
+    sheet = safe_dict(meta.get("plan_pdf_editable_sheet_v1"))
+    if not analysis or not sheet:
+        return []
+    existing_ids = {safe_str(item.get("linked_pdf_element_id")) for item in safe_list(safe_dict(meta.get(CAD_ENTITY_MODEL_VERSION)).get("entities")) if safe_str(safe_dict(item).get("linked_pdf_element_id"))}
+    evidence_by_id = _pdf_evidence_by_id(analysis)
+    entities: List[Dict[str, Any]] = []
+    for element in safe_list(sheet.get("elements")):
+        rec = safe_dict(element)
+        element_id = safe_str(rec.get("element_id"))
+        if element_id and element_id in existing_ids:
+            continue
+        evidence = safe_dict(evidence_by_id.get(safe_str(rec.get("source_evidence_id"))))
+        entity = _pdf_element_to_cad_entity(rec, analysis, evidence)
+        if entity:
+            entities.append(entity)
+    vector_records = (
+        safe_list(safe_dict(analysis.get("vector_geometry")).get("entities"))
+        + safe_list(safe_dict(analysis.get("vector_extraction")).get("entities"))
+        + safe_list(analysis.get("vector_geometry_candidates"))
+    )
+    for index, candidate in enumerate(vector_records):
+        entity = _pdf_vector_entity(safe_dict(candidate), analysis, index)
+        if entity:
+            entities.append(entity)
+    return entities
+
+
 def cad_entities_to_site_object_candidates(model: Dict[str, Any], *, requested_entity_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     requested = set(requested_entity_ids or [])
     candidates: List[Dict[str, Any]] = []
@@ -878,7 +1081,7 @@ def cad_source_confidence_summary(entities: List[Dict[str, Any]]) -> Dict[str, A
         "counts_by_source_confidence": counts,
         "blockers": blockers,
         "construction_release_allowed": False,
-        "truth_label": "CAD entity source confidence explains drafting evidence only; it does not make CAD geometry survey-backed or approved for construction.",
+        "truth_label": "CAD entity source confidence explains drafting evidence only; it does not make CAD geometry survey-backed or construction-release evidence.",
     }
 
 
@@ -900,5 +1103,6 @@ __all__ = [
     "import_candidates_to_cad_entities",
     "manual_drawn_objects_to_cad_entities",
     "normalize_cad_entity",
+    "plan_pdf_elements_to_cad_entities",
     "validate_cad_entity",
 ]

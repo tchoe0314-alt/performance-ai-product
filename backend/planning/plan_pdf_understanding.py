@@ -12,6 +12,7 @@ import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from backend.planning.common import safe_dict, safe_list, safe_str
+from backend.planning.cad_entity_model import plan_pdf_elements_to_cad_entities
 
 
 TRUTH_LABEL = (
@@ -459,22 +460,20 @@ def build_editable_sheet_from_analysis(analysis: Dict[str, Any]) -> Dict[str, An
     for bucket, element_type in mapping.items():
         for item in safe_list(classifications.get(bucket)):
             elements.append(_element_from_evidence(safe_dict(item), element_type, len(elements)))
-    linework_candidates: List[Dict[str, Any]] = []
-    if safe_list(classifications.get("dimensions")) or safe_list(classifications.get("scale_candidates")):
-        linework_candidates.append(
-            {
-                "element_id": _stable_id("linework", analysis.get("source_pdf", {}).get("sha256"), prefix="pse"),
-                "type": "linework_geometry_candidate",
-                "page_index": 0,
-                "source_confidence": SOURCE_CONFIDENCE,
-                "review_status": "pending",
-                "review_required": True,
-                "editable": False,
-                "geometry": None,
-                "blockers": ["Vector/linework extraction is not available without a configured PDF vector parser."],
-                "truth_label": TRUTH_LABEL,
-            }
-        )
+    linework_candidates: List[Dict[str, Any]] = [
+        {
+            "element_id": _stable_id("linework", analysis.get("source_pdf", {}).get("sha256"), prefix="pse"),
+            "type": "linework_geometry_candidate",
+            "page_index": 0,
+            "source_confidence": SOURCE_CONFIDENCE,
+            "review_status": "pending",
+            "review_required": True,
+            "editable": False,
+            "geometry": None,
+            "blockers": ["Vector/linework extraction is not available without a configured PDF vector parser."],
+            "truth_label": TRUTH_LABEL,
+        }
+    ]
     elements.extend(linework_candidates)
     counts: Dict[str, int] = {}
     for element in elements:
@@ -837,6 +836,7 @@ def plan_pdf_report(meta: Dict[str, Any]) -> Dict[str, Any]:
     analysis = safe_dict(meta.get("plan_pdf_analysis_v1"))
     sheet = safe_dict(meta.get("plan_pdf_editable_sheet_v1"))
     changed = safe_dict(meta.get("plan_pdf_changed_elements_v1")) or safe_dict(sheet.get("changed_elements"))
+    cad_entities = plan_pdf_elements_to_cad_entities(meta)
     return {
         "version": "plan_pdf_extraction_report_v1",
         "source_confidence": SOURCE_CONFIDENCE,
@@ -846,6 +846,19 @@ def plan_pdf_report(meta: Dict[str, Any]) -> Dict[str, Any]:
         "analysis": analysis,
         "editable_sheet": sheet,
         "changed_elements": changed,
+        "pdf_to_cad_entities": {
+            "version": "pdf_to_cad_entities_v1",
+            "source_confidence": SOURCE_CONFIDENCE,
+            "review_required": True,
+            "construction_release_allowed": False,
+            "converted_count": len(cad_entities),
+            "entities": cad_entities,
+            "blockers": safe_list(analysis.get("blockers")),
+            "truth_label": (
+                "PDF-derived CAD entities are imported_pdf_review_required drafting/review objects only. "
+                "Raster/OCR uncertainty and unsupported vector geometry remain blockers, not fabricated CAD linework."
+            ),
+        },
         "review_only_edited_sheet_export": {
             "version": "plan_pdf_review_only_edited_sheet_export_v1",
             "source_confidence": SOURCE_CONFIDENCE,

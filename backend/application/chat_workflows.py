@@ -29,6 +29,7 @@ from backend.planning.cad_entity_model import (
     history_event,
     manual_drawn_objects_to_cad_entities,
     normalize_cad_entity,
+    plan_pdf_elements_to_cad_entities,
 )
 from backend.planning.common import safe_float, safe_str
 from backend.planning.design_alternatives import (
@@ -836,6 +837,8 @@ def _cad_entity_chat_response(
     user_id: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
+    if ("pdf" in lowered and "cad" in lowered) or ("raster line" in lowered and "cad" in lowered):
+        return None
     mentions_cad_entity = "cad entit" in lowered or "cad object" in lowered or "drawn object" in lowered
     mentions_cad = bool(re.search(r"\bcad\b", lowered)) or mentions_cad_entity
     asks_list = any(phrase in lowered for phrase in ("what cad entities", "list cad entities", "cad entities are in", "what cad objects"))
@@ -1548,6 +1551,8 @@ def _geometry_edit_distance_from_message(message: str) -> Optional[float]:
 
 def _cad_command_line_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
+    if ("pdf" in lowered and "cad" in lowered) or ("raster line" in lowered and "cad" in lowered):
+        return None
     mentions_command_line = (
         "command line" in lowered
         or "typed command" in lowered
@@ -4184,6 +4189,54 @@ def _plan_pdf_ocr_behavior_line(meta: Dict[str, Any]) -> str:
     return f"OCR status: {status}; engine {engine_name} is {available}; OCR results are review-required."
 
 
+def _plan_pdf_cad_entity_lines(meta: Dict[str, Any]) -> List[str]:
+    model = build_cad_entity_model(meta)
+    entities = [
+        _safe_dict(item)
+        for item in _safe_list(model.get("entities"))
+        if safe_str(_safe_dict(item).get("source")) in {"plan_pdf_extraction", "plan_pdf_vector_extraction"}
+    ]
+    if not entities:
+        return ["No PDF elements have become CAD entities yet."]
+    lines = [f"{len(entities)} PDF-derived CAD entit(ies) are present in cad_entity_model_v1:"]
+    for entity in entities[:12]:
+        source_pdf = _safe_dict(entity.get("source_pdf"))
+        label = safe_str(entity.get("original_text") or _safe_dict(entity.get("geometry")).get("text")) or safe_str(entity.get("type"), "entity")
+        page = int(source_pdf.get("page") or entity.get("page") or 0)
+        lines.append(
+            f"- {safe_str(entity.get('id'))}: {safe_str(entity.get('type'))} {safe_str(entity.get('pdf_annotation_kind'))} on page {page}; {label}; {safe_str(entity.get('source_confidence'), PLAN_PDF_SOURCE_CONFIDENCE)}."
+        )
+    lines.append("All PDF-derived CAD entities remain imported_pdf_review_required, review-only, not survey-backed, and not construction-release evidence.")
+    return lines
+
+
+def _plan_pdf_unconverted_cad_lines(meta: Dict[str, Any]) -> List[str]:
+    analysis = _safe_dict(meta.get("plan_pdf_analysis_v1"))
+    sheet = _safe_dict(meta.get("plan_pdf_editable_sheet_v1"))
+    converted_element_ids = {safe_str(_safe_dict(item).get("linked_pdf_element_id")) for item in plan_pdf_elements_to_cad_entities(meta)}
+    lines = ["Unreadable or unconverted PDF-to-CAD items:"]
+    for element in _safe_list(sheet.get("elements")):
+        rec = _safe_dict(element)
+        element_id = safe_str(rec.get("element_id"))
+        if element_id in converted_element_ids:
+            continue
+        reason = "not converted"
+        if safe_str(rec.get("type")) == "stamp_or_seal_source_imagery":
+            reason = "protected professional mark imagery is source-only and never approval evidence"
+        elif safe_str(rec.get("type")) == "linework_geometry_candidate":
+            reason = "; ".join(safe_str(item) for item in _safe_list(rec.get("blockers")) if safe_str(item)) or "vector geometry extraction is unavailable"
+        elif not _safe_dict(rec.get("bbox") or rec.get("original_bbox")):
+            reason = "missing reliable source bounds"
+        lines.append(f"- {safe_str(rec.get('type'), 'element')} {element_id}: {reason}.")
+    blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
+    for blocker in blockers[:8]:
+        if "ocr" in blocker or "raster" in blocker or "vector" in blocker:
+            lines.append(f"- blocker: {blocker}")
+    if len(lines) == 1:
+        lines.append("- No unconverted PDF sheet elements are saved.")
+    return lines
+
+
 def _plan_pdf_chat_response(
     *,
     message: str,
@@ -4217,6 +4270,14 @@ def _plan_pdf_chat_response(
             "pool deck elevation",
             "move this label",
             "what changed",
+            "turn pdf labels into cad text",
+            "pdf labels into cad text",
+            "convert plan dimensions to cad annotations",
+            "what pdf elements became cad entities",
+            "why can t this raster line become cad",
+            "why can't this raster line become cad",
+            "show unreadable unconverted pdf items",
+            "unconverted pdf items",
         )
     )
     if "since last version" in normalized:
@@ -4361,7 +4422,51 @@ def _plan_pdf_chat_response(
                 )
     summary = _safe_dict(analysis.get("summary"))
     blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
-    if wants_change_summary:
+    wants_pdf_to_cad = (
+        "cad" in normalized
+        and "pdf" in normalized
+        and any(phrase in normalized for phrase in ("turn", "convert", "became", "entities", "annotations", "labels"))
+    )
+    wants_unconverted = "unconverted" in normalized or ("unreadable" in normalized and "cad" in normalized)
+    wants_raster_line_reason = "raster line" in normalized and "cad" in normalized
+    if wants_pdf_to_cad and project_store and user_id and ("turn" in normalized or "convert" in normalized):
+        converted = plan_pdf_elements_to_cad_entities(meta)
+        updated_latest = deepcopy(latest_result)
+        updated_plan = deepcopy(final_plan)
+        updated_meta = deepcopy(meta)
+        updated_meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model(updated_meta)
+        updated_plan["meta"] = updated_meta
+        updated_latest["final_plan"] = updated_plan
+        _save_project_record(
+            project_store,
+            {**record, "_user_id": user_id},
+            project_input=deepcopy(_safe_dict(record.get("project_input"))),
+            latest_result=updated_latest,
+        )
+        lines = _plan_pdf_cad_entity_lines(updated_meta)
+        if not converted:
+            lines = ["No safe bounded embedded-text PDF candidates could be converted into CAD entities."] + _plan_pdf_unconverted_cad_lines(updated_meta)
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="pdf_to_cad_entities",
+            run_mode="cad_entity_model_update",
+            needs_clarification=False,
+            action_taken="converted_pdf_candidates_to_review_required_cad_entities",
+            affected_systems=["plan_pdf_understanding", "cad_entity_model", "candidate_review_inbox"],
+            assumptions=["Only bounded embedded PDF text and supported vector line/polyline records are converted; OCR/raster uncertainty remains blocked."],
+            next_best_action="Review the PDF-derived CAD entity candidates in Candidate Review Inbox before relying on them.",
+            command_payload_updates={"ui_navigation_target": "data", "requested_ui_mode": "data", "source_confidence": PLAN_PDF_SOURCE_CONFIDENCE},
+            state_changed=True,
+            confidence=0.66,
+        )
+    if wants_pdf_to_cad and ("became" in normalized or "entities" in normalized):
+        lines = _plan_pdf_cad_entity_lines(meta)
+    elif wants_unconverted or wants_raster_line_reason:
+        lines = _plan_pdf_unconverted_cad_lines(meta)
+        if wants_raster_line_reason:
+            lines.insert(0, "A raster line cannot become CAD linework unless a configured extraction engine returns supported vector line/polyline geometry with confidence and source bounds.")
+    elif wants_change_summary:
         lines = _plan_pdf_changed_lines(meta)
     elif "what can you not read" in normalized or "what could you not read" in normalized or "unreadable" in normalized or "blocker" in normalized:
         lines = _plan_pdf_unreadable_lines(meta)
