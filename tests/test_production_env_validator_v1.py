@@ -13,6 +13,8 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         self.assertTrue(report["release_blocked"])
         codes = {item["code"] for item in report["blockers"]}
         self.assertIn("missing_required_env", codes)
+        self.assertIn("public_api_base_url_missing", codes)
+        self.assertIn("backend_public_url_missing", codes)
         self.assertIn("vercel_api_base_missing", codes)
 
     def test_redacts_secret_diagnostics(self) -> None:
@@ -82,6 +84,25 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         self.assertIn("frontend_api_base_url_localhost", codes)
         self.assertIn("wildcard_cors_not_allowed", codes)
 
+    def test_production_blocks_mixed_wildcard_cors_and_insecure_public_urls(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "production",
+                "NEXT_PUBLIC_API_BASE_URL": "http://api.example.com",
+                "CIVORA_PUBLIC_API_BASE_URL": "http://api.example.com",
+                "CORS_ALLOW_ORIGINS": "https://app.example.com,*",
+                "CIVORA_FRONTEND_PUBLIC_URL": "https://app.example.com",
+                "CIVORA_SESSION_SECRET": "session-secret",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+            }
+        )
+
+        codes = {item["code"] for item in report["blockers"]}
+        self.assertIn("wildcard_cors_not_allowed", codes)
+        self.assertIn("frontend_api_base_url_not_https", codes)
+        self.assertIn("backend_public_url_not_https", codes)
+
     def test_gis_requirement_promotes_missing_registry_to_blocker(self) -> None:
         report = validate_production_env_v1(
             {
@@ -133,6 +154,33 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         self.assertIn("monitoring_owner_missing", codes)
         self.assertIn("rollback_owner_missing", codes)
         self.assertIn("public_beta_release_gates_not_green", codes)
+
+    def test_real_charging_requires_legal_and_provider_gates(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "production",
+                "NEXT_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CIVORA_PUBLIC_API_BASE_URL": "https://api.example.com",
+                "CORS_ALLOW_ORIGINS": "https://app.example.com",
+                "CIVORA_FRONTEND_PUBLIC_URL": "https://app.example.com",
+                "CIVORA_SESSION_SECRET": "session-secret",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_ENABLE_REAL_CHARGING": "true",
+                "CIVORA_BILLING_PROVIDER": "stripe",
+                "CIVORA_SUPPORT_CONTACT_URL": "https://support.example.com",
+                "CIVORA_BUG_REPORT_URL": "https://support.example.com/bugs",
+                "CIVORA_ESCALATION_CONTACT": "ops@example.com",
+                "CIVORA_MONITORING_OWNER": "ops@example.com",
+                "CIVORA_ROLLBACK_OWNER": "release@example.com",
+                "CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN": "true",
+            }
+        )
+
+        codes = {item["code"] for item in report["blockers"]}
+        self.assertIn("billing_provider_without_legal_docs", codes)
+        self.assertIn("stripe_config_incomplete", codes)
+        self.assertIn("real_charging_gates_incomplete", codes)
 
     def test_public_beta_env_contract_can_be_ready_when_ops_gates_are_green(self) -> None:
         report = validate_production_env_v1(

@@ -116,6 +116,40 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertTrue(data["operational_summary"]["public_beta_blocked"])
         self.assertFalse(data["operational_summary"]["ready_for_public_launch"])
 
+    def test_health_response_reports_truthful_queue_counts(self):
+        data = health_response(
+            app_name="Civora AI",
+            app_version="1.0",
+            product_mode="production",
+            user_count=7,
+            storage="postgres",
+            deployment={"api_base_url": "https://api.example.test", "build_version": "abc123"},
+            runtime_monitoring={
+                "status": "warning",
+                "job_queue": {
+                    "status": "warning",
+                    "counts": {"queued": 4, "running": 2, "failed": 3},
+                    "queued_count": 4,
+                    "running_count": 2,
+                    "failed_count": 3,
+                    "failed_recent_count": 1,
+                    "stale_job_count": 1,
+                    "oldest_active_age_sec": 90.0,
+                },
+                "process": {"status": "healthy", "recent_start_count": 1, "previous_shutdown_clean": True},
+            },
+            release_guard={"construction_release_enabled": False, "construction_release_blocked": True},
+        )
+
+        summary = data["operational_summary"]
+        self.assertEqual(summary["pending_count"], 4)
+        self.assertEqual(summary["queued_count"], 4)
+        self.assertEqual(summary["running_count"], 2)
+        self.assertEqual(summary["failed_count"], 3)
+        self.assertEqual(summary["failed_recent_count"], 1)
+        self.assertEqual(summary["stale_job_count"], 1)
+        self.assertIn("Background job health needs attention", " ".join(data["deployment"]["user_safe_messages"]))
+
     def test_runtime_monitoring_reports_process_restart_risk(self):
         previous = {
             key: os.environ.get(key)

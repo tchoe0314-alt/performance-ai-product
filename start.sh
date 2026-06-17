@@ -9,6 +9,7 @@ PYTHON_BIN="$VENV_DIR/bin/python"
 PIP_BIN="$VENV_DIR/bin/pip"
 UVICORN_RELOAD="${UVICORN_RELOAD:-0}"
 MPL_CACHE_DIR="$ROOT_DIR/.mpl-cache"
+NEXT_DEV_DIST_DIR="${NEXT_DEV_DIST_DIR:-.next-dev}"
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -118,7 +119,7 @@ start_frontend() {
   echo "Starting frontend on http://localhost:3000 ..."
   (
     cd "$FRONTEND_DIR"
-    exec npm run dev
+    exec env NEXT_DIST_DIR="$NEXT_DEV_DIST_DIR" npm run dev
   ) &
   FRONTEND_PID=$!
 }

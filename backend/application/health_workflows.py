@@ -61,6 +61,11 @@ def health_response(
     queue_status = str(queue_evidence.get("status") or monitoring.get("job_queue", {}).get("status") or "unknown")
     monitoring_queue = monitoring.get("job_queue", {}) if isinstance(monitoring.get("job_queue", {}), dict) else {}
     queue_counts = monitoring_queue.get("counts") if isinstance(monitoring_queue.get("counts"), dict) else {}
+    pending_count = int(queue_evidence.get("pending_count", monitoring_queue.get("queued_count", queue_counts.get("queued", 0))) or 0)
+    running_count = int(monitoring_queue.get("running_count", queue_counts.get("running", 0)) or 0)
+    stale_job_count = int(monitoring_queue.get("stale_job_count", queue_evidence.get("timeout_count", 0)) or 0)
+    failed_count = int(monitoring_queue.get("failed_count", queue_counts.get("failed", queue_evidence.get("historical_failed_count", queue_evidence.get("failed_count", 0)))) or 0)
+    failed_recent_count = int(queue_evidence.get("failed_recent_count", monitoring_queue.get("failed_recent_count", 0)) or 0)
     deployment_meta = deployment or {}
     support_meta = support or {}
     build_version = str(deployment_meta.get("build_version") or app_version or "").strip()
@@ -75,6 +80,8 @@ def health_response(
         service_messages.append("Backend health checks are blocked. Some workspace actions may be unavailable.")
     if queue_status not in {"healthy", "ready", "ok"}:
         service_messages.append("Background jobs may be delayed. Queued runs can be retried when service recovers.")
+    if pending_count or stale_job_count or failed_recent_count:
+        service_messages.append("Background job health needs attention; pending, failed, and stale counts are listed in the operational summary.")
     if not api_base_url:
         service_messages.append("The API base URL is not published in health metadata.")
     if not service_messages:
@@ -145,16 +152,16 @@ def health_response(
             "job_queue_evidence_status": str(queue_evidence.get("status") or ""),
             "queue_status": queue_status,
             "queue_counts": queue_counts,
-            "queued_count": queue_evidence.get("pending_count", monitoring_queue.get("queued_count", queue_counts.get("queued"))),
-            "running_count": monitoring_queue.get("running_count", queue_counts.get("running", 0)),
-            "stale_job_count": monitoring_queue.get("stale_job_count", queue_evidence.get("timeout_count", 0)),
+            "pending_count": pending_count,
+            "queued_count": pending_count,
+            "running_count": running_count,
+            "failed_count": failed_count,
+            "stale_job_count": stale_job_count,
             "job_queue_monitoring_ready": bool(queue_evidence.get("queue_monitoring_ready")),
             "async_jobs_enabled": bool(queue_evidence.get("async_jobs_enabled", True)),
             "timeout_count": queue_evidence.get("timeout_count"),
-            "failed_count": queue_evidence.get("failed_count"),
-            "failed_recent_count": queue_evidence.get("failed_recent_count"),
+            "failed_recent_count": failed_recent_count,
             "historical_failed_count": queue_evidence.get("historical_failed_count"),
-            "pending_count": queue_evidence.get("pending_count"),
             "construction_release_enabled": bool(release.get("construction_release_enabled")) and not review_only,
             "construction_release_blocked": review_only or bool(release.get("construction_release_blocked")),
             "ready_for_ui": operational_status in {"healthy", "degraded"},

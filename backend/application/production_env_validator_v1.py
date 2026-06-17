@@ -10,6 +10,7 @@ VALID_PRODUCT_MODES = {"development", "local", "private_alpha", "public_beta", "
 PRODUCTION_MODES = {"public_beta", "production"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 SECRET_MARKERS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "DATABASE_URL", "POSTGRES", "REDIS_URL")
+RECOGNIZED_BILLING_PROVIDERS = {"none", "disabled", "off", "stripe"}
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,10 @@ def _is_local_url(value: str) -> bool:
     return _hostname(value) in LOCAL_HOSTS
 
 
+def _is_public_prod_url(value: str) -> bool:
+    return _is_url(value) and not _is_local_url(value)
+
+
 def _secret_like(name: str) -> bool:
     upper = name.upper()
     return any(marker in upper for marker in SECRET_MARKERS)
@@ -191,20 +196,28 @@ def validate_production_env_v1(
     if backend_url and not backend_url.startswith(("http://", "https://")):
         backend_url = f"https://{backend_url}"
 
+    if mode in PRODUCTION_MODES and not frontend_url:
+        blockers.append(_issue("blocker", "public_api_base_url_missing", "NEXT_PUBLIC_API_BASE_URL is required in public_beta and production.", env_vars=["NEXT_PUBLIC_API_BASE_URL"]))
     if frontend_url:
         if not _is_url(frontend_url):
             blockers.append(_issue("blocker", "invalid_frontend_api_base_url", "NEXT_PUBLIC_API_BASE_URL must be an absolute http(s) URL.", env_vars=["NEXT_PUBLIC_API_BASE_URL"]))
         elif mode in PRODUCTION_MODES and _is_local_url(frontend_url):
             blockers.append(_issue("blocker", "frontend_api_base_url_localhost", "NEXT_PUBLIC_API_BASE_URL cannot point at localhost in public_beta or production.", env_vars=["NEXT_PUBLIC_API_BASE_URL"]))
+        elif mode in PRODUCTION_MODES and urlparse(frontend_url).scheme != "https":
+            blockers.append(_issue("blocker", "frontend_api_base_url_not_https", "NEXT_PUBLIC_API_BASE_URL must use https in public_beta or production.", env_vars=["NEXT_PUBLIC_API_BASE_URL"]))
+    if mode in PRODUCTION_MODES and not backend_url:
+        blockers.append(_issue("blocker", "backend_public_url_missing", "CIVORA_PUBLIC_API_BASE_URL is required in public_beta and production.", env_vars=["CIVORA_PUBLIC_API_BASE_URL"]))
     if backend_url:
         if not _is_url(backend_url):
             blockers.append(_issue("blocker", "invalid_backend_public_url", "Backend public URL must be an absolute http(s) URL.", env_vars=["CIVORA_PUBLIC_API_BASE_URL", "RAILWAY_PUBLIC_DOMAIN"]))
         elif mode in PRODUCTION_MODES and _is_local_url(backend_url):
             blockers.append(_issue("blocker", "backend_public_url_localhost", "Backend public URL cannot point at localhost in public_beta or production.", env_vars=["CIVORA_PUBLIC_API_BASE_URL"]))
+        elif mode in PRODUCTION_MODES and urlparse(backend_url).scheme != "https":
+            blockers.append(_issue("blocker", "backend_public_url_not_https", "CIVORA_PUBLIC_API_BASE_URL must use https in public_beta or production.", env_vars=["CIVORA_PUBLIC_API_BASE_URL"]))
 
     cors_raw = str(env.get("CORS_ALLOW_ORIGINS") or "").strip()
     cors_origins = _parse_origins(cors_raw)
-    if cors_raw == "*" and mode not in {"development", "local"}:
+    if "*" in cors_origins and mode not in {"development", "local"}:
         blockers.append(_issue("blocker", "wildcard_cors_not_allowed", "Wildcard CORS is only allowed in local/development mode.", env_vars=["CORS_ALLOW_ORIGINS"]))
     elif mode in PRODUCTION_MODES and not cors_origins:
         blockers.append(_issue("blocker", "missing_cors_origins", "CORS_ALLOW_ORIGINS must list deployed frontend origins.", env_vars=["CORS_ALLOW_ORIGINS"]))
@@ -246,10 +259,23 @@ def validate_production_env_v1(
             blockers.append(_issue("blocker", "charging_requested_without_provider", "Charging was requested but no billing provider is configured.", env_vars=["CIVORA_ENABLE_REAL_CHARGING", "CIVORA_BILLING_PROVIDER"]))
         if not _truthy(env.get("CIVORA_BILLING_LEGAL_DOCS_READY")):
             blockers.append(_issue("blocker", "charging_requested_without_business_docs", "Charging was requested but billing business-document readiness is false.", env_vars=["CIVORA_ENABLE_REAL_CHARGING", "CIVORA_BILLING_LEGAL_DOCS_READY"]))
+    if billing_provider not in RECOGNIZED_BILLING_PROVIDERS:
+        blockers.append(_issue("blocker", "unknown_billing_provider", "Billing provider must be none/disabled/off or a configured supported provider.", env_vars=["CIVORA_BILLING_PROVIDER"]))
+    billing_legal_ready = _truthy(env.get("CIVORA_BILLING_LEGAL_DOCS_READY"))
+    if billing_provider in {"stripe"} and not billing_legal_ready:
+        blockers.append(_issue("blocker", "billing_provider_without_legal_docs", "A real billing provider cannot be selected until billing/legal gates are ready.", env_vars=["CIVORA_BILLING_PROVIDER", "CIVORA_BILLING_LEGAL_DOCS_READY"]))
     if billing_provider == "stripe":
         missing_stripe = [name for name in ("STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_PILOT_PRICE_ID", "STRIPE_WEBHOOK_SECRET") if not str(env.get(name) or "").strip()]
         if missing_stripe:
             blockers.append(_issue("blocker", "stripe_config_incomplete", "Stripe billing provider is selected but required Stripe config is missing.", env_vars=missing_stripe))
+    if charging_requested and billing_provider == "stripe":
+        missing_charge_gates = [
+            name
+            for name in ("CIVORA_BILLING_PROVIDER", "CIVORA_BILLING_LEGAL_DOCS_READY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_SECRET_KEY", "STRIPE_PILOT_PRICE_ID", "STRIPE_WEBHOOK_SECRET")
+            if not str(env.get(name) or "").strip()
+        ]
+        if missing_charge_gates:
+            blockers.append(_issue("blocker", "real_charging_gates_incomplete", "Real charging remains blocked until every explicit legal, billing, and provider flag is configured.", env_vars=missing_charge_gates))
 
     if target == "railway":
         if not env.get("PORT"):
@@ -275,6 +301,7 @@ def validate_production_env_v1(
             "escalation_contact_missing": (not str(env.get("CIVORA_ESCALATION_CONTACT") or "").strip(), ["CIVORA_ESCALATION_CONTACT"]),
             "monitoring_owner_missing": (not str(env.get("CIVORA_MONITORING_OWNER") or "").strip(), ["CIVORA_MONITORING_OWNER"]),
             "rollback_owner_missing": (not str(env.get("CIVORA_ROLLBACK_OWNER") or "").strip(), ["CIVORA_ROLLBACK_OWNER"]),
+            "billing_legal_docs_not_ready": (not billing_legal_ready, ["CIVORA_BILLING_LEGAL_DOCS_READY"]),
             "public_beta_release_gates_not_green": (not _truthy(env.get("CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN")), ["CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN"]),
         }
         for code, (blocked, env_vars) in public_beta_gates.items():
@@ -311,8 +338,8 @@ def validate_production_env_v1(
         "required_env_vars": build_env_contract()["required"],
         "optional_env_vars": build_env_contract()["optional"],
         "checks": {
-            "vercel": {"root": "apps/web", "api_base_url_present": bool(frontend_url), "frontend_origin_present": bool(frontend_origin), "localhost_blocked_in_prod": mode in PRODUCTION_MODES},
-            "railway": {"port_env": "${PORT:-8002}", "healthcheck_path": "/api/health", "public_url_present": bool(backend_url)},
+            "vercel": {"root": "apps/web", "api_base_url_present": bool(frontend_url), "api_base_url_public": _is_public_prod_url(frontend_url), "frontend_origin_present": bool(frontend_origin), "localhost_blocked_in_prod": mode in PRODUCTION_MODES},
+            "railway": {"port_env": "${PORT:-8002}", "healthcheck_path": "/api/health", "public_url_present": bool(backend_url), "public_url_public": _is_public_prod_url(backend_url)},
         },
     }
 
