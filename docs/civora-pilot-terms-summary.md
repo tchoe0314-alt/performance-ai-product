@@ -1,5 +1,3 @@
-# Chat 198 report.
-
 # Civora Pilot Terms Summary
 
 Draft status: legal/business draft for review. This is not legal advice. Use this summary for product, onboarding, and legal review alongside [civora-controlled-pilot-terms-draft.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/civora-controlled-pilot-terms-draft.md).
@@ -18,6 +16,7 @@ Civora is an invite-only pilot workspace for civil design support and engineer-r
 - I understand Civora does not provide professional engineering services and does not act as engineer of record.
 - I understand licensed professional review outside Civora is required before reliance where professional review is required.
 - I understand I am responsible for source verification, standards verification, project data accuracy, and final project decisions.
+- I understand I must have rights to upload, connect, process, display, analyze, and use map/GIS sources and related metadata in Civora within the approved pilot scope.
 - I understand I must not use Civora outputs for construction, permitting, bidding, procurement, installation, field work, owner approval, contractor direction, or regulatory submission unless externally reviewed and approved by the responsible licensed professional.
 - I understand I must not upload confidential, regulated, restricted, or unauthorized data outside the approved pilot scope.
 - I understand any payment arrangement requires separate written approval and does not change the review-only boundary.

@@ -145,7 +145,8 @@ Next action:
 - Civil3D workflows are not externally verified.
 - DWG export is unsupported.
 - Standards require user/company acceptance before they can be used as review evidence.
-- Survey/control, datum, benchmark, and source evidence are required for production-grade review.
+- Survey/control, datum, benchmark, and source evidence are required for source-backed reviewer evaluation.
+- Map/GIS imports require confirmation that the pilot user has rights to upload, connect, process, and use the source within the approved pilot scope.
 - Auth, SQLite storage, and in-process jobs are private-pilot grade, not broad production infrastructure.
 
 ## What Users Should Test

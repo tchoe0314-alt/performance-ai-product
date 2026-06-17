@@ -114,7 +114,7 @@ export default function AuthScreen({
                 <FolderOpen className="h-5 w-5 text-slate-900" />
                 <p className="mt-3 text-sm font-medium text-slate-900">Projects</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Open, rerun, and review real project history.
+                  Open, rerun, and review approved pilot project history.
                 </p>
               </CardContent>
             </Card>
@@ -144,7 +144,7 @@ export default function AuthScreen({
             <CardHeader>
               <SectionTitle
                 icon={Sparkles}
-                title={authMode === "register" ? "Create Account" : "Sign In"}
+                title={authMode === "register" ? "Request Pilot Access" : "Sign In"}
                 desc="Auth is now user-scoped so projects and jobs are private per beta tester."
               />
             </CardHeader>
@@ -170,7 +170,7 @@ export default function AuthScreen({
                       : "text-slate-600"
                   }`}
                 >
-                  Create Account Mode
+                  Request Access Mode
                 </button>
               </div>
               <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
@@ -180,10 +180,10 @@ export default function AuthScreen({
                       {authStatus.user_count} Civora AI beta account
                       {authStatus.user_count === 1 ? "" : "s"} already exist in this
                       workspace. Use <strong>Sign In</strong> if you made one before,
-                      or create another account.
+                      or request approved pilot access.
                     </span>
                   ) : (
-                    <span>No Civora AI beta accounts exist yet. Create the first one here.</span>
+                    <span>No Civora AI beta accounts exist yet. Request invite-only pilot access here.</span>
                   )
                 ) : (
                   <span>Account status will appear here once the Civora AI backend responds.</span>
@@ -248,7 +248,7 @@ export default function AuthScreen({
                   {authLoading
                     ? "Working..."
                     : authMode === "register"
-                      ? "Create Account"
+                      ? "Request Pilot Access"
                       : "Sign In"}
                 </SmallButton>
                 <SmallButton

@@ -3900,7 +3900,7 @@ function PerformanceAIDashboardView({
                   ? "utility"
                   : "floodplain_wetland_constraint",
         label: featureType.replaceAll("_", " "),
-        source: String(rec.evidence_source ?? rec.source_name ?? rec.source_type ?? "map/GIS source"),
+        source: String(rec.evidence_source ?? rec.source_name ?? rec.source_type ?? "authorized map/GIS source"),
         provider: String(rec.source_name ?? rec.source_type ?? "map/GIS"),
         source_url: String(rec.source_url ?? ""),
         confidence: typeof rec.confidence === "number" || typeof rec.confidence === "string" ? rec.confidence : "unknown",
@@ -15789,7 +15789,7 @@ function PerformanceAIDashboardView({
       next_action: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl
         ? "Review the source result; no online/GIS candidate is auto-accepted."
         : hasLocationEvidence || siteAddress.trim()
-          ? "Run online/source discovery or upload a map/GIS source."
+          ? "Run online/source discovery or upload an authorized map/GIS source."
           : "Add address/location evidence before source discovery.",
       why_blocked: hasLocationEvidence || siteAddress.trim() ? "" : "Online/source discovery needs a location or uploaded source.",
       review_required: Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl),

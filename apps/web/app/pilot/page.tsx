@@ -13,8 +13,8 @@ const sections = [
     id: "limitations",
     title: "Pilot Limitations",
     body: [
-      "Civora is private-pilot software. Civil 3D workflows are not externally verified, DWG export is unsupported, standards require user or company acceptance, and survey/control, datum, benchmark, and source evidence are required for production-grade review.",
-      "Address lookup, GIS, imagery detection, inferred objects, and visual previews are review context only unless backed by accepted source evidence.",
+      "Civora is private-pilot software. Civil 3D workflows are not externally verified, DWG export is unsupported, standards require user or company acceptance, and survey/control, datum, benchmark, and source evidence are required for source-backed reviewer evaluation.",
+      "Address lookup, GIS, imagery detection, inferred objects, and visual previews are review context only unless backed by accepted source evidence. Users must have rights to upload or connect map/GIS sources before importing them.",
     ],
   },
   {

@@ -97,7 +97,8 @@ Please include:
 - Civil3D workflows are not externally verified.
 - DWG export is unsupported.
 - Standards require user/company acceptance before they can be used as review evidence.
-- Survey/control, datum, benchmark, and source evidence are required for production-grade review.
+- Survey/control, datum, benchmark, and source evidence are required for source-backed reviewer evaluation.
+- Map/GIS imports require confirmation that the pilot user has rights to upload, connect, process, and use the source within the approved pilot scope.
 - Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
 - Address lookup does not automatically create trusted site objects unless those objects are backed by accepted source evidence.
 - GIS and imagery detections are candidates that require review.

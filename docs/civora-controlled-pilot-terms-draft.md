@@ -1,5 +1,3 @@
-# Chat 198 report.
-
 # Civora Controlled Pilot Terms and Conditions Draft
 
 Draft status: legal/business draft for review. This is not legal advice. Civora should not send, publish, or rely on this draft until reviewed and approved by counsel and the business owner.
@@ -91,7 +89,9 @@ GIS, imagery, PDF, CAD, LandXML, spreadsheets, uploaded files, and other importe
 
 Civora may infer or extract candidate site objects from imported data. Candidate objects are not trusted project evidence unless the user or responsible reviewer verifies and accepts the underlying source.
 
-Users must confirm file provenance, coordinate systems, scale, units, layer meaning, revision status, and completeness before using imported data in project review.
+Users must confirm file provenance, coordinate systems, scale, units, layer meaning, revision status, source rights, and completeness before using imported data in project review.
+
+Users must have the right to upload, connect, process, display, analyze, and use map/GIS sources, imagery, exports, and related metadata in Civora within the approved pilot scope. Civora does not grant rights to third-party map, GIS, imagery, or source datasets.
 
 ## 11. External approval/stamp records as customer-provided metadata only
 

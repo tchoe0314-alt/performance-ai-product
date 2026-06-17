@@ -6,11 +6,11 @@ export default function UpgradesPage() {
     "Engineering metrics tied to live model outputs",
     "Materials and quantity takeoffs",
     "Survey + slope inference from imagery",
-    "Map snapshot ingestion (Google Maps, GIS exports)",
+    "Map snapshot ingestion with source-rights review (Google Maps, GIS exports)",
     "Clickable issue detection and fix routing",
     "Full engineering coverage for bridges, pools, subdivisions",
     "Environmental / regulatory depth",
-    "Construction and inspection workflows",
+    "Construction-adjacent review support and field-observation package workflows",
     "Operations support dashboards",
   ];
 
