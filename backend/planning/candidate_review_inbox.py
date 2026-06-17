@@ -5,6 +5,7 @@ from datetime import date
 import hashlib
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from .cad_entity_model import plan_pdf_elements_to_cad_entities
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .map_feature_detection import accept_feature_candidate_as_draft_object
 
@@ -390,12 +391,45 @@ def _plan_pdf_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
     return candidates
 
 
+def _plan_pdf_cad_entity_candidates(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+    for idx, entity in enumerate(plan_pdf_elements_to_cad_entities(meta)):
+        rec = safe_dict(entity)
+        if not rec:
+            continue
+        source_pdf = safe_dict(rec.get("source_pdf"))
+        annotation_kind = safe_str(rec.get("pdf_annotation_kind") or rec.get("type"), "cad_entity")
+        label_text = safe_str(rec.get("original_text") or safe_dict(rec.get("geometry")).get("text"))
+        label = f"PDF CAD {annotation_kind}"
+        if label_text:
+            label = f"{label}: {label_text[:80]}"
+        candidates.append(
+            _candidate(
+                candidate_id=safe_str(rec.get("id")) or _stable_id("plan_pdf_cad_entity", idx, rec.get("linked_pdf_element_id")),
+                candidate_type=f"plan_pdf_cad_{annotation_kind}",
+                label=label,
+                source=safe_str(source_pdf.get("filename"), "uploaded plan PDF"),
+                provider="cad_entity_model_v1",
+                confidence=safe_str(rec.get("source_confidence"), "imported_pdf_review_required"),
+                status=safe_str(rec.get("review_status"), "pending"),
+                object_count=1,
+                blocker_review_reason=(
+                    "PDF-derived CAD entity candidate is imported_pdf_review_required. "
+                    "It is not survey-backed, engineer-reviewed, or construction-release evidence."
+                ),
+                source_record=rec,
+            )
+        )
+    return candidates
+
+
 def build_candidate_review_inbox(meta: Dict[str, Any]) -> Dict[str, Any]:
     candidates = (
         _map_feature_candidates(meta)
         + _standards_candidates(meta)
         + _online_or_imported_candidates(meta)
         + _plan_pdf_candidates(meta)
+        + _plan_pdf_cad_entity_candidates(meta)
     )
     by_id: Dict[str, Dict[str, Any]] = {}
     for candidate in candidates:
