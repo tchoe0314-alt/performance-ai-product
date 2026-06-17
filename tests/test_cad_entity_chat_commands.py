@@ -106,6 +106,64 @@ def test_chat_moves_selected_cad_entity_and_marks_it_stale_review_required():
     assert saved_entity["construction_release_allowed"] is False
 
 
+def test_chat_reports_selected_cad_entity_ids_and_grips():
+    store = RecordingProjectStore(_record_with_line())
+
+    result = _chat("what is selected?", store)
+
+    assert result["action_taken"] == "reported_selected_cad_entities"
+    assert "cad-line-1" in result["assistant_message"]
+    model = result["response_metadata"]["command_payload"][CAD_ENTITY_MODEL_VERSION]
+    assert model["selection"]["selected_entity_ids"] == ["cad-line-1"]
+    assert [grip["grip_id"] for grip in model["selection"]["grips"]] == ["start", "end", "midpoint"]
+
+
+def test_chat_moves_selected_grip_and_records_geometry_event():
+    store = RecordingProjectStore(_record_with_line())
+
+    result = _chat(
+        "move this grip by 5,2",
+        store,
+        {"selected_cad_entity_ids": ["cad-line-1"], "selected_cad_grip_entity_id": "cad-line-1", "selected_cad_grip_id": "end"},
+    )
+
+    operation = result["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert operation["selected_action"] == "move_grip"
+    assert operation["updated_entity_ids"] == ["cad-line-1"]
+    saved_model = store.record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]
+    saved_entity = saved_model["entities"][0]
+    assert saved_entity["geometry"]["end"] == {"x": 15.0, "y": 2.0}
+    assert saved_model["history"][-1]["event_type"] == "entity_geometry_changed"
+    assert saved_entity["draft_review_required"] is True
+    assert saved_entity["construction_release_allowed"] is False
+
+
+def test_chat_explains_grip_blocker_for_locked_reference_entity():
+    record = _record_with_line()
+    record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]["entities"][0]["locked"] = True
+    store = RecordingProjectStore(record)
+
+    result = _chat("why can't I edit this grip?", store)
+
+    assert result["action_taken"] == "explained_cad_grip_edit_blocker"
+    assert "locked/reference/underlay entity" in result["assistant_message"]
+    assert result["response_metadata"]["blocker"] == "locked/reference/underlay entity"
+
+
+def test_chat_deletes_selected_cad_objects_review_only():
+    store = RecordingProjectStore(_record_with_line())
+
+    result = _chat("delete selected CAD objects", store)
+
+    operation = result["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert operation["selected_action"] == "delete_selected"
+    assert operation["deleted_entity_ids"] == ["cad-line-1"]
+    saved_model = store.record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]
+    assert saved_model["entities"] == []
+    assert saved_model["history"][-1]["event_type"] == "entity_deleted"
+    assert saved_model["construction_release_allowed"] is False
+
+
 def test_chat_asks_specific_question_for_ambiguous_line_command_without_mutating():
     store = RecordingProjectStore(_record())
 
