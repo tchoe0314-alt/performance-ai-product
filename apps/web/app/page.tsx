@@ -15542,7 +15542,7 @@ function PerformanceAIDashboardView({
 	    },
 	    {
 	      key: "design",
-	      label: "Design",
+	      label: "Generate",
 	      caption: "Grading, storm, utilities",
 	      panel: "generate",
 	      icon: SlidersHorizontal,
@@ -16680,7 +16680,7 @@ function PerformanceAIDashboardView({
 	                    <button
 	                      key={item.key}
 	                      type="button"
-	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : undefined}
+	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.key === "design" ? "Generate" : undefined}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
 	                      className={`min-h-20 rounded-lg border px-2.5 py-2 text-left transition ${
@@ -17721,6 +17721,30 @@ function PerformanceAIDashboardView({
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-4">
                     <WorkflowFocusPanel {...workflowFocusPanels.setup} />
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={handleStartBlankSite}
+                        aria-label="Start a blank site and clear address map evidence"
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        Start from blank site
+                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                          Clear address map evidence
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
+                        aria-label={siteScaleLocked ? "Unlock site boundary for editing" : "Lock current site boundary for engineer review"}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        {siteScaleLocked ? "Change site boundary" : "Lock site boundary"}
+                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                          {siteScaleLocked ? "Unlock for editing" : "Engineer review required"}
+                        </span>
+                      </button>
+                    </div>
                     <details className="rounded-2xl border border-slate-200 bg-white p-4">
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Detailed setup controls and evidence
@@ -22674,7 +22698,7 @@ function PerformanceAIDashboardView({
               </div>
             </aside>
           ) : null}
-          <main className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+          <main data-testid="workspace-canvas-shell" className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
 	            <div className="flex w-full max-w-full flex-1 flex-col gap-3 px-2 pb-36 pt-3 sm:gap-4 sm:px-4 sm:pb-40 md:px-5 lg:pb-4 lg:pt-4">
 	              <div className="flex w-full flex-col">
 	                <div className="mx-auto mb-3 w-full max-w-[1600px] rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm">
@@ -22692,6 +22716,7 @@ function PerformanceAIDashboardView({
 	                          <button
 	                            key={`top-${item.key}`}
 	                            type="button"
+	                            aria-label={item.key === "design" ? "Generate" : undefined}
 	                            onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                            className={`min-h-12 rounded-lg border px-2 py-2 text-left transition sm:min-h-14 ${
 	                              isActive
@@ -22712,7 +22737,7 @@ function PerformanceAIDashboardView({
 	                  </div>
 	                </div>
 	                <div
-	                  data-testid="workspace-canvas-shell"
+	                  data-testid="workspace-canvas-frame"
 	                  className="civora-canvas mx-auto w-full max-w-full overflow-hidden p-1"
                   style={{
                     width: "100%",
