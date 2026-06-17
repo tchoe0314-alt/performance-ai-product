@@ -1142,6 +1142,7 @@ export type PlanMeta = {
   design_alternatives_v1?: DesignAlternativesV1;
   review_issue_tracker_v1?: ReviewIssueTrackerV1;
   source_confidence_map_v1?: SourceConfidenceMap;
+  cad_entity_model_v1?: CadEntityModelV1;
   plan_pdf_analysis_v1?: PlanPdfAnalysis;
   plan_pdf_analyses_v1?: PlanPdfAnalysis[];
   plan_pdf_editable_sheet_v1?: PlanPdfEditableSheet;
@@ -1164,6 +1165,62 @@ export type PlanMeta = {
     candidate_rules?: Array<Record<string, unknown>>;
   };
   iterations?: IterationRecord[];
+};
+
+export type CadEntityGeometry = Record<string, unknown> & {
+  start?: { x?: number; y?: number } | [number, number];
+  end?: { x?: number; y?: number } | [number, number];
+  points?: Array<{ x?: number; y?: number } | [number, number]>;
+  vertices?: Array<{ x?: number; y?: number } | [number, number]>;
+  origin?: { x?: number; y?: number } | [number, number];
+  insert?: { x?: number; y?: number } | [number, number];
+  position?: { x?: number; y?: number } | [number, number];
+  center?: { x?: number; y?: number } | [number, number];
+  width?: number;
+  height?: number;
+  radius?: number;
+  text?: string;
+};
+
+export type CadEntityModelEntityV1 = {
+  id?: string;
+  type?: string;
+  label?: string;
+  name?: string;
+  layer_id?: string;
+  style_id?: string;
+  geometry?: CadEntityGeometry;
+  bounding_box?: { min_x?: number; min_y?: number; max_x?: number; max_y?: number; width?: number; height?: number };
+  source?: string;
+  source_confidence?: string;
+  review_status?: string;
+  validation_status?: string;
+  validation_blockers?: string[];
+  blockers?: string[];
+  warnings?: string[];
+  linked_object_id?: string;
+  canonical_geometry_handoff?: {
+    object_id?: string;
+    geometry_id?: string;
+  };
+  dirty?: boolean;
+  stale?: boolean;
+  draft_review_required?: boolean;
+  construction_release_allowed?: boolean;
+};
+
+export type CadEntityModelV1 = {
+  version?: "cad_entity_model_v1" | string;
+  entities?: CadEntityModelEntityV1[];
+  selected_entity_ids?: string[];
+  entity_bounding_boxes?: Record<string, { min_x?: number; min_y?: number; max_x?: number; max_y?: number; width?: number; height?: number }>;
+  layers?: Array<{ id?: string; layer_id?: string; name?: string; color?: string; visible?: boolean }>;
+  validation?: {
+    valid?: boolean;
+    blockers?: Array<{ entity_id?: string; reason?: string } | string>;
+  };
+  construction_release_allowed?: boolean;
+  truth_label?: string;
 };
 
 export type PlanAction = {
@@ -2066,6 +2123,13 @@ export type Preview3DItem = {
   confidence?: number | string | null;
   blockers?: string[];
   terrainSample?: boolean;
+  geometryType?: "polygon" | "polyline" | "rect" | "point" | "circle";
+  geometry?: Array<[number, number]>;
+  radius?: number;
+  entityType?: string;
+  linkedObjectId?: string;
+  sourceEntityId?: string;
+  unsupported?: boolean;
 };
 
 export type GradingEarthworkUx = {

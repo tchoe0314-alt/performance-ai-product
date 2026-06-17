@@ -256,6 +256,7 @@ type PreviewPanelProps = {
   onCreateSiteBoundary?: (payload: { points: Array<[number, number]> }) => void;
   onUnlockSite?: () => void;
   buildingPlacements: BuildingPlacement[];
+  cadEntityPreviewObjects?: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
   selectedBuildingId: string | null;
   focusDetectedId?: string | null;
@@ -373,6 +374,7 @@ export default function PreviewPanel({
   onCreateSiteBoundary,
   onUnlockSite,
   buildingPlacements,
+  cadEntityPreviewObjects = [],
   suggestedPlacements,
   selectedBuildingId,
   focusDetectedId,
@@ -773,7 +775,7 @@ export default function PreviewPanel({
   }, [currentSiteSize.height, currentSiteSize.width]);
   const planLabelObjects = useMemo(
     () =>
-      [...buildingPlacements, ...suggestedPlacements]
+      [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]
         .filter(
           (item) =>
             item.type !== "site" &&
@@ -784,7 +786,7 @@ export default function PreviewPanel({
             Boolean(item.label),
         )
         .slice(0, previewLabelDensity === "high" ? 28 : previewLabelDensity === "standard" ? 16 : 8),
-    [buildingPlacements, hiddenCadLayers, previewLabelDensity, suggestedPlacements],
+    [buildingPlacements, cadEntityPreviewObjects, hiddenCadLayers, previewLabelDensity, suggestedPlacements],
   );
   const resolveVisualKind = useCallback((item: BuildingPlacement) => {
     const type = String(item.type || "building");
@@ -1424,13 +1426,13 @@ export default function PreviewPanel({
 
   const cadLayerOptions = useMemo(() => {
     const layers = new Set(["C-DRAFT", "C-SITE", "C-ROAD", "C-UTIL", "C-DRAIN", "C-BLDG", "C-SYMB", "C-ANNO"]);
-    [...buildingPlacements, ...suggestedPlacements].forEach((item) => layers.add(getCadLayer(item)));
+    [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach((item) => layers.add(getCadLayer(item)));
     return Array.from(layers).sort();
-  }, [buildingPlacements, getCadLayer, suggestedPlacements]);
+  }, [buildingPlacements, cadEntityPreviewObjects, getCadLayer, suggestedPlacements]);
 
   const visibleCadObjects = useMemo(
-    () => buildingPlacements.filter((item) => !hiddenCadLayers.includes(getCadLayer(item))),
-    [buildingPlacements, getCadLayer, hiddenCadLayers],
+    () => [...buildingPlacements, ...cadEntityPreviewObjects].filter((item) => !hiddenCadLayers.includes(getCadLayer(item))),
+    [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers],
   );
 
   const cadSegments = useMemo(() => {
@@ -1790,8 +1792,8 @@ export default function PreviewPanel({
   }, [lastRectEdit, onRemoveBuilding, onRestoreBuilding, onUpdateBuilding]);
 
   const selectedCadObject = useMemo(
-    () => buildingPlacements.find((item) => item.id === selectedBuildingId && item.type !== "site") ?? null,
-    [buildingPlacements, selectedBuildingId],
+    () => visibleCadObjects.find((item) => item.id === selectedBuildingId && item.type !== "site") ?? null,
+    [selectedBuildingId, visibleCadObjects],
   );
   const selectedCadMetrics = useMemo(() => {
     const points = selectedCadObject ? getObjectGeometryPoints(selectedCadObject) : [];
@@ -6889,7 +6891,7 @@ export default function PreviewPanel({
                           </g>
                         ) : null}
                         {visibleCadObjects
-                          .filter((item) => item.geometryType === "polyline" && Array.isArray(item.geometry))
+                          .filter((item) => !item.meta?.unsupported_entity_placeholder && item.geometryType === "polyline" && Array.isArray(item.geometry))
                           .map((item) => {
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (points.length < 2) return null;
@@ -6940,7 +6942,7 @@ export default function PreviewPanel({
                             );
                           })}
                         {visibleCadObjects
-                          .filter((item) => item.geometryType === "polygon" && Array.isArray(item.geometry))
+                          .filter((item) => !item.meta?.unsupported_entity_placeholder && item.geometryType === "polygon" && Array.isArray(item.geometry))
                           .map((item) => {
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (points.length < 3) return null;
@@ -6987,6 +6989,86 @@ export default function PreviewPanel({
                                 </text>
                                 <text x={Math.min(x + 2.1, 96)} y={Math.max(y - 2, 3)} fontSize="2.05" fill="#334155" fontWeight={700}>
                                   {String(item.label).slice(0, 18)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        {visibleCadObjects
+                          .filter((item) => item.meta?.cad_entity_type === "circle" && Number.isFinite(Number(item.meta?.cad_radius)))
+                          .map((item) => {
+                            const center = Array.isArray(item.geometry) && item.geometry[0]
+                              ? item.geometry[0]
+                              : ([(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2] as [number, number]);
+                            const [x, y] = siteTupleToPercent(center, currentSiteSize);
+                            const radiusFt = Math.max(0, Number(item.meta?.cad_radius));
+                            const radiusPct = Math.max(0.35, (radiusFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100);
+                            const isSelected = selectedBuildingId === item.id;
+                            return (
+                              <g key={`cad-circle-${item.id}`} data-testid="cad-entity-circle">
+                                <circle
+                                  cx={x}
+                                  cy={y}
+                                  r={radiusPct}
+                                  fill="rgba(124, 58, 237, 0.08)"
+                                  stroke={isSelected ? "#f59e0b" : "#7c3aed"}
+                                  strokeWidth={isSelected ? 0.75 : 0.42}
+                                >
+                                  <title>{String(item.meta?.cad_source_confidence || "review required")}</title>
+                                </circle>
+                              </g>
+                            );
+                          })}
+                        {visibleCadObjects
+                          .filter((item) => item.meta?.cad_entity_type === "text")
+                          .map((item) => {
+                            const insert = Array.isArray(item.geometry) && item.geometry[0]
+                              ? item.geometry[0]
+                              : ([(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2] as [number, number]);
+                            const [x, y] = siteTupleToPercent(insert, currentSiteSize);
+                            return (
+                              <g key={`cad-text-${item.id}`} data-testid="cad-entity-text">
+                                <rect
+                                  x={Math.min(x + 0.8, 92)}
+                                  y={Math.max(y - 2.8, 1)}
+                                  width={Math.min(18, Math.max(6, String(item.label || "Text").length * 1.1))}
+                                  height={3.8}
+                                  rx={0.6}
+                                  fill="rgba(255,255,255,0.86)"
+                                  stroke="#64748b"
+                                  strokeWidth={0.22}
+                                />
+                                <text x={Math.min(x + 1.6, 93)} y={Math.max(y - 0.35, 3)} fontSize="2.2" fill="#334155" fontWeight={700}>
+                                  {String(item.label || "Text").slice(0, 18)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        {visibleCadObjects
+                          .filter((item) => item.meta?.unsupported_entity_placeholder)
+                          .map((item) => {
+                            const [x1, y1] = siteTupleToPercent([item.x ?? 0, item.y ?? 0], currentSiteSize);
+                            const [x2, y2] = siteTupleToPercent([(item.x ?? 0) + item.w, (item.y ?? 0) + item.d], currentSiteSize);
+                            const x = Math.min(x1, x2);
+                            const y = Math.min(y1, y2);
+                            const w = Math.max(1.2, Math.abs(x2 - x1));
+                            const h = Math.max(1.2, Math.abs(y2 - y1));
+                            const blockers = Array.isArray(item.meta?.cad_review_blockers) ? item.meta.cad_review_blockers.map(String) : [];
+                            return (
+                              <g key={`cad-unsupported-${item.id}`} data-testid="cad-entity-unsupported">
+                                <rect
+                                  x={x}
+                                  y={y}
+                                  width={w}
+                                  height={h}
+                                  fill="rgba(251, 191, 36, 0.12)"
+                                  stroke="#b45309"
+                                  strokeWidth={0.42}
+                                  strokeDasharray="1.4 1"
+                                >
+                                  <title>{blockers[0] || "Unsupported CAD entity requires review."}</title>
+                                </rect>
+                                <text x={Math.min(x + 1.2, 94)} y={Math.max(y - 1.2, 3)} fontSize="2.05" fill="#92400e" fontWeight={800}>
+                                  Blocked CAD entity
                                 </text>
                               </g>
                             );
