@@ -2417,6 +2417,13 @@ type DeploymentHealth = {
     last_deploy_time?: string;
     user_safe_messages?: string[];
   };
+  support?: {
+    support_contact?: string;
+    support_contact_configured?: boolean;
+    bug_report_url?: string;
+    bug_report_configured?: boolean;
+    user_safe_message?: string;
+  };
 };
 
 function isArtifactExportJob(job: JobSummary): boolean {
@@ -8244,7 +8251,7 @@ function PerformanceAIDashboardView({
     if (/why is this not for construction|not for construction/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "This is not for construction because sheets and plots are review-only production aids. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+        "This stays inside the review-preparation workflow because sheets and plots are review-only production aids. Field/submittal use, legal responsibility, and professional decisions remain outside Civora.",
         "status",
       );
       return true;
@@ -8507,10 +8514,10 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
+    if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|responsible professional|professional responsibility)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "No. Civora cannot stamp, seal, sign, certify, submit, approve construction, or act as engineer of record. Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field use and professional responsibility remain outside Civora.",
+        "Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field/submittal use, legal responsibility, and professional decisions remain outside Civora.",
         "status",
       );
       return true;
@@ -10221,7 +10228,7 @@ function PerformanceAIDashboardView({
     <h1>${escapeHtml(analysis.source_pdf?.filename || "Plan PDF")} extraction review</h1>
     <p>${escapeHtml(analysis.page_count ?? 0)} page(s) · ${escapeHtml(analysis.source_confidence || "imported_pdf_review_required")} · review required</p>
     <div class="banner">
-      PDF-derived labels, dimensions, title blocks, and edits are imported source evidence only. They are not survey-backed, engineer-approved, stamped, sealed, signed, certified, approved for construction, or construction-release evidence.
+      PDF-derived labels, dimensions, title blocks, and edits are imported source evidence only. They are not survey-backed field/submittal evidence and require qualified review before reliance.
     </div>
     <div class="grid">
       ${planPdfExtractionSummaryRows
@@ -13426,8 +13433,8 @@ function PerformanceAIDashboardView({
       engineer_review_required: true,
       not_for_construction: true,
       civora_limitations: [
-        "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
-        "Review sheets are review-only plan-production aids and are not approved construction documents.",
+        "Civora outputs are review-preparation materials only; field/submittal use remains outside Civora.",
+        "Review sheets are review-only plan-production aids and require qualified review before reliance.",
       ],
       sheet_set: {
         ...planSheetSet,
@@ -13515,7 +13522,7 @@ function PerformanceAIDashboardView({
     <div class="watermark">${escapeHtml(planSheetSet.plotStyles.reviewWatermark)}</div>
     <h1>${escapeHtml(activeSheet.titleBlock.sheetTitle)}</h1>
     <p>${escapeHtml(planSheetSet.name)} · ${escapeHtml(activeSheet.size)} · Review package only</p>
-    <div class="notice">Review-required plan-production aid only. Not an approved construction document. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.</div>
+    <div class="notice">Review-required plan-production aid only. Field/submittal use, legal responsibility, and professional decisions remain outside Civora.</div>
     <h2>Viewports</h2>
     ${activeSheet.viewports
       .map(
@@ -16128,9 +16135,12 @@ function PerformanceAIDashboardView({
     `Visible status: ${visibleStatusSummary}`,
     `Site: ${siteScaleLocked ? "locked" : "not locked"}; ${lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "size unavailable"}`,
     `Systems: ${Object.entries(systemStatuses).map(([key, value]) => `${key}=${value}`).join(", ")}`,
+    `Source confidence: entries=${sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length}; low=${sourceConfidenceSummary.low_confidence_count ?? 0}; needs_control=${sourceConfidenceSummary.needs_survey_control_count ?? 0}`,
+    `Upload/source context: survey_control=${hasVerifiedSurveyControl ? "present" : "not confirmed"}; terrain=${hasTerrainSource ? "present" : "missing"}; pdf=${planPdfAnalysis ? "imported" : "none"}`,
+    `Support path: ${deploymentHealth?.support?.bug_report_url || deploymentHealth?.support?.support_contact || "support@civora.ai"}`,
     `User message: ${issueReportMessage.trim() || "(add details before sending)"}`,
     "",
-    "Reminder: outputs are review-required materials only. Field use remains outside Civora.",
+    "Reminder: outputs are review-preparation materials only. Field/submittal use remains outside Civora.",
   ].join("\n");
   const handleCopyIssueDiagnostic = async () => {
     try {
@@ -16531,6 +16541,14 @@ function PerformanceAIDashboardView({
       : deploymentHealthLoading
         ? ["Checking deployment health..."]
         : ["Deployment health has not reported yet."];
+  const supportContact = deploymentHealth?.support?.support_contact || "support@civora.ai";
+  const supportHref = supportContact.startsWith("http")
+    ? supportContact
+    : `mailto:${supportContact}?subject=Civora%20pilot%20support`;
+  const bugReportHref = deploymentHealth?.support?.bug_report_url || "/pilot#operations";
+  const supportMessage =
+    deploymentHealth?.support?.user_safe_message ||
+    "Use support or the report-issue path for pilot issues; pause reliance on affected outputs when source, review, or export status is unclear.";
   const frontendBuildVersion =
     process.env.NEXT_PUBLIC_BUILD_VERSION ||
     process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
@@ -17249,12 +17267,16 @@ function PerformanceAIDashboardView({
 	                            {[deployment?.provider, deployment?.environment, deployment?.commit_ref].filter(Boolean).join(" / ")}
 	                          </p>
 	                        ) : null}
+	                        <p className="mt-2 text-xs leading-5 text-slate-500">{supportMessage}</p>
 	                        <div className="mt-3 flex flex-wrap gap-2">
-	                          <a href="mailto:support@civora.ai?subject=Civora%20pilot%20support" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+	                          <a href={supportHref} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
 	                            Contact Support
 	                          </a>
-	                          <a href="/pilot#operations" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
-	                            Bug Report Flow
+	                          <a href={bugReportHref} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+	                            Report Issue
+	                          </a>
+	                          <a href="/pilot/starter" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+	                            Starter Guide
 	                          </a>
 	                        </div>
 	                      </div>
@@ -17503,14 +17525,15 @@ function PerformanceAIDashboardView({
                       </summary>
                       <div className="mt-3 space-y-2 text-sm text-slate-600">
                         {[
-                          ["Ready", "Enough current, traceable evidence exists for review."],
-                          ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
-                          ["Blocked", "Missing evidence, stale output, unsupported export, or unresolved conflict prevents the next review step."],
-                          ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
+                          ["Review-only", "Useful for checking, discussion, coordination, or package preparation; still requires qualified review before reliance."],
+                          ["Ready", "Enough current, traceable evidence exists to begin review. Field/submittal use remains outside Civora."],
+                          ["Needs Source", "Traceable evidence is missing, such as survey/control, standards, utility records, source files, dimensions, or accepted candidate data."],
+                          ["Needs Review", "A user, reviewer, or responsible professional must check the output, source, or assumption."],
+                          ["Needs Engineer Review", "A responsible professional must evaluate the output, assumptions, sources, and next action outside Civora before use."],
+                          ["Blocked", "A missing input, stale output, unsupported export, unresolved conflict, or source-confidence issue prevents the next review step."],
+                          ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, accepted standards, dimensions, jurisdiction, or source evidence."],
                           ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
                           ["Visual preview only", "The view is a visual aid and is not evidence by itself."],
-                          ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
-                          ["Field use", "Remains outside Civora and requires independent licensed-professional review."],
                         ].map(([label, desc]) => (
                           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="font-semibold text-slate-800">{label}</p>
@@ -17524,6 +17547,9 @@ function PerformanceAIDashboardView({
                         Report issue
                       </summary>
                       <div className="mt-3 space-y-3">
+                        <p className="text-sm leading-6 text-slate-600">
+                          Copy this user-safe summary into the pilot support channel or issue form. It includes project/workflow status and source-confidence counts, but no secrets or private environment values.
+                        </p>
                         <textarea
                           value={issueReportMessage}
                           onChange={(event) => setIssueReportMessage(event.target.value)}
@@ -17545,6 +17571,20 @@ function PerformanceAIDashboardView({
                         >
                           {issueReportCopied ? "Copied" : "Copy diagnostic summary"}
                         </button>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <a
+                            href={supportHref}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                          >
+                            Contact support
+                          </a>
+                          <a
+                            href={bugReportHref}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                          >
+                            Open issue path
+                          </a>
+                        </div>
                       </div>
                     </details>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -17552,8 +17592,8 @@ function PerformanceAIDashboardView({
                       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                         {[
                           ["/pilot#onboarding", "Onboarding"],
-                          ["/pilot#operations", "Pilot operations"],
-                          ["/pilot#responsibility", "Responsibility"],
+                          ["/pilot/starter", "Starter guide"],
+                          ["/pilot#data", "Data guidance"],
                         ].map(([href, label]) => (
                           <a
                             key={href}
@@ -18433,7 +18473,7 @@ function PerformanceAIDashboardView({
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Source Confidence Map</p>
                             <p className="mt-1 text-xs font-medium text-slate-500">
-                              {sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length} visible source/object/layer entries. Review only.
+                              {sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length} visible source/object/layer entries. Use this to find needs-source, needs-review, and blocked evidence before relying on outputs.
                             </p>
                           </div>
                           <span className="shrink-0 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-red-700">
@@ -18465,11 +18505,17 @@ function PerformanceAIDashboardView({
                                   <p className="mt-1 line-clamp-2 text-xs text-slate-500">
                                     {entry.why_low_confidence || entry.next_action}
                                   </p>
-                                ) : null}
+                                ) : (
+                                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                    Verify source type, source date, coordinate context, and reviewer acceptance before reliance.
+                                  </p>
+                                )}
                               </div>
                             ))
                           ) : (
-                            <p className="text-xs text-slate-500">No source confidence entries are available yet.</p>
+                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500">
+                              No source confidence entries are available yet. Add an address, upload survey/control or PDFs, import accepted source files, or draw review candidates before generating systems.
+                            </div>
                           )}
                         </div>
                       </div>

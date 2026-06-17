@@ -5,15 +5,16 @@ const sections = [
     id: "onboarding",
     title: "Private Pilot Onboarding",
     body: [
-      "Civora helps pilot users organize civil site intent, candidate geometry, engineering signals, assumptions, blockers, and review-package materials.",
-      "Start with a project name, address or blank site, site size or boundary, locked site, objects, available survey/GIS/terrain inputs, standards review, system runs, blocker review, and a review package export.",
+      "Civora helps pilot users organize civil site intent, source evidence, candidate geometry, engineering signals, assumptions, blockers, and review-preparation materials.",
+      "Before starting, gather the address, survey/control if available, applicable standards, utility information, PDFs/source files, site constraints, and any customer-specific limits.",
+      "Use the starter guide for the full email-ready walkthrough.",
     ],
   },
   {
     id: "limitations",
     title: "Pilot Limitations",
     body: [
-      "Civora is private-pilot software. Civil 3D workflows are not externally verified, DWG export is unsupported, standards require user or company acceptance, and survey/control, datum, benchmark, and source evidence are required for source-backed reviewer evaluation.",
+      "Civora is private-pilot software. Advanced CAD handoff workflows are not externally verified, DWG export is unsupported, standards require user or company acceptance, and survey/control, datum, benchmark, and source evidence are required for source-backed review.",
       "Address lookup, GIS, imagery detection, inferred objects, and visual previews are review context only unless backed by accepted source evidence. Users must have rights to upload or connect map/GIS sources before importing them.",
     ],
   },
@@ -21,7 +22,7 @@ const sections = [
     id: "operations",
     title: "Controlled Pilot Operations",
     body: [
-      "Pilot use should stay within approved test or feasibility scope, use an assigned support path, and report issues with project ID, workflow step, visible status text, inputs, expected result, and actual result.",
+      "Pilot use should stay within the accepted test or feasibility scope, use an assigned support path, and report issues with project ID, workflow step, visible status text, inputs, expected result, and actual result.",
       "Users should pause reliance on any output marked blocked, missing input, stale, draft/review-required, visual preview only, or needs review.",
     ],
   },
@@ -29,8 +30,16 @@ const sections = [
     id: "responsibility",
     title: "Product Foundation And Responsibility",
     body: [
-      "Civora is a review workspace and planning copilot for early civil layout and feasibility. It is not an engineer of record, approval authority, permitting agent, or construction release system.",
-      "Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record. Only the licensed engineer or user can review, approve, stamp, seal, sign, submit, and take legal responsibility.",
+      "Civora is a review workspace and planning copilot for early civil layout and feasibility. It is not a substitute for professional judgment, project source control, or external review.",
+      "Civora outputs are review-preparation materials. Field use, submittals, legal responsibility, and professional decisions remain outside Civora.",
+    ],
+  },
+  {
+    id: "data",
+    title: "Data And Uploads",
+    body: [
+      "Use non-confidential or explicitly allowed pilot files unless your pilot agreement allows confidential project data. Do not send confidential project files through public support channels.",
+      "Deletion, retention, backup, and support-record handling follow the written pilot terms for the account. Until those are finalized, treat uploaded files and generated artifacts as retained for pilot operation and support.",
     ],
   },
 ];
@@ -58,7 +67,7 @@ export default function PilotPage() {
           </p>
         </header>
 
-        <nav className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <nav className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {sections.map((section) => (
             <a
               key={section.id}
@@ -98,6 +107,20 @@ export default function PilotPage() {
             </a>
             .
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/pilot/starter"
+              className="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-950 hover:bg-amber-100"
+            >
+              Pilot starter guide
+            </Link>
+            <a
+              href="/docs/pilot-starter-guide.md"
+              className="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-950 hover:bg-amber-100"
+            >
+              Email-ready markdown
+            </a>
+          </div>
         </section>
       </div>
     </main>

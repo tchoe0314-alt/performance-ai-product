@@ -1,8 +1,8 @@
 # Controlled Pilot Operations Checklist
 
-Use this checklist to launch and run a small, controlled Civora pilot. This is an internal operations document, not a construction release checklist.
+Use this checklist to launch and run a small, controlled Civora pilot. This is an internal operations document for review-preparation support.
 
-Permanent responsibility rule: Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record. Only the licensed engineer or user can review, approve, stamp, seal, sign, submit, and take legal responsibility.
+Permanent responsibility rule: Civora outputs are review-preparation materials only. Field use, submittals, legal responsibility, and professional decisions remain outside Civora.
 
 For the business-operations packet covering access flow, roles, support, bug intake, data retention/deletion, confidential input, usage limits, billing readiness, and pilot terms, use [pilot-business-operations.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/pilot-business-operations.md).
 
@@ -21,19 +21,19 @@ Maintain a private pilot roster before invites go out:
 | Support contact owner | Yes |
 | Invite status | Not invited / Invited / Active / Paused / Removed |
 | NDA or pilot terms accepted | Yes/No |
-| Allowed project type | Test-only / Internal feasibility / Other approved scope |
+| Allowed project type | Test-only / Internal feasibility / Other accepted scope |
 | Notes | Optional |
 
 Do not invite users without a named internal owner and support path.
 
 ## Pilot Invite Process
 
-1. Confirm the user is on the approved pilot roster.
+1. Confirm the user is on the accepted pilot roster.
 2. Confirm pilot terms, confidentiality expectations, and review-only scope.
 3. Send the invite with the app URL, onboarding guide, support contact, and known limitations.
-4. Tell the user to start with non-confidential or approved test inputs.
-5. Confirm the user understands exports are review packages unless externally approved by a licensed engineer outside Civora.
-6. Confirm Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
+4. Tell the user to start with non-confidential or explicitly allowed test inputs.
+5. Confirm the user understands exports are review packages for qualified external review.
+6. Confirm field use, submittals, legal responsibility, and professional decisions remain outside Civora.
 7. Mark the roster invite status as `Invited`.
 8. After first login and first project creation, mark the status as `Active`.
 
@@ -137,16 +137,16 @@ Next action:
 
 ## Known Limitations
 
-- Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
-- Construction release remains outside Civora.
-- Exports are review packages unless externally approved by a licensed engineer outside Civora.
+- Civora outputs are review-preparation materials only.
+- Field/submittal use remains outside Civora.
+- Exports are review packages for qualified external review.
 - Address lookup does not automatically create trusted site objects unless source-backed and accepted.
 - GIS and imagery detections are candidates that require review.
 - Civil3D workflows are not externally verified.
 - DWG export is unsupported.
 - Standards require user/company acceptance before they can be used as review evidence.
 - Survey/control, datum, benchmark, and source evidence are required for source-backed reviewer evaluation.
-- Map/GIS imports require confirmation that the pilot user has rights to upload, connect, process, and use the source within the approved pilot scope.
+- Map/GIS imports require confirmation that the pilot user has rights to upload, connect, process, and use the source within the accepted pilot scope.
 - Auth, SQLite storage, and in-process jobs are private-pilot grade, not broad production infrastructure.
 
 ## What Users Should Test
@@ -155,7 +155,7 @@ Next action:
 - Project creation, save, reopen, and history review.
 - Address or blank-site start flow.
 - Site boundary setup and lock behavior.
-- Uploading approved test images, survey CSV files, and supported source files.
+- Uploading accepted test images, survey CSV files, and supported source files.
 - Placing and editing site objects for concept review.
 - Generating review-only grading, drainage, sanitary, water, utility, quantity, and export-package outputs.
 - Reviewing assumptions, missing inputs, blockers, stale-output warnings, and low-confidence areas.
@@ -164,11 +164,11 @@ Next action:
 
 ## What Users Should Not Rely On
 
-- Civora output as stamped, sealed, signed, certified, submitted, approved, or construction-released work.
+- Civora output as anything beyond review-preparation material.
 - Address lookup alone as survey, control, boundary, title, easement, right-of-way, utility, or standards evidence.
 - GIS/imagery candidates without user or engineer review.
 - Inferred standards, dimensions, or assumptions without accepted source evidence.
-- Review exports as construction documents unless externally approved outside Civora.
+- Review exports for field/submittal use without qualified external review.
 - Any output that is marked blocked, missing input, stale, draft/review-required, visual preview only, or needs review.
 
 ## Engineer Responsibility Boundary
@@ -181,7 +181,7 @@ The licensed engineer or user remains responsible for:
 - professional judgment
 - jurisdictional and client requirements
 - calculation and geometry review
-- approval, stamping, sealing, signing, submission, and construction release outside Civora
+- legal responsibility, field use, submittals, and other external project decisions
 
 ## Rollback Or Disable Plan
 
@@ -237,5 +237,5 @@ Run this at the start and end of each pilot day:
 - Final data retention and deletion policy for pilot uploads and artifacts.
 - Final confidential input approval policy.
 - Final usage limits and charging rules.
-- Counsel-approved pilot terms, privacy language, and billing language.
+- Counsel-reviewed pilot terms, privacy language, and billing language.
 - Daily report archive location and naming convention.
