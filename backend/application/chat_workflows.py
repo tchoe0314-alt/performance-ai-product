@@ -27,6 +27,7 @@ from backend.planning.cad_entity_model import (
     cad_entity_operation_result,
     cad_entities_to_site_object_candidates,
     history_event,
+    locked_layer_blocker,
     manual_drawn_objects_to_cad_entities,
     normalize_cad_entity,
 )
@@ -684,11 +685,69 @@ def _collect_selected_cad_entity_ids(context: Dict[str, Any], model: Dict[str, A
     return selected
 
 
+def _cad_lookup_key(value: Any) -> str:
+    raw = safe_str(value).lower()
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in raw).strip("_")
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned
+
+
+def _cad_layer_id_from_phrase(model: Dict[str, Any], phrase: str) -> str:
+    target = _cad_lookup_key(phrase)
+    aliases = {
+        "utilities": "utilities",
+        "utility": "utility",
+        "drainage": "drainage",
+        "drain": "drainage",
+        "existing": "existing",
+    }
+    target = aliases.get(target, target)
+    variants = {target}
+    if target.endswith("ies"):
+        variants.add(target[:-3] + "y")
+    if target.endswith("y"):
+        variants.add(target[:-1] + "ies")
+    if target and not target.endswith("s"):
+        variants.add(f"{target}s")
+    for layer in _safe_list(model.get("layers")):
+        rec = _safe_dict(layer)
+        keys = {_cad_lookup_key(rec.get("id")), _cad_lookup_key(rec.get("layer_id")), _cad_lookup_key(rec.get("name"))}
+        if variants & keys or any(any(key.endswith(f"_{variant}") or variant in key.split("_") for variant in variants) for key in keys if key):
+            return safe_str(rec.get("id") or rec.get("layer_id"))
+    return f"layer_{target}" if target else ""
+
+
+def _cad_style_id_from_phrase(model: Dict[str, Any], phrase: str) -> str:
+    target = _cad_lookup_key(phrase)
+    for style in _safe_list(model.get("styles")):
+        rec = _safe_dict(style)
+        keys = {_cad_lookup_key(rec.get("id")), _cad_lookup_key(rec.get("style_id")), _cad_lookup_key(rec.get("name"))}
+        if target in keys or any(key.endswith(f"_{target}") or target in key.split("_") for key in keys if key):
+            return safe_str(rec.get("id") or rec.get("style_id"))
+    return f"style_{target}" if target else ""
+
+
+def _cad_layer_phrase(message: str) -> str:
+    patterns = (
+        r"\b(?:hide|show|lock|unlock|print|plot|make printable|make non-printable)\s+(.+?)\s+layer\b",
+        r"\b(?:move|change|set)\s+selected(?:\s+cad\s+entit(?:y|ies)|\s+cad\s+object)?\s+(?:to|onto)\s+(.+?)\s+layer\b",
+        r"\b(?:layer|to layer)\s+([a-zA-Z0-9_.-]+)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if match:
+            return safe_str(match.group(1))
+    return ""
+
+
 def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], model: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
     if "command line" in lowered or "cad command" in lowered:
         return None
-    if any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin")) and "cad entity" not in lowered and "cad object" not in lowered:
+    if lowered in {"add dimension", "add dimensions"}:
+        return None
+    if any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin")) and "cad entity" not in lowered and "cad object" not in lowered and "layer" not in lowered:
         return None
     command_tokens = (
         "create",
@@ -702,6 +761,12 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "change layer",
         "change style",
         "set style",
+        "show layers",
+        "hide",
+        "lock",
+        "unlock",
+        "printable",
+        "company layer style",
         "line",
         "polyline",
         "rectangle",
@@ -744,6 +809,25 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "next_best_action": "Review the changed CAD entities and their source confidence before downstream use.",
     }
 
+    if "show layers" in lowered or ("list" in lowered and "layers" in lowered):
+        return None
+    if "layer" in lowered and any(token in lowered for token in ("hide", "show", "lock", "unlock", "printable", "non-printable", "non printable")):
+        phrase = _cad_layer_phrase(message)
+        layer_id = _cad_layer_id_from_phrase(model, phrase)
+        if not layer_id:
+            return {**base, "action": "set_layer_visibility", "missing_inputs": ["target layer"], "next_best_action": "Name the target layer, for example: hide utilities layer."}
+        if "hide" in lowered:
+            return {**base, "action": "set_layer_visibility", "layer_id": layer_id, "visible": False}
+        if re.search(r"\bshow\b", lowered):
+            return {**base, "action": "set_layer_visibility", "layer_id": layer_id, "visible": True}
+        if "unlock" in lowered:
+            return {**base, "action": "set_layer_locked", "layer_id": layer_id, "locked": False}
+        if "lock" in lowered:
+            return {**base, "action": "set_layer_locked", "layer_id": layer_id, "locked": True}
+        return {**base, "action": "set_layer_printable", "layer_id": layer_id, "printable": "non-printable" not in lowered and "non printable" not in lowered}
+    if "company layer style" in lowered or "company layer standards" in lowered:
+        return {**base, "action": "use_company_layer_style"}
+
     wants_create = any(token in lowered for token in ("create", "draw", "add"))
     if re.search(r"\b(line|segment)\b", lowered) and wants_create:
         if len(points) < 2:
@@ -774,7 +858,9 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return {**base, "action": "create_text", "entity_type": "text", "geometry": {"insert": points[0], "text": label, "height": 1.0, "units": "ft"}}
 
     selected_action = ""
-    if "move" in lowered:
+    if "layer" in lowered and any(token in lowered for token in ("set", "change", "move")) and re.search(r"\b(?:to|onto)\s+.+?\s+layer\b", message, flags=re.IGNORECASE):
+        selected_action = "change_layer"
+    elif "move" in lowered:
         selected_action = "move_selected"
     elif "copy" in lowered:
         selected_action = "copy_selected"
@@ -813,14 +899,14 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
             return {**base, "action": selected_action, "missing_inputs": ["positive scale factor"], "next_best_action": "Provide a positive scale factor, for example: scale selected CAD entity by 2."}
         return {**base, "action": selected_action, "scale_factor": values[0]}
     if selected_action == "change_layer":
-        match = re.search(r"(?:layer|to layer)\s+([a-zA-Z0-9_.-]+)", message)
-        layer_id = safe_str(match.group(1) if match else "")
+        phrase = _cad_layer_phrase(message)
+        layer_id = _cad_layer_id_from_phrase(model, phrase)
         if not layer_id:
             return {**base, "action": selected_action, "missing_inputs": ["target layer"], "next_best_action": "Name the target layer, for example: change selected CAD entity to layer utility."}
         return {**base, "action": selected_action, "layer_id": layer_id}
     if selected_action == "change_style":
         match = re.search(r"(?:style|to style)\s+([a-zA-Z0-9_.-]+)", message)
-        style_id = safe_str(match.group(1) if match else "")
+        style_id = _cad_style_id_from_phrase(model, safe_str(match.group(1) if match else ""))
         if not style_id:
             return {**base, "action": selected_action, "missing_inputs": ["target style"], "next_best_action": "Name the target style, for example: set selected CAD entity style dashed."}
         return {**base, "action": selected_action, "style_id": style_id}
@@ -848,6 +934,8 @@ def _cad_entity_chat_response(
     asks_restore = mentions_cad and "restore" in lowered and ("object" in lowered or "entity" in lowered or "cad" in lowered)
     asks_convert_drawn = "convert" in lowered and "drawn object" in lowered and "cad entit" in lowered
     asks_candidate = "convert" in lowered and "site object" in lowered and ("cad" in lowered or "entity" in lowered)
+    asks_layers = "show layers" in lowered or ("list" in lowered and "layers" in lowered)
+    asks_layer_edit_blocker = "why" in lowered and "layer" in lowered and any(phrase in lowered for phrase in ("can't", "cannot", "cant", "won't", "blocked", "edit"))
 
     if record:
         project_input = deepcopy(_safe_dict(record.get("project_input")))
@@ -857,6 +945,8 @@ def _cad_entity_chat_response(
         latest_result = _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
     final_plan = _safe_dict(latest_result.get("final_plan"))
     meta = _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
+    if not _safe_dict(meta.get("active_customer_template")):
+        meta["active_customer_template"] = _safe_dict(GLOBAL_CUSTOMER_TEMPLATE_MANAGER.snapshot().get("active_template"))
     model = build_cad_entity_model(meta, project_input=project_input)
     entities = [_safe_dict(item) for item in _safe_list(model.get("entities"))]
     chat_operation = _cad_entity_chat_command_operation(message, context, model)
@@ -872,6 +962,8 @@ def _cad_entity_chat_response(
         or asks_restore
         or asks_convert_drawn
         or asks_candidate
+        or asks_layers
+        or asks_layer_edit_blocker
         or chat_operation
     ):
         return None
@@ -904,7 +996,13 @@ def _cad_entity_chat_response(
         next_source_model, operation_result = apply_cad_entity_operation(model, chat_operation, actor=user_id or "user")
         missing_inputs = _safe_list(operation_result.get("missing_inputs"))
         safety_blockers = _safe_list(operation_result.get("safety_blockers"))
-        changed = bool(operation_result.get("created_entity_ids") or operation_result.get("updated_entity_ids") or operation_result.get("deleted_entity_ids"))
+        changed = bool(
+            operation_result.get("created_entity_ids")
+            or operation_result.get("updated_entity_ids")
+            or operation_result.get("deleted_entity_ids")
+            or operation_result.get("updated_layer_ids")
+            or operation_result.get("updated_style_ids")
+        )
         if changed:
             meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: next_source_model}, project_input=project_input)
             final_plan["meta"] = meta
@@ -1073,6 +1171,64 @@ def _cad_entity_chat_response(
     ]
     selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
     selected_ids = set(selected_object_ids + selected_geometry_ids + _safe_list(_safe_dict(model.get("selection")).get("selected_entity_ids")))
+
+    if asks_layers:
+        lines = ["CAD layers:"]
+        for layer in _safe_list(model.get("layers"))[:20]:
+            rec = _safe_dict(layer)
+            lines.append(
+                f"- {safe_str(rec.get('id'))}: {safe_str(rec.get('name'))}, color={safe_str(rec.get('color'))}, "
+                f"linetype={safe_str(rec.get('linetype'))}, lineweight={safe_str(rec.get('lineweight'))}, "
+                f"visible={bool(rec.get('visible'))}, locked={bool(rec.get('locked'))}, printable={bool(rec.get('printable'))}, "
+                f"source={safe_str(rec.get('source'))}, review_required=true"
+            )
+        if not _safe_list(model.get("layers")):
+            lines.append("- No CAD layer registry records are saved yet.")
+        lines.append("Layer/style settings are drafting/review metadata only; printable controls sheet/export trace and does not indicate construction readiness.")
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_layer_style_manager",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="reported_cad_layers",
+            affected_systems=["cad_entity_model"],
+            assumptions=["Layer answers use cad_entity_model_v1 registry records and remain review-only."],
+            next_best_action="Review layer visibility, lock, and printable flags before plotting or downstream review.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
+
+    if asks_layer_edit_blocker:
+        phrase = _cad_layer_phrase(message)
+        layer_id = _cad_layer_id_from_phrase(model, phrase) if phrase else ""
+        layers_by_id = {safe_str(_safe_dict(layer).get("id")): _safe_dict(layer) for layer in _safe_list(model.get("layers"))}
+        selected_entities = [entity for entity in entities if safe_str(entity.get("id")) in selected_ids]
+        selected_layer = layers_by_id.get(layer_id) if layer_id else layers_by_id.get(safe_str((selected_entities[0] if selected_entities else {}).get("layer_id")))
+        if selected_layer and selected_layer.get("locked"):
+            blocker = locked_layer_blocker(selected_layer)
+        else:
+            blocker = "layer_edit_not_blocked_by_layer_lock" if selected_layer else "target_layer_missing"
+        lines = [
+            f"Layer edit blocker: {blocker}.",
+            "Locked layers prevent CAD entity edits and layer/style assignment changes until unlocked through review.",
+            "This is a drafting/review guard only and does not change engineering evidence or construction readiness.",
+        ]
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_layer_style_manager",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="explained_cad_layer_edit_blocker",
+            affected_systems=["cad_entity_model"],
+            next_best_action="Unlock the layer after review or move the entity to an editable review layer.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model, "cad_layer_edit_blocker": blocker},
+            outcome="understood_and_answered",
+            state_changed=False,
+            blocker=blocker,
+        )
 
     if asks_undo or asks_restore:
         undo_redo = _safe_dict(model.get("undo_redo"))
