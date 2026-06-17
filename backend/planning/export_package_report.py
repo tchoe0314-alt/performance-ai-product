@@ -502,6 +502,18 @@ def build_export_package_report_v1(
     formats = _format_matrix(cad_interop, bool(export_audit and not audit_blocked))
     external_verification = _external_verification_hooks(meta)
     formats = _apply_external_verification_to_formats(formats, external_verification)
+    dxf_roundtrip_report = safe_dict(meta.get("dxf_roundtrip_report_v1"))
+    if dxf_roundtrip_report:
+        roundtrip_blockers = safe_list(dxf_roundtrip_report.get("blockers"))
+        formats["dxf"]["roundtrip_status"] = "passed_review_only" if dxf_roundtrip_report.get("local_roundtrip_verified") is True else "blocked_or_limited"
+        formats["dxf"]["roundtrip_report_present"] = True
+        formats["dxf"]["roundtrip_blockers"] = deepcopy(roundtrip_blockers)
+        formats["dxf"]["review_ready"] = bool(formats["dxf"].get("review_ready") and not roundtrip_blockers)
+        if roundtrip_blockers:
+            formats["dxf"]["status"] = "blocked_by_dxf_roundtrip"
+    else:
+        formats["dxf"]["roundtrip_status"] = "not_run"
+        formats["dxf"]["roundtrip_report_present"] = False
     civil3d_compatibility = _civil3d_compatibility_status(external_verification)
     annotation_trace = build_annotation_standards_trace(meta, export_type=safe_str(export_type))
     symbol_reference_trace = build_symbol_block_reference_trace(meta)
@@ -562,6 +574,7 @@ def build_export_package_report_v1(
         "external_verification": external_verification,
         "supported_deliverables": deepcopy(formats),
         "dxf_compatibility_matrix": deepcopy(formats["dxf"].get("preservation_contract")),
+        "dxf_roundtrip_report_v1": deepcopy(dxf_roundtrip_report),
         "external_workflow_requirements": {
             "landxml": {
                 "workflow_states": ["not_verified", "blocked_needs_review", "externally_verified_review_only"],
