@@ -12,6 +12,7 @@ from .common import safe_dict, safe_float, safe_list, safe_str
 CAD_ENTITY_MODEL_VERSION = "cad_entity_model_v1"
 CAD_DEFAULT_LAYER_ID = "layer_draft"
 CAD_DEFAULT_STYLE_ID = "style_by_layer"
+CAD_LAYER_LOCK_BLOCKER_PREFIX = "locked_layer_prevents_cad_entity_edit"
 CAD_ENTITY_TYPES = {
     "line",
     "polyline",
@@ -578,24 +579,138 @@ def validate_cad_entity(entity: Dict[str, Any], *, known_layer_ids: Optional[Ite
 
 def _normalized_layer(layer: Dict[str, Any]) -> Dict[str, Any]:
     layer_id = safe_str(layer.get("id") or layer.get("layer_id"), CAD_DEFAULT_LAYER_ID)
+    source = safe_str(layer.get("source") or layer.get("template_source") or layer.get("source_reference"), "cad_entity_model")
+    template_trace = safe_dict(layer.get("template_trace"))
+    if not template_trace and (layer.get("template_id") or layer.get("source_reference")):
+        template_trace = {
+            "template_id": safe_str(layer.get("template_id")),
+            "source_reference": safe_str(layer.get("source_reference")),
+        }
     return {
         "id": layer_id,
+        "layer_id": layer_id,
         "name": safe_str(layer.get("name"), "Draft"),
+        "color": safe_str(layer.get("color"), "#ffffff"),
+        "linetype": safe_str(layer.get("linetype"), "CONTINUOUS"),
+        "lineweight": safe_str(layer.get("lineweight"), "0.18mm"),
         "visible": layer.get("visible") is not False,
         "locked": bool(layer.get("locked")),
-        "source": safe_str(layer.get("source"), "cad_entity_model"),
+        "printable": layer.get("printable") is not False,
+        "source": source,
+        "template_trace": template_trace,
+        "source_trace": safe_dict(layer.get("source_trace")) or {"source": source, **template_trace},
+        "review_required": True,
         "review_only": True,
+        "construction_release_allowed": False,
     }
 
 
 def _normalized_style(style: Dict[str, Any]) -> Dict[str, Any]:
     style_id = safe_str(style.get("id") or style.get("style_id"), CAD_DEFAULT_STYLE_ID)
+    source = safe_str(style.get("source") or style.get("template_source") or style.get("source_reference"), "cad_entity_model")
+    template_trace = safe_dict(style.get("template_trace"))
+    if not template_trace and (style.get("template_id") or style.get("source_reference")):
+        template_trace = {
+            "template_id": safe_str(style.get("template_id")),
+            "source_reference": safe_str(style.get("source_reference")),
+        }
     return {
         "id": style_id,
+        "style_id": style_id,
         "name": safe_str(style.get("name"), "By Layer"),
-        "source": safe_str(style.get("source"), "cad_entity_model"),
+        "entity_types_supported": _dedupe(style.get("entity_types_supported") or style.get("supported_entity_types") or sorted(CAD_ENTITY_TYPES)),
+        "defaults": {
+            "color": safe_str(safe_dict(style.get("defaults")).get("color") or style.get("color"), "by_layer"),
+            "linetype": safe_str(safe_dict(style.get("defaults")).get("linetype") or style.get("linetype"), "by_layer"),
+            "lineweight": safe_str(safe_dict(style.get("defaults")).get("lineweight") or style.get("lineweight"), "by_layer"),
+            "text": safe_dict(safe_dict(style.get("defaults")).get("text") or style.get("text_defaults")),
+            "dimension": safe_dict(safe_dict(style.get("defaults")).get("dimension") or style.get("dimension_defaults")),
+            "hatch": safe_dict(safe_dict(style.get("defaults")).get("hatch") or style.get("hatch_defaults")),
+        },
+        "source": source,
+        "template_trace": template_trace,
+        "source_trace": safe_dict(style.get("source_trace")) or {"source": source, **template_trace},
+        "review_required": True,
         "review_only": True,
+        "construction_release_allowed": False,
     }
+
+
+def _normalized_lookup_id(value: Any) -> str:
+    raw = safe_str(value).lower()
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in raw).strip("_")
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned
+
+
+def _template_layers_styles(template: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    rec = safe_dict(template)
+    if not rec:
+        return [], []
+    sections = safe_dict(rec.get("sections"))
+    source_reference = safe_str(rec.get("source_reference"), "customer_template")
+    template_trace = {
+        "template_id": safe_str(rec.get("template_id")),
+        "template_name": safe_str(rec.get("name")),
+        "firm_name": safe_str(rec.get("firm_name")),
+        "source_reference": source_reference,
+        "customer_standard_only": True,
+        "jurisdiction_compliance_claim": False,
+    }
+    layers: List[Dict[str, Any]] = []
+    for item in safe_list(safe_dict(sections.get("layer_standards")).get("layers")):
+        layer = safe_dict(item)
+        name = safe_str(layer.get("name") or layer.get("layer_id"))
+        if not name:
+            continue
+        layers.append(
+            _normalized_layer(
+                {
+                    **layer,
+                    "id": safe_str(layer.get("layer_id") or layer.get("id")) or f"layer_{_normalized_lookup_id(name)}",
+                    "name": name,
+                    "source": "customer_template",
+                    "source_reference": source_reference,
+                    "template_trace": template_trace,
+                }
+            )
+        )
+    styles: List[Dict[str, Any]] = []
+    annotation = safe_dict(sections.get("annotation_standards"))
+    for collection, defaults_key, entity_types in (
+        ("text_styles", "text", ["text"]),
+        ("dimension_styles", "dimension", ["dimension"]),
+        ("hatch_fill_styles", "hatch", ["hatch", "polygon"]),
+        ("linetype_styles", "", sorted(CAD_ENTITY_TYPES)),
+    ):
+        for item in safe_list(annotation.get(collection)):
+            style = safe_dict(item)
+            key = safe_str(style.get("key") or style.get("target") or style.get("name"))
+            if not key:
+                continue
+            defaults = {
+                "color": safe_str(style.get("color"), "by_layer"),
+                "linetype": safe_str(style.get("linetype"), "by_layer"),
+                "lineweight": safe_str(style.get("lineweight"), "by_layer"),
+                "text": style if defaults_key == "text" else {},
+                "dimension": style if defaults_key == "dimension" else {},
+                "hatch": style if defaults_key == "hatch" else {},
+            }
+            styles.append(
+                _normalized_style(
+                    {
+                        "id": safe_str(style.get("style_id") or style.get("id")) or f"style_{_normalized_lookup_id(key)}",
+                        "name": key,
+                        "entity_types_supported": safe_list(style.get("entity_types_supported")) or entity_types,
+                        "defaults": defaults,
+                        "source": "customer_template",
+                        "source_reference": source_reference,
+                        "template_trace": template_trace,
+                    }
+                )
+            )
+    return layers, styles
 
 
 def normalize_cad_entity(raw_entity: Dict[str, Any], *, created_by: str = "system", updated_at: Optional[str] = None) -> Dict[str, Any]:
@@ -633,20 +748,51 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
     source_model = safe_dict(meta.get(CAD_ENTITY_MODEL_VERSION) or meta.get("cad_entity_model") or {})
     layers = [_normalized_layer(item) for item in safe_list(source_model.get("layers")) if safe_dict(item)]
     styles = [_normalized_style(item) for item in safe_list(source_model.get("styles")) if safe_dict(item)]
+    template_layers, template_styles = _template_layers_styles(
+        safe_dict(source_model.get("active_customer_template") or meta.get("active_customer_template"))
+    )
+    existing_layer_ids = {item["id"] for item in layers}
+    for layer in template_layers:
+        if layer["id"] not in existing_layer_ids:
+            layers.append(layer)
+            existing_layer_ids.add(layer["id"])
+    existing_style_ids = {item["id"] for item in styles}
+    for style in template_styles:
+        if style["id"] not in existing_style_ids:
+            styles.append(style)
+            existing_style_ids.add(style["id"])
     if not any(item["id"] == CAD_DEFAULT_LAYER_ID for item in layers):
         layers.insert(0, _normalized_layer({"id": CAD_DEFAULT_LAYER_ID, "name": "Draft"}))
     if not any(item["id"] == CAD_DEFAULT_STYLE_ID for item in styles):
         styles.insert(0, _normalized_style({"id": CAD_DEFAULT_STYLE_ID, "name": "By Layer"}))
     layer_ids = {item["id"] for item in layers}
     style_ids = {item["id"] for item in styles}
+    layer_by_id = {item["id"]: item for item in layers}
     entities = [normalize_cad_entity(item) for item in safe_list(source_model.get("entities")) if safe_dict(item)]
     validation = [validate_cad_entity(item, known_layer_ids=layer_ids, known_style_ids=style_ids) for item in entities]
     validation_by_id = {item["entity_id"]: item for item in validation}
     for entity in entities:
         result = safe_dict(validation_by_id.get(entity["id"]))
+        layer = safe_dict(layer_by_id.get(safe_str(entity.get("layer_id"))))
+        visible = layer.get("visible") is not False
+        printable = layer.get("printable") is not False
         entity["bounding_box"] = result.get("bounding_box")
         entity["validation_status"] = "valid" if result.get("valid") else "invalid"
         entity["validation_blockers"] = safe_list(result.get("blockers"))
+        entity["render_metadata"] = {
+            **safe_dict(entity.get("render_metadata")),
+            "visible": visible,
+            "hidden_by_layer": not visible,
+            "layer_id": safe_str(entity.get("layer_id")),
+            "style_id": safe_str(entity.get("style_id")),
+        }
+        entity["sheet_export_trace"] = {
+            **safe_dict(entity.get("sheet_export_trace")),
+            "printable": printable,
+            "non_printable_by_layer": not printable,
+            "construction_release_allowed": False,
+            "truth_label": "Printable layer state affects sheet/export trace only and does not indicate construction readiness.",
+        }
         if entity["dirty"] or entity["stale"]:
             entity["review_status"] = "stale"
     selected_ids = _dedupe(source_model.get("selected_entity_ids") or [])
@@ -696,6 +842,10 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
     for entity in entities:
         entity_type = safe_str(entity.get("type"), "unknown")
         counts_by_type[entity_type] = counts_by_type.get(entity_type, 0) + 1
+    visible_entity_ids = _dedupe(entity.get("id") for entity in entities if safe_dict(entity.get("render_metadata")).get("visible") is not False)
+    hidden_entity_ids = _dedupe(entity.get("id") for entity in entities if safe_dict(entity.get("render_metadata")).get("hidden_by_layer"))
+    printable_layer_ids = _dedupe(layer.get("id") for layer in layers if layer.get("printable") is not False)
+    non_printable_layer_ids = _dedupe(layer.get("id") for layer in layers if layer.get("printable") is False)
     review_blockers = blockers + safe_list(safe_dict(cad_source_confidence_summary(entities)).get("blockers"))
     revision_timeline = {
         "latest_revision_id": latest_revision_id,
@@ -725,6 +875,21 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         "entities": entities,
         "selected_entity_ids": selected_entity_ids,
         "entity_bounding_boxes": {entity["id"]: entity.get("bounding_box") for entity in entities if entity.get("bounding_box")},
+        "render_metadata": {
+            "visible_entity_ids": visible_entity_ids,
+            "hidden_entity_ids": hidden_entity_ids,
+            "hidden_by_layer_count": len(hidden_entity_ids),
+            "review_required": True,
+            "construction_release_allowed": False,
+        },
+        "sheet_export_trace": {
+            "printable_layer_ids": printable_layer_ids,
+            "non_printable_layer_ids": non_printable_layer_ids,
+            "printable_flag_scope": "sheet/export trace only",
+            "review_required": True,
+            "construction_release_allowed": False,
+            "truth_label": "Layer printable flags control plotting/export trace only; they do not make CAD/manual/imported geometry construction-ready.",
+        },
         "validation": {
             "valid": not blockers,
             "entity_count": len(entities),
@@ -819,6 +984,8 @@ def cad_entity_operation_result(
     created_entity_ids: Optional[List[str]] = None,
     updated_entity_ids: Optional[List[str]] = None,
     deleted_entity_ids: Optional[List[str]] = None,
+    updated_layer_ids: Optional[List[str]] = None,
+    updated_style_ids: Optional[List[str]] = None,
     next_best_action: str = "",
 ) -> Dict[str, Any]:
     return {
@@ -832,6 +999,8 @@ def cad_entity_operation_result(
         "created_entity_ids": _dedupe(created_entity_ids or []),
         "updated_entity_ids": _dedupe(updated_entity_ids or []),
         "deleted_entity_ids": _dedupe(deleted_entity_ids or []),
+        "updated_layer_ids": _dedupe(updated_layer_ids or []),
+        "updated_style_ids": _dedupe(updated_style_ids or []),
         "review_required": True,
         "construction_release_allowed": False,
         "next_best_action": safe_str(next_best_action),
@@ -845,6 +1014,76 @@ def _safe_history(model: Dict[str, Any]) -> List[Dict[str, Any]]:
         if safe_str(rec.get("action") or rec.get("event_type")) in CAD_HISTORY_ACTIONS:
             history.append(rec)
     return history
+
+
+def _matches_layer(layer: Dict[str, Any], target: Any) -> bool:
+    needle = _normalized_lookup_id(target)
+    if not needle:
+        return False
+    return needle in {
+        _normalized_lookup_id(layer.get("id")),
+        _normalized_lookup_id(layer.get("layer_id")),
+        _normalized_lookup_id(layer.get("name")),
+    }
+
+
+def _matches_style(style: Dict[str, Any], target: Any) -> bool:
+    needle = _normalized_lookup_id(target)
+    if not needle:
+        return False
+    return needle in {
+        _normalized_lookup_id(style.get("id")),
+        _normalized_lookup_id(style.get("style_id")),
+        _normalized_lookup_id(style.get("name")),
+    }
+
+
+def _resolve_layer_id(layers: List[Dict[str, Any]], target: Any, *, create_missing: bool = False) -> str:
+    for layer in layers:
+        if _matches_layer(layer, target):
+            return safe_str(layer.get("id"))
+    layer_id = safe_str(target)
+    if not layer_id:
+        return ""
+    if create_missing:
+        layers.append(
+            _normalized_layer(
+                {
+                    "id": f"layer_{_normalized_lookup_id(layer_id)}",
+                    "name": layer_id,
+                    "source": "chat_cad_command",
+                    "template_trace": {"customer_standard_only": True, "jurisdiction_compliance_claim": False},
+                }
+            )
+        )
+        return safe_str(layers[-1].get("id"))
+    return layer_id
+
+
+def _resolve_style_id(styles: List[Dict[str, Any]], target: Any, *, create_missing: bool = False) -> str:
+    for style in styles:
+        if _matches_style(style, target):
+            return safe_str(style.get("id"))
+    style_id = safe_str(target)
+    if not style_id:
+        return ""
+    if create_missing:
+        styles.append(
+            _normalized_style(
+                {
+                    "id": f"style_{_normalized_lookup_id(style_id)}",
+                    "name": style_id,
+                    "source": "chat_cad_command",
+                    "template_trace": {"customer_standard_only": True, "jurisdiction_compliance_claim": False},
+                }
+            )
+        )
+        return safe_str(styles[-1].get("id"))
+    return style_id
+
+
+def locked_layer_blocker(layer: Dict[str, Any]) -> str:
+    return f"{CAD_LAYER_LOCK_BLOCKER_PREFIX}:{safe_str(layer.get('id') or layer.get('layer_id'), CAD_DEFAULT_LAYER_ID)}"
 
 
 def _transform_point(
@@ -902,11 +1141,20 @@ def apply_cad_entity_operation(
     if missing_inputs or safety_blockers or not action:
         return source_model, cad_entity_operation_result(understood_goal=understood_goal, selected_action=action or "unsupported", target_entities=target_ids, missing_inputs=missing_inputs, safety_blockers=safety_blockers, next_best_action=safe_str(operation.get("next_best_action")))
 
+    layers = [_normalized_layer(item) for item in safe_list(source_model.get("layers")) if safe_dict(item)]
+    styles = [_normalized_style(item) for item in safe_list(source_model.get("styles")) if safe_dict(item)]
+    if not any(item["id"] == CAD_DEFAULT_LAYER_ID for item in layers):
+        layers.insert(0, _normalized_layer({"id": CAD_DEFAULT_LAYER_ID, "name": "Draft"}))
+    if not any(item["id"] == CAD_DEFAULT_STYLE_ID for item in styles):
+        styles.insert(0, _normalized_style({"id": CAD_DEFAULT_STYLE_ID, "name": "By Layer"}))
+    layer_by_id = {safe_str(layer.get("id")): layer for layer in layers}
     entities = [normalize_cad_entity(item, created_by=actor) for item in safe_list(source_model.get("entities")) if safe_dict(item)]
     by_id = {safe_str(entity.get("id")): entity for entity in entities if safe_str(entity.get("id"))}
     created_ids: List[str] = []
     updated_ids: List[str] = []
     deleted_ids: List[str] = []
+    updated_layer_ids: List[str] = []
+    updated_style_ids: List[str] = []
     action_history: List[Dict[str, Any]] = []
     selected_entity_ids = _dedupe(source_model.get("selected_entity_ids") or [])
 
@@ -927,8 +1175,42 @@ def apply_cad_entity_operation(
                 selected_entity_ids = existing_hits[:1]
             else:
                 selected_entity_ids = _dedupe(selected_entity_ids + existing_hits)
+    elif action in {"set_layer_visibility", "set_layer_locked", "set_layer_printable"}:
+        layer_id = _resolve_layer_id(layers, operation.get("layer_id") or operation.get("layer_name"), create_missing=True)
+        for index, layer in enumerate(layers):
+            if safe_str(layer.get("id")) != layer_id:
+                continue
+            updated = deepcopy(layer)
+            if action == "set_layer_visibility":
+                updated["visible"] = bool(operation.get("visible"))
+            elif action == "set_layer_locked":
+                updated["locked"] = bool(operation.get("locked"))
+            else:
+                updated["printable"] = bool(operation.get("printable"))
+            updated["review_required"] = True
+            updated["construction_release_allowed"] = False
+            layers[index] = _normalized_layer(updated)
+            updated_layer_ids.append(layer_id)
+            layer_by_id[layer_id] = layers[index]
+            break
+    elif action == "use_company_layer_style":
+        updated_layer_ids.extend(safe_str(layer.get("id")) for layer in layers if safe_str(layer.get("source")) == "customer_template")
+        updated_style_ids.extend(safe_str(style.get("id")) for style in styles if safe_str(style.get("source")) == "customer_template")
     elif action.startswith("create_"):
-        entity = normalize_cad_entity({"id": safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1), "type": safe_str(operation.get("entity_type")), "geometry": safe_dict(operation.get("geometry")), "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID), "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID), "source": "chat_cad_command", "source_confidence": "chat_drafted_review_required", "review_status": "draft_review_required", "dirty": True}, created_by=actor)
+        entity = normalize_cad_entity(
+            {
+                "id": safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1),
+                "type": safe_str(operation.get("entity_type")),
+                "geometry": safe_dict(operation.get("geometry")),
+                "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID),
+                "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID),
+                "source": "chat_cad_command",
+                "source_confidence": "chat_drafted_review_required",
+                "review_status": "draft_review_required",
+                "dirty": True,
+            },
+            created_by=actor,
+        )
         by_id[entity["id"]] = entity
         created_ids.append(entity["id"])
         action_history.append(history_event("entity_created", entity["id"], actor=actor, details={"source": "chat", "review_required": True}))
@@ -937,7 +1219,22 @@ def apply_cad_entity_operation(
             entity = by_id.get(entity_id)
             if not entity:
                 continue
-            copied = normalize_cad_entity({**deepcopy(entity), "id": _stable_id("cadcopy", entity_id, len(entities), index), "source": "chat_cad_command", "source_confidence": "chat_drafted_review_required", "geometry": _transform_geometry(safe_dict(entity.get("geometry")), dx=safe_float(operation.get("dx"), 0.0), dy=safe_float(operation.get("dy"), 0.0)), "dirty": True, "stale": True}, created_by=actor)
+            layer = safe_dict(layer_by_id.get(safe_str(entity.get("layer_id"))))
+            if layer.get("locked"):
+                safety_blockers.append(locked_layer_blocker(layer))
+                continue
+            copied = normalize_cad_entity(
+                {
+                    **deepcopy(entity),
+                    "id": _stable_id("cadcopy", entity_id, len(entities), index),
+                    "source": "chat_cad_command",
+                    "source_confidence": "chat_drafted_review_required",
+                    "geometry": _transform_geometry(safe_dict(entity.get("geometry")), dx=safe_float(operation.get("dx"), 0.0), dy=safe_float(operation.get("dy"), 0.0)),
+                    "dirty": True,
+                    "stale": True,
+                },
+                created_by=actor,
+            )
             by_id[copied["id"]] = copied
             created_ids.append(copied["id"])
             action_history.append(history_event("entity_created", copied["id"], actor=actor, details={"copied_from": entity_id, "review_required": True}))
@@ -976,6 +1273,12 @@ def apply_cad_entity_operation(
                 updated_ids.append(entity_id)
                 action_history.append(history_event("entity_geometry_changed", entity_id, actor=actor, details={"chat_action": action, "grip_id": grip_id, "review_required": True}, before=before, after=updated, changed_fields=["geometry"]))
     elif action in {"move_selected", "rotate_selected", "scale_selected", "change_layer", "change_style"}:
+        if action == "change_layer":
+            operation["layer_id"] = _resolve_layer_id(layers, operation.get("layer_id") or operation.get("layer_name"), create_missing=True)
+            layer_by_id = {safe_str(layer.get("id")): layer for layer in layers}
+        if action == "change_style":
+            operation["style_id"] = _resolve_style_id(styles, operation.get("style_id") or operation.get("style_name"), create_missing=True)
+            updated_style_ids.append(safe_str(operation.get("style_id")))
         for entity_id in target_ids:
             entity = by_id.get(entity_id)
             if not entity:
@@ -984,6 +1287,10 @@ def apply_cad_entity_operation(
             edit_blocker = _edit_blocker(entity)
             if edit_blocker:
                 safety_blockers.append(edit_blocker)
+                continue
+            layer = safe_dict(layer_by_id.get(safe_str(entity.get("layer_id"))))
+            if layer.get("locked"):
+                safety_blockers.append(locked_layer_blocker(layer))
                 continue
             before = deepcopy(entity)
             updated = deepcopy(entity)
@@ -1002,13 +1309,32 @@ def apply_cad_entity_operation(
             updated["review_status"] = "draft_review_required"
             by_id[entity_id] = normalize_cad_entity(updated, created_by=actor)
             updated_ids.append(entity_id)
-            event_type = "entity_geometry_changed" if action in {"move_selected", "rotate_selected", "scale_selected"} else "entity_updated"
+            event_type = "entity_geometry_changed" if action in {"move_selected", "rotate_selected", "scale_selected"} else "entity_layer_changed" if action == "change_layer" else "entity_style_changed"
             action_history.append(history_event(event_type, entity_id, actor=actor, details={"chat_action": action, "review_required": True}, before=before, after=by_id[entity_id]))
     else:
         safety_blockers.append(f"unsupported_cad_entity_operation:{action}")
 
-    next_model = {**source_model, "entities": list(by_id.values()), "history": _safe_history(source_model) + action_history, "selected_entity_ids": [safe_str(entity_id) for entity_id in selected_entity_ids if safe_str(entity_id) in by_id]}
-    result = cad_entity_operation_result(understood_goal=understood_goal, selected_action=action, target_entities=target_ids, selected_entity_ids=selected_entity_ids, safety_blockers=safety_blockers, created_entity_ids=created_ids, updated_entity_ids=updated_ids, deleted_entity_ids=deleted_ids, next_best_action=safe_str(operation.get("next_best_action"), "Review the changed CAD entities before using them in downstream workflows."))
+    next_model = {
+        **source_model,
+        "entities": list(by_id.values()),
+        "layers": layers,
+        "styles": styles,
+        "history": _safe_history(source_model) + action_history,
+        "selected_entity_ids": [safe_str(entity_id) for entity_id in selected_entity_ids if safe_str(entity_id) in by_id],
+    }
+    result = cad_entity_operation_result(
+        understood_goal=understood_goal,
+        selected_action=action,
+        target_entities=target_ids,
+        selected_entity_ids=selected_entity_ids,
+        safety_blockers=safety_blockers,
+        created_entity_ids=created_ids,
+        updated_entity_ids=updated_ids,
+        deleted_entity_ids=deleted_ids,
+        updated_layer_ids=updated_layer_ids,
+        updated_style_ids=updated_style_ids,
+        next_best_action=safe_str(operation.get("next_best_action"), "Review the changed CAD entities before using them in downstream workflows."),
+    )
     return next_model, result
 
 def manual_drawn_objects_to_cad_entities(project_input: Dict[str, Any], latest_result: Optional[Dict[str, Any]] = None, *, created_by: str = "user") -> List[Dict[str, Any]]:
@@ -1147,6 +1473,7 @@ __all__ = [
     "history_event",
     "hit_test_entities",
     "import_candidates_to_cad_entities",
+    "locked_layer_blocker",
     "manual_drawn_objects_to_cad_entities",
     "normalize_cad_entity",
     "selected_entity_grips",
