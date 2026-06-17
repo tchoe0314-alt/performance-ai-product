@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
-from math import cos, isfinite, radians, sin
+from math import atan2, cos, degrees, hypot, isfinite, radians, sin
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .common import safe_dict, safe_float, safe_list, safe_str
@@ -21,7 +21,12 @@ CAD_ENTITY_TYPES = {
     "arc",
     "text",
     "dimension",
+    "leader",
+    "callout",
+    "note",
+    "label",
     "hatch",
+    "hatch_reference",
     "block_reference",
     "underlay_reference",
 }
@@ -36,6 +41,7 @@ CAD_HISTORY_ACTIONS = {
     "entity_style_changed",
     "entity_geometry_changed",
     "entity_attribute_changed",
+    "entity_association_updated",
 }
 CAD_ENTITY_CHAT_OPERATION_VERSION = "cad_entity_chat_operation_v1"
 LOW_CONFIDENCE_LABELS = {"", "missing", "metadata-only", "metadata_only", "inferred", "GIS candidate", "map imagery candidate"}
@@ -190,6 +196,17 @@ def _points(values: Any) -> List[Dict[str, float]]:
     return [point for point in (_point(item) for item in safe_list(values)) if point is not None]
 
 
+def _distance(a: Dict[str, float], b: Dict[str, float]) -> float:
+    return hypot(b["x"] - a["x"], b["y"] - a["y"])
+
+
+def _angle_degrees(a: Dict[str, float], b: Dict[str, float], c: Dict[str, float]) -> float:
+    v1 = atan2(a["y"] - b["y"], a["x"] - b["x"])
+    v2 = atan2(c["y"] - b["y"], c["x"] - b["x"])
+    angle = abs(degrees(v2 - v1)) % 360.0
+    return 360.0 - angle if angle > 180.0 else angle
+
+
 def _bbox_from_points(points: List[Dict[str, float]]) -> Optional[Dict[str, float]]:
     if not points:
         return None
@@ -212,7 +229,7 @@ def entity_bounding_box(entity: Dict[str, Any]) -> Optional[Dict[str, float]]:
     entity_type = safe_str(entity.get("type"))
     if entity_type == "line":
         bbox = _bbox_from_points([point for point in (_point(geometry.get("start")), _point(geometry.get("end"))) if point])
-    elif entity_type in {"polyline", "polygon", "hatch"}:
+    elif entity_type in {"polyline", "polygon", "hatch", "hatch_reference"}:
         bbox = _bbox_from_points(_points(geometry.get("points") or geometry.get("vertices") or geometry.get("boundary")))
     elif entity_type == "rectangle":
         origin = _point(geometry.get("origin") or geometry.get("min"))
@@ -226,11 +243,15 @@ def entity_bounding_box(entity: Dict[str, Any]) -> Optional[Dict[str, float]]:
         center = _point(geometry.get("center"))
         radius = safe_float(geometry.get("radius"), None)
         bbox = _expand_bbox({"min_x": center["x"], "min_y": center["y"], "max_x": center["x"], "max_y": center["y"]}, radius) if center and radius and radius > 0 else None
-    elif entity_type in {"text", "dimension", "block_reference", "underlay_reference"}:
+    elif entity_type in {"text", "dimension", "leader", "callout", "note", "label", "block_reference", "underlay_reference"}:
         insert = _point(geometry.get("insert") or geometry.get("position") or geometry.get("origin"))
         width = abs(safe_float(geometry.get("width"), 0.0))
         height = abs(safe_float(geometry.get("height"), 0.0))
-        bbox = _bbox_from_points([insert, {"x": insert["x"] + width, "y": insert["y"] + height}]) if insert else None
+        leader_points = _points(geometry.get("points") or geometry.get("leader_points"))
+        if entity_type in {"dimension", "leader", "callout"} and leader_points:
+            bbox = _bbox_from_points(leader_points + ([insert] if insert else []))
+        else:
+            bbox = _bbox_from_points([insert, {"x": insert["x"] + width, "y": insert["y"] + height}]) if insert else None
     else:
         bbox = None
     if bbox is None:
@@ -357,7 +378,7 @@ def _edit_blocker(entity: Dict[str, Any]) -> str:
     entity_type = safe_str(entity.get("type"))
     if bool(entity.get("locked")) or entity_type == "underlay_reference" or safe_str(entity.get("source")) in {"reference", "underlay", "external_reference"}:
         return "locked/reference/underlay entity"
-    if entity_type not in {"line", "polyline", "polygon", "rectangle", "circle", "text", "dimension", "block_reference"}:
+    if entity_type not in {"line", "polyline", "polygon", "rectangle", "circle", "text", "dimension", "leader", "callout", "note", "label", "block_reference"}:
         return "unsupported entity type"
     return ""
 
@@ -531,12 +552,12 @@ def validate_cad_entity(entity: Dict[str, Any], *, known_layer_ids: Optional[Ite
     if entity_type == "line":
         if not _point(geometry.get("start")) or not _point(geometry.get("end")):
             blockers.append("invalid_geometry:line_requires_start_and_end")
-    elif entity_type in {"polyline", "polygon", "hatch"}:
+    elif entity_type in {"polyline", "polygon", "hatch", "hatch_reference"}:
         points = _points(geometry.get("points") or geometry.get("vertices") or geometry.get("boundary"))
-        min_points = 3 if entity_type in {"polygon", "hatch"} else 2
+        min_points = 3 if entity_type in {"polygon", "hatch", "hatch_reference"} else 2
         if len(points) < min_points:
             blockers.append(f"invalid_geometry:{entity_type}_requires_{min_points}_points")
-        if entity_type in {"polygon", "hatch"} and _has_self_intersection(points, closed=True):
+        if entity_type in {"polygon", "hatch", "hatch_reference"} and _has_self_intersection(points, closed=True):
             blockers.append("self_intersection")
         if entity_type == "polyline" and _has_self_intersection(points, closed=bool(geometry.get("closed"))):
             blockers.append("self_intersection")
@@ -546,12 +567,20 @@ def validate_cad_entity(entity: Dict[str, Any], *, known_layer_ids: Optional[Ite
     elif entity_type in {"circle", "arc"}:
         if not _point(geometry.get("center")) or safe_float(geometry.get("radius"), 0.0) <= 0:
             blockers.append(f"invalid_geometry:{entity_type}_requires_center_and_positive_radius")
-    elif entity_type == "text":
+    elif entity_type in {"text", "note", "label"}:
         if not _point(geometry.get("insert") or geometry.get("position")) or not safe_str(geometry.get("text")):
-            blockers.append("invalid_geometry:text_requires_insert_and_text")
+            blockers.append(f"invalid_geometry:{entity_type}_requires_insert_and_text")
+    elif entity_type in {"leader", "callout"}:
+        if len(_points(geometry.get("points") or geometry.get("leader_points"))) < 2 or not safe_str(geometry.get("text")):
+            blockers.append(f"invalid_geometry:{entity_type}_requires_leader_points_and_text")
     elif entity_type == "dimension":
+        measurement = safe_dict(entity.get("dimension"))
         if len(_points(geometry.get("points"))) < 2 and not (_point(geometry.get("start")) and _point(geometry.get("end"))):
             blockers.append("invalid_geometry:dimension_requires_measurement_points")
+        if safe_str(measurement.get("dimension_type")) not in {"linear", "aligned", "angular", "radius", "diameter"}:
+            blockers.append("invalid_dimension_type")
+        if measurement.get("measurement_value") is None:
+            blockers.append("missing_dimension_measurement_value")
     elif entity_type in {"block_reference", "underlay_reference"}:
         if not _point(geometry.get("insert") or geometry.get("origin")):
             blockers.append(f"invalid_geometry:{entity_type}_requires_insert")
@@ -599,6 +628,175 @@ def _normalized_style(style: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _measurement_points_for_entity(entity: Dict[str, Any]) -> List[Dict[str, float]]:
+    rec = safe_dict(entity)
+    geometry = safe_dict(rec.get("geometry"))
+    entity_type = safe_str(rec.get("type"))
+    if entity_type == "line":
+        return [point for point in (_point(geometry.get("start")), _point(geometry.get("end"))) if point]
+    if entity_type in {"polyline", "polygon", "hatch", "hatch_reference"}:
+        return _points(geometry.get("points") or geometry.get("vertices") or geometry.get("boundary"))[:2]
+    if entity_type == "rectangle":
+        bbox = entity_bounding_box(rec)
+        if bbox:
+            return [{"x": bbox["min_x"], "y": bbox["min_y"]}, {"x": bbox["max_x"], "y": bbox["min_y"]}]
+    if entity_type in {"circle", "arc"}:
+        center = _point(geometry.get("center"))
+        radius = safe_float(geometry.get("radius"), None)
+        if center and radius and radius > 0:
+            return [center, {"x": center["x"] + radius, "y": center["y"]}]
+    return []
+
+
+def _dimension_measurement(
+    *,
+    dimension_type: str,
+    points: List[Dict[str, float]],
+    measured_entities: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[Optional[float], List[str], str]:
+    kind = safe_str(dimension_type, "aligned")
+    entities = [safe_dict(item) for item in safe_list(measured_entities)]
+    first_entity = entities[0] if entities else {}
+    first_type = safe_str(first_entity.get("type"))
+    first_geometry = safe_dict(first_entity.get("geometry"))
+    if kind in {"radius", "diameter"} and first_type in {"circle", "arc"}:
+        radius = safe_float(first_geometry.get("radius"), None)
+        if radius and radius > 0:
+            return (radius * 2.0 if kind == "diameter" else radius), [safe_str(first_entity.get("id"))], "safe_recalculated_from_circle_arc_geometry"
+    if kind == "angular" and len(points) >= 3:
+        return _angle_degrees(points[0], points[1], points[2]), [safe_str(item.get("id")) for item in entities], "safe_recalculated_from_points"
+    if len(points) >= 2:
+        if kind == "linear":
+            return abs(points[1]["x"] - points[0]["x"]) or abs(points[1]["y"] - points[0]["y"]), [safe_str(item.get("id")) for item in entities], "safe_recalculated_from_points"
+        return _distance(points[0], points[1]), [safe_str(item.get("id")) for item in entities], "safe_recalculated_from_points"
+    return None, [safe_str(item.get("id")) for item in entities], "blocked_missing_measurement_geometry"
+
+
+def create_cad_dimension_entity(
+    *,
+    dimension_type: str = "aligned",
+    points: Optional[List[Dict[str, Any]]] = None,
+    measured_entities: Optional[List[Dict[str, Any]]] = None,
+    units: str = "ft",
+    precision: int = 2,
+    prefix: str = "",
+    suffix: str = "",
+    scale: float = 1.0,
+    style_id: str = CAD_DEFAULT_STYLE_ID,
+    layer_id: str = CAD_DEFAULT_LAYER_ID,
+    entity_id: str = "",
+    created_by: str = "system",
+) -> Dict[str, Any]:
+    parsed_points = _points(points)
+    entities = [safe_dict(item) for item in safe_list(measured_entities)]
+    if not parsed_points and entities:
+        parsed_points = _measurement_points_for_entity(entities[0])
+    kind = safe_str(dimension_type, "aligned")
+    first_type = safe_str(entities[0].get("type")) if entities else ""
+    if kind not in {"linear", "aligned", "angular", "radius", "diameter"}:
+        kind = "aligned"
+    if kind == "aligned" and first_type in {"circle", "arc"}:
+        kind = "radius"
+    measurement_value, measured_refs, association_status = _dimension_measurement(
+        dimension_type=kind,
+        points=parsed_points,
+        measured_entities=entities,
+    )
+    dim_units = "deg" if kind == "angular" else safe_str(units, "ft")
+    dimension_record = {
+        "dimension_type": kind,
+        "measured_entity_refs": _dedupe(measured_refs),
+        "measured_points": deepcopy(parsed_points),
+        "measurement_value": measurement_value,
+        "units": dim_units,
+        "precision": int(safe_float(precision, 2)),
+        "prefix": safe_str(prefix),
+        "suffix": safe_str(suffix),
+        "scale": safe_float(scale, 1.0),
+        "style_id": safe_str(style_id, CAD_DEFAULT_STYLE_ID),
+        "layer_id": safe_str(layer_id, CAD_DEFAULT_LAYER_ID),
+        "review_required": True,
+        "construction_release_allowed": False,
+        "association_status": association_status,
+        "engineering_quantity_claim": False,
+        "truth_label": "Dimension values are drafting/review measurements only and do not update or approve engineering quantities.",
+    }
+    geometry = {
+        "points": parsed_points,
+        "units": dim_units,
+        "insert": parsed_points[-1] if parsed_points else {"x": 0.0, "y": 0.0},
+    }
+    if len(parsed_points) >= 2:
+        geometry["start"] = parsed_points[0]
+        geometry["end"] = parsed_points[1]
+    return normalize_cad_entity(
+        {
+            "id": safe_str(entity_id) or _stable_id("caddim", kind, measured_refs, parsed_points, measurement_value),
+            "type": "dimension",
+            "geometry": geometry,
+            "dimension": dimension_record,
+            "layer_id": layer_id,
+            "style_id": style_id,
+            "source": "chat_cad_command",
+            "source_confidence": "chat_drafted_review_required",
+            "review_status": "draft_review_required",
+            "dirty": True,
+        },
+        created_by=created_by,
+    )
+
+
+def create_cad_annotation_entity(
+    *,
+    annotation_type: str,
+    text: str,
+    points: Optional[List[Dict[str, Any]]] = None,
+    layer_id: str = CAD_DEFAULT_LAYER_ID,
+    style_id: str = CAD_DEFAULT_STYLE_ID,
+    entity_id: str = "",
+    created_by: str = "system",
+) -> Dict[str, Any]:
+    kind = safe_str(annotation_type, "text")
+    if kind not in {"text", "leader", "callout", "note", "label"}:
+        kind = "text"
+    parsed_points = _points(points) or [{"x": 0.0, "y": 0.0}]
+    insert = parsed_points[-1]
+    geometry = {
+        "insert": insert,
+        "position": insert,
+        "text": safe_str(text),
+        "height": 1.0,
+        "width": max(1.0, len(safe_str(text)) * 0.6),
+        "units": "ft",
+    }
+    if kind in {"leader", "callout"}:
+        geometry["leader_points"] = parsed_points if len(parsed_points) >= 2 else [parsed_points[0], parsed_points[0]]
+        geometry["points"] = geometry["leader_points"]
+    return normalize_cad_entity(
+        {
+            "id": safe_str(entity_id) or _stable_id("cadanno", kind, text, parsed_points),
+            "type": kind,
+            "geometry": geometry,
+            "annotation": {
+                "annotation_type": kind,
+                "text": safe_str(text),
+                "style_id": safe_str(style_id, CAD_DEFAULT_STYLE_ID),
+                "layer_id": safe_str(layer_id, CAD_DEFAULT_LAYER_ID),
+                "review_required": True,
+                "construction_release_allowed": False,
+                "truth_label": "Annotation entities are drafting/review aids and do not imply compliance, approval, or construction readiness.",
+            },
+            "layer_id": layer_id,
+            "style_id": style_id,
+            "source": "chat_cad_command",
+            "source_confidence": "chat_drafted_review_required",
+            "review_status": "draft_review_required",
+            "dirty": True,
+        },
+        created_by=created_by,
+    )
+
+
 def normalize_cad_entity(raw_entity: Dict[str, Any], *, created_by: str = "system", updated_at: Optional[str] = None) -> Dict[str, Any]:
     rec = deepcopy(safe_dict(raw_entity))
     entity_type = safe_str(rec.get("type"))
@@ -622,12 +820,148 @@ def normalize_cad_entity(raw_entity: Dict[str, Any], *, created_by: str = "syste
             "created_by": safe_str(rec.get("created_by"), created_by or "system"),
             "updated_at": safe_str(rec.get("updated_at"), updated_at or now_iso()),
             "canonical_geometry_handoff": safe_dict(rec.get("canonical_geometry_handoff") or rec.get("canonical_geometry_handoff_v1")),
+            "dimension": safe_dict(rec.get("dimension")),
+            "annotation": safe_dict(rec.get("annotation")),
             "linked_object_id": safe_str(rec.get("linked_object_id") or rec.get("object_id")),
             "dirty": bool(rec.get("dirty")),
             "stale": bool(rec.get("stale")),
         }
     )
+    if rec["type"] == "dimension":
+        dim = safe_dict(rec.get("dimension"))
+        dim["review_required"] = True
+        dim["construction_release_allowed"] = False
+        dim["engineering_quantity_claim"] = False
+        dim["style_id"] = safe_str(dim.get("style_id"), rec["style_id"])
+        dim["layer_id"] = safe_str(dim.get("layer_id"), rec["layer_id"])
+        rec["dimension"] = dim
+    if rec["type"] in {"text", "leader", "callout", "note", "label", "hatch", "hatch_reference"}:
+        anno = safe_dict(rec.get("annotation"))
+        if anno or rec["type"] in {"leader", "callout", "note", "label"}:
+            anno["annotation_type"] = safe_str(anno.get("annotation_type"), rec["type"])
+            anno["style_id"] = safe_str(anno.get("style_id"), rec["style_id"])
+            anno["layer_id"] = safe_str(anno.get("layer_id"), rec["layer_id"])
+            anno["review_required"] = True
+            anno["construction_release_allowed"] = False
+            rec["annotation"] = anno
     return rec
+
+
+def refresh_dimension_associations(
+    entities: List[Dict[str, Any]],
+    *,
+    changed_entity_ids: Optional[List[str]] = None,
+    actor: str = "system",
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    changed_ids = set(_dedupe(changed_entity_ids or []))
+    by_id = {safe_str(entity.get("id")): normalize_cad_entity(entity, created_by=actor) for entity in entities if safe_str(safe_dict(entity).get("id"))}
+    updated: List[Dict[str, Any]] = []
+    events: List[Dict[str, Any]] = []
+    for entity_id, entity in list(by_id.items()):
+        if safe_str(entity.get("type")) != "dimension":
+            updated.append(entity)
+            continue
+        dim = safe_dict(entity.get("dimension"))
+        refs = _dedupe(dim.get("measured_entity_refs") or [])
+        impacted = bool(changed_ids and any(ref in changed_ids for ref in refs))
+        if not impacted:
+            updated.append(entity)
+            continue
+        before = deepcopy(entity)
+        measured_entities = [by_id[ref] for ref in refs if ref in by_id]
+        points = _measurement_points_for_entity(measured_entities[0]) if len(measured_entities) == 1 else _points(dim.get("measured_points"))
+        if refs and len(measured_entities) != len(refs):
+            measurement_value = dim.get("measurement_value")
+            association_status = "stale_missing_measured_entity_reference"
+        else:
+            measurement_value, _, association_status = _dimension_measurement(
+                dimension_type=safe_str(dim.get("dimension_type"), "aligned"),
+                points=points,
+                measured_entities=measured_entities,
+            )
+        dim["measured_points"] = deepcopy(points)
+        dim["measurement_value"] = measurement_value
+        dim["association_status"] = association_status
+        dim["association_dirty_reason"] = "measured_cad_entity_changed_review_required"
+        dim["review_required"] = True
+        dim["construction_release_allowed"] = False
+        dim["engineering_quantity_claim"] = False
+        entity["dimension"] = dim
+        if len(points) >= 2:
+            entity["geometry"] = {**safe_dict(entity.get("geometry")), "start": points[0], "end": points[1], "points": points, "insert": points[-1]}
+        entity["dirty"] = True
+        entity["stale"] = True
+        entity["review_status"] = "stale"
+        updated.append(normalize_cad_entity(entity, created_by=actor))
+        events.append(
+            history_event(
+                "entity_association_updated",
+                entity_id,
+                actor=actor,
+                before=before,
+                after=entity,
+                changed_fields=["dimension", "geometry", "stale", "dirty"],
+                details={
+                    "changed_measured_entity_ids": sorted(changed_ids.intersection(refs)),
+                    "association_status": association_status,
+                    "review_required": True,
+                    "construction_release_allowed": False,
+                    "truth_label": "Dimension association refresh is drafting/review metadata only and does not update engineering quantities.",
+                },
+            )
+        )
+    return updated, events
+
+
+def build_dimension_annotation_trace(model: Dict[str, Any]) -> Dict[str, Any]:
+    dimensions: List[Dict[str, Any]] = []
+    annotations: List[Dict[str, Any]] = []
+    for entity in safe_list(safe_dict(model).get("entities")):
+        rec = safe_dict(entity)
+        entity_type = safe_str(rec.get("type"))
+        if entity_type == "dimension":
+            dim = safe_dict(rec.get("dimension"))
+            dimensions.append(
+                {
+                    "entity_id": safe_str(rec.get("id")),
+                    "dimension_type": safe_str(dim.get("dimension_type")),
+                    "measured_entity_refs": _dedupe(dim.get("measured_entity_refs") or []),
+                    "measurement_value": dim.get("measurement_value"),
+                    "units": safe_str(dim.get("units")),
+                    "precision": dim.get("precision"),
+                    "prefix": safe_str(dim.get("prefix")),
+                    "suffix": safe_str(dim.get("suffix")),
+                    "scale": dim.get("scale"),
+                    "style_id": safe_str(dim.get("style_id") or rec.get("style_id")),
+                    "layer_id": safe_str(dim.get("layer_id") or rec.get("layer_id")),
+                    "stale": bool(rec.get("stale") or rec.get("dirty")),
+                    "review_required": True,
+                    "construction_release_allowed": False,
+                }
+            )
+        elif entity_type in {"text", "leader", "callout", "note", "label", "hatch", "hatch_reference"}:
+            anno = safe_dict(rec.get("annotation"))
+            annotations.append(
+                {
+                    "entity_id": safe_str(rec.get("id")),
+                    "annotation_type": safe_str(anno.get("annotation_type"), entity_type),
+                    "text": safe_str(anno.get("text") or safe_dict(rec.get("geometry")).get("text")),
+                    "style_id": safe_str(anno.get("style_id") or rec.get("style_id")),
+                    "layer_id": safe_str(anno.get("layer_id") or rec.get("layer_id")),
+                    "review_required": True,
+                    "construction_release_allowed": False,
+                }
+            )
+    return {
+        "version": "cad_dimension_annotation_trace_v1",
+        "dimension_count": len(dimensions),
+        "annotation_count": len(annotations),
+        "dimensions": dimensions,
+        "annotations": annotations,
+        "review_required": True,
+        "construction_release_allowed": False,
+        "truth_label": "CAD dimensions and annotations are drafting/review aids only and do not imply compliance, approval, or construction readiness.",
+    }
 
 
 def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -700,6 +1034,7 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         entity_type = safe_str(entity.get("type"), "unknown")
         counts_by_type[entity_type] = counts_by_type.get(entity_type, 0) + 1
     review_blockers = blockers + safe_list(safe_dict(cad_source_confidence_summary(entities)).get("blockers"))
+    dimension_annotation_trace = build_dimension_annotation_trace({"entities": entities})
     revision_timeline = {
         "latest_revision_id": latest_revision_id,
         "entity_counts": {
@@ -738,6 +1073,7 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
             "construction_release_allowed": False,
         },
         "source_confidence": cad_source_confidence_summary(entities),
+        "dimension_annotation_trace": dimension_annotation_trace,
         "history": history,
         "history_events": history,
         "history_snapshots": history_snapshots,
@@ -931,7 +1267,36 @@ def apply_cad_entity_operation(
             else:
                 selected_entity_ids = _dedupe(selected_entity_ids + existing_hits)
     elif action.startswith("create_"):
-        entity = normalize_cad_entity({"id": safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1), "type": safe_str(operation.get("entity_type")), "geometry": safe_dict(operation.get("geometry")), "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID), "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID), "source": "chat_cad_command", "source_confidence": "chat_drafted_review_required", "review_status": "draft_review_required", "dirty": True}, created_by=actor)
+        entity_type = safe_str(operation.get("entity_type"))
+        if entity_type == "dimension":
+            measured_entities = [by_id[entity_id] for entity_id in target_ids if entity_id in by_id]
+            entity = create_cad_dimension_entity(
+                dimension_type=safe_str(operation.get("dimension_type"), "aligned"),
+                points=_points(safe_dict(operation.get("geometry")).get("points") or operation.get("points")),
+                measured_entities=measured_entities,
+                units=safe_str(operation.get("units"), "ft"),
+                precision=int(safe_float(operation.get("precision"), 2)),
+                prefix=safe_str(operation.get("prefix")),
+                suffix=safe_str(operation.get("suffix")),
+                scale=safe_float(operation.get("scale"), 1.0),
+                style_id=safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID),
+                layer_id=safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID),
+                entity_id=safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), target_ids, len(entities) + 1),
+                created_by=actor,
+            )
+        elif entity_type in {"text", "leader", "callout", "note", "label"}:
+            geometry = safe_dict(operation.get("geometry"))
+            entity = create_cad_annotation_entity(
+                annotation_type=entity_type,
+                text=safe_str(operation.get("text") or geometry.get("text")),
+                points=_points(geometry.get("points") or geometry.get("leader_points") or [geometry.get("insert")]),
+                style_id=safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID),
+                layer_id=safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID),
+                entity_id=safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1),
+                created_by=actor,
+            )
+        else:
+            entity = normalize_cad_entity({"id": safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1), "type": entity_type, "geometry": safe_dict(operation.get("geometry")), "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID), "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID), "source": "chat_cad_command", "source_confidence": "chat_drafted_review_required", "review_status": "draft_review_required", "dirty": True}, created_by=actor)
         by_id[entity["id"]] = entity
         created_ids.append(entity["id"])
         action_history.append(history_event("entity_created", entity["id"], actor=actor, details={"source": "chat", "review_required": True}))
@@ -1009,6 +1374,18 @@ def apply_cad_entity_operation(
             action_history.append(history_event(event_type, entity_id, actor=actor, details={"chat_action": action, "review_required": True}, before=before, after=by_id[entity_id]))
     else:
         safety_blockers.append(f"unsupported_cad_entity_operation:{action}")
+
+    association_changed_ids = _dedupe(updated_ids + deleted_ids)
+    if association_changed_ids:
+        refreshed_entities, association_events = refresh_dimension_associations(
+            list(by_id.values()),
+            changed_entity_ids=association_changed_ids,
+            actor=actor,
+        )
+        by_id = {safe_str(entity.get("id")): entity for entity in refreshed_entities if safe_str(entity.get("id"))}
+        refreshed_dimension_ids = [safe_str(event.get("entity_id")) for event in association_events if safe_str(event.get("entity_id"))]
+        updated_ids = _dedupe(updated_ids + refreshed_dimension_ids)
+        action_history.extend(association_events)
 
     next_model = {**source_model, "entities": list(by_id.values()), "history": _safe_history(source_model) + action_history, "selected_entity_ids": [safe_str(entity_id) for entity_id in selected_entity_ids if safe_str(entity_id) in by_id]}
     result = cad_entity_operation_result(understood_goal=understood_goal, selected_action=action, target_entities=target_ids, selected_entity_ids=selected_entity_ids, safety_blockers=safety_blockers, created_entity_ids=created_ids, updated_entity_ids=updated_ids, deleted_entity_ids=deleted_ids, next_best_action=safe_str(operation.get("next_best_action"), "Review the changed CAD entities before using them in downstream workflows."))
@@ -1341,10 +1718,13 @@ __all__ = [
     "apply_cad_entity_operation",
     "attach_cad_entity_model_to_result",
     "build_cad_entity_model",
+    "build_dimension_annotation_trace",
     "build_cad_history_snapshot",
     "cad_entity_operation_result",
     "cad_entities_to_site_object_candidates",
     "cad_source_confidence_summary",
+    "create_cad_annotation_entity",
+    "create_cad_dimension_entity",
     "entity_grip_points",
     "entity_bounding_box",
     "history_event",
@@ -1353,6 +1733,7 @@ __all__ = [
     "manual_drawn_objects_to_cad_entities",
     "normalize_cad_entity",
     "plan_pdf_elements_to_cad_entities",
+    "refresh_dimension_associations",
     "selected_entity_grips",
     "validate_cad_entity",
     "window_select_entities",
