@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 from backend.planning.existing_conditions import summarize_existing_conditions
 from backend.planning.existing_conditions_package import build_existing_conditions_package
 from backend.planning.existing_conditions_importers import (
@@ -547,8 +549,9 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertEqual(classified["mode"], mode)
 
     def test_geopackage_vector_import_classifies_layers(self) -> None:
-        import geopandas as gpd
-        from shapely.geometry import Polygon
+        gpd = pytest.importorskip("geopandas")
+        shapely_geometry = pytest.importorskip("shapely.geometry")
+        Polygon = shapely_geometry.Polygon
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "parcels.gpkg"
@@ -566,7 +569,7 @@ class ExistingConditionsImporterTests(unittest.TestCase):
 
     def test_geotiff_import_builds_surface(self) -> None:
         import numpy as np
-        import rasterio
+        rasterio = pytest.importorskip("rasterio")
         from rasterio.transform import from_origin
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -608,7 +611,7 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             )
 
     def test_las_import_samples_point_cloud(self) -> None:
-        import laspy
+        laspy = pytest.importorskip("laspy")
         import numpy as np
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -636,7 +639,7 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertEqual(merged["import_validation"]["import_matrix"][0]["status"], "review_required")
 
     def test_las_import_with_control_is_lidar_backed_not_survey_backed(self) -> None:
-        import laspy
+        laspy = pytest.importorskip("laspy")
         import numpy as np
 
         with tempfile.TemporaryDirectory() as tmpdir:
