@@ -241,8 +241,19 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         }
         drainage = {
             "coordination": {"preferred_outfall": {"name": "OUT-1", "x": 100.0, "y": 0.0, "z": 98.5}},
-            "surface_controls": {"primary_low_point": {"x": 100.0, "y": 0.0}},
-            "catchments": [{"name": "C-1", "runoff_c": 0.8}],
+            "surface_controls": {"primary_low_point": {"x": 100.0, "y": 0.0}, "source": "accepted_survey_control_fixture", "accepted_control": True},
+            "hydrology": {
+                "method": "rational_method",
+                "drainage_area_sf": 12000.0,
+                "intensity_in_hr": 4.25,
+                "time_of_concentration_min": 12.0,
+                "rainfall_source": "accepted_city_idf_fixture",
+                "standard_id": "CITY-STORM-2026",
+                "standard_status": "adopted",
+                "source_confidence": "accepted_controlled_fixture",
+                "assumptions": {"runoff_method": "rational_method", "time_of_concentration_min": 12.0},
+            },
+            "catchments": [{"name": "C-1", "runoff_c": 0.8, "area_sf": 12000.0}],
             "structures": [{"name": "IN-1", "estimated_flow_cfs": design_flow}],
             "detention_routing": [
                 {
@@ -285,6 +296,40 @@ class ProductionDepthArtifactTests(unittest.TestCase):
         self.assertEqual(validation["hgl_egl_trace"]["actual_egl_count"], 2)
         self.assertEqual(validation["hgl_egl_trace"]["confidence"], "calculated_from_available_network")
         self.assertTrue(validation["hgl_egl_trace"]["valid"])
+        self.assertEqual(enriched["hydrology_hydraulics_evidence"]["standard_id"], "CITY-STORM-2026")
+        self.assertEqual(enriched["hydrology_hydraulics_evidence"]["time_of_concentration_min"], 12.0)
+        self.assertEqual(enriched["hydrology_hydraulics_evidence"]["construction_release_allowed"], False)
+        self.assertIn("accepted rainfall/standard", validation["evidence"])
+        self.assertIn("runoff method/time of concentration assumptions", validation["evidence"])
+
+    def test_sparse_storm_inputs_surface_native_hydrology_hydraulics_blockers(self) -> None:
+        storm = {
+            "success": True,
+            "segments": [{"pipe": "P-SPARSE", "path": [[0.0, 0.0], [60.0, 0.0]], "flow_cfs": 1.0}],
+        }
+        drainage = {"structures": [{"name": "CB-SPARSE"}], "basins": []}
+
+        enriched = enrich_storm_production_depth(storm, drainage)
+        validation = validate_stormwater_depth({"meta": {"storm_pipes": enriched, "drainage": drainage}})
+
+        self.assertFalse(validation["production_ready"])
+        self.assertFalse(enriched["hydrology_hydraulics_evidence"]["construction_release_allowed"])
+        self.assertTrue(enriched["hydrology_hydraulics_evidence"]["engineer_review_required"])
+        self.assertIn("accepted_rainfall.standard", enriched["hydrology_hydraulics_evidence"]["missing_inputs"])
+        self.assertIn("time_of_concentration_min", enriched["hydrology_hydraulics_evidence"]["missing_inputs"])
+        for blocker in (
+            "Storm depth needs accepted rainfall/standard evidence.",
+            "Storm depth needs drainage area evidence.",
+            "Storm depth needs runoff method and time-of-concentration assumptions.",
+            "Storm depth needs drainage-selected basin/outfall target evidence.",
+            "Storm depth needs tailwater/backwater evidence.",
+            "Storm depth needs passing inlet capacity, spread, and bypass checks.",
+            "Storm depth needs HGL and EGL profiles from production hydraulic evidence.",
+            "Storm depth needs production detention stage-storage/outlet/drawdown routing.",
+            "Storm depth needs overflow routing evidence.",
+            "Storm depth needs survey/control/terrain evidence.",
+        ):
+            self.assertIn(blocker, validation["blockers"])
 
     def test_storm_backwater_validation_blocks_tailwater_surcharged_pipe(self) -> None:
         storm = {

@@ -316,6 +316,111 @@ def _storm_profile_evidence_from_segments(storm: Dict[str, Any], segments: Seque
     }
 
 
+def _storm_hydrology_hydraulics_evidence(
+    storm: Dict[str, Any],
+    drainage: Dict[str, Any],
+    segments: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    hydrology = safe_dict(drainage.get("hydrology") or storm.get("hydrology"))
+    rainfall = safe_dict(hydrology.get("rainfall") or drainage.get("rainfall") or storm.get("rainfall"))
+    assumptions = safe_dict(hydrology.get("assumptions") or drainage.get("assumptions"))
+    catchments = [safe_dict(item) for item in safe_list(drainage.get("catchments") or storm.get("catchments"))]
+    stats = safe_dict(drainage.get("stats") or storm.get("stats"))
+    drainage_area_sf = max(
+        safe_float(hydrology.get("drainage_area_sf"), 0.0),
+        safe_float(stats.get("total_contributing_area_sf"), 0.0),
+        sum(
+            max(
+                0.0,
+                safe_float(
+                    item.get("area_sf"),
+                    safe_float(item.get("tributary_area_sf"), safe_float(item.get("contributing_area_sf"), 0.0)),
+                ),
+            )
+            for item in catchments
+        ),
+        sum(max(0.0, safe_float(segment.get("tributary_area_sf"), safe_float(segment.get("upstream_cumulative_area_sf"), 0.0))) for segment in segments),
+    )
+    runoff_coefficients = [
+        value
+        for item in catchments
+        if (value := (item.get("runoff_c") or item.get("runoff_coefficient"))) not in (None, "", [], {})
+    ]
+    if not runoff_coefficients and drainage.get("runoff_coefficient") not in (None, "", [], {}):
+        runoff_coefficients = [drainage.get("runoff_coefficient")]
+    curve_numbers = [item.get("curve_number") for item in catchments if item.get("curve_number") not in (None, "", [], {})]
+    runoff_method = safe_str(hydrology.get("method") or hydrology.get("runoff_method") or assumptions.get("runoff_method") or drainage.get("runoff_method"))
+    if not runoff_method and runoff_coefficients:
+        runoff_method = "rational_method"
+    elif not runoff_method and curve_numbers:
+        runoff_method = "curve_number"
+    rainfall_intensity = max(
+        safe_float(hydrology.get("intensity_in_hr"), 0.0),
+        safe_float(rainfall.get("intensity_in_hr"), 0.0),
+        safe_float(drainage.get("rainfall_intensity_in_hr"), 0.0),
+    )
+    standard = safe_dict(hydrology.get("standard") or rainfall.get("standard"))
+    standard_id = safe_str(hydrology.get("standard_id") or rainfall.get("standard_id") or standard.get("standard_id"))
+    standard_status = safe_str(
+        hydrology.get("standard_status")
+        or rainfall.get("standard_status")
+        or standard.get("standard_status")
+        or standard.get("acceptance_status")
+    )
+    tc_min = max(
+        safe_float(hydrology.get("time_of_concentration_min"), 0.0),
+        safe_float(assumptions.get("time_of_concentration_min"), 0.0),
+    )
+    missing_inputs: List[str] = []
+    if rainfall_intensity <= 0.0:
+        missing_inputs.append("accepted_rainfall.intensity_in_hr")
+    if not standard_id or standard_status.lower() not in {"accepted", "adopted", "approved"}:
+        missing_inputs.append("accepted_rainfall.standard")
+    if drainage_area_sf <= 0.0:
+        missing_inputs.append("drainage_area")
+    if not runoff_method:
+        missing_inputs.append("runoff_method")
+    if not runoff_coefficients and not curve_numbers:
+        missing_inputs.append("runoff_coefficient_or_curve_number")
+    if tc_min <= 0.0:
+        missing_inputs.append("time_of_concentration_min")
+    source_confidence = safe_str(hydrology.get("source_confidence") or rainfall.get("source_confidence"))
+    if not source_confidence:
+        source_confidence = "review_depth" if missing_inputs else "accepted_fixture"
+    target = safe_dict(storm.get("target_outfall") or storm.get("outfall_target_metadata") or safe_dict(drainage.get("coordination")).get("preferred_outfall"))
+    return {
+        "drainage_area_sf": round(drainage_area_sf, 3),
+        "drainage_area_ac": round(drainage_area_sf / 43560.0, 4) if drainage_area_sf > 0.0 else 0.0,
+        "runoff_method": runoff_method,
+        "runoff_coefficients": runoff_coefficients,
+        "curve_numbers": curve_numbers,
+        "rainfall_intensity_in_hr": round(rainfall_intensity, 3),
+        "rainfall_source": safe_str(hydrology.get("rainfall_source") or rainfall.get("source") or rainfall.get("rainfall_source")),
+        "standard_id": standard_id,
+        "standard_status": standard_status,
+        "standard_accepted": standard_status.lower() in {"accepted", "adopted", "approved"} or standard.get("standard_accepted") is True,
+        "time_of_concentration_min": round(tc_min, 3),
+        "assumptions": {
+            "runoff_method": runoff_method,
+            "runoff_coefficients": runoff_coefficients,
+            "curve_numbers": curve_numbers,
+            "time_of_concentration_min": round(tc_min, 3),
+        },
+        "standards_dependency": {
+            "standard_id": standard_id,
+            "status": standard_status,
+            "rainfall_source": safe_str(hydrology.get("rainfall_source") or rainfall.get("source") or rainfall.get("rainfall_source")),
+        },
+        "source_confidence": source_confidence,
+        "tailwater_dependency": "tailwater_elev_ft_required",
+        "outfall_dependency": safe_str(target.get("name") or target.get("target_name")),
+        "engineer_review_required": True,
+        "construction_release_allowed": False,
+        "missing_inputs": missing_inputs,
+        "truth_label": "Hydrology/hydraulics depth exposes inputs, assumptions, rainfall standard dependency, source confidence, and outfall/tailwater dependencies; engineer review remains required.",
+    }
+
+
 def _stage_storage_rows(basin: Dict[str, Any], design: Dict[str, Any]) -> List[Dict[str, Any]]:
     provided = max(0.0, safe_float(design.get("provided_storage_cf"), 0.0))
     required = max(0.0, safe_float(design.get("required_storage_cf"), 0.0))
@@ -683,6 +788,7 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     if target_valid and drainage_target:
         enriched["target_outfall"] = {**drainage_target, "truth_source": "drainage_target_validation"}
     segments = [safe_dict(item) for item in safe_list(enriched.get("segments"))]
+    enriched["hydrology_hydraulics_evidence"] = _storm_hydrology_hydraulics_evidence(enriched, drainage_meta, segments)
     hydraulic_request = _storm_hydraulic_request_from_summary(enriched, segments)
     if hydraulic_request is not None:
         hydraulic_result = analyze_storm_hydraulics(hydraulic_request)

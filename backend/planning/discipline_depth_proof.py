@@ -19,6 +19,8 @@ DISCIPLINE_PROOF_REQUIREMENTS: Dict[str, List[Dict[str, Any]]] = {
         {"id": "pad_road_basin_interaction", "label": "Pad/road/basin interaction", "evidence": ("ADA path or drainage repair expected/actual evidence", "drainage-aware grading repair evidence"), "blocker_terms": ("roadway", "basin", "drainage")},
     ],
     "storm_pipe": [
+        {"id": "accepted_rainfall_standard", "label": "Accepted rainfall/standard", "evidence": ("accepted rainfall/standard",), "blocker_terms": ("rainfall", "standard")},
+        {"id": "runoff_tc", "label": "Runoff method and Tc", "evidence": ("runoff method/time of concentration assumptions",), "blocker_terms": ("runoff", "time-of-concentration")},
         {"id": "basin_outfall_dependency", "label": "Basin/outfall dependency", "evidence": ("drainage basin/outfall target",), "blocker_terms": ("basin/outfall", "outfall", "target")},
         {"id": "hgl_egl", "label": "HGL/EGL evidence", "evidence": ("HGL/EGL profile rows", "hydraulic_validation"), "blocker_terms": ("HGL", "EGL", "hydraulic")},
         {"id": "inlet_spread", "label": "Inlet spread and bypass", "evidence": ("inlet capacity/spread/bypass checks",), "blocker_terms": ("inlet", "spread", "bypass")},
@@ -27,6 +29,9 @@ DISCIPLINE_PROOF_REQUIREMENTS: Dict[str, List[Dict[str, Any]]] = {
         {"id": "storm_depth_validation", "label": "Storm depth validation", "evidence": ("depth_validation",), "blocker_terms": ("storm depth", "tailwater", "tributary")},
     ],
     "hydrology": [
+        {"id": "accepted_rainfall_standard", "label": "Accepted rainfall/standard", "evidence": ("accepted rainfall/standard",), "blocker_terms": ("rainfall", "standard")},
+        {"id": "drainage_area", "label": "Drainage area", "evidence": ("drainage area",), "blocker_terms": ("drainage area", "tributary")},
+        {"id": "runoff_tc", "label": "Runoff method and Tc", "evidence": ("runoff method/time of concentration assumptions",), "blocker_terms": ("runoff", "time-of-concentration")},
         {"id": "basin_outfall_dependency", "label": "Basin/outfall dependency", "evidence": ("drainage basin/outfall target",), "blocker_terms": ("basin/outfall", "outfall")},
         {"id": "detention_routing", "label": "Detention routing", "evidence": ("detention stage-storage/routing", "hydrology_or_detention"), "blocker_terms": ("detention", "routing")},
         {"id": "overflow_paths", "label": "Overflow paths", "evidence": ("overflow routing/capacity",), "blocker_terms": ("overflow",)},

@@ -117,8 +117,19 @@ def _complete_storm_hgl_fixture() -> tuple:
     drainage = {
         "success": True,
         "source": "drainage_engine",
+        "hydrology": {
+            "method": "rational_method",
+            "drainage_area_sf": 12000.0,
+            "intensity_in_hr": 4.25,
+            "time_of_concentration_min": 12.0,
+            "rainfall_source": "accepted_city_idf_fixture",
+            "standard_id": "CITY-STORM-2026",
+            "standard_status": "adopted",
+            "source_confidence": "accepted_controlled_fixture",
+            "assumptions": {"runoff_method": "rational_method", "time_of_concentration_min": 12.0},
+        },
         "coordination": {"preferred_outfall": {"name": "OUT-HGL-1", "target_name": "OUT-HGL-1", "x": 100.0, "y": 0.0, "z": 98.5}},
-        "surface_controls": {"primary_low_point": {"x": 100.0, "y": 0.0, "z": 98.5}},
+        "surface_controls": {"primary_low_point": {"x": 100.0, "y": 0.0, "z": 98.5}, "source": "accepted_survey_control_fixture", "accepted_control": True},
         "surface_guidance": {"surface_source": "terrain", "surface_from_grading": True},
         "catchments": [{"name": "C-HGL-1", "runoff_c": 0.8, "runoff_coefficient": 0.8}],
         "stats": {
@@ -477,6 +488,10 @@ class EngineDepthAuditTests(unittest.TestCase):
         self.assertEqual(hydrology["score"], 100.0)
         self.assertEqual(storm["first_failing_layer"], "")
         self.assertEqual(hydrology["first_failing_layer"], "")
+        storm_proof_ids = {item["id"] for item in storm["proof_checklist"]}
+        hydrology_proof_ids = {item["id"] for item in hydrology["proof_checklist"]}
+        self.assertIn("accepted_rainfall_standard", storm_proof_ids)
+        self.assertIn("runoff_tc", hydrology_proof_ids)
         self.assertFalse(report["construction_release_allowed"])
         self.assertEqual(report["summary"]["construction_gate_recommendation"], "block_construction_not_production_depth")
 

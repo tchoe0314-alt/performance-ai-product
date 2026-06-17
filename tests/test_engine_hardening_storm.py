@@ -9,6 +9,21 @@ from core.project_manager import ProjectManager
 def _drainage_with_targets(selected_name: str = "OUTLET-CANON") -> dict:
     return {
         "success": True,
+        "hydrology": {
+            "method": "rational_method",
+            "drainage_area_sf": 30000.0,
+            "intensity_in_hr": 4.0,
+            "time_of_concentration_min": 11.0,
+            "rainfall_source": "accepted_city_idf_fixture",
+            "standard_id": "CITY-STORM-2026",
+            "standard_status": "adopted",
+            "source_confidence": "accepted_controlled_fixture",
+            "assumptions": {"runoff_method": "rational_method", "time_of_concentration_min": 11.0},
+        },
+        "catchments": [
+            {"name": "C-INLET-1", "area_sf": 12000.0, "runoff_c": 0.85, "time_of_concentration_min": 11.0},
+            {"name": "C-INLET-2", "area_sf": 18000.0, "runoff_c": 0.85, "time_of_concentration_min": 11.0},
+        ],
         "structures": [
             {
                 "name": "INLET-1",
@@ -19,6 +34,8 @@ def _drainage_with_targets(selected_name: str = "OUTLET-CANON") -> dict:
                 "z": 101.0,
                 "contributing_area_sf": 12000.0,
                 "estimated_flow_cfs": 0.9,
+                "capacity_cfs": 10.0,
+                "gutter_spread_limit_ft": 8.0,
                 "target_name": selected_name,
                 "tributary_basin_name": "BASIN-CANON",
             },
@@ -31,6 +48,8 @@ def _drainage_with_targets(selected_name: str = "OUTLET-CANON") -> dict:
                 "z": 100.5,
                 "contributing_area_sf": 18000.0,
                 "estimated_flow_cfs": 1.25,
+                "capacity_cfs": 10.0,
+                "gutter_spread_limit_ft": 8.0,
                 "target_name": selected_name,
                 "tributary_basin_name": "BASIN-CANON",
             },
@@ -54,6 +73,27 @@ def _drainage_with_targets(selected_name: str = "OUTLET-CANON") -> dict:
                     "release_cfs": 0.35,
                     "drawdown_hours": 18.0,
                     "adequacy_status": "adequate",
+                    "routing_source": "hydrograph_engine",
+                    "routing_method": "stage_storage_hydrograph",
+                    "peak_inflow_cfs": 2.15,
+                    "stage_storage": [
+                        {"elevation_ft": 95.0, "storage_cf": 0.0},
+                        {"elevation_ft": 98.0, "storage_cf": 1800.0},
+                        {"elevation_ft": 100.0, "storage_cf": 3600.0},
+                    ],
+                    "outlet_structure": {
+                        "type": "orifice",
+                        "invert_elev_ft": 94.0,
+                        "release_cfs": 0.35,
+                        "source": "approved_outlet_fixture",
+                    },
+                    "overflow_elev_ft": 100.5,
+                    "overflow_spillway": {
+                        "crest_elev_ft": 100.5,
+                        "capacity_cfs": 5.0,
+                        "required_capacity_cfs": 3.0,
+                        "source": "approved_spillway_fixture",
+                    },
                 },
                 "outlet_structure": {
                     "name": selected_name,
@@ -80,6 +120,11 @@ def _drainage_with_targets(selected_name: str = "OUTLET-CANON") -> dict:
         "surface_guidance": {
             "preferred_targets": [{"target_name": selected_name, "x": 140.0, "y": 18.0, "z": 94.0}],
             "surface_source": "terrain",
+        },
+        "surface_controls": {
+            "primary_low_point": {"x": 140.0, "y": 18.0, "z": 94.0},
+            "source": "accepted_survey_control_fixture",
+            "accepted_control": True,
         },
     }
 
@@ -133,6 +178,8 @@ class EngineHardeningStormTests(unittest.TestCase):
         self.assertTrue(any(float(node.get("upstream_cumulative_area_sf", 0.0)) > 0.0 for node in nodes))
         self.assertGreater(storm["hydraulic_summary"]["system_tributary_area_sf"], 0.0)
         self.assertGreater(storm["hydraulic_summary"]["system_tributary_runoff_cfs"], 0.0)
+        self.assertEqual(project.meta["drainage_canonical"]["hydrology"]["standard_status"], "adopted")
+        self.assertEqual(project.meta["drainage_canonical"]["hydrology"]["time_of_concentration_min"], 11.0)
         self.assertTrue(storm["graph_validation"])
         self.assertTrue(storm["hydraulic_validation"])
         self.assertIn("controlling_segment", storm)
