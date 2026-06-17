@@ -833,6 +833,98 @@ def _has_valid_overflow_routing(drainage: Dict[str, Any], storm: Dict[str, Any])
     )
 
 
+def _storm_hydrology_proof(storm: Dict[str, Any], drainage: Dict[str, Any]) -> Dict[str, Any]:
+    proof = safe_dict(storm.get("hydrology_hydraulics_evidence") or drainage.get("hydrology_hydraulics_evidence"))
+    hydrology = safe_dict(drainage.get("hydrology") or storm.get("hydrology"))
+    rainfall = safe_dict(proof.get("rainfall") or hydrology.get("rainfall") or drainage.get("rainfall") or storm.get("rainfall"))
+    assumptions = safe_dict(proof.get("assumptions") or hydrology.get("assumptions") or drainage.get("assumptions"))
+    standard = safe_dict(proof.get("standard") or hydrology.get("standard") or rainfall.get("standard"))
+    area_sf = max(
+        safe_float(proof.get("drainage_area_sf"), 0.0),
+        safe_float(hydrology.get("drainage_area_sf"), 0.0),
+        safe_float(safe_dict(drainage.get("stats")).get("total_contributing_area_sf"), 0.0),
+    )
+    if area_sf <= 0.0:
+        area_sf = sum(
+            max(0.0, safe_float(safe_dict(row).get("area_sf") or safe_dict(row).get("tributary_area_sf"), 0.0))
+            for row in safe_list(drainage.get("catchments") or storm.get("catchments"))
+        )
+    runoff_values = safe_list(proof.get("runoff_coefficients")) or safe_list(assumptions.get("runoff_coefficients"))
+    curve_numbers = safe_list(proof.get("curve_numbers")) or safe_list(assumptions.get("curve_numbers"))
+    catchments = [safe_dict(item) for item in safe_list(drainage.get("catchments") or storm.get("catchments"))]
+    if not runoff_values:
+        runoff_values = [
+            item.get("runoff_c") or item.get("runoff_coefficient")
+            for item in catchments
+            if _present(item.get("runoff_c") or item.get("runoff_coefficient"))
+        ]
+    if not curve_numbers:
+        curve_numbers = [item.get("curve_number") for item in catchments if _present(item.get("curve_number"))]
+    tc_min = max(
+        safe_float(proof.get("time_of_concentration_min"), 0.0),
+        safe_float(assumptions.get("time_of_concentration_min"), 0.0),
+        safe_float(hydrology.get("time_of_concentration_min"), 0.0),
+    )
+    rainfall_intensity = max(
+        safe_float(proof.get("rainfall_intensity_in_hr"), 0.0),
+        safe_float(rainfall.get("intensity_in_hr"), 0.0),
+        safe_float(hydrology.get("intensity_in_hr"), 0.0),
+        safe_float(drainage.get("rainfall_intensity_in_hr"), 0.0),
+    )
+    standard_status = safe_str(
+        proof.get("standard_status")
+        or standard.get("standard_status")
+        or standard.get("acceptance_status")
+        or rainfall.get("standard_status")
+        or rainfall.get("acceptance_status")
+    ).lower()
+    standard_row = {
+        **standard,
+        "standard_status": standard_status,
+        "standard_accepted": proof.get("standard_accepted", standard.get("standard_accepted", rainfall.get("standard_accepted"))),
+        "source": proof.get("rainfall_source") or rainfall.get("source") or standard.get("source"),
+    }
+    method = safe_str(proof.get("runoff_method") or assumptions.get("runoff_method") or hydrology.get("method") or drainage.get("runoff_method"))
+    source_confidence = safe_str(proof.get("source_confidence") or hydrology.get("source_confidence") or rainfall.get("source_confidence"))
+    return {
+        "drainage_area_sf": area_sf,
+        "runoff_method": method,
+        "runoff_coefficients": runoff_values,
+        "curve_numbers": curve_numbers,
+        "time_of_concentration_min": tc_min,
+        "rainfall_intensity_in_hr": rainfall_intensity,
+        "rainfall_source": safe_str(proof.get("rainfall_source") or rainfall.get("source") or rainfall.get("rainfall_source")),
+        "standard_id": safe_str(proof.get("standard_id") or standard.get("standard_id") or rainfall.get("standard_id")),
+        "standard_status": standard_status,
+        "standard_valid": bool(rainfall_intensity > 0.0 and _has_accepted_standard(standard_row) and _row_is_production_evidence(standard_row)),
+        "runoff_tc_valid": bool(method and tc_min > 0.0 and (runoff_values or curve_numbers)),
+        "source_confidence": source_confidence,
+    }
+
+
+def _has_survey_control_terrain_evidence(drainage: Dict[str, Any], storm: Dict[str, Any]) -> bool:
+    records = [
+        safe_dict(drainage.get("terrain_evidence")),
+        safe_dict(storm.get("terrain_evidence")),
+        safe_dict(drainage.get("survey_control")),
+        safe_dict(storm.get("survey_control")),
+        safe_dict(drainage.get("surface_controls")),
+        safe_dict(safe_dict(drainage.get("surface_guidance")).get("surface_source") and drainage.get("surface_guidance")),
+    ]
+    for rec in records:
+        if not rec:
+            continue
+        if rec.get("valid") is False:
+            continue
+        if _text_has_concept_marker(rec.get("source") or rec.get("source_quality") or rec.get("surface_source")):
+            continue
+        if rec.get("accepted_control") is True or rec.get("survey_control_accepted") is True:
+            return True
+        if _present(rec.get("control_points")) or _present(rec.get("primary_low_point")) or _present(rec.get("surface_source")):
+            return True
+    return False
+
+
 def _has_valid_drainage_target(storm: Dict[str, Any], drainage: Dict[str, Any]) -> bool:
     validation = safe_dict(storm.get("drainage_target_validation") or drainage.get("drainage_target_validation"))
     if validation:
@@ -844,7 +936,12 @@ def _has_valid_drainage_target(storm: Dict[str, Any], drainage: Dict[str, Any]) 
 
 def _storm_hgl_egl_expected_actual(storm: Dict[str, Any], hgl_rows: List[Dict[str, Any]], egl_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     profile_evidence = safe_dict(storm.get("hydraulic_profile_evidence"))
-    valid = bool(hgl_rows and egl_rows and ((_has_production_rows(hgl_rows) and _has_production_rows(egl_rows)) or storm.get("hydraulic_source") == "engine"))
+    valid = bool(
+        hgl_rows
+        and egl_rows
+        and not safe_list(profile_evidence.get("missing_profile_inputs"))
+        and ((_has_production_rows(hgl_rows) and _has_production_rows(egl_rows)) or storm.get("hydraulic_source") == "engine")
+    )
     return {
         "expected": "production_hgl_and_egl_profile_rows",
         "actual_hgl_count": len(hgl_rows),
@@ -860,12 +957,13 @@ def _storm_hgl_egl_expected_actual(storm: Dict[str, Any], hgl_rows: List[Dict[st
 def _storm_tailwater_expected_actual(storm: Dict[str, Any]) -> Dict[str, Any]:
     tailwater = storm.get("tailwater_elev_ft")
     backwater = safe_dict(storm.get("backwater_validation"))
+    backwater_valid = backwater.get("valid") is True
     return {
         "expected": "tailwater_elev_ft_present_with_backwater_context",
         "actual_tailwater_elev_ft": tailwater,
         "backwater_valid": backwater.get("valid"),
         "tailwater_controls_hgl": backwater.get("tailwater_controls_hgl"),
-        "valid": _present(tailwater),
+        "valid": _present(tailwater) and backwater_valid,
     }
 
 
@@ -881,7 +979,7 @@ def _storm_inlet_expected_actual(inlet_checks: List[Dict[str, Any]]) -> List[Dic
                 "actual_bypass_cfs": safe_float(inlet.get("bypass_cfs"), 0.0),
                 "expected_spread_lte_ft": safe_float(inlet.get("spread_limit_ft"), safe_float(inlet.get("gutter_spread_limit_ft"), 0.0)),
                 "actual_spread_ft": safe_float(inlet.get("spread_ft"), 0.0),
-                "valid": inlet.get("valid") is True,
+                "valid": inlet.get("valid") is True and _present(inlet.get("spread_ft")) and _present(inlet.get("spread_limit_ft")),
             }
         )
     return rows
@@ -1030,15 +1128,21 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     inlet_trace = _storm_inlet_expected_actual(inlet_checks)
     detention_trace = _storm_detention_expected_actual(detention_rows)
     overflow_trace = _storm_overflow_expected_actual(drainage, storm)
+    hydrology_proof = _storm_hydrology_proof(storm, drainage)
+    survey_control_valid = _has_survey_control_terrain_evidence(drainage, storm)
     checks = [
+        _check("accepted_rainfall_standard", hydrology_proof["standard_valid"], evidence="accepted rainfall/standard", blocker="Storm depth needs accepted rainfall/standard evidence."),
+        _check("drainage_area", safe_float(hydrology_proof["drainage_area_sf"], 0.0) > 0.0, evidence="drainage area", blocker="Storm depth needs drainage area evidence."),
+        _check("runoff_tc_assumptions", hydrology_proof["runoff_tc_valid"], evidence="runoff method/time of concentration assumptions", blocker="Storm depth needs runoff method and time-of-concentration assumptions."),
         _check("basin_outfall_target", _has_valid_drainage_target(storm, drainage), evidence="drainage basin/outfall target", blocker="Storm depth needs drainage-selected basin/outfall target evidence."),
         _check("tributary_areas", any(safe_float(seg.get("tributary_area_sf") or seg.get("upstream_cumulative_area_sf"), 0.0) > 0.0 for seg in segments) or bool(catchments), evidence="tributary areas/catchments", blocker="Storm depth needs true tributary areas tied to pipes or catchments."),
         _check("runoff_coefficients", any(_present(safe_dict(item).get("runoff_c") or safe_dict(item).get("runoff_coefficient")) for item in catchments) or _present(drainage.get("runoff_coefficient")), evidence="runoff coefficients", blocker="Storm depth needs runoff coefficients by catchment/surface."),
+        _check("survey_control_terrain", survey_control_valid, evidence="survey/control/terrain evidence", blocker="Storm depth needs survey/control/terrain evidence."),
         _check("hgl_egl_profiles", hgl_egl_trace["valid"], evidence="HGL/EGL profile rows", blocker="Storm depth needs HGL and EGL profiles from production hydraulic evidence."),
         _check("tailwater", tailwater_trace["valid"], evidence="tailwater elevation", blocker="Storm depth needs tailwater/backwater evidence."),
         _check(
             "inlet_capacity",
-            _all_rows_valid(inlet_checks),
+            _all_rows_valid(inlet_trace),
             evidence="inlet capacity/spread/bypass checks",
             blocker="Storm depth needs passing inlet capacity, spread, and bypass checks.",
         ),
@@ -1063,7 +1167,9 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
             "inlet_capacity_trace": inlet_trace,
             "detention_routing_trace": detention_trace,
             "overflow_capacity_trace": overflow_trace,
-            "expected_actual_checks": [hgl_egl_trace, tailwater_trace, *inlet_trace, *detention_trace, *overflow_trace],
+            "hydrology_hydraulics_trace": hydrology_proof,
+            "survey_control_terrain_trace": {"valid": survey_control_valid},
+            "expected_actual_checks": [hydrology_proof, {"valid": survey_control_valid}, hgl_egl_trace, tailwater_trace, *inlet_trace, *detention_trace, *overflow_trace],
         }
     )
     return result
