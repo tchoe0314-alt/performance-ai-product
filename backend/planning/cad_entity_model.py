@@ -255,6 +255,228 @@ def hit_test_entities(entities: List[Dict[str, Any]], point: Dict[str, Any], *, 
     return [item for item in matches if item]
 
 
+def _bbox_intersects(a: Dict[str, float], b: Dict[str, float]) -> bool:
+    return not (a["max_x"] < b["min_x"] or a["min_x"] > b["max_x"] or a["max_y"] < b["min_y"] or a["min_y"] > b["max_y"])
+
+
+def window_select_entities(entities: List[Dict[str, Any]], window: Dict[str, Any]) -> List[str]:
+    p1 = _point(window.get("start") or window.get("min") or window.get("p1"))
+    p2 = _point(window.get("end") or window.get("max") or window.get("p2"))
+    if p1 is None or p2 is None:
+        return []
+    selection_box = {
+        "min_x": min(p1["x"], p2["x"]),
+        "min_y": min(p1["y"], p2["y"]),
+        "max_x": max(p1["x"], p2["x"]),
+        "max_y": max(p1["y"], p2["y"]),
+    }
+    matches: List[str] = []
+    for entity in entities:
+        bbox = entity_bounding_box(entity)
+        entity_id = safe_str(entity.get("id"))
+        if bbox and entity_id and _bbox_intersects(selection_box, bbox):
+            matches.append(entity_id)
+    return matches
+
+
+def _grip(grip_id: str, kind: str, point: Dict[str, float], *, label: str = "", index: Optional[int] = None) -> Dict[str, Any]:
+    rec: Dict[str, Any] = {
+        "grip_id": grip_id,
+        "kind": kind,
+        "point": {"x": float(point["x"]), "y": float(point["y"])},
+        "label": label or grip_id,
+    }
+    if index is not None:
+        rec["index"] = index
+    return rec
+
+
+def entity_grip_points(entity: Dict[str, Any]) -> List[Dict[str, Any]]:
+    geometry = safe_dict(entity.get("geometry"))
+    entity_type = safe_str(entity.get("type"))
+    grips: List[Dict[str, Any]] = []
+    if entity_type == "line":
+        start = _point(geometry.get("start"))
+        end = _point(geometry.get("end"))
+        if start and end:
+            grips.append(_grip("start", "line_endpoint", start, label="start"))
+            grips.append(_grip("end", "line_endpoint", end, label="end"))
+            grips.append(_grip("midpoint", "line_midpoint", {"x": (start["x"] + end["x"]) / 2, "y": (start["y"] + end["y"]) / 2}, label="midpoint"))
+    elif entity_type in {"polyline", "polygon", "hatch"}:
+        for index, point in enumerate(_points(geometry.get("points") or geometry.get("vertices") or geometry.get("boundary"))):
+            grips.append(_grip(f"vertex:{index}", f"{entity_type}_vertex", point, label=f"vertex {index + 1}", index=index))
+    elif entity_type == "rectangle":
+        bbox = entity_bounding_box(entity)
+        if bbox:
+            corners = [("corner:nw", {"x": bbox["min_x"], "y": bbox["min_y"]}), ("corner:ne", {"x": bbox["max_x"], "y": bbox["min_y"]}), ("corner:se", {"x": bbox["max_x"], "y": bbox["max_y"]}), ("corner:sw", {"x": bbox["min_x"], "y": bbox["max_y"]})]
+            edges = [("edge:n", {"x": (bbox["min_x"] + bbox["max_x"]) / 2, "y": bbox["min_y"]}), ("edge:e", {"x": bbox["max_x"], "y": (bbox["min_y"] + bbox["max_y"]) / 2}), ("edge:s", {"x": (bbox["min_x"] + bbox["max_x"]) / 2, "y": bbox["max_y"]}), ("edge:w", {"x": bbox["min_x"], "y": (bbox["min_y"] + bbox["max_y"]) / 2})]
+            for grip_id, point in corners:
+                grips.append(_grip(grip_id, "rectangle_corner", point, label=grip_id.replace(":", " ")))
+            for grip_id, point in edges:
+                grips.append(_grip(grip_id, "rectangle_edge", point, label=grip_id.replace(":", " ")))
+    elif entity_type == "circle":
+        center = _point(geometry.get("center"))
+        radius = safe_float(geometry.get("radius"), None)
+        if center and radius and radius > 0:
+            grips.append(_grip("center", "circle_center", center, label="center"))
+            grips.append(_grip("radius:e", "circle_radius", {"x": center["x"] + radius, "y": center["y"]}, label="radius"))
+    elif entity_type == "text":
+        insert = _point(geometry.get("insert") or geometry.get("position"))
+        if insert:
+            grips.append(_grip("insert", "text_insertion", insert, label="insertion point"))
+    elif entity_type == "dimension":
+        start = _point(geometry.get("start"))
+        end = _point(geometry.get("end"))
+        points = _points(geometry.get("points"))
+        if not start and len(points) >= 1:
+            start = points[0]
+        if not end and len(points) >= 2:
+            end = points[1]
+        if start:
+            grips.append(_grip("start", "dimension_endpoint", start, label="start"))
+        if end:
+            grips.append(_grip("end", "dimension_endpoint", end, label="end"))
+    elif entity_type == "block_reference":
+        insert = _point(geometry.get("insert") or geometry.get("origin"))
+        if insert:
+            grips.append(_grip("insert", "block_insertion", insert, label="insertion point"))
+    return [{"entity_id": safe_str(entity.get("id")), **item} for item in grips]
+
+
+def selected_entity_grips(model: Dict[str, Any]) -> List[Dict[str, Any]]:
+    selected = set(_dedupe(safe_dict(model).get("selected_entity_ids") or safe_dict(safe_dict(model).get("selection")).get("selected_entity_ids") or []))
+    grips: List[Dict[str, Any]] = []
+    for entity in safe_list(safe_dict(model).get("entities")):
+        rec = safe_dict(entity)
+        if safe_str(rec.get("id")) in selected:
+            grips.extend(entity_grip_points(rec))
+    return grips
+
+
+def _edit_blocker(entity: Dict[str, Any]) -> str:
+    entity_type = safe_str(entity.get("type"))
+    if bool(entity.get("locked")) or entity_type == "underlay_reference" or safe_str(entity.get("source")) in {"reference", "underlay", "external_reference"}:
+        return "locked/reference/underlay entity"
+    if entity_type not in {"line", "polyline", "polygon", "rectangle", "circle", "text", "dimension", "block_reference"}:
+        return "unsupported entity type"
+    return ""
+
+
+def _normalized_edit_blockers(entity: Dict[str, Any]) -> List[str]:
+    result = validate_cad_entity(entity, known_layer_ids=[safe_str(entity.get("layer_id"), CAD_DEFAULT_LAYER_ID)], known_style_ids=[safe_str(entity.get("style_id"), CAD_DEFAULT_STYLE_ID)])
+    blockers: List[str] = []
+    for blocker in safe_list(result.get("blockers")):
+        reason = safe_str(blocker)
+        if reason == "self_intersection":
+            blockers.append("self-intersection")
+        elif reason.startswith("invalid_geometry") or reason in {"missing_entity_id", "unsupported_entity_type"}:
+            blockers.append("invalid geometry")
+    return _dedupe(blockers)
+
+
+def _geometry_points_key(geometry: Dict[str, Any]) -> str:
+    for key in ("points", "vertices", "boundary"):
+        if key in geometry:
+            return key
+    return "points"
+
+
+def _move_entity_grip(entity: Dict[str, Any], grip_id: str, new_point: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    target = _point(new_point)
+    if target is None:
+        return None, ["invalid geometry"]
+    edit_blocker = _edit_blocker(entity)
+    if edit_blocker:
+        return None, [edit_blocker]
+    geometry = deepcopy(safe_dict(entity.get("geometry")))
+    entity_type = safe_str(entity.get("type"))
+    before_grips = {safe_str(item.get("grip_id")): item for item in entity_grip_points(entity)}
+    active_grip = safe_dict(before_grips.get(grip_id))
+    if not active_grip:
+        return None, ["unsupported entity type"]
+    current = _point(active_grip.get("point")) or target
+    delta = {"x": target["x"] - current["x"], "y": target["y"] - current["y"]}
+    if entity_type == "line":
+        if grip_id in {"start", "end"}:
+            geometry[grip_id] = target
+        elif grip_id == "midpoint":
+            geometry = _transform_geometry(geometry, dx=delta["x"], dy=delta["y"])
+        else:
+            return None, ["unsupported entity type"]
+    elif entity_type in {"polyline", "polygon"}:
+        index = safe_dict(active_grip).get("index")
+        if not isinstance(index, int):
+            return None, ["unsupported entity type"]
+        key = _geometry_points_key(geometry)
+        points = _points(geometry.get(key))
+        if index < 0 or index >= len(points):
+            return None, ["invalid geometry"]
+        points[index] = target
+        geometry[key] = points
+    elif entity_type == "rectangle":
+        bbox = entity_bounding_box(entity)
+        if not bbox:
+            return None, ["invalid geometry"]
+        min_x, min_y, max_x, max_y = bbox["min_x"], bbox["min_y"], bbox["max_x"], bbox["max_y"]
+        if grip_id == "corner:nw":
+            min_x, min_y = target["x"], target["y"]
+        elif grip_id == "corner:ne":
+            max_x, min_y = target["x"], target["y"]
+        elif grip_id == "corner:se":
+            max_x, max_y = target["x"], target["y"]
+        elif grip_id == "corner:sw":
+            min_x, max_y = target["x"], target["y"]
+        elif grip_id == "edge:n":
+            min_y = target["y"]
+        elif grip_id == "edge:e":
+            max_x = target["x"]
+        elif grip_id == "edge:s":
+            max_y = target["y"]
+        elif grip_id == "edge:w":
+            min_x = target["x"]
+        else:
+            return None, ["unsupported entity type"]
+        width = max_x - min_x
+        height = max_y - min_y
+        if abs(width) <= 0.000001 or abs(height) <= 0.000001:
+            return None, ["invalid geometry"]
+        geometry = {**geometry, "origin": {"x": min(min_x, max_x), "y": min(min_y, max_y)}, "width": abs(width), "height": abs(height)}
+        geometry.pop("points", None)
+        geometry.pop("vertices", None)
+    elif entity_type == "circle":
+        center = _point(geometry.get("center"))
+        if grip_id == "center":
+            geometry["center"] = target
+        elif grip_id.startswith("radius") and center:
+            radius = ((target["x"] - center["x"]) ** 2 + (target["y"] - center["y"]) ** 2) ** 0.5
+            if radius <= 0.000001:
+                return None, ["invalid geometry"]
+            geometry["radius"] = radius
+        else:
+            return None, ["unsupported entity type"]
+    elif entity_type == "text":
+        key = "insert" if "insert" in geometry else "position"
+        geometry[key] = target
+    elif entity_type == "dimension":
+        if grip_id not in {"start", "end"}:
+            return None, ["unsupported entity type"]
+        geometry[grip_id] = target
+        points = _points(geometry.get("points"))
+        if len(points) >= 2:
+            points[0 if grip_id == "start" else 1] = target
+            geometry["points"] = points
+    elif entity_type == "block_reference":
+        key = "insert" if "insert" in geometry else "origin"
+        geometry[key] = target
+    else:
+        return None, ["unsupported entity type"]
+    updated = normalize_cad_entity({**deepcopy(entity), "geometry": geometry, "dirty": True, "stale": True, "review_status": "draft_review_required", "draft_review_required": True, "construction_release_allowed": False}, created_by=safe_str(entity.get("created_by"), "user"))
+    blockers = _normalized_edit_blockers(updated)
+    if blockers:
+        return None, blockers
+    return updated, []
+
+
 def _orientation(a: Dict[str, float], b: Dict[str, float], c: Dict[str, float]) -> float:
     return (b["y"] - a["y"]) * (c["x"] - b["x"]) - (b["x"] - a["x"]) * (c["y"] - b["y"])
 
@@ -455,6 +677,20 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
     removed_entity_ids = _dedupe(event.get("entity_id") for event in history if safe_str(event.get("event_type")) == "entity_deleted")
     stale_entity_ids = _dedupe(entity.get("id") for entity in stale)
     invalid_entity_ids = _dedupe(item.get("entity_id") for item in invalid)
+    selected_entity_ids = [entity_id for entity_id in selected_ids if entity_id in {entity["id"] for entity in entities}]
+    selected_grips: List[Dict[str, Any]] = []
+    selection_blockers: List[Dict[str, str]] = []
+    for entity in entities:
+        if entity["id"] not in selected_entity_ids:
+            continue
+        edit_blocker = _edit_blocker(entity)
+        if edit_blocker:
+            selection_blockers.append({"entity_id": entity["id"], "reason": edit_blocker})
+        grips = entity_grip_points(entity)
+        if grips:
+            selected_grips.extend(grips)
+        else:
+            selection_blockers.append({"entity_id": entity["id"], "reason": "unsupported entity type"})
     latest_revision_id = (
         safe_str(source_model.get("latest_revision_id") or source_model.get("revision_id") or meta.get("canonical_revision"))
         or _stable_id("cadrev", len(history), ",".join(sorted(entity_ids)), ",".join(changed_entity_ids))
@@ -490,7 +726,7 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         "layers": layers,
         "styles": styles,
         "entities": entities,
-        "selected_entity_ids": [entity_id for entity_id in selected_ids if entity_id in {entity["id"] for entity in entities}],
+        "selected_entity_ids": selected_entity_ids,
         "entity_bounding_boxes": {entity["id"]: entity.get("bounding_box") for entity in entities if entity.get("bounding_box")},
         "validation": {
             "valid": not blockers,
@@ -515,8 +751,13 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
             "construction_release_allowed": False,
         },
         "selection": {
-            "selected_entity_ids": [entity_id for entity_id in selected_ids if entity_id in {entity["id"] for entity in entities}],
-            "hit_test_helper": "Use hit_test_entities with entity_bounding_boxes; this helper is bbox-based until grips/snaps add precise kernels.",
+            "selected_entity_ids": selected_entity_ids,
+            "selected_count": len(selected_entity_ids),
+            "grips": selected_grips,
+            "blockers": selection_blockers,
+            "hit_test_helper": "Use hit_test_entities with cad_entity_model_v1 entity IDs and entity_bounding_boxes; point selection is bbox-based and window selection uses bbox intersection.",
+            "window_select_helper": "Use window_select_entities with two window corner points to select persistent CAD entity IDs.",
+            "grip_feedback": "Grip edits are drafting/review actions only and return exact blockers: invalid geometry, self-intersection, locked/reference/underlay entity, missing selected entity, unsupported entity type.",
         },
         "issue_blockers": blockers,
         "review_only": True,
@@ -575,6 +816,7 @@ def cad_entity_operation_result(
     understood_goal: str,
     selected_action: str,
     target_entities: Optional[List[str]] = None,
+    selected_entity_ids: Optional[List[str]] = None,
     missing_inputs: Optional[List[str]] = None,
     safety_blockers: Optional[List[str]] = None,
     created_entity_ids: Optional[List[str]] = None,
@@ -587,6 +829,7 @@ def cad_entity_operation_result(
         "understood_goal": safe_str(understood_goal),
         "selected_action": safe_str(selected_action),
         "target_entities": _dedupe(target_entities or []),
+        "selected_entity_ids": _dedupe(selected_entity_ids or []),
         "missing_inputs": _dedupe(missing_inputs or []),
         "safety_blockers": _dedupe(safety_blockers or []),
         "created_entity_ids": _dedupe(created_entity_ids or []),
@@ -660,14 +903,7 @@ def apply_cad_entity_operation(
     missing_inputs = _dedupe(operation.get("missing_inputs") or [])
     safety_blockers = _dedupe(operation.get("safety_blockers") or [])
     if missing_inputs or safety_blockers or not action:
-        return source_model, cad_entity_operation_result(
-            understood_goal=understood_goal,
-            selected_action=action or "unsupported",
-            target_entities=target_ids,
-            missing_inputs=missing_inputs,
-            safety_blockers=safety_blockers,
-            next_best_action=safe_str(operation.get("next_best_action")),
-        )
+        return source_model, cad_entity_operation_result(understood_goal=understood_goal, selected_action=action or "unsupported", target_entities=target_ids, missing_inputs=missing_inputs, safety_blockers=safety_blockers, next_best_action=safe_str(operation.get("next_best_action")))
 
     entities = [normalize_cad_entity(item, created_by=actor) for item in safe_list(source_model.get("entities")) if safe_dict(item)]
     by_id = {safe_str(entity.get("id")): entity for entity in entities if safe_str(entity.get("id"))}
@@ -675,22 +911,27 @@ def apply_cad_entity_operation(
     updated_ids: List[str] = []
     deleted_ids: List[str] = []
     action_history: List[Dict[str, Any]] = []
+    selected_entity_ids = _dedupe(source_model.get("selected_entity_ids") or [])
 
-    if action.startswith("create_"):
-        entity = normalize_cad_entity(
-            {
-                "id": safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1),
-                "type": safe_str(operation.get("entity_type")),
-                "geometry": safe_dict(operation.get("geometry")),
-                "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID),
-                "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID),
-                "source": "chat_cad_command",
-                "source_confidence": "chat_drafted_review_required",
-                "review_status": "draft_review_required",
-                "dirty": True,
-            },
-            created_by=actor,
-        )
+    if action in {"select_single", "select_add", "select_multi", "select_window", "clear_selection"}:
+        if action == "clear_selection":
+            selected_entity_ids = []
+        else:
+            hit_ids: List[str] = []
+            if action == "select_window":
+                hit_ids = window_select_entities(entities, safe_dict(operation.get("window") or operation.get("selection_window")))
+            elif operation.get("point"):
+                hit_ids = hit_test_entities(entities, safe_dict(operation.get("point")), tolerance=abs(safe_float(operation.get("tolerance"), 2.0)))
+            hit_ids = _dedupe(target_ids + hit_ids)
+            existing_hits = [entity_id for entity_id in hit_ids if entity_id in by_id]
+            if not existing_hits:
+                missing_inputs.append("missing selected entity")
+            elif action == "select_single":
+                selected_entity_ids = existing_hits[:1]
+            else:
+                selected_entity_ids = _dedupe(selected_entity_ids + existing_hits)
+    elif action.startswith("create_"):
+        entity = normalize_cad_entity({"id": safe_str(operation.get("entity_id")) or _stable_id("cadchat", action, operation.get("geometry"), len(entities) + 1), "type": safe_str(operation.get("entity_type")), "geometry": safe_dict(operation.get("geometry")), "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID), "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID), "source": "chat_cad_command", "source_confidence": "chat_drafted_review_required", "review_status": "draft_review_required", "dirty": True}, created_by=actor)
         by_id[entity["id"]] = entity
         created_ids.append(entity["id"])
         action_history.append(history_event("entity_created", entity["id"], actor=actor, details={"source": "chat", "review_required": True}))
@@ -699,41 +940,62 @@ def apply_cad_entity_operation(
             entity = by_id.get(entity_id)
             if not entity:
                 continue
-            copied = normalize_cad_entity(
-                {
-                    **deepcopy(entity),
-                    "id": _stable_id("cadcopy", entity_id, len(entities), index),
-                    "source": "chat_cad_command",
-                    "source_confidence": "chat_drafted_review_required",
-                    "geometry": _transform_geometry(safe_dict(entity.get("geometry")), dx=safe_float(operation.get("dx"), 0.0), dy=safe_float(operation.get("dy"), 0.0)),
-                    "dirty": True,
-                    "stale": True,
-                },
-                created_by=actor,
-            )
+            copied = normalize_cad_entity({**deepcopy(entity), "id": _stable_id("cadcopy", entity_id, len(entities), index), "source": "chat_cad_command", "source_confidence": "chat_drafted_review_required", "geometry": _transform_geometry(safe_dict(entity.get("geometry")), dx=safe_float(operation.get("dx"), 0.0), dy=safe_float(operation.get("dy"), 0.0)), "dirty": True, "stale": True}, created_by=actor)
             by_id[copied["id"]] = copied
             created_ids.append(copied["id"])
             action_history.append(history_event("entity_created", copied["id"], actor=actor, details={"copied_from": entity_id, "review_required": True}))
+    elif action == "delete_selected":
+        for entity_id in target_ids:
+            entity = by_id.get(entity_id)
+            if not entity:
+                safety_blockers.append("missing selected entity")
+                continue
+            edit_blocker = _edit_blocker(entity)
+            if edit_blocker:
+                safety_blockers.append(edit_blocker)
+                continue
+            deleted = by_id.pop(entity_id)
+            deleted_ids.append(entity_id)
+            action_history.append(history_event("entity_deleted", entity_id, actor=actor, details={"chat_action": action, "review_required": True}, before=deleted, changed_fields=["entity"]))
+        selected_entity_ids = [entity_id for entity_id in selected_entity_ids if entity_id in by_id]
+    elif action == "move_grip":
+        entity_id = safe_str(operation.get("entity_id") or (target_ids[0] if target_ids else ""))
+        if not entity_id or entity_id not in by_id:
+            safety_blockers.append("missing selected entity")
+        else:
+            grip_id = safe_str(operation.get("grip_id") or safe_dict(operation.get("grip")).get("grip_id"))
+            point = safe_dict(operation.get("point") or operation.get("new_point") or operation.get("to"))
+            if not point and ("dx" in operation or "dy" in operation):
+                grip_by_id = {safe_str(item.get("grip_id")): item for item in entity_grip_points(by_id[entity_id])}
+                current = _point(safe_dict(grip_by_id.get(grip_id)).get("point"))
+                if current:
+                    point = {"x": current["x"] + safe_float(operation.get("dx"), 0.0), "y": current["y"] + safe_float(operation.get("dy"), 0.0)}
+            before = by_id[entity_id]
+            updated, blockers_for_edit = _move_entity_grip(before, grip_id, point)
+            if blockers_for_edit:
+                safety_blockers.extend(blockers_for_edit)
+            elif updated:
+                by_id[entity_id] = updated
+                updated_ids.append(entity_id)
+                action_history.append(history_event("entity_geometry_changed", entity_id, actor=actor, details={"chat_action": action, "grip_id": grip_id, "review_required": True}, before=before, after=updated, changed_fields=["geometry"]))
     elif action in {"move_selected", "rotate_selected", "scale_selected", "change_layer", "change_style"}:
         for entity_id in target_ids:
             entity = by_id.get(entity_id)
             if not entity:
+                safety_blockers.append("missing selected entity")
                 continue
+            edit_blocker = _edit_blocker(entity)
+            if edit_blocker:
+                safety_blockers.append(edit_blocker)
+                continue
+            before = deepcopy(entity)
             updated = deepcopy(entity)
             if action == "move_selected":
                 updated["geometry"] = _transform_geometry(safe_dict(entity.get("geometry")), dx=safe_float(operation.get("dx"), 0.0), dy=safe_float(operation.get("dy"), 0.0))
             elif action == "rotate_selected":
-                updated["geometry"] = _transform_geometry(
-                    safe_dict(entity.get("geometry")),
-                    angle_degrees=safe_float(operation.get("angle_degrees"), 0.0),
-                    origin=_entity_transform_origin(entity),
-                )
+                updated["geometry"] = _transform_geometry(safe_dict(entity.get("geometry")), angle_degrees=safe_float(operation.get("angle_degrees"), 0.0), origin=_entity_transform_origin(entity))
             elif action == "scale_selected":
-                updated["geometry"] = _transform_geometry(
-                    safe_dict(entity.get("geometry")),
-                    scale_factor=safe_float(operation.get("scale_factor"), 1.0),
-                    origin=_entity_transform_origin(entity),
-                )
+                updated["geometry"] = _transform_geometry(safe_dict(entity.get("geometry")), scale_factor=safe_float(operation.get("scale_factor"), 1.0), origin=_entity_transform_origin(entity))
             elif action == "change_layer":
                 updated["layer_id"] = safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID)
             elif action == "change_style":
@@ -743,28 +1005,14 @@ def apply_cad_entity_operation(
             updated["review_status"] = "draft_review_required"
             by_id[entity_id] = normalize_cad_entity(updated, created_by=actor)
             updated_ids.append(entity_id)
-            action_history.append(history_event("entity_updated", entity_id, actor=actor, details={"chat_action": action, "review_required": True}))
+            event_type = "entity_geometry_changed" if action in {"move_selected", "rotate_selected", "scale_selected"} else "entity_updated"
+            action_history.append(history_event(event_type, entity_id, actor=actor, details={"chat_action": action, "review_required": True}, before=before, after=by_id[entity_id]))
     else:
         safety_blockers.append(f"unsupported_cad_entity_operation:{action}")
 
-    next_model = {
-        **source_model,
-        "entities": list(by_id.values()),
-        "history": _safe_history(source_model) + action_history,
-        "selected_entity_ids": [safe_str(entity_id) for entity_id in safe_list(source_model.get("selected_entity_ids")) if safe_str(entity_id) in by_id],
-    }
-    result = cad_entity_operation_result(
-        understood_goal=understood_goal,
-        selected_action=action,
-        target_entities=target_ids,
-        safety_blockers=safety_blockers,
-        created_entity_ids=created_ids,
-        updated_entity_ids=updated_ids,
-        deleted_entity_ids=deleted_ids,
-        next_best_action=safe_str(operation.get("next_best_action"), "Review the changed CAD entities before using them in downstream workflows."),
-    )
+    next_model = {**source_model, "entities": list(by_id.values()), "history": _safe_history(source_model) + action_history, "selected_entity_ids": [safe_str(entity_id) for entity_id in selected_entity_ids if safe_str(entity_id) in by_id]}
+    result = cad_entity_operation_result(understood_goal=understood_goal, selected_action=action, target_entities=target_ids, selected_entity_ids=selected_entity_ids, safety_blockers=safety_blockers, created_entity_ids=created_ids, updated_entity_ids=updated_ids, deleted_entity_ids=deleted_ids, next_best_action=safe_str(operation.get("next_best_action"), "Review the changed CAD entities before using them in downstream workflows."))
     return next_model, result
-
 
 def manual_drawn_objects_to_cad_entities(project_input: Dict[str, Any], latest_result: Optional[Dict[str, Any]] = None, *, created_by: str = "user") -> List[Dict[str, Any]]:
     latest_result = safe_dict(latest_result)
@@ -1097,6 +1345,7 @@ __all__ = [
     "cad_entity_operation_result",
     "cad_entities_to_site_object_candidates",
     "cad_source_confidence_summary",
+    "entity_grip_points",
     "entity_bounding_box",
     "history_event",
     "hit_test_entities",
@@ -1104,5 +1353,7 @@ __all__ = [
     "manual_drawn_objects_to_cad_entities",
     "normalize_cad_entity",
     "plan_pdf_elements_to_cad_entities",
+    "selected_entity_grips",
     "validate_cad_entity",
+    "window_select_entities",
 ]

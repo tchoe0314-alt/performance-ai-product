@@ -697,8 +697,10 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "add",
         "move",
         "copy",
+        "delete",
         "rotate",
         "scale",
+        "grip",
         "set layer",
         "change layer",
         "change style",
@@ -776,9 +778,11 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
 
     selected_action = ""
     if "move" in lowered:
-        selected_action = "move_selected"
+        selected_action = "move_grip" if "grip" in lowered else "move_selected"
     elif "copy" in lowered:
         selected_action = "copy_selected"
+    elif "delete" in lowered or "erase" in lowered or "remove selected cad" in lowered:
+        selected_action = "delete_selected"
     elif "rotate" in lowered:
         selected_action = "rotate_selected"
     elif "scale" in lowered:
@@ -801,6 +805,16 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return None
     if not selected_ids:
         return {**base, "action": selected_action, "missing_inputs": ["selected CAD entity"], "next_best_action": "Select one or more persistent CAD entities, then retry the command."}
+    if selected_action == "move_grip":
+        grip_id = safe_str(context.get("selected_cad_grip_id") or context.get("selected_grip_id") or context.get("grip_id") or context.get("active_cad_grip_id"))
+        entity_id = safe_str(context.get("selected_cad_grip_entity_id") or context.get("selected_grip_entity_id") or context.get("grip_entity_id") or selected_ids[0])
+        if not grip_id:
+            return {**base, "action": selected_action, "entity_id": entity_id, "missing_inputs": ["selected CAD grip"], "next_best_action": "Select a visible CAD grip point, then retry the grip move."}
+        if len(values) < 2:
+            return {**base, "action": selected_action, "entity_id": entity_id, "grip_id": grip_id, "missing_inputs": ["x offset", "y offset"], "next_best_action": "Provide a grip displacement, for example: move this grip by 5,0."}
+        return {**base, "action": selected_action, "entity_id": entity_id, "target_entity_ids": [entity_id], "grip_id": grip_id, "dx": values[0], "dy": values[1]}
+    if selected_action == "delete_selected":
+        return {**base, "action": selected_action}
     if selected_action in {"move_selected", "copy_selected"}:
         if len(values) < 2:
             return {**base, "action": selected_action, "missing_inputs": ["x offset", "y offset"], "next_best_action": "Provide an X/Y offset, for example: move selected CAD entity by 10,0."}
@@ -851,6 +865,8 @@ def _cad_entity_chat_response(
     asks_restore = mentions_cad and "restore" in lowered and ("object" in lowered or "entity" in lowered or "cad" in lowered)
     asks_convert_drawn = "convert" in lowered and "drawn object" in lowered and "cad entit" in lowered
     asks_candidate = "convert" in lowered and "site object" in lowered and ("cad" in lowered or "entity" in lowered)
+    asks_selection = any(phrase in lowered for phrase in ("what is selected", "what's selected", "current selection", "selected cad entities", "selected cad objects"))
+    asks_grip_blocker = "why" in lowered and "grip" in lowered and any(phrase in lowered for phrase in ("can't", "cannot", "cant", "won't", "blocked", "edit"))
 
     if record:
         project_input = deepcopy(_safe_dict(record.get("project_input")))
@@ -875,6 +891,8 @@ def _cad_entity_chat_response(
         or asks_restore
         or asks_convert_drawn
         or asks_candidate
+        or asks_selection
+        or asks_grip_blocker
         or chat_operation
     ):
         return None
@@ -907,7 +925,8 @@ def _cad_entity_chat_response(
         next_source_model, operation_result = apply_cad_entity_operation(model, chat_operation, actor=user_id or "user")
         missing_inputs = _safe_list(operation_result.get("missing_inputs"))
         safety_blockers = _safe_list(operation_result.get("safety_blockers"))
-        changed = bool(operation_result.get("created_entity_ids") or operation_result.get("updated_entity_ids") or operation_result.get("deleted_entity_ids"))
+        selection_action = safe_str(operation_result.get("selected_action")) in {"select_single", "select_add", "select_multi", "select_window", "clear_selection"}
+        changed = bool(operation_result.get("created_entity_ids") or operation_result.get("updated_entity_ids") or operation_result.get("deleted_entity_ids") or (selection_action and not missing_inputs and not safety_blockers))
         if changed:
             meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: next_source_model}, project_input=project_input)
             final_plan["meta"] = meta
@@ -1076,6 +1095,44 @@ def _cad_entity_chat_response(
     ]
     selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
     selected_ids = set(selected_object_ids + selected_geometry_ids + _safe_list(_safe_dict(model.get("selection")).get("selected_entity_ids")))
+
+
+
+    if asks_selection:
+        selection = _safe_dict(model.get("selection"))
+        selected_cad_ids = [safe_str(item) for item in _safe_list(selection.get("selected_entity_ids")) if safe_str(item)]
+        lines = ["Selected CAD entity IDs:"]
+        lines.append(", ".join(selected_cad_ids) if selected_cad_ids else "None.")
+        grips = _safe_list(selection.get("grips"))
+        blockers = _safe_list(selection.get("blockers"))
+        if grips:
+            lines.append(f"Visible grip points: {len(grips)}.")
+            for grip in grips[:8]:
+                rec = _safe_dict(grip)
+                point = _safe_dict(rec.get("point"))
+                lines.append(f"- {safe_str(rec.get('entity_id'))} {safe_str(rec.get('grip_id'))} at {safe_float(point.get('x'), 0.0):.3f},{safe_float(point.get('y'), 0.0):.3f}")
+        if blockers:
+            lines.append("Grip/blocker feedback:")
+            for blocker in blockers[:8]:
+                rec = _safe_dict(blocker)
+                lines.append(f"- {safe_str(rec.get('entity_id'))}: {safe_str(rec.get('reason'))}")
+        lines.append("Selection is over persistent cad_entity_model_v1 entity IDs and remains drafting/review-only.")
+        return _truthful_decision_update({}, assistant_message="\n".join(lines), intent="cad_entity_selection", run_mode="none", needs_clarification=False, action_taken="reported_selected_cad_entities", affected_systems=["cad_entity_model", "cad_geometry"], assumptions=["CAD selection answers use persistent CAD entity IDs, not loose UI-only geometry."], next_best_action="Use grips or CAD commands for drafting/review edits, then rerun affected downstream checks before reliance.", command_payload_updates={CAD_ENTITY_MODEL_VERSION: model}, outcome="understood_and_answered", state_changed=False, blocker="; ".join(safe_str(_safe_dict(item).get("reason")) for item in blockers[:4]))
+
+    if asks_grip_blocker:
+        selection = _safe_dict(model.get("selection"))
+        blockers = _safe_list(selection.get("blockers"))
+        if blockers:
+            lines = ["This grip edit is blocked because:"]
+            for blocker in blockers[:8]:
+                rec = _safe_dict(blocker)
+                lines.append(f"- {safe_str(rec.get('entity_id'))}: {safe_str(rec.get('reason'))}")
+        elif not _safe_list(selection.get("selected_entity_ids")):
+            lines = ["This grip edit is blocked because: missing selected entity."]
+        else:
+            lines = ["No grip blocker is recorded on the selected CAD entity. If an edit failed, select a visible grip and retry with a valid displacement."]
+        lines.append("Grip edits remain review_required=true, draft_review_required=true, and construction_release_allowed=false.")
+        return _truthful_decision_update({}, assistant_message="\n".join(lines), intent="cad_entity_grip_edit", run_mode="none", needs_clarification=False, action_taken="explained_cad_grip_edit_blocker", affected_systems=["cad_entity_model", "cad_geometry"], next_best_action="Select an editable grip on a line/polyline/polygon/rectangle/circle/text/dimension/block reference, then retry.", command_payload_updates={CAD_ENTITY_MODEL_VERSION: model}, outcome="understood_and_answered", state_changed=False, blocker="; ".join(safe_str(_safe_dict(item).get("reason")) for item in blockers[:4]) or "missing selected entity")
 
     if asks_undo or asks_restore:
         undo_redo = _safe_dict(model.get("undo_redo"))
