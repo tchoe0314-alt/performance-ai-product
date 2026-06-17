@@ -250,6 +250,59 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("unsupported_no_native_writer", result["assistant_message"])
         self.assertFalse(result["response_metadata"]["command_payload"]["dwg_strategy"]["native_dwg_supported"])
 
+    def test_chat_answers_dxf_roundtrip_preserved_and_lost_from_report(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"]["dxf_roundtrip_report_v1"] = {
+            "source": "dxf_roundtrip_report_v1",
+            "preserved": {"layers": True, "text_labels": True, "canonical_cad_entity_ids": True},
+            "roundtrip_preservation_matrix": {"entity_count": "passed", "dimensions": "passed"},
+            "lost_limited": [{"field": "symbol_block_placeholders", "expected": 1, "parsed": 0}],
+            "unsupported": [{"entity_id": "cad-underlay-1", "type": "underlay_reference", "reason": "unsupported_entity_type"}],
+            "blockers": [],
+            "review_required": True,
+            "construction_release_allowed": False,
+        }
+        context = {"current_project": {"project_id": "project_123", "latest_result": record["latest_result"]}}
+
+        preserved = decide_chat(
+            {"message": "what did the DXF preserve?", "context": context},
+            decide_chat_message=decide_chat_message,
+        )
+        lost = decide_chat(
+            {"message": "what was lost in DXF?", "context": context},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(preserved["action_taken"], "answered_dxf_roundtrip_preservation")
+        self.assertIn("layers=True", preserved["assistant_message"])
+        self.assertIn("local review evidence", preserved["assistant_message"])
+        self.assertEqual(lost["action_taken"], "answered_dxf_roundtrip_loss")
+        self.assertIn("cad-underlay-1", lost["assistant_message"])
+        self.assertIn("construction-release", lost["assistant_message"])
+
+    def test_chat_answers_autocad_open_and_dxf_review_only_without_overclaim(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"]["export_package_report_v1"] = {
+            "supported_deliverables": {"dxf": {"roundtrip_status": "passed_review_only"}}
+        }
+        context = {"current_project": {"project_id": "project_123", "latest_result": record["latest_result"]}}
+
+        open_result = decide_chat(
+            {"message": "can this open in AutoCAD?", "context": context},
+            decide_chat_message=decide_chat_message,
+        )
+        review_result = decide_chat(
+            {"message": "why is DXF review-only?", "context": context},
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(open_result["action_taken"], "answered_autocad_dxf_open_status")
+        self.assertIn("may open in AutoCAD as a DXF review exchange artifact", open_result["assistant_message"])
+        self.assertIn("cannot claim AutoCAD acceptance", open_result["assistant_message"])
+        self.assertEqual(review_result["action_taken"], "explained_dxf_review_only")
+        self.assertIn("does not prove AutoCAD or Civil 3D acceptance", review_result["assistant_message"])
+        self.assertNotIn("construction ready", review_result["assistant_message"].lower())
+
     def test_chat_reports_persistent_cad_entities_review_only(self):
         record = _record()
         record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION] = {

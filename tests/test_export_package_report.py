@@ -258,6 +258,16 @@ class ExportPackageReportTests(unittest.TestCase):
 
     def test_dxf_landxml_and_report_package_include_audit_metadata(self) -> None:
         plan = _plan()
+        plan["meta"]["dxf_roundtrip_report_v1"] = {
+            "source": "dxf_roundtrip_report_v1",
+            "local_roundtrip_verified": True,
+            "blockers": [],
+            "preserved": {"layers": True, "canonical_cad_entity_ids": True},
+            "lost_limited": [],
+            "unsupported": [],
+            "review_required": True,
+            "construction_release_allowed": False,
+        }
         metadata = finalize_export_metadata(plan)
 
         self.assertIn("export_package_report_v1", metadata)
@@ -291,6 +301,9 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertTrue(report["section_packages"])
         self.assertEqual(report["dxf_compatibility_matrix"]["layers"], "verified_by_local_parse_when_export_exists")
         self.assertEqual(report["dxf_compatibility_matrix"]["canonical_ids"], "required_via_sidecar_and_export_audit_traceability")
+        self.assertEqual(report["supported_deliverables"]["dxf"]["roundtrip_status"], "passed_review_only")
+        self.assertTrue(report["supported_deliverables"]["dxf"]["roundtrip_report_present"])
+        self.assertEqual(report["dxf_roundtrip_report_v1"]["source"], "dxf_roundtrip_report_v1")
         self.assertEqual(report["external_workflow_requirements"]["landxml"]["current_state"], "not_verified")
         self.assertEqual(report["external_workflow_requirements"]["civil3d"]["current_state"], "not_verified")
         self.assertTrue(report["external_workflow_requirements"]["dwg"]["external_conversion_hook_required"])

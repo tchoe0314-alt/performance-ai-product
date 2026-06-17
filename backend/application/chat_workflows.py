@@ -1514,22 +1514,26 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
     lowered = _normalized_text(message)
     mentions_dwg = bool(re.search(r"\bdwg\b", lowered))
     mentions_dxf = bool(re.search(r"\bdxf\b", lowered))
+    mentions_autocad = "autocad" in lowered or "auto cad" in lowered
     mentions_civil3d = "civil3d" in lowered or "civil 3d" in lowered
     mentions_roundtrip = "roundtrip" in lowered or "round trip" in lowered
-    if not mentions_dwg and not mentions_civil3d and not (mentions_dxf and mentions_roundtrip):
+    if not mentions_dwg and not mentions_civil3d and not mentions_autocad and not mentions_dxf:
         return None
     asks_export = "export" in lowered or "download" in lowered or "save" in lowered
     asks_open = "open" in lowered or "load" in lowered or "import" in lowered
     asks_why = "why" in lowered or "unsupported" in lowered or "not supported" in lowered
     asks_need = "what do i need" in lowered or "what do we need" in lowered or "need for" in lowered or "civil3d" in lowered or "civil 3d" in lowered
     asks_preserved = "preserve" in lowered or "preserved" in lowered or "kept" in lowered
+    asks_lost = "lost" in lowered or "missing" in lowered or "limited" in lowered or "dropped" in lowered
+    asks_review_only = "review-only" in lowered or "review only" in lowered or ("why" in lowered and mentions_dxf)
     asks_ready = "ready" in lowered or "good to use" in lowered or "can i use" in lowered
-    if not (asks_export or asks_why or asks_need or asks_open or asks_preserved or asks_ready or mentions_roundtrip):
+    if not (asks_export or asks_why or asks_need or asks_open or asks_preserved or asks_lost or asks_review_only or asks_ready or mentions_roundtrip):
         return None
 
     meta = _meta_from_chat_context(context)
     strategy = dwg_strategy_from_meta(meta)
     export_report = _safe_dict(meta.get("export_package_report_v1"))
+    dxf_roundtrip = _safe_dict(meta.get("dxf_roundtrip_report_v1") or export_report.get("dxf_roundtrip_report_v1"))
     civil3d_record = _safe_dict(_safe_dict(export_report.get("external_verification")).get("civil3d"))
     civil3d_status = str(
         civil3d_record.get("status")
@@ -1538,14 +1542,51 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
     )
     if civil3d_status not in {"not_verified", "blocked_needs_review", "externally_verified_review_only"}:
         civil3d_status = "not_verified"
-    if mentions_dxf and (mentions_roundtrip or asks_preserved):
+    if mentions_dxf and asks_lost:
+        lost = _safe_list(dxf_roundtrip.get("lost_limited"))
+        unsupported = _safe_list(dxf_roundtrip.get("unsupported"))
+        if lost or unsupported:
+            lost_text = "; ".join(safe_str(item) for item in (lost + unsupported)[:6])
+        else:
+            lost_text = "No saved DXF roundtrip loss report is attached yet."
         assistant_message = (
-            "A Civora DXF roundtrip means Civora export -> local DXF parse -> Civora verification. It checks layer preservation, "
-            "supported object types, text/labels, block or symbol placeholders when present, dimensions where the exporter created them, "
-            "and canonical ID traceability through the sidecar/export audit. That is local review evidence only; it does not verify Civil 3D or DWG."
+            f"DXF lost/limited items: {lost_text} "
+            "Anything stale, dirty, unsupported, or absent from the local parse remains review-required and cannot support export-ready or construction-release claims."
+        )
+        action_taken = "answered_dxf_roundtrip_loss"
+        next_best_action = "Review dxf_roundtrip_report_v1.lost_limited, unsupported, and blockers before sharing the DXF review artifact."
+    elif mentions_dxf and asks_review_only:
+        assistant_message = (
+            "DXF is review-only because the roundtrip is local exchange evidence: persistent CAD entities are exported, parsed back, and compared for preservation. "
+            "That does not prove AutoCAD or Civil 3D acceptance, does not support DWG natively, and does not create construction approval or professional responsibility."
+        )
+        action_taken = "explained_dxf_review_only"
+        next_best_action = "Use DXF as a review exchange artifact and attach external target-tool evidence before making any compatibility claim."
+    elif mentions_dxf and (mentions_roundtrip or asks_preserved):
+        preserved = _safe_dict(dxf_roundtrip.get("preserved"))
+        matrix = _safe_dict(dxf_roundtrip.get("roundtrip_preservation_matrix"))
+        if preserved or matrix:
+            preserved_text = ", ".join(
+                f"{key}={safe_str(value)}"
+                for key, value in {**preserved, **matrix}.items()
+                if safe_str(key)
+            )
+        else:
+            preserved_text = "layer preservation, supported object types, text/labels, symbol placeholders when present, dimensions where supported, and canonical ID traceability through CAD entity IDs via sidecar are the expected checks; no saved roundtrip report is attached yet"
+        assistant_message = (
+            f"The DXF preservation check reports: {preserved_text}. "
+            "This is local review evidence only; it does not verify Civil 3D or DWG, and it does not prove AutoCAD acceptance."
         )
         action_taken = "answered_dxf_roundtrip_preservation"
-        next_best_action = "Run the DXF export verification and review the preservation_check and compatibility_matrix fields before sharing the artifact."
+        next_best_action = "Run the persistent CAD entity DXF roundtrip and review dxf_roundtrip_report_v1 before sharing the artifact."
+    elif (mentions_dxf or mentions_autocad) and asks_open:
+        status = safe_str(_safe_dict(_safe_dict(export_report.get("supported_deliverables")).get("dxf")).get("roundtrip_status"), "not_run")
+        assistant_message = (
+            f"It may open in AutoCAD as a DXF review exchange artifact, but Civora cannot claim AutoCAD acceptance from local parsing alone. "
+            f"Current DXF roundtrip status is {status}; Civil 3D remains not_verified and DWG is not natively supported."
+        )
+        action_taken = "answered_autocad_dxf_open_status"
+        next_best_action = "Open the DXF in the target AutoCAD environment and attach a target-tool workflow record with observed preserved and lost/limited items."
     elif mentions_civil3d and asks_open:
         assistant_message = (
             "It might open as a review artifact if the target Civil 3D workflow accepts the DXF or LandXML, but Civora cannot claim it will open correctly "
@@ -4746,6 +4787,9 @@ def decide_chat(
     )
     if cad_entity_decision is not None:
         return _enrich_response_contract(cad_entity_decision, message=message)
+    dwg_decision = _dwg_compatibility_chat_response(message, context)
+    if dwg_decision is not None:
+        return _enrich_response_contract(dwg_decision, message=message)
     cad_command_line_decision = _cad_command_line_chat_response(message, context)
     if cad_command_line_decision is not None:
         return _enrich_response_contract(cad_command_line_decision, message=message)
@@ -4758,9 +4802,6 @@ def decide_chat(
     )
     if geometry_edit_decision is not None:
         return _enrich_response_contract(geometry_edit_decision, message=message)
-    dwg_decision = _dwg_compatibility_chat_response(message, context)
-    if dwg_decision is not None:
-        return _enrich_response_contract(dwg_decision, message=message)
     plotting_decision = _plotting_sheet_chat_response(message, context)
     if plotting_decision is not None:
         return _enrich_response_contract(plotting_decision, message=message)
