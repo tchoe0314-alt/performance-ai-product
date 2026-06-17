@@ -15,9 +15,9 @@ from backend.planning.engine_depth_audit import (
 )
 from backend.planning.engine_readiness import evaluate_engine_readiness
 from backend.planning.engine_contracts import engine_contracts
-from backend.planning.depth_validators import validate_roadway_corridor_depth
+from backend.planning.depth_validators import validate_roadway_corridor_depth, validate_water_system_depth
 from backend.planning.golden_runner import run_golden_scenario
-from backend.planning.production_depth import enrich_storm_production_depth
+from backend.planning.production_depth import enrich_storm_production_depth, enrich_water_production_depth
 from core.civil_design import civil_design_readiness
 from tests.test_civil_design_readiness import _complete_meta
 from tests.test_depth_validators import _complete_grading_depth_meta
@@ -284,12 +284,76 @@ def _complete_sanitary_depth_fixture() -> dict:
     }
 
 
+def _complete_water_depth_fixture() -> dict:
+    return enrich_water_production_depth(
+        {
+            "source_pressure_psi": 72.0,
+            "source_pressure_source": "hydrant_flow_test_2026_accepted",
+            "source_node": "SRC",
+            "fire_flow_node": "H-1",
+            "min_residual_pressure_psi": 20.0,
+            "residual_pressure_source": "CITY-WATER-2026 residual pressure requirement",
+            "standard_id": "CITY-WATER-2026",
+            "standard_status": "adopted",
+            "utility_owner": "City Water",
+            "utility_owner_criteria": "City Water public-main criteria 2026",
+            "utility_owner_criteria_status": "accepted",
+            "fire_flow_criteria_source": "CITY-WATER-2026 Table FF-1",
+            "hydrant_evidence_source": "surveyed_hydrant_fixture",
+            "max_hydrant_spacing_ft": 300.0,
+            "fire_flow_demand_gpm": 1000.0,
+            "pressure_zones": [
+                {"id": "PZ-1", "source": "City Water pressure-zone map", "source_pressure_psi": 72.0, "min_pressure_psi": 45.0}
+            ],
+            "hydrants": [
+                {"name": "H-1", "x": 0.0, "y": 0.0, "zone_id": "PZ-1"},
+                {"name": "H-2", "x": 240.0, "y": 0.0, "zone_id": "PZ-1"},
+            ],
+            "water_segments": [
+                {
+                    "name": "W-1",
+                    "system_type": "water",
+                    "start_node": "SRC",
+                    "end_node": "H-1",
+                    "route_points": [[0.0, 0.0], [260.0, 0.0]],
+                    "diameter_in": 8.0,
+                    "material": "DIP",
+                    "source": "accepted_utility_plan",
+                    "flow_gpm": 300.0,
+                },
+                {
+                    "name": "W-2",
+                    "system_type": "water",
+                    "start_node": "H-1",
+                    "end_node": "SRC",
+                    "route_points": [[260.0, 0.0], [0.0, 0.0]],
+                    "diameter_in": 8.0,
+                    "material": "DIP",
+                    "source": "accepted_utility_plan",
+                    "flow_gpm": 300.0,
+                },
+            ],
+        }
+    )
+
+
 def _sanitary_depth_plan(payload: dict) -> dict:
     plan = _review_depth_plan(payload)
     meta = plan["meta"]
     meta["sanitary"] = _complete_sanitary_depth_fixture()
     meta["quantities"]["totals"]["pipe_length_ft"] = 260.0
     meta["quantities"]["explain"]["quantity_audit"]["pipe_length_ft"] = {"source_object_ids": ["SAN-MAIN-1", "SAN-MAIN-2"]}
+    meta["civil_design_readiness"] = civil_design_readiness(plan)
+    meta["engine_readiness"] = evaluate_engine_readiness(plan)
+    return plan
+
+
+def _water_depth_plan(payload: dict) -> dict:
+    plan = _review_depth_plan(payload)
+    meta = plan["meta"]
+    meta["water_summary"] = _complete_water_depth_fixture()
+    meta["quantities"]["totals"]["pipe_length_ft"] = 520.0
+    meta["quantities"]["explain"]["quantity_audit"]["pipe_length_ft"] = {"source_object_ids": ["W-1", "W-2"]}
     meta["civil_design_readiness"] = civil_design_readiness(plan)
     meta["engine_readiness"] = evaluate_engine_readiness(plan)
     return plan
@@ -517,6 +581,38 @@ class EngineDepthAuditTests(unittest.TestCase):
         self.assertFalse(report["construction_release_allowed"])
         self.assertFalse(report["construction_ready"])
         self.assertFalse(report["construction_depth_requirements_met"])
+
+    def test_complete_water_fixture_proves_water_depth_without_construction_release(self) -> None:
+        report = run_engine_depth_audit(scenario_ids=["small_commercial_pad"], build_plan_fn=_water_depth_plan)
+
+        water = report["engine_results"]["water"]
+        self.assertEqual(water["actual_depth_classification"], CLASS_PRODUCTION_DEPTH)
+        self.assertEqual(water["score"], 100.0)
+        self.assertEqual(water["first_failing_layer"], "")
+        proof_ids = {item["id"] for item in water["proof_checklist"]}
+        self.assertIn("source_pressure", proof_ids)
+        self.assertIn("residual_pressure", proof_ids)
+        self.assertIn("utility_owner_criteria", proof_ids)
+        self.assertIn("loop_dead_end", proof_ids)
+        for evidence in (
+            "pressure zones",
+            "hydrant spacing evidence",
+            "fire flow validation",
+            "utility owner criteria",
+            "velocity checks",
+            "looped network graph",
+            "no dead-end water nodes",
+        ):
+            self.assertIn(evidence, water["evidence"])
+        self.assertTrue(water["discipline_depth_proof"]["engineer_review_required"])
+        self.assertFalse(report["construction_release_allowed"])
+        self.assertFalse(report["construction_ready"])
+        self.assertFalse(report["construction_depth_requirements_met"])
+
+        plan = _water_depth_plan({"project_name": "water depth fixture"})
+        depth = validate_water_system_depth(plan)
+        self.assertTrue(depth["production_ready"])
+        self.assertEqual(depth["system"], "water_system_depth")
 
     def test_storm_hgl_egl_fixture_missing_inputs_remain_blocked(self) -> None:
         storm, drainage = _complete_storm_hgl_fixture()

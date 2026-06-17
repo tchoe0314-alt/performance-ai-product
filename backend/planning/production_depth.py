@@ -1069,6 +1069,72 @@ def _accepted_standard_evidence(*records: Dict[str, Any]) -> Dict[str, Any]:
     return {"standard_accepted": False, "missing_inputs": ["accepted_standard"]}
 
 
+def _water_owner_criteria_evidence(*records: Dict[str, Any]) -> Dict[str, Any]:
+    for rec in records:
+        clean = safe_dict(rec)
+        owner = safe_str(clean.get("utility_owner") or clean.get("utility_owner_name") or clean.get("water_utility_owner"))
+        criteria = safe_str(
+            clean.get("utility_owner_criteria")
+            or clean.get("utility_owner_criteria_id")
+            or clean.get("water_utility_criteria")
+            or clean.get("utility_criteria_source")
+        )
+        status = safe_str(clean.get("utility_owner_criteria_status") or clean.get("criteria_status")).lower()
+        accepted = bool(
+            clean.get("utility_owner_criteria_accepted") is True
+            or clean.get("owner_criteria_accepted") is True
+            or status in {"accepted", "adopted", "approved"}
+        )
+        if owner and criteria and accepted:
+            return {
+                "utility_owner": owner,
+                "utility_owner_criteria": criteria,
+                "utility_owner_criteria_status": status or "accepted",
+                "utility_owner_criteria_accepted": True,
+            }
+    return {
+        "utility_owner_criteria_accepted": False,
+        "missing_inputs": ["utility_owner", "utility_owner_criteria"],
+    }
+
+
+def _water_pressure_zone_validation(zones: Sequence[Any], source_pressure: Optional[float]) -> Dict[str, Any]:
+    rows: List[Dict[str, Any]] = []
+    missing_rows: List[Dict[str, Any]] = []
+    for index, item in enumerate(zones, start=1):
+        rec = safe_dict(item)
+        zone_id = safe_str(rec.get("id") or rec.get("zone_id") or rec.get("name"), f"PZ-{index}")
+        missing: List[str] = []
+        if not safe_str(rec.get("id") or rec.get("zone_id") or rec.get("name")):
+            missing.append("zone_id")
+        if _finite_or_none(rec.get("source_pressure_psi")) is None and source_pressure is None:
+            missing.append("source_pressure_psi")
+        if _finite_or_none(rec.get("min_pressure_psi")) is None:
+            missing.append("min_pressure_psi")
+        if not safe_str(rec.get("source") or rec.get("pressure_zone_source") or rec.get("utility_owner")):
+            missing.append("pressure_zone_source")
+        row = {
+            "id": zone_id,
+            "name": safe_str(rec.get("name") or rec.get("label"), zone_id),
+            "source_pressure_psi": round(_finite_or_none(rec.get("source_pressure_psi")) or source_pressure or 0.0, 3),
+            "min_pressure_psi": rec.get("min_pressure_psi"),
+            "max_pressure_psi": rec.get("max_pressure_psi"),
+            "source": safe_str(rec.get("source") or rec.get("pressure_zone_source") or rec.get("utility_owner")),
+            "valid": not missing,
+        }
+        rows.append(row)
+        if missing:
+            missing_rows.append({"zone": zone_id, "missing_fields": sorted(set(missing))})
+    return {
+        "valid": bool(rows) and not missing_rows,
+        "zone_count": len(rows),
+        "zones": rows,
+        "missing_inputs": [] if rows else ["pressure_zones"],
+        "zone_missing_inputs": missing_rows,
+        "truth_label": "Pressure zone validation requires explicit zone evidence tied to source pressure or utility-owner criteria.",
+    }
+
+
 def _critical_water_node(pressure_result: Dict[str, Any], fallback: str = "") -> str:
     pressures = safe_dict(pressure_result.get("node_pressures_psi"))
     best_node = ""
@@ -1179,6 +1245,10 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
             segment_missing.append("flow_gpm")
         if diameter_in <= 0.0:
             segment_missing.append("diameter_in")
+        if not safe_str(rec.get("material") or rec.get("pipe_material")):
+            segment_missing.append("material")
+        if not safe_str(rec.get("source") or rec.get("main_source") or rec.get("utility_source")):
+            segment_missing.append("source")
         start_node = safe_str(rec.get("start_node") or rec.get("from_node") or rec.get("start_name"))
         end_node = safe_str(rec.get("end_node") or rec.get("to_node") or rec.get("end_name"))
         if not start_node and points:
@@ -1201,8 +1271,10 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         if end_node:
             rec["end_node"] = end_node
         water_segments.append(rec)
+        graph_blocking_missing = [field for field in segment_missing if field not in {"material", "source"}]
         if segment_missing:
             missing_inputs.append({"segment": name, "missing_fields": sorted(set(segment_missing))})
+        if graph_blocking_missing:
             continue
         graph_rows.append(
             {
@@ -1226,25 +1298,51 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
 
     source = safe_dict(enriched.get("water_source") or enriched.get("source"))
     standard_evidence = _accepted_standard_evidence(enriched, source)
+    owner_criteria = _water_owner_criteria_evidence(enriched, source)
     source_pressure = (
         _finite_or_none(enriched.get("source_pressure_psi"))
         or _finite_or_none(enriched.get("available_pressure_psi"))
         or _finite_or_none(source.get("pressure_psi"))
         or _finite_or_none(source.get("source_pressure_psi"))
     )
+    source_pressure_source = safe_str(
+        enriched.get("source_pressure_source")
+        or enriched.get("pressure_source")
+        or source.get("pressure_source")
+        or source.get("source_pressure_source")
+    )
     source_node = safe_str(enriched.get("source_node") or source.get("node") or source.get("source_node"))
     if not source_node and graph_rows:
         source_node = safe_str(graph_rows[0].get("start_node"))
-    min_required_pressure = max(0.0, safe_float(enriched.get("min_residual_pressure_psi"), 20.0))
+    residual_target = _finite_or_none(enriched.get("min_residual_pressure_psi"))
+    residual_target_source = safe_str(
+        enriched.get("residual_pressure_source")
+        or enriched.get("residual_target_source")
+        or enriched.get("fire_flow_residual_source")
+        or source.get("residual_pressure_source")
+    )
+    min_required_pressure = max(0.0, residual_target if residual_target is not None else 20.0)
     pressure_missing: List[str] = []
     if source_pressure is None:
         pressure_missing.append("source_pressure_psi")
+    if not source_pressure_source:
+        pressure_missing.append("source_pressure_source")
     if not source_node:
         pressure_missing.append("source_node")
+    if residual_target is None:
+        pressure_missing.append("min_residual_pressure_psi")
+    if not residual_target_source:
+        pressure_missing.append("residual_pressure_source")
     if not graph_rows:
         pressure_missing.append("water_segments_with_flow_diameter_length_nodes")
     if standard_evidence.get("standard_accepted") is not True:
         pressure_missing.append("accepted_standard")
+    if owner_criteria.get("utility_owner_criteria_accepted") is not True:
+        pressure_missing.extend(owner_criteria.get("missing_inputs") or ["utility_owner_criteria"])
+    for item in missing_inputs:
+        fields = safe_list(safe_dict(item).get("missing_fields"))
+        if "material" in fields or "source" in fields:
+            pressure_missing.append("water_main_material_source")
     pressure_result: Dict[str, Any] = {}
     if source_pressure is not None and source_node and graph_rows:
         pressure_result = analyze_water_pressure_graph(
@@ -1255,15 +1353,26 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         )
     min_pressure = safe_float(pressure_result.get("min_pressure_psi"), 0.0)
     standard_accepted = standard_evidence.get("standard_accepted") is True
-    pressure_valid = bool(pressure_result.get("success")) and min_pressure >= min_required_pressure and not missing_inputs and standard_accepted
+    owner_criteria_accepted = owner_criteria.get("utility_owner_criteria_accepted") is True
+    pressure_valid = (
+        bool(pressure_result.get("success"))
+        and min_pressure >= min_required_pressure
+        and not missing_inputs
+        and not pressure_missing
+        and standard_accepted
+        and owner_criteria_accepted
+    )
     enriched["pressure_validation"] = {
         "valid": pressure_valid,
         "source": "water_pressure_graph",
         **standard_evidence,
+        **owner_criteria,
         "source_node": source_node,
         "source_pressure_psi": round(source_pressure, 3) if source_pressure is not None else None,
+        "source_pressure_source": source_pressure_source,
         "min_pressure_psi": round(min_pressure, 3) if pressure_result else None,
         "min_required_pressure_psi": round(min_required_pressure, 3),
+        "residual_pressure_source": residual_target_source,
         "residual_pressure_margin_psi": round(min_pressure - min_required_pressure, 3) if pressure_result else None,
         "pressure_graph": pressure_result,
         "missing_inputs": pressure_missing,
@@ -1281,17 +1390,9 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
                 rec["velocity_fps"] = solved.get("velocity_fps")
     enriched["velocity_checks"] = velocity_checks
     existing_zones = safe_list(enriched.get("pressure_zones"))
+    enriched["pressure_zone_validation"] = _water_pressure_zone_validation(existing_zones, source_pressure)
     if existing_zones:
         enriched["pressure_zones"] = existing_zones
-    elif source_pressure is not None:
-        enriched["pressure_zones"] = [
-            {
-                "name": safe_str(source.get("zone") or enriched.get("pressure_zone_name"), "Source Pressure Zone"),
-                "source_node": source_node,
-                "source_pressure_psi": round(source_pressure, 3),
-                "truth_label": "Pressure zone derived from supplied source pressure.",
-            }
-        ]
 
     hydrants = safe_list(enriched.get("hydrants") or enriched.get("fire_hydrants"))
     enriched["hydrant_spacing_validation"] = _hydrant_spacing_validation(
@@ -1303,6 +1404,17 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         0.0,
         safe_float(enriched.get("fire_flow_demand_gpm"), 0.0),
         safe_float(enriched.get("required_fire_flow_gpm"), 0.0),
+    )
+    fire_flow_criteria_source = safe_str(
+        enriched.get("fire_flow_criteria_source")
+        or enriched.get("demand_criteria_source")
+        or enriched.get("fire_flow_standard_source")
+        or source.get("fire_flow_criteria_source")
+    )
+    hydrant_evidence_source = safe_str(
+        enriched.get("hydrant_evidence_source")
+        or enriched.get("hydrant_source")
+        or source.get("hydrant_evidence_source")
     )
     available_fire = max(
         0.0,
@@ -1337,10 +1449,24 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
     fire_missing = []
     if fire_demand <= 0.0:
         fire_missing.append("fire_flow_demand_gpm")
+    if not fire_flow_criteria_source:
+        fire_missing.append("fire_flow_criteria_source")
     if source_pressure is None:
         fire_missing.append("source_pressure_psi")
+    if not source_pressure_source:
+        fire_missing.append("source_pressure_source")
+    if residual_target is None:
+        fire_missing.append("min_residual_pressure_psi")
+    if not residual_target_source:
+        fire_missing.append("residual_pressure_source")
+    if not hydrants:
+        fire_missing.append("hydrant_evidence")
+    if not hydrant_evidence_source:
+        fire_missing.append("hydrant_evidence_source")
     if standard_evidence.get("standard_accepted") is not True:
         fire_missing.append("accepted_standard")
+    if owner_criteria.get("utility_owner_criteria_accepted") is not True:
+        fire_missing.extend(owner_criteria.get("missing_inputs") or ["utility_owner_criteria"])
     if governing_available <= 0.0:
         fire_missing.append("available_fire_flow_gpm_or_calculable_fire_flow_path")
     residual_for_fire = safe_float(
@@ -1354,10 +1480,17 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
             and residual_for_fire >= min_required_pressure
             and (not calculated_fire or calculated_fire.get("valid") is True)
             and standard_accepted
+            and owner_criteria_accepted
+            and not fire_missing
         ),
         "source": "water_fire_flow_residual_calculation" if calculated_fire else "water_fire_flow_check",
         **standard_evidence,
+        **owner_criteria,
         "calculation_method": calculated_fire.get("calculation_method") or "declared_available_flow_with_pressure_graph_residual",
+        "demand_scenario": safe_str(enriched.get("demand_scenario") or enriched.get("fire_flow_scenario"), "fire_flow"),
+        "fire_flow_criteria_source": fire_flow_criteria_source,
+        "hydrant_evidence_source": hydrant_evidence_source,
+        "source_pressure_source": source_pressure_source,
         "fire_flow_node": fire_flow_node,
         "required_fire_flow_gpm": round(fire_demand, 3),
         "available_fire_flow_gpm": round(governing_available, 3),
@@ -1366,6 +1499,7 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         "fire_flow_margin_gpm": round(governing_available - fire_demand, 3) if fire_demand > 0.0 and governing_available > 0.0 else None,
         "residual_pressure_psi": round(residual_for_fire, 3) if pressure_result or calculated_fire else None,
         "min_required_residual_pressure_psi": round(min_required_pressure, 3),
+        "residual_pressure_source": residual_target_source,
         "residual_pressure_margin_psi": round(residual_for_fire - min_required_pressure, 3) if pressure_result or calculated_fire else None,
         "fire_flow_path": safe_list(calculated_fire.get("fire_flow_path")),
         "fire_flow_graph": calculated_fire,
@@ -1390,6 +1524,8 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
     enriched["looping_validation"] = {
         "valid": bool(enriched["looped"]),
         "method": "graph_cycle_detection",
+        "source": "water_graph_degree_check" if graph_rows else "",
+        "missing_inputs": [] if graph_rows else ["water_segments_with_flow_diameter_length_nodes"],
         "truth_label": "Looping validation is based on water graph connectivity.",
     }
     sizing_recommendations: List[Dict[str, Any]] = []
@@ -1408,6 +1544,37 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         "truth_label": "Sizing optimization is evidence-only until a resized candidate is explicitly accepted.",
     }
     blockers = []
+    native_blockers = {
+        "source_pressure_psi": "source_pressure_missing",
+        "source_pressure_source": "source_pressure_source_missing",
+        "min_residual_pressure_psi": "residual_target_missing",
+        "residual_pressure_source": "residual_target_source_missing",
+        "hydrant_evidence": "hydrant_evidence_missing",
+        "hydrant_evidence_source": "hydrant_evidence_source_missing",
+        "fire_flow_demand_gpm": "demand_fire_flow_criteria_missing",
+        "fire_flow_criteria_source": "demand_fire_flow_criteria_missing",
+        "accepted_standard": "accepted_water_standard_missing",
+        "utility_owner": "utility_owner_criteria_missing",
+        "utility_owner_criteria": "utility_owner_criteria_missing",
+        "pressure_zones": "pressure_zone_missing",
+        "water_segments_with_flow_diameter_length_nodes": "loop_dead_end_proof_missing",
+        "water_main_material_source": "water_main_material_source_missing",
+    }
+    pressure_zone = safe_dict(enriched.get("pressure_zone_validation"))
+    blockers = []
+    for missing in pressure_missing + fire_missing + safe_list(pressure_zone.get("missing_inputs")):
+        code = native_blockers.get(safe_str(missing))
+        if code and code not in blockers:
+            blockers.append(code)
+    if pressure_zone.get("valid") is not True and "pressure_zone_missing" not in blockers:
+        blockers.append("pressure_zone_missing")
+    main_missing = [
+        item
+        for item in missing_inputs
+        if any(field in {"material", "source"} for field in safe_list(safe_dict(item).get("missing_fields")))
+    ]
+    if main_missing and "water_main_material_source_missing" not in blockers:
+        blockers.append("water_main_material_source_missing")
     if pressure_missing or missing_inputs:
         blockers.append("pressure_inputs_missing")
     if safe_dict(enriched["hydrant_spacing_validation"]).get("valid") is not True:
@@ -1420,6 +1587,62 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         blockers.append("water_dead_ends_present")
     if standard_evidence.get("standard_accepted") is not True:
         blockers.append("accepted_water_standard_missing")
+    if owner_criteria.get("utility_owner_criteria_accepted") is not True and "utility_owner_criteria_missing" not in blockers:
+        blockers.append("utility_owner_criteria_missing")
+    if not graph_rows and "loop_dead_end_proof_missing" not in blockers:
+        blockers.append("loop_dead_end_proof_missing")
+    blockers = list(dict.fromkeys(blockers))
+    enriched["water_fire_flow_proof"] = {
+        "source_pressure": {
+            "source_node": source_node,
+            "source_pressure_psi": round(source_pressure, 3) if source_pressure is not None else None,
+            "source": source_pressure_source,
+            "valid": bool(source_pressure is not None and source_pressure_source),
+        },
+        "residual_pressure": {
+            "target_psi": round(min_required_pressure, 3),
+            "target_source": residual_target_source,
+            "calculated_residual_psi": enriched["fire_flow_validation"].get("residual_pressure_psi"),
+            "valid": bool(residual_target is not None and residual_target_source and enriched["fire_flow_validation"].get("residual_pressure_psi") is not None),
+        },
+        "demand_scenario": {
+            "scenario": enriched["fire_flow_validation"].get("demand_scenario"),
+            "required_fire_flow_gpm": round(fire_demand, 3),
+            "criteria_source": fire_flow_criteria_source,
+            "valid": bool(fire_demand > 0.0 and fire_flow_criteria_source),
+        },
+        "accepted_standard": standard_evidence,
+        "utility_owner_criteria": owner_criteria,
+        "pressure_zones": enriched["pressure_zone_validation"],
+        "hydrants": {
+            "count": len(hydrants),
+            "source": hydrant_evidence_source,
+            "spacing": enriched["hydrant_spacing_validation"],
+            "valid": bool(hydrants and hydrant_evidence_source and enriched["hydrant_spacing_validation"].get("valid") is True),
+        },
+        "main_evidence": {
+            "segments": [
+                {
+                    "name": safe_str(segment.get("name")),
+                    "diameter_in": segment.get("diameter_in"),
+                    "material": safe_str(segment.get("material") or segment.get("pipe_material")),
+                    "source": safe_str(segment.get("source") or segment.get("main_source") or segment.get("utility_source")),
+                    "valid": bool(
+                        safe_float(segment.get("diameter_in"), 0.0) > 0.0
+                        and safe_str(segment.get("material") or segment.get("pipe_material"))
+                        and safe_str(segment.get("source") or segment.get("main_source") or segment.get("utility_source"))
+                    ),
+                }
+                for segment in water_segments
+            ],
+        },
+        "velocity_checks": velocity_checks,
+        "looping": enriched["looping_validation"],
+        "dead_ends": enriched["dead_end_validation"],
+        "engineer_review_required": True,
+        "construction_release_allowed": False,
+        "truth_label": "Water/fire-flow proof exposes deterministic review evidence and blockers only; construction release remains outside Civora.",
+    }
     enriched["water_depth_status"] = "ready" if not blockers else "blocked_missing_inputs"
     enriched["water_depth_blockers"] = blockers
     enriched["water_depth_blocker_details"] = blocker_explanations(blockers)

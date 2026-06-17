@@ -139,9 +139,9 @@ def _engine_evidence(engine_id: str, meta: Dict[str, Any]) -> List[str]:
         if _safe_dict(sanitary.get("structure_spacing_validation")).get("valid"):
             evidence.append("manhole_spacing")
     elif engine_id == "water":
-        utilities = _safe_dict(meta.get("utilities") or meta.get("utility_summary"))
+        utilities = _safe_dict(meta.get("water") or meta.get("water_summary") or meta.get("utilities") or meta.get("utility_summary"))
         hooks = _safe_dict(utilities.get("conflict_hooks"))
-        if _safe_list(utilities.get("segments")) or _safe_list(hooks.get("utility_segments")):
+        if _safe_list(utilities.get("water_segments")) or _safe_list(utilities.get("segments")) or _safe_list(hooks.get("utility_segments")):
             evidence.append("utility_segments")
     elif engine_id in {"utility_coordination", "conflict_resolution"}:
         coordination = _safe_dict(meta.get("coordination") or meta.get("coordination_summary"))
@@ -628,6 +628,9 @@ def evaluate_engine_readiness(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
         depth_validation = _depth_validation_for_engine(contract.engine_id, meta)
         if depth_validation.get("production_ready"):
             evidence.append("depth_validation")
+            for item in _safe_list(depth_validation.get("evidence")):
+                if item not in evidence:
+                    evidence.append(item)
         production_gaps.extend(_depth_blockers_for_engine(contract.engine_id, meta))
         production_gaps.extend(_explicit_blockers_for_engine(contract.engine_id, meta))
         has_orchestration_evidence = contract.engine_id == "ai_orchestration" and bool(_safe_dict(meta.get("ai_orchestration_evidence_v1")))
