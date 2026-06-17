@@ -30,6 +30,7 @@ from backend.planning.cad_entity_model import (
     locked_layer_blocker,
     manual_drawn_objects_to_cad_entities,
     normalize_cad_entity,
+    refresh_dimension_associations,
 )
 from backend.planning.common import safe_float, safe_str
 from backend.planning.design_alternatives import (
@@ -747,6 +748,8 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return None
     if lowered in {"add dimension", "add dimensions"}:
         return None
+    if "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("why", "what", "show", "which", "update", "refresh", "recalculate", "recalc")):
+        return None
     if any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin")) and "cad entity" not in lowered and "cad object" not in lowered and "layer" not in lowered:
         return None
     command_tokens = (
@@ -774,6 +777,10 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "rectangle",
         "dimension",
         "text",
+        "callout",
+        "leader",
+        "note",
+        "label",
         "cad entity",
         "cad object",
     )
@@ -831,6 +838,7 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return {**base, "action": "use_company_layer_style"}
 
     wants_create = any(token in lowered for token in ("create", "draw", "add"))
+    targeted_dimension = "dimension" in lowered and (bool(selected_ids) or "this line" in lowered or "this circle" in lowered or "this arc" in lowered)
     if re.search(r"\b(line|segment)\b", lowered) and wants_create:
         if len(points) < 2:
             return {**base, "action": "create_line", "entity_type": "line", "missing_inputs": ["line start point", "line end point"], "next_best_action": "Provide start and end coordinates, for example: create line from 0,0 to 25,0."}
@@ -843,10 +851,25 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         if len(points) < 1 or len(values) < 4:
             return {**base, "action": "create_rectangle", "entity_type": "rectangle", "missing_inputs": ["rectangle origin", "rectangle width", "rectangle height"], "next_best_action": "Provide origin, width, and height, for example: create rectangle at 0,0 width 40 height 20."}
         return {**base, "action": "create_rectangle", "entity_type": "rectangle", "geometry": {"origin": points[0], "width": abs(values[-2]), "height": abs(values[-1]), "units": "ft"}}
-    if "dimension" in lowered and wants_create:
-        if len(points) < 2:
+    if "dimension" in lowered and (wants_create or targeted_dimension):
+        if len(points) < 2 and not selected_ids:
+            if lowered in {"add dimension", "add dimensions"}:
+                return None
             return {**base, "action": "create_dimension", "entity_type": "dimension", "missing_inputs": ["dimension start point", "dimension end point"], "next_best_action": "Provide two measurement points for the dimension."}
-        return {**base, "action": "create_dimension", "entity_type": "dimension", "geometry": {"start": points[0], "end": points[1], "points": points[:2], "units": "ft"}}
+        dimension_type = "angular" if "angular" in lowered else "diameter" if "diameter" in lowered else "radius" if "radius" in lowered else "linear" if "linear" in lowered else "aligned"
+        geometry = {"units": "ft"}
+        if len(points) >= 2:
+            geometry.update({"start": points[0], "end": points[1], "points": points[:3] if dimension_type == "angular" else points[:2]})
+        return {**base, "action": "create_dimension", "entity_type": "dimension", "dimension_type": dimension_type, "geometry": geometry, "units": "deg" if dimension_type == "angular" else "ft", "precision": 1 if dimension_type == "angular" else 2}
+    if any(token in lowered for token in ("callout", "leader", "note", "label")) and wants_create:
+        text_match = re.search(r"['\"]([^'\"]+)['\"]", message)
+        text = text_match.group(1).strip() if text_match else ("Callout" if "callout" in lowered else "Note" if "note" in lowered else "Label")
+        annotation_type = "callout" if "callout" in lowered else "leader" if "leader" in lowered else "note" if "note" in lowered else "label"
+        if annotation_type in {"callout", "leader"} and len(points) < 2:
+            return {**base, "action": f"create_{annotation_type}", "entity_type": annotation_type, "missing_inputs": ["leader start point", "leader text point"], "next_best_action": "Provide leader/callout points, for example: add callout \"review inlet\" from 0,0 to 5,5."}
+        if annotation_type in {"note", "label"} and not points:
+            return {**base, "action": f"create_{annotation_type}", "entity_type": annotation_type, "missing_inputs": ["annotation insertion point"], "next_best_action": "Provide an insertion point for the annotation."}
+        return {**base, "action": f"create_{annotation_type}", "entity_type": annotation_type, "text": text, "geometry": {"insert": points[-1] if points else {"x": 0, "y": 0}, "points": points, "text": text, "units": "ft"}}
     if re.search(r"\btext\b", lowered) and wants_create:
         text_match = re.search(r"['\"]([^'\"]+)['\"]", message)
         label = text_match.group(1).strip() if text_match else ""
@@ -936,11 +959,15 @@ def _cad_entity_chat_response(
     user_id: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
+    if ("pdf" in lowered and "cad" in lowered) or ("raster line" in lowered and "cad" in lowered) or "dxf" in lowered or "dwg" in lowered or "autocad" in lowered:
+        return None
     mentions_cad_entity = "cad entit" in lowered or "cad object" in lowered or "drawn object" in lowered
     mentions_cad = bool(re.search(r"\bcad\b", lowered)) or mentions_cad_entity
     asks_list = any(phrase in lowered for phrase in ("what cad entities", "list cad entities", "cad entities are in", "what cad objects"))
     asks_review_only = "why" in lowered and ("review-only" in lowered or "review only" in lowered or "cad object" in lowered or "cad entity" in lowered)
     asks_stale_invalid = ("stale" in lowered or "invalid" in lowered) and ("cad" in lowered or "entity" in lowered or "object" in lowered)
+    asks_dimension_stale = "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("why", "what", "show", "which"))
+    asks_update_stale_dimensions = "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("update", "refresh", "recalculate", "recalc"))
     asks_history = mentions_cad and any(phrase in lowered for phrase in ("show cad history", "cad history", "revision timeline", "cad timeline"))
     asks_changed = mentions_cad and any(phrase in lowered for phrase in ("what changed in cad", "what changed on cad", "cad changes", "changed in cad"))
     asks_object_changed = any(phrase in lowered for phrase in ("what changed on this object", "what changed on this cad object", "show this object history", "object history"))
@@ -971,6 +998,8 @@ def _cad_entity_chat_response(
         or asks_list
         or asks_review_only
         or asks_stale_invalid
+        or asks_dimension_stale
+        or asks_update_stale_dimensions
         or asks_history
         or asks_changed
         or asks_object_changed
@@ -1318,6 +1347,63 @@ def _cad_entity_chat_response(
             blocker=lines[0],
         )
 
+    if asks_update_stale_dimensions:
+        stale_dimensions = [
+            entity
+            for entity in entities
+            if entity.get("type") == "dimension" and (entity.get("dirty") or entity.get("stale") or entity.get("review_status") == "stale")
+        ]
+        if not (record and project_store and user_id):
+            return _truthful_decision_update(
+                {},
+                assistant_message="I can refresh stale dimension associations only after a saved project is loaded, so the persistent CAD entity model and history can be updated safely.",
+                intent="cad_dimension_annotation",
+                run_mode="none",
+                needs_clarification=True,
+                action_taken="blocked_stale_dimension_update_missing_project",
+                action_blocked_reason="No saved canonical project record is available.",
+                required_missing_inputs=["saved project"],
+                affected_systems=["cad_entity_model", "cad_dimensions"],
+                next_best_action="Save or load the project, then retry updating stale dimensions.",
+                command_payload_updates={CAD_ENTITY_MODEL_VERSION: model},
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="No saved canonical project record is available.",
+            )
+        changed_refs: List[str] = []
+        for entity in stale_dimensions:
+            changed_refs.extend(_safe_list(_safe_dict(entity.get("dimension")).get("measured_entity_refs")))
+        source_model = _safe_dict(meta.get(CAD_ENTITY_MODEL_VERSION))
+        refreshed_entities, association_events = refresh_dimension_associations(
+            _safe_list(source_model.get("entities")) or entities,
+            changed_entity_ids=changed_refs,
+            actor=user_id or "user",
+        )
+        source_model["entities"] = refreshed_entities
+        source_model["history"] = _safe_list(source_model.get("history")) + association_events
+        meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: source_model}, project_input=project_input)
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        _save_project_record(project_store, {**record, "_user_id": user_id}, project_input=project_input, latest_result=latest_result)
+        model = meta[CAD_ENTITY_MODEL_VERSION]
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                f"Refreshed {len(association_events)} stale dimension association(s) where the measured CAD entity still exists. "
+                "They remain stale/dirty review aids until reviewed; engineering quantities were not updated."
+            ),
+            intent="cad_dimension_annotation",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="updated_stale_dimension_associations",
+            affected_systems=["cad_entity_model", "cad_dimensions", "cad_history"],
+            assumptions=["Dimension refresh updates drafting/review association metadata only and does not mutate engineering evidence."],
+            next_best_action="Review refreshed dimensions before relying on them in exports or reports.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model, "updated_dimension_entity_ids": [safe_str(event.get("entity_id")) for event in association_events]},
+            outcome="understood_and_executed",
+            state_changed=bool(association_events),
+        )
+
     if asks_history or asks_changed or asks_object_changed:
         filtered_history = history
         if asks_object_changed and selected_ids:
@@ -1371,16 +1457,20 @@ def _cad_entity_chat_response(
             blocker="; ".join(safe_str(item.get("reason")) for item in blockers[:4] if isinstance(item, dict)),
         )
 
-    if asks_stale_invalid:
-        lines = ["CAD entities that are stale or invalid:"]
-        if stale_invalid:
-            for entity in stale_invalid[:10]:
+    if asks_stale_invalid or asks_dimension_stale:
+        dimension_only = asks_dimension_stale and not asks_stale_invalid
+        rows = [entity for entity in stale_invalid if entity.get("type") == "dimension"] if dimension_only else stale_invalid
+        lines = ["Stale dimensions:" if dimension_only else "CAD entities that are stale or invalid:"]
+        if rows:
+            for entity in rows[:10]:
                 blockers = ", ".join(safe_str(item) for item in _safe_list(entity.get("validation_blockers")) if safe_str(item))
-                lines.append(f"- {safe_str(entity.get('id'))} ({safe_str(entity.get('type'))}): {blockers or 'stale/dirty rerun review required'}")
+                dim = _safe_dict(entity.get("dimension"))
+                reason = safe_str(dim.get("association_dirty_reason") or dim.get("association_status"))
+                lines.append(f"- {safe_str(entity.get('id'))} ({safe_str(entity.get('type'))}): {blockers or reason or 'stale/dirty rerun review required'}")
         else:
             lines.append("- None visible in the current CAD entity model.")
-        lines.append("CAD entities remain review-only and cannot create construction release.")
-        action_taken = "reported_stale_invalid_cad_entities"
+        lines.append("Dimensions and CAD entities remain review-only and cannot create construction release or update engineering quantities by themselves.")
+        action_taken = "explained_stale_dimension_status" if dimension_only else "reported_stale_invalid_cad_entities"
     elif asks_review_only:
         lines = [
             "This CAD object is review-only because CAD/manual/imported geometry is drafting evidence, not survey-backed or engineer-approved evidence by itself.",

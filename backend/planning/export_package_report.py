@@ -14,6 +14,7 @@ from .release_gates import construction_release_blockers_from_meta, final_plan_r
 from .smart_fix import build_smart_fix_recommendations
 from .annotation_standards import build_annotation_standards_trace
 from .symbol_block_library import build_symbol_block_reference_trace
+from .cad_entity_model import build_cad_entity_model, build_dimension_annotation_trace
 
 
 def _utc_now_iso() -> str:
@@ -506,6 +507,7 @@ def build_export_package_report_v1(
     annotation_trace = build_annotation_standards_trace(meta, export_type=safe_str(export_type))
     symbol_reference_trace = build_symbol_block_reference_trace(meta)
     plotting_standards = build_plotting_standards(meta)
+    dimension_annotation_trace = build_dimension_annotation_trace(build_cad_entity_model(meta))
     review_blocked = bool(audit_blocked or gate_blocked or stale)
     deliverable_confidence = (
         "construction_blocked"
@@ -542,6 +544,7 @@ def build_export_package_report_v1(
         "smart_fix_recommendations_v1": build_smart_fix_recommendations(plan, meta=meta),
         "canonical_ids_included": canonical_ids,
         "annotation_standard_trace": annotation_trace,
+        "cad_dimension_annotation_trace": dimension_annotation_trace,
         "symbol_block_reference_trace": symbol_reference_trace,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
         "paper_model_plotting_standards_v1": plotting_standards,
