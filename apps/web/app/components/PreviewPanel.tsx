@@ -607,6 +607,7 @@ export default function PreviewPanel({
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
+  const suppressNextDrawClickRef = useRef(false);
   const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
   const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
@@ -2703,7 +2704,7 @@ export default function PreviewPanel({
     onCreateSiteBoundary,
   ]);
 
-  const draftPointCount = draftPoints.length + (draftPreviewPoint ? 1 : 0);
+  const draftPointCount = draftPoints.length;
   const finishDraftMinPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
   const finishDraftBlockedReason =
     draftPoints.length && drawMode !== "rect" && draftPointCount < finishDraftMinPoints
@@ -6121,7 +6122,6 @@ export default function PreviewPanel({
           ) : (
             <div
               ref={previewRef}
-              data-testid="preview-drawing-surface"
               className={`relative flex w-full min-w-0 flex-1 min-h-[320px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
                 previewFullscreenOpen && showMap
                   ? "fixed inset-0 z-[120] rounded-none bg-slate-950 p-0"
@@ -6225,6 +6225,10 @@ export default function PreviewPanel({
               onClick={(event) => {
                 if (allowMapInteraction) return;
                 if (drawMode !== "select") {
+                  if (suppressNextDrawClickRef.current) {
+                    suppressNextDrawClickRef.current = false;
+                    return;
+                  }
                   if (handleDrawPointer(event, overlayBoundsResolved)) return;
                 }
                 if (placementMode) {
@@ -6390,6 +6394,12 @@ export default function PreviewPanel({
                   if (allowMapInteraction) return;
                   if (drawMode === "pan") {
                     handleDrawPointer(event, overlayBoundsResolved);
+                    return;
+                  }
+                  if (drawMode !== "select") {
+                    if (handleDrawPointer(event, overlayBoundsResolved)) {
+                      suppressNextDrawClickRef.current = true;
+                    }
                     return;
                   }
                   if (rotateDragActive && onSetSiteRotationDeg) {
@@ -7631,6 +7641,7 @@ export default function PreviewPanel({
                       </div>
                     ) : null}
                     <div
+                      data-testid="preview-drawing-surface"
                       className={`${overlayPointerEvents} absolute inset-0 z-[30]`}
                       style={{
                         transformOrigin: "top left",
@@ -7737,6 +7748,7 @@ export default function PreviewPanel({
                           <div
                             key={item.id}
                             data-object-overlay
+                            aria-label={`Select ${item.label || item.type || "CAD object"}`}
                             data-preview-quality={previewQuality}
                             data-visual-kind={visualKind}
                             className={`${allowItemInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
