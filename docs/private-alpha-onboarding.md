@@ -2,11 +2,11 @@
 
 ## What Civora Is
 
-Civora is a private-pilot civil site planning copilot. It helps users organize site intent, source evidence, candidate geometry, engineering signals, assumptions, blockers, and review-package materials so a licensed professional or qualified reviewer can evaluate the work faster.
+Civora is a private-pilot civil site planning copilot. It helps users organize site intent, source evidence, candidate geometry, engineering signals, assumptions, blockers, and review-package materials so the project team can evaluate the work faster.
 
 Civora outputs are review-preparation materials only. Field use, submittals, legal responsibility, and professional decisions remain outside Civora.
 
-For the email-ready user guide, use [pilot-starter-guide.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/pilot-starter-guide.md) or the in-app `/pilot/starter` page.
+For the email-ready user guide, use [private-pilot-starter-guide.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/private-pilot-starter-guide.md). For the shorter in-app reference, use the `/pilot/starter` page.
 
 ## What Users Should Prepare
 
@@ -27,7 +27,7 @@ Civora can help prepare civil site planning evidence for review. In private alph
 - help place and edit site objects such as buildings, roads, parking, paths, basins, and utilities
 - generate review-only grading, drainage, sanitary, water, utility coordination, quantity, and export-package outputs
 - list assumptions, missing inputs, blockers, low-confidence areas, and stale-output warnings
-- package review materials for a licensed professional or qualified reviewer
+- package review materials for project-team review
 
 ## What Civora Does Not Do
 
@@ -43,7 +43,7 @@ Civora does not:
 
 Civora can prepare review packages, trace assumptions, identify blockers, and show candidate plans. Civora cannot decide that work is ready for field/submittal use.
 
-The licensed professional or qualified reviewer is responsible for:
+The project team is responsible for:
 
 - confirming source data, survey/control, datum, benchmarks, standards, constraints, and jurisdictional requirements
 - reviewing calculations, geometry, conflicts, quantities, assumptions, and exports
