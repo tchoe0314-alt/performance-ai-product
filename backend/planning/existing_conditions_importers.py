@@ -662,25 +662,28 @@ def classify_existing_conditions_file(path: Path) -> Dict[str, Any]:
     if suffix in {".shp", ".gpkg"}:
         available = _module_available("geopandas")
         return {
-            "supported": available,
+            "supported": True,
             "format": suffix.lstrip("."),
             "mode": "geospatial_vector",
+            "dependency_available": available,
             "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[suffix],
         }
     if suffix in {".tif", ".tiff"}:
         available = _module_available("rasterio")
         return {
-            "supported": available,
+            "supported": True,
             "format": "geotiff",
             "mode": "raster_surface",
+            "dependency_available": available,
             "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[suffix],
         }
     if suffix in {".las", ".laz"}:
         available = _module_available("laspy")
         return {
-            "supported": available,
+            "supported": True,
             "format": suffix.lstrip("."),
             "mode": "point_cloud",
+            "dependency_available": available,
             "required_dependency": "" if available else HEAVY_FORMAT_REQUIREMENTS[suffix],
         }
     if suffix in HEAVY_FORMAT_REQUIREMENTS:

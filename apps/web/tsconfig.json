@@ -28,9 +28,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts",
-    ".next-release-regression/types/**/*.ts",
-    ".next-release-regression/dev/types/**/*.ts"
+    "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", ".next-release-regression"]
 }

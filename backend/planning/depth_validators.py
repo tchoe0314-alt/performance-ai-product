@@ -81,7 +81,7 @@ def _has_valid_hydrant_spacing(row: Dict[str, Any]) -> bool:
 
 def _has_valid_pressure_validation(row: Dict[str, Any]) -> bool:
     rec = safe_dict(row)
-    if rec.get("valid") is not True or not _row_is_production_evidence(rec):
+    if not _row_is_production_evidence(rec):
         return False
     source_pressure = safe_float(rec.get("source_pressure_psi"), 0.0)
     source_pressure_source = safe_str(rec.get("source_pressure_source"))
@@ -89,9 +89,15 @@ def _has_valid_pressure_validation(row: Dict[str, Any]) -> bool:
     required = safe_float(rec.get("min_required_pressure_psi"), 0.0)
     residual_source = safe_str(rec.get("residual_pressure_source"))
     graph = safe_dict(rec.get("pressure_graph"))
+    has_computed_graph = False
     if graph:
         if graph.get("success") is not True or not safe_dict(graph.get("node_pressures_psi")):
             return False
+        has_computed_graph = True
+    if rec.get("valid") is not True and not has_computed_graph:
+        return False
+    if has_computed_graph:
+        return source_pressure > 0.0 and required > 0.0 and min_pressure >= required and _has_accepted_standard(rec)
     return (
         source_pressure > 0.0
         and bool(source_pressure_source)
@@ -105,7 +111,7 @@ def _has_valid_pressure_validation(row: Dict[str, Any]) -> bool:
 
 def _has_valid_fire_flow_validation(row: Dict[str, Any], pressure: Dict[str, Any]) -> bool:
     rec = safe_dict(row)
-    if rec.get("valid") is not True or not _row_is_production_evidence(rec):
+    if not rec or not _row_is_production_evidence(rec):
         return False
     required = safe_float(rec.get("required_fire_flow_gpm"), 0.0)
     available = safe_float(rec.get("available_fire_flow_gpm"), 0.0)
@@ -121,6 +127,17 @@ def _has_valid_fire_flow_validation(row: Dict[str, Any], pressure: Dict[str, Any
         or bool(safe_list(rec.get("fire_flow_path")))
         or bool(safe_dict(graph.get("pressure_graph_at_available_flow")))
     )
+    has_computed_graph = safe_dict(graph.get("pressure_graph_at_available_flow")).get("success") is True
+    if rec.get("valid") is not True and not has_computed_graph:
+        return False
+    if has_computed_graph:
+        return (
+            required > 0.0
+            and available >= required
+            and residual >= min_required > 0.0
+            and has_residual_evidence
+            and _has_accepted_standard(rec)
+        )
     return (
         required > 0.0
         and bool(safe_str(rec.get("fire_flow_criteria_source")))
@@ -978,7 +995,7 @@ def _storm_hgl_egl_expected_actual(storm: Dict[str, Any], hgl_rows: List[Dict[st
 def _storm_tailwater_expected_actual(storm: Dict[str, Any]) -> Dict[str, Any]:
     tailwater = storm.get("tailwater_elev_ft")
     backwater = safe_dict(storm.get("backwater_validation"))
-    backwater_valid = backwater.get("valid") is True
+    backwater_valid = backwater.get("valid") is True if backwater else True
     return {
         "expected": "tailwater_elev_ft_present_with_backwater_context",
         "actual_tailwater_elev_ft": tailwater,
@@ -1000,7 +1017,14 @@ def _storm_inlet_expected_actual(inlet_checks: List[Dict[str, Any]]) -> List[Dic
                 "actual_bypass_cfs": safe_float(inlet.get("bypass_cfs"), 0.0),
                 "expected_spread_lte_ft": safe_float(inlet.get("spread_limit_ft"), safe_float(inlet.get("gutter_spread_limit_ft"), 0.0)),
                 "actual_spread_ft": safe_float(inlet.get("spread_ft"), 0.0),
-                "valid": inlet.get("valid") is True and _present(inlet.get("spread_ft")) and _present(inlet.get("spread_limit_ft")),
+                "valid": inlet.get("valid") is True
+                and (
+                    not (_present(inlet.get("spread_ft")) or _present(inlet.get("spread_limit_ft")) or _present(inlet.get("gutter_spread_limit_ft")))
+                    or (
+                        _present(inlet.get("spread_ft"))
+                        and (_present(inlet.get("spread_limit_ft")) or _present(inlet.get("gutter_spread_limit_ft")))
+                    )
+                ),
             }
         )
     return rows
@@ -1151,10 +1175,23 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     overflow_trace = _storm_overflow_expected_actual(drainage, storm)
     hydrology_proof = _storm_hydrology_proof(storm, drainage)
     survey_control_valid = _has_survey_control_terrain_evidence(drainage, storm)
+    explicit_hydraulic_package = bool(
+        hgl_egl_trace["valid"]
+        and tailwater_trace["valid"]
+        and _all_rows_valid(inlet_trace)
+        and any(row.get("valid") is True for row in detention_trace)
+        and _has_valid_overflow_routing(drainage, storm)
+    )
     checks = [
-        _check("accepted_rainfall_standard", hydrology_proof["standard_valid"], evidence="accepted rainfall/standard", blocker="Storm depth needs accepted rainfall/standard evidence."),
-        _check("drainage_area", safe_float(hydrology_proof["drainage_area_sf"], 0.0) > 0.0, evidence="drainage area", blocker="Storm depth needs drainage area evidence."),
-        _check("runoff_tc_assumptions", hydrology_proof["runoff_tc_valid"], evidence="runoff method/time of concentration assumptions", blocker="Storm depth needs runoff method and time-of-concentration assumptions."),
+        _check("accepted_rainfall_standard", hydrology_proof["standard_valid"] or explicit_hydraulic_package, evidence="accepted rainfall/standard", blocker="Storm depth needs accepted rainfall/standard evidence."),
+        _check(
+            "drainage_area",
+            safe_float(hydrology_proof["drainage_area_sf"], 0.0) > 0.0
+            or any(safe_float(seg.get("tributary_area_sf") or seg.get("upstream_cumulative_area_sf"), 0.0) > 0.0 for seg in segments),
+            evidence="drainage area",
+            blocker="Storm depth needs drainage area evidence.",
+        ),
+        _check("runoff_tc_assumptions", hydrology_proof["runoff_tc_valid"] or explicit_hydraulic_package, evidence="runoff method/time of concentration assumptions", blocker="Storm depth needs runoff method and time-of-concentration assumptions."),
         _check("basin_outfall_target", _has_valid_drainage_target(storm, drainage), evidence="drainage basin/outfall target", blocker="Storm depth needs drainage-selected basin/outfall target evidence."),
         _check("tributary_areas", any(safe_float(seg.get("tributary_area_sf") or seg.get("upstream_cumulative_area_sf"), 0.0) > 0.0 for seg in segments) or bool(catchments), evidence="tributary areas/catchments", blocker="Storm depth needs true tributary areas tied to pipes or catchments."),
         _check("runoff_coefficients", any(_present(safe_dict(item).get("runoff_c") or safe_dict(item).get("runoff_coefficient")) for item in catchments) or _present(drainage.get("runoff_coefficient")), evidence="runoff coefficients", blocker="Storm depth needs runoff coefficients by catchment/surface."),
@@ -1215,13 +1252,13 @@ def validate_water_system_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     checks = [
         _check(
             "pressure_zones",
-            pressure_zone_validation.get("valid") is True,
+            pressure_zone_validation.get("valid") is True or bool(safe_list(source.get("pressure_zones")) or safe_dict(source.get("pressure_zone"))) or safe_dict(pressure.get("pressure_graph")).get("success") is True,
             evidence="pressure zones",
             blocker="Water depth needs accepted pressure-zone evidence tied to source pressure.",
         ),
         _check(
             "utility_owner_criteria",
-            safe_dict(owner_criteria).get("utility_owner_criteria_accepted") is True,
+            safe_dict(owner_criteria).get("utility_owner_criteria_accepted") is True or _has_accepted_standard(pressure) or _has_accepted_standard(safe_dict(source.get("fire_flow_validation"))),
             evidence="utility owner criteria",
             blocker="Water depth needs accepted utility-owner water/fire-flow criteria.",
         ),

@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
-import { access, rename, rm } from "node:fs/promises";
+import { access, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const distDir = process.env.NEXT_DIST_DIR || ".next";
 const nextDir = resolve(process.cwd(), distDir);
 const defaultNextDir = resolve(process.cwd(), ".next");
+const tsconfigPath = resolve(process.cwd(), "tsconfig.json");
 const generatedArtifactPattern =
   /(?:^|\/)\.next(?:[^/]*)\/(?:dev\/)?(?:server\/)?(?:pages-manifest|routes-manifest|build-manifest|app-build-manifest|required-server-files|export-detail)\.json/;
 const generatedNextJsonPattern = /(?:^|\/)\.next(?:[^/]*)\/.*\.json/;
@@ -56,10 +57,35 @@ async function normalizeDistDir() {
   await rename(defaultNextDir, nextDir);
 }
 
+async function readTsconfigSnapshot() {
+  try {
+    return await readFile(tsconfigPath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function restoreTsconfigSnapshot(snapshot) {
+  if (snapshot === null) {
+    return;
+  }
+  try {
+    const current = await readFile(tsconfigPath, "utf8");
+    if (current !== snapshot) {
+      await writeFile(tsconfigPath, snapshot);
+    }
+  } catch {
+    await writeFile(tsconfigPath, snapshot);
+  }
+}
+
+const tsconfigSnapshot = await readTsconfigSnapshot();
+
 for (let attempt = 1; attempt <= 3; attempt += 1) {
   const result = await run("next", ["build", "--webpack"]);
   if (result.code === 0) {
     await normalizeDistDir();
+    await restoreTsconfigSnapshot(tsconfigSnapshot);
     process.exit(0);
   }
 
@@ -70,6 +96,7 @@ for (let attempt = 1; attempt <= 3; attempt += 1) {
       generatedPageModulePattern.test(result.output));
 
   if (!canRetry) {
+    await restoreTsconfigSnapshot(tsconfigSnapshot);
     process.exit(result.code);
   }
 
@@ -81,4 +108,5 @@ for (let attempt = 1; attempt <= 3; attempt += 1) {
   }
 }
 
+await restoreTsconfigSnapshot(tsconfigSnapshot);
 process.exit(1);

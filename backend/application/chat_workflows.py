@@ -2238,6 +2238,7 @@ def _utility_catalog_chat_response(message: str, context: Dict[str, Any]) -> Opt
             "needs_clarification": False,
             "assistant_message": text,
             "reason": "Handled by utility catalog chat support.",
+            "action_taken": action_taken,
             "confidence": 0.96,
             "response_metadata": metadata,
         }
@@ -2285,7 +2286,7 @@ def _utility_catalog_chat_response(message: str, context: Dict[str, Any]) -> Opt
             metadata_updates={"catalog_result": explanation},
         )
 
-    if ("add" in lowered or "create" in lowered) and "hydrant" in lowered and "catalog" in lowered:
+    if any(token in lowered for token in ("add", "create", "insert", "place")) and "hydrant" in lowered and "catalog" in lowered:
         source = _safe_dict(context.get("catalog_source") or context.get("utility_catalog_source"))
         if not source:
             return _base_response(
@@ -4911,6 +4912,9 @@ def decide_chat(
     discipline_depth_decision = _discipline_depth_chat_response(message, context)
     if discipline_depth_decision is not None:
         return _enrich_response_contract(discipline_depth_decision, message=message)
+    utility_catalog_decision = _utility_catalog_chat_response(message, context)
+    if utility_catalog_decision is not None:
+        return _enrich_response_contract(utility_catalog_decision, message=message)
     symbol_block_decision = _symbol_block_chat_response(message, context)
     if symbol_block_decision is not None:
         return _enrich_response_contract(symbol_block_decision, message=message)
@@ -4938,9 +4942,6 @@ def decide_chat(
     )
     if online_discovery_decision is not None:
         return _enrich_response_contract(online_discovery_decision, message=message)
-    utility_catalog_decision = _utility_catalog_chat_response(message, context)
-    if utility_catalog_decision is not None:
-        return _enrich_response_contract(utility_catalog_decision, message=message)
     standards_rules_decision = _standards_rules_chat_response(
         message=message,
         context=context,

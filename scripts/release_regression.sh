@@ -42,6 +42,7 @@ cleanup() {
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
+  rm -rf "$WEB_DIR/$RELEASE_DIST_DIR"
 }
 trap cleanup EXIT
 

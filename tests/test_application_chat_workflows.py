@@ -503,6 +503,20 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertTrue(reference["source_only"])
         self.assertFalse(reference["native_xref_parity"])
 
+    def test_chat_blocks_hydrant_catalog_insert_without_source_review(self):
+        result = decide_chat(
+            {
+                "message": "insert hydrant from catalog",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+        )
+
+        self.assertEqual(result["action_taken"], "blocked_catalog_missing_source_review")
+        self.assertEqual(result["response_metadata"]["required_missing_inputs"], ["catalog source and review metadata"])
+        self.assertFalse(result["response_metadata"]["state_changed"])
+        self.assertNotEqual(result["action_taken"], "prepared_symbol_insert")
+
     def test_chat_reports_open_review_issues(self):
         record = _record()
         record["latest_result"]["final_plan"]["meta"].update(

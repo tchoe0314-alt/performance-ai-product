@@ -9,7 +9,7 @@ PYTHON_BIN="$VENV_DIR/bin/python"
 PIP_BIN="$VENV_DIR/bin/pip"
 UVICORN_RELOAD="${UVICORN_RELOAD:-0}"
 MPL_CACHE_DIR="$ROOT_DIR/.mpl-cache"
-NEXT_DEV_DIST_DIR="${NEXT_DEV_DIST_DIR:-.next-dev}"
+NEXT_DEV_DIST_DIR="${NEXT_DEV_DIST_DIR:-.next}"
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -107,6 +107,8 @@ start_backend() {
   (
     cd "$BACKEND_DIR"
     export MPLCONFIGDIR="$MPL_CACHE_DIR"
+    export CIVORA_ALLOW_LOCAL_PILOT_CORS="${CIVORA_ALLOW_LOCAL_PILOT_CORS:-1}"
+    export CIVORA_LOCAL_PILOT_CORS_ORIGINS="${CIVORA_LOCAL_PILOT_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}"
     if [[ "$UVICORN_RELOAD" == "1" ]]; then
       exec "$PYTHON_BIN" -m uvicorn backend.api.app:app --reload --port 8002
     fi
