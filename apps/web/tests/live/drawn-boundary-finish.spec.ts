@@ -26,12 +26,23 @@ async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number) 
   await surface.page().mouse.click(point.x, point.y);
 }
 
+async function openSetupControls(page: Page) {
+  await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Setup\b/i }).click({ noWaitAfter: true });
+  const setupDetails = page.locator("details").filter({ hasText: "Detailed setup controls and evidence" }).first();
+  if (await setupDetails.isVisible().catch(() => false)) {
+    const isOpen = await setupDetails.evaluate((element) => element.hasAttribute("open"));
+    if (!isOpen) {
+      await setupDetails.locator("summary").filter({ hasText: "Detailed setup controls and evidence" }).click();
+    }
+  }
+}
+
 async function openBlankWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundary=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Detention Basin A").first()).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Setup\b/i }).click({ noWaitAfter: true });
+  await openSetupControls(page);
   await page.getByRole("button", { name: "Start a blank site and clear address map evidence" }).click({ noWaitAfter: true });
   await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
   await expect(page.getByText("Detention Basin A")).toHaveCount(0);
@@ -67,7 +78,7 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     await canvas.getByRole("button", { name: "Change Site Boundary" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
-    await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Setup\b/i }).click({ noWaitAfter: true });
+    await openSetupControls(page);
     await page.getByRole("button", { name: "Lock current site boundary for engineer review" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     const relockClose = page.getByRole("button", { name: "Close" });
