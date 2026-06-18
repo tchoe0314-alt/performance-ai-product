@@ -226,6 +226,27 @@ def validate_production_env_v1(
             blockers.append(_issue("blocker", "invalid_frontend_public_url", "CIVORA_FRONTEND_PUBLIC_URL must be an absolute http(s) URL.", env_vars=["CIVORA_FRONTEND_PUBLIC_URL"]))
         elif cors_origins and frontend_origin not in cors_origins:
             blockers.append(_issue("blocker", "frontend_origin_not_in_cors", "Frontend public origin is not listed in CORS_ALLOW_ORIGINS.", env_vars=["CIVORA_FRONTEND_PUBLIC_URL", "CORS_ALLOW_ORIGINS"]))
+    if mode == "private_alpha" and target == "local":
+        local_browser_origins = {"http://localhost:3000", "http://127.0.0.1:3000"}
+        missing_local_origins = sorted(local_browser_origins.difference(cors_origins))
+        if missing_local_origins:
+            warnings.append(
+                _issue(
+                    "warning",
+                    "local_private_alpha_cors_origins_incomplete",
+                    "Local private-alpha browser QA should allow both http://localhost:3000 and http://127.0.0.1:3000 in CORS_ALLOW_ORIGINS.",
+                    env_vars=["CORS_ALLOW_ORIGINS"],
+                )
+            )
+        else:
+            info.append(
+                _issue(
+                    "info",
+                    "local_private_alpha_cors_origins_ready",
+                    "Local private-alpha CORS includes localhost:3000 and 127.0.0.1:3000 for browser QA.",
+                    env_vars=["CORS_ALLOW_ORIGINS"],
+                )
+            )
     if mode in PRODUCTION_MODES and _truthy(env.get("CIVORA_ALLOW_LOCAL_PILOT_CORS")):
         warnings.append(_issue("warning", "temporary_local_cors_enabled", "Local pilot CORS is enabled; remove it after the live QA window.", env_vars=["CIVORA_ALLOW_LOCAL_PILOT_CORS", "CIVORA_LOCAL_PILOT_CORS_ORIGINS"]))
 
@@ -325,6 +346,15 @@ def validate_production_env_v1(
         if include_diagnostics
     }
     info.append(_issue("info", "billing_not_auto_enabled", "Validator reports billing config only; it does not enable billing or charging."))
+    if mode == "private_alpha" and target == "local":
+        info.append(
+            _issue(
+                "info",
+                "local_private_alpha_env_defaults",
+                "Documented local defaults: CIVORA_PRODUCT_MODE=private_alpha, CORS_ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000, PERFORMANCE_AI_STORAGE_DIR=./data. Queue monitoring still requires a live authenticated runtime sample.",
+                env_vars=["CIVORA_PRODUCT_MODE", "CORS_ALLOW_ORIGINS", "PERFORMANCE_AI_STORAGE_DIR", "CIVORA_RUNTIME_DEBUG_BEARER_TOKEN"],
+            )
+        )
     return {
         "version": "production_env_validator_v1",
         "status": status,

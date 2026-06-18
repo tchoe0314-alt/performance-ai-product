@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -203,6 +204,11 @@ class RealInputFileBenchmarkTests(unittest.TestCase):
         classification = classify_existing_conditions_file(path)
         if not classification["supported"]:
             return dependency_blocked_existing_conditions_import(path, classification)
+        if importlib.util.find_spec("rasterio") is None:
+            blocked = dict(classification)
+            blocked["supported"] = False
+            blocked["required_dependency"] = "GeoTIFF import requires rasterio; install rasterio to prove raster surface import locally."
+            return dependency_blocked_existing_conditions_import(path, blocked)
         import numpy as np
         import rasterio
         from rasterio.transform import from_origin
@@ -226,6 +232,11 @@ class RealInputFileBenchmarkTests(unittest.TestCase):
         classification = classify_existing_conditions_file(path)
         if not classification["supported"]:
             return dependency_blocked_existing_conditions_import(path, classification)
+        if importlib.util.find_spec("laspy") is None:
+            blocked = dict(classification)
+            blocked["supported"] = False
+            blocked["required_dependency"] = "LAS/LiDAR import requires laspy; install laspy to prove point-cloud import locally."
+            return dependency_blocked_existing_conditions_import(path, blocked)
         import laspy
         import numpy as np
 

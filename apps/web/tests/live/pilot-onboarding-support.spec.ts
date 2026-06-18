@@ -27,7 +27,7 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
   await expect(rightPanel.getByText("Diagnostic summary", { exact: true })).toBeVisible();
   await expect(rightPanel.getByText("Pilot docs")).toBeVisible();
 
-  await page.locator("button").filter({ hasText: "Deliver" }).filter({ hasText: "Sheets and exports" }).first().click();
+  await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Deliver\b/i }).click();
   await expect(rightPanel.getByText("What is the review package?")).toBeVisible();
   await expect(rightPanel.getByText("External licensed engineer review required")).toBeVisible();
 });

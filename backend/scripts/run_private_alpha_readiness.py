@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--max-failed-recent-count", type=float, default=None)
     parser.add_argument("--max-stale-job-count", type=float, default=None)
     parser.add_argument("--max-oldest-active-age-sec", type=float, default=None)
+    parser.add_argument("--fail-on-blocked", action="store_true", help="Exit non-zero when readiness is blocked. By default, a completed truthful blocked audit exits zero.")
     args = parser.parse_args()
 
     threshold_values = {
@@ -55,12 +56,19 @@ def main() -> None:
                 "blocker_count": report["blocker_count"],
                 "golden_scenario_count": report["sections"]["golden_scenarios"]["scenario_count"],
                 "monitoring_sample_count": report["sections"]["monitoring"]["sample_count"],
+                "queue_monitoring_status": report["sections"]["monitoring"]["job_queue_monitoring_evidence"].get("status"),
+                "queue_monitoring_setup": report["how_to_clear_queue_monitoring_blocker"],
                 "output": args.output,
             },
             sort_keys=True,
         )
     )
-    raise SystemExit(0 if report["success"] else 1)
+    if not report["success"]:
+        print(
+            "Readiness remains blocked. This command completed the audit but did not mark private-alpha readiness green. "
+            "Use --base-url with an authenticated /api/debug/runtime sample to provide real queue monitoring evidence.",
+        )
+    raise SystemExit(1 if args.fail_on_blocked and not report["success"] else 0)
 
 
 if __name__ == "__main__":

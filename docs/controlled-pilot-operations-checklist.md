@@ -64,6 +64,31 @@ Backend:
 | `CIVORA_ROLLBACK_OWNER` | Required before public beta | Named owner authorized to roll back or disable Vercel/Railway services. |
 | `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN` | Required before public beta | Keep `false` until all support, privacy, billing/legal, production storage/queue, monitoring, rollback, and review-only gates are owner-accepted. |
 
+### Local Private-Alpha Readiness Defaults
+
+Use these defaults for local browser QA and backend readiness checks:
+
+```bash
+export CIVORA_PRODUCT_MODE=private_alpha
+export CIVORA_DEPLOYMENT_TARGET=local
+export CIVORA_FRONTEND_PUBLIC_URL=http://localhost:3000
+export NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8002
+export CIVORA_PUBLIC_API_BASE_URL=http://127.0.0.1:8002
+export CORS_ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+export PERFORMANCE_AI_STORAGE_DIR=./data
+```
+
+Local private-alpha CORS must include both `http://localhost:3000` and `http://127.0.0.1:3000` so browser QA can use either frontend origin against the local backend. Public beta and production must continue to use explicit deployed HTTPS origins and must not use wildcard CORS.
+
+Queue monitoring evidence is not faked by local scripts. A no-URL run of `PYTHONPATH=. python3 backend/scripts/run_private_alpha_readiness.py` can complete and write a blocked report, but it does not clear private-alpha readiness. To clear the queue blocker, start a live backend with the runtime debug endpoint available, configure a valid audit token, then run:
+
+```bash
+export CIVORA_RUNTIME_DEBUG_BEARER_TOKEN=<valid backend bearer token>
+PYTHONPATH=. python3 backend/scripts/run_private_alpha_readiness.py --base-url http://127.0.0.1:8002 --runtime-bearer-token "$CIVORA_RUNTIME_DEBUG_BEARER_TOKEN" --fail-on-blocked
+```
+
+Passing queue evidence must come from `/api/debug/runtime` and include `JobQueueService.runtime_stats()` data with monitored job types plus pending, failed, stale/timeout, and worker/runtime confidence fields. If that endpoint or token is unavailable, mark readiness blocked and attach the generated report instead of marking readiness green.
+
 Frontend:
 
 | Variable | Required | Notes |

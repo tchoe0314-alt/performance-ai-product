@@ -569,7 +569,10 @@ class ExistingConditionsImporterTests(unittest.TestCase):
 
     def test_geotiff_import_builds_surface(self) -> None:
         import numpy as np
-        rasterio = pytest.importorskip("rasterio")
+        rasterio = pytest.importorskip(
+            "rasterio",
+            reason="GeoTIFF real-input benchmark is dependency-gated; install rasterio to prove raster surface import locally.",
+        )
         from rasterio.transform import from_origin
 
         with tempfile.TemporaryDirectory() as tmpdir:

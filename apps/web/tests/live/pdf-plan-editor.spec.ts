@@ -109,7 +109,7 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
 
   const fileInput = workflow.locator('input[type="file"][accept*=".pdf"]');
   await fileInput.setInputFiles(POOL_PDF_PATH);
-  await expect(workflow).toContainText("Pool Geometric.pdf", { timeout: 120_000 });
+  await expect(workflow).toContainText("pool-geometric.pdf", { timeout: 120_000 });
   await expect(workflow).toContainText("imported_pdf_review_required");
 
   for (const label of ["Text", "Labels", "Dimensions", "Title block", "Scale", "Elevations", "Matchlines", "Details"]) {

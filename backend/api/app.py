@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import signal
 import time
 import uuid
 import urllib.parse
@@ -978,24 +977,10 @@ def _log_runtime_event(event: str, **fields: Any) -> None:
     )
 
 
-def _install_signal_handlers() -> None:
-    def _handler(signum: int, _frame: Any) -> None:
-        signal_name = signal.Signals(signum).name
-        _log_runtime_event("process_signal", signal=signal_name)
-        raise SystemExit(0)
-
-    for signal_name in ("SIGTERM", "SIGINT"):
-        try:
-            signal.signal(getattr(signal, signal_name), _handler)
-        except Exception:
-            continue
-
-
 @app.on_event("startup")
 def _register_job_handlers() -> None:
     log_memory("startup_begin")
     record_process_start(state_dir=STORAGE_DIR, start_time=START_TIME, instance_id=RUNTIME_INSTANCE_ID)
-    _install_signal_handlers()
     _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
     _log_mapbox_token_config()
     JOB_QUEUE.register_handler(

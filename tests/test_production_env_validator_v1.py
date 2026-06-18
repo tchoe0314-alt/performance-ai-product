@@ -67,6 +67,26 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         self.assertEqual(report["status"], "warning")
         self.assertIn("ocr_engine_missing", {item["code"] for item in report["warnings"]})
 
+    def test_local_private_alpha_documents_browser_qa_cors_defaults(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "local",
+                "CIVORA_FRONTEND_PUBLIC_URL": "http://localhost:3000",
+                "NEXT_PUBLIC_API_BASE_URL": "http://127.0.0.1:8002",
+                "CIVORA_PUBLIC_API_BASE_URL": "http://127.0.0.1:8002",
+                "CORS_ALLOW_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000",
+                "PERFORMANCE_AI_STORAGE_DIR": "./data",
+                "CIVORA_AI_PROVIDER": "none",
+            },
+            deployment_target="local",
+        )
+
+        self.assertFalse(report["release_blocked"])
+        self.assertNotIn("local_private_alpha_cors_origins_incomplete", {item["code"] for item in report["warnings"]})
+        self.assertIn("local_private_alpha_env_defaults", {item["code"] for item in report["info"]})
+        self.assertIn("local_private_alpha_cors_origins_ready", {item["code"] for item in report["info"]})
+
     def test_production_blocks_wildcard_cors_and_localhost_api(self) -> None:
         report = validate_production_env_v1(
             {

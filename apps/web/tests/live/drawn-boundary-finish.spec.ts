@@ -43,7 +43,7 @@ async function openBlankWorkspace(page: Page) {
   await expect(page.getByText("Detention Basin A").first()).toBeVisible({ timeout: 30_000 });
 
   await openSetupControls(page);
-  await page.getByRole("button", { name: "Start a blank site and clear address map evidence" }).click({ noWaitAfter: true });
+  await page.getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" }).click({ noWaitAfter: true });
   await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
   await expect(page.getByText("Detention Basin A")).toHaveCount(0);
   await expect(page.getByText("Multifamily Building A")).toHaveCount(0);
@@ -79,7 +79,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await canvas.getByRole("button", { name: "Change Site Boundary" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
     await openSetupControls(page);
-    await page.getByRole("button", { name: "Lock current site boundary for engineer review" }).click();
+    await page.getByRole("button", { name: "Lock current site boundary from detailed setup controls for engineer review" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     const relockClose = page.getByRole("button", { name: "Close" });
     if (await relockClose.isVisible().catch(() => false)) {

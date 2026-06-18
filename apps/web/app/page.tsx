@@ -17725,7 +17725,7 @@ function PerformanceAIDashboardView({
                       <button
                         type="button"
                         onClick={handleStartBlankSite}
-                        aria-label="Start a blank site and clear address map evidence"
+                        aria-label="Start a blank site from setup summary and clear address map evidence"
                         className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
                       >
                         Start from blank site
@@ -17736,7 +17736,11 @@ function PerformanceAIDashboardView({
                       <button
                         type="button"
                         onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
-                        aria-label={siteScaleLocked ? "Unlock site boundary for editing" : "Lock current site boundary for engineer review"}
+                        aria-label={
+                          siteScaleLocked
+                            ? "Unlock site boundary from setup summary for editing"
+                            : "Lock current site boundary from setup summary for engineer review"
+                        }
                         className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
                       >
                         {siteScaleLocked ? "Change site boundary" : "Lock site boundary"}
@@ -17781,7 +17785,7 @@ function PerformanceAIDashboardView({
                         <button
                           type="button"
                           onClick={handleStartBlankSite}
-                          aria-label="Start a blank site and clear address map evidence"
+                          aria-label="Start a blank site from detailed setup controls and clear address map evidence"
                           className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
                         >
                           Start from blank site
@@ -18222,7 +18226,11 @@ function PerformanceAIDashboardView({
                         <button
                           type="button"
                           onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
-                          aria-label={siteScaleLocked ? "Unlock site boundary for editing" : "Lock current site boundary for engineer review"}
+                          aria-label={
+                            siteScaleLocked
+                              ? "Unlock site boundary from detailed setup controls for editing"
+                              : "Lock current site boundary from detailed setup controls for engineer review"
+                          }
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
                         >
                           <span>{siteScaleLocked ? "Change site boundary" : "Lock site boundary"}</span>
