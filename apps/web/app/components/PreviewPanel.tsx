@@ -867,10 +867,14 @@ export default function PreviewPanel({
   );
   const hoveredObject = useMemo(
     () =>
-      [...buildingPlacements, ...suggestedPlacements].find(
+      [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
         (item) => item.id === hoveredObjectId && item.type !== "site",
       ) ?? null,
-    [buildingPlacements, suggestedPlacements, hoveredObjectId],
+    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements, hoveredObjectId],
+  );
+  const shouldRevealObjectLabel = useCallback(
+    (item: BuildingPlacement) => hoveredObjectId === item.id,
+    [hoveredObjectId],
   );
   const show3D = previewMode === "3d" && !showMap;
   useEffect(() => {
@@ -4488,37 +4492,7 @@ export default function PreviewPanel({
       } else if (map.getLayer("civora-survey-points")) {
         map.removeLayer("civora-survey-points");
       }
-      if (!useLightHighQuality) {
-        if (!map.getLayer("civora-visual-labels")) {
-          map.addLayer({
-            id: "civora-visual-labels",
-            type: "symbol",
-            source: "civora-visual-labels",
-            layout: {
-              "text-field": ["get", "label"],
-              "text-size": 11,
-              "text-anchor": "top",
-              "text-offset": [0, 0.8],
-              "text-max-width": 10,
-              "text-allow-overlap": false,
-              "symbol-sort-key": [
-                "case",
-                ["==", ["get", "kind"], "building"],
-                1,
-                ["==", ["get", "kind"], "road"],
-                2,
-                3,
-              ],
-            },
-            paint: {
-              "text-color": "#0f172a",
-              "text-halo-color": "rgba(255,255,255,0.9)",
-              "text-halo-width": 1.2,
-              "text-opacity": 0.82,
-            },
-          });
-        }
-      } else if (map.getLayer("civora-visual-labels")) {
+      if (map.getLayer("civora-visual-labels")) {
         map.removeLayer("civora-visual-labels");
       }
     };
@@ -6785,16 +6759,10 @@ export default function PreviewPanel({
                                     strokeDasharray="2.5 1.5"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
-                                  />
-                                  <text
-                                    x={labelX}
-                                    y={labelY}
-                                    fontSize="2.8"
-                                    fill={path.capacityValid ? "#0f766e" : "#dc2626"}
-                                    textAnchor="middle"
                                   >
-                                    {path.name}
-                                  </text>
+                                    <title>{path.name}</title>
+                                  </polyline>
+                                  <circle cx={labelX} cy={labelY} r={0.42} fill={path.capacityValid ? "#0f766e" : "#dc2626"} />
                                 </g>
                               );
                             })}
@@ -6827,17 +6795,10 @@ export default function PreviewPanel({
                                     fill={overTarget ? "rgba(248,113,113,0.2)" : "rgba(14,165,233,0.2)"}
                                     stroke={overTarget ? "#dc2626" : "#0284c7"}
                                     strokeWidth={0.42}
-                                  />
-                                  <circle cx={x} cy={y} r={0.7} fill={overTarget ? "#dc2626" : "#0284c7"} />
-                                  <text
-                                    x={x}
-                                    y={Math.max(y - spreadRadius - 1, 2)}
-                                    fontSize="2.6"
-                                    fill={overTarget ? "#b91c1c" : "#0369a1"}
-                                    textAnchor="middle"
                                   >
-                                    {inlet.id}
-                                  </text>
+                                    <title>{inlet.id}</title>
+                                  </circle>
+                                  <circle cx={x} cy={y} r={0.7} fill={overTarget ? "#dc2626" : "#0284c7"} />
                                 </g>
                               );
                             })}
@@ -7096,15 +7057,18 @@ export default function PreviewPanel({
                                 ? item.geometry[0]
                                 : [(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2],
                             );
+                            const revealLabel = shouldRevealObjectLabel(item);
                             return (
                               <g key={`cad-symbol-${item.id}`} data-testid="cad-symbol">
                                 <circle cx={x} cy={y} r={1.55} fill="#ffffff" stroke="#0f172a" strokeWidth={0.42} />
                                 <text x={x} y={y + 0.72} textAnchor="middle" fontSize="2.3" fill="#0f172a" fontWeight={800}>
                                   {glyph[symbol] ?? "U"}
                                 </text>
-                                <text x={Math.min(x + 2.1, 96)} y={Math.max(y - 2, 3)} fontSize="2.05" fill="#334155" fontWeight={700}>
-                                  {String(item.label).slice(0, 18)}
-                                </text>
+                                {revealLabel ? (
+                                  <text x={Math.min(x + 2.1, 96)} y={Math.max(y - 2, 3)} fontSize="2.05" fill="#334155" fontWeight={700}>
+                                    {String(item.label).slice(0, 18)}
+                                  </text>
+                                ) : null}
                               </g>
                             );
                           })}
@@ -7140,21 +7104,27 @@ export default function PreviewPanel({
                               ? item.geometry[0]
                               : ([(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2] as [number, number]);
                             const [x, y] = sitePointToPreviewPercent(insert);
+                            const revealLabel = shouldRevealObjectLabel(item);
                             return (
                               <g key={`cad-text-${item.id}`} data-testid="cad-entity-text">
-                                <rect
-                                  x={Math.min(x + 0.8, 92)}
-                                  y={Math.max(y - 2.8, 1)}
-                                  width={Math.min(18, Math.max(6, String(item.label || "Text").length * 1.1))}
-                                  height={3.8}
-                                  rx={0.6}
-                                  fill="rgba(255,255,255,0.86)"
-                                  stroke="#64748b"
-                                  strokeWidth={0.22}
-                                />
-                                <text x={Math.min(x + 1.6, 93)} y={Math.max(y - 0.35, 3)} fontSize="2.2" fill="#334155" fontWeight={700}>
-                                  {String(item.label || "Text").slice(0, 18)}
-                                </text>
+                                <circle cx={x} cy={y} r={0.5} fill="#64748b" opacity={0.72} />
+                                {revealLabel ? (
+                                  <>
+                                    <rect
+                                      x={Math.min(x + 0.8, 92)}
+                                      y={Math.max(y - 2.8, 1)}
+                                      width={Math.min(18, Math.max(6, String(item.label || "Text").length * 1.1))}
+                                      height={3.8}
+                                      rx={0.6}
+                                      fill="rgba(255,255,255,0.9)"
+                                      stroke="#64748b"
+                                      strokeWidth={0.22}
+                                    />
+                                    <text x={Math.min(x + 1.6, 93)} y={Math.max(y - 0.35, 3)} fontSize="2.2" fill="#334155" fontWeight={700}>
+                                      {String(item.label || "Text").slice(0, 18)}
+                                    </text>
+                                  </>
+                                ) : null}
                               </g>
                             );
                           })}
@@ -7163,6 +7133,7 @@ export default function PreviewPanel({
                           .map((item) => {
                             const rect = mapAnchoredRectPercent(item, mapRef.current);
                             const blockers = Array.isArray(item.meta?.cad_review_blockers) ? item.meta.cad_review_blockers.map(String) : [];
+                            const revealLabel = shouldRevealObjectLabel(item);
                             return (
                               <g key={`cad-unsupported-${item.id}`} data-testid="cad-entity-unsupported">
                                 <rect
@@ -7177,14 +7148,16 @@ export default function PreviewPanel({
                                 >
                                   <title>{blockers[0] || "Unsupported CAD entity requires review."}</title>
                                 </rect>
-                                <text x={Math.min(rect.left + 1.2, 94)} y={Math.max(rect.top - 1.2, 3)} fontSize="2.05" fill="#92400e" fontWeight={800}>
-                                  Blocked CAD entity
-                                </text>
+                                {revealLabel ? (
+                                  <text x={Math.min(rect.left + 1.2, 94)} y={Math.max(rect.top - 1.2, 3)} fontSize="2.05" fill="#92400e" fontWeight={800}>
+                                    Blocked CAD entity
+                                  </text>
+                                ) : null}
                               </g>
                             );
                           })}
                         {visibleCadObjects
-                          .filter((item) => item.meta?.cad_dimension_label && getObjectGeometryPoints(item).length >= 2)
+                          .filter((item) => item.meta?.cad_dimension_label && shouldRevealObjectLabel(item) && getObjectGeometryPoints(item).length >= 2)
                           .map((item) => {
                             const points = getObjectGeometryPoints(item);
                             const [a, b] = points;
@@ -7304,7 +7277,7 @@ export default function PreviewPanel({
                           })}
                         {planLabelObjects.length ? (
                           <g data-testid="cad-plan-labels">
-                            {planLabelObjects.map((item) => {
+                            {planLabelObjects.filter(shouldRevealObjectLabel).map((item) => {
                               const [x, y] = sitePointToPreviewPercent([(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2]);
                               const kind = resolveVisualKind(item);
                               const color =
@@ -7397,16 +7370,9 @@ export default function PreviewPanel({
                                     fill={statusColor}
                                     stroke="#ffffff"
                                     strokeWidth={0.32}
-                                  />
-                                  <text
-                                    x={x + 1.3}
-                                    y={y - 1.2}
-                                    fontSize="2.4"
-                                    fill="#0f172a"
-                                    fontWeight={700}
                                   >
-                                    {hydrant.label}
-                                  </text>
+                                    <title>{hydrant.label}</title>
+                                  </circle>
                                 </g>
                               );
                             })}
@@ -7870,7 +7836,6 @@ export default function PreviewPanel({
                             }}
                             onMouseEnter={() => {
                               if (!allowItemInteraction) return;
-                              if (!showHover) return;
                               setHoveredObjectId(item.id);
                             }}
                             onMouseLeave={() => {
@@ -7909,9 +7874,11 @@ export default function PreviewPanel({
                                     className={`pointer-events-none absolute h-2.5 w-2.5 rounded-sm border border-white bg-amber-400 shadow ${position}`}
                                   />
                                 ))}
-                                <div className="pointer-events-none absolute -top-7 left-1/2 max-w-[160px] -translate-x-1/2 truncate rounded-md border border-amber-200 bg-white/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
-                                  {item.label || "Selected"}
-                                </div>
+                                {shouldRevealObjectLabel(item) ? (
+                                  <div className="pointer-events-none absolute -top-7 left-1/2 max-w-[160px] -translate-x-1/2 truncate rounded-md border border-amber-200 bg-white/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
+                                    {item.label || "Selected"}
+                                  </div>
+                                ) : null}
                               </>
                             ) : null}
                             {showBox && isHighQuality && visualKind === "building" ? (
@@ -8126,19 +8093,21 @@ export default function PreviewPanel({
                                 ×
                               </button>
                             ) : null}
-                            {isSelected && caps.movable && !isPolyline ? (
+                            {isSelected && shouldRevealObjectLabel(item) && caps.movable && !isPolyline ? (
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
                                 Snap 5ft
                               </div>
                             ) : null}
-                            {isSelected && typeof item.x === "number" && typeof item.y === "number" ? (
+                            {isSelected && shouldRevealObjectLabel(item) && typeof item.x === "number" && typeof item.y === "number" ? (
                               <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
                                 X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
                               </div>
                             ) : null}
-                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
-                              {item.label}
-                            </div>
+                            {shouldRevealObjectLabel(item) ? (
+                              <div className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
+                                {item.label}
+                              </div>
+                            ) : null}
                             {hoveredObjectId === item.id && objectHoverDetails.length ? (
                               <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
                                 <div className="space-y-1">
@@ -8177,15 +8146,16 @@ export default function PreviewPanel({
                             }}
                             onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
                             onMouseEnter={() => {
-                              if (!showHover) return;
                               setHoveredObjectId(item.id);
                             }}
                             onMouseLeave={() => setHoveredObjectId(null)}
                           >
                             <div className="h-full w-full rounded-[8px] border border-dashed border-amber-400 bg-amber-200/10" />
-                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 shadow">
-                              {item.label}
-                            </div>
+                            {shouldRevealObjectLabel(item) ? (
+                              <div className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 shadow">
+                                {item.label}
+                              </div>
+                            ) : null}
                             {hoveredObjectId === item.id && objectHoverDetails.length ? (
                               <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
                                 <div className="space-y-1">
@@ -8763,7 +8733,6 @@ export default function PreviewPanel({
                                 cursor: "pointer",
                               }}
                               onMouseEnter={() => {
-                                if (!showHover) return;
                                 setHoveredObjectId(item.id);
                               }}
                               onMouseLeave={() => setHoveredObjectId(null)}
@@ -8775,9 +8744,11 @@ export default function PreviewPanel({
                               <div
                                 className={`h-full w-full rounded-[8px] border border-dashed bg-slate-50/70 transition ${borderColor}`}
                               />
-                              <div className="absolute left-2 top-2 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
-                                {item.label}
-                              </div>
+                              {shouldRevealObjectLabel(item) ? (
+                                <div className="pointer-events-none absolute left-2 top-2 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
+                                  {item.label}
+                                </div>
+                              ) : null}
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
                                 Suggested
                               </div>
