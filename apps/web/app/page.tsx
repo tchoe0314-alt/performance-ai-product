@@ -507,6 +507,11 @@ type WorkflowRailCard = {
   action: string;
   panel: SidePanelKey;
 };
+type PanelReviewSection = {
+  label: string;
+  value: string;
+  tone: ReviewTableTone;
+};
 type SidebarNavItem = {
   label: string;
   caption: string;
@@ -16547,6 +16552,93 @@ function PerformanceAIDashboardView({
       : sidePanelForRender
         ? sidePanelCopy[sidePanelForRender].desc
         : "";
+  const activePanelStatus = sidePanelForRender ? panelStatus(sidePanelForRender) : "idle";
+  const activePanelStatusTone: ReviewTableTone =
+    activePanelStatus === "block"
+      ? "block"
+      : activePanelStatus === "review"
+        ? "review"
+        : activePanelStatus === "ok"
+          ? "ok"
+          : "idle";
+  const activePanelBlockers = uniqueStrings([
+    ...previewBlockedReasons,
+    ...bottomBlockerItems,
+    exportBlockText,
+    !siteScaleLocked && ["site_existing", "model", "generate", "grading", "drainage", "utilities", "roadway", "deliverables"].includes(sidePanelForRender || "")
+      ? "Site boundary is not locked."
+      : "",
+    !hasTerrainSource && ["import_survey", "data", "grading", "generate", "deliverables"].includes(sidePanelForRender || "")
+      ? "Terrain, survey, DEM, or accepted source path is missing."
+      : "",
+    sourceConfidenceSummary.low_confidence_count
+      ? `${sourceConfidenceSummary.low_confidence_count} low-confidence source item(s) need review.`
+      : "",
+    sourceConfidenceSummary.stale_or_missing_count
+      ? `${sourceConfidenceSummary.stale_or_missing_count} stale or missing source item(s).`
+      : "",
+  ]).slice(0, 3);
+  const activePanelEvidence = uniqueStrings([
+    sidebarHasTruthEvidence ? `${sidebarTruthCounts.ready} traceable, ${sidebarTruthCounts.review} review, ${sidebarTruthCounts.blocked} blocked evidence item(s).` : "",
+    backendResult ? "Generated plan output is available." : "",
+    hasTerrainSource ? "Terrain/source input is present." : "",
+    quantityRows.length ? `${quantityRows.length} quantity row(s) available.` : "",
+    candidateReviewItems.length ? `${candidateReviewItems.length} candidate source item(s).` : "",
+    selectedJob ? `Selected job ${selectedJob.job_id} has audit details.` : "",
+  ]).slice(0, 3);
+  const activePanelActions = uniqueStrings([
+    sidePanelForRender === "deliverables" || sidePanelForRender === "reports"
+      ? "Open release gates or export engineer-review materials when unblocked."
+      : "",
+    sidePanelForRender === "jobs" ? "Refresh, retry, resume, or inspect job artifacts." : "",
+    sidePanelForRender === "data" || sidePanelForRender === "import_survey"
+      ? "Review source confidence, imports, standards, GIS, and PDFs."
+      : "",
+    sidePanelForRender === "generate" ? "Run systems or open a blocked discipline panel." : "",
+    sidePanelForRender === "model" || sidePanelForRender === "objects" ? "Draw, place, edit, and inspect model objects." : "",
+    "Resolve blockers before relying on deliverables.",
+  ]).slice(0, 3);
+  const activePanelReviewSections: PanelReviewSection[] = [
+    {
+      label: "Summary",
+      value: activePanelDescription || "Review this workflow panel.",
+      tone: activePanelStatusTone,
+    },
+    {
+      label: "Current status",
+      value:
+        activePanelStatus === "block"
+          ? "Blocked"
+          : activePanelStatus === "review"
+            ? "Review required"
+            : activePanelStatus === "ok"
+              ? "Traceable"
+              : "Not started",
+      tone: activePanelStatusTone,
+    },
+    {
+      label: "Blockers / missing inputs",
+      value: activePanelBlockers.length ? activePanelBlockers.join(" ") : "No panel-specific blocker is recorded.",
+      tone: activePanelBlockers.length ? "block" : activePanelStatusTone,
+    },
+    {
+      label: "Evidence",
+      value: activePanelEvidence.length ? activePanelEvidence.join(" ") : "Evidence appears after setup, imports, generated systems, or review packages.",
+      tone: activePanelEvidence.length ? "ok" : "idle",
+    },
+    {
+      label: "Actions",
+      value: activePanelActions.join(" "),
+      tone: activePanelStatusTone,
+    },
+    {
+      label: "Details / audit trail",
+      value: "Detailed cards, tables, jobs, source IDs, and audit records stay below in collapsible review sections where available.",
+      tone: "idle",
+    },
+  ];
+  const visibleReleaseGuardrail =
+    "Review-only. Engineer review required. Construction release blocked until approved outside Civora.";
   const systemReadyLabels = Object.entries(systemStatuses)
     .filter(([, status]) => status === "fresh")
     .map(([system]) => `${system} output is current`);
@@ -17143,7 +17235,62 @@ function PerformanceAIDashboardView({
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4">
-                <div className="mb-4 space-y-2">
+                <section className="civora-review-shell mb-4" aria-label={`${activePanelTitle} review summary`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Panel review order</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-950">{activePanelTitle}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(activePanelStatusTone)}`}>
+                      {activePanelReviewSections[1]?.value}
+                    </span>
+                  </div>
+                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-semibold leading-5 text-amber-800">
+                    {visibleReleaseGuardrail}
+                  </p>
+                  <div className="mt-3 grid gap-2">
+                    {activePanelReviewSections.map((section, index) => {
+                      const isDetail = section.label === "Details / audit trail";
+                      const body = (
+                        <p className="mt-1 text-xs font-medium leading-5 text-slate-600">
+                          {section.value}
+                        </p>
+                      );
+                      return isDetail ? (
+                        <details key={section.label} className="civora-review-section">
+                          <summary className="flex cursor-pointer items-center justify-between gap-3">
+                            <span>
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                {index + 1}. {section.label}
+                              </span>
+                            </span>
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(section.tone)}`}>
+                              Audit
+                            </span>
+                          </summary>
+                          {body}
+                        </details>
+                      ) : (
+                        <div key={section.label} className="civora-review-section">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              {index + 1}. {section.label}
+                            </p>
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(section.tone)}`}>
+                              {section.tone === "block" ? "Blocked" : section.tone === "review" ? "Review" : section.tone === "ok" ? "Evidence" : "Info"}
+                            </span>
+                          </div>
+                          {body}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+                <details className="civora-review-shell mb-4" open={activePanelStatus === "block"}>
+                  <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Review gates
+                  </summary>
+                  <div className="mt-3 space-y-2">
                   {rightRailWorkflowCards.map((card) => (
                     <button
                       key={card.title}
@@ -17194,7 +17341,8 @@ function PerformanceAIDashboardView({
                       {releaseBlockedDetail}
                     </p>
                   </button>
-                </div>
+                  </div>
+                </details>
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
                     <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
