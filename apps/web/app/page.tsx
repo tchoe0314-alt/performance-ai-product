@@ -508,11 +508,6 @@ type WorkflowRailCard = {
   action: string;
   panel: SidePanelKey;
 };
-type PanelReviewSection = {
-  label: string;
-  value: string;
-  tone: ReviewTableTone;
-};
 type SidebarNavItem = {
   label: string;
   caption: string;
@@ -17235,14 +17230,6 @@ function PerformanceAIDashboardView({
       ? `${sourceConfidenceSummary.stale_or_missing_count} stale or missing source item(s).`
       : "",
   ]).slice(0, 3);
-  const activePanelEvidence = uniqueStrings([
-    sidebarHasTruthEvidence ? `${sidebarTruthCounts.ready} traceable, ${sidebarTruthCounts.review} review, ${sidebarTruthCounts.blocked} blocked evidence item(s).` : "",
-    backendResult ? "Generated plan output is available." : "",
-    hasTerrainSource ? "Terrain/source input is present." : "",
-    quantityRows.length ? `${quantityRows.length} quantity row(s) available.` : "",
-    candidateReviewItems.length ? `${candidateReviewItems.length} candidate source item(s).` : "",
-    selectedJob ? `Selected job ${selectedJob.job_id} has audit details.` : "",
-  ]).slice(0, 3);
   const activePanelActions = uniqueStrings([
     sidePanelForRender === "deliverables" || sidePanelForRender === "reports"
       ? "Open release gates or export engineer-review materials when unblocked."
@@ -17255,47 +17242,14 @@ function PerformanceAIDashboardView({
     sidePanelForRender === "model" || sidePanelForRender === "objects" ? "Draw, place, edit, and inspect model objects." : "",
     "Resolve blockers before relying on deliverables.",
   ]).slice(0, 3);
-  const activePanelReviewSections: PanelReviewSection[] = [
-    {
-      label: "Summary",
-      value: activePanelDescription || "Review this workflow panel.",
-      tone: activePanelStatusTone,
-    },
-    {
-      label: "Current status",
-      value:
-        activePanelStatus === "block"
-          ? "Blocked"
-          : activePanelStatus === "review"
-            ? "Review required"
-            : activePanelStatus === "ok"
-              ? "Traceable"
-              : "Not started",
-      tone: activePanelStatusTone,
-    },
-    {
-      label: "Blockers / missing inputs",
-      value: activePanelBlockers.length ? activePanelBlockers.join(" ") : canonicalWorkspaceBlockerText,
-      tone: activePanelBlockers.length ? "block" : activePanelStatusTone,
-    },
-    {
-      label: "Evidence",
-      value: activePanelEvidence.length ? activePanelEvidence.join(" ") : "Evidence appears after setup, imports, generated systems, or review packages.",
-      tone: activePanelEvidence.length ? "ok" : "idle",
-    },
-    {
-      label: "Actions",
-      value: activePanelActions.join(" "),
-      tone: activePanelStatusTone,
-    },
-    {
-      label: "Details / audit trail",
-      value: "Detailed cards, tables, jobs, source IDs, and audit records stay below in collapsible review sections where available.",
-      tone: "idle",
-    },
-  ];
-  const visibleReleaseGuardrail =
-    "Review-only. Engineer review required. Construction release blocked until approved outside Civora.";
+  const activePanelStatusLabel =
+    activePanelStatus === "block"
+      ? "Blocked"
+      : activePanelStatus === "review"
+        ? "Review required"
+        : activePanelStatus === "ok"
+          ? "Traceable"
+          : "Not started";
   const systemReadyLabels = Object.entries(systemStatuses)
     .filter(([, status]) => status === "fresh")
     .map(([system]) => `${system} output is current`);
@@ -17897,60 +17851,45 @@ function PerformanceAIDashboardView({
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4">
-                <section className="civora-review-shell mb-4" aria-label={`${activePanelTitle} review summary`}>
+                <section className="mb-4 rounded-xl border border-slate-200 bg-white px-3 py-3" aria-label={`${activePanelTitle} status`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Panel review order</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-950">{activePanelTitle}</p>
+                      <p className="text-sm font-semibold text-slate-950">{activePanelTitle}</p>
+                      <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-600">
+                        {activePanelDescription}
+                      </p>
                     </div>
                     <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(activePanelStatusTone)}`}>
-                      {activePanelReviewSections[1]?.value}
+                      {activePanelStatusLabel}
                     </span>
                   </div>
-                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-semibold leading-5 text-amber-800">
-                    {visibleReleaseGuardrail}
-                  </p>
-                  <div className="mt-3 grid gap-2">
-                    {activePanelReviewSections.map((section, index) => {
-                      const isDetail = section.label === "Details / audit trail";
-                      const body = (
-                        <p className="mt-1 text-xs font-medium leading-5 text-slate-600">
-                          {section.value}
-                        </p>
-                      );
-                      return isDetail ? (
-                        <details key={section.label} className="civora-review-section">
-                          <summary className="flex cursor-pointer items-center justify-between gap-3">
-                            <span>
-                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                                {index + 1}. {section.label}
-                              </span>
-                            </span>
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(section.tone)}`}>
-                              Audit
-                            </span>
-                          </summary>
-                          {body}
-                        </details>
-                      ) : (
-                        <div key={section.label} className="civora-review-section">
-                          <div className="flex items-start justify-between gap-3">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                              {index + 1}. {section.label}
-                            </p>
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(section.tone)}`}>
-                              {section.tone === "block" ? "Blocked" : section.tone === "review" ? "Review" : section.tone === "ok" ? "Evidence" : "Info"}
-                            </span>
-                          </div>
-                          {body}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {activePanelBlockers.length ? (
+                    <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-600">Blocked by</p>
+                      <ul className="mt-1 space-y-1 text-xs font-semibold leading-5 text-red-700">
+                        {activePanelBlockers.map((blocker) => (
+                          <li key={blocker}>{blocker}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
+                      Review-only. Engineer review required. Construction release stays blocked outside Civora.
+                    </p>
+                  )}
+                  {activePanelActions.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {activePanelActions.map((action) => (
+                        <span key={action} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                          {action}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </section>
-                <details className="civora-review-shell mb-4" open={activePanelStatus === "block"}>
+                <details className="mb-4 rounded-xl border border-slate-200 bg-white px-3 py-3" open={activePanelStatus === "block"}>
                   <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Review gates
+                    Workspace gates
                   </summary>
                   <div className="mt-3 space-y-2">
                   {rightRailWorkflowCards.map((card) => (
@@ -18744,17 +18683,43 @@ function PerformanceAIDashboardView({
                               : "Not set"}
                         </span>
                       </div>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            siteAddressInputRef.current?.focus();
-                            setStatusMessage("Enter an address, choose a suggestion if one appears, then apply the address.");
+                      <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Type project address
+                        <input
+                          ref={siteAddressInputRef}
+                          value={siteAddress}
+                          onChange={(event) => {
+                            setSiteAddress(event.target.value);
+                            setSelectedAddressSuggestion(null);
                           }}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white"
-                        >
-                          Edit address
-                        </button>
+                          placeholder="123 Main St, City, State"
+                          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 focus:border-slate-400 focus:outline-none"
+                        />
+                      </label>
+                      {addressSuggestions.length && !siteScaleLocked ? (
+                        <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                          {addressSuggestions.map((suggestion) => (
+                            <button
+                              key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
+                              type="button"
+                              aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
+                              onClick={() => {
+                                setSelectedAddressSuggestion(suggestion);
+                                setSiteAddress(suggestion.display_name ?? siteAddress);
+                                setAddressSuggestions([]);
+                              }}
+                              className={`w-full rounded-lg px-3 py-2 text-left text-[12px] transition ${
+                                selectedAddressSuggestion?.display_name === suggestion.display_name
+                                  ? "bg-slate-900 text-white"
+                                  : "hover:bg-slate-50"
+                              }`}
+                            >
+                              <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <button
                           type="button"
                           onClick={() => void saveSiteAddress()}
@@ -18762,6 +18727,13 @@ function PerformanceAIDashboardView({
                           className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Apply address
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => mapSnapshotInputRef.current?.click()}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white"
+                        >
+                          Upload map
                         </button>
                       </div>
                     </div>
@@ -18831,9 +18803,9 @@ function PerformanceAIDashboardView({
                         </button>
                       </div>
                     </div>
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4" open>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Detailed setup controls and evidence
+                        Boundary, source, and size details
                       </summary>
                       <div className="mt-3 space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -18875,61 +18847,6 @@ function PerformanceAIDashboardView({
                             Begin with editable width and length
                           </span>
                         </button>
-                      </div>
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Address / location
-                          <input
-                            ref={siteAddressInputRef}
-                            value={siteAddress}
-                            onChange={(event) => {
-                              setSiteAddress(event.target.value);
-                              setSelectedAddressSuggestion(null);
-                            }}
-                            placeholder="123 Main St, City, State"
-                            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 focus:border-slate-400 focus:outline-none"
-                          />
-                        </label>
-                        {addressSuggestions.length && !siteScaleLocked ? (
-                          <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
-                            {addressSuggestions.map((suggestion) => (
-                              <button
-                                key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
-                                type="button"
-                                aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
-                                onClick={() => {
-                                  setSelectedAddressSuggestion(suggestion);
-                                  setSiteAddress(suggestion.display_name ?? siteAddress);
-                                  setAddressSuggestions([]);
-                                }}
-                                className={`w-full rounded-lg px-3 py-2 text-left text-[12px] transition ${
-                                  selectedAddressSuggestion?.display_name === suggestion.display_name
-                                    ? "bg-slate-900 text-white"
-                                    : "hover:bg-slate-50"
-                                }`}
-                              >
-                                <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          <button
-                            type="button"
-                            onClick={() => void saveSiteAddress()}
-                            disabled={!siteAddress.trim()}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Apply address
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => mapSnapshotInputRef.current?.click()}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                          >
-                            Upload map
-                          </button>
-                        </div>
                       </div>
                       <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Site size</p>
