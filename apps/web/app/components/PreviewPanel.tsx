@@ -840,6 +840,31 @@ export default function PreviewPanel({
     },
     [isHighQuality, legendPalette.building, legendPalette.buildingFill, legendPalette.parkingFill, legendPalette.road, resolveVisualKind],
   );
+  const roundedSiteShapePath = useCallback(
+    (
+      rect: { left: number; top: number; width: number; height: number },
+      kind: "water" | "landscape" | "road" | "sidewalk",
+    ) => {
+      const x = rect.left;
+      const y = rect.top;
+      const w = Math.max(rect.width, 0.1);
+      const h = Math.max(rect.height, 0.1);
+      if (kind === "road" || kind === "sidewalk") {
+        const r = Math.min(w, h) * 0.22;
+        return `M ${x + r} ${y} L ${x + w - r} ${y} Q ${x + w} ${y} ${x + w} ${y + r} L ${x + w} ${y + h - r} Q ${x + w} ${y + h} ${x + w - r} ${y + h} L ${x + r} ${y + h} Q ${x} ${y + h} ${x} ${y + h - r} L ${x} ${y + r} Q ${x} ${y} ${x + r} ${y} Z`;
+      }
+      const wobble = kind === "water" ? 0.13 : 0.18;
+      return [
+        `M ${x + w * 0.18} ${y + h * 0.18}`,
+        `C ${x + w * 0.32} ${y - h * wobble} ${x + w * 0.7} ${y - h * 0.04} ${x + w * 0.84} ${y + h * 0.22}`,
+        `C ${x + w * 1.04} ${y + h * 0.42} ${x + w * 0.96} ${y + h * 0.78} ${x + w * 0.76} ${y + h * 0.9}`,
+        `C ${x + w * 0.54} ${y + h * 1.05} ${x + w * 0.2} ${y + h * 0.94} ${x + w * 0.08} ${y + h * 0.7}`,
+        `C ${x - w * 0.04} ${y + h * 0.48} ${x + w * 0.02} ${y + h * 0.28} ${x + w * 0.18} ${y + h * 0.18}`,
+        "Z",
+      ].join(" ");
+    },
+    [],
+  );
   const hoveredObject = useMemo(
     () =>
       [...buildingPlacements, ...suggestedPlacements].find(
@@ -6911,6 +6936,10 @@ export default function PreviewPanel({
                             const selected = selectedBuildingId === item.id;
                             const visualKind = resolveVisualKind(item);
                             const visualStyle = resolveSvgVisualStyle(item, selected);
+                            const useShapePath = ["water", "landscape", "road", "sidewalk"].includes(visualKind);
+                            const shapePath = useShapePath
+                              ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
+                              : null;
                             const cornerRadius =
                               visualKind === "road" || visualKind === "parking" || visualKind === "sidewalk"
                                 ? 0.35
@@ -6919,17 +6948,52 @@ export default function PreviewPanel({
                                   : 0.7;
                             return (
                               <g key={`rect-plan-${item.id}`} data-testid="plan-rect-object">
-                                <rect
-                                  x={rect.left}
-                                  y={rect.top}
-                                  width={rect.width}
-                                  height={rect.height}
-                                  rx={cornerRadius}
-                                  fill={visualStyle.fill}
-                                  stroke={visualStyle.stroke}
-                                  strokeWidth={visualStyle.strokeWidth}
-                                  strokeLinejoin="round"
-                                />
+                                {shapePath ? (
+                                  <path
+                                    d={shapePath}
+                                    fill={visualStyle.fill}
+                                    stroke={visualStyle.stroke}
+                                    strokeWidth={visualStyle.strokeWidth}
+                                    strokeLinejoin="round"
+                                  />
+                                ) : (
+                                  <rect
+                                    x={rect.left}
+                                    y={rect.top}
+                                    width={rect.width}
+                                    height={rect.height}
+                                    rx={cornerRadius}
+                                    fill={visualStyle.fill}
+                                    stroke={visualStyle.stroke}
+                                    strokeWidth={visualStyle.strokeWidth}
+                                    strokeLinejoin="round"
+                                  />
+                                )}
+                                {isHighQuality && visualKind === "water" ? (
+                                  <>
+                                    <path
+                                      d={roundedSiteShapePath(
+                                        {
+                                          left: rect.left + rect.width * 0.1,
+                                          top: rect.top + rect.height * 0.14,
+                                          width: rect.width * 0.78,
+                                          height: rect.height * 0.62,
+                                        },
+                                        "water",
+                                      )}
+                                      fill="none"
+                                      stroke="rgba(224,242,254,0.72)"
+                                      strokeWidth={0.16}
+                                    />
+                                    <path
+                                      d={`M ${rect.left + rect.width * 0.18} ${rect.top + rect.height * 0.55} C ${rect.left + rect.width * 0.35} ${rect.top + rect.height * 0.46} ${rect.left + rect.width * 0.58} ${rect.top + rect.height * 0.64} ${rect.left + rect.width * 0.82} ${rect.top + rect.height * 0.5}`}
+                                      fill="none"
+                                      stroke="rgba(14,116,144,0.34)"
+                                      strokeWidth={0.18}
+                                      strokeLinecap="round"
+                                    />
+                                  </>
+                                ) : null}
                                 {isHighQuality && visualKind === "building" ? (
                                   <>
                                     <line
@@ -6951,14 +7015,43 @@ export default function PreviewPanel({
                                   </>
                                 ) : null}
                                 {isHighQuality && visualKind === "parking" ? (
-                                  <line
-                                    x1={rect.left + rect.width * 0.1}
-                                    y1={rect.top + rect.height * 0.5}
-                                    x2={rect.left + rect.width * 0.9}
-                                    y2={rect.top + rect.height * 0.5}
-                                    stroke="rgba(248,250,252,0.74)"
-                                    strokeWidth={0.16}
-                                    strokeDasharray="1 0.8"
+                                  <>
+                                    <line
+                                      x1={rect.left + rect.width * 0.08}
+                                      y1={rect.top + rect.height * 0.5}
+                                      x2={rect.left + rect.width * 0.92}
+                                      y2={rect.top + rect.height * 0.5}
+                                      stroke="rgba(248,250,252,0.78)"
+                                      strokeWidth={0.2}
+                                      strokeDasharray="1 0.8"
+                                    />
+                                    {Array.from({ length: Math.min(10, Math.max(3, Math.round(rect.width / 3.6))) }).map((_, stallIdx, stalls) => {
+                                      const x = rect.left + rect.width * (0.12 + (stallIdx / Math.max(stalls.length - 1, 1)) * 0.76);
+                                      return (
+                                        <line
+                                          key={`parking-stall-${item.id}-${stallIdx}`}
+                                          x1={x}
+                                          y1={rect.top + rect.height * 0.16}
+                                          x2={x}
+                                          y2={rect.top + rect.height * 0.84}
+                                          stroke="rgba(248,250,252,0.5)"
+                                          strokeWidth={0.12}
+                                        />
+                                      );
+                                    })}
+                                  </>
+                                ) : null}
+                                {selected ? (
+                                  <rect
+                                    x={rect.left - 0.42}
+                                    y={rect.top - 0.42}
+                                    width={rect.width + 0.84}
+                                    height={rect.height + 0.84}
+                                    rx={0.7}
+                                    fill="none"
+                                    stroke="#f59e0b"
+                                    strokeWidth={0.32}
+                                    strokeDasharray="1.3 0.9"
                                   />
                                 ) : null}
                               </g>
