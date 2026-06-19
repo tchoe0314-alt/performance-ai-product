@@ -22952,29 +22952,21 @@ function PerformanceAIDashboardView({
 	                      </button>
 	                    </div>
 	                    <div className="mt-3 grid grid-cols-2 gap-2">
-	                      <button
-	                        type="button"
-	                        onClick={() =>
-	                          setPreviewLayers((prev) =>
-	                            Object.fromEntries(Object.keys(prev).map((key) => [key, true])) as typeof prev,
-	                          )
-	                        }
-	                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-	                      >
-	                        Show all
-	                      </button>
-	                      <button
-	                        type="button"
-	                        onClick={() =>
-	                          setPreviewLayers((prev) => ({
-	                            ...Object.fromEntries(Object.keys(prev).map((key) => [key, false])),
-	                            buildings: true,
-	                          }) as typeof prev)
-	                        }
-	                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-	                      >
-	                        Buildings
-	                      </button>
+	                      {[
+	                        ["Show all", { buildings: true, roads: true, grading: true, drainage: true, utilities: true, structures: true, lots: true }],
+	                        ["Proposed", { buildings: true, roads: true, grading: false, drainage: true, utilities: true, structures: true, lots: false }],
+	                        ["Utilities", { buildings: false, roads: true, grading: false, drainage: true, utilities: true, structures: true, lots: false }],
+	                        ["Clean", { buildings: true, roads: true, grading: false, drainage: false, utilities: false, structures: false, lots: false }],
+	                      ].map(([label, preset]) => (
+	                        <button
+	                          key={String(label)}
+	                          type="button"
+	                          onClick={() => setPreviewLayers(preset as typeof previewLayers)}
+	                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+	                        >
+	                          {String(label)}
+	                        </button>
+	                      ))}
 	                    </div>
 	                    <div className="mt-3 space-y-1.5">
 	                      {Object.entries(previewLayers).map(([key, value]) => (
@@ -24442,6 +24434,14 @@ function PerformanceAIDashboardView({
               activePlanTool={activePlanTool}
               thinkingState={thinkingState}
               statusText={chatSummary || statusMessage}
+              commandContext={{
+                mode: activePrimaryWorkflowKey,
+                interaction: previewInteraction,
+                layer: activePlacementId ? "selected" : "C-DRAFT",
+                selectedCount: activePlacementId ? 1 : 0,
+                snap: previewInteraction === "edit" ? "on" : "ready",
+                view: `${previewMode.toUpperCase()} / ${previewQuality}`,
+              }}
             />
           ) : null}
         </div>

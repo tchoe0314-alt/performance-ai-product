@@ -22,6 +22,14 @@ type PinnedCommandBarProps = {
   activePlanTool: PlanToolMode;
   thinkingState: ThinkingState;
   statusText: string;
+  commandContext?: {
+    mode: string;
+    interaction: string;
+    layer: string;
+    selectedCount: number;
+    snap: string;
+    view: string;
+  };
 };
 
 export default function PinnedCommandBar({
@@ -36,6 +44,7 @@ export default function PinnedCommandBar({
   activePlanTool,
   thinkingState,
   statusText,
+  commandContext,
 }: PinnedCommandBarProps) {
   const isWorking = busy || hasVisibleActiveJob;
   const canSend = Boolean(prompt.trim() || imageName) && !isWorking;
@@ -63,6 +72,23 @@ export default function PinnedCommandBar({
         <p className="mb-2 truncate px-2 text-xs font-medium text-slate-500">
           {statusText}
         </p>
+      ) : null}
+      {commandContext ? (
+        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          {[
+            ["Mode", commandContext.mode],
+            ["Tool", commandContext.interaction],
+            ["Layer", commandContext.layer],
+            ["Sel", String(commandContext.selectedCount)],
+            ["Snap", commandContext.snap],
+            ["View", commandContext.view],
+          ].map(([label, value]) => (
+            <span key={label} className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2">
+              <span className="text-slate-400">{label}</span>
+              <span className="text-slate-700">{value}</span>
+            </span>
+          ))}
+        </div>
       ) : null}
       <div className="flex min-w-0 items-end gap-2">
         <button

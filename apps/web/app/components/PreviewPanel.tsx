@@ -812,33 +812,47 @@ export default function PreviewPanel({
     (item: BuildingPlacement, selected = false) => {
       const kind = resolveVisualKind(item);
       if (!isHighQuality) {
+        const standardPalette: Record<string, { fill: string; stroke: string }> = {
+          building: { fill: "rgba(226, 218, 202, 0.72)", stroke: "#8b7355" },
+          parking: { fill: "rgba(107, 114, 128, 0.18)", stroke: "#6b7280" },
+          road: { fill: "rgba(75, 85, 99, 0.18)", stroke: "#4b5563" },
+          water: { fill: "rgba(56, 189, 248, 0.2)", stroke: "#0891b2" },
+          landscape: { fill: "rgba(134, 239, 172, 0.2)", stroke: "#22c55e" },
+          sidewalk: { fill: "rgba(241, 245, 249, 0.52)", stroke: "#94a3b8" },
+          utility: { fill: "rgba(59, 130, 246, 0.08)", stroke: "#2563eb" },
+          fallback: { fill: "rgba(148, 163, 184, 0.14)", stroke: "#64748b" },
+        };
+        const style = standardPalette[kind] ?? standardPalette.fallback;
         return {
-          fill: kind === "parking" ? legendPalette.parkingFill : legendPalette.buildingFill,
-          stroke: selected ? "#f59e0b" : kind === "road" ? legendPalette.road : legendPalette.building,
-          strokeWidth: selected ? 0.75 : 0.45,
+          fill: style.fill,
+          stroke: selected ? "#f59e0b" : style.stroke,
+          strokeWidth: selected ? 0.82 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.58 : 0.42,
         };
       }
       if (kind === "road") {
-        return { fill: "none", stroke: selected ? "#fbbf24" : "#111827", strokeWidth: selected ? 1.35 : 1.05 };
+        return { fill: "rgba(71, 85, 105, 0.16)", stroke: selected ? "#fbbf24" : "#475569", strokeWidth: selected ? 1.25 : 0.92 };
       }
       if (kind === "parking") {
-        return { fill: "rgba(71, 85, 105, 0.32)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.42 };
+        return { fill: "rgba(100, 116, 139, 0.22)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.78 : 0.38 };
       }
       if (kind === "water") {
-        return { fill: "rgba(14, 165, 233, 0.28)", stroke: selected ? "#fbbf24" : "#0284c7", strokeWidth: selected ? 0.75 : 0.45 };
+        return { fill: "rgba(125, 211, 252, 0.34)", stroke: selected ? "#fbbf24" : "#0284c7", strokeWidth: selected ? 0.82 : 0.45 };
       }
       if (kind === "landscape") {
-        return { fill: "rgba(34, 197, 94, 0.22)", stroke: selected ? "#fbbf24" : "#16a34a", strokeWidth: selected ? 0.75 : 0.4 };
+        return { fill: "rgba(134, 239, 172, 0.18)", stroke: selected ? "#fbbf24" : "#16a34a", strokeWidth: selected ? 0.72 : 0.34 };
       }
       if (kind === "sidewalk") {
-        return { fill: "none", stroke: selected ? "#fbbf24" : "#0f766e", strokeWidth: selected ? 0.85 : 0.55 };
+        return { fill: "rgba(248, 250, 252, 0.46)", stroke: selected ? "#fbbf24" : "#94a3b8", strokeWidth: selected ? 0.75 : 0.42 };
       }
       if (kind === "utility") {
-        return { fill: "rgba(124, 58, 237, 0.14)", stroke: selected ? "#fbbf24" : "#7c3aed", strokeWidth: selected ? 0.75 : 0.45 };
+        return { fill: "rgba(37, 99, 235, 0.08)", stroke: selected ? "#fbbf24" : "#2563eb", strokeWidth: selected ? 0.78 : 0.46 };
       }
-      return { fill: "rgba(148, 163, 184, 0.18)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.42 };
+      if (kind === "building") {
+        return { fill: "rgba(226, 218, 202, 0.76)", stroke: selected ? "#fbbf24" : "#8b7355", strokeWidth: selected ? 0.82 : 0.42 };
+      }
+      return { fill: "rgba(148, 163, 184, 0.14)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.38 };
     },
-    [isHighQuality, legendPalette.building, legendPalette.buildingFill, legendPalette.parkingFill, legendPalette.road, resolveVisualKind],
+    [isHighQuality, resolveVisualKind],
   );
   const roundedSiteShapePath = useCallback(
     (
