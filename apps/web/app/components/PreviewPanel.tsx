@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType, CSSProperties } from "react";
+import type { ComponentType } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { AlertTriangle, CornerUpLeft, CornerUpRight, Download, Droplets, Eye, EyeOff, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Navigation, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -840,84 +840,6 @@ export default function PreviewPanel({
     },
     [isHighQuality, legendPalette.building, legendPalette.buildingFill, legendPalette.parkingFill, legendPalette.road, resolveVisualKind],
   );
-  const resolveObjectBoxStyle = useCallback(
-    (item: BuildingPlacement): CSSProperties => {
-      const kind = resolveVisualKind(item);
-      if (!isHighQuality) {
-        return {
-          backgroundColor: "rgba(15, 23, 42, 0.22)",
-          borderColor: (item.meta as { style?: { outline_color?: string } } | undefined)?.style?.outline_color,
-        };
-      }
-      const outlineColor = (item.meta as { style?: { outline_color?: string } } | undefined)?.style?.outline_color;
-      const base: CSSProperties = {
-        borderColor: outlineColor,
-        boxShadow: "0 8px 22px rgba(15,23,42,0.2)",
-      };
-      if (kind === "building") {
-        return {
-          ...base,
-          backgroundColor: "rgba(30, 41, 59, 0.82)",
-          backgroundImage:
-            "linear-gradient(135deg, rgba(255,255,255,0.2), rgba(15,23,42,0.2)), repeating-linear-gradient(90deg, rgba(255,255,255,0.12) 0 1px, transparent 1px 14px)",
-        };
-      }
-      if (kind === "road") {
-        return {
-          ...base,
-          backgroundColor: "rgba(31, 41, 55, 0.82)",
-          backgroundImage:
-            "linear-gradient(90deg, transparent 0 45%, rgba(248,250,252,0.55) 45% 50%, transparent 50% 100%)",
-        };
-      }
-      if (kind === "parking") {
-        return {
-          ...base,
-          backgroundColor: "rgba(71, 85, 105, 0.34)",
-          backgroundImage: "repeating-linear-gradient(90deg, rgba(255,255,255,0.58) 0 1px, transparent 1px 12px)",
-          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.24), 0 6px 18px rgba(15,23,42,0.12)",
-        };
-      }
-      if (kind === "water") {
-        return {
-          ...base,
-          backgroundColor: "rgba(14, 165, 233, 0.34)",
-          backgroundImage: "linear-gradient(135deg, rgba(255,255,255,0.32), rgba(14,116,144,0.16))",
-          boxShadow: "inset 0 0 18px rgba(56,189,248,0.22), 0 6px 18px rgba(14,116,144,0.16)",
-        };
-      }
-      if (kind === "landscape") {
-        return {
-          ...base,
-          backgroundColor: "rgba(34, 197, 94, 0.22)",
-          backgroundImage:
-            "radial-gradient(circle at 20% 30%, rgba(22,163,74,0.22) 0 2px, transparent 2px), radial-gradient(circle at 70% 65%, rgba(132,204,22,0.2) 0 2px, transparent 2px)",
-        };
-      }
-      if (kind === "sidewalk") {
-        return {
-          ...base,
-          backgroundColor: "rgba(240, 253, 250, 0.58)",
-          backgroundImage: "repeating-linear-gradient(90deg, rgba(15,118,110,0.25) 0 1px, transparent 1px 10px)",
-          boxShadow: "inset 0 0 0 1px rgba(15,118,110,0.24)",
-        };
-      }
-      if (kind === "utility") {
-        return {
-          ...base,
-          backgroundColor: "rgba(124, 58, 237, 0.18)",
-          backgroundImage: "repeating-linear-gradient(135deg, rgba(124,58,237,0.28) 0 1px, transparent 1px 9px)",
-          boxShadow: "inset 0 0 0 1px rgba(124,58,237,0.2)",
-        };
-      }
-      return {
-        ...base,
-        backgroundColor: "rgba(148, 163, 184, 0.2)",
-        backgroundImage: "repeating-linear-gradient(45deg, rgba(100,116,139,0.22) 0 1px, transparent 1px 9px)",
-      };
-    },
-    [isHighQuality, resolveVisualKind],
-  );
   const hoveredObject = useMemo(
     () =>
       [...buildingPlacements, ...suggestedPlacements].find(
@@ -949,14 +871,14 @@ export default function PreviewPanel({
     (hasGradingSurface || systemStatuses.grading === "fresh" || previewQuality === "high");
   const surfaceModel = gradingEarthworkUx?.surfaceModel;
   const heatmapFill = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
-    if (mode === "cut") return "rgba(239, 68, 68, 0.2)";
-    if (mode === "fill") return "rgba(14, 165, 233, 0.2)";
-    return "rgba(34, 197, 94, 0.14)";
+    if (mode === "cut") return "rgba(239, 68, 68, 0.045)";
+    if (mode === "fill") return "rgba(14, 165, 233, 0.05)";
+    return "rgba(34, 197, 94, 0.035)";
   };
   const heatmapStroke = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
-    if (mode === "cut") return "rgba(220, 38, 38, 0.34)";
-    if (mode === "fill") return "rgba(2, 132, 199, 0.34)";
-    return "rgba(22, 163, 74, 0.3)";
+    if (mode === "cut") return "rgba(220, 38, 38, 0.2)";
+    if (mode === "fill") return "rgba(2, 132, 199, 0.2)";
+    return "rgba(22, 163, 74, 0.16)";
   };
   const accessPointsForParking = useMemo(
     () =>
@@ -3125,12 +3047,28 @@ export default function PreviewPanel({
     [mapAnchor],
   );
 
+  const sitePointToPreviewPercent = useCallback(
+    (point: [number, number], targetMap: mapboxgl.Map | null = mapRef.current): [number, number] => {
+      if (showMap && mapAnchor && targetMap) {
+        const container = targetMap.getContainer();
+        const containerWidth = Math.max(container.clientWidth, 1);
+        const containerHeight = Math.max(container.clientHeight, 1);
+        const lngLat = siteToMapLngLat({ x: point[0], y: point[1] }, mapAnchor);
+        if (!lngLat) return siteTupleToPercent(point, currentSiteSize);
+        const projected = targetMap.project(lngLat);
+        return [(projected.x / containerWidth) * 100, (projected.y / containerHeight) * 100];
+      }
+      return siteTupleToPercent(point, currentSiteSize);
+    },
+    [currentSiteSize, mapAnchor, showMap],
+  );
+
   const sitePointToSvgPercent = useCallback(
     (point: [number, number]) => {
-      const [x, y] = siteTupleToPercent(point, currentSiteSize);
+      const [x, y] = sitePointToPreviewPercent(point);
       return `${x},${y}`;
     },
-    [currentSiteSize],
+    [sitePointToPreviewPercent],
   );
 
   const siteRectPercent = useCallback(
@@ -6475,7 +6413,7 @@ export default function PreviewPanel({
                       </div>
                     </div>
                     <div
-                      className="absolute right-4 top-4 z-[45] flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white/92 shadow-sm backdrop-blur"
+                      className="civora-preview-zoom-controls absolute right-4 top-4 z-[45] flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white/92 shadow-sm backdrop-blur"
                       onMouseDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
                     >
@@ -6510,7 +6448,7 @@ export default function PreviewPanel({
                     <div
                       aria-label="Canvas coordinate readout"
                       data-testid="canvas-coordinate-readout"
-                      className="pointer-events-none absolute bottom-4 left-4 z-[45] rounded-lg border border-slate-300 bg-white/92 px-3 py-2 font-mono text-[11px] text-slate-700 shadow-sm backdrop-blur"
+                      className="civora-preview-coordinate-readout pointer-events-none absolute bottom-4 left-4 z-[45] rounded-lg border border-slate-300 bg-white/92 px-3 py-2 font-mono text-[11px] text-slate-700 shadow-sm backdrop-blur"
                     >
                       <div>ZOOM {Math.round(canvasView.scale * 100)}%</div>
                       <div>
@@ -6664,17 +6602,27 @@ export default function PreviewPanel({
                           </text>
                         </g>
                         {showEarthworkUx && gradingEarthworkUx ? (
-                          <g data-testid="earthwork-ux-overlay">
+                          <g data-testid="earthwork-ux-overlay" opacity={isHighQuality ? 0.62 : 0.48}>
+                            {[18, 34, 50, 66, 82].map((y, idx) => (
+                              <path
+                                key={`grading-contour-${idx}`}
+                                d={`M 3 ${y} C 18 ${y - 3.5} 28 ${y + 3.2} 42 ${y - 1.4} S 70 ${y + 4.2} 97 ${y - 2.2}`}
+                                fill="none"
+                                stroke="rgba(71, 85, 105, 0.22)"
+                                strokeWidth={0.18}
+                                strokeDasharray={idx % 2 ? "1.2 1.2" : undefined}
+                              />
+                            ))}
                             {gradingEarthworkUx.heatmapCells.map((cell) => (
-                              <rect
+                              <ellipse
                                 key={cell.id}
-                                x={cell.xPct}
-                                y={cell.yPct}
-                                width={cell.wPct}
-                                height={cell.hPct}
+                                cx={cell.xPct + cell.wPct / 2}
+                                cy={cell.yPct + cell.hPct / 2}
+                                rx={Math.max(1.1, cell.wPct * 0.26)}
+                                ry={Math.max(0.9, cell.hPct * 0.22)}
                                 fill={heatmapFill(cell.mode)}
                                 stroke={heatmapStroke(cell.mode)}
-                                strokeWidth={0.12}
+                                strokeWidth={0.08}
                               />
                             ))}
                             {gradingEarthworkUx.padTieIns.map((pad) => {
@@ -6730,21 +6678,26 @@ export default function PreviewPanel({
                         {gradingBlocker ? (
                           (() => {
                             const toPct = (pt: { x: number; y: number }) => ({
-                              x: siteTupleToPercent([pt.x, pt.y], currentSiteSize)[0],
-                              y: siteTupleToPercent([pt.x, pt.y], currentSiteSize)[1],
+                              x: sitePointToPreviewPercent([pt.x, pt.y])[0],
+                              y: sitePointToPreviewPercent([pt.x, pt.y])[1],
                             });
                             const source = gradingBlocker.sourcePoint ? toPct(gradingBlocker.sourcePoint) : null;
                             const target = gradingBlocker.blockedTarget ? toPct(gradingBlocker.blockedTarget) : null;
                             const blocker = gradingBlocker.blockerLocation ? toPct(gradingBlocker.blockerLocation) : null;
                             const zone = gradingBlocker.suggestedFixZone
-                              ? siteRectToPercent(
+                              ? mapAnchoredRectPercent(
                                   {
+                                    id: "grading-fix-zone",
+                                    type: "setback_zone",
+                                    label: "Grading fix zone",
                                     x: gradingBlocker.suggestedFixZone.x,
                                     y: gradingBlocker.suggestedFixZone.y,
-                                    width: gradingBlocker.suggestedFixZone.w,
-                                    height: gradingBlocker.suggestedFixZone.h,
-                                  },
-                                  currentSiteSize,
+                                    w: gradingBlocker.suggestedFixZone.w,
+                                    d: gradingBlocker.suggestedFixZone.h,
+                                    placed: true,
+                                    locked: true,
+                                  } as BuildingPlacement,
+                                  mapRef.current,
                                 )
                               : null;
                             return (
@@ -6790,13 +6743,13 @@ export default function PreviewPanel({
                             {stormHydrologyOverlay.overflowPaths.map((path) => {
                               const points = path.path
                                 .map((pt) => {
-                                  const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
+                                  const [x, y] = sitePointToPreviewPercent([pt.x, pt.y]);
                                   return `${x},${y}`;
                                 })
                                 .join(" ");
                               if (!points) return null;
                               const labelPoint = path.path[Math.floor(path.path.length / 2)] ?? path.path[0];
-                              const [labelX, labelY] = siteTupleToPercent([labelPoint.x, labelPoint.y], currentSiteSize);
+                              const [labelX, labelY] = sitePointToPreviewPercent([labelPoint.x, labelPoint.y]);
                               return (
                                 <g key={`overflow-${path.id}`}>
                                   <polyline
@@ -6826,7 +6779,7 @@ export default function PreviewPanel({
                           <g>
                             {stormHydrologyOverlay.inletChecks.map((inlet) => {
                               if (inlet.x === null || inlet.y === null) return null;
-                              const [x, y] = siteTupleToPercent([inlet.x, inlet.y], currentSiteSize);
+                              const [x, y] = sitePointToPreviewPercent([inlet.x, inlet.y]);
                               const spreadRadius = Math.max(
                                 1.1,
                                 Math.min(
@@ -6952,6 +6905,66 @@ export default function PreviewPanel({
                             );
                           })}
                         {visibleCadObjects
+                          .filter((item) => !item.meta?.unsupported_entity_placeholder && (!item.geometryType || item.geometryType === "rect") && item.type !== "site")
+                          .map((item) => {
+                            const rect = mapAnchoredRectPercent(item, mapRef.current);
+                            const selected = selectedBuildingId === item.id;
+                            const visualKind = resolveVisualKind(item);
+                            const visualStyle = resolveSvgVisualStyle(item, selected);
+                            const cornerRadius =
+                              visualKind === "road" || visualKind === "parking" || visualKind === "sidewalk"
+                                ? 0.35
+                                : visualKind === "building"
+                                  ? 0.18
+                                  : 0.7;
+                            return (
+                              <g key={`rect-plan-${item.id}`} data-testid="plan-rect-object">
+                                <rect
+                                  x={rect.left}
+                                  y={rect.top}
+                                  width={rect.width}
+                                  height={rect.height}
+                                  rx={cornerRadius}
+                                  fill={visualStyle.fill}
+                                  stroke={visualStyle.stroke}
+                                  strokeWidth={visualStyle.strokeWidth}
+                                  strokeLinejoin="round"
+                                />
+                                {isHighQuality && visualKind === "building" ? (
+                                  <>
+                                    <line
+                                      x1={rect.left}
+                                      y1={rect.top + rect.height}
+                                      x2={rect.left + rect.width}
+                                      y2={rect.top}
+                                      stroke="rgba(15,23,42,0.45)"
+                                      strokeWidth={0.16}
+                                    />
+                                    <line
+                                      x1={rect.left}
+                                      y1={rect.top}
+                                      x2={rect.left + rect.width}
+                                      y2={rect.top + rect.height}
+                                      stroke="rgba(255,255,255,0.34)"
+                                      strokeWidth={0.12}
+                                    />
+                                  </>
+                                ) : null}
+                                {isHighQuality && visualKind === "parking" ? (
+                                  <line
+                                    x1={rect.left + rect.width * 0.1}
+                                    y1={rect.top + rect.height * 0.5}
+                                    x2={rect.left + rect.width * 0.9}
+                                    y2={rect.top + rect.height * 0.5}
+                                    stroke="rgba(248,250,252,0.74)"
+                                    strokeWidth={0.16}
+                                    strokeDasharray="1 0.8"
+                                  />
+                                ) : null}
+                              </g>
+                            );
+                          })}
+                        {visibleCadObjects
                           .filter((item) => !item.meta?.unsupported_entity_placeholder && item.geometryType === "polygon" && Array.isArray(item.geometry))
                           .map((item) => {
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
@@ -6985,11 +6998,10 @@ export default function PreviewPanel({
                               benchmark: "B",
                               note_callout: "N",
                             };
-                            const [x, y] = siteTupleToPercent(
+                            const [x, y] = sitePointToPreviewPercent(
                               Array.isArray(item.geometry) && item.geometry[0]
                                 ? item.geometry[0]
                                 : [(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2],
-                              currentSiteSize,
                             );
                             return (
                               <g key={`cad-symbol-${item.id}`} data-testid="cad-symbol">
@@ -7009,7 +7021,7 @@ export default function PreviewPanel({
                             const center = Array.isArray(item.geometry) && item.geometry[0]
                               ? item.geometry[0]
                               : ([(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2] as [number, number]);
-                            const [x, y] = siteTupleToPercent(center, currentSiteSize);
+                            const [x, y] = sitePointToPreviewPercent(center);
                             const radiusFt = Math.max(0, Number(item.meta?.cad_radius));
                             const radiusPct = Math.max(0.35, (radiusFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100);
                             const isSelected = selectedBuildingId === item.id;
@@ -7034,7 +7046,7 @@ export default function PreviewPanel({
                             const insert = Array.isArray(item.geometry) && item.geometry[0]
                               ? item.geometry[0]
                               : ([(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2] as [number, number]);
-                            const [x, y] = siteTupleToPercent(insert, currentSiteSize);
+                            const [x, y] = sitePointToPreviewPercent(insert);
                             return (
                               <g key={`cad-text-${item.id}`} data-testid="cad-entity-text">
                                 <rect
@@ -7056,20 +7068,15 @@ export default function PreviewPanel({
                         {visibleCadObjects
                           .filter((item) => item.meta?.unsupported_entity_placeholder)
                           .map((item) => {
-                            const [x1, y1] = siteTupleToPercent([item.x ?? 0, item.y ?? 0], currentSiteSize);
-                            const [x2, y2] = siteTupleToPercent([(item.x ?? 0) + item.w, (item.y ?? 0) + item.d], currentSiteSize);
-                            const x = Math.min(x1, x2);
-                            const y = Math.min(y1, y2);
-                            const w = Math.max(1.2, Math.abs(x2 - x1));
-                            const h = Math.max(1.2, Math.abs(y2 - y1));
+                            const rect = mapAnchoredRectPercent(item, mapRef.current);
                             const blockers = Array.isArray(item.meta?.cad_review_blockers) ? item.meta.cad_review_blockers.map(String) : [];
                             return (
                               <g key={`cad-unsupported-${item.id}`} data-testid="cad-entity-unsupported">
                                 <rect
-                                  x={x}
-                                  y={y}
-                                  width={w}
-                                  height={h}
+                                  x={rect.left}
+                                  y={rect.top}
+                                  width={Math.max(1.2, rect.width)}
+                                  height={Math.max(1.2, rect.height)}
                                   fill="rgba(251, 191, 36, 0.12)"
                                   stroke="#b45309"
                                   strokeWidth={0.42}
@@ -7077,7 +7084,7 @@ export default function PreviewPanel({
                                 >
                                   <title>{blockers[0] || "Unsupported CAD entity requires review."}</title>
                                 </rect>
-                                <text x={Math.min(x + 1.2, 94)} y={Math.max(y - 1.2, 3)} fontSize="2.05" fill="#92400e" fontWeight={800}>
+                                <text x={Math.min(rect.left + 1.2, 94)} y={Math.max(rect.top - 1.2, 3)} fontSize="2.05" fill="#92400e" fontWeight={800}>
                                   Blocked CAD entity
                                 </text>
                               </g>
@@ -7091,8 +7098,8 @@ export default function PreviewPanel({
                             const mode = String(item.meta?.cad_dimension_mode || "linear");
                             const start: [number, number] = mode === "linear" ? [a[0], Math.max(a[1], b[1]) + 8] : a;
                             const end: [number, number] = mode === "linear" ? [b[0], Math.max(a[1], b[1]) + 8] : b;
-                            const [x1, y1] = siteTupleToPercent(start, currentSiteSize);
-                            const [x2, y2] = siteTupleToPercent(end, currentSiteSize);
+                            const [x1, y1] = sitePointToPreviewPercent(start);
+                            const [x2, y2] = sitePointToPreviewPercent(end);
                             const labelX = (x1 + x2) / 2;
                             const labelY = (y1 + y2) / 2 - 1.1;
                             return (
@@ -7205,10 +7212,7 @@ export default function PreviewPanel({
                         {planLabelObjects.length ? (
                           <g data-testid="cad-plan-labels">
                             {planLabelObjects.map((item) => {
-                              const [x, y] = siteTupleToPercent(
-                                [(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2],
-                                currentSiteSize,
-                              );
+                              const [x, y] = sitePointToPreviewPercent([(item.x ?? 0) + item.w / 2, (item.y ?? 0) + item.d / 2]);
                               const kind = resolveVisualKind(item);
                               const color =
                                 selectedBuildingId === item.id
@@ -7250,7 +7254,7 @@ export default function PreviewPanel({
                             {waterFireFlow.pressureZones.map((zone) => {
                               if (zone.geometry.length < 3) return null;
                               const points = zone.geometry
-                                .map((pt) => siteTupleToPercent(pt, currentSiteSize).join(","))
+                                .map((pt) => sitePointToPreviewPercent(pt).join(","))
                                 .join(" ");
                               return (
                                 <polygon
@@ -7267,7 +7271,7 @@ export default function PreviewPanel({
                             {waterFireFlow.networkSegments.map((segment) => {
                               if (segment.geometry.length < 2) return null;
                               const points = segment.geometry
-                                .map((pt) => siteTupleToPercent(pt, currentSiteSize).join(","))
+                                .map((pt) => sitePointToPreviewPercent(pt).join(","))
                                 .join(" ");
                               return (
                                 <polyline
@@ -7283,7 +7287,7 @@ export default function PreviewPanel({
                               );
                             })}
                             {waterFireFlow.hydrants.map((hydrant) => {
-                              const [x, y] = siteTupleToPercent([hydrant.x, hydrant.y], currentSiteSize);
+                              const [x, y] = sitePointToPreviewPercent([hydrant.x, hydrant.y]);
                               const selected = waterFireFlow.selectedHydrant?.id === hydrant.id;
                               const statusColor =
                                 hydrant.status === "pass"
@@ -7318,7 +7322,7 @@ export default function PreviewPanel({
                         {surfaceModel ? (
                           <g data-testid="surface-model-overlay">
                             {surfaceModel.comparisonCells.map((cell, idx) => {
-                              const [x, y] = siteTupleToPercent([cell.x, cell.y], currentSiteSize);
+                              const [x, y] = sitePointToPreviewPercent([cell.x, cell.y]);
                               const fill =
                                 cell.mode === "cut"
                                   ? "rgba(220,38,38,0.35)"
@@ -7338,9 +7342,10 @@ export default function PreviewPanel({
                               );
                             })}
                             {surfaceModel.contours.map((contour, idx) => {
-                              const points = contour.points.map((pt) => siteTupleToPercent(pt, currentSiteSize).join(",")).join(" ");
+                              const points = contour.points.map((pt) => sitePointToPreviewPercent(pt).join(",")).join(" ");
                               if (!points) return null;
                               const isIndexContour = idx % 5 === 0;
+                              const labelPoint = contour.points[0] ? sitePointToPreviewPercent(contour.points[0]) : null;
                               return (
                                 <g key={`surface-contour-${idx}`}>
                                   <polyline
@@ -7353,8 +7358,8 @@ export default function PreviewPanel({
                                   />
                                   {isIndexContour && previewLabelDensity !== "low" && contour.points[0] ? (
                                     <text
-                                      x={siteTupleToPercent(contour.points[0], currentSiteSize)[0] + 0.8}
-                                      y={siteTupleToPercent(contour.points[0], currentSiteSize)[1] - 0.8}
+                                      x={(labelPoint?.[0] ?? 0) + 0.8}
+                                      y={(labelPoint?.[1] ?? 0) - 0.8}
                                       fontSize="2"
                                       fill="#334155"
                                       fontWeight={700}
@@ -7366,7 +7371,7 @@ export default function PreviewPanel({
                               );
                             })}
                             {surfaceModel.flowPaths.map((path) => {
-                              const points = path.points.map((pt) => siteTupleToPercent([pt.x, pt.y], currentSiteSize).join(",")).join(" ");
+                              const points = path.points.map((pt) => sitePointToPreviewPercent([pt.x, pt.y]).join(",")).join(" ");
                               if (!points) return null;
                               return (
                                 <polyline
@@ -7382,7 +7387,7 @@ export default function PreviewPanel({
                               );
                             })}
                             {surfaceModel.slopeArrows.map((arrow, idx) => {
-                              const [x, y] = siteTupleToPercent([arrow.x, arrow.y], currentSiteSize);
+                              const [x, y] = sitePointToPreviewPercent([arrow.x, arrow.y]);
                               const scale = Math.min(2.7, Math.max(1.1, arrow.slopePct / 3));
                               const x2 = x + arrow.dx * scale;
                               const y2 = y + arrow.dy * scale;
@@ -7403,7 +7408,7 @@ export default function PreviewPanel({
                             })}
                             {previewLabelDensity !== "low"
                               ? surfaceModel.spotElevations.slice(0, previewLabelDensity === "high" ? 28 : 12).map((spot, idx) => {
-                                  const [x, y] = siteTupleToPercent([spot.x, spot.y], currentSiteSize);
+                                  const [x, y] = sitePointToPreviewPercent([spot.x, spot.y]);
                                   return (
                                     <g key={`surface-spot-${idx}`}>
                                       <circle cx={x} cy={y} r={0.48} fill="#111827" />
@@ -7424,7 +7429,7 @@ export default function PreviewPanel({
                         ) : null}
                         {(surveyPoints ?? []).length
                           ? (surveyPoints ?? []).slice(0, 1500).map((pt, idx) => {
-                              const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
+                              const [x, y] = sitePointToPreviewPercent([pt.x, pt.y]);
                               return (
                                 <circle
                                   key={`survey-${idx}`}
@@ -7438,22 +7443,27 @@ export default function PreviewPanel({
                             })
                           : null}
                         {activeSnapPoint ? (
+                          (() => {
+                            const [snapX, snapY] = sitePointToPreviewPercent([activeSnapPoint.x, activeSnapPoint.y]);
+                            return (
                           <g>
                             <circle
-                              cx={siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0]}
-                              cy={siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1]}
+                              cx={snapX}
+                              cy={snapY}
                               r={1.15}
                               fill="none"
                               stroke="#f59e0b"
                               strokeWidth={0.42}
                             />
                             <path
-                              d={`M ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0] - 1.6} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1]} L ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0] + 1.6} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1]} M ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0]} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1] - 1.6} L ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[0]} ${siteTupleToPercent([activeSnapPoint.x, activeSnapPoint.y], currentSiteSize)[1] + 1.6}`}
+                              d={`M ${snapX - 1.6} ${snapY} L ${snapX + 1.6} ${snapY} M ${snapX} ${snapY - 1.6} L ${snapX} ${snapY + 1.6}`}
                               stroke="#f59e0b"
                               strokeWidth={0.32}
                               strokeLinecap="round"
                             />
                           </g>
+                            );
+                          })()
                         ) : null}
                         {draftPoints.length || draftPreviewPoint ? (
                           (() => {
@@ -7675,7 +7685,7 @@ export default function PreviewPanel({
                       }}
                     >
                       {waterFireFlow.hydrants.map((hydrant) => {
-                        const [left, top] = siteTupleToPercent([hydrant.x, hydrant.y], currentSiteSize);
+                        const [left, top] = sitePointToPreviewPercent([hydrant.x, hydrant.y]);
                         const scenario = waterFireFlow.scenarios.find((item) => item.hydrantId === hydrant.id);
                         const selected = waterFireFlow.selectedHydrant?.id === hydrant.id;
                         return (
@@ -7706,7 +7716,6 @@ export default function PreviewPanel({
                           Number.isFinite(item.x) &&
                           Number.isFinite(item.y),
                       )
-                      // eslint-disable-next-line react-hooks/refs
                       .map((item) => {
                         const caps = getEditCapabilities(item);
                         const isSelected = selectedBuildingId === item.id;
@@ -7738,9 +7747,9 @@ export default function PreviewPanel({
                         const isEditableVertexGeometry = isPolyline || isPolygon;
                         const isCustomArea = isPolygon;
                         const showBox = !isPolyline && !isCustomArea;
+                        const showBoxChrome = showBox && (isSelected || Boolean(isAccessHighlight));
                         const isSite = item.type === "site";
                         const visualKind = resolveVisualKind(item);
-                        const objectBoxStyle = resolveObjectBoxStyle(item);
                         const allowItemInteraction =
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
@@ -7784,12 +7793,13 @@ export default function PreviewPanel({
                           >
                             <div
                               className={`h-full w-full rounded-[8px] shadow-sm transition ${
-                                showBox ? `border ${borderColor}` : ""
+                                showBoxChrome ? `border ${borderColor}` : ""
                               } ${
-                                showBox && isSelected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-white/80 shadow-[0_0_0_6px_rgba(251,191,36,0.14)]" : ""
-                              } ${showBox && isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
+                                showBoxChrome && isSelected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-white/80 shadow-[0_0_0_6px_rgba(251,191,36,0.14)]" : ""
+                              } ${showBoxChrome && isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
                               style={{
-                                ...(showBox ? objectBoxStyle : { backgroundColor: "transparent", borderColor: outlineColor || undefined }),
+                                backgroundColor: "transparent",
+                                borderColor: showBoxChrome ? outlineColor || undefined : "transparent",
                               }}
                             />
                             {isSelected && showBox ? (
@@ -8056,7 +8066,6 @@ export default function PreviewPanel({
                       })}
                       {suggestedPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
-                      // eslint-disable-next-line react-hooks/refs
                       .map((item) => {
                         const rectPct = mapAnchoredRectPercent(item, mapRef.current);
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
@@ -8111,12 +8120,12 @@ export default function PreviewPanel({
                             : [path.from, path.to];
                           const coords = points
                             .map((pt) => {
-                              const [x, y] = siteTupleToPercent([pt.x, pt.y], currentSiteSize);
+                              const [x, y] = sitePointToPreviewPercent([pt.x, pt.y]);
                               return `${x},${y}`;
                             })
                             .join(" ");
                           const labelPoint = points[Math.floor(points.length / 2)] ?? path.from;
-                          const [labelX, labelY] = siteTupleToPercent([labelPoint.x, labelPoint.y], currentSiteSize);
+                          const [labelX, labelY] = sitePointToPreviewPercent([labelPoint.x, labelPoint.y]);
                           return (
                             <g key={path.id}>
                               <polyline
@@ -8230,19 +8239,19 @@ export default function PreviewPanel({
                   </div>
                 </div>
               ) : null}
-              <div className="pointer-events-none absolute bottom-6 left-6 hidden rounded-[18px] border border-white/20 bg-white/70 px-4 py-3 text-xs text-slate-700 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)] backdrop-blur lg:block">
+              <div className="civora-preview-status-pill pointer-events-none absolute bottom-6 left-6 hidden rounded-[18px] border border-white/20 bg-white/70 px-4 py-3 text-xs text-slate-700 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)] backdrop-blur lg:block">
                 <span className="font-semibold uppercase tracking-[0.18em] text-slate-500">
                   AI Layout + Generation
                 </span>
               </div>
               {showHover && !planPreviewAnnotations?.labels?.length ? (
-                <div className="pointer-events-none absolute right-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
+                <div className="civora-preview-hover-pill pointer-events-none absolute right-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block">
                   Hover labels pending
                 </div>
               ) : null}
               {showHover ? (
                 <div
-                  className="pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block"
+                  className="civora-preview-hover-pill pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block"
                 >
                   Hover geometry for details
                 </div>
@@ -8554,7 +8563,6 @@ export default function PreviewPanel({
                       : null}
                     {visibleCadObjects
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
-                      // eslint-disable-next-line react-hooks/refs
                       .map((item) => {
                         const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
@@ -8630,7 +8638,6 @@ export default function PreviewPanel({
                       })}
                       {suggestedPlacements
                         .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
-                        // eslint-disable-next-line react-hooks/refs
                         .map((item) => {
                           const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
                           const rotation = showMap ? 0 : (item.rotation ?? 0);

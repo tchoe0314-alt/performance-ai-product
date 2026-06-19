@@ -193,6 +193,15 @@ body,
   pointer-events: none;
 }
 
+.civora-preview-zoom-controls,
+.civora-preview-coordinate-readout,
+.civora-preview-status-pill,
+.civora-preview-hover-pill,
+.civora-evidence-dock,
+.civora-coordination-dock {
+  display: none !important;
+}
+
 .civora-cad-dock:hover,
 .civora-cad-dock:focus-within {
   max-height: 230px;
@@ -237,20 +246,6 @@ body,
 
 .civora-coordination-dock > section:not(:first-child) {
   display: none;
-}
-
-.civora-evidence-dock {
-  max-height: 54px;
-  overflow: hidden;
-  opacity: 0.92;
-  transition: max-height 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
-}
-
-.civora-evidence-dock:hover,
-.civora-evidence-dock:focus-within {
-  max-height: 240px;
-  opacity: 1;
-  box-shadow: 0 24px 58px -36px rgba(15, 23, 42, 0.62);
 }
 
 .civora-evidence-dock-left {
