@@ -127,7 +127,7 @@ body,
   position: absolute;
   inset: 12px 12px auto 12px;
   z-index: 70;
-  max-height: 154px;
+  max-height: 86px;
   overflow: auto;
   margin-bottom: 0;
   border-radius: 12px;
@@ -145,8 +145,25 @@ body,
   border-bottom-color: rgba(226, 232, 240, 0.7);
 }
 
+.civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) > section:not(:nth-child(2)):not(:last-child) {
+  display: none;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) > section:last-child {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+
 .civora-preview-panel > div:nth-child(2) > div:first-child button {
-  min-height: 32px;
+  min-height: 30px;
 }
 
 .civora-preview-panel > div:nth-child(2) > div:first-child span {
@@ -166,14 +183,27 @@ body,
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 18px 44px -34px rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(14px);
+  transition: max-height 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
 }
 
 .civora-cad-dock {
   left: 16px;
   right: 16px;
   bottom: 16px;
-  max-height: 210px;
+  max-height: 52px;
   margin-bottom: 0;
+  opacity: 0.94;
+}
+
+.civora-cad-dock:hover,
+.civora-cad-dock:focus-within {
+  max-height: 230px;
+  opacity: 1;
+  box-shadow: 0 24px 58px -34px rgba(15, 23, 42, 0.62);
+}
+
+.civora-cad-dock > section {
+  min-width: 174px;
 }
 
 .civora-cad-dock section > p:first-child {
@@ -189,10 +219,17 @@ body,
 .civora-coordination-dock {
   right: 16px;
   bottom: 238px;
-  width: min(360px, calc(100% - 32px));
-  max-height: 198px;
+  width: min(320px, calc(100% - 32px));
+  max-height: 50px;
   margin-bottom: 0;
   grid-template-columns: 1fr !important;
+  opacity: 0.9;
+}
+
+.civora-coordination-dock:hover,
+.civora-coordination-dock:focus-within {
+  max-height: 198px;
+  opacity: 1;
 }
 
 .civora-coordination-dock > section {
@@ -203,24 +240,55 @@ body,
   display: none;
 }
 
+.civora-evidence-dock {
+  max-height: 54px;
+  overflow: hidden;
+  opacity: 0.92;
+  transition: max-height 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
+}
+
+.civora-evidence-dock:hover,
+.civora-evidence-dock:focus-within {
+  max-height: 240px;
+  opacity: 1;
+  box-shadow: 0 24px 58px -36px rgba(15, 23, 42, 0.62);
+}
+
+.civora-evidence-dock-left {
+  bottom: 84px !important;
+}
+
+.civora-evidence-dock-right {
+  bottom: 84px !important;
+}
+
 @media (max-width: 900px) {
   .civora-preview-panel > div:nth-child(2) {
     min-height: 720px;
   }
 
   .civora-preview-panel > div:nth-child(2) > div:first-child {
-    max-height: 176px;
+    max-height: 168px;
   }
 
   .civora-cad-dock {
     left: 10px;
     right: 10px;
     bottom: 10px;
-    max-height: 214px;
+    max-height: 58px;
     grid-template-columns: 1fr !important;
   }
 
+  .civora-cad-dock:hover,
+  .civora-cad-dock:focus-within {
+    max-height: 238px;
+  }
+
   .civora-coordination-dock {
+    display: none;
+  }
+
+  .civora-evidence-dock {
     display: none;
   }
 }

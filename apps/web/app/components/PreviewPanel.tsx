@@ -7556,7 +7556,7 @@ export default function PreviewPanel({
                     {showEarthworkUx && gradingEarthworkUx ? (
                       <div
                         data-testid="grading-earthwork-panel"
-                        className="pointer-events-none absolute bottom-4 left-4 z-[24] w-[min(360px,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.85)] backdrop-blur"
+                        className="civora-evidence-dock civora-evidence-dock-left pointer-events-none absolute bottom-4 left-4 z-[24] w-[min(360px,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.85)] backdrop-blur"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -8248,7 +8248,7 @@ export default function PreviewPanel({
                 </div>
               ) : null}
               {waterFireFlow.hasData ? (
-                <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-40 rounded-lg border border-slate-200/80 bg-white/94 p-3 text-xs text-slate-700 shadow-[0_18px_55px_-32px_rgba(15,23,42,0.6)] backdrop-blur sm:left-auto sm:bottom-6 sm:right-6 sm:w-[380px] sm:max-w-[calc(100%-3rem)]">
+                <div className="civora-evidence-dock civora-evidence-dock-right pointer-events-auto absolute bottom-3 left-3 right-3 z-40 rounded-lg border border-slate-200/80 bg-white/94 p-3 text-xs text-slate-700 shadow-[0_18px_55px_-32px_rgba(15,23,42,0.6)] backdrop-blur sm:left-auto sm:bottom-6 sm:right-6 sm:w-[380px] sm:max-w-[calc(100%-3rem)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">

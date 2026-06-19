@@ -16632,7 +16632,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
+            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[248px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
           >
             <button
               type="button"
@@ -22751,7 +22751,7 @@ function PerformanceAIDashboardView({
 	                              type="button"
 	                              aria-label={item.key === "design" ? "Generate" : undefined}
 	                              onClick={() => handleOpenPanelFromDrawer(item.panel)}
-	                              className={`min-h-10 min-w-[82px] rounded-md px-2.5 py-2 text-center text-xs font-semibold transition ${
+	                              className={`min-h-9 min-w-[78px] rounded-md px-2.5 py-1.5 text-center text-xs font-semibold transition ${
 	                                isActive
 	                                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
 	                                  : "text-slate-600 hover:bg-white hover:text-slate-950"
@@ -22781,7 +22781,7 @@ function PerformanceAIDashboardView({
 	                              type="button"
 	                              onClick={tool.action}
 	                              data-testid={tool.label === "Modify" ? "preview-interaction-edit" : undefined}
-	                              className={`flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${
+	                              className={`flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[13px] font-semibold transition ${
 	                                tool.active
 	                                  ? "border-blue-200 bg-blue-50 text-blue-700"
 	                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -22827,7 +22827,7 @@ function PerformanceAIDashboardView({
 	                        <button
 	                          type="button"
 	                          onClick={() => setRightRailCollapsed((value) => !value)}
-	                          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-50"
+	                          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-50"
 	                        >
 	                          {rightRailCollapsed ? "Show review" : "Hide review"}
 	                        </button>
