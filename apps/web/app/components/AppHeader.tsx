@@ -1,11 +1,11 @@
 "use client";
 
-import { Bell, CircleHelp, FolderOpen, MessageSquare, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Undo2 } from "lucide-react";
+import { Bell, CircleHelp, MessageSquare, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Undo2 } from "lucide-react";
 
 type AppHeaderProps = {
   userEmail: string;
   onOpenDashboard: () => void;
-  onOpenProjects: () => void;
+  onOpenWorkspace: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
   sidebarOpen: boolean;
@@ -16,7 +16,7 @@ type AppHeaderProps = {
 export default function AppHeader({
   userEmail,
   onOpenDashboard,
-  onOpenProjects,
+  onOpenWorkspace,
   onOpenDocs,
   onOpenChat,
   sidebarOpen,
@@ -55,21 +55,21 @@ export default function AppHeader({
           </button>
           <button
             type="button"
-            onClick={onOpenProjects}
-            aria-label="Open projects from header"
-            className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 md:inline-flex"
-          >
-            <FolderOpen className="h-4 w-4" />
-            Projects
-          </button>
-          <button
-            type="button"
             onClick={onOpenChat}
             aria-label="Open chat from header"
             className="hidden items-center gap-2 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 md:inline-flex"
           >
             <MessageSquare className="h-4 w-4" />
             Chat
+          </button>
+          <button
+            type="button"
+            onClick={onOpenWorkspace}
+            aria-label="Open workspace controls"
+            className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 md:inline-flex"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+            Workspace
           </button>
         </div>
 

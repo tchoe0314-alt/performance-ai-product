@@ -2430,7 +2430,6 @@ function PerformanceAIDashboardView({
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
   const [rightRailCollapsed, setRightRailCollapsed] = useState(true);
   const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(true);
-  const [rightPanelSectionsCollapsed, setRightPanelSectionsCollapsed] = useState(false);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
@@ -13500,6 +13499,23 @@ function PerformanceAIDashboardView({
     setUseSurveyForGrading(true);
     setMapSnapshotPath("");
     setMapAnalysis(null);
+    setSiteSelectionMode(false);
+    setViewportFootprint(null);
+    setViewportCenter(null);
+    setAddressSuggestions([]);
+    setSelectedAddressSuggestion(null);
+    setAutoExistingConditionsStatus({
+      status: "waiting",
+      message: "Apply an address and lock the site. Civora will then check available source context inside the boundary.",
+      candidateCount: 0,
+      missing: [],
+    });
+    setSelectedPlanPdfElementId("");
+    setLayerManagerOpen(false);
+    setPreviewFullscreenOpen(false);
+    setSelectedJobId("");
+    setMoveEditFeedback("");
+    setWorkspaceRestoreState("idle");
     setSiteAddress("");
     setBuildingPlacements([]);
     setDetectedPlacements([]);
@@ -13585,6 +13601,11 @@ function PerformanceAIDashboardView({
     setGrading(true);
     setDrainage(true);
     setUtilities(true);
+    setActiveSidePanel("site_existing");
+    setRightRailCollapsed(false);
+    setBottomPanelCollapsed(true);
+    setWorkspaceChromeMinimized(false);
+    setLeftSidebarOpen(true);
     const nextThread = [createWelcomeMessage()];
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
@@ -13635,7 +13656,9 @@ function PerformanceAIDashboardView({
         if (createdProject?.project_id) {
           resolvedProjectIdRef.current = createdProject.project_id;
           setProjectId(createdProject.project_id);
+          setCurrentProject(createdProject);
           debugLog("new-project-created", { projectId: createdProject.project_id });
+          await refreshProjects(token);
         }
       }
     } finally {
@@ -13665,19 +13688,9 @@ function PerformanceAIDashboardView({
       }
       removeProjectSummary(projectIdToDelete);
       if (currentProject?.project_id === projectIdToDelete || projectId === projectIdToDelete) {
-        const remaining = projects.filter(
-          (item) => item.project_id !== projectIdToDelete,
-        );
-        if (remaining.length) {
-          const next = [...remaining].sort(
-            (a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0),
-          )[0];
-          if (next?.project_id) {
-            await loadProject(next.project_id);
-          }
-        } else {
-          await handleNewProject();
-        }
+        await handleNewProject();
+      } else {
+        await refreshProjects(token);
       }
       setStatusMessage("Project deleted.");
     } catch (error) {
@@ -17170,9 +17183,10 @@ function PerformanceAIDashboardView({
         <AppHeader
           userEmail={effectiveUser.email}
           onOpenDashboard={() => handleOpenSidePanel("dashboard")}
-          onOpenProjects={() => {
-            if (token) void refreshProjects(token);
-            handleOpenSidePanel("projects");
+          onOpenWorkspace={() => {
+            setWorkspaceChromeMinimized(false);
+            setLeftSidebarOpen(true);
+            setRightRailCollapsed(true);
           }}
           onOpenDocs={() => handleOpenSidePanel("deliverables")}
           onOpenChat={() => handleOpenSidePanel("chat")}
@@ -17530,14 +17544,6 @@ function PerformanceAIDashboardView({
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setRightPanelSectionsCollapsed((value) => !value)}
-                    className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
-                    aria-pressed={rightPanelSectionsCollapsed}
-                  >
-                    {rightPanelSectionsCollapsed ? "Expand" : "Sections"}
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => {
                       if (sidePanelCloseTimeoutRef.current !== null) {
                         window.clearTimeout(sidePanelCloseTimeoutRef.current);
@@ -17553,7 +17559,7 @@ function PerformanceAIDashboardView({
               </div>
               <div
                 className="civora-right-panel-sections flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4"
-                data-sections-collapsed={rightPanelSectionsCollapsed ? "true" : "false"}
+                data-sections-collapsed="false"
               >
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
@@ -17621,7 +17627,10 @@ function PerformanceAIDashboardView({
                           </button>
                           <button
                             type="button"
-                            onClick={() => void handleDeleteProject(projectSummary.project_id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleDeleteProject(projectSummary.project_id);
+                            }}
                             className={`absolute right-3 top-3 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                               projectSummary.project_id === projectId
                                 ? "border-white/40 text-white/80 hover:bg-white/10"
