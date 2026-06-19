@@ -125,16 +125,13 @@ body,
 
 .civora-preview-panel > div:nth-child(2) > div:first-child {
   position: absolute;
-  inset: 12px 12px auto 12px;
-  z-index: 70;
-  max-height: 86px;
-  overflow: auto;
-  margin-bottom: 0;
-  border-radius: 12px;
-  border-color: rgba(203, 213, 225, 0.82);
-  background: rgba(255, 255, 255, 0.91);
-  box-shadow: 0 16px 38px -28px rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(14px);
+  z-index: -1;
+  width: 1px;
+  height: 1px;
+  max-height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .civora-preview-panel > div:nth-child(2) > div:first-child > div {
@@ -190,15 +187,17 @@ body,
   left: 16px;
   right: 16px;
   bottom: 16px;
-  max-height: 52px;
+  max-height: 1px;
   margin-bottom: 0;
-  opacity: 0.94;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .civora-cad-dock:hover,
 .civora-cad-dock:focus-within {
   max-height: 230px;
   opacity: 1;
+  pointer-events: auto;
   box-shadow: 0 24px 58px -34px rgba(15, 23, 42, 0.62);
 }
 
