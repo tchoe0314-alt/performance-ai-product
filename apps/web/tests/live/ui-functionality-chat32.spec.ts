@@ -23,6 +23,8 @@ test.describe("Chat 32 UI functionality QA", () => {
     const initialObjectOverlayCount = await page.locator("[data-object-overlay]").count();
     expect(initialObjectOverlayCount).toBeGreaterThan(0);
 
+    await page.getByTestId("reopen-civora-workspace").click();
+    await expect(canvas.getByTestId("preview-quality-high")).toBeVisible();
     await canvas.getByTestId("preview-quality-high").click();
     await expect(canvas).toContainText("High Quality");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(

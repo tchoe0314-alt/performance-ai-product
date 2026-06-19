@@ -2428,8 +2428,8 @@ function PerformanceAIDashboardView({
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("site_existing");
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
-  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
-  const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(false);
+  const [rightRailCollapsed, setRightRailCollapsed] = useState(true);
+  const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(true);
   const [rightPanelSectionsCollapsed, setRightPanelSectionsCollapsed] = useState(false);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
@@ -15817,10 +15817,10 @@ function PerformanceAIDashboardView({
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     dashboard: { title: "Dashboard", desc: "Review project readiness, health, and active work." },
-    model: { title: "Canvas", desc: "Design, prompt-create, generate systems, and open contextual discipline controls." },
+    model: { title: "Canvas", desc: "View, pan, zoom, inspect, and switch between 2D/3D preview modes." },
     site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
-    objects: { title: "Objects", desc: "Add, size, and place model objects." },
+    objects: { title: "Draw & Objects", desc: "Draw, manage objects, and open CAD tools from one place." },
     generate: { title: "Generate Systems", desc: "Run focused engines from one control panel." },
     grading: { title: "Grading Controls", desc: "Control grading rules, terrain inputs, and slope limits." },
     drainage: { title: "Drainage Controls", desc: "Control drainage rules, sources, and repair behavior." },
@@ -16096,7 +16096,7 @@ function PerformanceAIDashboardView({
 	  const primaryWorkflowGroups: Record<PrimaryWorkflowKey, SidePanelKey[]> = {
 	    setup: ["site_existing", "import_survey", "data", "standards"],
 	    draw: ["model", "layers", "files"],
-	    objects: ["objects", "details"],
+	    objects: ["objects", "model", "details"],
 	    design: [
 	      "generate",
 	      "grading",
@@ -16145,17 +16145,17 @@ function PerformanceAIDashboardView({
 	    },
 	    {
 	      key: "draw",
-	      label: "Draw",
-	      caption: "CAD tools and canvas",
+	      label: "Canvas",
+	      caption: "View and inspect",
 	      panel: "model",
 	      icon: Box,
 	      status: siteScaleLocked ? panelStatus("model") : "review",
-	      metric: "Canvas tools",
+	      metric: previewMode.toUpperCase(),
 	    },
 	    {
 	      key: "objects",
-	      label: "Objects",
-	      caption: "Manage placed objects",
+	      label: "Draw",
+	      caption: "Objects and CAD tools",
 	      panel: "objects",
 	      icon: Layers,
 	      status: panelStatus("objects"),
@@ -16210,7 +16210,8 @@ function PerformanceAIDashboardView({
 	      { label: "Layers", panel: "layers", detail: "Visibility, source badges, overlays", status: panelStatus("layers") },
 	    ],
 	    objects: [
-	      { label: "Object Manager", panel: "objects", detail: "Rename, recolor, select, move, delete", status: panelStatus("objects") },
+	      { label: "Draw & Object Manager", panel: "objects", detail: "Draw, rename, recolor, select, move, delete", status: panelStatus("objects") },
+	      { label: "CAD Canvas Tools", panel: "model", detail: "Lines, areas, boxes, points, snaps, dimensions", status: panelStatus("model") },
 	      { label: "Object Details", panel: "details", detail: activePlacementId ? "Selected object details" : "Select or draw an object", status: panelStatus("details") },
 	    ],
 	    design: [
@@ -16294,7 +16295,7 @@ function PerformanceAIDashboardView({
       testId: "change-site-boundary-toolbar",
     },
     {
-      label: "Draw",
+      label: "Draw tools",
       icon: Pencil,
       modes: ["draw"] as PrimaryWorkflowKey[],
       action: () => handleOpenPanelFromDrawer("model"),
@@ -17172,7 +17173,12 @@ function PerformanceAIDashboardView({
           onOpenDocs={() => handleOpenSidePanel("deliverables")}
           onOpenChat={() => handleOpenSidePanel("chat")}
           sidebarOpen={leftSidebarOpen}
-          onToggleSidebar={() => setLeftSidebarOpen((value) => !value)}
+          onToggleSidebar={() => {
+            setLeftSidebarOpen((value) => {
+              if (value) setWorkspaceChromeMinimized(false);
+              return !value;
+            });
+          }}
           onLogout={handleLogout}
         />
 
@@ -18127,7 +18133,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-4">
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-address-truth" open>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-address-truth">
                       <summary className="flex cursor-pointer items-center gap-3 text-left">
                         <span className="min-w-0 flex-1">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / Location</span>
@@ -18247,7 +18253,7 @@ function PerformanceAIDashboardView({
                       </div>
                       </div>
                     </details>
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-site-box-controls" open>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-site-box-controls">
                       <summary className="flex cursor-pointer items-center gap-3 text-left">
                         <span className="min-w-0 flex-1">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site Boundary</span>
@@ -22319,12 +22325,83 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "objects" ? (
                   <div className="space-y-4">
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" open data-testid="draw-cad-tools-section">
+                      <summary className="flex cursor-pointer items-center gap-3 text-left">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">CAD Tools</span>
+                          <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
+                            Lines, areas, boxes, points, snaps, layers, dimensions
+                          </span>
+                        </span>
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+                          Canvas
+                        </span>
+                      </summary>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewInteraction("edit");
+                            handleOpenSidePanel("model");
+                            setStatusMessage("Canvas CAD tools are active. Use line, area, box, point, snaps, dimensions, layers, and command input on the canvas.");
+                          }}
+                          className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800"
+                        >
+                          Open canvas CAD tools
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
+                            Draw and modify geometry
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewInteraction("edit");
+                            handleOpenSidePanel("layers");
+                            setStatusMessage("Layer controls opened. Use layers with CAD objects for visibility, review, and export organization.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          Open layers
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Visibility and CAD layers
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewInteraction("edit");
+                            handleOpenSidePanel("model");
+                            setStatusMessage("Use Add Line, Add Area, Add Box, or Add Point in the canvas draw toolbar.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          Draw line / area / box / point
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Manual draft objects
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewInteraction("edit");
+                            handleOpenSidePanel("model");
+                            setStatusMessage("CAD precision tools include coordinate entry, snaps, ortho, offsets, trims, fillets, dimensions, symbols, undo, and redo.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          Precision tools
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Snaps, command input, dimensions
+                          </span>
+                        </button>
+                      </div>
+                    </details>
 	                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
 	                      <div className="flex items-start justify-between gap-3">
 	                        <div>
-	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Object manager</p>
+	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Draw & Object Manager</p>
 	                          <p className="mt-1 text-sm text-slate-600">
-	                            Manage placed and pending objects here. To create new objects, ask Civora in chat or draw directly on the canvas.
+	                            Manage placed and pending objects here. Draw manually with CAD tools, or ask Civora in chat to create objects for placement.
 	                          </p>
 	                        </div>
 	                        <button
@@ -23366,7 +23443,7 @@ function PerformanceAIDashboardView({
 	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
 	              <div className="contents">
 	                <div
-	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200 bg-white/92 px-3 py-3 shadow-[0_22px_80px_-44px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-200 lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"} ${workspaceChromeMinimized ? "pointer-events-none -translate-y-2 opacity-0" : "opacity-100"}`}
+	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200 bg-white/92 px-3 py-3 shadow-[0_22px_80px_-44px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-200 lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"} ${workspaceChromeMinimized ? "hidden" : "opacity-100"}`}
 	                  aria-hidden={workspaceChromeMinimized}
 	                >
 	                  <div className="flex flex-col gap-3">

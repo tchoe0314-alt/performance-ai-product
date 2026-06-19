@@ -25,13 +25,12 @@ async function timedOpen(page: Page, buttonName: RegExp | string, expectedPanelT
 
 async function expectSectionToggles(page: Page, testId: string, headerName: RegExp | string, visibleBodyText: RegExp | string) {
   const section = page.getByTestId(testId);
-  await expect(section).toHaveAttribute("open", "", { timeout: 4_000 });
-  await expect(section).toContainText(visibleBodyText);
-  await section.getByText(headerName).first().click();
-  await expect(section).not.toHaveAttribute("open", "");
+  await expect(section).not.toHaveAttribute("open", "", { timeout: 4_000 });
   await section.getByText(headerName).first().click();
   await expect(section).toHaveAttribute("open", "");
   await expect(section).toContainText(visibleBodyText);
+  await section.getByText(headerName).first().click();
+  await expect(section).not.toHaveAttribute("open", "");
 }
 
 test.describe("real website workflow clarity", () => {
@@ -43,7 +42,11 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByText("Run engines with gates").first()).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Open canvas from sidebar" })).toHaveCount(1);
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
+    await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
+    await expect(page.getByTestId("reopen-civora-workspace")).toBeVisible();
 
+    await page.getByRole("button", { name: /^Setup$/ }).click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Project Setup");
     await expectSectionToggles(page, "setup-address-truth", "Address / Location", /Type project address/);
     await expectSectionToggles(page, "setup-site-box-controls", "Site Boundary", /Width \(ft\)/);
     await page.getByTestId("setup-survey-terrain-card").getByText("Survey / Terrain").first().click();
@@ -51,7 +54,9 @@ test.describe("real website workflow clarity", () => {
     await page.getByTestId("setup-detect-inside-site").getByText("Auto Site Context").first().click();
     await expect(page.getByTestId("setup-detect-inside-site")).toHaveAttribute("open", "");
 
-    const objectOpenMs = await timedOpen(page, /^Objects$/, /Object manager|Objects/);
+    const objectOpenMs = await timedOpen(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
+    await expect(page.getByTestId("draw-cad-tools-section")).toContainText(/Lines, areas, boxes, points, snaps, layers, dimensions/);
+    await expect(page.getByRole("button", { name: /Open canvas CAD tools/i })).toBeVisible();
     const generateOpenMs = await timedOpen(page, "Generate", /Generate Systems/);
     const reviewOpenMs = await timedOpen(page, /^Review$/, /Review|Evidence|Issues/);
 
@@ -59,10 +64,10 @@ test.describe("real website workflow clarity", () => {
     expect(generateOpenMs).toBeLessThan(1_500);
     expect(reviewOpenMs).toBeLessThan(1_500);
 
-    await page.getByRole("button", { name: "Minimize Civora workspace controls" }).click();
-    await expect(page.getByTestId("reopen-civora-workspace")).toBeVisible();
     await page.getByTestId("reopen-civora-workspace").click();
     await expect(page.getByRole("button", { name: "Minimize Civora workspace controls" })).toBeVisible();
+    await page.getByRole("button", { name: "Minimize Civora workspace controls" }).click();
+    await expect(page.getByTestId("reopen-civora-workspace")).toBeVisible();
 
     await page.getByRole("button", { name: /^Sections$/ }).click();
     await expect(page.locator(".civora-right-panel-sections")).toHaveAttribute("data-sections-collapsed", "true");
