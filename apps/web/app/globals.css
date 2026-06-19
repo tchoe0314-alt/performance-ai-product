@@ -4,7 +4,7 @@
   --background: #f7f7f7;
   --foreground: #101318;
 
-  --civora-bg: #f4f4f5;
+  --civora-bg: #f5f7fb;
   --civora-bg-soft: #ffffff;
   --civora-surface: rgba(255, 255, 255, 0.92);
   --civora-surface-solid: #ffffff;
@@ -14,8 +14,8 @@
   --civora-text: #101318;
   --civora-text-muted: #626b78;
   --civora-text-soft: #8a93a0;
-  --civora-accent: #111827;
-  --civora-accent-soft: rgba(17, 24, 39, 0.1);
+  --civora-accent: #2563eb;
+  --civora-accent-soft: rgba(37, 99, 235, 0.12);
   --civora-success: #2f9b5f;
   --civora-warning: #d68a1d;
   --civora-danger: #d94a45;
@@ -31,9 +31,9 @@
   --civora-radius-xl: 14px;
   --civora-radius-pill: 999px;
 
-  --civora-shadow-soft: 0 18px 50px -34px rgba(18, 25, 38, 0.42);
-  --civora-shadow-panel: 0 24px 70px -46px rgba(18, 25, 38, 0.46);
-  --civora-shadow-canvas: 0 34px 90px -54px rgba(18, 25, 38, 0.55);
+  --civora-shadow-soft: 0 16px 42px -34px rgba(18, 25, 38, 0.38);
+  --civora-shadow-panel: 0 22px 64px -48px rgba(18, 25, 38, 0.44);
+  --civora-shadow-canvas: 0 28px 84px -58px rgba(18, 25, 38, 0.5);
   --civora-blur: 18px;
 }
 
@@ -49,7 +49,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), sans-serif;
   background-image:
-    linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%);
+    linear-gradient(180deg, #ffffff 0%, #f6f8fb 48%, #eef3f8 100%);
   min-height: 100vh;
   overflow-x: hidden;
   overscroll-behavior-x: none;
@@ -101,9 +101,9 @@ body,
   border: 1px solid var(--civora-border-strong);
   border-radius: var(--civora-radius-xl);
   background:
-    linear-gradient(rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.86)),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.055) 1px, transparent 1px),
-    linear-gradient(rgba(15, 23, 42, 0.055) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.82)),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.05) 1px, transparent 1px),
+    linear-gradient(rgba(37, 99, 235, 0.045) 1px, transparent 1px),
     #ffffff;
   background-size: auto, 48px 48px, 48px 48px, auto;
   box-shadow: var(--civora-shadow-canvas);

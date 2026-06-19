@@ -9,10 +9,16 @@ import {
   ClipboardCheck,
   CheckCircle2,
   Circle,
+  Crosshair,
   FileText,
   Gauge,
+  Hand,
   Layers,
   MapPinned,
+  MousePointer2,
+  Move,
+  Pencil,
+  Ruler,
   Route,
   Settings,
   SlidersHorizontal,
@@ -2602,10 +2608,12 @@ function PerformanceAIDashboardView({
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
+  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
   const [bottomPanelContentVisible, setBottomPanelContentVisible] = useState(true);
+  const [bottomPanelSize, setBottomPanelSize] = useState<"compact" | "standard" | "tall">("standard");
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [issueReportMessage, setIssueReportMessage] = useState("");
   const [issueReportCopied, setIssueReportCopied] = useState(false);
@@ -2921,6 +2929,7 @@ function PerformanceAIDashboardView({
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setLeftSidebarOpen(false);
+      setRightRailCollapsed(true);
     }
   }, []);
 
@@ -2928,8 +2937,8 @@ function PerformanceAIDashboardView({
     let timeout: number | undefined;
     let frame: number | undefined;
 
-    if (activeSidePanel) {
-      setRenderedSidePanel(activeSidePanel);
+    if (!rightRailCollapsed) {
+      setRenderedSidePanel(activeSidePanel ?? "dashboard");
       frame = window.requestAnimationFrame(() => setSidePanelVisible(true));
     } else {
       setSidePanelVisible(false);
@@ -2940,7 +2949,7 @@ function PerformanceAIDashboardView({
       if (frame !== undefined) window.cancelAnimationFrame(frame);
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [activeSidePanel]);
+  }, [activeSidePanel, rightRailCollapsed]);
 
   useEffect(() => {
     let timeout: number | undefined;
@@ -15267,7 +15276,9 @@ function PerformanceAIDashboardView({
     { panel: "system_landscape", label: "Landscape" },
     { panel: "analysis", label: "Review & QA" },
   ];
-  const sidePanelForRender = activeSidePanel ?? renderedSidePanel;
+  const sidePanelForRender = rightRailCollapsed
+    ? null
+    : activeSidePanel ?? renderedSidePanel ?? "dashboard";
   const utilityCatalogPipes = utilityCatalog?.pipes ?? [];
   const utilityCatalogParts = utilityCatalog?.parts ?? [];
   const filteredUtilityPipes = utilityCatalogNetworkFilter === "all"
@@ -15333,6 +15344,9 @@ function PerformanceAIDashboardView({
     if (sidePanelCloseTimeoutRef.current !== null) {
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
       sidePanelCloseTimeoutRef.current = null;
+    }
+    if (panel) {
+      setRightRailCollapsed(false);
     }
     setActiveSidePanel(panel);
     if (!panel) return;
@@ -16976,17 +16990,13 @@ function PerformanceAIDashboardView({
                   onClick={() => {
                     if (sidePanelCloseTimeoutRef.current !== null) {
                       window.clearTimeout(sidePanelCloseTimeoutRef.current);
-                    }
-                    setSidePanelVisible(false);
-                    sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
-                      setActiveSidePanel(null);
-                      setRenderedSidePanel(null);
                       sidePanelCloseTimeoutRef.current = null;
-                    }, 180);
+                    }
+                    setRightRailCollapsed(true);
                   }}
                   className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
                 >
-                  Close
+                  Minimize
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4">
@@ -22706,41 +22716,119 @@ function PerformanceAIDashboardView({
               </div>
             </aside>
           ) : null}
+          {rightRailCollapsed ? (
+            <button
+              type="button"
+              onClick={() => {
+                setRightRailCollapsed(false);
+                setActiveSidePanel((panel) => panel ?? "dashboard");
+              }}
+              className="fixed right-3 top-24 z-40 rounded-l-xl border border-r-0 border-slate-200 bg-white/95 px-3 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.6)] backdrop-blur transition hover:bg-slate-50 lg:top-28"
+              aria-label="Reopen reviewer drawer"
+              data-testid="reopen-reviewer-drawer"
+            >
+              Review
+            </button>
+          ) : null}
           <main data-testid="workspace-canvas-shell" className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
 	            <div className="flex w-full max-w-full flex-1 flex-col gap-3 px-2 pb-36 pt-3 sm:gap-4 sm:px-4 sm:pb-40 md:px-5 lg:pb-4 lg:pt-4">
 	              <div className="flex w-full flex-col">
-	                <div className="mx-auto mb-3 w-full max-w-[1600px] rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm">
-	                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-	                    <div className="min-w-0 px-1">
-	                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Civora Workspace</p>
-	                      <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-	                        {primaryWorkflowItems.find((item) => item.key === activePrimaryWorkflowKey)?.caption || "Review-first civil design workspace"}
-	                      </p>
+	                <div className="mx-auto mb-3 w-full max-w-[1600px] rounded-xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm">
+	                  <div className="flex flex-col gap-3">
+	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+	                      <div className="min-w-0">
+	                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Civora Workspace</p>
+	                        <p className="mt-1 truncate text-base font-semibold text-slate-950">
+	                          {siteName || currentProject?.name || "Untitled Project"}
+	                        </p>
+	                      </div>
+	                      <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
+	                        {primaryWorkflowItems.map((item) => {
+	                          const isActive = activePrimaryWorkflowKey === item.key;
+	                          return (
+	                            <button
+	                              key={`top-${item.key}`}
+	                              type="button"
+	                              aria-label={item.key === "design" ? "Generate" : undefined}
+	                              onClick={() => handleOpenPanelFromDrawer(item.panel)}
+	                              className={`min-h-10 min-w-[82px] rounded-md px-2.5 py-2 text-center text-xs font-semibold transition ${
+	                                isActive
+	                                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
+	                                  : "text-slate-600 hover:bg-white hover:text-slate-950"
+	                              }`}
+	                            >
+	                              {item.label}
+	                            </button>
+	                          );
+	                        })}
+	                      </div>
 	                    </div>
-	                    <div className="grid grid-cols-2 gap-1 min-[420px]:grid-cols-3 sm:grid-cols-6 lg:min-w-[680px]">
-	                      {primaryWorkflowItems.map((item) => {
-	                        const isActive = activePrimaryWorkflowKey === item.key;
-	                        return (
-	                          <button
-	                            key={`top-${item.key}`}
-	                            type="button"
-	                            aria-label={item.key === "design" ? "Generate" : undefined}
-	                            onClick={() => handleOpenPanelFromDrawer(item.panel)}
-	                            className={`min-h-12 rounded-lg border px-2 py-2 text-left transition sm:min-h-14 ${
-	                              isActive
-	                                ? "border-slate-950 bg-slate-950 text-white"
-	                                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white hover:text-slate-950"
-	                            }`}
-	                          >
-	                            <span className="block truncate text-xs font-semibold">{item.label}</span>
-	                            <span className={`mt-0.5 block truncate text-[10px] font-semibold uppercase tracking-[0.1em] ${
-	                              isActive ? "text-white/55" : "text-slate-400"
-	                            }`}>
-	                              {item.metric}
-	                            </span>
-	                          </button>
-	                        );
-	                      })}
+	                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+	                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+	                        {[
+	                          { label: "Select", icon: MousePointer2, action: () => setPreviewInteraction("static"), active: previewInteraction === "static" },
+	                          { label: "Pan", icon: Hand, action: () => setPreviewInteraction("static"), active: false },
+	                          { label: "Draw", icon: Pencil, action: () => handleOpenPanelFromDrawer("model"), active: activePrimaryWorkflowKey === "draw" },
+	                          { label: "Modify", icon: Move, action: () => setPreviewInteraction("edit"), active: previewInteraction === "edit" },
+	                          { label: "Measure", icon: Ruler, action: () => setShowMeasurements((value) => !value), active: showMeasurements },
+	                          { label: "Snaps", icon: Crosshair, action: () => handleOpenPanelFromDrawer("model"), active: previewInteraction === "edit" },
+	                          { label: "Layers", icon: Layers, action: () => handleOpenPanelFromDrawer("layers"), active: sidePanelForRender === "layers" },
+	                        ].map((tool) => {
+	                          const Icon = tool.icon;
+	                          return (
+	                            <button
+	                              key={tool.label}
+	                              type="button"
+	                              onClick={tool.action}
+	                              className={`flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${
+	                                tool.active
+	                                  ? "border-blue-200 bg-blue-50 text-blue-700"
+	                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+	                              }`}
+	                            >
+	                              <Icon className="h-4 w-4" />
+	                              <span>{tool.label}</span>
+	                            </button>
+	                          );
+	                        })}
+	                      </div>
+	                      <div className="flex shrink-0 items-center gap-2">
+	                        <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+	                          {(["2d", "3d"] as const).map((mode) => (
+	                            <button
+	                              key={mode}
+	                              type="button"
+	                              onClick={() => setPreviewMode(mode)}
+	                              className={`h-8 rounded-md px-3 text-xs font-semibold uppercase tracking-[0.08em] ${
+	                                previewMode === mode ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
+	                              }`}
+	                            >
+	                              {mode}
+	                            </button>
+	                          ))}
+	                        </div>
+	                        <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+	                          {(["standard", "high"] as const).map((quality) => (
+	                            <button
+	                              key={quality}
+	                              type="button"
+	                              onClick={() => setPreviewQuality(quality)}
+	                              className={`h-8 rounded-md px-3 text-xs font-semibold capitalize ${
+	                                previewQuality === quality ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
+	                              }`}
+	                            >
+	                              {quality}
+	                            </button>
+	                          ))}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => setRightRailCollapsed((value) => !value)}
+	                          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-50"
+	                        >
+	                          {rightRailCollapsed ? "Show review" : "Hide review"}
+	                        </button>
+	                      </div>
 	                    </div>
 	                  </div>
 	                </div>
@@ -22907,17 +22995,41 @@ function PerformanceAIDashboardView({
                         : "No project evidence yet. Start setup to create traceable state."}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setBottomPanelCollapsed((value) => !value)}
-                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                  >
-                    {bottomPanelCollapsed ? "Open" : "Collapse"}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {!bottomPanelCollapsed ? (
+                      <div className="hidden rounded-lg border border-slate-200 bg-slate-50 p-1 sm:flex">
+                        {(["compact", "standard", "tall"] as const).map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => setBottomPanelSize(size)}
+                            className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                              bottomPanelSize === size ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setBottomPanelCollapsed((value) => !value)}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                    >
+                      {bottomPanelCollapsed ? "Open" : "Collapse"}
+                    </button>
+                  </div>
                 </div>
                 {bottomPanelContentRendered ? (
                   <div
-                    className="civora-motion-bottom-panel grid max-h-[42svh] gap-3 overflow-y-auto px-3 py-3 lg:max-h-none lg:grid-cols-[auto,1fr] lg:overflow-visible"
+                    className={`civora-motion-bottom-panel grid gap-3 overflow-y-auto px-3 py-3 lg:grid-cols-[auto,1fr] ${
+                      bottomPanelSize === "compact"
+                        ? "max-h-[24svh]"
+                        : bottomPanelSize === "tall"
+                          ? "max-h-[58svh]"
+                          : "max-h-[42svh]"
+                    }`}
                     data-motion-state={bottomPanelContentVisible ? "open" : "closed"}
                     aria-hidden={bottomPanelCollapsed}
                   >
