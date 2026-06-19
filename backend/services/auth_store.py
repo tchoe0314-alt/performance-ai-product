@@ -27,6 +27,19 @@ def _hash_password(password: str, salt_hex: str) -> str:
     ).hex()
 
 
+def _is_duplicate_email_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "unique constraint failed",
+            "duplicate key value violates unique constraint",
+            "users_email",
+            "users_email_key",
+        )
+    )
+
+
 class AuthStore:
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -72,7 +85,7 @@ class AuthStore:
             connection.commit()
         except Exception as exc:
             connection.rollback()
-            if "UNIQUE constraint failed" in str(exc):
+            if _is_duplicate_email_error(exc):
                 raise ValueError("That email is already registered.") from exc
             raise
         finally:

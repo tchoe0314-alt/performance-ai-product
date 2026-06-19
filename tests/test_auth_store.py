@@ -43,6 +43,24 @@ class AuthStoreTest(unittest.TestCase):
         self.assertIsNotNone(user)
         self.assertEqual(user["email"], "user@example.com")
 
+    def test_register_user_maps_postgres_duplicate_email_to_value_error(self):
+        class DuplicateEmailConnection:
+            def execute(self, _sql, _params=()):
+                raise Exception('duplicate key value violates unique constraint "users_email_key"')
+
+            def rollback(self):
+                self.rolled_back = True
+
+            def close(self):
+                pass
+
+        connection = DuplicateEmailConnection()
+        with patch.object(self.db, "connect", return_value=connection):
+            with self.assertRaises(ValueError) as ctx:
+                self.store.register_user(email="user@example.com", password="password123", name="User")
+
+        self.assertEqual(str(ctx.exception), "That email is already registered.")
+
 
 if __name__ == "__main__":
     unittest.main()
