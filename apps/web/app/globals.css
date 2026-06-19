@@ -422,6 +422,38 @@ body,
   content: "Hide";
 }
 
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article) {
+  max-height: 4.75rem;
+  overflow: hidden;
+  transition:
+    max-height 180ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article):hover,
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article):focus-within {
+  max-height: 72rem;
+  overflow: visible;
+  box-shadow: var(--civora-shadow-card);
+}
+
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article)::before {
+  content: "Section";
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--civora-text-muted);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article):hover::before,
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article):focus-within::before {
+  content: "Open section";
+}
+
 [data-testid="workspace-right-panel"] :where(table) {
   font-size: 0.75rem;
 }

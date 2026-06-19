@@ -2429,6 +2429,8 @@ function PerformanceAIDashboardView({
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
   const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
+  const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(false);
+  const [rightPanelSectionsCollapsed, setRightPanelSectionsCollapsed] = useState(false);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
@@ -17536,21 +17538,34 @@ function PerformanceAIDashboardView({
                     {activePanelDescription}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (sidePanelCloseTimeoutRef.current !== null) {
-                      window.clearTimeout(sidePanelCloseTimeoutRef.current);
-                      sidePanelCloseTimeoutRef.current = null;
-                    }
-                    setRightRailCollapsed(true);
-                  }}
-                  className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
-                >
-                  Minimize
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRightPanelSectionsCollapsed((value) => !value)}
+                    className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
+                    aria-pressed={rightPanelSectionsCollapsed}
+                  >
+                    {rightPanelSectionsCollapsed ? "Expand" : "Sections"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (sidePanelCloseTimeoutRef.current !== null) {
+                        window.clearTimeout(sidePanelCloseTimeoutRef.current);
+                        sidePanelCloseTimeoutRef.current = null;
+                      }
+                      setRightRailCollapsed(true);
+                    }}
+                    className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
+                  >
+                    Minimize
+                  </button>
+                </div>
               </div>
-              <div className="flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4">
+              <div
+                className="civora-right-panel-sections flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4"
+                data-sections-collapsed={rightPanelSectionsCollapsed ? "true" : "false"}
+              >
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
                     <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -23300,7 +23315,10 @@ function PerformanceAIDashboardView({
           <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
 	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
 	              <div className="contents">
-	                <div className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200 bg-white/92 px-3 py-3 shadow-[0_22px_80px_-44px_rgba(15,23,42,0.7)] backdrop-blur-xl lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}>
+	                <div
+	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200 bg-white/92 px-3 py-3 shadow-[0_22px_80px_-44px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-200 lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"} ${workspaceChromeMinimized ? "pointer-events-none -translate-y-2 opacity-0" : "opacity-100"}`}
+	                  aria-hidden={workspaceChromeMinimized}
+	                >
 	                  <div className="flex flex-col gap-3">
 	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
 	                      <div className="min-w-0">
@@ -23309,25 +23327,35 @@ function PerformanceAIDashboardView({
 	                          {siteName || currentProject?.name || "Untitled Project"}
 	                        </p>
 	                      </div>
-	                      <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
-	                        {primaryWorkflowItems.map((item) => {
-	                          const isActive = activePrimaryWorkflowKey === item.key;
-	                          return (
-	                            <button
-	                              key={`top-${item.key}`}
-	                              type="button"
-	                              aria-label={item.key === "design" ? "Generate" : undefined}
-	                              onClick={() => handleOpenPanelFromDrawer(item.panel)}
-	                              className={`min-h-9 min-w-[78px] rounded-md px-2.5 py-1.5 text-center text-xs font-semibold transition ${
-	                                isActive
-	                                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
-	                                  : "text-slate-600 hover:bg-white hover:text-slate-950"
-	                              }`}
-	                            >
-	                              {item.label}
-	                            </button>
-	                          );
-	                        })}
+	                      <div className="flex min-w-0 items-center gap-2">
+	                        <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
+	                          {primaryWorkflowItems.map((item) => {
+	                            const isActive = activePrimaryWorkflowKey === item.key;
+	                            return (
+	                              <button
+	                                key={`top-${item.key}`}
+	                                type="button"
+	                                aria-label={item.key === "design" ? "Generate" : undefined}
+	                                onClick={() => handleOpenPanelFromDrawer(item.panel)}
+	                                className={`min-h-9 min-w-[78px] rounded-md px-2.5 py-1.5 text-center text-xs font-semibold transition ${
+	                                  isActive
+	                                    ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
+	                                    : "text-slate-600 hover:bg-white hover:text-slate-950"
+	                                }`}
+	                              >
+	                                {item.label}
+	                              </button>
+	                            );
+	                          })}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => setWorkspaceChromeMinimized(true)}
+	                          className="h-9 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-50"
+	                          aria-label="Minimize Civora workspace controls"
+	                        >
+	                          Minimize
+	                        </button>
 	                      </div>
 	                    </div>
 	                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -23404,6 +23432,17 @@ function PerformanceAIDashboardView({
 	                    </div>
 	                  </div>
 	                </div>
+	                {workspaceChromeMinimized ? (
+	                  <button
+	                    type="button"
+	                    onClick={() => setWorkspaceChromeMinimized(false)}
+	                    className={`absolute left-1/2 top-3 z-50 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 shadow-[0_18px_50px_-28px_rgba(15,23,42,0.65)] backdrop-blur transition hover:bg-slate-50 lg:left-[calc(272px+12rem)] lg:translate-x-0`}
+	                    data-testid="reopen-civora-workspace"
+	                    aria-label="Reopen Civora workspace controls"
+	                  >
+	                    Workspace
+	                  </button>
+	                ) : null}
 	                {layerManagerOpen ? (
 	                  <div
 	                    data-testid="floating-layer-manager"
