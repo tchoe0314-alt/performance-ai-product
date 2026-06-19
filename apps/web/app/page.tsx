@@ -17247,7 +17247,7 @@ function PerformanceAIDashboardView({
 	                    <button
 	                      key={item.key}
 	                      type="button"
-	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.key === "design" ? "Generate" : undefined}
+	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.label}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
 	                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${
@@ -17501,27 +17501,6 @@ function PerformanceAIDashboardView({
                 );
               })}
             </div>
-	            <div className="mt-auto rounded-lg border border-slate-200 bg-white px-3 py-3 text-left text-slate-900">
-	              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Quick actions</p>
-	              <div className="mt-2 grid grid-cols-2 gap-2">
-	                {[
-	                  ["Ask Civora", "chat"],
-	                  ["Draw", "model"],
-	                  ["Run", "generate"],
-	                  ["Deliver", "deliverables"],
-	                ].map(([label, panel]) => (
-	                  <button
-	                    key={label}
-	                    type="button"
-	                    aria-label={`${label} quick action`}
-	                    onClick={() => handleOpenPanelFromDrawer(panel as SidePanelKey)}
-	                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-white"
-	                  >
-	                    {label}
-	                  </button>
-	                ))}
-	              </div>
-	            </div>
           </aside>
           ) : null}
           {sidePanelForRender ? (
@@ -20063,35 +20042,6 @@ function PerformanceAIDashboardView({
                         <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                           <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Issues</p>
                           <p className="mt-1 text-lg font-semibold text-slate-900">{issues.length + analysisIssues.length}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generate</p>
-                      <button type="button" onClick={() => handleOpenSidePanel("generate")} className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800">
-                        Generate Systems
-                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">Run engines with gates</span>
-                      </button>
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Discipline panels</p>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          {([
-                            ["grading", "Grading"],
-                            ["drainage", "Drainage"],
-                            ["utilities", "Utilities"],
-                            ["roadway", "Roadway"],
-                            ["landscape", "Landscape"],
-                            ["details", "Selected Details"],
-                          ] as Array<[SidePanelKey, string]>).map(([panel, label]) => (
-                            <button
-                              key={panel}
-                              type="button"
-                              onClick={() => handleOpenSidePanel(panel)}
-                              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              {label}
-                            </button>
-                          ))}
                         </div>
                       </div>
                     </div>
@@ -23328,6 +23278,7 @@ function PerformanceAIDashboardView({
 	                        </p>
 	                      </div>
 	                      <div className="flex min-w-0 items-center gap-2">
+	                        {!sidebarVisible ? (
 	                        <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
 	                          {primaryWorkflowItems.map((item) => {
 	                            const isActive = activePrimaryWorkflowKey === item.key;
@@ -23335,7 +23286,7 @@ function PerformanceAIDashboardView({
 	                              <button
 	                                key={`top-${item.key}`}
 	                                type="button"
-	                                aria-label={item.key === "design" ? "Generate" : undefined}
+	                                aria-label={item.label}
 	                                onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                                className={`min-h-9 min-w-[78px] rounded-md px-2.5 py-1.5 text-center text-xs font-semibold transition ${
 	                                  isActive
@@ -23348,6 +23299,7 @@ function PerformanceAIDashboardView({
 	                            );
 	                          })}
 	                        </div>
+	                        ) : null}
 	                        <button
 	                          type="button"
 	                          onClick={() => setWorkspaceChromeMinimized(true)}
