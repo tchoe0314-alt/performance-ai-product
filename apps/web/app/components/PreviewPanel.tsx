@@ -4775,7 +4775,7 @@ export default function PreviewPanel({
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements, updateFocusTransform]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
+    <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
       <div className="mb-3 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -4785,7 +4785,7 @@ export default function PreviewPanel({
             <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
               <button
                 type="button"
-                data-testid="preview-quality-standard"
+                data-testid="preview-panel-quality-standard"
                 onClick={() => {
                   if (previewQuality === "standard") return;
                   onQueuePreviewRefresh("Requesting standard-quality preview...");
@@ -4799,7 +4799,7 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-quality-high"
+                data-testid="preview-panel-quality-high"
                 onClick={() => {
                   if (previewQuality === "high") return;
                   onQueuePreviewRefresh("Requesting high-quality preview...");
@@ -4813,7 +4813,7 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-mode-2d"
+                data-testid="preview-panel-mode-2d"
                 onClick={() => onSetPreviewMode("2d")}
                 className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
                   previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
@@ -4823,7 +4823,7 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-mode-3d"
+                data-testid="preview-panel-mode-3d"
                 onClick={() => {
                   if (!canUse3D) return;
                   onSetPreviewMode("3d");
@@ -4837,7 +4837,7 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
-                data-testid="preview-interaction-edit"
+                data-testid="preview-panel-interaction-edit"
                 aria-label="Use canvas edit tool"
                 onClick={() => onSetPreviewInteraction("edit")}
                 className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
@@ -5334,11 +5334,11 @@ export default function PreviewPanel({
                     Full
                   </button>
                 ) : null}
-                <button type="button" onClick={onExportDxf} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download a DXF review export"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" aria-label="Export DXF" onClick={onExportDxf} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download a DXF review export"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                   <Download className="h-4 w-4" />
                   DXF
                 </button>
-                <button type="button" onClick={onExportReport} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download an engineer-review package report"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" aria-label="Export Report" onClick={onExportReport} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download an engineer-review package report"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                   <FileText className="h-4 w-4" />
                   Report
                 </button>
@@ -5709,7 +5709,7 @@ export default function PreviewPanel({
             </div>
           ) : null}
           {previewMode === "2d" ? (
-            <div className="relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
+            <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
               <section className="min-w-0">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
@@ -5959,7 +5959,7 @@ export default function PreviewPanel({
               </section>
             </div>
           ) : null}
-          <div className="mb-3 grid gap-3 xl:grid-cols-[1.1fr_1.4fr_1fr]">
+          <div className="civora-coordination-dock mb-3 grid gap-3 xl:grid-cols-[1.1fr_1.4fr_1fr]">
             <section className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm" data-testid="utility-conflict-viewer">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -6107,7 +6107,7 @@ export default function PreviewPanel({
                 <button
                   type="button"
                   onClick={onOpenFullscreen}
-                  className="absolute bottom-4 right-4 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
+                  className="absolute right-4 top-4 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
                 >
                   Open Fullscreen
                 </button>

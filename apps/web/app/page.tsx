@@ -16685,8 +16685,8 @@ function PerformanceAIDashboardView({
 	                {setupWizardState.next_action}
 	              </p>
 	            </button>
-	            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-950 p-2 text-white" data-testid="primary-workflow-sidebar">
-	              <div className="grid grid-cols-2 gap-1.5">
+	            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="primary-workflow-sidebar">
+	              <div className="space-y-1.5">
 	                {primaryWorkflowItems.map((item) => {
 	                  const Icon = item.icon;
 	                  const isActive = activePrimaryWorkflowKey === item.key;
@@ -16697,30 +16697,30 @@ function PerformanceAIDashboardView({
 	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.key === "design" ? "Generate" : undefined}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
-	                      className={`min-h-20 rounded-lg border px-2.5 py-2 text-left transition ${
+	                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${
 	                        isActive
-	                          ? "border-white bg-white text-slate-950"
-	                          : "border-white/10 bg-white/5 text-white/78 hover:bg-white/10 hover:text-white"
+	                          ? "border-blue-200 bg-blue-50 text-blue-700"
+	                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
 	                      }`}
 	                    >
-	                      <span className="flex items-center justify-between gap-2">
-	                        <Icon className="h-4 w-4 shrink-0" />
-	                        <span className={`h-2 w-2 rounded-full ${
-	                          item.status === "ok"
-	                            ? "bg-emerald-400"
-	                            : item.status === "block"
-	                              ? "bg-red-400"
-	                              : item.status === "review"
-	                                ? "bg-amber-300"
-	                                : "bg-slate-400"
-	                        }`} />
+	                      <Icon className="h-4 w-4 shrink-0" />
+	                      <span className="min-w-0 flex-1">
+	                        <span className="block truncate text-sm font-semibold">{item.label}</span>
+	                        <span className={`mt-0.5 block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${
+	                          isActive ? "text-blue-500" : "text-slate-400"
+	                        }`}>
+	                          {item.metric}
+	                        </span>
 	                      </span>
-	                      <span className="mt-2 block text-sm font-semibold">{item.label}</span>
-	                      <span className={`mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.12em] ${
-	                        isActive ? "text-slate-500" : "text-white/45"
-	                      }`}>
-	                        {item.metric}
-	                      </span>
+	                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+	                        item.status === "ok"
+	                          ? "bg-emerald-500"
+	                          : item.status === "block"
+	                            ? "bg-red-500"
+	                            : item.status === "review"
+	                              ? "bg-amber-400"
+	                              : "bg-slate-300"
+	                      }`} />
 	                    </button>
 	                  );
 	                })}
@@ -22780,6 +22780,7 @@ function PerformanceAIDashboardView({
 	                              key={tool.label}
 	                              type="button"
 	                              onClick={tool.action}
+	                              data-testid={tool.label === "Modify" ? "preview-interaction-edit" : undefined}
 	                              className={`flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${
 	                                tool.active
 	                                  ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -22798,6 +22799,7 @@ function PerformanceAIDashboardView({
 	                            <button
 	                              key={mode}
 	                              type="button"
+	                              data-testid={mode === "2d" ? "preview-mode-2d" : "preview-mode-3d"}
 	                              onClick={() => setPreviewMode(mode)}
 	                              className={`h-8 rounded-md px-3 text-xs font-semibold uppercase tracking-[0.08em] ${
 	                                previewMode === mode ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
@@ -22812,6 +22814,7 @@ function PerformanceAIDashboardView({
 	                            <button
 	                              key={quality}
 	                              type="button"
+	                              data-testid={quality === "standard" ? "preview-quality-standard" : "preview-quality-high"}
 	                              onClick={() => setPreviewQuality(quality)}
 	                              className={`h-8 rounded-md px-3 text-xs font-semibold capitalize ${
 	                                previewQuality === quality ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"

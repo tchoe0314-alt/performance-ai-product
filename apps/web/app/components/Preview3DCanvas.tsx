@@ -556,7 +556,7 @@ export default function Preview3DCanvas({
         Orbit | Pan | Zoom
       </div>
       {objectChips.length ? (
-        <div className="absolute bottom-16 right-4 flex max-h-44 w-[min(260px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-sm backdrop-blur" data-testid="civil-3d-object-strip">
+        <div className="absolute right-4 top-28 z-[90] flex max-h-44 w-[min(260px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
           {objectChips.map((object) => (
             <button
               key={object.id}
@@ -576,7 +576,7 @@ export default function Preview3DCanvas({
       ) : null}
       {picked ? (
         <div
-          className="pointer-events-none absolute max-w-[230px] rounded-xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
+          className="pointer-events-none absolute z-[95] max-w-[230px] rounded-xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
           data-testid="civil-3d-selection-popover"
           style={{
             left: Math.min(Math.max(picked.x + 12, 8), 360),

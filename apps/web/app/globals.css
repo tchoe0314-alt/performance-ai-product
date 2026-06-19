@@ -109,6 +109,122 @@ body,
   box-shadow: var(--civora-shadow-canvas);
 }
 
+.civora-preview-panel > div:first-child {
+  display: none;
+}
+
+.civora-preview-panel > div:nth-child(2) {
+  position: relative;
+  min-height: min(68vh, 760px);
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(37, 99, 235, 0.06), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #eef3f8 100%);
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child {
+  position: absolute;
+  inset: 12px 12px auto 12px;
+  z-index: 70;
+  max-height: 154px;
+  overflow: auto;
+  margin-bottom: 0;
+  border-radius: 12px;
+  border-color: rgba(203, 213, 225, 0.82);
+  background: rgba(255, 255, 255, 0.91);
+  box-shadow: 0 16px 38px -28px rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(14px);
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child > div {
+  padding: 8px 10px;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child > div:first-child {
+  border-bottom-color: rgba(226, 232, 240, 0.7);
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child button {
+  min-height: 32px;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child span {
+  white-space: nowrap;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:not(:first-child):not(.civora-cad-dock):not(.civora-coordination-dock) {
+  min-height: inherit;
+}
+
+.civora-cad-dock,
+.civora-coordination-dock {
+  position: absolute;
+  z-index: 64;
+  overflow: auto;
+  border-color: rgba(203, 213, 225, 0.82);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 44px -34px rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(14px);
+}
+
+.civora-cad-dock {
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  max-height: 210px;
+  margin-bottom: 0;
+}
+
+.civora-cad-dock section > p:first-child {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: -4px -4px 6px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.75);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 4px;
+}
+
+.civora-coordination-dock {
+  right: 16px;
+  bottom: 238px;
+  width: min(360px, calc(100% - 32px));
+  max-height: 198px;
+  margin-bottom: 0;
+  grid-template-columns: 1fr !important;
+}
+
+.civora-coordination-dock > section {
+  min-height: auto;
+}
+
+.civora-coordination-dock > section:not(:first-child) {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .civora-preview-panel > div:nth-child(2) {
+    min-height: 720px;
+  }
+
+  .civora-preview-panel > div:nth-child(2) > div:first-child {
+    max-height: 176px;
+  }
+
+  .civora-cad-dock {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-height: 214px;
+    grid-template-columns: 1fr !important;
+  }
+
+  .civora-coordination-dock {
+    display: none;
+  }
+}
+
 .civora-app-bg {
   color-scheme: light;
 }
