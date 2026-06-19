@@ -2834,6 +2834,7 @@ function PerformanceAIDashboardView({
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
+  const [layerManagerOpen, setLayerManagerOpen] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
   const [objectOutlineColor, setObjectOutlineColor] = useState("#1f2937");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
@@ -15345,6 +15346,7 @@ function PerformanceAIDashboardView({
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
       sidePanelCloseTimeoutRef.current = null;
     }
+    setLayerManagerOpen(false);
     if (panel) {
       setRightRailCollapsed(false);
     }
@@ -15631,6 +15633,104 @@ function PerformanceAIDashboardView({
 	      { label: "Settings", panel: "settings", detail: "Workspace defaults", status: panelStatus("settings") },
 	    ],
 	  };
+  const contextualToolbarTools = [
+    {
+      label: "Address",
+      icon: MapPinned,
+      modes: ["setup"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("site_existing"),
+      active: sidePanelForRender === "site_existing",
+    },
+    {
+      label: siteScaleLocked ? "Unlock" : "Lock site",
+      icon: Crosshair,
+      modes: ["setup"] as PrimaryWorkflowKey[],
+      action: siteScaleLocked ? handleUnlockSite : () => void handleApplySite(),
+      active: siteScaleLocked,
+    },
+    {
+      label: "Import",
+      icon: FileText,
+      modes: ["setup", "deliver"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("import_survey"),
+      active: sidePanelForRender === "import_survey",
+    },
+    {
+      label: "Select",
+      icon: MousePointer2,
+      modes: ["draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      action: () => setPreviewInteraction("static"),
+      active: previewInteraction === "static",
+    },
+    {
+      label: "Pan",
+      icon: Hand,
+      modes: ["draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      action: () => setPreviewInteraction("static"),
+      active: false,
+    },
+    {
+      label: "Draw",
+      icon: Pencil,
+      modes: ["draw"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("model"),
+      active: activePrimaryWorkflowKey === "draw",
+    },
+    {
+      label: "Modify",
+      icon: Move,
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
+      action: () => setPreviewInteraction("edit"),
+      active: previewInteraction === "edit",
+      testId: "preview-interaction-edit",
+    },
+    {
+      label: "Measure",
+      icon: Ruler,
+      modes: ["draw", "analyze", "review"] as PrimaryWorkflowKey[],
+      action: () => setShowMeasurements((value) => !value),
+      active: showMeasurements,
+    },
+    {
+      label: "Snaps",
+      icon: Crosshair,
+      modes: ["draw"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("model"),
+      active: previewInteraction === "edit",
+    },
+    {
+      label: "Layers",
+      icon: Layers,
+      modes: ["setup", "draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      action: () => setLayerManagerOpen((value) => !value),
+      active: layerManagerOpen,
+    },
+    {
+      label: "Run",
+      icon: SlidersHorizontal,
+      modes: ["design", "analyze"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("generate"),
+      active: sidePanelForRender === "generate",
+    },
+    {
+      label: "Issues",
+      icon: AlertCircle,
+      modes: ["analyze", "review"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("analysis"),
+      active: sidePanelForRender === "analysis",
+    },
+    {
+      label: "Sheets",
+      icon: FileText,
+      modes: ["deliver"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("deliverables"),
+      active: sidePanelForRender === "deliverables",
+    },
+  ].filter((tool) => tool.modes.includes(activePrimaryWorkflowKey));
+  const selectedObjectConfidence = selectedBuilding
+    ? sourceConfidenceByObjectId.get(selectedBuilding.id)
+    : null;
+  const visibleLayerCount = Object.values(previewLayers).filter(Boolean).length;
   const sidebarStaleSystems = (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
     .filter(([, status]) => status === "stale")
     .map(([system]) => system);
@@ -22765,22 +22865,14 @@ function PerformanceAIDashboardView({
 	                    </div>
 	                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
 	                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-	                        {[
-	                          { label: "Select", icon: MousePointer2, action: () => setPreviewInteraction("static"), active: previewInteraction === "static" },
-	                          { label: "Pan", icon: Hand, action: () => setPreviewInteraction("static"), active: false },
-	                          { label: "Draw", icon: Pencil, action: () => handleOpenPanelFromDrawer("model"), active: activePrimaryWorkflowKey === "draw" },
-	                          { label: "Modify", icon: Move, action: () => setPreviewInteraction("edit"), active: previewInteraction === "edit" },
-	                          { label: "Measure", icon: Ruler, action: () => setShowMeasurements((value) => !value), active: showMeasurements },
-	                          { label: "Snaps", icon: Crosshair, action: () => handleOpenPanelFromDrawer("model"), active: previewInteraction === "edit" },
-	                          { label: "Layers", icon: Layers, action: () => handleOpenPanelFromDrawer("layers"), active: sidePanelForRender === "layers" },
-	                        ].map((tool) => {
+	                        {contextualToolbarTools.map((tool) => {
 	                          const Icon = tool.icon;
 	                          return (
 	                            <button
 	                              key={tool.label}
 	                              type="button"
 	                              onClick={tool.action}
-	                              data-testid={tool.label === "Modify" ? "preview-interaction-edit" : undefined}
+	                              data-testid={tool.testId}
 	                              className={`flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[13px] font-semibold transition ${
 	                                tool.active
 	                                  ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -22841,6 +22933,147 @@ function PerformanceAIDashboardView({
 	                    </div>
 	                  </div>
 	                </div>
+	                {layerManagerOpen ? (
+	                  <div
+	                    data-testid="floating-layer-manager"
+	                    className={`absolute right-3 top-[9.75rem] z-40 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:top-[9rem] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
+	                  >
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div>
+	                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Layers</p>
+	                        <p className="mt-1 text-xs font-semibold text-slate-700">{visibleLayerCount}/{Object.keys(previewLayers).length} visible</p>
+	                      </div>
+	                      <button
+	                        type="button"
+	                        onClick={() => setLayerManagerOpen(false)}
+	                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
+	                      >
+	                        Close
+	                      </button>
+	                    </div>
+	                    <div className="mt-3 grid grid-cols-2 gap-2">
+	                      <button
+	                        type="button"
+	                        onClick={() =>
+	                          setPreviewLayers((prev) =>
+	                            Object.fromEntries(Object.keys(prev).map((key) => [key, true])) as typeof prev,
+	                          )
+	                        }
+	                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+	                      >
+	                        Show all
+	                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() =>
+	                          setPreviewLayers((prev) => ({
+	                            ...Object.fromEntries(Object.keys(prev).map((key) => [key, false])),
+	                            buildings: true,
+	                          }) as typeof prev)
+	                        }
+	                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+	                      >
+	                        Buildings
+	                      </button>
+	                    </div>
+	                    <div className="mt-3 space-y-1.5">
+	                      {Object.entries(previewLayers).map(([key, value]) => (
+	                        <label
+	                          key={`floating-layer-${key}`}
+	                          className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold capitalize text-slate-700"
+	                        >
+	                          <span>{key.replace("_", " ")}</span>
+	                          <span className="flex items-center gap-2">
+	                            <span className={`h-2 w-2 rounded-full ${value ? "bg-emerald-500" : "bg-slate-300"}`} />
+	                            <input
+	                              type="checkbox"
+	                              checked={Boolean(value)}
+	                              onChange={(event) => setPreviewLayers((prev) => ({ ...prev, [key]: event.target.checked }))}
+	                              className="h-4 w-4 accent-slate-950"
+	                            />
+	                          </span>
+	                        </label>
+	                      ))}
+	                    </div>
+	                    <button
+	                      type="button"
+	                      onClick={() => handleOpenPanelFromDrawer("layers")}
+	                      className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                    >
+	                      Open full layer details
+	                    </button>
+	                  </div>
+	                ) : null}
+	                {selectedBuilding ? (
+	                  <div
+	                    data-testid="floating-object-inspector"
+	                    className="absolute left-3 top-[9.75rem] z-40 hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
+	                  >
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div className="min-w-0">
+	                        <p className="truncate text-sm font-semibold text-slate-950">{selectedBuilding.label}</p>
+	                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+	                          {selectedBuilding.type} · {selectedBuilding.placed ? "placed" : "not placed"}
+	                        </p>
+	                      </div>
+	                      <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+	                        selectedObjectConfidence?.confidence_band === "higher"
+	                          ? "bg-emerald-50 text-emerald-700"
+	                          : selectedObjectConfidence?.confidence_band === "review"
+	                            ? "bg-amber-50 text-amber-700"
+	                            : "bg-slate-100 text-slate-600"
+	                      }`}>
+	                        {selectedObjectConfidence?.visible_badge || selectedBuilding.source || "draft"}
+	                      </span>
+	                    </div>
+	                    <div className="mt-3 grid grid-cols-3 gap-2">
+	                      {[
+	                        ["W", `${Math.round(selectedBuilding.w)} ft`],
+	                        ["D", `${Math.round(selectedBuilding.d)} ft`],
+	                        ["Rot", `${Math.round(selectedBuilding.rotation ?? 0)}°`],
+	                      ].map(([label, value]) => (
+	                        <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+	                          <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+	                          <p className="mt-0.5 font-semibold text-slate-800">{value}</p>
+	                        </div>
+	                      ))}
+	                    </div>
+	                    {selectedObjectConfidence?.why_low_confidence || selectedObjectConfidence?.next_action ? (
+	                      <p className="mt-2 line-clamp-2 rounded-lg border border-amber-100 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-700">
+	                        {selectedObjectConfidence.why_low_confidence || selectedObjectConfidence.next_action}
+	                      </p>
+	                    ) : null}
+	                    <div className="mt-3 grid grid-cols-3 gap-2">
+	                      <button
+	                        type="button"
+	                        onClick={() => {
+	                          setPlacementModeEnabled(true);
+	                          setPreviewInteraction("edit");
+	                        }}
+	                        className="rounded-lg border border-slate-950 bg-slate-950 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white"
+	                      >
+	                        Edit
+	                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() => {
+	                          setFocusObjectId(selectedBuilding.id);
+	                          setActiveSidePanel(null);
+	                        }}
+	                        className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                      >
+	                        Focus
+	                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() => handleOpenPanelFromDrawer("details")}
+	                        className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                      >
+	                        Details
+	                      </button>
+	                    </div>
+	                  </div>
+	                ) : null}
 	                <div
 	                  data-testid="workspace-canvas-frame"
 	                  className="absolute inset-0 z-0 h-full w-full overflow-hidden"
