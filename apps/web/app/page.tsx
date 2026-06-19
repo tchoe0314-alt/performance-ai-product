@@ -604,18 +604,20 @@ const DEFAULT_BLANK_SITE_WIDTH_FT = 300;
 const DEFAULT_BLANK_SITE_DEPTH_FT = 300;
 const OVERSIZED_SITE_MESSAGE =
   "Selected site is very large. Zoom in or reduce site area before grading.";
+const ACTIVE_PROJECT_STORAGE_KEY = "civora.activeProjectId";
 
-function buildAssumedSlopeEstimate(): SurveySlopeResponse {
+function buildAssumedSlopeEstimate(slopePercent = 8): SurveySlopeResponse {
+  const safeSlopePercent = Number.isFinite(slopePercent) && slopePercent > 0 ? slopePercent : 8;
   return {
     success: true,
-    slope_ratio: 0.015,
-    slope_percent: 1.5,
+    slope_ratio: safeSlopePercent / 100,
+    slope_percent: safeSlopePercent,
     downhill_dx: 1,
     downhill_dy: 1,
     direction: "southeast",
     point_count: 0,
     warnings: [
-      "First-pass assumed slope for early layout only. Replace with survey, DEM, or map terrain before final engineering.",
+      "Assumed terrain slope for early layout only. Survey/control is still required before engineering reliance.",
     ],
   };
 }
@@ -2651,6 +2653,7 @@ function PerformanceAIDashboardView({
   const [maxParkingSlopePct, setMaxParkingSlopePct] = useState("");
   const [maxRoadGradePct, setMaxRoadGradePct] = useState("");
   const [maxAdaCrossSlopePct, setMaxAdaCrossSlopePct] = useState("");
+  const [assumedTerrainSlopePct, setAssumedTerrainSlopePct] = useState("8");
   const [roads, setRoads] = useState(true);
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
@@ -2683,6 +2686,7 @@ function PerformanceAIDashboardView({
     driveway: "Driveway",
     sidewalks: "Sidewalks",
     ada_route: "ADA route",
+    assumed_terrain_slope: "8",
   });
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
@@ -2883,6 +2887,7 @@ function PerformanceAIDashboardView({
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobToasts, setJobToasts] = useState<JobToast[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
+  const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
   const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealth | null>(null);
   const [deploymentHealthError, setDeploymentHealthError] = useState("");
   const [deploymentHealthLoading, setDeploymentHealthLoading] = useState(false);
@@ -2923,6 +2928,7 @@ function PerformanceAIDashboardView({
   const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget) => Promise<void>) | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
+  const restoredActiveProjectRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
   const autosaveSuspendRef = useRef(false);
   const demoWorkspaceSeededRef = useRef(false);
@@ -3296,8 +3302,7 @@ function PerformanceAIDashboardView({
       manualFields.building_depth = buildingDepthValue;
     }
 
-    const placementOverrides = (placementsOverride ?? buildingPlacements)
-      .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
+    const allPlacementSnapshots = (placementsOverride ?? buildingPlacements)
       .map((placement) => ({
         id: placement.id,
         name: placement.label,
@@ -3312,6 +3317,7 @@ function PerformanceAIDashboardView({
         use: placement.use,
         stall_count: placement.stallCount,
         locked: placement.locked,
+        placed: Boolean(placement.placed),
         source: placement.source,
         generated: placement.generated,
         geometry_type: placement.geometryType,
@@ -3319,6 +3325,9 @@ function PerformanceAIDashboardView({
         meta: placement.meta,
         systemDependencies: placement.systemDependencies,
       }));
+    const placementOverrides = allPlacementSnapshots
+      .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
+      .map((placement) => placement);
     const canonicalGeometryHandoffs = placementOverrides
       .map((placement) =>
         placement.type === "custom"
@@ -3428,8 +3437,8 @@ function PerformanceAIDashboardView({
       manualFields.site_plan = { parking_count: resolvedParkingCount };
     }
 
-    if (placementOverrides.length) {
-      manualFields.site_objects = placementOverrides.map((placement) => ({
+    if (allPlacementSnapshots.length) {
+      manualFields.site_objects = allPlacementSnapshots.map((placement) => ({
         id: placement.id,
         name: placement.label,
         label: placement.label,
@@ -3441,6 +3450,7 @@ function PerformanceAIDashboardView({
         height_ft: placement.height_ft,
         rotation: placement.rotation,
         locked: placement.locked,
+        placed: placement.placed,
         source: placement.source,
         generated: placement.generated,
         geometry_type: placement.geometry_type,
@@ -3485,6 +3495,13 @@ function PerformanceAIDashboardView({
         max_ada_cross_slope_pct: maxAdaSlopeValue,
       };
     }
+    if (surveySlopeEstimate?.slope_percent && Number(surveySlopeEstimate.point_count ?? 0) === 0) {
+      manualFields.grading = {
+        ...(manualFields.grading ?? {}),
+        assumed_terrain_source: true,
+        assumed_terrain_slope_pct: surveySlopeEstimate.slope_percent,
+      } as ManualFields["grading"] & Record<string, unknown>;
+    }
 
     if (pipeMinSlopeValue !== null) {
       manualFields.drainage = {
@@ -3519,6 +3536,8 @@ function PerformanceAIDashboardView({
     drainageConnectOrphans,
     drainageForcedInlets,
     drainageMaxSlopeAdjust,
+    surveySlopeEstimate?.point_count,
+    surveySlopeEstimate?.slope_percent,
   ]);
 
   const payloadPreview = useMemo(
@@ -3832,11 +3851,16 @@ function PerformanceAIDashboardView({
     return null;
   }, [currentPlanMeta]);
   const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  const appliedAddressLabel = String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim();
+  const hasAppliedAddress = Boolean(appliedAddressLabel || (siteInputs?.geocode?.lat && siteInputs?.geocode?.lng));
   const hasLocationEvidence =
-    Boolean(siteInputs?.address) ||
+    hasAppliedAddress ||
     Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
     Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
   const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
+  const hasAssumedTerrainSlope =
+    Boolean(surveySlopeEstimate?.slope_percent) &&
+    Number(surveySlopeEstimate?.point_count ?? 0) === 0;
   const hasTerrainSource =
     !debugNoTerrain &&
     ((Boolean(surveyFileName) && useSurveyForGrading) ||
@@ -5435,6 +5459,8 @@ function PerformanceAIDashboardView({
       max_parking_slope_pct?: number;
       max_road_grade_pct?: number;
       max_ada_cross_slope_pct?: number;
+      assumed_terrain_source?: boolean;
+      assumed_terrain_slope_pct?: number;
     };
     const drainageFields = (manualFields.drainage ?? {}) as NonNullable<ManualFields["drainage"]>;
     const drainageForced = Array.isArray(drainageFields?.forced_inlets)
@@ -5510,7 +5536,7 @@ function PerformanceAIDashboardView({
         const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
-        const placed = Number.isFinite(x) && Number.isFinite(y);
+        const placed = rec.placed === false ? false : Number.isFinite(x) && Number.isFinite(y);
         const geometryType = isCustomGeometryMode(rec.geometry_type) ? rec.geometry_type : undefined;
         const geometry = normalizeGeometryPoints(rec.geometry);
         return {
@@ -5562,7 +5588,7 @@ function PerformanceAIDashboardView({
         const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
-        const placed = Number.isFinite(x) && Number.isFinite(y);
+        const placed = rec.placed === false ? false : Number.isFinite(x) && Number.isFinite(y);
         return {
           id: typeof rec.id === "string" ? rec.id : `basin-${Date.now()}-${idx}`,
           label:
@@ -5636,7 +5662,7 @@ function PerformanceAIDashboardView({
         const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
-        const placed = Number.isFinite(x) && Number.isFinite(y);
+        const placed = rec.placed === false ? false : Number.isFinite(x) && Number.isFinite(y);
         const geometryType = isCustomGeometryMode(rec.geometry_type) ? rec.geometry_type : undefined;
         const geometry = normalizeGeometryPoints(rec.geometry);
         return {
@@ -5683,6 +5709,12 @@ function PerformanceAIDashboardView({
     setActivePlacementId(null);
     setParkingCount(String(sitePlan.parking_count ?? ""));
     setMinSlopePct(String(gradingFields.min_slope_pct ?? ""));
+    if (typeof (gradingFields as Record<string, unknown>).assumed_terrain_slope_pct === "number") {
+      const slopePct = Number((gradingFields as Record<string, unknown>).assumed_terrain_slope_pct);
+      setAssumedTerrainSlopePct(String(slopePct));
+      setSurveySlopeEstimate(buildAssumedSlopeEstimate(slopePct));
+      setUseSurveyForGrading(false);
+    }
     setPipeMinSlopePct(String(drainageFields.min_pipe_slope_pct ?? ""));
     setDrainageForcedInlets(
       drainageForced
@@ -6136,6 +6168,7 @@ function PerformanceAIDashboardView({
         placed?: boolean;
         width?: number;
         depth?: number;
+        meta?: Record<string, unknown>;
       },
     ) => {
       const catalog = SITE_OBJECT_CATALOG[type];
@@ -6242,6 +6275,7 @@ function PerformanceAIDashboardView({
           category: catalog.category,
           ...(parkingParams ? { parkingParams } : {}),
           ...(options?.style ? { style: options.style } : {}),
+          ...(options?.meta ?? {}),
         },
       };
       if (type === "parking" && parkingParams) {
@@ -6300,6 +6334,7 @@ function PerformanceAIDashboardView({
         ];
       }
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      markSystemsStale(systemsImpactedByPlacement(nextPlacement));
       setActivePlacementId(nextPlacement.id);
       setPlacementModeEnabled(true);
       setPreviewMode("2d");
@@ -6334,6 +6369,8 @@ function PerformanceAIDashboardView({
       resolveLotBounds,
       buildDefaultPolyline,
       computeParkingFootprint,
+      markSystemsStale,
+      systemsImpactedByPlacement,
     ],
   );
 
@@ -6352,6 +6389,15 @@ function PerformanceAIDashboardView({
     });
     setObjectPrompt("");
   }, [handleAddObject, objectOutlineColor, objectPrompt, parsePromptToObjects, setStatusMessage]);
+
+  const handleApplyAssumedTerrainSlope = useCallback(() => {
+    const slopePct = parsePositiveNumber(assumedTerrainSlopePct) ?? 8;
+    const slopeEstimate = buildAssumedSlopeEstimate(slopePct);
+    setAssumedTerrainSlopePct(String(slopePct));
+    setUseSurveyForGrading(false);
+    setSurveySlopeEstimate(slopeEstimate);
+    setStatusMessage(`Assumed ${slopePct}% terrain slope added for review-only preflight. Survey/control is still required.`);
+  }, [assumedTerrainSlopePct]);
 
   const handleGuidedObjectCard = useCallback(
     (key: string) => {
@@ -6406,6 +6452,15 @@ function PerformanceAIDashboardView({
         setStatusMessage(placeNow ? "Detention basin draft placed for review." : "Detention basin draft added to Needs placement.");
         return;
       }
+      if (key === "assumed_terrain_slope") {
+        const slopePct = value ?? 8;
+        setAssumedTerrainSlopePct(String(slopePct));
+        const slopeEstimate = buildAssumedSlopeEstimate(slopePct);
+        setUseSurveyForGrading(false);
+        setSurveySlopeEstimate(slopeEstimate);
+        setStatusMessage(`Assumed ${slopePct}% terrain slope added for review-required setup. Survey/control still needed.`);
+        return;
+      }
       const utilityCards: Record<string, { type: SiteObjectType; label: string; meta: Record<string, unknown> }> = {
         public_water: { type: "utility_corridor", label: rawValue || "Public water connection", meta: { utilityKind: "public_water" } },
         public_sanitary: { type: "utility_corridor", label: rawValue || "Public sanitary connection", meta: { utilityKind: "public_sanitary" } },
@@ -6421,21 +6476,11 @@ function PerformanceAIDashboardView({
         placed: placeNow,
         geometryType: "polyline",
         style: card.meta as Record<string, string>,
+        meta: {
+          ...card.meta,
+          review_status: "engineer_review_required",
+        },
       });
-      setBuildingPlacements((prev) =>
-        prev.map((item, index) =>
-          index === prev.length - 1
-            ? {
-                ...item,
-                meta: {
-                  ...(item.meta ?? {}),
-                  ...card.meta,
-                  review_status: "engineer_review_required",
-                },
-              }
-            : item,
-        ),
-      );
       setStatusMessage(placeNow ? `${card.label} draft placed for review.` : `${card.label} draft added to Needs placement.`);
     },
     [buildingDepth, buildingWidth, guidedObjectDrafts, handleAddObject, resolveLotBounds, siteScaleLocked],
@@ -7166,19 +7211,43 @@ function PerformanceAIDashboardView({
 
   const handleSelectPlacementTarget = useCallback((id: string) => {
     const lot = resolveLotBounds();
+    const target = buildingPlacements.find((item) => item.id === id);
     if (!lot.w || !lot.h) {
-      askClarification(
-        "I need a site boundary before placing objects. What size should the site be?",
-        "place_object_missing_site",
-        { id },
+      const message = `Cannot place ${target?.label || "object"} yet: site width and depth are missing. Set or draw a site boundary first.`;
+      askClarification(message, "place_object_missing_site", { id });
+      return;
+    }
+    if (target && target.type === "site") {
+      setStatusMessage("Site boundary is already configured and cannot be moved from the object tray.");
+      return;
+    }
+    if (target && !target.placed) {
+      const nextX = Math.min(Math.max(16, (lot.w - target.w) / 2), Math.max(0, lot.w - target.w));
+      const nextY = Math.min(Math.max(16, (lot.h - target.d) / 2), Math.max(0, lot.h - target.d));
+      setBuildingPlacements((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                x: Number.isFinite(nextX) ? nextX : 0,
+                y: Number.isFinite(nextY) ? nextY : 0,
+                placed: true,
+              }
+            : item,
+        ),
       );
+      markSystemsStale(systemsImpactedByPlacement(target));
+      setPreviewMode("2d");
+      setPreviewInteraction("edit");
+      setActivePlacementId(id);
+      setPlacementModeEnabled(false);
+      setStatusMessage(`${target.label} placed as a visible draft. Select it to move or edit.`);
       return;
     }
     setPreviewMode("2d");
     setPreviewInteraction("edit");
     setActivePlacementId(id);
     setPlacementModeEnabled(true);
-    const target = buildingPlacements.find((item) => item.id === id);
     console.debug("[placement] select-target", {
       id,
       type: target?.type,
@@ -7189,7 +7258,7 @@ function PerformanceAIDashboardView({
         ? `Ready to place ${target.label}. Click on the canvas to drop it.`
         : "Placement active. Click on the canvas to drop the object.",
     );
-  }, [askClarification, buildingPlacements, resolveLotBounds]);
+  }, [askClarification, buildingPlacements, markSystemsStale, resolveLotBounds, systemsImpactedByPlacement]);
 
   function askClarification(question: string, action: string, payload?: Record<string, unknown>) {
     setPendingClarification({ action, payload, question });
@@ -7343,11 +7412,16 @@ function PerformanceAIDashboardView({
       has_preview: Boolean(planPreviewUrl),
       site_locked: siteScaleLocked,
       site_address: siteAddress,
+      applied_address: appliedAddressLabel,
+      online_source_lookup: onlineSourceLookupLabel,
       has_location_evidence: hasLocationEvidence,
       has_site_boundary: buildingPlacements.some((item) => item.type === "site"),
       has_terrain_source: hasTerrainSource,
+      has_assumed_terrain_slope: hasAssumedTerrainSlope,
       has_verified_survey_control: hasVerifiedSurveyControl,
       placed_object_count: placedObjectCount,
+      pending_placement_count: pendingPlacementObjects.length,
+      pending_placement_objects: pendingPlacementObjects.map((item) => ({ id: item.id, label: item.label, type: item.type })),
       system_statuses: systemStatuses,
       map_analysis_success: Boolean(mapAnalysis?.success),
       setup_wizard_state_v1: setupWizardState,
@@ -8447,16 +8521,16 @@ function PerformanceAIDashboardView({
       if (!hasStandardsEvidence) blockers.push({ label: "missing standards", action: "standards" });
       if (needsAll || target === "roads" || target === "utilities") {
         if (hasBuildingDraft && !buildingPlaced) {
-          blockers.push({ label: "building exists but is not placed", action: "objects" });
+          blockers.push({ label: "office building exists but needs placement", action: "objects" });
         } else if (!hasBuildingDraft) {
-          blockers.push({ label: "missing building", action: "objects" });
+          blockers.push({ label: "missing office building", action: "objects" });
         }
       }
       if (needsDrainage) {
         if (hasBasinDraft && !basinPlaced) {
-          blockers.push({ label: "basin exists but is not placed", action: "objects" });
+          blockers.push({ label: "detention basin exists but needs placement", action: "objects" });
         } else if (!hasBasinDraft) {
-          blockers.push({ label: "unplaced basin: add a detention basin, then place it on the site", action: "objects" });
+          blockers.push({ label: "missing detention basin", action: "objects" });
         }
         if (hasOutfallDraft && !outfallPlaced) {
           blockers.push({ label: "outfall exists but is not placed", action: "objects" });
@@ -8568,8 +8642,22 @@ function PerformanceAIDashboardView({
         .filter(([, status]) => status === "fresh")
         .map(([system]) => system);
       const lines = [
-        currentProject?.updated_at ? `Project last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}.` : "Project has no reloadable saved timestamp yet.",
+        effectiveDemoWorkspaceEnabled
+          ? "Workspace persistence: Local demo only."
+          : currentProject?.project_id && currentProject?.updated_at
+            ? `Workspace persistence: Saved reloadable, last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}.`
+            : "Workspace persistence: unsaved draft, not reloadable yet.",
+        hasAppliedAddress
+          ? `Address state: applied (${appliedAddressLabel || "coordinate context"}). ${onlineSourceLookupUnavailable ? "Address applied; online source lookup not configured/available." : onlineSourceLookupLabel}`
+          : siteAddress.trim()
+            ? "Address state: entered but not applied."
+            : "Address state: missing.",
         `${placedObjects.length} placed object${placedObjects.length === 1 ? "" : "s"} and ${pendingPlacementObjects.length} pending placement object${pendingPlacementObjects.length === 1 ? "" : "s"}.`,
+        hasAssumedTerrainSlope
+          ? "Terrain slope is assumed; survey/control still needed."
+          : hasVerifiedSurveyControl
+            ? "Survey/control is uploaded for review."
+            : "Survey/control still needed.",
         staleSystems.length ? `Changed systems needing rerun: ${staleSystems.join(", ")}.` : "No stale systems are marked from object/control edits.",
         freshSystems.length ? `Current generated systems: ${freshSystems.join(", ")}.` : "No generated systems are marked current yet.",
         planSheetSet.revisions.length ? `Sheet revisions: ${planSheetSet.revisions.length}.` : "No sheet revision entries recorded yet.",
@@ -8582,6 +8670,7 @@ function PerformanceAIDashboardView({
       const blockers = uniqueStrings([
         ...fullGeneratePreflightBlockers.map((item) => item.label),
         ...pendingPlacementObjects.map((item) => `${item.label} exists but is not placed`),
+        ...generatePreflightNotes,
         siteScaleLocked && siteInputs?.site_boundary_state === "draft_editable"
           ? "site locked state contradicts draft boundary source"
           : "",
@@ -8604,7 +8693,9 @@ function PerformanceAIDashboardView({
       const firstBlocker = fullGeneratePreflightBlockers[0];
       const visibleAction = firstBlocker
         ? `Open ${sidePanelCopy[firstBlocker.action].title} and fix: ${firstBlocker.label}.`
-        : progressTimelineState.next_action || nextSetupAction;
+        : pendingPlacementObjects.length
+          ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
+          : progressTimelineState.next_action || nextSetupAction;
       if (firstBlocker) {
         handleOpenSidePanel(firstBlocker.action);
       }
@@ -8613,6 +8704,24 @@ function PerformanceAIDashboardView({
         `${visibleAction} This is the next visible UI action; all outputs remain review-required.`,
         "status",
       );
+      return true;
+    }
+
+    if (/(why is this review[- ]only|why.*review[- ]only|why.*engineer review|required review)/i.test(normalized)) {
+      const lines = [
+        "Civora is review-only because it is showing draft layouts, source evidence, assumptions, blockers, and generated artifacts for qualified review.",
+        hasAppliedAddress
+          ? `Address context is applied (${appliedAddressLabel || "coordinate context"}), but address/GIS context is not survey/control.`
+          : "Address/location evidence is not fully applied yet.",
+        hasAssumedTerrainSlope
+          ? "Terrain slope is assumed; survey/control still needed."
+          : hasVerifiedSurveyControl
+            ? "Survey/control is uploaded for review but still requires professional verification."
+            : "Survey/control is still missing.",
+        `${placedObjects.length} design object${placedObjects.length === 1 ? "" : "s"} placed; ${pendingPlacementObjects.length} still need placement.`,
+        "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+      ];
+      appendChatMessage("assistant", lines.join("\n"), "status");
       return true;
     }
 
@@ -9243,7 +9352,7 @@ function PerformanceAIDashboardView({
         } else if (/(map|terrain)/.test(lower)) {
           setUseSurveyForGrading(false);
         } else if (/(assume|assumed|fallback)/.test(lower)) {
-          slopeEstimateOverride = buildAssumedSlopeEstimate();
+          slopeEstimateOverride = buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8);
           setUseSurveyForGrading(false);
           setSurveySlopeEstimate(slopeEstimateOverride);
         } else {
@@ -9423,7 +9532,7 @@ function PerformanceAIDashboardView({
         | "full"
         | undefined;
       if (target) {
-        const slopeEstimateOverride = buildAssumedSlopeEstimate();
+        const slopeEstimateOverride = buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8);
         setUseSurveyForGrading(false);
         setSurveySlopeEstimate(slopeEstimateOverride);
         setPendingClarification(null);
@@ -9689,6 +9798,10 @@ function PerformanceAIDashboardView({
       resolvedProjectIdRef.current = data.project.project_id;
       setProjectId(data.project.project_id);
       setCurrentProject(data.project);
+      setWorkspaceRestoreState("restored");
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
+      }
       upsertProjectSummary(data.project);
       if (!silent) {
         setStatusMessage(
@@ -9893,18 +10006,33 @@ function PerformanceAIDashboardView({
       setPlanPreviewUrl("");
       setPlanPreviewSummary(null);
       setStatusMessage(`Loaded project "${project.name}".`);
+      setWorkspaceRestoreState("restored");
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
+      }
       loadProjectResultInBackground(project);
       if (activeJobId && (!projectId || currentProjectActiveJob?.project_id === id || activeJob?.project_id === id)) {
         void loadJob(activeJobId);
       }
     } catch (error) {
+      setWorkspaceRestoreState("failed");
       setStatusMessage(
-        error instanceof Error ? error.message : "Project load failed.",
+        error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.",
       );
     } finally {
       autosaveSuspendRef.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!token || effectiveDemoWorkspaceEnabled || restoredActiveProjectRef.current) return;
+    if (currentProject?.project_id || projectId) return;
+    if (typeof window === "undefined") return;
+    const savedProjectId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+    if (!savedProjectId) return;
+    restoredActiveProjectRef.current = true;
+    void loadProject(savedProjectId);
+  }, [token, effectiveDemoWorkspaceEnabled, currentProject?.project_id, projectId]);
 
   const ensureProjectDraft = async (): Promise<string | null> => {
     if (!token) return null;
@@ -12066,15 +12194,22 @@ function PerformanceAIDashboardView({
         latestResultOverride,
       });
       setSiteScaleLocked(false);
+      setSiteAddress(geocode.display_name);
       setShowSiteBounds(true);
       setPreviewQuality("high");
       setSiteSelectionMode(true);
       setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
       const candidateCount = Number(onlineFetch?.online_existing_conditions_discovery_v1?.candidate_count ?? 0);
+      const lookupUnavailable =
+        candidateCount === 0 &&
+        (String(onlineFetch?.online_existing_conditions_discovery_v1?.status || "").includes("failed") ||
+          (!configuredLocalGisProviders.length && !(onlineFetch?.online_existing_conditions_discovery_v1?.sources ?? []).length));
       setStatusMessage(
         candidateCount > 0
           ? `Address applied. Found ${candidateCount} online source candidate${candidateCount === 1 ? "" : "s"} for review.`
-          : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
+          : lookupUnavailable
+            ? "Address applied; online source lookup not configured/available."
+            : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
       );
       setSelectedAddressSuggestion(geocode);
     } catch (error) {
@@ -12457,6 +12592,29 @@ function PerformanceAIDashboardView({
       {}) as LocalGisProviderRegistry;
   const localGisProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
   const configuredLocalGisProviders = localGisProviders.filter((provider) => Boolean(provider.service_url || provider.arcgis?.service_url));
+  const onlineSourceLookupUnavailable =
+    hasAppliedAddress &&
+    onlineDiscoveryCandidateCount === 0 &&
+    (String(onlineDiscovery.status || "").includes("failed") ||
+      (onlineDiscoverySources.length === 0 && configuredLocalGisProviders.length === 0));
+  const onlineSourceLookupLabel = !hasAppliedAddress
+    ? "Needs address/location first"
+    : onlineDiscoveryCandidateCount > 0
+      ? `${onlineDiscoveryCandidateCount} candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} for review`
+      : onlineSourceLookupUnavailable
+        ? "Address applied; online source lookup not configured/available."
+        : "Address applied; no online source candidates accepted.";
+  const generatePreflightNotes = [
+    hasAssumedTerrainSlope
+      ? "terrain slope is assumed; survey/control still needed."
+      : "",
+    hasAppliedAddress && onlineSourceLookupUnavailable
+      ? "Address applied; online source lookup not configured/available."
+      : "",
+    buildingPlacements.some((item) => item.type === "site")
+      ? "Site boundary count is separate from design object counts."
+      : "",
+  ].filter(Boolean);
 
   const ensureSiteLocked = useCallback(
     (action: string) => {
@@ -15130,7 +15288,11 @@ function PerformanceAIDashboardView({
   const existingConditionRows = [
     {
       label: "Address / location evidence",
-      value: hasLocationEvidence ? "Imported / applied" : "Missing",
+      value: hasAppliedAddress
+        ? `Applied: ${appliedAddressLabel || "coordinate context"}`
+        : hasLocationEvidence
+          ? "Map/image location context"
+          : "Missing",
       status: hasLocationEvidence ? "review" : "block",
       action: "Setup panel -> enter an address, pick a geocode suggestion, then Apply address.",
     },
@@ -15154,8 +15316,8 @@ function PerformanceAIDashboardView({
     },
     {
       label: "GIS / map context",
-      value: mapAnalysis?.success ? "Analyzed" : uploadedImageApiUrl || uploadedImagePreviewUrl ? "Image uploaded" : "Missing",
-      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl ? "review" : "block",
+      value: mapAnalysis?.success ? "Analyzed" : uploadedImageApiUrl || uploadedImagePreviewUrl ? "Image uploaded" : onlineSourceLookupLabel,
+      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl || hasAppliedAddress ? "review" : "block",
       action: "Setup panel -> upload a map snapshot and run Analyze map snapshot.",
     },
   ] as const;
@@ -15170,7 +15332,7 @@ function PerformanceAIDashboardView({
       blockers.push("missing terrain/source: add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
     }
     if ((target === "drainage" || target === "storm") && !hasBasinPlaced) {
-      blockers.push(hasBasinObject ? "basin exists but is not placed." : "unplaced basin: add a detention basin, then place it on the site.");
+      blockers.push(hasBasinObject ? "detention basin exists but needs placement." : "missing detention basin.");
     }
     if (target === "roadway" && confirmedObjectCounts.buildings === 0 && confirmedObjectCounts.access === 0) {
       blockers.push("Add at least one building, entrance, driveway, road, or parking object.");
@@ -16219,12 +16381,14 @@ function PerformanceAIDashboardView({
     {
       id: "address_location",
       label: "Address / Location",
-      status: hasLocationEvidence || siteAddress.trim() ? "needs_review" : "not_started",
+      status: hasAppliedAddress ? "needs_review" : siteAddress.trim() ? "pending" : "not_started",
       panel: "site_existing",
-      next_action: hasLocationEvidence || siteAddress.trim()
-        ? "Review the geocode/source and continue to site boundary."
+      next_action: hasAppliedAddress
+        ? `Address applied: ${appliedAddressLabel || "location context available"}. Continue to site boundary.`
+        : siteAddress.trim()
+          ? "Apply the entered address or choose a geocode suggestion."
         : "Enter an address, provide coordinates, or choose a blank site.",
-      review_required: Boolean(hasLocationEvidence || siteAddress.trim()),
+      review_required: Boolean(hasAppliedAddress || siteAddress.trim()),
     },
     {
       id: "site_boundary",
@@ -16241,15 +16405,15 @@ function PerformanceAIDashboardView({
     {
       id: "online_sources_candidates",
       label: "Online Sources / Candidates",
-      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl ? "needs_review" : hasLocationEvidence || siteAddress.trim() ? "not_started" : "blocked",
+      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl || hasAppliedAddress ? "needs_review" : "blocked",
       panel: "data",
       next_action: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl
         ? "Review the source result; no online/GIS candidate is auto-accepted."
-        : hasLocationEvidence || siteAddress.trim()
-          ? "Run online/source discovery or upload a map/GIS source."
+        : hasAppliedAddress
+          ? onlineSourceLookupLabel
           : "Add address/location evidence before source discovery.",
-      why_blocked: hasLocationEvidence || siteAddress.trim() ? "" : "Online/source discovery needs a location or uploaded source.",
-      review_required: Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl),
+      why_blocked: hasAppliedAddress ? "" : "Online/source discovery needs a location or uploaded source.",
+      review_required: Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl || hasAppliedAddress),
     },
     {
       id: "survey_terrain_control",
@@ -16258,7 +16422,9 @@ function PerformanceAIDashboardView({
       panel: "import_survey",
       next_action: hasVerifiedSurveyControl
         ? "Continue to standards acceptance."
-        : hasTerrainSource || surveyPreviewPoints.length
+        : hasAssumedTerrainSlope
+          ? "Terrain slope is assumed; survey/control still needed."
+          : hasTerrainSource || surveyPreviewPoints.length
           ? "Review survey/control, datum, benchmark, coordinate system, and terrain source."
           : "Upload survey/topo/control evidence or explicitly choose an assumed terrain path.",
       why_blocked: hasVerifiedSurveyControl || hasTerrainSource || surveyPreviewPoints.length ? "" : "Survey/control remains an explicit gate.",
@@ -17265,8 +17431,10 @@ function PerformanceAIDashboardView({
                 <span className="flex items-center justify-between gap-2">
                   <span>Sync</span>
                   <span className={currentProject?.project_id && !effectiveDemoWorkspaceEnabled ? "text-slate-900" : "text-amber-700"}>
-                    {effectiveDemoWorkspaceEnabled
-                      ? "Local demo"
+                    {workspaceRestoreState === "failed"
+                      ? "Could not restore saved workspace"
+                      : effectiveDemoWorkspaceEnabled
+                      ? "Local demo only"
                       : currentProject?.project_id
                         ? "Saved reloadable"
                         : "Unsaved draft"}
@@ -18437,6 +18605,9 @@ function PerformanceAIDashboardView({
                                 ? "Address typed but not applied to project evidence yet."
                                 : "Start from address or blank site before locking the boundary."}
                           </p>
+                          <p className="mt-1 text-xs font-semibold text-slate-600">
+                            Source lookup: {onlineSourceLookupLabel}
+                          </p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
                           pendingAddressEdit
@@ -18504,6 +18675,44 @@ function PerformanceAIDashboardView({
                           {siteScaleLocked ? "Unlock for editing" : "Engineer review required"}
                         </span>
                       </button>
+                    </div>
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="assumed-terrain-slope-control">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Assumed terrain slope</p>
+                          <p className="mt-1 text-sm font-semibold text-amber-950">
+                            {hasAssumedTerrainSlope
+                              ? `Assumed ${surveySlopeEstimate?.slope_percent?.toFixed(1)}% slope active`
+                              : "No assumed terrain slope active"}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-amber-800">
+                            Assumed/review-required only. Survey/control still needed separately.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                          Review required
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr,auto]">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                          Slope %
+                          <input
+                            type="number"
+                            min="0.1"
+                            step="0.1"
+                            value={assumedTerrainSlopePct}
+                            onChange={(event) => setAssumedTerrainSlopePct(event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleApplyAssumedTerrainSlope}
+                          className="rounded-lg border border-amber-900 bg-amber-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-amber-800 sm:self-end"
+                        >
+                          Use assumed slope
+                        </button>
+                      </div>
                     </div>
                     <details className="rounded-2xl border border-slate-200 bg-white p-4" open>
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -20446,6 +20655,15 @@ function PerformanceAIDashboardView({
                             Setup, placed objects, terrain/source, standards, outfall, utilities, parking, and ADA route are ready for a review-required run.
                           </p>
                         )}
+                        {generatePreflightNotes.length ? (
+                          <div className="mt-2 space-y-1">
+                            {generatePreflightNotes.map((note) => (
+                              <p key={note} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800">
+                                {note}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
@@ -21631,6 +21849,23 @@ function PerformanceAIDashboardView({
                               <p className="mt-1 font-semibold text-slate-900">{selectedBuilding.placed ? "Placed" : "Unplaced"}</p>
                             </div>
                           </div>
+                          <p className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                            selectedBuilding.type === "site"
+                              ? "border-slate-200 bg-slate-50 text-slate-600"
+                              : selectedBuilding.locked
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : selectedBuilding.placed
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "border-amber-200 bg-amber-50 text-amber-800"
+                          }`}>
+                            {selectedBuilding.type === "site"
+                              ? "Move/edit blocked: site boundary is controlled from Setup."
+                              : selectedBuilding.locked
+                                ? "Move/edit blocked: object is locked. Unlock it to edit."
+                                : selectedBuilding.placed
+                                  ? "Move/edit controls available for this draft object."
+                                  : "Move/edit blocked: object needs placement first."}
+                          </p>
                           <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                             {selectedBuilding.locked ? "Unlock object" : "Lock object"}
                           </button>
@@ -22449,9 +22684,17 @@ function PerformanceAIDashboardView({
                           <p className="mt-1 text-sm text-slate-600">Cards create review-required draft objects. If the site is locked, Civora places a first-pass draft; otherwise they land in Needs placement.</p>
                         </div>
                         <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          {placedObjects.length} placed / {pendingPlacementObjects.length} pending
+                          Design objects: {placedObjects.length} placed / {pendingPlacementObjects.length} pending
                         </span>
                       </div>
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Site boundary is counted separately: {buildingPlacements.some((item) => item.type === "site") ? "1 configured boundary" : "no configured boundary"}.
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-amber-700" data-testid="guided-assumed-slope-status">
+                        {hasAssumedTerrainSlope
+                          ? `Assumed terrain slope active: ${surveySlopeEstimate?.slope_percent?.toFixed(1)}% (review-required; survey/control still needed).`
+                          : "Assumed terrain slope: not active."}
+                      </p>
                       <div className="mt-3 grid gap-2">
                         {[
                           ["office_sf", "Office building SF", "number", "office building"],
@@ -22463,6 +22706,7 @@ function PerformanceAIDashboardView({
                           ["driveway", "Driveway", "text", "access"],
                           ["sidewalks", "Sidewalks", "text", "pedestrian route"],
                           ["ada_route", "ADA route", "text", "accessible route"],
+                          ["assumed_terrain_slope", "Assumed terrain slope %", "number", "review-required terrain note"],
                         ].map(([key, label, inputType, hint]) => (
                           <div key={key} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr,1.1fr,auto] sm:items-end">
                             <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -22484,6 +22728,7 @@ function PerformanceAIDashboardView({
                             </p>
                             <button
                               type="button"
+                              aria-label={`Add ${label}`}
                               onClick={() => handleGuidedObjectCard(key)}
                               className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
                             >
@@ -25292,7 +25537,7 @@ function PerformanceAIDashboardView({
                         ) : !hasTerrainSource ? (
                           <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs terrain</span>
                         ) : !hasBasinPlaced ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs basin</span>
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">{hasBasinObject ? "Needs basin placement" : "Needs basin"}</span>
                         ) : null}
                       </div>
                     </button>
@@ -25320,7 +25565,7 @@ function PerformanceAIDashboardView({
                         ) : !hasTerrainSource ? (
                           <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs terrain</span>
                         ) : !hasBasinPlaced ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs basin</span>
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">{hasBasinObject ? "Needs basin placement" : "Needs basin"}</span>
                         ) : null}
                       </div>
                     </button>
