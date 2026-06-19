@@ -213,6 +213,74 @@ const normalizeSystemLabel = (value: unknown) => {
 const formatClearance = (value: number | null | undefined) =>
   value === null || value === undefined || Number.isNaN(value) ? "Needs source" : `${value.toFixed(1)} ft`;
 
+type PreviewSourceState = "verified" | "imported" | "inferred" | "stale" | "blocked" | "fallback";
+
+const resolveSourceState = (item: BuildingPlacement): PreviewSourceState => {
+  const meta = item.meta ?? {};
+  const statusText = [
+    meta.source_confidence,
+    meta.cad_source_confidence,
+    meta.classification_status,
+    meta.engineering_status,
+    meta.review_status,
+    meta.handoff_status,
+    meta.source,
+    item.source,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (item.meta?.unsupported_entity_placeholder || statusText.includes("blocked")) return "blocked";
+  if (statusText.includes("stale") || statusText.includes("dirty")) return "stale";
+  if (statusText.includes("inferred") || statusText.includes("low") || item.source === "inferred") return "inferred";
+  if (statusText.includes("import") || item.source === "detected_from_image") return "imported";
+  const hasPathGeometry =
+    (item.geometryType === "polygon" || item.geometryType === "polyline" || item.geometryType === "point") &&
+    Array.isArray(item.geometry) &&
+    item.geometry.length > 0;
+  if (!hasPathGeometry && item.geometryType !== "rect" && item.type !== "site") return "fallback";
+  return "verified";
+};
+
+const sourceStateLabel = (state: PreviewSourceState) => {
+  if (state === "verified") return "Source-backed geometry";
+  if (state === "imported") return "Imported geometry - review required";
+  if (state === "inferred") return "Inferred geometry - low confidence";
+  if (state === "stale") return "Stale geometry - rerun affected systems";
+  if (state === "blocked") return "Blocked geometry - review required";
+  return "Fallback geometry - bounds only";
+};
+
+const utilityStrokeColor = (item: BuildingPlacement) => {
+  const text = `${item.type || ""} ${item.label || ""} ${item.meta?.system || ""} ${item.meta?.discipline || ""}`.toLowerCase();
+  if (text.includes("water") || text.includes("hydrant")) return "#0284c7";
+  if (text.includes("sanitary") || text.includes("sewer") || text.includes("manhole")) return "#7c3aed";
+  if (text.includes("storm") || text.includes("drain") || text.includes("inlet")) return "#0f766e";
+  if (text.includes("electric") || text.includes("power")) return "#ca8a04";
+  if (text.includes("gas")) return "#dc2626";
+  return "#7c3aed";
+};
+
+const polygonCentroid = (points: Array<[number, number]>): [number, number] => {
+  if (!points.length) return [0, 0];
+  const sum = points.reduce(
+    (acc, pt) => {
+      acc.x += pt[0];
+      acc.y += pt[1];
+      return acc;
+    },
+    { x: 0, y: 0 },
+  );
+  return [sum.x / points.length, sum.y / points.length];
+};
+
+const scalePolygonTowardCenter = (points: Array<[number, number]>, scale: number): Array<[number, number]> => {
+  const [cx, cy] = polygonCentroid(points);
+  return points.map(([x, y]) => [cx + (x - cx) * scale, cy + (y - cy) * scale]);
+};
+
+const firstMetaNumber = (item: BuildingPlacement, keys: string[]): number | null => readMetaNumber(item.meta, keys);
+
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
   previewTotalPhaseCount: number;
@@ -606,6 +674,7 @@ export default function PreviewPanel({
   const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
+  const [lastDraftPreviewPoint, setLastDraftPreviewPoint] = useState<[number, number] | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
   const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
@@ -651,6 +720,7 @@ export default function PreviewPanel({
   const fullscreenRef = useRef<HTMLDivElement | null>(null);
   const previewImageRef = useRef<HTMLImageElement | null>(null);
   const fullscreenImageRef = useRef<HTMLImageElement | null>(null);
+  const lastDrawPointerHandledAtRef = useRef(0);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const fullscreenMapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -810,32 +880,41 @@ export default function PreviewPanel({
   const resolveSvgVisualStyle = useCallback(
     (item: BuildingPlacement, selected = false) => {
       const kind = resolveVisualKind(item);
+      const sourceState = resolveSourceState(item);
+      const blocked = sourceState === "blocked";
+      const lowConfidence = sourceState === "inferred" || sourceState === "fallback";
+      const imported = sourceState === "imported";
+      const stale = sourceState === "stale";
+      const dash =
+        blocked ? "1.2 0.8" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
       if (!isHighQuality) {
         return {
           fill: kind === "parking" ? legendPalette.parkingFill : legendPalette.buildingFill,
-          stroke: selected ? "#f59e0b" : kind === "road" ? legendPalette.road : legendPalette.building,
+          stroke: selected ? "#f59e0b" : blocked ? "#dc2626" : kind === "road" ? legendPalette.road : legendPalette.building,
           strokeWidth: selected ? 0.75 : 0.45,
+          strokeDasharray: dash,
+          opacity: blocked ? 0.92 : lowConfidence ? 0.74 : 1,
         };
       }
       if (kind === "road") {
-        return { fill: "none", stroke: selected ? "#fbbf24" : "#111827", strokeWidth: selected ? 1.35 : 1.05 };
+        return { fill: "none", stroke: selected ? "#fbbf24" : blocked ? "#dc2626" : "#111827", strokeWidth: selected ? 1.35 : 1.05, strokeDasharray: dash, opacity: blocked ? 0.92 : lowConfidence ? 0.78 : 1 };
       }
       if (kind === "parking") {
-        return { fill: "rgba(71, 85, 105, 0.32)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.42 };
+        return { fill: "rgba(71, 85, 105, 0.32)", stroke: selected ? "#fbbf24" : blocked ? "#dc2626" : "#64748b", strokeWidth: selected ? 0.75 : 0.42, strokeDasharray: dash, opacity: blocked ? 0.9 : lowConfidence ? 0.78 : 1 };
       }
       if (kind === "water") {
-        return { fill: "rgba(14, 165, 233, 0.28)", stroke: selected ? "#fbbf24" : "#0284c7", strokeWidth: selected ? 0.75 : 0.45 };
+        return { fill: "rgba(14, 165, 233, 0.28)", stroke: selected ? "#fbbf24" : blocked ? "#dc2626" : "#0284c7", strokeWidth: selected ? 0.75 : 0.45, strokeDasharray: dash, opacity: blocked ? 0.9 : lowConfidence ? 0.8 : 1 };
       }
       if (kind === "landscape") {
-        return { fill: "rgba(34, 197, 94, 0.22)", stroke: selected ? "#fbbf24" : "#16a34a", strokeWidth: selected ? 0.75 : 0.4 };
+        return { fill: "rgba(34, 197, 94, 0.22)", stroke: selected ? "#fbbf24" : blocked ? "#dc2626" : "#16a34a", strokeWidth: selected ? 0.75 : 0.4, strokeDasharray: dash, opacity: blocked ? 0.9 : lowConfidence ? 0.78 : 1 };
       }
       if (kind === "sidewalk") {
-        return { fill: "none", stroke: selected ? "#fbbf24" : "#0f766e", strokeWidth: selected ? 0.85 : 0.55 };
+        return { fill: "none", stroke: selected ? "#fbbf24" : blocked ? "#dc2626" : "#0f766e", strokeWidth: selected ? 0.85 : 0.55, strokeDasharray: dash, opacity: blocked ? 0.9 : lowConfidence ? 0.78 : 1 };
       }
       if (kind === "utility") {
-        return { fill: "rgba(124, 58, 237, 0.14)", stroke: selected ? "#fbbf24" : "#7c3aed", strokeWidth: selected ? 0.75 : 0.45 };
+        return { fill: "rgba(124, 58, 237, 0.14)", stroke: selected ? "#fbbf24" : blocked ? "#dc2626" : utilityStrokeColor(item), strokeWidth: selected ? 0.75 : 0.45, strokeDasharray: dash, opacity: blocked ? 0.92 : lowConfidence ? 0.78 : 1 };
       }
-      return { fill: "rgba(148, 163, 184, 0.18)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.42 };
+      return { fill: "rgba(148, 163, 184, 0.18)", stroke: selected ? "#fbbf24" : blocked ? "#dc2626" : "#64748b", strokeWidth: selected ? 0.75 : 0.42, strokeDasharray: dash, opacity: blocked ? 0.9 : lowConfidence ? 0.74 : 1 };
     },
     [isHighQuality, legendPalette.building, legendPalette.buildingFill, legendPalette.parkingFill, legendPalette.road, resolveVisualKind],
   );
@@ -2636,6 +2715,7 @@ export default function PreviewPanel({
   const clearDraftGeometry = useCallback(() => {
     setDraftPoints([]);
     setDraftPreviewPoint(null);
+    setLastDraftPreviewPoint(null);
   }, []);
 
   useEffect(() => {
@@ -2652,12 +2732,13 @@ export default function PreviewPanel({
 
   const finishDraftGeometry = useCallback(() => {
     if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") return;
+    const stablePreviewPoint = draftPreviewPoint ?? lastDraftPreviewPoint;
     const effectivePoints =
-      draftPreviewPoint &&
+      stablePreviewPoint &&
       !draftPoints.some(
-        (pt) => Math.abs(pt[0] - draftPreviewPoint[0]) < 0.001 && Math.abs(pt[1] - draftPreviewPoint[1]) < 0.001,
+        (pt) => Math.abs(pt[0] - stablePreviewPoint[0]) < 0.001 && Math.abs(pt[1] - stablePreviewPoint[1]) < 0.001,
       )
-        ? [...draftPoints, draftPreviewPoint]
+        ? [...draftPoints, stablePreviewPoint]
         : draftPoints;
     const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
     if (effectivePoints.length < minPoints) return;
@@ -2688,6 +2769,7 @@ export default function PreviewPanel({
       setCadCommandStatus("POLYGON cleaned and stored as draft review geometry.");
       setDraftPoints([]);
       setDraftPreviewPoint(null);
+      setLastDraftPreviewPoint(null);
       setDrawMode("select");
       return;
     }
@@ -2699,11 +2781,20 @@ export default function PreviewPanel({
     draftPoints,
     draftPreviewPoint,
     drawMode,
+    lastDraftPreviewPoint,
     onCreateCustomGeometry,
     onCreateSiteBoundary,
   ]);
 
-  const draftPointCount = draftPoints.length + (draftPreviewPoint ? 1 : 0);
+  const stableDraftPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPoint;
+  const draftPointCount =
+    draftPoints.length +
+    (stableDraftPreviewPoint &&
+    !draftPoints.some(
+      (pt) => Math.abs(pt[0] - stableDraftPreviewPoint[0]) < 0.001 && Math.abs(pt[1] - stableDraftPreviewPoint[1]) < 0.001,
+    )
+      ? 1
+      : 0);
   const finishDraftMinPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
   const finishDraftBlockedReason =
     draftPoints.length && drawMode !== "rect" && draftPointCount < finishDraftMinPoints
@@ -2737,15 +2828,33 @@ export default function PreviewPanel({
         return true;
       }
       const rawSitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, bounds);
-      if (!rawSitePoint) return true;
+      const clampedSitePoint = (() => {
+        if (rawSitePoint || !previewRef.current) return rawSitePoint;
+        const rect = previewRef.current.getBoundingClientRect();
+        const effectiveLotWidth = drawMode === "site" ? drawingLotWidth : lotWidth;
+        const effectiveLotHeight = drawMode === "site" ? drawingLotHeight : lotHeight;
+        if (!effectiveLotWidth || !effectiveLotHeight) return null;
+        const relX = Math.min(Math.max((event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1), 0), 1);
+        const relY = Math.min(Math.max((event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1), 0), 1);
+        const snapStep = drawMode === "point" ? 1 : drawMode === "site" ? 5 : 2;
+        return {
+          x: Math.round((relX * effectiveLotWidth) / snapStep) * snapStep,
+          y: Math.round((relY * effectiveLotHeight) / snapStep) * snapStep,
+          relX,
+          relY,
+        };
+      })();
+      if (!clampedSitePoint) return true;
+      lastDrawPointerHandledAtRef.current = Date.now();
       event.preventDefault();
       event.stopPropagation();
       const basePoint = draftPoints.length
         ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
         : null;
-      const sitePoint = resolveCadSnapPoint(rawSitePoint, basePoint);
+      const sitePoint = resolveCadSnapPoint(clampedSitePoint, basePoint);
       setActiveSnapPoint(sitePoint);
       const point: [number, number] = [sitePoint.x, sitePoint.y];
+      setLastDraftPreviewPoint(point);
       if (drawMode === "point") {
         onCreateCustomGeometry({ mode: "point", points: [point] });
         clearDraftGeometry();
@@ -2772,12 +2881,87 @@ export default function PreviewPanel({
       canDrawObjects,
       clearDraftGeometry,
       draftPoints,
+      drawingLotHeight,
+      drawingLotWidth,
       drawMode,
+      lotHeight,
+      lotWidth,
       onCreateCustomGeometry,
       resolveCadSnapPoint,
       screenToSitePoint,
     ],
   );
+
+  useEffect(() => {
+    if (drawMode === "select" || drawMode === "pan") return;
+    const handleNativeDrawMouseDown = (event: MouseEvent) => {
+      const preview = previewRef.current;
+      if (!preview) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("button, input, textarea, select, [role='button']")) return;
+      const rect = preview.getBoundingClientRect();
+      if (
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom
+      ) {
+        return;
+      }
+      if (drawMode !== "site" && !canDrawObjects) return;
+      const bounds = { left: 0, top: 0, width: rect.width, height: rect.height };
+      const effectiveLotWidth = drawMode === "site" ? drawingLotWidth : lotWidth;
+      const effectiveLotHeight = drawMode === "site" ? drawingLotHeight : lotHeight;
+      if (!effectiveLotWidth || !effectiveLotHeight) return;
+      const relX = Math.min(Math.max((event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1), 0), 1);
+      const relY = Math.min(Math.max((event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1), 0), 1);
+      const snapStep = drawMode === "point" ? 1 : drawMode === "site" ? 5 : 2;
+      const rawPoint = {
+        x: Math.round((relX * effectiveLotWidth) / snapStep) * snapStep,
+        y: Math.round((relY * effectiveLotHeight) / snapStep) * snapStep,
+      };
+      const basePoint = draftPoints.length
+        ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
+        : null;
+      const sitePoint = resolveCadSnapPoint(rawPoint, basePoint);
+      const point: [number, number] = [sitePoint.x, sitePoint.y];
+      lastDrawPointerHandledAtRef.current = Date.now();
+      setLastDraftPreviewPoint(point);
+      setActiveSnapPoint(sitePoint);
+      event.preventDefault();
+      event.stopPropagation();
+      if (drawMode === "point") {
+        onCreateCustomGeometry({ mode: "point", points: [point] });
+        clearDraftGeometry();
+        setDrawMode("select");
+        return;
+      }
+      if (drawMode === "rect") {
+        if (!draftPoints.length) {
+          setDraftPoints([point]);
+          return;
+        }
+        onCreateCustomGeometry({ mode: "rect", points: [draftPoints[0], point] });
+        setDrawMode("select");
+        clearDraftGeometry();
+        return;
+      }
+      setDraftPoints((prev) => [...prev, point]);
+    };
+    window.addEventListener("mousedown", handleNativeDrawMouseDown, true);
+    return () => window.removeEventListener("mousedown", handleNativeDrawMouseDown, true);
+  }, [
+    canDrawObjects,
+    clearDraftGeometry,
+    draftPoints,
+    drawMode,
+    drawingLotHeight,
+    drawingLotWidth,
+    lotHeight,
+    lotWidth,
+    onCreateCustomGeometry,
+    resolveCadSnapPoint,
+  ]);
 
   const drawModeButtons: Array<{
     mode: DrawMode;
@@ -2997,6 +3181,10 @@ export default function PreviewPanel({
       typeof hoveredObject.confidence === "number"
         ? `${Math.round(hoveredObject.confidence * 100)}%`
         : null;
+    const sourceState = resolveSourceState(hoveredObject);
+    const pipeSize = firstMetaNumber(hoveredObject, ["diameter_in", "pipe_diameter_in", "size_in"]);
+    const elevation = firstMetaNumber(hoveredObject, ["elevation_ft", "rim_elevation_ft", "invert_ft", "normal_pool_elevation_ft"]);
+    const sourceNote = String(hoveredObject.meta?.source_note || hoveredObject.meta?.source_stage || "");
     const position =
       typeof hoveredObject.x === "number" && typeof hoveredObject.y === "number"
         ? `X ${hoveredObject.x.toFixed(1)} ft • Y ${hoveredObject.y.toFixed(1)} ft`
@@ -3023,7 +3211,11 @@ export default function PreviewPanel({
         : []),
       ...(height ? [{ label: "Height", value: height }] : []),
       { label: "Source", value: source },
+      { label: "Source state", value: sourceStateLabel(sourceState) },
+      ...(sourceNote ? [{ label: "Evidence", value: sourceNote }] : []),
       ...(confidence ? [{ label: "Confidence", value: confidence }] : []),
+      ...(pipeSize !== null ? [{ label: "Pipe size", value: `${pipeSize.toFixed(0)} in` }] : []),
+      ...(elevation !== null ? [{ label: "Elevation", value: `${elevation.toFixed(2)} ft` }] : []),
     ];
   }, [hoveredObject, lotHeight, lotWidth]);
   const overlayBounds = useMemo(() => {
@@ -3049,6 +3241,12 @@ export default function PreviewPanel({
     if (!previewContainerBounds) return null;
     return previewContainerBounds;
   }, [overlayBounds, previewContainerBounds]);
+  const getDrawingBounds = useCallback(() => {
+    if (overlayBoundsResolved) return overlayBoundsResolved;
+    const rect = previewRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return { left: 0, top: 0, width: rect.width, height: rect.height };
+  }, [overlayBoundsResolved]);
 
   useEffect(() => {
     if (showHover) return;
@@ -6155,8 +6353,17 @@ export default function PreviewPanel({
                   ),
                 });
               }}
+              onMouseDownCapture={(event) => {
+                if (allowMapInteraction) return;
+                if (drawMode === "select" || drawMode === "pan") return;
+                if (Date.now() - lastDrawPointerHandledAtRef.current < 120) return;
+                const target = event.target as HTMLElement | null;
+                if (target?.closest?.("button, input, textarea, select, [role='button']")) return;
+                handleDrawPointer(event, getDrawingBounds());
+              }}
               onMouseMove={(event) => {
                 if (allowMapInteraction) return;
+                const drawingBounds = getDrawingBounds();
                 if (rotateDragStart && previewContainerBounds && onSetSiteRotationDeg) {
                   const deltaX = event.clientX - rotateDragStart.x;
                   const width = Math.max(previewContainerBounds.width, 1);
@@ -6173,31 +6380,34 @@ export default function PreviewPanel({
                   }));
                   return;
                 }
-                if (drawMode !== "select" && drawMode !== "pan" && overlayBoundsResolved) {
-                  const rawSitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
+                if (drawMode !== "select" && drawMode !== "pan" && drawingBounds) {
+                  const rawSitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, drawingBounds);
                   const basePoint = draftPoints.length
                     ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
                     : null;
                   const sitePoint = rawSitePoint ? resolveCadSnapPoint(rawSitePoint, basePoint) : null;
                   setDraftPreviewPoint(sitePoint ? [sitePoint.x, sitePoint.y] : null);
+                  if (sitePoint) {
+                    setLastDraftPreviewPoint([sitePoint.x, sitePoint.y]);
+                  }
                   setActiveSnapPoint(sitePoint);
                   if (sitePoint) {
                     setCursorSitePoint({ x: sitePoint.x, y: sitePoint.y });
                   }
                   return;
                 }
-                if (overlayBoundsResolved) {
-                  updateDraggedBuilding(event, overlayBoundsResolved);
+                if (drawingBounds) {
+                  updateDraggedBuilding(event, drawingBounds);
                 }
                 if (showHover) {
-                  resolveHover(event, previewRef, overlayBoundsResolved, setHoverPoint);
+                  resolveHover(event, previewRef, drawingBounds, setHoverPoint);
                 } else {
                   if (hoverPoint) setHoverPoint(null);
                   if (hoveredObjectId) setHoveredObjectId(null);
                   if (hoveredAnnotation) setHoveredAnnotation(null);
                 }
-                if (showHover && overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
-                  const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
+                if (showHover && drawingBounds && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
+                  const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, drawingBounds);
                   setCursorSitePoint(sitePoint ? { x: sitePoint.x, y: sitePoint.y } : null);
                 } else if (!showHover) {
                   setCursorSitePoint(null);
@@ -6224,11 +6434,13 @@ export default function PreviewPanel({
               }}
               onClick={(event) => {
                 if (allowMapInteraction) return;
+                const drawingBounds = getDrawingBounds();
                 if (drawMode !== "select") {
-                  if (handleDrawPointer(event, overlayBoundsResolved)) return;
+                  if (Date.now() - lastDrawPointerHandledAtRef.current < 350) return;
+                  if (handleDrawPointer(event, drawingBounds)) return;
                 }
                 if (placementMode) {
-                  resolvePlacement(event, previewRef, overlayBoundsResolved);
+                  resolvePlacement(event, previewRef, drawingBounds);
                   return;
                 }
                 if (!showHover || !hoveredAnnotation) return;
@@ -6389,7 +6601,7 @@ export default function PreviewPanel({
                 onMouseDown={(event) => {
                   if (allowMapInteraction) return;
                   if (drawMode === "pan") {
-                    handleDrawPointer(event, overlayBoundsResolved);
+                    handleDrawPointer(event, getDrawingBounds());
                     return;
                   }
                   if (rotateDragActive && onSetSiteRotationDeg) {
@@ -6897,14 +7109,35 @@ export default function PreviewPanel({
                             if (points.length < 2) return null;
                             const visualStyle = resolveSvgVisualStyle(item, selectedBuildingId === item.id);
                             const isSelectedPolyline = selectedBuildingId === item.id;
+                            const kind = resolveVisualKind(item);
+                            const sourceState = resolveSourceState(item);
+                            const corridorWidthFt =
+                              firstMetaNumber(item, ["corridor_width_ft", "pavement_width_ft", "width_ft", "road_width_ft"]) ??
+                              (kind === "road" ? Math.max(Math.min(item.w, item.d), 18) : null);
+                            const corridorStrokeWidth =
+                              corridorWidthFt && kind === "road"
+                                ? Math.max(1.15, Math.min(5.5, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100))
+                                : visualStyle.strokeWidth;
                             return (
                               <g key={`poly-${item.id}`}>
-                                {isHighQuality && (item.type === "road" || item.type === "driveway") ? (
+                                {isHighQuality && kind === "road" ? (
                                   <polyline
                                     points={points.join(" ")}
                                     fill="none"
-                                    stroke="rgba(15, 23, 42, 0.18)"
-                                    strokeWidth={1.85}
+                                    stroke={sourceState === "fallback" ? "rgba(100,116,139,0.2)" : "rgba(31,41,55,0.82)"}
+                                    strokeWidth={corridorStrokeWidth}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeDasharray={sourceState === "fallback" ? "1.4 1" : undefined}
+                                  />
+                                ) : null}
+                                {isHighQuality && kind === "road" && sourceState !== "fallback" ? (
+                                  <polyline
+                                    points={points.join(" ")}
+                                    fill="none"
+                                    stroke="rgba(248, 250, 252, 0.72)"
+                                    strokeWidth={Math.max(0.16, corridorStrokeWidth * 0.055)}
+                                    strokeDasharray={item.type === "driveway" ? undefined : "1.4 1.6"}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                   />
@@ -6914,49 +7147,113 @@ export default function PreviewPanel({
                                     points={points.join(" ")}
                                     fill="none"
                                     stroke={previewQuality === "high" ? "#fbbf24" : "#f59e0b"}
-                                    strokeWidth={1.3}
+                                    strokeWidth={kind === "road" ? Math.max(corridorStrokeWidth + 0.55, 1.3) : 1.3}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
+                                    strokeOpacity={0.72}
                                   />
                                 ) : null}
                                 <polyline
                                   points={points.join(" ")}
                                   fill="none"
-                                  stroke={visualStyle.stroke}
-                                  strokeWidth={visualStyle.strokeWidth}
+                                  stroke={kind === "road" && isHighQuality ? "rgba(15,23,42,0.78)" : visualStyle.stroke}
+                                  strokeWidth={kind === "road" && isHighQuality ? Math.max(0.22, corridorStrokeWidth * 0.12) : visualStyle.strokeWidth}
+                                  strokeDasharray={visualStyle.strokeDasharray}
+                                  opacity={visualStyle.opacity}
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
-                                />
-                                {isHighQuality && (item.type === "road" || item.type === "driveway") ? (
-                                  <polyline
-                                    points={points.join(" ")}
-                                    fill="none"
-                                    stroke="rgba(248, 250, 252, 0.72)"
-                                    strokeWidth={0.2}
-                                    strokeDasharray="1.4 1.4"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  />
-                                ) : null}
+                                >
+                                  <title>{sourceStateLabel(sourceState)}</title>
+                                </polyline>
                               </g>
                             );
                           })}
                         {visibleCadObjects
-                          .filter((item) => !item.meta?.unsupported_entity_placeholder && item.geometryType === "polygon" && Array.isArray(item.geometry))
+                          .filter((item) => !item.meta?.unsupported_entity_placeholder && (item.geometryType === "polygon" || item.geometryType === "rect") && Array.isArray(item.geometry))
                           .map((item) => {
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (points.length < 3) return null;
                             const isSelectedPolygon = selectedBuildingId === item.id;
                             const visualStyle = resolveSvgVisualStyle(item, isSelectedPolygon);
+                            const kind = resolveVisualKind(item);
+                            const sourceState = resolveSourceState(item);
+                            const geometry = (item.geometry || []) as Array<[number, number]>;
+                            const innerShelf = kind === "water" ? scalePolygonTowardCenter(geometry, 0.78) : [];
+                            const bottomShelf = kind === "water" ? scalePolygonTowardCenter(geometry, 0.48) : [];
+                            const waterSurface = kind === "water" && firstMetaNumber(item, ["normal_pool_elevation_ft", "water_surface_elevation_ft", "normal_pool_ft"]) !== null
+                              ? scalePolygonTowardCenter(geometry, 0.62)
+                              : [];
+                            const roadAxis =
+                              kind === "road"
+                                ? (() => {
+                                    const bounds = boundsForSiteGeometry(geometry);
+                                    const y = bounds.minY + bounds.height / 2;
+                                    const x = bounds.minX + bounds.width / 2;
+                                    return bounds.width >= bounds.height
+                                      ? [[bounds.minX, y], [bounds.maxX, y]] as Array<[number, number]>
+                                      : [[x, bounds.minY], [x, bounds.maxY]] as Array<[number, number]>;
+                                  })()
+                                : [];
                             return (
-                              <polygon
-                                key={`custom-poly-${item.id}`}
-                                points={points.join(" ")}
-                                fill={visualStyle.fill}
-                                stroke={visualStyle.stroke}
-                                strokeWidth={visualStyle.strokeWidth}
-                                strokeLinejoin="round"
-                              />
+                              <g key={`custom-poly-${item.id}`}>
+                                <polygon
+                                  points={points.join(" ")}
+                                  fill={visualStyle.fill}
+                                  stroke={visualStyle.stroke}
+                                  strokeWidth={visualStyle.strokeWidth}
+                                  strokeDasharray={visualStyle.strokeDasharray}
+                                  opacity={visualStyle.opacity}
+                                  strokeLinejoin="round"
+                                >
+                                  <title>{sourceStateLabel(sourceState)}</title>
+                                </polygon>
+                                {kind === "water" ? (
+                                  <>
+                                    <polygon
+                                      points={innerShelf.map(sitePointToSvgPercent).join(" ")}
+                                      fill="none"
+                                      stroke="#38bdf8"
+                                      strokeWidth={0.28}
+                                      strokeDasharray="1.5 0.9"
+                                      strokeOpacity={0.74}
+                                    />
+                                    <polygon
+                                      points={bottomShelf.map(sitePointToSvgPercent).join(" ")}
+                                      fill="rgba(2,132,199,0.12)"
+                                      stroke="#0369a1"
+                                      strokeWidth={0.24}
+                                      strokeOpacity={0.68}
+                                    />
+                                    {waterSurface.length ? (
+                                      <polygon
+                                        points={waterSurface.map(sitePointToSvgPercent).join(" ")}
+                                        fill="rgba(125,211,252,0.36)"
+                                        stroke="#0ea5e9"
+                                        strokeWidth={0.18}
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : null}
+                                {kind === "road" && roadAxis.length === 2 ? (
+                                  <>
+                                    <polyline
+                                      points={roadAxis.map(sitePointToSvgPercent).join(" ")}
+                                      fill="none"
+                                      stroke="rgba(15,23,42,0.62)"
+                                      strokeWidth={0.24}
+                                      strokeLinecap="round"
+                                    />
+                                    <polyline
+                                      points={roadAxis.map(sitePointToSvgPercent).join(" ")}
+                                      fill="none"
+                                      stroke="rgba(248,250,252,0.74)"
+                                      strokeWidth={0.14}
+                                      strokeDasharray={item.type === "driveway" ? undefined : "1.3 1.4"}
+                                      strokeLinecap="round"
+                                    />
+                                  </>
+                                ) : null}
+                              </g>
                             );
                           })}
                         {visibleCadObjects
@@ -7101,6 +7398,13 @@ export default function PreviewPanel({
                           .flatMap((item) =>
                             buildParkingModules(item, accessPointsForParking).map((module, idx) => {
                               const toPct = (pt: [number, number]) => sitePointToSvgPercent(pt);
+                              const sourceState = resolveSourceState(item);
+                              const reviewStriping = sourceState === "fallback" || sourceState === "inferred";
+                              const aisleMid = module.aisleLine[Math.floor(module.aisleLine.length / 2)] ?? module.aisleLine[0];
+                              const aisleEnd = module.aisleLine[module.aisleLine.length - 1] ?? aisleMid;
+                              const [arrowX, arrowY] = siteTupleToPercent(aisleMid, currentSiteSize);
+                              const [arrowEndX] = siteTupleToPercent(aisleEnd, currentSiteSize);
+                              const arrowDir = arrowEndX >= arrowX ? 1 : -1;
                               const moduleFill = module.isAdaModule
                                 ? "rgba(16,185,129,0.18)"
                                 : module.isCompactModule
@@ -7149,7 +7453,18 @@ export default function PreviewPanel({
                                     fill="none"
                                     stroke={legendPalette.road}
                                     strokeWidth={0.45}
+                                    strokeDasharray={reviewStriping ? "1.2 0.8" : undefined}
                                   />
+                                  <path
+                                    d={`M ${arrowX - arrowDir * 1.1} ${arrowY - 0.75} L ${arrowX + arrowDir * 1.1} ${arrowY} L ${arrowX - arrowDir * 1.1} ${arrowY + 0.75}`}
+                                    fill="none"
+                                    stroke="rgba(51,65,85,0.72)"
+                                    strokeWidth={0.26}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <title>Circulation direction from parking module geometry.</title>
+                                  </path>
                                   {module.stripeLines.map((line, stripeIdx) => (
                                     <polyline
                                       key={`stripe-${stripeIdx}`}
@@ -7157,8 +7472,31 @@ export default function PreviewPanel({
                                       fill="none"
                                       stroke="#cbd5f5"
                                       strokeWidth={0.24}
+                                      strokeDasharray={reviewStriping ? "0.8 0.55" : undefined}
                                     />
                                   ))}
+                                  {module.isAdaModule && module.bounds[0] ? (
+                                    <text
+                                      x={siteTupleToPercent(module.bounds[0], currentSiteSize)[0] + 1.2}
+                                      y={siteTupleToPercent(module.bounds[0], currentSiteSize)[1] + 2.8}
+                                      fontSize="2.15"
+                                      fill="#047857"
+                                      fontWeight={800}
+                                    >
+                                      ADA
+                                    </text>
+                                  ) : null}
+                                  {reviewStriping && module.bounds[0] && idx === 0 ? (
+                                    <text
+                                      x={siteTupleToPercent(module.bounds[0], currentSiteSize)[0] + 1.2}
+                                      y={siteTupleToPercent(module.bounds[0], currentSiteSize)[1] + 5.4}
+                                      fontSize="1.8"
+                                      fill="#64748b"
+                                      fontWeight={700}
+                                    >
+                                      review striping
+                                    </text>
+                                  ) : null}
                                 </g>
                               );
                             }),
@@ -7729,17 +8067,19 @@ export default function PreviewPanel({
                         const showBox = !isPolyline && !isCustomArea;
                         const isSite = item.type === "site";
                         const visualKind = resolveVisualKind(item);
+                        const sourceState = resolveSourceState(item);
                         const objectBoxStyle = resolveObjectBoxStyle(item);
                         const allowItemInteraction =
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
+                        const allowOverlayInteraction = allowItemInteraction && (showBox || isSelected);
                         return (
                           <div
                             key={item.id}
                             data-object-overlay
                             data-preview-quality={previewQuality}
                             data-visual-kind={visualKind}
-                            className={`${allowItemInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
+                            className={`${allowOverlayInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
                             style={{
                               left: `${rectPct.left}%`,
                               top: `${rectPct.top}%`,
@@ -7750,12 +8090,12 @@ export default function PreviewPanel({
                               cursor: caps.movable ? (isPolyline ? "grab" : "move") : "default",
                             }}
                             onMouseDown={(event) => {
-                              if (!allowItemInteraction) return;
+                              if (!allowOverlayInteraction) return;
                               if (draggingMode === "vertex" || hoveredSegment?.id === item.id) return;
                               handleBuildingMouseDown(event, item, "move");
                             }}
                             onMouseEnter={() => {
-                              if (!allowItemInteraction) return;
+                              if (!allowOverlayInteraction) return;
                               if (!showHover) return;
                               setHoveredObjectId(item.id);
                             }}
@@ -7764,7 +8104,7 @@ export default function PreviewPanel({
                               setHoveredVertex(null);
                             }}
                             onClick={(event) => {
-                              if (!allowItemInteraction) return;
+                              if (!allowOverlayInteraction) return;
                               event.stopPropagation();
                               setSelectedVertex(null);
                               onSelectBuilding(item.id);
@@ -8021,9 +8361,16 @@ export default function PreviewPanel({
                                 X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
                               </div>
                             ) : null}
-                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
-                              {item.label}
-                            </div>
+                            {sourceState === "fallback" && showBox ? (
+                              <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-300 bg-white/82 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em] text-slate-500 shadow-sm">
+                                fallback
+                              </div>
+                            ) : null}
+                            {isSelected || hoveredObjectId === item.id ? (
+                              <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow">
+                                {item.label}
+                              </div>
+                            ) : null}
                             {hoveredObjectId === item.id && objectHoverDetails.length ? (
                               <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
                                 <div className="space-y-1">
@@ -8069,9 +8416,11 @@ export default function PreviewPanel({
                             onMouseLeave={() => setHoveredObjectId(null)}
                           >
                             <div className="h-full w-full rounded-[8px] border border-dashed border-amber-400 bg-amber-200/10" />
-                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 shadow">
-                              {item.label}
-                            </div>
+                            {hoveredObjectId === item.id || selectedBuildingId === item.id ? (
+                              <div className="absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 shadow">
+                                {item.label}
+                              </div>
+                            ) : null}
                             {hoveredObjectId === item.id && objectHoverDetails.length ? (
                               <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
                                 <div className="space-y-1">

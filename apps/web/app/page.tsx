@@ -8517,7 +8517,7 @@ function PerformanceAIDashboardView({
     if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|responsible professional|professional responsibility)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field/submittal use, legal responsibility, and professional decisions remain outside Civora.",
+        "Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field use and professional responsibility remain outside Civora.",
         "status",
       );
       return true;
