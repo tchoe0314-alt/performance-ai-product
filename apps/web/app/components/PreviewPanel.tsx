@@ -830,13 +830,13 @@ export default function PreviewPanel({
         };
       }
       if (kind === "road") {
-        return { fill: "rgba(71, 85, 105, 0.16)", stroke: selected ? "#fbbf24" : "#475569", strokeWidth: selected ? 1.25 : 0.92 };
+        return { fill: "rgba(71, 85, 105, 0.11)", stroke: selected ? "#fbbf24" : "#475569", strokeWidth: selected ? 1.18 : 0.78 };
       }
       if (kind === "parking") {
-        return { fill: "rgba(100, 116, 139, 0.22)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.78 : 0.38 };
+        return { fill: "rgba(100, 116, 139, 0.16)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.72 : 0.34 };
       }
       if (kind === "water") {
-        return { fill: "rgba(125, 211, 252, 0.34)", stroke: selected ? "#fbbf24" : "#0284c7", strokeWidth: selected ? 0.82 : 0.45 };
+        return { fill: "rgba(125, 211, 252, 0.26)", stroke: selected ? "#fbbf24" : "#0284c7", strokeWidth: selected ? 0.82 : 0.42 };
       }
       if (kind === "landscape") {
         return { fill: "rgba(134, 239, 172, 0.18)", stroke: selected ? "#fbbf24" : "#16a34a", strokeWidth: selected ? 0.72 : 0.34 };
@@ -6858,16 +6858,19 @@ export default function PreviewPanel({
                           .map((item) => {
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (points.length < 2) return null;
+                            const visualKind = resolveVisualKind(item);
                             const visualStyle = resolveSvgVisualStyle(item, selectedBuildingId === item.id);
                             const isSelectedPolyline = selectedBuildingId === item.id;
+                            const isCorridorLine = visualKind === "road" || item.type === "driveway";
+                            const isUtilityLine = visualKind === "utility";
                             return (
                               <g key={`poly-${item.id}`}>
-                                {isHighQuality && (item.type === "road" || item.type === "driveway") ? (
+                                {isHighQuality && isCorridorLine ? (
                                   <polyline
                                     points={points.join(" ")}
                                     fill="none"
-                                    stroke="rgba(15, 23, 42, 0.18)"
-                                    strokeWidth={1.85}
+                                    stroke="rgba(15, 23, 42, 0.16)"
+                                    strokeWidth={2.15}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                   />
@@ -6889,8 +6892,9 @@ export default function PreviewPanel({
                                   strokeWidth={visualStyle.strokeWidth}
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
+                                  strokeDasharray={isUtilityLine ? "1.2 0.85" : undefined}
                                 />
-                                {isHighQuality && (item.type === "road" || item.type === "driveway") ? (
+                                {isHighQuality && isCorridorLine ? (
                                   <polyline
                                     points={points.join(" ")}
                                     fill="none"
@@ -6900,6 +6904,25 @@ export default function PreviewPanel({
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                   />
+                                ) : null}
+                                {isHighQuality && isUtilityLine ? (
+                                  <g>
+                                    {points.map((point, idx) => {
+                                      const [x, y] = String(point).split(",").map((value) => Number(value));
+                                      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                                      return (
+                                        <circle
+                                          key={`utility-node-${item.id}-${idx}`}
+                                          cx={x}
+                                          cy={y}
+                                          r={0.42}
+                                          fill="#ffffff"
+                                          stroke={visualStyle.stroke}
+                                          strokeWidth={0.18}
+                                        />
+                                      );
+                                    })}
+                                  </g>
                                 ) : null}
                               </g>
                             );
@@ -7054,6 +7077,17 @@ export default function PreviewPanel({
                               { minX: 100, maxX: 0, minY: 100, maxY: 0 },
                             );
                             const stripeCount = Math.min(12, Math.max(4, Math.round((bounds.maxX - bounds.minX) / 3.2)));
+                            const innerPolygonPoints = points
+                              .map((point) => {
+                                const [rawX, rawY] = String(point).split(",").map((value) => Number(value));
+                                if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return null;
+                                const centerX = (bounds.minX + bounds.maxX) / 2;
+                                const centerY = (bounds.minY + bounds.maxY) / 2;
+                                const inset = visualKind === "water" ? 0.82 : 0.88;
+                                return `${centerX + (rawX - centerX) * inset},${centerY + (rawY - centerY) * inset}`;
+                              })
+                              .filter(Boolean)
+                              .join(" ");
                             return (
                               <g key={`custom-poly-${item.id}`}>
                                 <polygon
@@ -7092,6 +7126,26 @@ export default function PreviewPanel({
                                       );
                                     })}
                                   </g>
+                                ) : null}
+                                {isHighQuality && visualKind === "water" && innerPolygonPoints ? (
+                                  <polygon
+                                    points={innerPolygonPoints}
+                                    fill="none"
+                                    stroke="rgba(224,242,254,0.7)"
+                                    strokeWidth={0.16}
+                                    strokeLinejoin="round"
+                                  />
+                                ) : null}
+                                {isHighQuality && visualKind === "road" ? (
+                                  <line
+                                    x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.12}
+                                    y1={(bounds.minY + bounds.maxY) / 2}
+                                    x2={bounds.maxX - (bounds.maxX - bounds.minX) * 0.12}
+                                    y2={(bounds.minY + bounds.maxY) / 2}
+                                    stroke="rgba(248,250,252,0.62)"
+                                    strokeWidth={0.14}
+                                    strokeDasharray="1.25 1"
+                                  />
                                 ) : null}
                               </g>
                             );
