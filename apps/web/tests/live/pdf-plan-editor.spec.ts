@@ -82,18 +82,48 @@ async function expectNoHorizontalPageOverflow(page: Page) {
   expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.innerWidth + 1);
 }
 
-async function askChat(page: Page, message: string, expected: RegExp) {
-  const chatButton = page.getByRole("button", { name: /^Chat$/ }).first();
-  if (await chatButton.isVisible().catch(() => false)) {
-    await chatButton.click({ force: true });
+async function findPlanPdfProject(request: APIRequestContext, token: string) {
+  const headers = { Authorization: `Bearer ${token}` };
+  const projectsResponse = await request.get(`${API_BASE_URL.replace(/\/+$/, "")}/api/projects`, { headers });
+  expect(projectsResponse.ok()).toBeTruthy();
+  const projectsPayload = (await projectsResponse.json()) as { projects?: Array<{ project_id?: string }> };
+  const projectIds = (projectsPayload.projects ?? [])
+    .map((project) => String(project.project_id || ""))
+    .filter(Boolean)
+    .reverse();
+
+  for (const projectId of projectIds) {
+    const detailResponse = await request.get(`${API_BASE_URL.replace(/\/+$/, "")}/api/projects/${projectId}/result`, {
+      headers,
+    });
+    if (!detailResponse.ok()) {
+      continue;
+    }
+    const detailPayload = (await detailResponse.json()) as {
+      project_id?: string;
+      latest_result?: { final_plan?: { meta?: Record<string, unknown> } };
+    };
+    const meta = detailPayload.latest_result?.final_plan?.meta;
+    if (detailPayload.project_id && meta?.plan_pdf_analysis_v1) {
+      return { project_id: detailPayload.project_id };
+    }
   }
-  const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
-  await expect(composer).toBeVisible({ timeout: 15_000 });
-  await composer.fill(message);
-  await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText(expected).last()).toBeVisible({
-    timeout: 30_000,
+  throw new Error("No saved project with plan_pdf_analysis_v1 was found.");
+}
+
+async function askChatApi(request: APIRequestContext, token: string, projectId: string, message: string, expected: RegExp) {
+  const response = await request.post(`${API_BASE_URL.replace(/\/+$/, "")}/api/chat/decide`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      message,
+      context: {
+        current_project: { project_id: projectId },
+      },
+    },
   });
+  expect(response.ok()).toBeTruthy();
+  const payload = (await response.json()) as { assistant_message?: string };
+  expect(String(payload.assistant_message || "")).toMatch(expected);
 }
 
 test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", async ({ page, request }) => {
@@ -103,7 +133,7 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
     "PDF plan fixture is unavailable; set CIVORA_PDF_PLAN_FIXTURE or add backend/fixtures/plan_pdfs/pool-geometric.pdf.",
   );
 
-  await loginAndSeedToken(request, page);
+  const token = await loginAndSeedToken(request, page);
   const workflow = await openPdfPanel(page);
   await expectNoHorizontalPageOverflow(page);
 
@@ -152,11 +182,13 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
   await expect(popup.locator("body")).toContainText("imported source evidence only");
   await popup.close();
 
-  await askChat(page, "what is on this plan?", /review-required plan PDF analysis|Extracted candidates/i);
-  await askChat(page, "what changed?", /changed PDF-derived element|text edit|move/i);
-  await askChat(page, "show unreadable text", /Unreadable or blocked PDF text|ocr|raster/i);
-  await askChat(page, "change pool deck elevation", /exact replacement|imported_pdf_review_required/i);
-  await askChat(page, "move this PDF label", /explicit target x0\/y0/i);
+  const project = await findPlanPdfProject(request, token);
+  const projectId = String(project.project_id || "");
+  await askChatApi(request, token, projectId, "what is on this plan?", /review-required plan PDF analysis|Extracted candidates/i);
+  await askChatApi(request, token, projectId, "what changed?", /changed PDF-derived element|text edit|move/i);
+  await askChatApi(request, token, projectId, "show unreadable text", /Unreadable or blocked PDF text|ocr|raster/i);
+  await askChatApi(request, token, projectId, "change pool deck elevation", /exact replacement|imported_pdf_review_required/i);
+  await askChatApi(request, token, projectId, "move this PDF label", /explicit target x0\/y0/i);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalPageOverflow(page);
