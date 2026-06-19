@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   AlertCircle,
@@ -498,15 +498,6 @@ type ReviewTableRow = {
   action: string;
   panel: SidePanelKey;
   issueIndex?: number;
-};
-type WorkflowRailCard = {
-  title: string;
-  status: string;
-  tone: ReviewTableTone;
-  metric: string;
-  detail: string;
-  action: string;
-  panel: SidePanelKey;
 };
 type SidebarNavItem = {
   label: string;
@@ -2300,79 +2291,6 @@ function statusTextClass(status?: string): string {
     return "text-amber-700";
   }
   return "text-red-600";
-}
-
-type WorkflowFocusPanelProps = {
-  title: string;
-  subtitle: string;
-  ready: string[];
-  blocked: string[];
-  civoraCan: string[];
-  userMust: string[];
-  nextActionLabel: string;
-  onNextAction: () => void;
-  nextActionDisabled?: boolean;
-  safetyNote?: ReactNode;
-};
-
-function WorkflowFocusPanel({
-  title,
-  subtitle,
-  ready,
-  blocked,
-  civoraCan,
-  userMust,
-  nextActionLabel,
-  onNextAction,
-  nextActionDisabled = false,
-  safetyNote = "engineer-review-required · construction-release-blocked until external review clears it",
-}: WorkflowFocusPanelProps) {
-  const sections = [
-    ["What is ready", ready.length ? ready : ["Nothing is ready yet."], "text-emerald-700"],
-    ["What is blocked", blocked.length ? blocked : ["No blockers recorded for this view; Civora outputs remain review-required."], "text-red-600"],
-    ["What Civora can do", civoraCan, "text-slate-800"],
-    ["What you must provide", userMust.length ? userMust : ["No additional user input recorded for this step."], "text-slate-800"],
-  ] as const;
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</p>
-          <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{subtitle}</p>
-        </div>
-        <span className="shrink-0 rounded-full border border-red-100 bg-red-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-700">
-          construction-release-blocked
-        </span>
-      </div>
-      <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-        {safetyNote}
-      </p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {sections.map(([label, items, tone]) => (
-          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
-              {items.slice(0, 4).map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${tone === "text-red-600" ? "bg-red-500" : tone === "text-emerald-700" ? "bg-emerald-500" : "bg-slate-400"}`} />
-                  <span className={tone}>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={onNextAction}
-        disabled={nextActionDisabled}
-        className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-      >
-        {nextActionLabel}
-      </button>
-    </section>
-  );
 }
 
 function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
@@ -16885,63 +16803,6 @@ function PerformanceAIDashboardView({
         : tone === "ok"
           ? "bg-emerald-50 text-emerald-700"
           : "bg-slate-100 text-slate-500";
-  const reviewToneBorderClass = (tone: ReviewTableTone) =>
-    tone === "block"
-      ? "border-red-200 bg-red-50/70"
-      : tone === "review"
-        ? "border-amber-200 bg-amber-50/70"
-        : tone === "ok"
-          ? "border-emerald-200 bg-emerald-50/70"
-          : "border-slate-200 bg-slate-50";
-  const releaseBlockedDetail =
-    exportBlockText ||
-    "Construction release remains blocked inside Civora; outputs are review materials only.";
-  const rightRailWorkflowCards: WorkflowRailCard[] = [
-    {
-      title: "Next Recommended Step",
-      status: progressTimelineCurrentStep?.status?.replace(/_/g, " ") || "pending",
-      tone: progressTimelineCurrentStep?.status === "blocked"
-        ? "block"
-        : progressTimelineCurrentStep?.status === "completed"
-          ? "ok"
-          : "review",
-      metric: progressTimelineCurrentStep?.label || setupWizardState.current_step_label || "Workflow",
-      detail: nextSetupAction || progressTimelineState.next_action || "Open the current workflow step.",
-      action: progressTimelineCurrentStep?.action_label || setupWizardState.primary_action_label || "Open step",
-      panel: (progressTimelineCurrentStep?.action_panel || setupWizardCurrentStep?.panel || "site_existing") as SidePanelKey,
-    },
-    {
-      title: "Project Health",
-      status: sidebarTruthCounts.blocked ? "Blocked" : sidebarTruthCounts.review ? "Review required" : sidebarHasTruthEvidence ? "Traceable" : "No evidence",
-      tone: sidebarTruthCounts.blocked ? "block" : sidebarTruthCounts.review || sidebarHasTruthEvidence ? "review" : "idle",
-      metric: sidebarTruthScore !== null ? `${sidebarTruthScore}% evidence score` : "Not evaluated",
-      detail: sidebarHasTruthEvidence
-        ? `${sidebarTruthCounts.blocked} blocked, ${sidebarTruthCounts.review} review, ${sidebarTruthCounts.ready} traceable item(s).`
-        : "Start setup to create traceable project state.",
-      action: "Open dashboard",
-      panel: "dashboard",
-    },
-    {
-      title: "Setup Progress",
-      status: String(setupWizardState.current_status || "not_started").replace(/_/g, " "),
-      tone: setupWizardState.blocked_step_ids?.length ? "block" : setupWizardState.needs_review_step_ids?.length ? "review" : setupWizardState.completed_count === setupWizardState.total_count ? "ok" : "idle",
-      metric: `${setupWizardState.completed_count ?? 0}/${setupWizardState.total_count ?? setupWizardSteps.length} steps`,
-      detail: setupWizardState.current_step_label || setupWizardCurrentStep?.label || "Setup has not started.",
-      action: "Open setup step",
-      panel: (setupWizardCurrentStep?.panel || "site_existing") as SidePanelKey,
-    },
-    {
-      title: "Engineer Review Required",
-      status: "Required",
-      tone: "review",
-      metric: backendResult ? "Package evidence exists" : "Awaiting generated evidence",
-      detail: sidebarHasTruthEvidence
-        ? "All generated and drawn geometry remains review-only until external professional review."
-        : "No project evidence has been evaluated yet.",
-      action: "Open review package",
-      panel: "reports",
-    },
-  ];
   const prioritizedIssueEntries = (() => {
     const picked = new Set<number>();
     const seenActions = new Set<string>();
@@ -17203,178 +17064,6 @@ function PerformanceAIDashboardView({
       : sidePanelForRender
         ? sidePanelCopy[sidePanelForRender].desc
         : "";
-  const activePanelStatus = sidePanelForRender ? panelStatus(sidePanelForRender) : "idle";
-  const activePanelStatusTone: ReviewTableTone =
-    activePanelStatus === "block"
-      ? "block"
-      : activePanelStatus === "review"
-        ? "review"
-        : activePanelStatus === "ok"
-          ? "ok"
-          : "idle";
-  const activePanelBlockers = uniqueStrings([
-    ...canonicalWorkspaceBlockers,
-    ...previewBlockedReasons,
-    ...bottomBlockerItems,
-    exportBlockText,
-    !siteScaleLocked && ["site_existing", "model", "generate", "grading", "drainage", "utilities", "roadway", "deliverables"].includes(sidePanelForRender || "")
-      ? "Site boundary is not locked."
-      : "",
-    !hasTerrainSource && ["import_survey", "data", "grading", "generate", "deliverables"].includes(sidePanelForRender || "")
-      ? "Terrain, survey, DEM, or accepted source path is missing."
-      : "",
-    sourceConfidenceSummary.low_confidence_count
-      ? `${sourceConfidenceSummary.low_confidence_count} low-confidence source item(s) need review.`
-      : "",
-    sourceConfidenceSummary.stale_or_missing_count
-      ? `${sourceConfidenceSummary.stale_or_missing_count} stale or missing source item(s).`
-      : "",
-  ]).slice(0, 3);
-  const activePanelActions = uniqueStrings([
-    sidePanelForRender === "deliverables" || sidePanelForRender === "reports"
-      ? "Open release gates or export engineer-review materials when unblocked."
-      : "",
-    sidePanelForRender === "jobs" ? "Refresh, retry, resume, or inspect job artifacts." : "",
-    sidePanelForRender === "data" || sidePanelForRender === "import_survey"
-      ? "Review source confidence, imports, standards, GIS, and PDFs."
-      : "",
-    sidePanelForRender === "generate" ? "Run systems or open a blocked discipline panel." : "",
-    sidePanelForRender === "model" || sidePanelForRender === "objects" ? "Draw, place, edit, and inspect model objects." : "",
-    "Resolve blockers before relying on deliverables.",
-  ]).slice(0, 3);
-  const activePanelStatusLabel =
-    activePanelStatus === "block"
-      ? "Blocked"
-      : activePanelStatus === "review"
-        ? "Review required"
-        : activePanelStatus === "ok"
-          ? "Traceable"
-          : "Not started";
-  const systemReadyLabels = Object.entries(systemStatuses)
-    .filter(([, status]) => status === "fresh")
-    .map(([system]) => `${system} output is current`);
-  const systemBlockedLabels = systemReadinessRows
-    .filter((row) => row.blockers.length > 0)
-    .flatMap((row) => row.blockers.map((blocker) => `${row.label}: ${blocker}`));
-  const reviewBlockedLabels = [
-    ...previewBlockedReasons,
-    ...bottomBlockerItems,
-    exportBlockText,
-  ].filter(Boolean) as string[];
-  const workflowFocusPanels = {
-    setup: {
-      title: "Setup workflow",
-      subtitle: "Get the site frame, source evidence, and lockable boundary ready before design work.",
-      ready: [
-        siteScaleLocked ? "Site boundary is locked" : "",
-        siteAddress.trim() || siteInputs?.address ? "Address/location evidence exists" : "",
-        hasTerrainSource ? "Terrain source is present" : "",
-        surveyPreviewPoints.length ? `${surveyPreviewPoints.length} survey/control point(s) loaded` : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        ...setupBlockedText,
-        !siteScaleLocked ? "Site boundary must be drawn or locked" : "",
-        !hasTerrainSource ? "Survey, topo, DEM, or assumed terrain path is still needed" : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Geocode an address", "Analyze a map snapshot", "Draw or lock the site boundary", "Carry review-required assumptions forward visibly"],
-      userMust: [
-        "Confirm the site boundary and dimensions",
-        "Provide survey/control, terrain, or approve an assumed source path",
-        "Review standards before relying on generated systems",
-      ],
-      nextActionLabel: setupWizardState.primary_action_label || "Continue setup",
-      onNextAction: () => setupWizardCurrentStep && handleSetupWizardAction(setupWizardCurrentStep),
-    },
-    data: {
-      title: "Data workflow",
-      subtitle: "Keep sources, standards, catalogs, PDFs, and confidence evidence organized for review.",
-      ready: [
-        hasTerrainSource ? "Terrain source is loaded" : "",
-        mapAnalysis?.success ? "GIS/map analysis is available" : "",
-        planPdfAnalysis ? "Plan PDF extraction is available" : "",
-        utilityCatalog ? "Utility catalog is loaded" : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        !hasVerifiedSurveyControl ? "Verified survey/control has not been accepted" : "",
-        sourceConfidenceSummary.low_confidence_count ? `${sourceConfidenceSummary.low_confidence_count} low-confidence source item(s)` : "",
-        sourceConfidenceSummary.stale_or_missing_count ? `${sourceConfidenceSummary.stale_or_missing_count} stale or missing source item(s)` : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Import survey/topo and PDFs", "Extract review candidates", "Surface source-confidence issues", "Open standards, templates, catalogs, and libraries"],
-      userMust: ["Provide authoritative survey/control and datum", "Accept or reject source candidates", "Confirm firm standards and catalogs"],
-      nextActionLabel: hasTerrainSource ? "Review source confidence" : "Import survey or terrain",
-      onNextAction: () => handleOpenSidePanel(hasTerrainSource ? "data" : "import_survey"),
-    },
-    design: {
-      title: "Design / Systems workflow",
-      subtitle: "Run or inspect civil systems only after setup and source gates are clear enough for review.",
-      ready: [
-        placedObjectCount ? `${placedObjectCount} object(s) on canvas` : "",
-        ...systemReadyLabels,
-        hasGradingSurface ? "Grading surface is rendered" : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        !siteScaleLocked ? "Site boundary is not locked" : "",
-        ...canonicalWorkspaceBlockers,
-        ...systemBlockedLabels,
-        hasHardSystemBlock ? "Hard system blocker recorded" : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Place and edit objects", "Run full or discipline-specific systems", "Queue partial reruns for stale systems", "Show discipline health panels"],
-      userMust: ["Provide missing terrain/basin/program inputs", "Review generated geometry before relying on it", "Confirm assumptions and stale-system reruns"],
-      nextActionLabel: siteScaleLocked ? "Run systems" : "Open setup",
-      onNextAction: () => handleOpenSidePanel(siteScaleLocked ? "generate" : "site_existing"),
-    },
-    analyze: {
-      title: "Analyze workflow",
-      subtitle: "Review issues, access checks, system health, quantities, jobs, and catalog evidence.",
-      ready: [
-        backendResult ? "Generated result is available for review" : "",
-        quantityRows.length ? `${quantityRows.length} quantity row(s) available` : "",
-        systemHealthItems.filter((item) => item.state === "complete").length ? `${systemHealthItems.filter((item) => item.state === "complete").length} system health item(s) complete` : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        ...bottomBlockerItems.slice(0, 4),
-        systemHealthItems.filter((item) => item.state === "blocked").length ? `${systemHealthItems.filter((item) => item.state === "blocked").length} system health item(s) blocked` : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Run access analysis", "Show issue guidance", "Inspect jobs and quantities", "Open system health evidence"],
-      userMust: ["Review every warning before package handoff", "Resolve missing inputs or source gaps", "Decide whether to rerun affected systems"],
-      nextActionLabel: "Run access analysis",
-      onNextAction: handleAnalyzeSiteAccess,
-    },
-    review: {
-      title: "Review workflow",
-      subtitle: "Keep blockers, assumptions, engineering health, and release gates visible before delivery.",
-      ready: [
-        backendResult ? "Review package evidence exists" : "",
-        sidebarAssumptions.length ? `${sidebarAssumptions.length} assumption categorie(s) listed` : "",
-        sidebarTrustScore !== "not reported" ? `Trust score ${sidebarTrustScore}` : "",
-      ].filter(Boolean) as string[],
-      blocked: canonicalWorkspaceBlockers.length ? canonicalWorkspaceBlockers.slice(0, 5) : reviewBlockedLabels.slice(0, 5),
-      civoraCan: ["Summarize QA issues", "Link to engineering health panels", "Prepare review-only evidence", "Apply supported safe fixes"],
-      userMust: ["Complete engineer review", "Accept or reject assumptions", "Clear construction-release-blocked export gates"],
-      nextActionLabel: "Open QA issues",
-      onNextAction: () => handleOpenSidePanel("analysis"),
-    },
-    deliver: {
-      title: "Deliver workflow",
-      subtitle: "Prepare sheets, reports, DXF, and package evidence as review-only deliverables.",
-      ready: [
-        backendResult ? "Review report data is available" : "",
-        planSheetSet.sheets.length ? `${planSheetSet.sheets.length} sheet(s) in package` : "",
-        planPreviewUrl ? "Preview is review ready" : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        ...canonicalWorkspaceBlockers.slice(0, 5),
-        exportBlockText,
-        !backendResult ? "Run systems before preparing deliverables" : "",
-        ...(getPlanSheetBlockers ? getPlanSheetBlockers().slice(0, 3) : []),
-      ].filter(Boolean) as string[],
-      civoraCan: ["Create review sheets", "Export report evidence", "Export DXF when gates clear", "Show smart-fix recommendations"],
-      userMust: ["Review title block, sheets, and support status", "Provide missing package inputs", "Complete licensed professional review before field use"],
-      nextActionLabel: exportBlockText ? "Show blocker details" : "Export review report",
-      onNextAction: () => exportBlockText ? handleOpenSidePanel("reports") : handleExportReport(),
-      nextActionDisabled: !exportBlockText && Boolean(getExportBlockReason()),
-    },
-  };
   const deployment = deploymentHealth?.deployment;
   const deploymentBackendStatus =
     deploymentHealthError
@@ -17851,99 +17540,6 @@ function PerformanceAIDashboardView({
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4">
-                <section className="mb-4 rounded-xl border border-slate-200 bg-white px-3 py-3" aria-label={`${activePanelTitle} status`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-950">{activePanelTitle}</p>
-                      <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-600">
-                        {activePanelDescription}
-                      </p>
-                    </div>
-                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(activePanelStatusTone)}`}>
-                      {activePanelStatusLabel}
-                    </span>
-                  </div>
-                  {activePanelBlockers.length ? (
-                    <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-600">Blocked by</p>
-                      <ul className="mt-1 space-y-1 text-xs font-semibold leading-5 text-red-700">
-                        {activePanelBlockers.map((blocker) => (
-                          <li key={blocker}>{blocker}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
-                      Review-only. Engineer review required. Construction release stays blocked outside Civora.
-                    </p>
-                  )}
-                  {activePanelActions.length ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {activePanelActions.map((action) => (
-                        <span key={action} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                          {action}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-                <details className="mb-4 rounded-xl border border-slate-200 bg-white px-3 py-3" open={activePanelStatus === "block"}>
-                  <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Workspace gates
-                  </summary>
-                  <div className="mt-3 space-y-2">
-                  {rightRailWorkflowCards.map((card) => (
-                    <button
-                      key={card.title}
-                      type="button"
-                      onClick={() => handleOpenSidePanel(card.panel)}
-                      className={`w-full rounded-lg border px-3 py-2.5 text-left transition hover:bg-white ${reviewToneBorderClass(card.tone)}`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            {card.title}
-                          </p>
-                          <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                            {card.metric}
-                          </p>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(card.tone)}`}>
-                          {card.status}
-                        </span>
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-slate-600">
-                        {card.detail}
-                      </p>
-                      <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        {card.action}
-                      </p>
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSidePanel("deliverables")}
-                    className="w-full rounded-lg border border-red-100 bg-red-50/80 px-3 py-2 text-left transition hover:bg-red-50"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-red-500">
-                          Release Guardrail
-                        </p>
-                        <p className="mt-1 truncate text-sm font-semibold text-red-700">
-                          Review materials only
-                        </p>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-red-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-600">
-                        Blocked
-                      </span>
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-red-700">
-                      {releaseBlockedDetail}
-                    </p>
-                  </button>
-                  </div>
-                </details>
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
                     <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -18644,7 +18240,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.setup} />
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-address-truth">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -19392,7 +18987,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "data" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.data} />
                     <details className="rounded-2xl border border-slate-200 bg-white p-4">
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Detailed source evidence and import tools
@@ -20375,7 +19969,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "model" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.design} />
                     {!siteScaleLocked ? (
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Setup required</p>
@@ -20651,7 +20244,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "generate" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.design} nextActionLabel="Run full system" onNextAction={() => handleGenerateSystem("full")} />
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Generate systems
@@ -22111,7 +21703,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "analysis" ? (
                   <div className="space-y-3">
-                    <WorkflowFocusPanel {...workflowFocusPanels.analyze} />
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Model issues", issues.length],
@@ -23081,13 +22672,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" || sidePanelForRender === "deliverables" ? (
                   <div className="space-y-3">
-                    {sidePanelForRender === "deliverables" ? (
-                      <WorkflowFocusPanel {...workflowFocusPanels.deliver} />
-                    ) : sidePanelForRender === "quantities" ? (
-                      <WorkflowFocusPanel {...workflowFocusPanels.analyze} nextActionLabel="Review quantities" onNextAction={() => handleOpenSidePanel("quantities")} />
-                    ) : (
-                      <WorkflowFocusPanel {...workflowFocusPanels.review} />
-                    )}
                     {(sidePanelForRender === "reports" || sidePanelForRender === "deliverables") ? (
                       <details className="rounded-2xl border border-slate-200 bg-white p-4" open={sidePanelForRender === "deliverables"}>
                         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
