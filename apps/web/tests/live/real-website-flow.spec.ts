@@ -37,16 +37,21 @@ test.describe("real website workflow clarity", () => {
   test("uses one visible workflow home per major action and stays responsive", async ({ page }) => {
     await openDemoWorkspace(page);
 
+    await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
+    await expect(page.getByTestId("reopen-civora-workspace")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open projects from header" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open chat from header" })).toBeVisible();
+    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Projects");
+    await page.getByRole("button", { name: /^Setup$/ }).click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Project Setup");
+
     await expect(page.getByText("Quick actions")).toHaveCount(0);
     await expect(page.getByText("Generate Systems").first()).not.toBeVisible();
     await expect(page.getByText("Run engines with gates").first()).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Open canvas from sidebar" })).toHaveCount(1);
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
-    await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
-    await expect(page.getByTestId("reopen-civora-workspace")).toBeVisible();
 
-    await page.getByRole("button", { name: /^Setup$/ }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toContainText("Project Setup");
     await expectSectionToggles(page, "setup-address-truth", "Address / Location", /Type project address/);
     await expectSectionToggles(page, "setup-site-box-controls", "Site Boundary", /Width \(ft\)/);
     await page.getByTestId("setup-survey-terrain-card").getByText("Survey / Terrain").first().click();

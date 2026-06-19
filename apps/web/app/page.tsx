@@ -17170,6 +17170,10 @@ function PerformanceAIDashboardView({
         <AppHeader
           userEmail={effectiveUser.email}
           onOpenDashboard={() => handleOpenSidePanel("dashboard")}
+          onOpenProjects={() => {
+            if (token) void refreshProjects(token);
+            handleOpenSidePanel("projects");
+          }}
           onOpenDocs={() => handleOpenSidePanel("deliverables")}
           onOpenChat={() => handleOpenSidePanel("chat")}
           sidebarOpen={leftSidebarOpen}
