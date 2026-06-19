@@ -6596,13 +6596,13 @@ export default function PreviewPanel({
                         preserveAspectRatio="none"
                         style={viewportTransformStyle}
                       >
-                        <g data-testid="cad-plan-grid" opacity={isHighQuality ? 0.9 : 0.62}>
+                        <g data-testid="cad-plan-grid" opacity={showMap ? 0 : isHighQuality ? 0.9 : 0.62}>
                           <rect
                             x={0}
                             y={0}
                             width={100}
                             height={100}
-                            fill={isHighQuality ? "rgba(248,250,252,0.62)" : "rgba(255,255,255,0.5)"}
+                            fill={showMap ? "transparent" : isHighQuality ? "rgba(248,250,252,0.62)" : "rgba(255,255,255,0.5)"}
                             stroke={isHighQuality ? "rgba(15,23,42,0.56)" : "rgba(100,116,139,0.42)"}
                             strokeWidth={0.32}
                           />
@@ -8018,11 +8018,16 @@ export default function PreviewPanel({
                       })}
                       {visibleCadObjects
                       .filter(
-                        (item) =>
-                          item.type !== "site" &&
+                        (item) => {
+                          const editableSiteBox =
+                            item.type === "site" && previewInteraction === "edit" && !siteLocked && showSiteBounds && !showMap;
+                          return (
+                            (item.type !== "site" || editableSiteBox) &&
                           item.placed &&
                           Number.isFinite(item.x) &&
-                          Number.isFinite(item.y),
+                            Number.isFinite(item.y)
+                          );
+                        },
                       )
                       .map((item) => {
                         const caps = getEditCapabilities(item);

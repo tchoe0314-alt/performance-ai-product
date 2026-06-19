@@ -11776,6 +11776,48 @@ function PerformanceAIDashboardView({
     setStatusMessage("Draw the site boundary on the canvas. Double-click or use Finish to lock it.");
   }, [handleUnlockSite, lotHeight, lotWidth, scrollToDrawingSurface, siteScaleLocked]);
 
+  const handleMoveSiteBox = useCallback(() => {
+    const width = parsePositiveNumber(lotWidth);
+    const height = parsePositiveNumber(lotHeight);
+    const existingSite = buildingPlacements.find((item) => item.type === "site");
+    if (!existingSite && (!width || !height)) {
+      setStatusMessage("Type a site width and depth first, then move the box on the canvas.");
+      return;
+    }
+    if (siteScaleLocked) {
+      handleUnlockSite();
+    }
+    const siteId = existingSite?.id ?? `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (!existingSite && width && height) {
+      autoFitSite(width, height, "Draft Site Boundary", siteId, true, false);
+    }
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
+    setBottomPanelCollapsed(true);
+    setPlacementModeEnabled(false);
+    setActivePlacementId(siteId);
+    setSiteSelectionMode(true);
+    setShowSiteBounds(true);
+    setPreviewInteraction("edit");
+    setFitToSiteRequest((value) => value + 1);
+    if (typeof window !== "undefined") {
+      setLeftSidebarOpen(false);
+    }
+    scrollToDrawingSurface();
+    setStatusMessage("Move or resize the site box on the canvas. In satellite view, drag the map under the box, then lock it.");
+  }, [
+    autoFitSite,
+    buildingPlacements,
+    handleUnlockSite,
+    lotHeight,
+    lotWidth,
+    scrollToDrawingSurface,
+    siteScaleLocked,
+  ]);
+
   useEffect(() => {
     if (siteScaleLocked) return;
     if (!viewportFootprint?.widthFt || !viewportFootprint?.heightFt) return;
@@ -18414,18 +18456,7 @@ function PerformanceAIDashboardView({
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setActiveWorkspaceMode("canvas");
-                            setActiveSidePanel(null);
-                            setRenderedSidePanel(null);
-                            setSidePanelVisible(false);
-                            setRightRailCollapsed(true);
-                            setSiteSelectionMode(true);
-                            setShowSiteBounds(true);
-                            setPreviewInteraction("edit");
-                            scrollToDrawingSurface();
-                            setStatusMessage(siteScaleLocked ? "Unlock the site before moving the site box." : "Move or resize the draft site box on the canvas, then lock the site.");
-                          }}
+                          onClick={handleMoveSiteBox}
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
                         >
                           Move box
