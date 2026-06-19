@@ -1723,7 +1723,7 @@ export type WaterFireFlowAnnotations = {
 
 export type AuthStatus = {
   auth_enabled: boolean;
-  user_count: number;
+  account_setup?: "configured" | "not_configured";
 };
 
 export type DisciplineToggle = {

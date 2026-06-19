@@ -144,7 +144,7 @@ export default function AuthScreen({
             <CardHeader>
               <SectionTitle
                 icon={Sparkles}
-                title={authMode === "register" ? "Create Account" : "Sign In"}
+                title={authMode === "register" ? "Request Pilot Access" : "Sign In"}
                 desc="Auth is now user-scoped so projects and jobs are private per beta tester."
               />
             </CardHeader>
@@ -242,7 +242,7 @@ export default function AuthScreen({
                   {authLoading
                     ? "Working..."
                     : authMode === "register"
-                      ? "Create Account"
+                      ? "Request Pilot Access"
                       : "Sign In"}
                 </SmallButton>
                 <SmallButton
@@ -252,7 +252,7 @@ export default function AuthScreen({
                     onAuthModeChange(authMode === "register" ? "login" : "register");
                   }}
                 >
-                  {authMode === "register" ? "Switch to sign-in" : "Switch to sign-up"}
+                  {authMode === "register" ? "Switch to sign-in" : "Request access"}
                 </SmallButton>
               </div>
             </CardContent>

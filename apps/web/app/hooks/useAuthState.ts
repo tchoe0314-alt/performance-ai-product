@@ -62,9 +62,6 @@ export default function useAuthState({
       const data = await getJson<AuthStatus>("/api/auth/status");
       setAuthStatus(data);
       setAuthStatusError("");
-      if ((data.user_count ?? 0) > 0) {
-        setAuthMode("login");
-      }
     } catch (error) {
       setAuthStatus(null);
       setAuthStatusError(

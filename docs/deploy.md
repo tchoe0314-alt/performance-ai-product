@@ -39,6 +39,12 @@ CIVORA_ROLLBACK_OWNER=release-owner@example.com
 CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=false
 ```
 
+For a one-time private-alpha account reset, temporarily set
+`CIVORA_ADMIN_BOOTSTRAP_SECRET` on Railway, call
+`POST /api/admin/bootstrap-owner` with the matching
+`x-civora-admin-bootstrap-secret` header, then remove the secret immediately
+after the owner account works. The route is disabled when the secret is blank.
+
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
 For a self-hosted local model worker, set `CIVORA_AI_PROVIDER=ollama` and configure `CIVORA_OLLAMA_BASE_URL`.
 If `MAPBOX_TOKEN` is missing or rejected, `/api/geocode` should return a structured blocked response instead of `500`; address lookup remains review context only and is not survey, boundary, or control evidence.

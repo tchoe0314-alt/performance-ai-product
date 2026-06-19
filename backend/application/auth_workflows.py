@@ -16,11 +16,11 @@ class AuthStoreProtocol(Protocol):
         ...
 
 
-def auth_status(*, user_count: int) -> Dict[str, Any]:
+def auth_status(*, user_count: int = 0) -> Dict[str, Any]:
     return {
         "success": True,
         "auth_enabled": True,
-        "user_count": int(user_count),
+        "account_setup": "configured" if int(user_count or 0) > 0 else "not_configured",
     }
 
 

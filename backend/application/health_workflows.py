@@ -43,6 +43,7 @@ def health_response(
     normalized_mode = _normalize_product_mode(product_mode)
     normalized_storage = str(storage or "sqlite").strip().lower() or "sqlite"
     review_only = normalized_mode in REVIEW_ONLY_PRODUCT_MODES
+    accounts_configured = int(user_count or 0) > 0
     monitoring = runtime_monitoring or {}
     release = release_guard or {}
     monitoring_status = str(monitoring.get("status") or "healthy").strip().lower() or "healthy"
@@ -95,8 +96,8 @@ def health_response(
         "launch_stage": "private_alpha" if review_only else normalized_mode,
         "review_only": review_only,
         "auth_enabled": True,
+        "account_setup": "configured" if accounts_configured else "not_configured",
         "storage": normalized_storage,
-        "user_count": int(user_count),
         "deployment": {
             "frontend_status": frontend_status,
             "backend_status": backend_status,
@@ -144,8 +145,8 @@ def health_response(
             "launch_stage": "private_alpha" if review_only else normalized_mode,
             "review_only": review_only,
             "auth_enabled": True,
+            "account_setup": "configured" if accounts_configured else "not_configured",
             "storage": normalized_storage,
-            "user_count": int(user_count),
             "monitoring_status": monitoring_status,
             "alpha_monitoring_status": str(alpha_monitoring_report.get("readiness") or ""),
             "alpha_monitoring_blocker_count": len(alpha_monitoring_report.get("blockers") or []),

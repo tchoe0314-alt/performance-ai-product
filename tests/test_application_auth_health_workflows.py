@@ -43,9 +43,12 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
             user_count=3,
         )
         self.assertTrue(data["success"])
-        self.assertEqual(data["user_count"], 3)
+        self.assertEqual(data["account_setup"], "configured")
+        self.assertNotIn("user_count", data)
         self.assertEqual(data["operational_summary"]["status"], "blocked")
         self.assertEqual(data["operational_summary"]["mode"], "development")
+        self.assertEqual(data["operational_summary"]["account_setup"], "configured")
+        self.assertNotIn("user_count", data["operational_summary"])
         self.assertFalse(data["operational_summary"]["ready_for_ui"])
         self.assertTrue(data["operational_summary"]["review_only"])
         self.assertFalse(data["operational_summary"]["construction_release_enabled"])
@@ -201,7 +204,8 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
     def test_auth_status(self):
         data = auth_status(user_count=5)
         self.assertTrue(data["auth_enabled"])
-        self.assertEqual(data["user_count"], 5)
+        self.assertEqual(data["account_setup"], "configured")
+        self.assertNotIn("user_count", data)
 
     def test_register_user_wraps_success(self):
         data = register_user(
