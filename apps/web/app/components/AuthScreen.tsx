@@ -170,21 +170,15 @@ export default function AuthScreen({
                       : "text-slate-600"
                   }`}
                 >
-                  Create Account Mode
+                  Request Access Mode
                 </button>
               </div>
               <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
                 {authStatus ? (
-                  authStatus.user_count > 0 ? (
-                    <span>
-                      {authStatus.user_count} Civora AI beta account
-                      {authStatus.user_count === 1 ? "" : "s"} already exist in this
-                      workspace. Use <strong>Sign In</strong> if you made one before,
-                      or create another account.
-                    </span>
-                  ) : (
-                    <span>No Civora AI beta accounts exist yet. Create the first one here.</span>
-                  )
+                  <span>
+                    Pilot access is invite-only. Use <strong>Sign In</strong> if you
+                    already have approved access, or request pilot access.
+                  </span>
                 ) : (
                   <span>Account status will appear here once the Civora AI backend responds.</span>
                 )}
