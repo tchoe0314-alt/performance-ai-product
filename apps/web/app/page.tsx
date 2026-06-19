@@ -2751,7 +2751,7 @@ function PerformanceAIDashboardView({
     roads: true,
     buildings: true,
     parking: true,
-    grading: false,
+    grading: true,
   });
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedAddressSuggestion, setSelectedAddressSuggestion] = useState<AddressSuggestion | null>(null);
@@ -2850,7 +2850,7 @@ function PerformanceAIDashboardView({
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
-  const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget) => Promise<void>) | null>(null);
+  const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget, options?: { slopeEstimateOverride?: SurveySlopeResponse | null }) => Promise<void>) | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
   const restoredActiveProjectRef = useRef(false);
@@ -12066,21 +12066,45 @@ function PerformanceAIDashboardView({
   ]);
 
   const runSelectedDetections = useCallback(async () => {
+    if (!siteScaleLocked) {
+      setStatusMessage("Lock the site first, then Civora can detect or draft inside that boundary.");
+      return;
+    }
     const wantsContext = detectionChoices.roads || detectionChoices.buildings || detectionChoices.parking;
+    let ranSomething = false;
     if (wantsContext) {
       if (!mapSnapshotPath) {
-        setStatusMessage("Upload a map snapshot to detect existing context.");
+        setStatusMessage("Map/image detection needs a map snapshot. Grading can still run from survey, terrain, or an explicit assumed slope.");
       } else {
         await handleAnalyzeImageFeatures();
+        ranSomething = true;
       }
     }
     if (detectionChoices.grading) {
-      await handleGenerateSystemRef.current?.("grading");
+      let slopeEstimateOverride: SurveySlopeResponse | null = null;
+      if (!hasTerrainSource && !surveySlopeEstimate?.slope_percent) {
+        const slopePct = parsePositiveNumber(assumedTerrainSlopePct) ?? 8;
+        slopeEstimateOverride = buildAssumedSlopeEstimate(slopePct);
+        setAssumedTerrainSlopePct(String(slopePct));
+        setUseSurveyForGrading(false);
+        setSurveySlopeEstimate(slopeEstimateOverride);
+        setStatusMessage(`No survey/terrain source is attached, so Civora is using an explicit ${slopePct}% assumed slope for this review draft.`);
+      }
+      await handleGenerateSystemRef.current?.("grading", { slopeEstimateOverride });
+      ranSomething = true;
     }
-    if (!wantsContext && !detectionChoices.grading) {
+    if (!ranSomething && !wantsContext && !detectionChoices.grading) {
       setStatusMessage("Select at least one detection option.");
     }
-  }, [detectionChoices, handleAnalyzeImageFeatures, mapSnapshotPath]);
+  }, [
+    assumedTerrainSlopePct,
+    detectionChoices,
+    handleAnalyzeImageFeatures,
+    hasTerrainSource,
+    mapSnapshotPath,
+    siteScaleLocked,
+    surveySlopeEstimate?.slope_percent,
+  ]);
 
   useEffect(() => {
     if (!siteScaleLocked) return;
@@ -18419,6 +18443,79 @@ function PerformanceAIDashboardView({
                         </button>
                       </div>
                     </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-survey-terrain-card">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Survey / terrain</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {hasTerrainSource
+                              ? "Terrain source available"
+                              : surveyPreviewPoints.length
+                                ? "Survey points imported"
+                                : hasAssumedTerrainSlope
+                                  ? `Using assumed ${surveySlopeEstimate?.slope_percent?.toFixed(1)}% slope`
+                                  : "Add survey, map, or use assumed slope"}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            Survey/topo, map images, and terrain files help Civora understand grades inside the locked site. All remain review-required.
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          hasVerifiedSurveyControl
+                            ? "bg-emerald-50 text-emerald-700"
+                            : hasTerrainSource || surveyPreviewPoints.length || hasAssumedTerrainSlope
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {hasVerifiedSurveyControl ? "Survey" : hasTerrainSource || surveyPreviewPoints.length || hasAssumedTerrainSlope ? "Review" : "Optional"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => surveyInputRef.current?.click()}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white"
+                        >
+                          Upload survey / topo
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            {surveyPreviewPoints.length ? `${surveyPreviewPoints.length} pts` : "CSV, DXF, LAS, GeoTIFF"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => mapSnapshotInputRef.current?.click()}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white"
+                        >
+                          Upload map / image
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            {mapSnapshotPath ? "Ready" : "For detection"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleApplyAssumedTerrainSlope}
+                          className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
+                        >
+                          Use assumed slope
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                            {assumedTerrainSlopePct || "8"}% review draft
+                          </span>
+                        </button>
+                      </div>
+                      <input
+                        ref={surveyInputRef}
+                        type="file"
+                        accept=".csv,.geojson,.json,.dxf,.shp,.zip,.gpkg,.tif,.tiff,.las,.laz,.xml,.landxml"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (file) {
+                            await uploadExistingConditions(file);
+                          }
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-detect-inside-site">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -18448,7 +18545,7 @@ function PerformanceAIDashboardView({
                         >
                           Detect buildings / roads / grading
                           <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
-                            Uses available sources inside site
+                            Map detection + grading draft
                           </span>
                         </button>
                         <button
@@ -18467,7 +18564,7 @@ function PerformanceAIDashboardView({
                         </button>
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="assumed-terrain-slope-control">
+                    <div className="hidden" data-testid="assumed-terrain-slope-control">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Assumed terrain slope</p>
