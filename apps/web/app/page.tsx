@@ -2673,6 +2673,17 @@ function PerformanceAIDashboardView({
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [objectPrompt, setObjectPrompt] = useState("");
+  const [guidedObjectDrafts, setGuidedObjectDrafts] = useState<Record<string, string>>({
+    office_sf: "25000",
+    parking_spaces: "96",
+    detention_basin_sf: "12000",
+    public_water: "Public water main",
+    public_sanitary: "Public sanitary sewer",
+    storm_sewer: "Storm sewer",
+    driveway: "Driveway",
+    sidewalks: "Sidewalks",
+    ada_route: "ADA route",
+  });
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
 
@@ -3822,7 +3833,7 @@ function PerformanceAIDashboardView({
   }, [currentPlanMeta]);
   const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
   const hasLocationEvidence =
-    Boolean(siteInputs?.address || siteAddress.trim()) ||
+    Boolean(siteInputs?.address) ||
     Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
     Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
   const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
@@ -3831,6 +3842,21 @@ function PerformanceAIDashboardView({
     ((Boolean(surveyFileName) && useSurveyForGrading) ||
       Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
       Boolean(surveySlopeEstimate?.slope_percent));
+  const currentPlanMetaRecord = currentPlanMeta as Record<string, unknown>;
+  const hasStandardsEvidence = Boolean(
+    minSlopePct ||
+      pipeMinSlopePct ||
+      maxParkingSlopePct ||
+      maxRoadGradePct ||
+      maxAdaCrossSlopePct ||
+      currentPlanMetaRecord.standards_package ||
+      currentPlanMetaRecord.standards_source_registry ||
+      currentPlanMetaRecord.standards_acceptance_report,
+  );
+  const pendingAddressEdit = Boolean(
+    siteAddress.trim() &&
+      siteAddress.trim() !== String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim(),
+  );
   const smartFixBlockedReasons = useMemo(() => {
     const releaseReview = currentPlanMeta.release_review && typeof currentPlanMeta.release_review === "object"
       ? currentPlanMeta.release_review as Record<string, unknown>
@@ -6108,6 +6134,8 @@ function PerformanceAIDashboardView({
         style?: Record<string, string>;
         geometryType?: "polygon" | "polyline" | "rect";
         placed?: boolean;
+        width?: number;
+        depth?: number;
       },
     ) => {
       const catalog = SITE_OBJECT_CATALOG[type];
@@ -6153,8 +6181,11 @@ function PerformanceAIDashboardView({
       const lot = resolveLotBounds();
       const existingCount =
         buildingPlacements.filter((item) => item.type === type).length + 1;
-      const defaults =
-        type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD };
+      const defaults = {
+        ...(type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD }),
+        ...(options?.width ? { w: options.width } : {}),
+        ...(options?.depth ? { d: options.depth } : {}),
+      };
       const defaultHeight = catalog.defaultH ?? 0;
       const autoPlaced = Boolean(options?.placed);
       const autoX =
@@ -6321,6 +6352,94 @@ function PerformanceAIDashboardView({
     });
     setObjectPrompt("");
   }, [handleAddObject, objectOutlineColor, objectPrompt, parsePromptToObjects, setStatusMessage]);
+
+  const handleGuidedObjectCard = useCallback(
+    (key: string) => {
+      const rawValue = guidedObjectDrafts[key] ?? "";
+      const value = parsePositiveNumber(rawValue);
+      const currentLot = resolveLotBounds();
+      const placeNow = siteScaleLocked && Boolean(currentLot.w && currentLot.h);
+      if (key === "office_sf") {
+        const sf = value ?? 25000;
+        const width = Math.max(60, Math.round(Math.sqrt(sf * 1.8)));
+        const depth = Math.max(40, Math.round(sf / width));
+        setBuildingWidth(String(width));
+        setBuildingDepth(String(depth));
+        handleAddObject("office_building", {
+          label: `Office Building ${Math.round(sf).toLocaleString()} SF`,
+          placed: placeNow,
+          style: { program_sf: String(Math.round(sf)) },
+          width,
+          depth,
+        });
+        setStatusMessage(placeNow ? "Office building draft placed for review." : "Office building draft added to Needs placement.");
+        return;
+      }
+      if (key === "parking_spaces") {
+        const spaces = value ?? 96;
+        setParkingCount(String(Math.round(spaces)));
+        handleAddObject("parking", {
+          label: `Parking ${Math.round(spaces)} spaces`,
+          placed: placeNow,
+          style: { requested_spaces: String(Math.round(spaces)) },
+        });
+        setStatusMessage(placeNow ? "Parking layout draft placed for review." : "Parking layout draft added to Needs placement.");
+        return;
+      }
+      if (key === "detention_basin_sf") {
+        const sf = value ?? 12000;
+        const width = Math.max(70, Math.round(Math.sqrt(sf * 1.5)));
+        const depth = Math.max(45, Math.round(sf / width));
+        const previousWidth = buildingWidth;
+        const previousDepth = buildingDepth;
+        setBuildingWidth(String(width));
+        setBuildingDepth(String(depth));
+        handleAddObject("basin", {
+          label: `Detention Basin ${Math.round(sf).toLocaleString()} SF`,
+          placed: placeNow,
+          style: { storage_area_sf: String(Math.round(sf)) },
+          width,
+          depth,
+        });
+        setBuildingWidth(previousWidth);
+        setBuildingDepth(previousDepth);
+        setStatusMessage(placeNow ? "Detention basin draft placed for review." : "Detention basin draft added to Needs placement.");
+        return;
+      }
+      const utilityCards: Record<string, { type: SiteObjectType; label: string; meta: Record<string, unknown> }> = {
+        public_water: { type: "utility_corridor", label: rawValue || "Public water connection", meta: { utilityKind: "public_water" } },
+        public_sanitary: { type: "utility_corridor", label: rawValue || "Public sanitary connection", meta: { utilityKind: "public_sanitary" } },
+        storm_sewer: { type: "utility_corridor", label: rawValue || "Storm sewer connection", meta: { utilityKind: "storm_sewer" } },
+        driveway: { type: "driveway", label: rawValue || "Driveway", meta: { accessKind: "driveway" } },
+        sidewalks: { type: "sidewalk", label: rawValue || "Sidewalks", meta: { routeKind: "sidewalk" } },
+        ada_route: { type: "sidewalk", label: rawValue || "ADA route", meta: { routeKind: "ada_route", review_status: "engineer_review_required" } },
+      };
+      const card = utilityCards[key];
+      if (!card) return;
+      handleAddObject(card.type, {
+        label: card.label,
+        placed: placeNow,
+        geometryType: "polyline",
+        style: card.meta as Record<string, string>,
+      });
+      setBuildingPlacements((prev) =>
+        prev.map((item, index) =>
+          index === prev.length - 1
+            ? {
+                ...item,
+                meta: {
+                  ...(item.meta ?? {}),
+                  ...card.meta,
+                  review_status: "engineer_review_required",
+                },
+              }
+            : item,
+        ),
+      );
+      setStatusMessage(placeNow ? `${card.label} draft placed for review.` : `${card.label} draft added to Needs placement.`);
+    },
+    [buildingDepth, buildingWidth, guidedObjectDrafts, handleAddObject, resolveLotBounds, siteScaleLocked],
+  );
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
@@ -8283,6 +8402,98 @@ function PerformanceAIDashboardView({
     return false;
   };
 
+  const getGeneratePreflightBlockers = useCallback(
+    (target: SystemGenerationTarget) => {
+      const lot = resolveLotBounds();
+      const missingBoundary = !(lot.w && lot.h);
+      const areaAcres = siteAreaAcresFromSize(lot.w, lot.h);
+      const needsAll = target === "full";
+      const needsGrading = needsAll || target === "grading" || target === "drainage";
+      const needsDrainage = needsAll || target === "drainage";
+      const needsUtilities = needsAll || target === "utilities";
+      const needsParking = needsAll || target === "parking" || target === "roads";
+      const hasBasinDraft = buildingPlacements.some((item) => item.type === "basin");
+      const basinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
+      const hasBuildingDraft = buildingPlacements.some((item) =>
+        ["building", "retail_building", "multifamily_building", "industrial_building", "office_building", "pad"].includes(item.type ?? ""),
+      );
+      const buildingPlaced = buildingPlacements.some((item) =>
+        item.placed && ["building", "retail_building", "multifamily_building", "industrial_building", "office_building", "pad"].includes(item.type ?? ""),
+      );
+      const hasOutfallDraft = buildingPlacements.some((item) => item.type === "outfall");
+      const outfallPlaced = buildingPlacements.some((item) => item.type === "outfall" && item.placed);
+      const hasUtilityDraft = buildingPlacements.some((item) =>
+        ["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+        ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || "")),
+      );
+      const utilityPlaced = buildingPlacements.some((item) =>
+        item.placed &&
+        (["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+          ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || ""))),
+      );
+      const hasParkingDraft = buildingPlacements.some((item) => item.type === "parking");
+      const parkingPlaced = buildingPlacements.some((item) => item.type === "parking" && item.placed);
+      const hasAdaDraft = buildingPlacements.some((item) =>
+        item.type === "sidewalk" && String(item.meta?.routeKind || "").includes("ada"),
+      );
+      const adaPlaced = buildingPlacements.some((item) =>
+        item.placed && item.type === "sidewalk" && String(item.meta?.routeKind || "").includes("ada"),
+      );
+      const blockers: Array<{ label: string; action: SidePanelKey }> = [];
+
+      if (missingBoundary) blockers.push({ label: "missing site boundary dimensions", action: "site_existing" });
+      if (!siteScaleLocked) blockers.push({ label: "site boundary exists but is not locked", action: "site_existing" });
+      if (needsGrading && !hasTerrainSource) blockers.push({ label: "missing terrain/source", action: "import_survey" });
+      if (!hasStandardsEvidence) blockers.push({ label: "missing standards", action: "standards" });
+      if (needsAll || target === "roads" || target === "utilities") {
+        if (hasBuildingDraft && !buildingPlaced) {
+          blockers.push({ label: "building exists but is not placed", action: "objects" });
+        } else if (!hasBuildingDraft) {
+          blockers.push({ label: "missing building", action: "objects" });
+        }
+      }
+      if (needsDrainage) {
+        if (hasBasinDraft && !basinPlaced) {
+          blockers.push({ label: "basin exists but is not placed", action: "objects" });
+        } else if (!hasBasinDraft) {
+          blockers.push({ label: "unplaced basin: add a detention basin, then place it on the site", action: "objects" });
+        }
+        if (hasOutfallDraft && !outfallPlaced) {
+          blockers.push({ label: "outfall exists but is not placed", action: "objects" });
+        } else if (!hasOutfallDraft) {
+          blockers.push({ label: "missing outfall", action: "objects" });
+        }
+      }
+      if (needsUtilities) {
+        if (hasUtilityDraft && !utilityPlaced) {
+          blockers.push({ label: "utility connection exists but is not placed", action: "objects" });
+        } else if (!hasUtilityDraft) {
+          blockers.push({ label: "missing utility connection", action: "objects" });
+        }
+      }
+      if (needsParking) {
+        if (hasParkingDraft && !parkingPlaced) {
+          blockers.push({ label: "parking layout exists but is not placed", action: "objects" });
+        } else if (!hasParkingDraft) {
+          blockers.push({ label: "missing parking layout", action: "objects" });
+        }
+      }
+      if (needsAll) {
+        if (hasAdaDraft && !adaPlaced) {
+          blockers.push({ label: "ADA route exists but is not placed", action: "objects" });
+        } else if (!hasAdaDraft) {
+          blockers.push({ label: "missing ADA route", action: "objects" });
+        }
+      }
+      if (areaAcres > SITE_GRADING_HARD_BLOCK_ACRES && needsGrading) {
+        blockers.push({ label: OVERSIZED_SITE_MESSAGE, action: "site_existing" });
+      }
+      return Array.from(new Map(blockers.map((item) => [item.label, item])).values());
+    },
+    [buildingPlacements, hasStandardsEvidence, hasTerrainSource, resolveLotBounds, siteScaleLocked],
+  );
+  const fullGeneratePreflightBlockers = getGeneratePreflightBlockers("full");
+
   const tryHandleInfoIntent = (message: string): boolean => {
     const normalized = message.toLowerCase();
     const placed = buildingPlacements.filter((item) => item.placed);
@@ -8344,6 +8555,62 @@ function PerformanceAIDashboardView({
       appendChatMessage(
         "assistant",
         `Selected object: ${formatPlacement(selected)}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(what changed|what has changed|changes|revision state|revision status)/i.test(normalized)) {
+      const staleSystems = Object.entries(systemStatuses)
+        .filter(([, status]) => status === "stale")
+        .map(([system]) => system);
+      const freshSystems = Object.entries(systemStatuses)
+        .filter(([, status]) => status === "fresh")
+        .map(([system]) => system);
+      const lines = [
+        currentProject?.updated_at ? `Project last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}.` : "Project has no reloadable saved timestamp yet.",
+        `${placedObjects.length} placed object${placedObjects.length === 1 ? "" : "s"} and ${pendingPlacementObjects.length} pending placement object${pendingPlacementObjects.length === 1 ? "" : "s"}.`,
+        staleSystems.length ? `Changed systems needing rerun: ${staleSystems.join(", ")}.` : "No stale systems are marked from object/control edits.",
+        freshSystems.length ? `Current generated systems: ${freshSystems.join(", ")}.` : "No generated systems are marked current yet.",
+        planSheetSet.revisions.length ? `Sheet revisions: ${planSheetSet.revisions.length}.` : "No sheet revision entries recorded yet.",
+      ];
+      appendChatMessage("assistant", lines.join("\n"), "status");
+      return true;
+    }
+
+    if (/(what is blocked|what's blocked|what.*blocked|blocked right now)/i.test(normalized)) {
+      const blockers = uniqueStrings([
+        ...fullGeneratePreflightBlockers.map((item) => item.label),
+        ...pendingPlacementObjects.map((item) => `${item.label} exists but is not placed`),
+        siteScaleLocked && siteInputs?.site_boundary_state === "draft_editable"
+          ? "site locked state contradicts draft boundary source"
+          : "",
+        !siteScaleLocked && siteInputs?.site_boundary_state === "locked_canonical"
+          ? "site unlocked state contradicts locked boundary source"
+          : "",
+        ...previewBlockedReasons,
+      ]);
+      appendChatMessage(
+        "assistant",
+        blockers.length
+          ? `Current blockers:\n${blockers.map((reason) => `- ${reason}`).join("\n")}`
+          : "No current blockers are recorded. Outputs remain review-required.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/(what do i need next|what should i do next|what next|next step|where should i start|what do i do next)/i.test(normalized)) {
+      const firstBlocker = fullGeneratePreflightBlockers[0];
+      const visibleAction = firstBlocker
+        ? `Open ${sidePanelCopy[firstBlocker.action].title} and fix: ${firstBlocker.label}.`
+        : progressTimelineState.next_action || nextSetupAction;
+      if (firstBlocker) {
+        handleOpenSidePanel(firstBlocker.action);
+      }
+      appendChatMessage(
+        "assistant",
+        `${visibleAction} This is the next visible UI action; all outputs remain review-required.`,
         "status",
       );
       return true;
@@ -12504,6 +12771,19 @@ function PerformanceAIDashboardView({
       target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
       options?: { slopeEstimateOverride?: SurveySlopeResponse | null },
     ) => {
+      const preflightBlockers = getGeneratePreflightBlockers(target);
+      if (preflightBlockers.length) {
+        const firstPanel = preflightBlockers[0]?.action ?? "generate";
+        setRightRailCollapsed(false);
+        setActiveSidePanel(firstPanel);
+        appendChatMessage(
+          "assistant",
+          `Generate preflight blocked:\n${preflightBlockers.map((item) => `- ${item.label}`).join("\n")}`,
+          "status",
+        );
+        setStatusMessage(`Generate blocked: ${preflightBlockers[0].label}.`);
+        return;
+      }
       if (!hasSiteBoundary()) {
         askClarification(
           "I need a site boundary before generating systems. What size should the site be?",
@@ -12642,6 +12922,7 @@ function PerformanceAIDashboardView({
       buildPayloadFromOverrides,
       buildingPlacements,
       executePlanAction,
+      getGeneratePreflightBlockers,
       hasSiteBoundary,
       ensureSiteLocked,
       minSlopePct,
@@ -14352,7 +14633,19 @@ function PerformanceAIDashboardView({
   const siteTooLargeForGrading = siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES;
   const missingSite = !(lotBounds.w && lotBounds.h);
   const missingImage = !mapSnapshotPath;
+  const placedObjects = buildingPlacements.filter((item) => item.placed && item.type !== "site");
+  const pendingPlacementObjects = buildingPlacements.filter((item) => !item.placed && item.type !== "site");
+  const hasBasinObject = buildingPlacements.some((item) => item.type === "basin");
   const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
+  const hasUtilityConnectionObject = buildingPlacements.some((item) =>
+    ["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+    ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || "")),
+  );
+  const hasUtilityConnectionPlaced = buildingPlacements.some((item) =>
+    item.placed &&
+    (["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+      ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || ""))),
+  );
   const siteSizeSet = Boolean(parsePositiveNumber(lotWidth) && parsePositiveNumber(lotHeight));
   const gradingSourceSummary = useMemo(() => {
     const hasSurvey = Boolean(siteInputs?.survey_file?.stored_filename || siteInputs?.survey_file?.survey_url);
@@ -14874,10 +15167,10 @@ function PerformanceAIDashboardView({
       blockers.push(OVERSIZED_SITE_MESSAGE);
     }
     if ((target === "grading" || target === "drainage" || target === "storm") && !hasTerrainSource) {
-      blockers.push("Add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
+      blockers.push("missing terrain/source: add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
     }
     if ((target === "drainage" || target === "storm") && !hasBasinPlaced) {
-      blockers.push("Place a basin or outfall target.");
+      blockers.push(hasBasinObject ? "basin exists but is not placed." : "unplaced basin: add a detention basin, then place it on the site.");
     }
     if (target === "roadway" && confirmedObjectCounts.buildings === 0 && confirmedObjectCounts.access === 0) {
       blockers.push("Add at least one building, entrance, driveway, road, or parking object.");
@@ -14887,6 +15180,9 @@ function PerformanceAIDashboardView({
     }
     if ((target === "sanitary" || target === "water") && confirmedObjectCounts.buildings === 0) {
       blockers.push("Add buildings or service/demand targets.");
+    }
+    if ((target === "sanitary" || target === "water" || target === "utilities") && !hasUtilityConnectionPlaced) {
+      blockers.push(hasUtilityConnectionObject ? "utility connection exists but is not placed." : "missing utility connection.");
     }
     if (hasHardSystemBlock && target !== "roadway") {
       blockers.push("Resolve active hard model blockers.");
@@ -15377,6 +15673,9 @@ function PerformanceAIDashboardView({
     if (panel) {
       setRightRailCollapsed(false);
     }
+    if (panel === "chat") {
+      setBottomPanelCollapsed(true);
+    }
     setActiveSidePanel(panel);
     if (!panel) return;
     setActiveWorkspaceMode(workspaceModeByPanel[panel]);
@@ -15581,7 +15880,7 @@ function PerformanceAIDashboardView({
 	      panel: "model",
 	      icon: Box,
 	      status: siteScaleLocked ? panelStatus("model") : "review",
-	      metric: `${placedObjectCount} object${placedObjectCount === 1 ? "" : "s"}`,
+	      metric: `${placedObjects.length} placed / ${pendingPlacementObjects.length} pending`,
 	    },
 	    {
 	      key: "design",
@@ -16965,8 +17264,12 @@ function PerformanceAIDashboardView({
                 </span>
                 <span className="flex items-center justify-between gap-2">
                   <span>Sync</span>
-                  <span className={currentProject?.project_id ? "text-slate-900" : "text-amber-700"}>
-                    {currentProject?.project_id ? "Saved" : "Draft"}
+                  <span className={currentProject?.project_id && !effectiveDemoWorkspaceEnabled ? "text-slate-900" : "text-amber-700"}>
+                    {effectiveDemoWorkspaceEnabled
+                      ? "Local demo"
+                      : currentProject?.project_id
+                        ? "Saved reloadable"
+                        : "Unsaved draft"}
                   </span>
                 </span>
               </div>
@@ -17285,7 +17588,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-              className="civora-motion-right-panel fixed inset-x-0 bottom-0 top-auto z-50 order-3 flex max-h-[82svh] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/96 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-4 sm:max-h-[78svh] sm:rounded-xl lg:bottom-4 lg:left-auto lg:right-4 lg:top-20 lg:h-auto lg:max-h-none lg:w-[388px] lg:rounded-xl lg:shadow-[var(--civora-shadow-panel)]"
+            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-50 order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/96 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-20 lg:h-auto lg:max-h-none lg:w-[388px] lg:rounded-xl lg:shadow-[var(--civora-shadow-panel)]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
@@ -18118,6 +18421,62 @@ function PerformanceAIDashboardView({
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-4">
                     <WorkflowFocusPanel {...workflowFocusPanels.setup} />
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-address-truth">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / location</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {pendingAddressEdit ? siteAddress.trim() : siteInputs?.address || siteAddress.trim() || "No address applied"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {pendingAddressEdit
+                              ? "Address edited but not applied to project evidence yet."
+                              : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                              ? `Geocode context only: ${Number(siteInputs.geocode.lat).toFixed(5)}, ${Number(siteInputs.geocode.lng).toFixed(5)}`
+                              : siteAddress.trim()
+                                ? "Address typed but not applied to project evidence yet."
+                                : "Start from address or blank site before locking the boundary."}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          pendingAddressEdit
+                            ? "bg-amber-50 text-amber-700"
+                            : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                            ? "bg-emerald-50 text-emerald-700"
+                            : siteAddress.trim()
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {pendingAddressEdit
+                            ? "Needs apply"
+                            : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                            ? "Applied"
+                            : siteAddress.trim()
+                              ? "Needs apply"
+                              : "Not set"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            siteAddressInputRef.current?.focus();
+                            setStatusMessage("Enter an address, choose a suggestion if one appears, then apply the address.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white"
+                        >
+                          Edit address
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void saveSiteAddress()}
+                          disabled={!siteAddress.trim()}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Apply address
+                        </button>
+                      </div>
+                    </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <button
                         type="button"
@@ -18146,7 +18505,7 @@ function PerformanceAIDashboardView({
                         </span>
                       </button>
                     </div>
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" open>
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Detailed setup controls and evidence
                       </summary>
@@ -20057,6 +20416,37 @@ function PerformanceAIDashboardView({
                       <p className="mt-1 text-sm text-slate-600">
                         Run one discipline or regenerate the whole coordinated model.
                       </p>
+                      <div className={`mt-3 rounded-xl border p-3 ${
+                        fullGeneratePreflightBlockers.length
+                          ? "border-red-200 bg-red-50"
+                          : "border-emerald-200 bg-emerald-50"
+                      }`} data-testid="generate-preflight-blockers">
+                        <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                          fullGeneratePreflightBlockers.length ? "text-red-600" : "text-emerald-700"
+                        }`}>
+                          Generate preflight
+                        </p>
+                        {fullGeneratePreflightBlockers.length ? (
+                          <div className="mt-2 space-y-2">
+                            {fullGeneratePreflightBlockers.map((item) => (
+                              <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs">
+                                <span className="font-semibold text-red-800">{item.label}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSidePanel(item.action)}
+                                  className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-red-700 hover:bg-red-100"
+                                >
+                                  Fix
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-xs font-semibold text-emerald-800">
+                            Setup, placed objects, terrain/source, standards, outfall, utilities, parking, and ADA route are ready for a review-required run.
+                          </p>
+                        )}
+                      </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
                           const blocked = row.blockers.length > 0;
@@ -22052,6 +22442,95 @@ function PerformanceAIDashboardView({
                       </div>
                     </div>
 
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="guided-scenario-cards">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Guided scenario cards</p>
+                          <p className="mt-1 text-sm text-slate-600">Cards create review-required draft objects. If the site is locked, Civora places a first-pass draft; otherwise they land in Needs placement.</p>
+                        </div>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          {placedObjects.length} placed / {pendingPlacementObjects.length} pending
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {[
+                          ["office_sf", "Office building SF", "number", "office building"],
+                          ["parking_spaces", "Parking spaces", "number", "parking layout"],
+                          ["detention_basin_sf", "Detention basin SF", "number", "basin"],
+                          ["public_water", "Public water", "text", "utility connection"],
+                          ["public_sanitary", "Public sanitary", "text", "utility connection"],
+                          ["storm_sewer", "Storm sewer", "text", "utility connection"],
+                          ["driveway", "Driveway", "text", "access"],
+                          ["sidewalks", "Sidewalks", "text", "pedestrian route"],
+                          ["ada_route", "ADA route", "text", "accessible route"],
+                        ].map(([key, label, inputType, hint]) => (
+                          <div key={key} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr,1.1fr,auto] sm:items-end">
+                            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              {label}
+                              <input
+                                type={inputType}
+                                value={guidedObjectDrafts[key] ?? ""}
+                                onChange={(event) =>
+                                  setGuidedObjectDrafts((prev) => ({
+                                    ...prev,
+                                    [key]: event.target.value,
+                                  }))
+                                }
+                                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                            <p className="text-xs font-medium text-slate-500">
+                              Creates {hint}; {siteScaleLocked ? "placed as a draft for review" : "pending with one Place button"}.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleGuidedObjectCard(key)}
+                              className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="needs-placement-tray">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Needs placement</p>
+                          <p className="mt-1 text-sm font-semibold text-amber-950">
+                            {pendingPlacementObjects.length
+                              ? `${pendingPlacementObjects.length} draft object${pendingPlacementObjects.length === 1 ? "" : "s"} must be placed before Generate can rely on them.`
+                              : "No pending placement objects."}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                          Pending {pendingPlacementObjects.length}
+                        </span>
+                      </div>
+                      {pendingPlacementObjects.length ? (
+                        <div className="mt-3 space-y-2">
+                          {pendingPlacementObjects.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm">
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-slate-900">{item.label}</p>
+                                <p className="text-xs font-medium text-slate-500">
+                                  {SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object"} · {item.w} ft x {item.d} ft
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectPlacementTarget(item.id)}
+                                className="shrink-0 rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                              >
+                                Place
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Shape tools</p>
                       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -22142,7 +22621,7 @@ function PerformanceAIDashboardView({
                           Canvas Objects
                         </p>
                         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                          {buildingPlacements.length}
+                          {placedObjects.length} placed / {pendingPlacementObjects.length} pending
                         </span>
                       </div>
                       <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
@@ -22870,6 +23349,31 @@ function PerformanceAIDashboardView({
                     ) : null}
                     {sidePanelForRender === "deliverables" ? (
                       <>
+                        {!backendResult || fullGeneratePreflightBlockers.length ? (
+                          <div className="rounded-2xl border border-red-200 bg-red-50 p-4" data-testid="deliverables-blocked-explanation">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-600">Review package blocked</p>
+                            <p className="mt-1 text-sm font-semibold text-red-950">
+                              Review package blocked because {(!backendResult && !fullGeneratePreflightBlockers.length)
+                                ? "no system run evidence has been generated yet"
+                                : fullGeneratePreflightBlockers.map((item) => item.label).join("; ")}.
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {(fullGeneratePreflightBlockers.length
+                                ? fullGeneratePreflightBlockers.slice(0, 4)
+                                : [{ label: "run Generate after setup is ready", action: "generate" as SidePanelKey }]
+                              ).map((item) => (
+                                <button
+                                  key={item.label}
+                                  type="button"
+                                  onClick={() => handleOpenSidePanel(item.action)}
+                                  className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-700 hover:bg-red-100"
+                                >
+                                  Fix: {item.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         <PlanSheetEditor
                           sheetSet={{ ...planSheetSet, blockers: getPlanSheetBlockers() }}
                           onUpdateTitleBlock={handlePlanSheetTitleBlockUpdate}
