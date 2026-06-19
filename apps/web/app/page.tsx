@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import {
   AlertCircle,
   Box,
-  ClipboardCheck,
   CheckCircle2,
   Circle,
   Crosshair,
@@ -461,7 +460,7 @@ type SidebarNavItem = {
   icon: typeof Gauge;
   status: SidebarStatus;
 };
-type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "review" | "deliver";
+type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "deliver";
 type PrimaryWorkflowItem = {
   key: PrimaryWorkflowKey;
   label: string;
@@ -8318,8 +8317,6 @@ function PerformanceAIDashboardView({
     ],
   );
   const fullGeneratePreflightBlockers = getGeneratePreflightBlockers("full");
-  const fullGenerateHardBlockers = fullGeneratePreflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
-  const fullGenerateProofGaps = fullGeneratePreflightBlockers.filter((item) => !isHardGenerateBlocker(item.label));
   const canonicalWorkspaceBlockers = useMemo(
     () =>
       uniqueStrings([
@@ -13060,16 +13057,12 @@ function PerformanceAIDashboardView({
       const preflightBlockers = getGeneratePreflightBlockers(target);
       const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
       if (hardPreflightBlockers.length) {
-        const firstPanel = hardPreflightBlockers[0]?.action ?? "generate";
-        setRightRailCollapsed(false);
-        setActiveSidePanel(firstPanel);
         appendChatMessage(
           "assistant",
-          `Draft generation needs the site first:\n${hardPreflightBlockers.map((item) => `- ${item.label}`).join("\n")}`,
+          `I’ll run what Civora can draft now. Missing inputs will stay visible as notes:\n${hardPreflightBlockers.map((item) => `- ${item.label}`).join("\n")}`,
           "status",
         );
-        setStatusMessage(`Draft generation needs site setup: ${hardPreflightBlockers[0].label}.`);
-        return;
+        setStatusMessage("Running draft generation with missing inputs tracked as notes.");
       }
       if (!hasSiteBoundary()) {
         askClarification(
@@ -16090,7 +16083,6 @@ function PerformanceAIDashboardView({
     if (mode === "setup") return siteScaleLocked ? "ok" : "review";
     if (mode === "canvas") return panelStatus("model");
     if (mode === "layers") return panelStatus("layers");
-    if (mode === "review") return hasHardSystemBlock ? "block" : issues.length || analysisIssues.length ? "review" : panelStatus("reports");
     if (mode === "deliver") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "block" : panelStatus("deliverables");
     if (mode === "data") return panelStatus("data");
     if (mode === "settings") return panelStatus("settings");
@@ -16101,7 +16093,6 @@ function PerformanceAIDashboardView({
 	    { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
 	    { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
     { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
-    { label: "Review", caption: "Gates and health", target: "review", icon: ClipboardCheck, status: sidebarModeStatus("review") },
     { label: "Deliver", caption: "Sheets and exports", target: "deliver", icon: FileText, status: sidebarModeStatus("deliver") },
     { label: "Data", caption: "Survey and sources", target: "data", icon: MapPinned, status: sidebarModeStatus("data") },
 	    { label: "Settings", caption: "Workspace defaults", target: "settings", icon: Settings, status: sidebarModeStatus("settings") },
@@ -16128,8 +16119,7 @@ function PerformanceAIDashboardView({
 	      "system_landscape",
 	    ],
 	    analyze: ["analysis", "quantities", "jobs", "catalogs"],
-	    review: ["reports", "dashboard", "templates", "libraries"],
-	    deliver: ["deliverables", "settings", "chat"],
+    deliver: ["deliverables", "settings", "chat"],
 	  };
 	  const activePrimaryWorkflowKey =
 	    (Object.entries(primaryWorkflowGroups).find(([, panels]) =>
@@ -16139,9 +16129,7 @@ function PerformanceAIDashboardView({
 	      ? "setup"
 	      : activeWorkspaceMode === "canvas" || activeWorkspaceMode === "layers"
 	        ? "draw"
-	        : activeWorkspaceMode === "review"
-	          ? "review"
-	          : activeWorkspaceMode === "deliver"
+        : activeWorkspaceMode === "deliver"
 	            ? "deliver"
 	            : activeWorkspaceMode === "data"
 	              ? "setup"
@@ -16193,15 +16181,6 @@ function PerformanceAIDashboardView({
 	      metric: `${issues.length + analysisIssues.length} issue${issues.length + analysisIssues.length === 1 ? "" : "s"}`,
 	    },
 	    {
-	      key: "review",
-	      label: "Review",
-	      caption: "Evidence and gates",
-	      panel: "reports",
-	      icon: ClipboardCheck,
-	      status: sidebarModeStatus("review"),
-	      metric: String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "Blocked" : "Review required",
-	    },
-	    {
 	      key: "deliver",
 	      label: "Deliver",
 	      caption: "Sheets and exports",
@@ -16240,12 +16219,6 @@ function PerformanceAIDashboardView({
 	      { label: "Quantities", panel: "quantities", detail: `${quantityRows.length} takeoff row${quantityRows.length === 1 ? "" : "s"}`, status: panelStatus("quantities") },
 	      { label: "Async Jobs", panel: "jobs", detail: visibleActiveJob ? `${visibleActiveJob.status}` : "Queue history", status: panelStatus("jobs") },
 	      { label: "Catalogs", panel: "catalogs", detail: "Parts, pipes, structures", status: panelStatus("catalogs") },
-	    ],
-	    review: [
-	      { label: "Review Package", panel: "reports", detail: previewBlockedReasons[0] || "Evidence and blockers", status: panelStatus("reports") },
-	      { label: "Dashboard", panel: "dashboard", detail: "Project health and timeline", status: panelStatus("dashboard") },
-	      { label: "Templates", panel: "templates", detail: customerTemplates ? "Firm template active" : "Company standards optional", status: panelStatus("templates") },
-	      { label: "Libraries", panel: "libraries", detail: "Reusable review assets", status: panelStatus("libraries") },
 	    ],
 	    deliver: [
 	      { label: "Plan Sheets", panel: "deliverables", detail: "Sheet editor, report, DXF", status: panelStatus("deliverables") },
@@ -20312,80 +20285,46 @@ function PerformanceAIDashboardView({
                       <p className="mt-1 text-sm text-slate-600">
                         Start a review draft from the locked site. Missing proof stays visible for review and package readiness.
                       </p>
-                      <div className={`mt-3 rounded-xl border p-3 ${
-                        fullGenerateHardBlockers.length
-                          ? "border-red-200 bg-red-50"
-                          : fullGenerateProofGaps.length
-                            ? "border-amber-200 bg-amber-50"
-                            : "border-emerald-200 bg-emerald-50"
-                      }`} data-testid="generate-preflight-blockers">
-                        <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                          fullGenerateHardBlockers.length ? "text-red-600" : fullGenerateProofGaps.length ? "text-amber-700" : "text-emerald-700"
-                        }`}>
-                          {fullGenerateHardBlockers.length ? "Site needed" : "Ready to draft"}
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="generate-preflight-blockers">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Draft generation
                         </p>
-                        {fullGenerateHardBlockers.length ? (
-                          <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs">
-                            <span className="font-semibold text-red-800">{fullGenerateHardBlockers[0]?.label || "Lock the site before drafting."}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenSidePanel(fullGenerateHardBlockers[0]?.action ?? "site_existing")}
-                              className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-red-700 hover:bg-red-100"
-                            >
-                              Open setup
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/70 bg-white px-3 py-2 text-xs">
-                            <span className={`font-semibold ${fullGenerateProofGaps.length ? "text-amber-800" : "text-emerald-800"}`}>
-                              Run a review draft now. {fullGenerateProofGaps.length ? "Extra proof can be added later." : "Setup looks ready."}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenSidePanel("chat")}
-                              className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-                            >
-                              Ask why
-                            </button>
-                          </div>
-                        )}
+                        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/70 bg-white px-3 py-2 text-xs">
+                          <span className="font-semibold text-slate-700">
+                            Run the parts you need. Missing inputs stay as notes instead of stopping the whole workspace.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSidePanel("chat")}
+                            className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+                          >
+                            Ask
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
-                          const hardBlockers = row.blockers.filter(isHardGenerateBlocker);
-                          const proofGaps = row.blockers.filter((item) => !isHardGenerateBlocker(item));
-                          const blocked = hardBlockers.length > 0;
-                          const statusLabel = blocked
-                            ? hardBlockers[0]
-                            : row.status === "fresh"
+                          const statusLabel = row.status === "fresh"
                               ? "Run complete / current"
                               : busy || visibleActiveJob
                                 ? "Queue or wait for current run"
-                                : proofGaps.length
-                                  ? `Draft can run; proof gap: ${proofGaps[0]}`
+                                : row.blockers.length
+                                  ? `Runs what it can; note: ${row.blockers[0]}`
                                   : "Ready to run";
                           return (
                             <button
                               key={row.key}
                               type="button"
                               data-testid={`generate-${row.key}`}
-                              onClick={() => blocked ? handleOpenSidePanel(row.panel) : handleGenerateSystem(row.runTarget)}
-                              title={blocked ? `Blocked: ${hardBlockers.join("; ")}` : proofGaps.length ? `Run ${row.label}; proof gaps remain: ${proofGaps.join("; ")}` : `Run ${row.label}`}
-                              className={`rounded-xl border px-3 py-3 text-left transition ${
-                                blocked
-                                  ? "border-red-100 bg-red-50 hover:border-red-200"
-                                  : "border-slate-200 bg-white hover:border-slate-950 hover:bg-slate-50"
-                              }`}
+                              onClick={() => handleGenerateSystem(row.runTarget)}
+                              title={row.blockers.length ? `Run ${row.label}; missing items stay as notes: ${row.blockers.join("; ")}` : `Run ${row.label}`}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-950 hover:bg-slate-50"
                             >
-                              <span className={`block text-xs font-semibold uppercase tracking-[0.14em] ${
-                                blocked ? "text-red-700" : "text-slate-900"
-                              }`}>
+                              <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-900">
                                 {row.label}
                               </span>
-                              <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                blocked ? "text-red-500" : proofGaps.length ? "text-amber-600" : "text-slate-400"
-                              }`}>
-                                {blocked ? "Blocked" : proofGaps.length ? "Proof gaps" : row.status.replace("_", " ")}
+                              <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${row.blockers.length ? "text-amber-600" : "text-slate-400"}`}>
+                                {row.blockers.length ? "Notes" : row.status.replace("_", " ")}
                               </span>
                               <span className="mt-2 block text-[11px] leading-4 text-slate-500">
                                 {statusLabel}
@@ -20396,30 +20335,15 @@ function PerformanceAIDashboardView({
                         <button
                           type="button"
                           onClick={() => {
-                            if (fullGenerateHardBlockers.length) {
-                              setStatusMessage(`Draft generation needs site setup: ${fullGenerateHardBlockers[0]?.label}.`);
-                              setRightRailCollapsed(false);
-                              handleOpenSidePanel("generate");
-                              appendChatMessage(
-                                "assistant",
-                                `Draft generation needs the site first:\n${fullGenerateHardBlockers.map((item) => `- ${item.label}`).join("\n")}`,
-                                "status",
-                              );
-                              return;
-                            }
                             void handleGenerateSystem("full");
                           }}
-                          className={`col-span-2 rounded-xl border px-3 py-3 text-left transition ${
-                            fullGenerateHardBlockers.length
-                              ? "border-red-200 bg-red-50 text-red-800 hover:bg-red-100"
-                              : "border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
-                          }`}
+                          className="col-span-2 rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-white transition hover:bg-slate-800"
                         >
                           <span className="block text-xs font-semibold uppercase tracking-[0.14em]">
-                            {fullGenerateHardBlockers.length ? "Lock Site Before Draft" : "Run Draft Generation"}
+                            Run Draft Generation
                           </span>
-                          <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${fullGenerateHardBlockers.length ? "text-red-600" : "text-white/65"}`}>
-                            {fullGenerateHardBlockers.length ? fullGenerateHardBlockers[0]?.label || "Site setup required" : "Runs what it can; proof gaps stay visible"}
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/65">
+                            Runs what it can; missing inputs stay as notes
                           </span>
                         </button>
                       </div>
@@ -21790,8 +21714,8 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button type="button" onClick={handleExportDxf} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">DXF</button>
-                        <button type="button" onClick={handleExportReport} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">Report</button>
+                        <button type="button" onClick={handleExportDxf} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">DXF</button>
+                        <button type="button" onClick={handleExportReport} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Report</button>
                       </div>
                     </div>
                   </div>
@@ -23360,43 +23284,11 @@ function PerformanceAIDashboardView({
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                          <button type="button" onClick={handleExportDxf} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">Export DXF</button>
-                          <button type="button" onClick={handleExportReport} disabled={Boolean(getExportBlockReason())} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400">Export Report</button>
+                          <button type="button" onClick={handleExportDxf} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export DXF</button>
+                          <button type="button" onClick={handleExportReport} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export Report</button>
                         </div>
                       </>
                     ) : null}
-                    {sortedProjects.length ? (
-                      sortedProjects.map((projectSummary) => (
-                        <div
-                          key={projectSummary.project_id}
-                          className="rounded-2xl border border-slate-200 bg-white p-4"
-                        >
-                          <p className="text-sm font-semibold text-slate-900">
-                            {projectSummary.name || "Untitled Project"}
-                          </p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.12em] text-slate-500">
-                            {projectSummary.description ||
-                              (projectSummary.updated_at
-                                ? `Updated ${new Date(projectSummary.updated_at * 1000).toLocaleDateString()}`
-                                : "No description")}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await loadProject(projectSummary.project_id);
-                              await handlePreviewPlan();
-                              setPreviewFullscreenOpen(true);
-                              setActiveSidePanel(null);
-                            }}
-                            className="mt-3 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                          >
-                            View Docs
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-slate-500">No docs available yet.</p>
-                    )}
                   </div>
                 ) : null}
 
@@ -23437,20 +23329,6 @@ function PerformanceAIDashboardView({
                 ) : null}
               </div>
             </aside>
-          ) : null}
-          {rightRailCollapsed ? (
-            <button
-              type="button"
-              onClick={() => {
-                setRightRailCollapsed(false);
-                setActiveSidePanel((panel) => panel ?? "dashboard");
-              }}
-              className="fixed right-3 top-24 z-[60] rounded-l-xl border border-r-0 border-slate-200 bg-white/95 px-3 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.6)] backdrop-blur transition hover:bg-slate-50 lg:top-28"
-              aria-label="Reopen reviewer drawer"
-              data-testid="reopen-reviewer-drawer"
-            >
-              Review
-            </button>
           ) : null}
           <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
 	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
@@ -23562,29 +23440,10 @@ function PerformanceAIDashboardView({
 	                            </button>
 	                          ))}
 	                        </div>
-	                        <button
-	                          type="button"
-	                          onClick={() => setRightRailCollapsed((value) => !value)}
-	                          title={rightRailCollapsed ? "Show reviewer drawer" : "Hide reviewer drawer"}
-	                          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-50"
-	                        >
-	                          {rightRailCollapsed ? "Show review" : "Hide review"}
-	                        </button>
 	                      </div>
 	                    </div>
 	                  </div>
 	                </div>
-	                {workspaceChromeMinimized ? (
-	                  <button
-	                    type="button"
-	                    onClick={() => setWorkspaceChromeMinimized(false)}
-	                    className={`absolute left-1/2 top-3 z-50 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 shadow-[0_18px_50px_-28px_rgba(15,23,42,0.65)] backdrop-blur transition hover:bg-slate-50 lg:left-[calc(272px+12rem)] lg:translate-x-0`}
-	                    data-testid="reopen-civora-workspace"
-	                    aria-label="Reopen Civora workspace controls"
-	                  >
-	                    Workspace
-	                  </button>
-	                ) : null}
 	                {layerManagerOpen ? (
 	                  <div
 	                    data-testid="floating-layer-manager"
@@ -23883,6 +23742,7 @@ function PerformanceAIDashboardView({
                   </div>
                 </div>
               </div>
+              {false ? (
               <div
                 data-testid="bottom-review-panel"
                 className={`fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] left-3 right-3 z-40 overflow-hidden rounded-xl border border-slate-200 bg-white/94 shadow-[0_24px_80px_-46px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:bottom-4 lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
@@ -24076,6 +23936,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
               </div>
+              ) : null}
               <div className="hidden">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">

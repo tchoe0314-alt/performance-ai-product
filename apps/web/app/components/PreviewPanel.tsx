@@ -5002,7 +5002,7 @@ export default function PreviewPanel({
           <button
             type="button"
             onClick={onExportDxf}
-            disabled={busy || Boolean(exportBlockReason)}
+            disabled={busy}
             title={exportBlockReason || "Download a DXF review export"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -5012,7 +5012,7 @@ export default function PreviewPanel({
           <button
             type="button"
             onClick={onExportReport}
-            disabled={busy || Boolean(exportBlockReason)}
+            disabled={busy}
             title={exportBlockReason || "Download an engineer-review package report"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -5021,7 +5021,7 @@ export default function PreviewPanel({
           </button>
           {exportBlockReason ? (
             <p className="w-full text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700">
-              Export blocked: {exportBlockReason}
+              Export note: {exportBlockReason}
             </p>
           ) : null}
         </div>
@@ -5368,11 +5368,11 @@ export default function PreviewPanel({
                     Full
                   </button>
                 ) : null}
-                <button type="button" aria-label="Export DXF" onClick={onExportDxf} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download a DXF review export"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" aria-label="Export DXF" onClick={onExportDxf} disabled={busy} title={exportBlockReason || "Download a DXF review export"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                   <Download className="h-4 w-4" />
                   DXF
                 </button>
-                <button type="button" aria-label="Export Report" onClick={onExportReport} disabled={busy || Boolean(exportBlockReason)} title={exportBlockReason || "Download an engineer-review package report"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" aria-label="Export Report" onClick={onExportReport} disabled={busy} title={exportBlockReason || "Download an engineer-review package report"} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                   <FileText className="h-4 w-4" />
                   Report
                 </button>
@@ -5428,7 +5428,7 @@ export default function PreviewPanel({
               ) : null}
               {exportBlockReason ? (
                 <span className="ml-auto text-amber-700">
-                  Export blocked: {exportBlockReason}
+                  Export note: {exportBlockReason}
                 </span>
               ) : null}
             </div>

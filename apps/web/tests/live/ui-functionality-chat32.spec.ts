@@ -17,13 +17,12 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(page.getByRole("button", { name: "Notifications unavailable" })).toBeDisabled();
 
     const canvas = page.getByTestId("workspace-canvas-shell");
-    await expect(canvas.getByRole("button", { name: "Export DXF" })).toBeDisabled();
-    await expect(canvas.getByRole("button", { name: "Export Report" })).toBeDisabled();
-    await expect(canvas).toContainText("Export blocked: authenticate with a backend session before exporting review packages");
+    await expect(canvas.getByRole("button", { name: "Export DXF" })).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "Export Report" })).toBeEnabled();
     const initialObjectOverlayCount = await page.locator("[data-object-overlay]").count();
     expect(initialObjectOverlayCount).toBeGreaterThan(0);
 
-    await page.getByTestId("reopen-civora-workspace").click();
+    await page.locator("header").getByRole("button", { name: "Workspace" }).click();
     await expect(canvas.getByTestId("preview-quality-high")).toBeVisible();
     await canvas.getByTestId("preview-quality-high").click();
     await expect(canvas).toContainText("High Quality");
@@ -79,7 +78,7 @@ test.describe("Chat 32 UI functionality QA", () => {
     await openDemoWorkspace(page);
 
     await expect(page.getByTestId("floating-command-bar")).toBeVisible();
-    await expect(page.getByTestId("bottom-review-panel")).toBeVisible();
+    await expect(page.getByTestId("bottom-review-panel")).toHaveCount(0);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
