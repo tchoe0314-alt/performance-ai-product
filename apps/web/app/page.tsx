@@ -497,6 +497,7 @@ type ReviewTableRow = {
   updated: string;
   action: string;
   panel: SidePanelKey;
+  issueIndex?: number;
 };
 type WorkflowRailCard = {
   title: string;
@@ -12385,8 +12386,8 @@ function PerformanceAIDashboardView({
       forcedBasins?: Array<Record<string, unknown>>;
       connectOrphans?: boolean;
       allowSlopeAdjust?: boolean;
-    }) => {
-      if (!ensureSiteLocked("drainage")) return;
+    }): Promise<boolean> => {
+      if (!ensureSiteLocked("drainage")) return false;
       const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null, placementsOverride);
       const omitField = { source: "omit", value: null } as const;
       const nextManualFields = {
@@ -12463,10 +12464,12 @@ function PerformanceAIDashboardView({
             "status",
           );
           setStatusMessage(`Drainage autofix queued as ${jobId}.`);
+          return true;
         } catch (error) {
           const message = error instanceof Error ? error.message : "Drainage autofix failed.";
           appendChatMessage("assistant", message, "status");
           setStatusMessage(message);
+          return false;
         }
       } else {
         await executePlanAction({
@@ -12476,6 +12479,7 @@ function PerformanceAIDashboardView({
         });
       }
       setSystemStatuses((prev) => ({ ...prev, drainage: "fresh" }));
+      return true;
     },
     [
       buildPayloadFromOverrides,
@@ -12738,8 +12742,10 @@ function PerformanceAIDashboardView({
           ts: Date.now(),
         });
         setFocusObjectId(inletPlacement.id);
-        await runDrainageAutofix({ placementsOverride: [...buildingPlacements, inletPlacement], forcedInlets: nextForced });
-        setStatusMessage("Applied inlet placement. Drainage regenerated.");
+        const queued = await runDrainageAutofix({ placementsOverride: [...buildingPlacements, inletPlacement], forcedInlets: nextForced });
+        if (queued) {
+          setStatusMessage("Applied inlet placement. Drainage regenerated.");
+        }
         return;
       }
 
@@ -12749,8 +12755,10 @@ function PerformanceAIDashboardView({
           return;
         }
         setDrainageConnectOrphans(true);
-        await runDrainageAutofix({ connectOrphans: true });
-        setStatusMessage("Applied orphan inlet connection. Drainage regenerated.");
+        const queued = await runDrainageAutofix({ connectOrphans: true });
+        if (queued) {
+          setStatusMessage("Applied orphan inlet connection. Drainage regenerated.");
+        }
         return;
       }
 
@@ -12760,8 +12768,10 @@ function PerformanceAIDashboardView({
           return;
         }
         setDrainageAllowSlopeAdjust(true);
-        await runDrainageAutofix({ allowSlopeAdjust: true });
-        setStatusMessage("Applied slope adjustment attempt. Drainage regenerated.");
+        const queued = await runDrainageAutofix({ allowSlopeAdjust: true });
+        if (queued) {
+          setStatusMessage("Applied slope adjustment attempt. Drainage regenerated.");
+        }
         return;
       }
 
@@ -12822,11 +12832,13 @@ function PerformanceAIDashboardView({
             generated: placement.generated,
             systemDependencies: placement.systemDependencies,
           }));
-        await runDrainageAutofix({
+        const queued = await runDrainageAutofix({
           placementsOverride: nextPlacements,
           forcedBasins,
         });
-        setStatusMessage("Applied basin placement. Drainage regenerated.");
+        if (queued) {
+          setStatusMessage("Applied basin placement. Drainage regenerated.");
+        }
         return;
       }
     },
@@ -16353,9 +16365,44 @@ function PerformanceAIDashboardView({
       panel: "reports",
     },
   ];
+  const prioritizedIssueEntries = (() => {
+    const picked = new Set<number>();
+    const seenActions = new Set<string>();
+    const entries: Array<{ issue: Issue; index: number }> = [];
+    issues.forEach((issue, index) => {
+      const applyLabel = drainageIssueApplyLabel(issue);
+      if (!applyLabel || seenActions.has(applyLabel)) return;
+      seenActions.add(applyLabel);
+      picked.add(index);
+      entries.push({ issue, index });
+    });
+    issues.forEach((issue, index) => {
+      if (picked.has(index)) return;
+      entries.push({ issue, index });
+    });
+    return entries;
+  })();
   const issueRows: ReviewTableRow[] = (
-    bottomBlockerItems.length
-      ? bottomBlockerItems.slice(0, 6).map((item, index) => ({
+    issues.length
+      ? prioritizedIssueEntries.slice(0, 6).map(({ issue, index }, rowIndex) => {
+          const message = typeof issue.message === "string" ? issue.message : JSON.stringify(issue.message ?? "Review issue");
+          const applyLabel = drainageIssueApplyLabel(issue);
+          const isBlockedIssue = issue.severity === "error";
+          return {
+            id: `ISS-${rowIndex + 1}`,
+            name: message,
+            source: String(issue.context?.system ?? issue.context?.discipline ?? "QA / blocker"),
+            status: isBlockedIssue ? "Blocked" : "Open issues",
+            tone: isBlockedIssue ? "block" : "review",
+            assigned: "Project team",
+            updated: "Current session",
+            action: applyLabel ?? "Open issues",
+            panel: "analysis" as const,
+            issueIndex: index,
+          };
+        })
+      : bottomBlockerItems.length
+        ? bottomBlockerItems.slice(0, 6).map((item, index) => ({
           id: `ISS-${index + 1}`,
           name: item,
           source: "QA / blocker",
@@ -16366,7 +16413,7 @@ function PerformanceAIDashboardView({
           action: "Open issues",
           panel: "analysis" as const,
         }))
-      : [
+        : [
           {
             id: "ISS-0",
             name: sidebarHasTruthEvidence
@@ -18969,10 +19016,7 @@ function PerformanceAIDashboardView({
                                           top: `${Math.max(0, Math.min(100, 100 - (y1 / height) * 100))}%`,
                                           width: `${Math.max(2, Math.min(80, ((x1 - x0) / width) * 100))}%`,
                                           height: `${Math.max(2, Math.min(20, ((y1 - y0) / height) * 100))}%`,
-                                          zIndex:
-                                            selectedPlanPdfElement?.element_id === element.element_id
-                                              ? 100
-                                              : 20 + index,
+                                          zIndex: 20 + index,
                                         }}
                                       >
                                         <span className="sr-only">{element.text}</span>
@@ -19100,12 +19144,13 @@ function PerformanceAIDashboardView({
                                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Extracted Elements</p>
                                   <span className="text-[11px] font-semibold text-slate-400">{planPdfElements.length}</span>
                                 </div>
-                                <div className="mt-2 max-h-48 space-y-1 overflow-auto pr-1">
+                                <div className="mt-2 max-h-48 space-y-1 overflow-auto pr-1" data-testid="plan-pdf-extracted-elements">
                                   {planPdfElements.length ? (
                                     planPdfElements.slice(0, 80).map((element) => (
                                       <button
                                         key={element.element_id}
                                         type="button"
+                                        aria-label={`Select extracted PDF list element ${element.text || element.type || "PDF element"}`}
                                         onClick={() => setSelectedPlanPdfElementId(element.element_id)}
                                         className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
                                           selectedPlanPdfElement?.element_id === element.element_id
@@ -23257,7 +23302,7 @@ function PerformanceAIDashboardView({
 	                    </button>
 	                  </div>
 	                ) : null}
-	                {!selectedBuilding && !layerManagerOpen ? (
+	                {!selectedBuilding && !layerManagerOpen && activePrimaryWorkflowKey !== "draw" ? (
 	                  <div className="absolute left-3 top-[9.75rem] z-40 hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/90 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]">
 	                    <div className="flex items-start justify-between gap-3">
 	                      <div className="min-w-0">
@@ -23573,12 +23618,24 @@ function PerformanceAIDashboardView({
                     </div>
                     {bottomPanelSize !== "tall" ? (
                       <div className="grid min-w-0 gap-2 rounded-lg border border-slate-200 bg-white p-2 sm:grid-cols-2 xl:grid-cols-3">
-                        {activeBottomReviewRows.slice(0, bottomPanelSize === "compact" ? 3 : 6).map((row) => (
-                          <button
+                        {activeBottomReviewRows.slice(0, bottomPanelSize === "compact" ? 3 : 6).map((row) => {
+                          const rowIssue =
+                            typeof row.issueIndex === "number" ? issues[row.issueIndex] : null;
+                          const rowApplyLabel = rowIssue ? drainageIssueApplyLabel(rowIssue) : null;
+                          const rowCanApply = rowIssue ? canApplyDrainageIssue(rowIssue) : false;
+                          return (
+                          <div
                             key={`${activeBottomPanelTab}-card-${row.id}`}
-                            type="button"
                             onClick={() => handleOpenSidePanel(row.panel)}
                             className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:bg-white"
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                handleOpenSidePanel(row.panel);
+                              }
+                            }}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <p className="min-w-0 truncate text-xs font-semibold text-slate-900">{row.name}</p>
@@ -23587,9 +23644,28 @@ function PerformanceAIDashboardView({
                               </span>
                             </div>
                             <p className="mt-1 line-clamp-1 text-[11px] font-medium text-slate-500">{row.source}</p>
-                            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{row.action}</p>
-                          </button>
-                        ))}
+                            {rowApplyLabel && rowIssue ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleApplyDrainageIssue(rowIssue);
+                                }}
+                                disabled={!rowCanApply}
+                                className={`mt-2 rounded-lg border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  rowCanApply
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    : "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+                                }`}
+                              >
+                                {rowApplyLabel}
+                              </button>
+                            ) : (
+                              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{row.action}</p>
+                            )}
+                          </div>
+                          );
+                        })}
                       </div>
                     ) : (
                     <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -23604,7 +23680,12 @@ function PerformanceAIDashboardView({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
-                          {activeBottomReviewRows.map((row) => (
+                          {activeBottomReviewRows.map((row) => {
+                            const rowIssue =
+                              typeof row.issueIndex === "number" ? issues[row.issueIndex] : null;
+                            const rowApplyLabel = rowIssue ? drainageIssueApplyLabel(rowIssue) : null;
+                            const rowCanApply = rowIssue ? canApplyDrainageIssue(rowIssue) : false;
+                            return (
                             <tr key={`${activeBottomPanelTab}-${row.id}`} className="align-top">
                               <td className="px-3 py-3">
                                 <p className="break-words font-semibold text-slate-900">{row.name}</p>
@@ -23623,16 +23704,32 @@ function PerformanceAIDashboardView({
                                 <p className="mt-1 text-[11px] text-slate-500">{row.updated}</p>
                               </td>
                               <td className="hidden px-3 py-3 md:table-cell">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSidePanel(row.panel)}
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-                                >
-                                  {row.action}
-                                </button>
+                                {rowApplyLabel && rowIssue ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleApplyDrainageIssue(rowIssue)}
+                                    disabled={!rowCanApply}
+                                    className={`rounded-lg border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                      rowCanApply
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                        : "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+                                    }`}
+                                  >
+                                    {rowApplyLabel}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSidePanel(row.panel)}
+                                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+                                  >
+                                    {row.action}
+                                  </button>
+                                )}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

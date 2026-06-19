@@ -166,7 +166,10 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
 
   await workflow.getByRole("button", { name: "Accept" }).click();
   await expect(workflow).toContainText("accepted", { timeout: 30_000 });
-  await workflow.locator("button").filter({ hasText: /FFE:|MAIN FFE:|TERRACE FFE:/ }).first().click();
+  await workflow
+    .getByTestId("plan-pdf-extracted-elements")
+    .getByRole("button", { name: /MAIN FFE: 100\.50/i })
+    .click();
   await workflow.getByRole("button", { name: "Reject" }).click();
   await expect(workflow).toContainText("rejected", { timeout: 30_000 });
 

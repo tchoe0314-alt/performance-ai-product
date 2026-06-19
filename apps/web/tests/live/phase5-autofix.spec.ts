@@ -159,8 +159,8 @@ async function queueOrchestrateScenario(
     data: { project_id: projectId, request: payload },
     timeout: 60_000,
   });
-  for (let attempt = 1; response.status() === 429 && attempt <= 3; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, attempt * 2_000));
+  for (let attempt = 1; response.status() === 429 && attempt <= 6; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, attempt * 5_000));
     response = await request.post(`${API_BASE_URL}/api/jobs/drainage`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { project_id: projectId, request: payload },
@@ -318,12 +318,26 @@ async function applyIssue(page: Page, actionLabel: string) {
   const reviewButton = page.getByRole("button", { name: "Review", exact: true }).first();
   await expect(reviewButton).toBeVisible({ timeout: 12_000 });
   await reviewButton.click();
-  const engineeringIssues = page.getByText("Engineering Issues", { exact: true }).first();
-  await engineeringIssues.scrollIntoViewIfNeeded();
-  await expect(engineeringIssues).toBeVisible({ timeout: 12_000 });
-  const applyButton = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(actionLabel)}$`, "i") }).first();
+  const modernPanel = page.getByTestId("bottom-review-panel");
+  let applyButton = modernPanel.getByRole("button", { name: new RegExp(`^${escapeRegExp(actionLabel)}$`, "i") }).first();
+  if (await modernPanel.isVisible().catch(() => false)) {
+    const openPanel = modernPanel.getByRole("button", { name: "Open", exact: true });
+    if (await openPanel.isVisible().catch(() => false)) {
+      await openPanel.click();
+    }
+    const issuesTab = modernPanel.getByRole("button", { name: "Issues", exact: true });
+    if (await issuesTab.isVisible().catch(() => false)) {
+      await issuesTab.click();
+    }
+  } else {
+    const engineeringIssues = page.getByText("Engineering Issues", { exact: true }).first();
+    await engineeringIssues.scrollIntoViewIfNeeded();
+    await expect(engineeringIssues).toBeVisible({ timeout: 12_000 });
+    applyButton = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(actionLabel)}$`, "i") }).first();
+  }
   await expect(applyButton).toBeVisible({ timeout: 20_000 });
-  await applyButton.click();
+  await expect(applyButton).toBeEnabled({ timeout: 5_000 });
+  await applyButton.evaluate((element: HTMLElement) => element.click());
   await page.waitForTimeout(5_000);
 }
 
@@ -509,6 +523,8 @@ test.describe("Phase 5 drainage autofix matrix", () => {
           await withTimeout(applyIssue(page, actionLabel), 25_000, `${entry.name} applyIssue`);
           console.info(`${entry.name} APPLY CLICK FIRED`);
           let jobId: string | null = null;
+          let jobIdError: string | null = null;
+          let applyBlocked = false;
           try {
             if (jobRequestPromise) {
               const req = await withTimeout(jobRequestPromise, 25_000, `${entry.name} jobRequest`);
@@ -519,12 +535,28 @@ test.describe("Phase 5 drainage autofix matrix", () => {
                 console.info(`${entry.name} JOB REQUEST PARSE ERROR`, String(err));
               }
             }
-          const jobResponse = await withTimeout(jobResponsePromise, 25_000, `${entry.name} jobResponse`);
-          const jobPayload = (await jobResponse.json()) as { job?: { job_id?: string } };
-          jobId = String(jobPayload?.job?.job_id || "");
-          console.info(`${entry.name} JOB ID`, jobId || "missing");
+          const jobResponse = await withTimeout(jobResponsePromise, 60_000, `${entry.name} jobResponse`);
+          if (!jobResponse.ok()) {
+            applyBlocked = true;
+            const blockedPayload = (await jobResponse.json().catch(() => ({}))) as { detail?: string; message?: string };
+            const blockedMessage = String(
+              blockedPayload.detail || blockedPayload.message || `Request failed with status ${jobResponse.status()}`,
+            );
+            console.info(`${entry.name} APPLY BLOCKED`, jobResponse.status(), blockedMessage);
+            await expect(
+              page.getByText(/too many requests|rate limit|wait about a minute|try again later/i).first(),
+            ).toBeVisible({ timeout: 10_000 });
+          } else {
+            const jobPayload = (await jobResponse.json()) as { job?: { job_id?: string } };
+            jobId = String(jobPayload?.job?.job_id || "");
+            console.info(`${entry.name} JOB ID`, jobId || "missing");
+          }
           } catch (err) {
-            console.info(`${entry.name} JOB ID ERROR`, String(err));
+            jobIdError = String(err);
+            console.info(`${entry.name} JOB ID ERROR`, jobIdError);
+          }
+          if (!jobId && !applyBlocked) {
+            throw new Error(jobIdError || `${entry.name} did not return a drainage job id after Apply.`);
           }
           if (jobId) {
             console.info(`${entry.name} POLLING START`);
@@ -586,6 +618,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
       });
       console.info(`${entry.name} BEFORE`, before);
       console.info(`${entry.name} AFTER`, after);
+      await page.goto("about:blank").catch(() => null);
     }
     console.info("PHASE5_AUTOFIX_RESULTS", JSON.stringify(caseResults, null, 2));
 

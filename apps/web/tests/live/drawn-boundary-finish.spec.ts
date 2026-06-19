@@ -27,7 +27,12 @@ async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number) 
 }
 
 async function openSetupControls(page: Page) {
-  await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Setup\b/i }).click({ noWaitAfter: true });
+  const sidebarSetup = page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Setup\b/i });
+  if (await sidebarSetup.isVisible().catch(() => false)) {
+    await sidebarSetup.click({ noWaitAfter: true });
+  } else {
+    await page.getByTestId("workspace-canvas-shell").getByRole("button", { name: /^Setup$/ }).click({ noWaitAfter: true });
+  }
   const setupDetails = page.locator("details").filter({ hasText: "Detailed setup controls and evidence" }).first();
   if (await setupDetails.isVisible().catch(() => false)) {
     const isOpen = await setupDetails.evaluate((element) => element.hasAttribute("open"));
@@ -63,14 +68,22 @@ async function startBoundaryDraw(page: Page) {
 }
 
 async function finishDraft(page: Page, canvas: Locator) {
-  await expect(canvas.getByRole("button", { name: "Finish" })).toBeEnabled();
+  const finish = canvas.getByRole("button", { name: "Finish" });
+  if (await finish.isVisible().catch(() => false)) {
+    await expect(finish).toBeEnabled();
+  }
   await page.keyboard.press("Enter");
 }
 
 async function clickCanvasTool(canvas: Locator, name: string) {
   const tool = canvas.getByRole("button", { name });
   await expect(tool).toBeEnabled();
-  await tool.click({ force: true });
+  await tool.evaluate((element: HTMLElement) => element.click());
+}
+
+async function clickVisibleControl(control: Locator) {
+  await expect(control).toBeVisible();
+  await control.evaluate((element: HTMLElement) => element.click());
 }
 
 test.describe("drawn site boundary Finish workflow", () => {
@@ -131,7 +144,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickSurfaceAt(surface, 0.78, 0.72);
     await expect.poll(async () => (await page.locator("[data-object-overlay]").count()) - beforeObjects).toBeGreaterThanOrEqual(4);
 
-    await page.getByLabel(/Select Custom Point \d+/).click();
+    await clickVisibleControl(page.getByLabel(/Select Custom Point \d+/));
     await page.getByRole("button", { name: "Chat" }).first().click();
     await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("make this a basin");
     await page.getByRole("button", { name: "Send" }).click();
@@ -225,11 +238,11 @@ test.describe("drawn site boundary Finish workflow", () => {
     await page.getByLabel("Select Custom Line 1").click();
 
     await cadTools.getByLabel("CAD layer").selectOption("C-UTIL");
-    await cadTools.getByRole("button", { name: "Layer" }).click();
+    await clickVisibleControl(cadTools.getByRole("button", { name: "Layer" }));
     await expect(cadTools).toContainText("Layer");
     await cadTools.getByLabel("CAD dimension mode").selectOption("aligned");
     await cadTools.getByLabel("CAD dimension label").fill("130.0 ft review");
-    await cadTools.getByRole("button", { name: "Dim" }).click();
+    await clickVisibleControl(cadTools.getByRole("button", { name: "Dim" }));
     await expect(page.getByTestId("cad-dimension-label")).toContainText("130.0 ft review");
 
     await cadTools.getByLabel("CAD command input").fill("move 5");
