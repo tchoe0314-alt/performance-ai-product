@@ -197,7 +197,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 def _public_registration_allowed() -> bool:
-    if PRODUCT_MODE in {"development", "local"}:
+    if PRODUCT_MODE in {"development", "local", "private_alpha"}:
         return True
     return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
 

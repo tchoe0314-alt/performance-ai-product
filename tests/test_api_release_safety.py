@@ -199,9 +199,35 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertEqual(payload.status, "")
         self.assertFalse(payload.sealed)
 
-    def test_private_alpha_registration_blocks_public_signup_after_bootstrap(self) -> None:
+    def test_private_alpha_registration_allows_temporary_public_signup(self) -> None:
         class FakeConnection:
-            def execute(self, _sql: str) -> "FakeConnection":
+            def execute(self, _sql: str, _params: object = ()) -> "FakeConnection":
+                return self
+
+            def fetchone(self) -> tuple[int]:
+                return (1,)
+
+            def close(self) -> None:
+                pass
+
+        class FakeDatabase:
+            def connect(self) -> FakeConnection:
+                return FakeConnection()
+
+        class FakeAuthStore:
+            def register_user(self, *, email: str, password: str, name: str):
+                return {"user": {"email": email, "name": name}, "token": "tok"}
+
+        with patch.object(api_app_module, "DB", FakeDatabase()):
+            with patch.object(api_app_module, "AUTH_STORE", FakeAuthStore()):
+                data = register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
+
+        self.assertTrue(data["success"])
+        self.assertEqual(data["user"]["email"], "new@example.com")
+
+    def test_production_registration_blocks_public_signup_without_flag(self) -> None:
+        class FakeConnection:
+            def execute(self, _sql: str, _params: object = ()) -> "FakeConnection":
                 return self
 
             def fetchone(self) -> tuple[int]:
@@ -215,12 +241,43 @@ class ApiReleaseSafetyTest(unittest.TestCase):
                 return FakeConnection()
 
         with patch.object(api_app_module, "DB", FakeDatabase()):
-            with patch.dict(os.environ, {"CIVORA_ALLOW_PUBLIC_REGISTRATION": ""}, clear=False):
-                with self.assertRaises(HTTPException) as ctx:
-                    register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
+            with patch.object(api_app_module, "PRODUCT_MODE", "production"):
+                with patch.dict(os.environ, {"CIVORA_ALLOW_PUBLIC_REGISTRATION": ""}, clear=False):
+                    api_app_module._RATE_LIMIT_EVENTS.clear()
+                    with self.assertRaises(HTTPException) as ctx:
+                        register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
 
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertIn("Public registration is disabled", str(ctx.exception.detail))
+
+    def test_production_registration_allows_signup_with_flag(self) -> None:
+        class FakeConnection:
+            def execute(self, _sql: str, _params: object = ()) -> "FakeConnection":
+                return self
+
+            def fetchone(self) -> tuple[int]:
+                return (1,)
+
+            def close(self) -> None:
+                pass
+
+        class FakeDatabase:
+            def connect(self) -> FakeConnection:
+                return FakeConnection()
+
+        class FakeAuthStore:
+            def register_user(self, *, email: str, password: str, name: str):
+                return {"user": {"email": email, "name": name}, "token": "tok"}
+
+        with patch.object(api_app_module, "DB", FakeDatabase()):
+            with patch.object(api_app_module, "AUTH_STORE", FakeAuthStore()):
+                with patch.object(api_app_module, "PRODUCT_MODE", "production"):
+                    with patch.dict(os.environ, {"CIVORA_ALLOW_PUBLIC_REGISTRATION": "1"}, clear=False):
+                        api_app_module._RATE_LIMIT_EVENTS.clear()
+                        data = register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
+
+        self.assertTrue(data["success"])
+        self.assertEqual(data["user"]["email"], "new@example.com")
 
     def test_auth_status_route_is_rate_limited(self) -> None:
         client = TestClient(app)
