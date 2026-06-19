@@ -16,8 +16,6 @@ civora-ai/
   backend/
     api/                  # Product API package
     planning/             # Product-facing planner package wrappers
-  archive/
-    next-starter/         # Original unused Next starter app
   backend_api_main.py     # FastAPI entrypoint
   planner_orchestrator.py # Main orchestration shell
   planner.py              # Core planning engine
