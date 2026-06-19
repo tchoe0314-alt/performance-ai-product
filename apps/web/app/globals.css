@@ -439,10 +439,10 @@ body,
 .civora-motion-right-panel,
 .civora-motion-bottom-panel,
 .civora-motion-command-bar {
-  will-change: opacity, transform;
-  transition:
-    opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	  will-change: opacity, transform;
+	  transition:
+	    opacity 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+	    transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .civora-motion-sidebar {
@@ -464,7 +464,7 @@ body,
 .civora-motion-right-panel[data-motion-state="closed"] {
   opacity: 0;
   pointer-events: none;
-  transform: translateX(18px);
+  transform: translateX(32px);
 }
 
 .civora-motion-bottom-panel {

@@ -24,7 +24,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
-import { API_BASE_URL, deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
+import { deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
 
 import type {
   Assumption,
@@ -428,57 +428,6 @@ type CustomerTemplateRegistryResponse = {
     jurisdiction_compliance_claim?: boolean;
   };
 };
-type BillingStatusV1 = {
-  version?: string;
-  status?: string;
-  operational_state?: "disabled" | "blocked" | "enabled" | string;
-  paid_pilot_mode?: boolean;
-  real_charging_enabled?: boolean;
-  charging_config_requested?: boolean;
-  legal_business_docs_ready?: boolean;
-  blocked?: boolean;
-  blocked_reasons?: string[];
-  plan?: {
-    code?: string;
-    label?: string;
-    access?: string;
-    gates?: Record<string, string>;
-  };
-  usage_limits?: {
-    monthly_projects?: number;
-    monthly_exports?: number;
-    monthly_jobs?: number;
-    enforcement?: string;
-  };
-  provider?: {
-    provider?: string;
-    configured?: boolean;
-    charging_enabled?: boolean;
-    status?: string;
-    missing?: string[];
-  };
-  invoice?: {
-    status?: string;
-    provider?: string;
-    message?: string;
-  };
-  payment?: {
-    status?: string;
-    message?: string;
-  };
-  charging_guard?: {
-    state?: string;
-    real_charging_allowed?: boolean;
-    requires_explicit_flags?: string[];
-    user_safe_message?: string;
-  };
-  legal?: {
-    terms_url?: string;
-    privacy_url?: string;
-    order_form_url?: string;
-    required?: string[];
-  };
-};
 const hasAddressCoordinates = (
   value: AddressSuggestion | null | undefined,
 ): value is AddressSuggestion & { lat: number; lng: number; display_name: string } =>
@@ -512,7 +461,7 @@ type SidebarNavItem = {
   icon: typeof Gauge;
   status: SidebarStatus;
 };
-type PrimaryWorkflowKey = "setup" | "draw" | "design" | "analyze" | "review" | "deliver";
+type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "review" | "deliver";
 type PrimaryWorkflowItem = {
   key: PrimaryWorkflowKey;
   label: string;
@@ -2270,43 +2219,6 @@ function formatTimestamp(value?: number): string {
   }
 }
 
-function formatDeployTime(value?: string): string {
-  if (!value) return "Not published";
-  const numeric = Number(value);
-  const timestamp = Number.isFinite(numeric)
-    ? new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000)
-    : new Date(value);
-  if (Number.isNaN(timestamp.getTime())) return value;
-  return timestamp.toLocaleString();
-}
-
-function shortBuildValue(value?: string): string {
-  const cleaned = String(value || "").trim();
-  return cleaned ? cleaned.slice(0, 12) : "Not published";
-}
-
-function statusPillClass(status?: string): string {
-  const normalized = String(status || "").toLowerCase();
-  if (["healthy", "online", "ok", "ready", "enabled", "reachable", "configured", "known"].includes(normalized)) {
-    return "bg-emerald-50 text-emerald-700";
-  }
-  if (["degraded", "warning", "unknown", "checking"].includes(normalized)) {
-    return "bg-amber-50 text-amber-700";
-  }
-  return "bg-red-50 text-red-600";
-}
-
-function statusTextClass(status?: string): string {
-  const normalized = String(status || "").toLowerCase();
-  if (["healthy", "online", "ok", "ready", "enabled", "reachable", "configured", "known"].includes(normalized)) {
-    return "text-emerald-700";
-  }
-  if (["degraded", "warning", "unknown", "checking"].includes(normalized)) {
-    return "text-amber-700";
-  }
-  return "text-red-600";
-}
-
 function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
   if (!job?.updated_at) return false;
   const status = String(job.status || "").toLowerCase();
@@ -2330,36 +2242,6 @@ type ArtifactJobResult = {
     download_path?: string;
     review_only?: boolean;
     construction_release_allowed?: boolean;
-  };
-};
-
-type DeploymentHealth = {
-  success?: boolean;
-  version?: string;
-  auth_enabled?: boolean;
-  operational_summary?: {
-    status?: string;
-    ready_for_ui?: boolean;
-    queue_status?: string;
-    job_queue_evidence_status?: string;
-    pending_count?: number;
-    failed_recent_count?: number;
-  };
-  deployment?: {
-    frontend_status?: string;
-    backend_status?: string;
-    api_status?: string;
-    api_base_url?: string;
-    auth_status?: string;
-    queue_status?: string;
-    build_status?: string;
-    build_version?: string;
-    commit_sha?: string;
-    commit_ref?: string;
-    environment?: string;
-    provider?: string;
-    last_deploy_time?: string;
-    user_safe_messages?: string[];
   };
 };
 
@@ -2592,8 +2474,6 @@ function PerformanceAIDashboardView({
   const [utilityCatalogNetworkFilter, setUtilityCatalogNetworkFilter] = useState("all");
   const [customerTemplates, setCustomerTemplates] = useState<CustomerTemplateRegistryResponse | null>(null);
   const [customerTemplateStatus, setCustomerTemplateStatus] = useState("Templates not loaded");
-  const [billingStatus, setBillingStatus] = useState<BillingStatusV1 | null>(null);
-  const [billingStatusMessage, setBillingStatusMessage] = useState("Billing not loaded");
   const [assistedEnabled, setAssistedEnabled] = useState(false);
   const [drainageForcedInlets, setDrainageForcedInlets] = useState<
     Array<{ x: number; y: number; name?: string }>
@@ -2606,18 +2486,6 @@ function PerformanceAIDashboardView({
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [objectPrompt, setObjectPrompt] = useState("");
-  const [guidedObjectDrafts, setGuidedObjectDrafts] = useState<Record<string, string>>({
-    office_sf: "25000",
-    parking_spaces: "96",
-    detention_basin_sf: "12000",
-    public_water: "Public water main",
-    public_sanitary: "Public sanitary sewer",
-    storm_sewer: "Storm sewer",
-    driveway: "Driveway",
-    sidewalks: "Sidewalks",
-    ada_route: "ADA route",
-    assumed_terrain_slope: "8",
-  });
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
 
@@ -2826,9 +2694,6 @@ function PerformanceAIDashboardView({
   const [statusMessage, setStatusMessage] = useState("");
   const [moveEditFeedback, setMoveEditFeedback] = useState("");
   const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
-  const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealth | null>(null);
-  const [deploymentHealthError, setDeploymentHealthError] = useState("");
-  const [deploymentHealthLoading, setDeploymentHealthLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
@@ -3013,58 +2878,16 @@ function PerformanceAIDashboardView({
   }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled]);
 
   useEffect(() => {
-    if (!clientMounted) return;
-    let cancelled = false;
-    const loadDeploymentHealth = async () => {
-      setDeploymentHealthLoading(true);
-      try {
-        const data = await getJson<DeploymentHealth>("/api/health");
-        if (cancelled) return;
-        setDeploymentHealth({
-          ...data,
-          deployment: {
-            ...(data.deployment ?? {}),
-            frontend_status: "reachable",
-            api_base_url: API_BASE_URL,
-          },
-        });
-        setDeploymentHealthError("");
-      } catch (error) {
-        if (cancelled) return;
-        setDeploymentHealth(null);
-        setDeploymentHealthError(
-          error instanceof Error
-            ? error.message
-            : "Civora AI could not load deployment health.",
-        );
-      } finally {
-        if (!cancelled) setDeploymentHealthLoading(false);
-      }
-    };
-    void loadDeploymentHealth();
-    const interval = window.setInterval(() => {
-      void loadDeploymentHealth();
-    }, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [clientMounted]);
-
-  useEffect(() => {
     if (!token) {
       setUtilityCatalog(null);
       setUtilityCatalogStatus("Sign in to load utility catalogs");
       setCustomerTemplates(null);
       setCustomerTemplateStatus("Sign in to load templates");
-      setBillingStatus(null);
-      setBillingStatusMessage("Sign in to load billing status");
       return;
     }
     let cancelled = false;
     setUtilityCatalogStatus("Loading utility catalogs");
     setCustomerTemplateStatus("Loading templates");
-    setBillingStatusMessage("Loading billing status");
     void getJson<UtilityCatalogResponse>("/api/utility-catalogs", { token })
       .then((data) => {
         if (cancelled) return;
@@ -3097,24 +2920,6 @@ function PerformanceAIDashboardView({
         if (cancelled) return;
         setCustomerTemplates(null);
         setCustomerTemplateStatus(error instanceof Error ? error.message : "Template load failed");
-      });
-    void getJson<BillingStatusV1>("/api/billing/status", { token })
-      .then((data) => {
-        if (cancelled) return;
-        setBillingStatus(data);
-        const reasons = data.blocked_reasons ?? [];
-        setBillingStatusMessage(
-          data.real_charging_enabled
-            ? "Provider configured; charges still require an explicit payment flow"
-            : reasons.length
-              ? `Blocked: ${reasons.map((value) => toReadableLabel(value)).join(", ")}`
-              : "Billing status loaded",
-        );
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setBillingStatus(null);
-        setBillingStatusMessage(error instanceof Error ? error.message : "Billing status load failed");
       });
     return () => {
       cancelled = true;
@@ -6387,93 +6192,6 @@ function PerformanceAIDashboardView({
     setSurveySlopeEstimate(slopeEstimate);
     setStatusMessage(`Assumed ${slopePct}% terrain slope added for review-only preflight. Survey/control is still required.`);
   }, [assumedTerrainSlopePct]);
-
-  const handleGuidedObjectCard = useCallback(
-    (key: string) => {
-      const rawValue = guidedObjectDrafts[key] ?? "";
-      const value = parsePositiveNumber(rawValue);
-      const currentLot = resolveLotBounds();
-      const placeNow = siteScaleLocked && Boolean(currentLot.w && currentLot.h);
-      if (key === "office_sf") {
-        const sf = value ?? 25000;
-        const width = Math.max(60, Math.round(Math.sqrt(sf * 1.8)));
-        const depth = Math.max(40, Math.round(sf / width));
-        setBuildingWidth(String(width));
-        setBuildingDepth(String(depth));
-        handleAddObject("office_building", {
-          label: `Office Building ${Math.round(sf).toLocaleString()} SF`,
-          placed: placeNow,
-          style: { program_sf: String(Math.round(sf)) },
-          width,
-          depth,
-        });
-        setStatusMessage(placeNow ? "Office building draft placed for review." : "Office building draft added to Needs placement.");
-        return;
-      }
-      if (key === "parking_spaces") {
-        const spaces = value ?? 96;
-        setParkingCount(String(Math.round(spaces)));
-        handleAddObject("parking", {
-          label: `Parking ${Math.round(spaces)} spaces`,
-          placed: placeNow,
-          style: { requested_spaces: String(Math.round(spaces)) },
-        });
-        setStatusMessage(placeNow ? "Parking layout draft placed for review." : "Parking layout draft added to Needs placement.");
-        return;
-      }
-      if (key === "detention_basin_sf") {
-        const sf = value ?? 12000;
-        const width = Math.max(70, Math.round(Math.sqrt(sf * 1.5)));
-        const depth = Math.max(45, Math.round(sf / width));
-        const previousWidth = buildingWidth;
-        const previousDepth = buildingDepth;
-        setBuildingWidth(String(width));
-        setBuildingDepth(String(depth));
-        handleAddObject("basin", {
-          label: `Detention Basin ${Math.round(sf).toLocaleString()} SF`,
-          placed: placeNow,
-          style: { storage_area_sf: String(Math.round(sf)) },
-          width,
-          depth,
-        });
-        setBuildingWidth(previousWidth);
-        setBuildingDepth(previousDepth);
-        setStatusMessage(placeNow ? "Detention basin draft placed for review." : "Detention basin draft added to Needs placement.");
-        return;
-      }
-      if (key === "assumed_terrain_slope") {
-        const slopePct = value ?? 8;
-        setAssumedTerrainSlopePct(String(slopePct));
-        const slopeEstimate = buildAssumedSlopeEstimate(slopePct);
-        setUseSurveyForGrading(false);
-        setSurveySlopeEstimate(slopeEstimate);
-        setStatusMessage(`Assumed ${slopePct}% terrain slope added for review-required setup. Survey/control still needed.`);
-        return;
-      }
-      const utilityCards: Record<string, { type: SiteObjectType; label: string; meta: Record<string, unknown> }> = {
-        public_water: { type: "utility_corridor", label: rawValue || "Public water connection", meta: { utilityKind: "public_water" } },
-        public_sanitary: { type: "utility_corridor", label: rawValue || "Public sanitary connection", meta: { utilityKind: "public_sanitary" } },
-        storm_sewer: { type: "utility_corridor", label: rawValue || "Storm sewer connection", meta: { utilityKind: "storm_sewer" } },
-        driveway: { type: "driveway", label: rawValue || "Driveway", meta: { accessKind: "driveway" } },
-        sidewalks: { type: "sidewalk", label: rawValue || "Sidewalks", meta: { routeKind: "sidewalk" } },
-        ada_route: { type: "sidewalk", label: rawValue || "ADA route", meta: { routeKind: "ada_route", review_status: "engineer_review_required" } },
-      };
-      const card = utilityCards[key];
-      if (!card) return;
-      handleAddObject(card.type, {
-        label: card.label,
-        placed: placeNow,
-        geometryType: "polyline",
-        style: card.meta as Record<string, string>,
-        meta: {
-          ...card.meta,
-          review_status: "engineer_review_required",
-        },
-      });
-      setStatusMessage(placeNow ? `${card.label} draft placed for review.` : `${card.label} draft added to Needs placement.`);
-    },
-    [buildingDepth, buildingWidth, guidedObjectDrafts, handleAddObject, resolveLotBounds, siteScaleLocked],
-  );
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
@@ -16375,7 +16093,8 @@ function PerformanceAIDashboardView({
 	  ];
 	  const primaryWorkflowGroups: Record<PrimaryWorkflowKey, SidePanelKey[]> = {
 	    setup: ["site_existing", "import_survey", "data", "standards"],
-	    draw: ["model", "objects", "details", "layers", "files"],
+	    draw: ["model", "layers", "files"],
+	    objects: ["objects", "details"],
 	    design: [
 	      "generate",
 	      "grading",
@@ -16425,10 +16144,19 @@ function PerformanceAIDashboardView({
 	    {
 	      key: "draw",
 	      label: "Draw",
-	      caption: "CAD tools and objects",
+	      caption: "CAD tools and canvas",
 	      panel: "model",
 	      icon: Box,
 	      status: siteScaleLocked ? panelStatus("model") : "review",
+	      metric: "Canvas tools",
+	    },
+	    {
+	      key: "objects",
+	      label: "Objects",
+	      caption: "Manage placed objects",
+	      panel: "objects",
+	      icon: Layers,
+	      status: panelStatus("objects"),
 	      metric: `${placedObjects.length} placed / ${pendingPlacementObjects.length} pending`,
 	    },
 	    {
@@ -16477,9 +16205,11 @@ function PerformanceAIDashboardView({
 	    ],
 	    draw: [
 	      { label: "Canvas", panel: "model", detail: "CAD draw, 2D/3D, High Quality", status: panelStatus("model") },
-	      { label: "Objects", panel: "objects", detail: "Buildings, roads, basins, utilities", status: panelStatus("objects") },
-	      { label: "Object Details", panel: "details", detail: activePlacementId ? "Selected object details" : "Select or draw an object", status: panelStatus("details") },
 	      { label: "Layers", panel: "layers", detail: "Visibility, source badges, overlays", status: panelStatus("layers") },
+	    ],
+	    objects: [
+	      { label: "Object Manager", panel: "objects", detail: "Rename, recolor, select, move, delete", status: panelStatus("objects") },
+	      { label: "Object Details", panel: "details", detail: activePlacementId ? "Selected object details" : "Select or draw an object", status: panelStatus("details") },
 	    ],
 	    design: [
 	      { label: "Run Systems", panel: "generate", detail: "Queue grading, drainage, utilities", status: panelStatus("generate") },
@@ -17370,32 +17100,7 @@ function PerformanceAIDashboardView({
       : sidePanelForRender
         ? sidePanelCopy[sidePanelForRender].desc
         : "";
-  const deployment = deploymentHealth?.deployment;
-  const deploymentBackendStatus =
-    deploymentHealthError
-      ? "down"
-      : deployment?.backend_status || deploymentHealth?.operational_summary?.status || (deploymentHealthLoading ? "checking" : "unknown");
-  const deploymentQueueStatus =
-    deployment?.queue_status ||
-    deploymentHealth?.operational_summary?.queue_status ||
-    deploymentHealth?.operational_summary?.job_queue_evidence_status ||
-    "unknown";
-  const deploymentAuthStatus = deployment?.auth_status || (deploymentHealth?.auth_enabled ? "enabled" : "unknown");
-  const deploymentMessages = deploymentHealthError
-    ? [deploymentHealthError]
-    : deployment?.user_safe_messages?.length
-      ? deployment.user_safe_messages
-      : deploymentHealthLoading
-        ? ["Checking deployment health..."]
-        : ["Deployment health has not reported yet."];
-  const frontendBuildVersion =
-    process.env.NEXT_PUBLIC_BUILD_VERSION ||
-    process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
-    deployment?.build_version ||
-    deploymentHealth?.version ||
-    "";
-
-  if (!clientMounted) {
+	  if (!clientMounted) {
     return (
       <div className="civora-app-bg min-h-screen text-[var(--civora-text)]">
         <div className="flex min-h-screen items-center justify-center px-6">
@@ -17985,106 +17690,6 @@ function PerformanceAIDashboardView({
                         Save project identity
 	                      </button>
 	                    </div>
-	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="billing-status-panel">
-	                      <div className="flex items-start justify-between gap-3">
-	                        <div>
-	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Billing</p>
-	                          <p className="mt-1 text-base font-semibold text-slate-950">
-	                            {billingStatus?.plan?.label || "Paid pilot foundation"}
-	                          </p>
-	                          <p className="mt-1 text-xs leading-5 text-slate-500">{billingStatusMessage}</p>
-	                        </div>
-	                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-	                          billingStatus?.real_charging_enabled
-	                            ? "bg-amber-50 text-amber-700"
-	                            : billingStatus?.blocked
-	                              ? "bg-red-50 text-red-600"
-	                              : "bg-emerald-50 text-emerald-700"
-	                        }`}>
-	                          {billingStatus?.operational_state || (billingStatus?.real_charging_enabled ? "Enabled" : billingStatus?.blocked ? "Blocked" : "Disabled")}
-	                        </span>
-	                      </div>
-	                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-	                        {[
-	                          ["Pilot mode", billingStatus?.paid_pilot_mode ? "On" : "Off"],
-	                          ["Provider", billingStatus?.provider?.provider || "None"],
-	                          ["State", billingStatus?.operational_state || "unknown"],
-	                          ["Charges", billingStatus?.real_charging_enabled ? "Enabled" : "Off"],
-	                          ["Docs", billingStatus?.legal_business_docs_ready ? "Ready" : "Missing"],
-	                          ["Projects/mo", billingStatus?.usage_limits?.monthly_projects ?? "Hook"],
-	                          ["Exports/mo", billingStatus?.usage_limits?.monthly_exports ?? "Hook"],
-	                        ].map(([label, value]) => (
-	                          <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-	                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
-	                            <p className="mt-1 font-semibold text-slate-800">{String(value)}</p>
-	                          </div>
-	                        ))}
-	                      </div>
-	                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-	                        <p className="font-semibold text-slate-800">Invoice/payment</p>
-	                        <p>{billingStatus?.charging_guard?.user_safe_message || billingStatus?.invoice?.message || "Invoice and payment records are placeholders until a provider is explicitly configured."}</p>
-	                        {billingStatus?.blocked_reasons?.length ? (
-	                          <p className="mt-1 font-semibold text-red-600">
-	                            {billingStatus.blocked_reasons.map((reason) => toReadableLabel(reason)).join("; ")}
-	                          </p>
-	                        ) : null}
-	                      </div>
-	                    </div>
-	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deployment-health-panel">
-	                      <div className="flex items-start justify-between gap-3">
-	                        <div>
-	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Deployment Health</p>
-	                          <p className="mt-1 text-base font-semibold text-slate-950">
-	                            {deploymentHealthError ? "Service check failed" : deploymentHealthLoading ? "Checking services" : "Runtime visibility"}
-	                          </p>
-	                          <p className="mt-1 break-all text-xs leading-5 text-slate-500">
-	                            API: {deployment?.api_base_url || API_BASE_URL || "Not configured"}
-	                          </p>
-	                        </div>
-	                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${statusPillClass(deploymentBackendStatus)}`}>
-	                          {deploymentBackendStatus}
-	                        </span>
-	                      </div>
-	                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-	                        {[
-	                          ["Frontend", deploymentHealthError ? "reachable" : deployment?.frontend_status || "reachable"],
-	                          ["Backend", deploymentBackendStatus],
-	                          ["API", deployment?.api_status || (deployment?.api_base_url ? "configured" : "missing_url")],
-	                          ["Auth", deploymentAuthStatus],
-	                          ["Queue", deploymentQueueStatus],
-	                          ["Build", deployment?.build_status || shortBuildValue(frontendBuildVersion)],
-	                          ["Deploy", formatDeployTime(deployment?.last_deploy_time)],
-	                        ].map(([label, value]) => (
-	                          <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-	                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
-	                            <p className={`mt-1 break-words font-semibold ${["Frontend", "Backend", "API", "Auth", "Queue", "Build"].includes(String(label)) ? statusTextClass(String(value)) : "text-slate-800"}`}>
-	                              {String(value)}
-	                            </p>
-	                          </div>
-	                        ))}
-	                      </div>
-	                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-	                        <p className="font-semibold text-slate-800">User-safe service messages</p>
-	                        <ul className="mt-1 space-y-1">
-	                          {deploymentMessages.slice(0, 3).map((message) => (
-	                            <li key={message}>{message}</li>
-	                          ))}
-	                        </ul>
-	                        {(deployment?.commit_ref || deployment?.environment || deployment?.provider) ? (
-	                          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-	                            {[deployment?.provider, deployment?.environment, deployment?.commit_ref].filter(Boolean).join(" / ")}
-	                          </p>
-	                        ) : null}
-	                        <div className="mt-3 flex flex-wrap gap-2">
-	                          <a href="mailto:support@civora.ai?subject=Civora%20pilot%20support" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
-	                            Contact Support
-	                          </a>
-	                          <a href="/pilot#operations" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
-	                            Bug Report Flow
-	                          </a>
-	                        </div>
-	                      </div>
-	                    </div>
 	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="progress-timeline-dashboard">
 	                      <div className="flex items-start justify-between gap-3">
 	                        <div>
@@ -18293,7 +17898,7 @@ function PerformanceAIDashboardView({
                         </div>
                       ))}
                     </div>
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4" open>
+	                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Onboarding checklist
                       </summary>
@@ -18373,24 +17978,6 @@ function PerformanceAIDashboardView({
                         </button>
                       </div>
                     </details>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pilot docs</p>
-                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        {[
-                          ["/pilot#onboarding", "Onboarding"],
-                          ["/pilot#operations", "Pilot operations"],
-                          ["/pilot#responsibility", "Responsibility"],
-                        ].map(([href, label]) => (
-                          <a
-                            key={href}
-                            href={href}
-                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-                          >
-                            {label}
-                          </a>
-                        ))}
-                      </div>
-                    </div>
                     {workflowReviewDashboard ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <div className="flex items-start justify-between gap-3">
@@ -20426,43 +20013,9 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {sidePanelForRender === "model" ? (
-                  <div className="space-y-4">
-                    {!siteScaleLocked ? (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Setup required</p>
-                        <p className="mt-1 text-sm font-semibold text-amber-950">{nextSetupAction}</p>
-                        <div className="mt-3 space-y-2">
-                          {setupChecklistItems.map((item) => (
-                            <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white/80 px-3 py-2 text-sm">
-                              <span className="font-semibold text-slate-700">{item.label}</span>
-                              <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
-                                item.status === "blocked" ? "text-red-600" : item.status === "done" ? "text-emerald-700" : "text-amber-700"
-                              }`}>
-                                {item.status}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenSidePanel("site_existing")}
-                            className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
-                          >
-                            Open setup
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleAddObject("site")}
-                            className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
-                          >
-                            Draw boundary
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                    {previewMode === "3d" ? (
+	                {sidePanelForRender === "model" ? (
+	                  <div className="space-y-4">
+	                    {previewMode === "3d" ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">3D engineering review</p>
                         <p className="mt-2 text-sm text-slate-600">
@@ -20499,17 +20052,11 @@ function PerformanceAIDashboardView({
                       </div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Create and engineer</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white">
-                          Objects
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Prompt and object controls</span>
-                        </button>
-                        <button type="button" onClick={() => handleOpenSidePanel("generate")} className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800">
-                          Generate Systems
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">Run engines with gates</span>
-                        </button>
-                      </div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generate</p>
+                      <button type="button" onClick={() => handleOpenSidePanel("generate")} className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800">
+                        Generate Systems
+                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">Run engines with gates</span>
+                      </button>
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Discipline panels</p>
                         <div className="mt-2 grid grid-cols-2 gap-2">
@@ -20642,36 +20189,7 @@ function PerformanceAIDashboardView({
                           Fullscreen
                         </button>
                       </div>
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Canvas height
-                          <input
-                            type="range"
-                            min={590}
-                            max={1200}
-                            step={10}
-                            value={previewHeightPx}
-                            onChange={(event) => {
-                              const next = Number(event.target.value);
-                              if (Number.isFinite(next)) setPreviewHeightPx(next);
-                            }}
-                            className="mt-3 h-2 w-full accent-slate-900"
-                          />
-                        </label>
-                        <input
-                          type="number"
-                          min={590}
-                          max={1200}
-                          step={10}
-                          value={previewHeightPx}
-                          onChange={(event) => {
-                            const next = Number(event.target.value);
-                            if (Number.isFinite(next)) setPreviewHeightPx(next);
-                          }}
-                          className="mt-2 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
-                        />
-                      </div>
-                    </div>
+	                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Legend</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700">
@@ -22736,111 +22254,26 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "objects" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Add Object
-                      </p>
-                      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                        <label className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-800">
-                          <span>Assisted</span>
-                          <input
-                            type="checkbox"
-                            checked={assistedEnabled}
-                            onChange={(event) => setAssistedEnabled(event.target.checked)}
-                            className="h-4 w-4 accent-slate-950"
-                          />
-                        </label>
-                      </div>
-                      <div className="mt-3 flex flex-col gap-2">
-                        <input
-                          value={objectPrompt}
-                          onChange={(event) => setObjectPrompt(event.target.value)}
-                          placeholder="building 110x58, road, basin..."
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
-                        />
-                        <div className="flex items-center gap-3">
-                          <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Outline
-                            <input
-                              type="color"
-                              value={objectOutlineColor}
-                              onChange={(event) => setObjectOutlineColor(event.target.value)}
-                              className="h-9 w-10 rounded-lg border border-slate-200 bg-white"
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={handlePromptAddObject}
-                            disabled={!objectPrompt.trim()}
-                            className="flex-1 rounded-2xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Add Object
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="guided-scenario-cards">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Guided scenario cards</p>
-                          <p className="mt-1 text-sm text-slate-600">Cards create review-required draft objects. If the site is locked, Civora places a first-pass draft; otherwise they land in Needs placement.</p>
-                        </div>
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Design objects: {placedObjects.length} placed / {pendingPlacementObjects.length} pending
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Site boundary is counted separately: {buildingPlacements.some((item) => item.type === "site") ? "1 configured boundary" : "no configured boundary"}.
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-amber-700" data-testid="guided-assumed-slope-status">
-                        {hasAssumedTerrainSlope
-                          ? `Assumed terrain slope active: ${surveySlopeEstimate?.slope_percent?.toFixed(1)}% (review-required; survey/control still needed).`
-                          : "Assumed terrain slope: not active."}
-                      </p>
-                      <div className="mt-3 grid gap-2">
-                        {[
-                          ["office_sf", "Office building SF", "number", "office building"],
-                          ["parking_spaces", "Parking spaces", "number", "parking layout"],
-                          ["detention_basin_sf", "Detention basin SF", "number", "basin"],
-                          ["public_water", "Public water", "text", "utility connection"],
-                          ["public_sanitary", "Public sanitary", "text", "utility connection"],
-                          ["storm_sewer", "Storm sewer", "text", "utility connection"],
-                          ["driveway", "Driveway", "text", "access"],
-                          ["sidewalks", "Sidewalks", "text", "pedestrian route"],
-                          ["ada_route", "ADA route", "text", "accessible route"],
-                          ["assumed_terrain_slope", "Assumed terrain slope %", "number", "review-required terrain note"],
-                        ].map(([key, label, inputType, hint]) => (
-                          <div key={key} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr,1.1fr,auto] sm:items-end">
-                            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              {label}
-                              <input
-                                type={inputType}
-                                value={guidedObjectDrafts[key] ?? ""}
-                                onChange={(event) =>
-                                  setGuidedObjectDrafts((prev) => ({
-                                    ...prev,
-                                    [key]: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700"
-                              />
-                            </label>
-                            <p className="text-xs font-medium text-slate-500">
-                              Creates {hint}; {siteScaleLocked ? "placed as a draft for review" : "pending with one Place button"}.
-                            </p>
-                            <button
-                              type="button"
-                              aria-label={`Add ${label}`}
-                              onClick={() => handleGuidedObjectCard(key)}
-                              className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
-                            >
-                              Add
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+	                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+	                      <div className="flex items-start justify-between gap-3">
+	                        <div>
+	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Object manager</p>
+	                          <p className="mt-1 text-sm text-slate-600">
+	                            Manage placed and pending objects here. To create new objects, ask Civora in chat or draw directly on the canvas.
+	                          </p>
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            setPrompt("Add an office building, parking, detention basin, driveway, sidewalks, and public utilities inside the locked site.");
+	                            handleOpenSidePanel("chat");
+	                          }}
+	                          className="shrink-0 rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+	                        >
+	                          Ask chat
+	                        </button>
+	                      </div>
+	                    </div>
 
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="needs-placement-tray">
                       <div className="flex items-start justify-between gap-3">
@@ -22877,90 +22310,6 @@ function PerformanceAIDashboardView({
                           ))}
                         </div>
                       ) : null}
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Shape tools</p>
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleAddObject("building", { label: "Rectangle Shape", geometryType: "rect" })}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Rectangle
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddObject("open_space", { label: "Polygon Shape", geometryType: "polygon" })}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Polygon
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddObject("road", { label: "Line Shape", geometryType: "polyline" })}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Line
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Object Library
-                      </p>
-                      <div className="mt-3 space-y-4">
-                        {ADD_MENU_SECTIONS.map((section) => (
-                          <div key={section.key}>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                              {section.title}
-                            </p>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              {section.items.map((type) => {
-                                const catalog = SITE_OBJECT_CATALOG[type];
-                                return (
-                                  <button
-                                    key={type}
-                                    type="button"
-                                    onClick={() => handleAddObject(type)}
-                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:border-slate-900 hover:text-slate-950"
-                                  >
-                                    {catalog.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Project Setup
-                      </p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Site width</p>
-                          <p className="mt-1 font-semibold text-slate-800">
-                            {lotBounds.w ? `${lotBounds.w.toFixed(0)} ft` : "Not set"}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Site length</p>
-                          <p className="mt-1 font-semibold text-slate-800">
-                            {lotBounds.h ? `${lotBounds.h.toFixed(0)} ft` : "Not set"}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setActiveSidePanel("data")}
-                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                      >
-                        Edit Site Setup
-                      </button>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -23023,11 +22372,40 @@ function PerformanceAIDashboardView({
                                   </button>
                                 ) : null}
                               </div>
-                              {item.type !== "site" ? (
-                                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                                  <label className="flex flex-col gap-1">
-                                    Length
-                                    <input
+	                              {item.type !== "site" ? (
+	                                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+	                                  <label className="col-span-2 flex flex-col gap-1">
+	                                    Name
+	                                    <input
+	                                      type="text"
+	                                      value={item.label}
+	                                      onChange={(event) =>
+	                                        handleUpdateBuilding(item.id, {
+	                                          label: event.target.value || item.label,
+	                                        })
+	                                      }
+	                                      className="rounded-md border border-slate-200 px-2 py-1 text-sm"
+	                                    />
+	                                  </label>
+	                                  <label className="col-span-2 flex items-center justify-between gap-3 rounded-md border border-slate-200 px-2 py-2">
+	                                    <span className="font-semibold uppercase tracking-[0.12em] text-slate-400">Color</span>
+	                                    <input
+	                                      type="color"
+	                                      value={String(item.meta?.ui_color || item.meta?.color || objectOutlineColor || "#64748b")}
+	                                      onChange={(event) =>
+	                                        handleUpdateBuilding(item.id, {
+	                                          meta: {
+	                                            ...(item.meta ?? {}),
+	                                            ui_color: event.target.value,
+	                                          },
+	                                        })
+	                                      }
+	                                      className="h-8 w-10 rounded border border-slate-200 bg-white"
+	                                    />
+	                                  </label>
+	                                  <label className="flex flex-col gap-1">
+	                                    Length
+	                                    <input
                                       type="number"
                                       value={item.w}
                                       onChange={(event) =>
@@ -23066,18 +22444,28 @@ function PerformanceAIDashboardView({
                                       />
                                     </label>
                                   ) : null}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActivePlacementId(item.id);
-                                      setPlacementModeEnabled(true);
-                                    }}
-                                    className="col-span-2 rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
-                                  >
-                                    {item.placed ? "Move on Canvas" : "Place on Canvas"}
-                                  </button>
-                                </div>
-                              ) : null}
+	                                  <button
+	                                    type="button"
+	                                    onClick={() => {
+	                                      setActivePlacementId(item.id);
+	                                      setPlacementModeEnabled(true);
+	                                    }}
+	                                    className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
+	                                  >
+	                                    {item.placed ? "Move on Canvas" : "Place on Canvas"}
+	                                  </button>
+	                                  <button
+	                                    type="button"
+	                                    onClick={() => {
+	                                      setActivePlacementId(item.id);
+	                                      setPreviewInteraction("edit");
+	                                    }}
+	                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+	                                  >
+	                                    Select
+	                                  </button>
+	                                </div>
+	                              ) : null}
                             </div>
                             );
                           })
@@ -23092,7 +22480,7 @@ function PerformanceAIDashboardView({
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" || sidePanelForRender === "deliverables" ? (
                   <div className="space-y-3">
                     {(sidePanelForRender === "reports" || sidePanelForRender === "deliverables") ? (
-                      <details className="rounded-2xl border border-slate-200 bg-white p-4" open={sidePanelForRender === "deliverables"}>
+	                      <details className="rounded-2xl border border-slate-200 bg-white p-4">
                         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                           What is the review package?
                         </summary>
@@ -23522,36 +22910,6 @@ function PerformanceAIDashboardView({
                                 <p className="mt-1 line-clamp-2 text-xs text-slate-500">
                                   {entry.why_low_confidence || entry.next_action || "Verification status visible."}
                                 </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Backend capability audit</p>
-                          <div className="mt-3 space-y-2">
-                            {capabilityAuditRows.map((item) => (
-                              <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-slate-800">{item.label}</p>
-                                    <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                                      Exposed {item.exposed} in {item.surfaces.join(" / ")}
-                                    </p>
-                                  </div>
-                                  <span className={`max-w-[150px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                    item.status === "block"
-                                      ? "text-red-600"
-                                      : item.status === "idle"
-                                        ? "text-slate-400"
-                                        : item.status === "ok"
-                                          ? "text-slate-600"
-                                          : "text-amber-600"
-                                  }`}>
-                                    {item.value}
-                                  </span>
-                                </div>
-                                <p className="mt-2 text-xs text-slate-500">Missing wiring: {item.missingWiring}</p>
-                                <p className="mt-1 text-xs font-medium text-slate-600">Exact fix: {item.exactFix}</p>
                               </div>
                             ))}
                           </div>

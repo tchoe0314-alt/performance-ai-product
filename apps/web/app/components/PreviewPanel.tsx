@@ -883,11 +883,15 @@ export default function PreviewPanel({
       const sourceState = resolveSourceState(item);
       const blocked = sourceState === "blocked";
       const lowConfidence = sourceState === "inferred" || sourceState === "fallback";
-      const imported = sourceState === "imported";
-      const stale = sourceState === "stale";
-      const dash =
-        blocked ? "1.2 0.8" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
-      const stateStroke = (fallback: string) => (selected ? "#fbbf24" : blocked ? "#dc2626" : fallback);
+	      const imported = sourceState === "imported";
+	      const stale = sourceState === "stale";
+	      const customStroke =
+	        typeof item.meta?.ui_color === "string" && /^#[0-9a-f]{6}$/i.test(item.meta.ui_color)
+	          ? item.meta.ui_color
+	          : null;
+	      const dash =
+	        blocked ? "1.2 0.8" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
+	      const stateStroke = (fallback: string) => (selected ? "#fbbf24" : blocked ? "#dc2626" : customStroke ?? fallback);
       const stateOpacity = blocked ? 0.92 : lowConfidence ? 0.76 : 1;
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
@@ -901,9 +905,9 @@ export default function PreviewPanel({
           fallback: { fill: "rgba(148, 163, 184, 0.14)", stroke: "#64748b" },
         };
         const style = standardPalette[kind] ?? standardPalette.fallback;
-        return {
-          fill: style.fill,
-          stroke: selected ? "#f59e0b" : blocked ? "#dc2626" : style.stroke,
+	        return {
+	          fill: style.fill,
+	          stroke: selected ? "#f59e0b" : blocked ? "#dc2626" : customStroke ?? style.stroke,
           strokeWidth: selected ? 0.82 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.58 : 0.42,
           strokeDasharray: dash,
           opacity: stateOpacity,
