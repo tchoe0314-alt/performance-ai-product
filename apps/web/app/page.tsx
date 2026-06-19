@@ -2608,7 +2608,7 @@ function PerformanceAIDashboardView({
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
-  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
+  const [rightRailCollapsed, setRightRailCollapsed] = useState(true);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
@@ -16626,13 +16626,13 @@ function PerformanceAIDashboardView({
           onLogout={handleLogout}
         />
 
-        <div className="flex h-[calc(100svh-4rem)] min-h-0 w-full max-w-full flex-col overflow-hidden lg:h-[calc(100vh-4rem)] lg:flex-row">
+        <div className="relative h-[calc(100svh-4rem)] min-h-0 w-full max-w-full overflow-hidden lg:h-[calc(100vh-4rem)]">
           {sidebarRendered ? (
 		          <aside
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[248px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
+            className="civora-motion-sidebar fixed inset-x-3 top-20 z-50 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/96 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:bottom-4 lg:left-4 lg:right-auto lg:top-20 lg:h-auto lg:max-h-none lg:w-[248px]"
           >
             <button
               type="button"
@@ -16976,7 +16976,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-              className="civora-motion-right-panel fixed inset-x-0 bottom-0 top-auto z-50 order-3 flex max-h-[82svh] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/98 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-4 sm:max-h-[78svh] sm:rounded-xl lg:static lg:inset-auto lg:z-auto lg:m-3 lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:max-h-none lg:w-[372px] lg:shadow-[var(--civora-shadow-panel)]"
+              className="civora-motion-right-panel fixed inset-x-0 bottom-0 top-auto z-50 order-3 flex max-h-[82svh] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/96 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-4 sm:max-h-[78svh] sm:rounded-xl lg:bottom-4 lg:left-auto lg:right-4 lg:top-20 lg:h-auto lg:max-h-none lg:w-[388px] lg:rounded-xl lg:shadow-[var(--civora-shadow-panel)]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
@@ -22723,17 +22723,17 @@ function PerformanceAIDashboardView({
                 setRightRailCollapsed(false);
                 setActiveSidePanel((panel) => panel ?? "dashboard");
               }}
-              className="fixed right-3 top-24 z-40 rounded-l-xl border border-r-0 border-slate-200 bg-white/95 px-3 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.6)] backdrop-blur transition hover:bg-slate-50 lg:top-28"
+              className="fixed right-3 top-24 z-[60] rounded-l-xl border border-r-0 border-slate-200 bg-white/95 px-3 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.6)] backdrop-blur transition hover:bg-slate-50 lg:top-28"
               aria-label="Reopen reviewer drawer"
               data-testid="reopen-reviewer-drawer"
             >
               Review
             </button>
           ) : null}
-          <main data-testid="workspace-canvas-shell" className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
-	            <div className="flex w-full max-w-full flex-1 flex-col gap-3 px-2 pb-36 pt-3 sm:gap-4 sm:px-4 sm:pb-40 md:px-5 lg:pb-4 lg:pt-4">
-	              <div className="flex w-full flex-col">
-	                <div className="mx-auto mb-3 w-full max-w-[1600px] rounded-xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm">
+          <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
+	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
+	              <div className="contents">
+	                <div className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200 bg-white/92 px-3 py-3 shadow-[0_22px_80px_-44px_rgba(15,23,42,0.7)] backdrop-blur-xl lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}>
 	                  <div className="flex flex-col gap-3">
 	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
 	                      <div className="min-w-0">
@@ -22800,7 +22800,13 @@ function PerformanceAIDashboardView({
 	                              key={mode}
 	                              type="button"
 	                              data-testid={mode === "2d" ? "preview-mode-2d" : "preview-mode-3d"}
-	                              onClick={() => setPreviewMode(mode)}
+	                              onClick={() => {
+	                                setPreviewMode(mode);
+	                                if (mode === "3d") {
+	                                  setRightRailCollapsed(true);
+	                                  setBottomPanelCollapsed(true);
+	                                }
+	                              }}
 	                              className={`h-8 rounded-md px-3 text-xs font-semibold uppercase tracking-[0.08em] ${
 	                                previewMode === mode ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
 	                              }`}
@@ -22837,10 +22843,10 @@ function PerformanceAIDashboardView({
 	                </div>
 	                <div
 	                  data-testid="workspace-canvas-frame"
-	                  className="civora-canvas mx-auto w-full max-w-full overflow-hidden p-1"
+	                  className="absolute inset-0 z-0 h-full w-full overflow-hidden"
                   style={{
                     width: "100%",
-                    height: `clamp(420px, calc(100svh - 18rem), ${previewHeightPx}px)`,
+                    height: "100%",
                   }}
                 >
                   <div className="h-full w-full">
@@ -22985,7 +22991,7 @@ function PerformanceAIDashboardView({
               </div>
               <div
                 data-testid="bottom-review-panel"
-                className="mx-auto w-full max-w-[1600px] overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm"
+                className={`fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] left-3 right-3 z-40 overflow-hidden rounded-xl border border-slate-200 bg-white/94 shadow-[0_24px_80px_-46px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:bottom-4 lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
               >
                 <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2">
                   <div className="min-w-0">
@@ -23028,10 +23034,10 @@ function PerformanceAIDashboardView({
                   <div
                     className={`civora-motion-bottom-panel grid gap-3 overflow-y-auto px-3 py-3 lg:grid-cols-[auto,1fr] ${
                       bottomPanelSize === "compact"
-                        ? "max-h-[24svh]"
+                        ? "max-h-[20svh]"
                         : bottomPanelSize === "tall"
-                          ? "max-h-[58svh]"
-                          : "max-h-[42svh]"
+                          ? "max-h-[54svh]"
+                          : "max-h-[36svh]"
                     }`}
                     data-motion-state={bottomPanelContentVisible ? "open" : "closed"}
                     aria-hidden={bottomPanelCollapsed}
