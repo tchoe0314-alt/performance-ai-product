@@ -2790,7 +2790,7 @@ function PerformanceAIDashboardView({
   const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
-  const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false);
+  const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(true);
   const [activeBottomPanelTab, setActiveBottomPanelTab] = useState<BottomPanelTab>("issues");
   const [previewLayers, setPreviewLayers] = useState({
     buildings: true,
@@ -5345,7 +5345,7 @@ function PerformanceAIDashboardView({
     setUseSurveyForGrading(true);
     setBuildingPlacements(demoPlacements);
     setPlacementModeEnabled(false);
-    setActivePlacementId("demo-basin-a");
+    setActivePlacementId(null);
     setPreviewQuality("standard");
     setPreviewMode("2d");
     setPreviewInteraction("static");
