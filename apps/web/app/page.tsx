@@ -592,6 +592,14 @@ const OVERSIZED_SITE_MESSAGE =
   "Selected site is very large. Zoom in or reduce site area before grading.";
 const ACTIVE_PROJECT_STORAGE_KEY = "civora.activeProjectId";
 
+function isHardGenerateBlocker(label: string): boolean {
+  return (
+    label === "missing site boundary dimensions" ||
+    label === "site boundary exists but is not locked" ||
+    label === OVERSIZED_SITE_MESSAGE
+  );
+}
+
 function buildAssumedSlopeEstimate(slopePercent = 8): SurveySlopeResponse {
   const safeSlopePercent = Number.isFinite(slopePercent) && slopePercent > 0 ? slopePercent : 8;
   return {
@@ -2529,10 +2537,10 @@ function PerformanceAIDashboardView({
     forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled || queryDemoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("site_existing");
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
-  const [rightRailCollapsed, setRightRailCollapsed] = useState(true);
+  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
@@ -8590,6 +8598,8 @@ function PerformanceAIDashboardView({
     ],
   );
   const fullGeneratePreflightBlockers = getGeneratePreflightBlockers("full");
+  const fullGenerateHardBlockers = fullGeneratePreflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
+  const fullGenerateProofGaps = fullGeneratePreflightBlockers.filter((item) => !isHardGenerateBlocker(item.label));
   const canonicalWorkspaceBlockers = useMemo(
     () =>
       uniqueStrings([
@@ -12947,16 +12957,17 @@ function PerformanceAIDashboardView({
       options?: { slopeEstimateOverride?: SurveySlopeResponse | null },
     ) => {
       const preflightBlockers = getGeneratePreflightBlockers(target);
-      if (preflightBlockers.length) {
-        const firstPanel = preflightBlockers[0]?.action ?? "generate";
+      const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
+      if (hardPreflightBlockers.length) {
+        const firstPanel = hardPreflightBlockers[0]?.action ?? "generate";
         setRightRailCollapsed(false);
         setActiveSidePanel(firstPanel);
         appendChatMessage(
           "assistant",
-          `Generate preflight blocked:\n${preflightBlockers.map((item) => `- ${item.label}`).join("\n")}`,
+          `Draft generation needs the site first:\n${hardPreflightBlockers.map((item) => `- ${item.label}`).join("\n")}`,
           "status",
         );
-        setStatusMessage(`Generate blocked: ${preflightBlockers[0].label}.`);
+        setStatusMessage(`Draft generation needs site setup: ${hardPreflightBlockers[0].label}.`);
         return;
       }
       if (!hasSiteBoundary()) {
@@ -12970,43 +12981,11 @@ function PerformanceAIDashboardView({
       if (!ensureSiteLocked(target)) {
         return;
       }
-      const hasBasin =
-        target === "drainage" || target === "full"
-          ? buildingPlacements.some((item) => item.type === "basin" && item.placed)
-          : true;
-      if (!hasBasin && (target === "drainage" || target === "full")) {
-        askClarification(
-          "Drainage needs a basin or outfall target. Do you want me to add a basin object for you?",
-          "drainage_missing_basin",
-          { target },
-        );
-        return;
-      }
-      if (target === "roads") {
-        const hasRoadAnchor = buildingPlacements.some((item) =>
-          ["road", "driveway", "entrance", "building"].includes(item.type ?? ""),
-        );
-        if (!hasRoadAnchor) {
-          setStatusMessage("Add a building or entrance before generating roads.");
-          return;
-        }
-      }
       if (target === "grading" || target === "drainage" || target === "full") {
         const lot = resolveLotBounds();
         const siteAreaAcres = siteAreaAcresFromSize(lot.w, lot.h);
         if (target === "grading" && siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES) {
           setStatusMessage(OVERSIZED_SITE_MESSAGE);
-          return;
-        }
-        const effectiveSlopeEstimate = options?.slopeEstimateOverride ?? surveySlopeEstimate;
-        const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
-        const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
-        if (!hasSurvey && !hasMapTerrain && !effectiveSlopeEstimate?.slope_percent) {
-          askClarification(
-            "I need a terrain source for grading. Use survey, map terrain, or a first‑pass assumed slope?",
-            "grading_source",
-            { target },
-          );
           return;
         }
       }
@@ -13015,7 +12994,14 @@ function PerformanceAIDashboardView({
       const nextManualFields = {
         ...(requestPayload.manual_fields ?? {}),
       } as Record<string, unknown>;
-      const slopeEstimateOverride = options?.slopeEstimateOverride ?? null;
+      const targetUsesTerrain = target === "grading" || target === "drainage" || target === "full";
+      const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
+      const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
+      const slopeEstimateOverride =
+        options?.slopeEstimateOverride ??
+        (targetUsesTerrain && !hasSurvey && !hasMapTerrain && !surveySlopeEstimate?.slope_percent
+          ? buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8)
+          : null);
       if (slopeEstimateOverride?.slope_percent) {
         nextManualFields.grading = {
           ...((typeof nextManualFields.grading === "object" && nextManualFields.grading !== null
@@ -13075,7 +13061,7 @@ function PerformanceAIDashboardView({
       await executePlanAction({
         mode: "run",
         requestPayload: systemRequestPayload,
-        assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
+        assistantPrefix: `Generating a review draft for ${systemLabel} around the locked site...`,
         timeoutMs: queueLongRun ? undefined : 20_000,
         allowQueueFallback: true,
         forceQueue: queueLongRun,
@@ -13094,6 +13080,7 @@ function PerformanceAIDashboardView({
     },
     [
       askClarification,
+      assumedTerrainSlopePct,
       buildPayloadFromOverrides,
       buildingPlacements,
       executePlanAction,
@@ -15420,7 +15407,7 @@ function PerformanceAIDashboardView({
     !siteScaleLocked ? "Setup panel -> Lock site boundary." : "",
     existingConditionRows.some((item) => item.status === "block") ? "Data panel -> resolve missing existing-condition evidence." : "",
     placedObjectCount <= 1 ? "Objects panel -> add or draw buildings, parking, roads, basin/outfall, and utility points/lines." : "",
-    systemReadinessRows.some((row) => row.blockers.length) ? `Generate Systems panel -> ${systemReadinessRows.find((row) => row.blockers.length)?.label}: ${systemReadinessRows.find((row) => row.blockers.length)?.blockers[0]}` : "",
+    systemReadinessRows.some((row) => row.blockers.some(isHardGenerateBlocker)) ? `Generate Systems panel -> ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.label}: ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.blockers.find(isHardGenerateBlocker)}` : "",
     getExportBlockReason() ? `Deliver panel -> export blocked: ${getExportBlockReason()}.` : "",
   ].filter(Boolean);
   const formatSupportValue = (value: string, blocked = false) => ({ value, status: blocked ? "block" : "review" });
@@ -18282,6 +18269,7 @@ function PerformanceAIDashboardView({
                         Type project address
                         <input
                           ref={siteAddressInputRef}
+                          aria-label="Type project address"
                           value={siteAddress}
                           onChange={(event) => {
                             setSiteAddress(event.target.value);
@@ -18332,33 +18320,175 @@ function PerformanceAIDashboardView({
                         </button>
                       </div>
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={handleStartBlankSite}
-                        aria-label="Start a blank site from setup summary and clear address map evidence"
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                      >
-                        Start from blank site
-                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Clear address map evidence
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-site-box-controls">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site boundary / size box</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {siteScaleLocked ? "Locked project area" : "Move or resize before locking"}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            Draw the boundary, or type a size and move the box on the canvas. Only the locked area drives generation.
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                        }`}>
+                          {siteScaleLocked ? "Locked" : "Editable"}
                         </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
-                        aria-label={
-                          siteScaleLocked
-                            ? "Unlock site boundary from setup summary for editing"
-                            : "Lock current site boundary from setup summary for engineer review"
-                        }
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                      >
-                        {siteScaleLocked ? "Change site boundary" : "Lock site boundary"}
-                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          {siteScaleLocked ? "Unlock for editing" : "Engineer review required"}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+                        <label className="flex flex-col gap-1 font-semibold">
+                          Width (ft)
+                          <input
+                            type="number"
+                            value={lotWidth}
+                            disabled={siteScaleLocked}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setLotWidth(nextValue);
+                              const width = parsePositiveNumber(nextValue);
+                              const height = parsePositiveNumber(lotHeight);
+                              if (width && height) {
+                                autoFitSite(width, height, "Draft Site Boundary", undefined, false, false);
+                              }
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 font-semibold">
+                          Depth (ft)
+                          <input
+                            type="number"
+                            value={lotHeight}
+                            disabled={siteScaleLocked}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setLotHeight(nextValue);
+                              const width = parsePositiveNumber(lotWidth);
+                              const height = parsePositiveNumber(nextValue);
+                              if (width && height) {
+                                autoFitSite(width, height, "Draft Site Boundary", undefined, false, false);
+                              }
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        </label>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        {siteSizeSet
+                          ? `${(((parsePositiveNumber(lotWidth) ?? 0) * (parsePositiveNumber(lotHeight) ?? 0)) / SQFT_PER_ACRE).toFixed(2)} acres`
+                          : "Type width/depth or pick a quick size."}
+                      </p>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {[1, 4.2, 10].map((acres) => (
+                          <button
+                            key={acres}
+                            type="button"
+                            disabled={siteScaleLocked}
+                            onClick={() => {
+                              const side = Math.round(Math.sqrt(acres * SQFT_PER_ACRE));
+                              setLotWidth(String(side));
+                              setLotHeight(String(side));
+                              autoFitSite(side, side, `${acres} Acre Draft Site`, undefined, true, false);
+                              setSiteSelectionMode(true);
+                              setShowSiteBounds(true);
+                              setPreviewInteraction("edit");
+                              setStatusMessage(`Created a movable ${acres}-acre site box. Move it on the canvas, then lock the site.`);
+                            }}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {acres} acre{acres === 1 ? "" : "s"}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={handleStartSiteBoundaryDraw}
+                          disabled={siteScaleLocked}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Draw boundary
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveWorkspaceMode("canvas");
+                            setActiveSidePanel(null);
+                            setRenderedSidePanel(null);
+                            setSidePanelVisible(false);
+                            setRightRailCollapsed(true);
+                            setSiteSelectionMode(true);
+                            setShowSiteBounds(true);
+                            setPreviewInteraction("edit");
+                            scrollToDrawingSurface();
+                            setStatusMessage(siteScaleLocked ? "Unlock the site before moving the site box." : "Move or resize the draft site box on the canvas, then lock the site.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          Move box
+                        </button>
+                        <button
+                          type="button"
+                          onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
+                          className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] ${
+                            siteScaleLocked
+                              ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                              : "border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
+                          }`}
+                        >
+                          {siteScaleLocked ? "Unlock site" : "Lock site"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-detect-inside-site">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detect inside site</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {siteScaleLocked ? "Ready to review source context" : "Lock the site first"}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            Civora only uses the locked project area for draft systems. Source items outside it stay context, not design scope.
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {siteScaleLocked ? "Inside only" : "Waiting"}
                         </span>
-                      </button>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          disabled={!siteScaleLocked}
+                          onClick={() => {
+                            setStatusMessage("Reviewing configured sources inside the locked site. Outside context remains ignored for generation.");
+                            void runSelectedDetections();
+                          }}
+                          className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          Detect buildings / roads / grading
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
+                            Uses available sources inside site
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!siteScaleLocked}
+                          onClick={() => {
+                            handleOpenSidePanel("objects");
+                            setStatusMessage("Add or draw project objects inside the locked site.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Draw / add objects
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Building, parking, basin, roads, utilities
+                          </span>
+                        </button>
+                      </div>
                     </div>
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="assumed-terrain-slope-control">
                       <div className="flex items-start justify-between gap-3">
@@ -18400,119 +18530,23 @@ function PerformanceAIDashboardView({
                     </div>
                     <details className="rounded-2xl border border-slate-200 bg-white p-4">
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Boundary, source, and size details
+                        Advanced sources and imports
                       </summary>
                       <div className="mt-3 space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project setup</p>
-                          <p className="mt-1 text-lg font-semibold text-slate-950">Start the site</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            Set the address or blank site, define size, draw the boundary, then lock it before generating systems.
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
-                          Engineer review required
-                        </span>
-                      </div>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveSidePanel("site_existing");
-                            siteAddressInputRef.current?.focus();
-                            setStatusMessage("Enter an address, choose a suggestion if one appears, then apply the address.");
-                          }}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
-                        >
-                          Start from address
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Geocode first, then add map or terrain
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleStartBlankSite}
-                          aria-label="Start a blank site from detailed setup controls and clear address map evidence"
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
-                        >
-                          Start from blank site
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Begin with editable width and length
-                          </span>
-                        </button>
-                      </div>
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Site size</p>
-                        <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
-                          <label className="flex flex-col gap-1 font-semibold">
-                            Width / length (ft)
-                            <input
-                              type="number"
-                              value={lotWidth}
-                              disabled={siteScaleLocked}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setLotWidth(nextValue);
-                                setBuildingPlacements((prev) =>
-                                  prev.map((item) =>
-                                    item.type === "site"
-                                      ? { ...item, w: parsePositiveNumber(nextValue) ?? item.w }
-                                      : item,
-                                  ),
-                                );
-                              }}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 disabled:cursor-not-allowed disabled:opacity-60"
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1 font-semibold">
-                            Depth / length (ft)
-                            <input
-                              type="number"
-                              value={lotHeight}
-                              disabled={siteScaleLocked}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setLotHeight(nextValue);
-                                setBuildingPlacements((prev) =>
-                                  prev.map((item) =>
-                                    item.type === "site"
-                                      ? { ...item, d: parsePositiveNumber(nextValue) ?? item.d }
-                                      : item,
-                                  ),
-                                );
-                              }}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 disabled:cursor-not-allowed disabled:opacity-60"
-                            />
-                          </label>
-                        </div>
-                        <p className="mt-2 text-xs font-semibold text-slate-500">
-                          {siteSizeSet
-                            ? `${(((parsePositiveNumber(lotWidth) ?? 0) * (parsePositiveNumber(lotHeight) ?? 0)) / SQFT_PER_ACRE).toFixed(2)} acres`
-                            : "Set both dimensions, or ask chat to create an acreage-based blank site."}
-                        </p>
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          {[1, 5, 10].map((acres) => (
-                            <button
-                              key={acres}
-                              type="button"
-                              disabled={siteScaleLocked}
-                              onClick={() => {
-                                const side = Math.round(Math.sqrt(acres * SQFT_PER_ACRE));
-                                setLotWidth(String(side));
-                                setLotHeight(String(side));
-                                autoFitSite(side, side, "Blank Site Boundary", undefined, true, false);
-                                setSiteSelectionMode(true);
-                                setStatusMessage(`Set a blank ${acres}-acre site. Review dimensions, then draw or lock the boundary.`);
-                              }}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {acres} acre{acres === 1 ? "" : "s"}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Source tools</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">Optional evidence for better review</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Upload/import sources here when you have them. They improve confidence, but they do not replace survey/control or engineer review.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleStartBlankSite}
+                        aria-label="Start a blank site from advanced source tools and clear address map evidence"
+                        className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                      >
+                        Clear address/source and start blank
+                      </button>
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2" data-testid="setup-wizard-current-step">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Auto Setup Wizard</p>
@@ -20249,21 +20283,23 @@ function PerformanceAIDashboardView({
                         Generate systems
                       </p>
                       <p className="mt-1 text-sm text-slate-600">
-                        Run one discipline or regenerate the whole coordinated model.
+                        Start a review draft from the locked site. Missing proof stays visible for review and package readiness.
                       </p>
                       <div className={`mt-3 rounded-xl border p-3 ${
-                        fullGeneratePreflightBlockers.length
+                        fullGenerateHardBlockers.length
                           ? "border-red-200 bg-red-50"
-                          : "border-emerald-200 bg-emerald-50"
+                          : fullGenerateProofGaps.length
+                            ? "border-amber-200 bg-amber-50"
+                            : "border-emerald-200 bg-emerald-50"
                       }`} data-testid="generate-preflight-blockers">
                         <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                          fullGeneratePreflightBlockers.length ? "text-red-600" : "text-emerald-700"
+                          fullGenerateHardBlockers.length ? "text-red-600" : fullGenerateProofGaps.length ? "text-amber-700" : "text-emerald-700"
                         }`}>
-                          Generate preflight
+                          Draft generation check
                         </p>
-                        {fullGeneratePreflightBlockers.length ? (
+                        {fullGenerateHardBlockers.length ? (
                           <div className="mt-2 space-y-2">
-                            {fullGeneratePreflightBlockers.map((item) => (
+                            {fullGenerateHardBlockers.map((item) => (
                               <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs">
                                 <span className="font-semibold text-red-800">{item.label}</span>
                                 <button
@@ -20272,6 +20308,24 @@ function PerformanceAIDashboardView({
                                   className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-red-700 hover:bg-red-100"
                                 >
                                   Fix
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : fullGenerateProofGaps.length ? (
+                          <div className="mt-2 space-y-2">
+                            <p className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800">
+                              Draft generation can run. These items are still needed for stronger proof, review package readiness, or external engineer review.
+                            </p>
+                            {fullGenerateProofGaps.slice(0, 6).map((item) => (
+                              <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs">
+                                <span className="font-semibold text-amber-800">{item.label}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSidePanel(item.action)}
+                                  className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-amber-700 hover:bg-amber-100"
+                                >
+                                  Improve
                                 </button>
                               </div>
                             ))}
@@ -20290,10 +20344,10 @@ function PerformanceAIDashboardView({
                             ))}
                           </div>
                         ) : null}
-                        {(fullGeneratePreflightBlockers.some((item) => item.label === "missing standards") ||
-                          fullGeneratePreflightBlockers.some((item) => /outfall/i.test(item.label))) ? (
+                        {(fullGenerateProofGaps.some((item) => item.label === "missing standards") ||
+                          fullGenerateProofGaps.some((item) => /outfall/i.test(item.label))) ? (
                           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            {fullGeneratePreflightBlockers.some((item) => item.label === "missing standards") ? (
+                            {fullGenerateProofGaps.some((item) => item.label === "missing standards") ? (
                               <button
                                 type="button"
                                 onClick={() => handleOpenSidePanel("standards")}
@@ -20305,7 +20359,7 @@ function PerformanceAIDashboardView({
                                 </span>
                               </button>
                             ) : null}
-                            {fullGeneratePreflightBlockers.some((item) => /outfall/i.test(item.label)) ? (
+                            {fullGenerateProofGaps.some((item) => /outfall/i.test(item.label)) ? (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -20335,21 +20389,25 @@ function PerformanceAIDashboardView({
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
-                          const blocked = row.blockers.length > 0;
+                          const hardBlockers = row.blockers.filter(isHardGenerateBlocker);
+                          const proofGaps = row.blockers.filter((item) => !isHardGenerateBlocker(item));
+                          const blocked = hardBlockers.length > 0;
                           const statusLabel = blocked
-                            ? row.blockers[0]
+                            ? hardBlockers[0]
                             : row.status === "fresh"
                               ? "Run complete / current"
                               : busy || visibleActiveJob
                                 ? "Queue or wait for current run"
-                                : "Ready to run";
+                                : proofGaps.length
+                                  ? `Draft can run; proof gap: ${proofGaps[0]}`
+                                  : "Ready to run";
                           return (
                             <button
                               key={row.key}
                               type="button"
                               data-testid={`generate-${row.key}`}
                               onClick={() => blocked ? handleOpenSidePanel(row.panel) : handleGenerateSystem(row.runTarget)}
-                              title={blocked ? `Blocked: ${row.blockers.join("; ")}` : `Run ${row.label}`}
+                              title={blocked ? `Blocked: ${hardBlockers.join("; ")}` : proofGaps.length ? `Run ${row.label}; proof gaps remain: ${proofGaps.join("; ")}` : `Run ${row.label}`}
                               className={`rounded-xl border px-3 py-3 text-left transition ${
                                 blocked
                                   ? "border-red-100 bg-red-50 hover:border-red-200"
@@ -20362,9 +20420,9 @@ function PerformanceAIDashboardView({
                                 {row.label}
                               </span>
                               <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                blocked ? "text-red-500" : "text-slate-400"
+                                blocked ? "text-red-500" : proofGaps.length ? "text-amber-600" : "text-slate-400"
                               }`}>
-                                {blocked ? "Blocked" : row.status.replace("_", " ")}
+                                {blocked ? "Blocked" : proofGaps.length ? "Proof gaps" : row.status.replace("_", " ")}
                               </span>
                               <span className="mt-2 block text-[11px] leading-4 text-slate-500">
                                 {statusLabel}
@@ -20375,13 +20433,13 @@ function PerformanceAIDashboardView({
                         <button
                           type="button"
                           onClick={() => {
-                            if (fullGeneratePreflightBlockers.length) {
-                              setStatusMessage(`Full Generate blocked: ${canonicalWorkspaceBlockerText}`);
+                            if (fullGenerateHardBlockers.length) {
+                              setStatusMessage(`Draft generation needs site setup: ${fullGenerateHardBlockers[0]?.label}.`);
                               setRightRailCollapsed(false);
                               handleOpenSidePanel("generate");
                               appendChatMessage(
                                 "assistant",
-                                `Full Generate is blocked:\n${canonicalWorkspaceBlockers.map((item) => `- ${item}`).join("\n")}`,
+                                `Draft generation needs the site first:\n${fullGenerateHardBlockers.map((item) => `- ${item.label}`).join("\n")}`,
                                 "status",
                               );
                               return;
@@ -20389,16 +20447,16 @@ function PerformanceAIDashboardView({
                             void handleGenerateSystem("full");
                           }}
                           className={`col-span-2 rounded-xl border px-3 py-3 text-left transition ${
-                            fullGeneratePreflightBlockers.length
+                            fullGenerateHardBlockers.length
                               ? "border-red-200 bg-red-50 text-red-800 hover:bg-red-100"
                               : "border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
                           }`}
                         >
                           <span className="block text-xs font-semibold uppercase tracking-[0.14em]">
-                            {fullGeneratePreflightBlockers.length ? "Full System Run Blocked" : "Full System Run"}
+                            {fullGenerateHardBlockers.length ? "Lock Site Before Draft" : "Run Draft Generation"}
                           </span>
-                          <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${fullGeneratePreflightBlockers.length ? "text-red-600" : "text-white/65"}`}>
-                            {fullGeneratePreflightBlockers.length ? canonicalWorkspaceBlockers[0] || "Open preflight blockers" : "Roads, grading, drainage, utilities"}
+                          <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${fullGenerateHardBlockers.length ? "text-red-600" : "text-white/65"}`}>
+                            {fullGenerateHardBlockers.length ? fullGenerateHardBlockers[0]?.label || "Site setup required" : "Runs what it can; proof gaps stay visible"}
                           </span>
                         </button>
                       </div>
