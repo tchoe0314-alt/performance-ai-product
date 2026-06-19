@@ -772,7 +772,8 @@ export default function PreviewPanel({
   const canUse3D = showMap || hasLiveObjects || preview3DEffectiveItems.length > 0 || Boolean(planPreviewUrl);
   const showHover = previewInteraction === "static";
   const allowEdits = previewInteraction === "edit";
-  const overlayPointerEvents = allowMapInteraction ? "pointer-events-none" : "pointer-events-auto";
+  const drawingSurfaceActive = drawMode !== "select" || allowEdits || showMap;
+  const overlayPointerEvents = allowMapInteraction || !drawingSurfaceActive ? "pointer-events-none" : "pointer-events-auto";
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
@@ -5159,7 +5160,7 @@ export default function PreviewPanel({
                 ) : null}
               </div>
             </div>
-            <div className="pointer-events-none relative z-[20] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
+            <div className="pointer-events-none relative z-[80] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
               <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
                 <button
@@ -5237,7 +5238,7 @@ export default function PreviewPanel({
                             onSetPreviewInteraction("edit");
                           }
                         }}
-                        className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 transition ${
+                        className={`relative z-[90] inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 transition ${
                           active
                             ? "border-slate-900 bg-slate-950 text-white"
                             : disabled
@@ -5374,7 +5375,7 @@ export default function PreviewPanel({
                 </button>
               </section>
             </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            <div className="pointer-events-auto relative z-[80] flex min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
               <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
                 {drawMode === "site" && draftPoints.length
                   ? "Draft site boundary"
@@ -5401,7 +5402,7 @@ export default function PreviewPanel({
                       onClick={finishDraftGeometry}
                       disabled={draftPointCount < finishDraftMinPoints}
                       title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                      className="relative z-20 inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-3 text-xs text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      className="relative z-[90] inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-3 text-xs text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       Finish
                     </button>
@@ -5714,7 +5715,7 @@ export default function PreviewPanel({
                         onClick={finishDraftGeometry}
                         disabled={draftPointCount < finishDraftMinPoints}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                        className="relative z-20 inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="relative z-[90] inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         Finish
                       </button>
@@ -6341,7 +6342,7 @@ export default function PreviewPanel({
                               });
                             }
                           }}
-                          className={`inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-[11px] font-semibold transition ${
+                          className={`relative z-[90] inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-[11px] font-semibold transition ${
                             active
                               ? "border-slate-900 bg-slate-950 text-white"
                               : disabled
@@ -6362,7 +6363,7 @@ export default function PreviewPanel({
                         onClick={finishDraftGeometry}
                         disabled={draftPointCount < finishDraftMinPoints}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                        className="relative z-20 min-h-10 flex-1 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="relative z-[90] min-h-10 flex-1 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         Finish
                       </button>
@@ -7959,7 +7960,7 @@ export default function PreviewPanel({
                     ) : null}
                     <div
                       data-testid="preview-drawing-surface"
-                      className={`${overlayPointerEvents} absolute inset-0 z-[30]`}
+                      className={`${overlayPointerEvents} absolute inset-0 z-[15]`}
                       style={{
                         transformOrigin: "top left",
                         transform: `${viewportTransformStyle.transform}${

@@ -11294,7 +11294,10 @@ function PerformanceAIDashboardView({
     setActiveSidePanel(null);
     setRenderedSidePanel(null);
     setSidePanelVisible(false);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+    setRightRailCollapsed(true);
+    setBottomPanelCollapsed(true);
+    setSiteDrawRequest((value) => value + 1);
+    if (typeof window !== "undefined") {
       setLeftSidebarOpen(false);
     }
     scrollToDrawingSurface();
@@ -11320,6 +11323,13 @@ function PerformanceAIDashboardView({
     }
     setActiveWorkspaceMode("canvas");
     setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
+    setBottomPanelCollapsed(true);
+    if (typeof window !== "undefined") {
+      setLeftSidebarOpen(false);
+    }
     setShowSiteBounds(true);
     setSiteSelectionMode(true);
     setPreviewInteraction("edit");
@@ -12354,7 +12364,7 @@ function PerformanceAIDashboardView({
         code === "NO_VALID_OUTFALL" ||
         code === "NO_PONDS_DEFINED"
       ) {
-        return Boolean(pickBestLowPoint());
+        return true;
       }
       if (code === "ORPHAN_INLETS" || code === "POOR_SLOPE") return true;
       return false;
@@ -15642,16 +15652,17 @@ function PerformanceAIDashboardView({
     {
       label: "Address",
       icon: MapPinned,
-      modes: ["setup"] as PrimaryWorkflowKey[],
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
       action: () => handleOpenPanelFromDrawer("site_existing"),
       active: sidePanelForRender === "site_existing",
     },
     {
       label: siteScaleLocked ? "Unlock" : "Lock site",
       icon: Crosshair,
-      modes: ["setup"] as PrimaryWorkflowKey[],
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
       action: siteScaleLocked ? handleUnlockSite : () => void handleApplySite(),
       active: siteScaleLocked,
+      testId: "site-lock-toolbar",
     },
     {
       label: "Import",
@@ -15673,6 +15684,22 @@ function PerformanceAIDashboardView({
       modes: ["draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
       action: () => setPreviewInteraction("static"),
       active: false,
+    },
+    {
+      label: "Draw Site Boundary",
+      icon: Crosshair,
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
+      action: handleStartSiteBoundaryDraw,
+      active: !siteScaleLocked && activePrimaryWorkflowKey === "draw",
+      testId: "draw-site-boundary-toolbar",
+    },
+    {
+      label: "Change Site Boundary",
+      icon: Crosshair,
+      modes: ["draw"] as PrimaryWorkflowKey[],
+      action: handleUnlockSite,
+      active: siteScaleLocked,
+      testId: "change-site-boundary-toolbar",
     },
     {
       label: "Draw",
@@ -18903,8 +18930,21 @@ function PerformanceAIDashboardView({
                                 )}
                                 {planPdfElements
                                   .filter((element) => element.page_index === 0 && element.bbox && planPdfFirstPage?.width && planPdfFirstPage?.height)
+                                  .sort((left, right) => {
+                                    const leftBox = left.bbox;
+                                    const rightBox = right.bbox;
+                                    const leftArea = leftBox
+                                      ? Math.max(1, Number(leftBox.x1 ?? 0) - Number(leftBox.x0 ?? 0)) *
+                                        Math.max(1, Number(leftBox.y1 ?? 0) - Number(leftBox.y0 ?? 0))
+                                      : 0;
+                                    const rightArea = rightBox
+                                      ? Math.max(1, Number(rightBox.x1 ?? 0) - Number(rightBox.x0 ?? 0)) *
+                                        Math.max(1, Number(rightBox.y1 ?? 0) - Number(rightBox.y0 ?? 0))
+                                      : 0;
+                                    return rightArea - leftArea;
+                                  })
                                   .slice(0, 40)
-                                  .map((element) => {
+                                  .map((element, index) => {
                                     const bbox = element.bbox;
                                     const width = Number(planPdfFirstPage?.width ?? 1);
                                     const height = Number(planPdfFirstPage?.height ?? 1);
@@ -18929,6 +18969,10 @@ function PerformanceAIDashboardView({
                                           top: `${Math.max(0, Math.min(100, 100 - (y1 / height) * 100))}%`,
                                           width: `${Math.max(2, Math.min(80, ((x1 - x0) / width) * 100))}%`,
                                           height: `${Math.max(2, Math.min(20, ((y1 - y0) / height) * 100))}%`,
+                                          zIndex:
+                                            selectedPlanPdfElement?.element_id === element.element_id
+                                              ? 100
+                                              : 20 + index,
                                         }}
                                       >
                                         <span className="sr-only">{element.text}</span>
