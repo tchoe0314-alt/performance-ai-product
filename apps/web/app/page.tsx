@@ -337,6 +337,12 @@ type OnlineExistingConditionsFetchResponse = {
   canonical_existing_conditions?: Record<string, unknown>;
   warnings?: string[];
 };
+type AutoExistingConditionsUiStatus = {
+  status: "idle" | "waiting" | "running" | "ready" | "blocked";
+  message: string;
+  candidateCount: number;
+  missing: string[];
+};
 type LocalGisProviderRegistryResponse = LocalGisProviderRegistry & {
   status?: string;
   providers?: LocalGisProvider[];
@@ -2756,6 +2762,12 @@ function PerformanceAIDashboardView({
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedAddressSuggestion, setSelectedAddressSuggestion] = useState<AddressSuggestion | null>(null);
   const [onlineDiscoveryBusy, setOnlineDiscoveryBusy] = useState(false);
+  const [autoExistingConditionsStatus, setAutoExistingConditionsStatus] = useState<AutoExistingConditionsUiStatus>({
+    status: "waiting",
+    message: "Apply an address and lock the site. Civora will then check available source context inside the boundary.",
+    candidateCount: 0,
+    missing: [],
+  });
   const [providerSourceType, setProviderSourceType] = useState("parcels");
   const [providerServiceUrl, setProviderServiceUrl] = useState("");
   const [providerLayerId, setProviderLayerId] = useState("0");
@@ -2763,6 +2775,7 @@ function PerformanceAIDashboardView({
   const addressSuggestTimeoutRef = useRef<number | null>(null);
   const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "uploaded" | "detecting" | "failed">("idle");
   const [imageUploadNote, setImageUploadNote] = useState<string | null>(null);
+  const autoExistingRunKeyRef = useRef("");
   const [pendingClarification, setPendingClarification] = useState<{
     action: string;
     payload?: Record<string, unknown>;
@@ -8738,12 +8751,9 @@ function PerformanceAIDashboardView({
         : pendingPlacementObjects.length
           ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
           : progressTimelineState.next_action || nextSetupAction;
-      if (firstBlocker) {
-        handleOpenSidePanel(firstBlocker.action);
-      }
-      appendChatMessage(
-        "assistant",
-        `${visibleAction} Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
+	      appendChatMessage(
+	        "assistant",
+	        `${visibleAction} Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
         "status",
       );
       return true;
@@ -11666,6 +11676,13 @@ function PerformanceAIDashboardView({
     setAnalysisSelectedIssueId(null);
     setIssues([]);
     setSelectedIssueId(null);
+    autoExistingRunKeyRef.current = "";
+    setAutoExistingConditionsStatus({
+      status: "waiting",
+      message: "Blank site started. Add an address later if you want Civora to auto-check public source context.",
+      candidateCount: 0,
+      missing: [],
+    });
     setAssumptions(defaultAssumptions);
     setFocusDetectedId(null);
     setFocusObjectId(null);
@@ -11897,6 +11914,277 @@ function PerformanceAIDashboardView({
     };
   }, [siteAddress, token]);
 
+  const runAutoExistingConditionsAfterSiteLock = useCallback(
+    async (projectInputOverride?: ProjectInput) => {
+      const currentInput = projectInputOverride ?? currentProject?.project_input ?? payloadPreview;
+      const currentSiteInputs = (currentInput?.meta?.site_inputs ?? {}) as SiteInputs;
+      const geocode = currentSiteInputs.geocode;
+      const address = String(currentSiteInputs.address || geocode?.display_name || siteAddress || "").trim();
+      const site = buildingPlacements.find((item) => item.type === "site");
+      const width = parsePositiveNumber(lotWidth) ?? site?.w ?? viewportFootprint?.widthFt ?? 0;
+      const height = parsePositiveNumber(lotHeight) ?? site?.d ?? viewportFootprint?.heightFt ?? 0;
+      const runKey = [
+        projectId || currentProject?.project_id || "local",
+        address,
+        geocode?.lat ?? viewportCenter?.lat ?? "",
+        geocode?.lng ?? viewportCenter?.lng ?? "",
+        Math.round(width),
+        Math.round(height),
+        site?.id ?? "",
+      ].join("|");
+
+      if (!address && !(geocode?.lat && geocode?.lng)) {
+        setAutoExistingConditionsStatus({
+          status: "blocked",
+          message: "Site is locked. Add an address to automatically check roads, buildings, terrain, constraints, and utilities.",
+          candidateCount: 0,
+          missing: ["address/geocode"],
+        });
+        setStatusMessage("Site locked. Add an address to auto-detect existing conditions inside the site.");
+        return;
+      }
+      if (!token) {
+        setAutoExistingConditionsStatus({
+          status: "blocked",
+          message: "Site is locked. Sign in or connect the backend to run automatic source discovery.",
+          candidateCount: 0,
+          missing: ["backend session"],
+        });
+        setStatusMessage("Site locked. Automatic source discovery needs a backend session.");
+        return;
+      }
+      if (autoExistingRunKeyRef.current === runKey) {
+        return;
+      }
+      autoExistingRunKeyRef.current = runKey;
+      setOnlineDiscoveryBusy(true);
+      setAutoExistingConditionsStatus({
+        status: "running",
+        message: "Checking parcels, roads, buildings, constraints, utilities, elevation, and grading context inside the locked site...",
+        candidateCount: 0,
+        missing: [],
+      });
+      setStatusMessage("Site locked. Civora is checking available existing-condition sources inside the boundary...");
+
+      try {
+        let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
+        try {
+          onlineFetch = await postJson<OnlineExistingConditionsFetchResponse>(
+            "/api/existing-conditions/fetch-online",
+            {
+              address: address || geocode?.display_name || "Locked site",
+              bbox: viewportFootprint?.bounds
+                ? {
+                    north: viewportFootprint.bounds.north,
+                    south: viewportFootprint.bounds.south,
+                    east: viewportFootprint.bounds.east,
+                    west: viewportFootprint.bounds.west,
+                    center_lat: viewportFootprint.bounds.centerLat,
+                    center_lng: viewportFootprint.bounds.centerLng,
+                    width_ft: width || viewportFootprint.widthFt,
+                    height_ft: height || viewportFootprint.heightFt,
+                  }
+                : undefined,
+              include_floodplain: true,
+              include_wetlands: true,
+              include_parcels: true,
+              include_building_footprints: true,
+              include_roads: true,
+              include_utilities: true,
+              include_contours: true,
+              include_elevation: true,
+              provider_registry: currentSiteInputs.local_gis_provider_registry_v1 ?? siteInputs?.local_gis_provider_registry_v1 ?? {},
+            },
+            { token },
+          );
+        } catch (error) {
+          onlineFetch = {
+            success: false,
+            status: "fetch_failed",
+            online_existing_conditions_discovery_v1: {
+              version: "online_existing_conditions_discovery_v1",
+              status: "fetch_failed",
+              candidate_count: 0,
+              sources: [],
+              blockers: [error instanceof Error ? error.message : "Automatic existing-condition discovery failed."],
+              review_required: true,
+              acceptance_status: "missing",
+              truth_label:
+                "Automatic existing-condition discovery failed; no source candidate is treated as accepted project evidence.",
+            },
+          };
+        }
+
+      const discovery = onlineFetch?.online_existing_conditions_discovery_v1;
+      const sources = Array.isArray(discovery?.sources) ? discovery.sources : [];
+      const candidateCount = Number(discovery?.candidate_count ?? 0);
+      const missing = sources
+        .filter((source) => Number(source.candidate_count ?? 0) <= 0)
+        .map((source) => String(source.label || source.key || source.source_type || "source unavailable"))
+        .slice(0, 6);
+      const slopePct = parsePositiveNumber(assumedTerrainSlopePct) ?? 8;
+      const needsAssumedSlope = !hasTerrainSource && !surveySlopeEstimate?.slope_percent;
+      const slopeEstimateOverride = needsAssumedSlope ? buildAssumedSlopeEstimate(slopePct) : null;
+      if (needsAssumedSlope && slopeEstimateOverride) {
+        setAssumedTerrainSlopePct(String(slopePct));
+        setUseSurveyForGrading(false);
+        setSurveySlopeEstimate(slopeEstimateOverride);
+      }
+
+      const autoExistingConditions = {
+        version: "auto_existing_conditions_v1",
+        status: candidateCount > 0 || slopeEstimateOverride || hasTerrainSource ? "ready_for_review" : "blocked_or_missing_sources",
+        triggered_by: "site_lock",
+        clipped_to_locked_site: true,
+        candidate_count: candidateCount,
+        sources_requested: [
+          "parcels",
+          "buildings",
+          "roads",
+          "floodplain",
+          "wetlands",
+          "utilities",
+          "contours",
+          "elevation",
+          "grading_context",
+        ],
+        missing_sources: missing,
+        grading_context: slopeEstimateOverride
+          ? {
+              source: "explicit_assumed_slope",
+              slope_percent: slopePct,
+              review_required: true,
+              survey_backed: false,
+            }
+          : {
+              source: hasTerrainSource ? "survey_or_terrain_source" : "missing",
+              review_required: true,
+              survey_backed: hasVerifiedSurveyControl,
+            },
+        review_required: true,
+        construction_release_allowed: false,
+        truth_label:
+          "Automatic existing-condition detection creates review-required candidates only; it is not survey/control or construction-release evidence.",
+      };
+      const nextSiteInputs: SiteInputs = {
+        ...currentSiteInputs,
+        site_alignment_locked: true,
+        site_boundary_state: "locked_canonical",
+        online_existing_conditions_discovery_v1: discovery ?? currentSiteInputs.online_existing_conditions_discovery_v1,
+        map_feature_detection_report_v1:
+          onlineFetch?.map_feature_detection_report_v1 ?? currentSiteInputs.map_feature_detection_report_v1,
+        existing_conditions_package:
+          onlineFetch?.existing_conditions_package ?? currentSiteInputs.existing_conditions_package,
+        auto_existing_conditions_v1: autoExistingConditions,
+        ...(slopeEstimateOverride
+          ? {
+              assumed_terrain_slope_pct: slopePct,
+              slope_estimate: slopeEstimateOverride,
+              use_survey_for_grading: false,
+            }
+          : {}),
+      };
+      if (discovery?.local_gis_provider_registry_v1) {
+        nextSiteInputs.local_gis_provider_registry_v1 = discovery.local_gis_provider_registry_v1;
+      }
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+      };
+      const latestResultOverride =
+        currentProject?.latest_result?.final_plan
+          ? {
+              ...currentProject.latest_result,
+              final_plan: {
+                ...currentProject.latest_result.final_plan,
+                meta: {
+                  ...(currentProject.latest_result.final_plan.meta ?? {}),
+                  online_existing_conditions_discovery_v1: discovery,
+                  map_feature_detection_report_v1: onlineFetch?.map_feature_detection_report_v1,
+                  existing_conditions_package: onlineFetch?.existing_conditions_package,
+                  existing_conditions_summary: onlineFetch?.existing_conditions_summary,
+                  auto_existing_conditions_v1: autoExistingConditions,
+                },
+              },
+            }
+          : undefined;
+
+      setCurrentProject((project) =>
+        project
+          ? {
+              ...project,
+              project_input: nextProjectInput,
+              latest_result: latestResultOverride ?? project.latest_result,
+              has_result: latestResultOverride ? true : project.has_result,
+              updated_at: Date.now() / 1000,
+            }
+          : project,
+      );
+      await saveProject({
+        silent: true,
+        projectInputOverride: nextProjectInput,
+        latestResultOverride,
+      });
+      setAutoExistingConditionsStatus({
+        status: candidateCount > 0 || slopeEstimateOverride || hasTerrainSource ? "ready" : "blocked",
+        message:
+          candidateCount > 0
+            ? `Found ${candidateCount} source candidate${candidateCount === 1 ? "" : "s"} inside/near the locked site for review.`
+            : slopeEstimateOverride
+              ? `No source candidates were found yet. Grading has an explicit ${slopePct}% assumed slope for review only.`
+              : "No usable source candidates were found from configured providers.",
+        candidateCount,
+        missing,
+      });
+      setStatusMessage(
+        candidateCount > 0
+          ? `Site locked. Civora found ${candidateCount} existing-condition candidate${candidateCount === 1 ? "" : "s"} for review inside the site.`
+          : slopeEstimateOverride
+            ? `Site locked. No source candidates found yet; grading is using an explicit ${slopePct}% assumed slope for review only.`
+            : "Site locked. Existing-condition auto-detection ran, but configured sources did not return usable candidates.",
+      );
+        if (slopeEstimateOverride || hasTerrainSource) {
+          void handleGenerateSystemRef.current?.("grading", { slopeEstimateOverride });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Automatic existing-condition discovery could not finish.";
+        setAutoExistingConditionsStatus({
+          status: "blocked",
+          message,
+          candidateCount: 0,
+          missing: ["automatic source discovery"],
+        });
+        setStatusMessage(message);
+      } finally {
+        setOnlineDiscoveryBusy(false);
+      }
+    },
+    [
+      assumedTerrainSlopePct,
+      buildingPlacements,
+      currentProject,
+      hasTerrainSource,
+      hasVerifiedSurveyControl,
+      lotHeight,
+      lotWidth,
+      payloadPreview,
+      projectId,
+      saveProject,
+      siteAddress,
+      siteInputs,
+      surveySlopeEstimate?.slope_percent,
+      token,
+      viewportCenter,
+      viewportFootprint,
+    ],
+  );
+
   const handleApplySite = useCallback(async () => {
     if (applyingSiteRef.current) return;
     if (siteScaleLocked) {
@@ -12008,8 +12296,9 @@ function PerformanceAIDashboardView({
         lat: viewportCenter?.lat,
         lng: viewportCenter?.lng,
       };
-      setStatusMessage("Site boundary locked for engineer review.");
       applyingSiteRef.current = false;
+      setStatusMessage("Site boundary locked. Checking available existing-condition sources inside the site...");
+      void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
       return;
     }
     const lastApplied = lastAppliedSiteRef.current;
@@ -12095,6 +12384,25 @@ function PerformanceAIDashboardView({
       lng: viewportCenter?.lng,
     };
     applyingSiteRef.current = false;
+    void runAutoExistingConditionsAfterSiteLock({
+      ...currentInput,
+      input_mode: "user",
+      strict_mode: false,
+      allow_ai_fill_for_blanks: false,
+      meta: {
+        ...(currentInput?.meta ?? {}),
+        site_inputs: nextSiteInputs,
+      },
+      manual_fields: {
+        ...(currentInput?.manual_fields ?? {}),
+        lot: {
+          x: 0,
+          y: 0,
+          w: width,
+          h: height,
+        },
+      },
+    });
   }, [
     autoFitSite,
     buildingPlacements,
@@ -12102,6 +12410,7 @@ function PerformanceAIDashboardView({
     lotHeight,
     lotWidth,
     payloadPreview,
+    runAutoExistingConditionsAfterSiteLock,
     saveProject,
     viewportCenter,
     viewportFootprint,
@@ -12166,6 +12475,13 @@ function PerformanceAIDashboardView({
     if (!trimmed) {
       setSelectedAddressSuggestion(null);
       setAddressSuggestions([]);
+      autoExistingRunKeyRef.current = "";
+      setAutoExistingConditionsStatus({
+        status: "waiting",
+        message: "Apply an address and lock the site. Civora will then check available source context inside the boundary.",
+        candidateCount: 0,
+        missing: [],
+      });
       await saveProject({
         silent: true,
         projectInputOverride: {
@@ -12319,6 +12635,7 @@ function PerformanceAIDashboardView({
       setPreviewQuality("high");
       setSiteSelectionMode(true);
       setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
+      autoExistingRunKeyRef.current = "";
       const candidateCount = Number(onlineFetch?.online_existing_conditions_discovery_v1?.candidate_count ?? 0);
       const lookupUnavailable =
         candidateCount === 0 &&
@@ -12331,7 +12648,18 @@ function PerformanceAIDashboardView({
             ? "Address applied; online source lookup not configured/available."
             : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
       );
+      setAutoExistingConditionsStatus({
+        status: siteScaleLocked ? "running" : "waiting",
+        message: siteScaleLocked
+          ? "Address changed. Civora will recheck sources inside the locked site."
+          : "Address applied. Lock the site boundary to auto-check roads, buildings, terrain, constraints, and utilities inside it.",
+        candidateCount,
+        missing: [],
+      });
       setSelectedAddressSuggestion(geocode);
+      if (siteScaleLocked) {
+        void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
+      }
     } catch (error) {
       setStatusMessage(
         error instanceof Error ? error.message : "Geocoding failed.",
@@ -17030,58 +17358,6 @@ function PerformanceAIDashboardView({
     { key: "quantities", label: "Quantities", panel: "quantities" },
     { key: "reports", label: "Reports", panel: "reports" },
   ];
-  const modeStarterCards: Array<{
-    key: PrimaryWorkflowKey;
-    title: string;
-    detail: string;
-    action: string;
-    panel: SidePanelKey;
-  }> = [
-    {
-      key: "setup",
-      title: siteScaleLocked ? "Site is locked" : "Lock site boundary",
-      detail: siteScaleLocked ? "Review sources and standards next." : "Set the boundary before relying on objects.",
-      action: siteScaleLocked ? "Review sources" : "Open setup",
-      panel: siteScaleLocked ? "data" : "site_existing",
-    },
-    {
-      key: "draw",
-      title: "Draw or edit",
-      detail: "Use Select, Draw, Modify, Measure, Snaps, and Layers from the command bar.",
-      action: "Open canvas tools",
-      panel: "model",
-    },
-    {
-      key: "design",
-      title: "Generate systems",
-      detail: "Run grading, drainage, utilities, roadway, and quantities when setup gates are ready.",
-      action: "Open run controls",
-      panel: "generate",
-    },
-    {
-      key: "analyze",
-      title: "Check blockers",
-      detail: previewBlockedReasons[0] || "Review conflicts, source confidence, and unresolved requirements.",
-      action: "Open issues",
-      panel: "analysis",
-    },
-    {
-      key: "review",
-      title: "Review evidence",
-      detail: "Inspect source confidence, assumptions, QA/QC, and reviewer assignments.",
-      action: "Open review",
-      panel: "reports",
-    },
-    {
-      key: "deliver",
-      title: "Prepare review package",
-      detail: "Create review sheets, reports, DXF/LandXML traces, and export audits.",
-      action: "Open sheets",
-      panel: "deliverables",
-    },
-  ];
-  const activeModeStarterCard =
-    modeStarterCards.find((card) => card.key === activePrimaryWorkflowKey) ?? modeStarterCards[0];
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -18550,33 +18826,77 @@ function PerformanceAIDashboardView({
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-detect-inside-site">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detect inside site</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Auto site context</p>
                           <p className="mt-1 text-sm font-semibold text-slate-900">
-                            {siteScaleLocked ? "Ready to review source context" : "Lock the site first"}
+                            {onlineDiscoveryBusy || autoExistingConditionsStatus.status === "running"
+                              ? "Checking available sources"
+                              : siteScaleLocked
+                                ? autoExistingConditionsStatus.status === "ready"
+                                  ? "Source candidates ready for review"
+                                  : "Auto-checks after site lock"
+                                : "Lock the site first"}
                           </p>
                           <p className="mt-1 text-xs font-medium text-slate-500">
-                            Civora only uses the locked project area for draft systems. Source items outside it stay context, not design scope.
+                            After the boundary is locked, Civora checks available roads, buildings, terrain, constraints, and utilities inside the site. Found items stay review-required until accepted.
                           </p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                          siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                          autoExistingConditionsStatus.status === "ready"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : autoExistingConditionsStatus.status === "running"
+                              ? "bg-sky-50 text-sky-700"
+                              : siteScaleLocked
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-slate-100 text-slate-500"
                         }`}>
-                          {siteScaleLocked ? "Inside only" : "Waiting"}
+                          {autoExistingConditionsStatus.status === "running"
+                            ? "Checking"
+                            : autoExistingConditionsStatus.status === "ready"
+                              ? "Review"
+                              : siteScaleLocked
+                                ? "Armed"
+                                : "Waiting"}
                         </span>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                        <p>{autoExistingConditionsStatus.message}</p>
+                        {autoExistingConditionsStatus.candidateCount > 0 ? (
+                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">
+                            {autoExistingConditionsStatus.candidateCount} candidate{autoExistingConditionsStatus.candidateCount === 1 ? "" : "s"} need review
+                          </p>
+                        ) : null}
+                        {autoExistingConditionsStatus.missing.length ? (
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            Missing/unavailable: {autoExistingConditionsStatus.missing.slice(0, 3).join(", ")}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <button
                           type="button"
                           disabled={!siteScaleLocked}
                           onClick={() => {
-                            setStatusMessage("Reviewing configured sources inside the locked site. Outside context remains ignored for generation.");
-                            void runSelectedDetections();
+                            void runAutoExistingConditionsAfterSiteLock();
+                            setStatusMessage("Rechecking available sources inside the locked site. Outside context remains ignored for generation.");
                           }}
                           className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                         >
-                          Detect buildings / roads / grading
+                          Recheck sources inside site
                           <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
-                            Map detection + grading draft
+                            Roads, buildings, terrain, utilities
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!siteScaleLocked}
+                          onClick={() => {
+                            void runSelectedDetections();
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Run map/image detection
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Optional snapshot + grading draft
                           </span>
                         </button>
                         <button
@@ -23787,30 +24107,6 @@ function PerformanceAIDashboardView({
 	                    >
 	                      Open full layer details
 	                    </button>
-	                  </div>
-	                ) : null}
-	                {!selectedBuilding && !layerManagerOpen && activePrimaryWorkflowKey !== "draw" ? (
-	                  <div className="absolute left-3 top-[9.75rem] z-40 hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/90 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]">
-	                    <div className="flex items-start justify-between gap-3">
-	                      <div className="min-w-0">
-	                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-	                          {activePrimaryWorkflowKey}
-	                        </p>
-	                        <p className="mt-1 text-sm font-semibold text-slate-950">
-	                          {activeModeStarterCard.title}
-	                        </p>
-	                        <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500">
-	                          {activeModeStarterCard.detail}
-	                        </p>
-	                      </div>
-	                      <button
-	                        type="button"
-	                        onClick={() => handleOpenPanelFromDrawer(activeModeStarterCard.panel)}
-	                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-	                      >
-	                        {activeModeStarterCard.action}
-	                      </button>
-	                    </div>
 	                  </div>
 	                ) : null}
 	                {selectedBuilding ? (

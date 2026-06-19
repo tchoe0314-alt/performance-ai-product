@@ -1362,6 +1362,7 @@ export type SiteInputs = {
   local_gis_provider_registry_v1?: LocalGisProviderRegistry;
   map_feature_detection_report_v1?: Record<string, unknown>;
   existing_conditions_package?: Record<string, unknown>;
+  auto_existing_conditions_v1?: Record<string, unknown>;
   viewport_bounds?: {
     north?: number;
     south?: number;
@@ -1390,6 +1391,7 @@ export type SiteInputs = {
   };
   survey_invalid_rows?: number;
   use_survey_for_grading?: boolean;
+  assumed_terrain_slope_pct?: number;
   detected_objects?: BuildingPlacement[];
   detection_scale?: {
     distance_ft?: number;
