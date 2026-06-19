@@ -166,6 +166,97 @@ body,
   text-transform: uppercase;
 }
 
+.civora-review-shell {
+  border: 1px solid var(--civora-border);
+  border-radius: var(--civora-radius-lg);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 0.875rem;
+  box-shadow: 0 18px 44px -36px rgba(18, 25, 38, 0.4);
+}
+
+.civora-review-section {
+  border: 1px solid var(--civora-border);
+  border-radius: var(--civora-radius-sm);
+  background: var(--civora-surface-muted);
+  padding: 0.625rem 0.75rem;
+}
+
+[data-testid="workspace-right-panel"] {
+  color: var(--civora-text);
+}
+
+[data-testid="workspace-right-panel"] :where(.rounded-2xl) {
+  border-radius: var(--civora-radius-lg);
+}
+
+[data-testid="workspace-right-panel"] :where(.rounded-xl) {
+  border-radius: var(--civora-radius-md);
+}
+
+[data-testid="workspace-right-panel"] :where(button, input, select, textarea) {
+  font-size: 0.8125rem;
+}
+
+[data-testid="workspace-right-panel"] :where(button) {
+  min-height: 2.25rem;
+}
+
+[data-testid="workspace-right-panel"] :where(button:not(:disabled)) {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+[data-testid="workspace-right-panel"] :where(button:focus-visible, summary:focus-visible) {
+  outline: 3px solid var(--civora-accent-soft);
+  outline-offset: 2px;
+}
+
+[data-testid="workspace-right-panel"] :where(details) {
+  scroll-margin: 1rem;
+}
+
+[data-testid="workspace-right-panel"] :where(summary) {
+  list-style: none;
+}
+
+[data-testid="workspace-right-panel"] :where(summary::-webkit-details-marker) {
+  display: none;
+}
+
+[data-testid="workspace-right-panel"] :where(summary)::after {
+  content: "Open";
+  margin-left: auto;
+  border: 1px solid var(--civora-border);
+  border-radius: var(--civora-radius-xs);
+  background: #fff;
+  padding: 0.125rem 0.4rem;
+  color: var(--civora-text-muted);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+[data-testid="workspace-right-panel"] :where(details[open] > summary)::after {
+  content: "Hide";
+}
+
+[data-testid="workspace-right-panel"] :where(table) {
+  font-size: 0.75rem;
+}
+
+[data-testid="workspace-right-panel"] :where(th) {
+  color: var(--civora-text-muted);
+  letter-spacing: 0.1em;
+}
+
+[data-testid="workspace-right-panel"] :where(td, th) {
+  vertical-align: top;
+}
+
 .civora-motion-sidebar,
 .civora-motion-right-panel,
 .civora-motion-bottom-panel,
