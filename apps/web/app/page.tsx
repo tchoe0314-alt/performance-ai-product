@@ -8479,18 +8479,6 @@ function PerformanceAIDashboardView({
       : onlineSourceLookupUnavailable
         ? "Address applied; online source lookup not configured/available."
         : "Address applied; no online source candidates accepted.";
-  const generatePreflightNotes = [
-    hasAssumedTerrainSlope
-      ? "assumed terrain slope / survey-control still needed"
-      : "",
-    hasAppliedAddress && onlineSourceLookupUnavailable
-      ? "Address applied; online source lookup not configured/available."
-      : "",
-    buildingPlacements.some((item) => item.type === "site")
-      ? "Site boundary count is separate from design object counts."
-      : "",
-  ].filter(Boolean);
-
   const getGeneratePreflightBlockers = useCallback(
     (target: SystemGenerationTarget) => {
       const lot = resolveLotBounds();
@@ -15410,17 +15398,6 @@ function PerformanceAIDashboardView({
     systemReadinessRows.some((row) => row.blockers.some(isHardGenerateBlocker)) ? `Generate Systems panel -> ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.label}: ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.blockers.find(isHardGenerateBlocker)}` : "",
     getExportBlockReason() ? `Deliver panel -> export blocked: ${getExportBlockReason()}.` : "",
   ].filter(Boolean);
-  const formatSupportValue = (value: string, blocked = false) => ({ value, status: blocked ? "block" : "review" });
-  const dwgCompatibilityMessage = "Unsupported natively; use DXF/LandXML review artifacts or an external conversion hook with workflow record";
-  const deliverableSupportRows = [
-    ["DXF", formatSupportValue(getExportBlockReason() || (backendResult ? "Review export available" : "Needs planner run"), Boolean(getExportBlockReason()))],
-    ["Engineer-review report", formatSupportValue(getExportBlockReason() || (backendResult ? "Available" : "Needs planner run"), Boolean(getExportBlockReason()))],
-    ["LandXML", formatSupportValue("Not generated in this UI yet", true)],
-    ["Civil 3D", formatSupportValue("Needs target workflow record; no native Civil 3D package", true)],
-    ["DWG", formatSupportValue(dwgCompatibilityMessage, true)],
-    ["Review support package", formatSupportValue(backendResult ? "Review-only package; independent professional review required" : "Needs run and review gates", !backendResult)],
-    ["Independent professional review", formatSupportValue("Required outside Civora")],
-  ] as const;
   const capabilityAuditRows = useMemo<CapabilityExposure[]>(() => {
     const meta = currentPlanMeta as Record<string, unknown>;
     const readRecord = (key: string): Record<string, unknown> =>
@@ -17192,7 +17169,7 @@ function PerformanceAIDashboardView({
             <button
               type="button"
               onClick={() => handleOpenPanelFromDrawer((setupWizardCurrentStep?.panel as SidePanelKey) || "site_existing")}
-              className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50"
+              className="hidden"
               data-testid="setup-wizard-sidebar-card"
             >
               <div className="flex items-start justify-between gap-3">
@@ -17253,7 +17230,7 @@ function PerformanceAIDashboardView({
 	                })}
 	              </div>
 	            </div>
-	            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="workflow-actions-sidebar">
+	            <div className="hidden" data-testid="workflow-actions-sidebar">
 	              <div className="flex items-center justify-between gap-3">
 	                <div>
 	                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -17307,7 +17284,7 @@ function PerformanceAIDashboardView({
 	                })}
 	              </div>
 	            </div>
-	            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="compact-truth-sidebar">
+	            <div className="hidden" data-testid="compact-truth-sidebar">
 	              <div className="flex items-start justify-between gap-3">
 	                <div>
 	                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Truth Status</p>
@@ -18547,7 +18524,7 @@ function PerformanceAIDashboardView({
                       >
                         Clear address/source and start blank
                       </button>
-                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2" data-testid="setup-wizard-current-step">
+                      <div className="hidden" data-testid="setup-wizard-current-step">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Auto Setup Wizard</p>
                           <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${setupWizardStatusClass(setupWizardState.current_status)}`}>
@@ -18588,7 +18565,7 @@ function PerformanceAIDashboardView({
                           ))}
                         </div>
                       </div>
-                      <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3" open>
+                      <details className="hidden">
                         <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Wizard steps
                         </summary>
@@ -20295,97 +20272,33 @@ function PerformanceAIDashboardView({
                         <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${
                           fullGenerateHardBlockers.length ? "text-red-600" : fullGenerateProofGaps.length ? "text-amber-700" : "text-emerald-700"
                         }`}>
-                          Draft generation check
+                          {fullGenerateHardBlockers.length ? "Site needed" : "Ready to draft"}
                         </p>
                         {fullGenerateHardBlockers.length ? (
-                          <div className="mt-2 space-y-2">
-                            {fullGenerateHardBlockers.map((item) => (
-                              <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs">
-                                <span className="font-semibold text-red-800">{item.label}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSidePanel(item.action)}
-                                  className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-red-700 hover:bg-red-100"
-                                >
-                                  Fix
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : fullGenerateProofGaps.length ? (
-                          <div className="mt-2 space-y-2">
-                            <p className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800">
-                              Draft generation can run. These items are still needed for stronger proof, review package readiness, or external engineer review.
-                            </p>
-                            {fullGenerateProofGaps.slice(0, 6).map((item) => (
-                              <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs">
-                                <span className="font-semibold text-amber-800">{item.label}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSidePanel(item.action)}
-                                  className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-amber-700 hover:bg-amber-100"
-                                >
-                                  Improve
-                                </button>
-                              </div>
-                            ))}
+                          <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs">
+                            <span className="font-semibold text-red-800">{fullGenerateHardBlockers[0]?.label || "Lock the site before drafting."}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSidePanel(fullGenerateHardBlockers[0]?.action ?? "site_existing")}
+                              className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-red-700 hover:bg-red-100"
+                            >
+                              Open setup
+                            </button>
                           </div>
                         ) : (
-                          <p className="mt-1 text-xs font-semibold text-emerald-800">
-                            Setup, placed objects, terrain/source, standards, outfall, utilities, parking, and ADA route are ready for a review-required run.
-                          </p>
+                          <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/70 bg-white px-3 py-2 text-xs">
+                            <span className={`font-semibold ${fullGenerateProofGaps.length ? "text-amber-800" : "text-emerald-800"}`}>
+                              Run a review draft now. {fullGenerateProofGaps.length ? "Extra proof can be added later." : "Setup looks ready."}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSidePanel("chat")}
+                              className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+                            >
+                              Ask why
+                            </button>
+                          </div>
                         )}
-                        {generatePreflightNotes.length ? (
-                          <div className="mt-2 space-y-1">
-                            {generatePreflightNotes.map((note) => (
-                              <p key={note} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800">
-                                {note}
-                              </p>
-                            ))}
-                          </div>
-                        ) : null}
-                        {(fullGenerateProofGaps.some((item) => item.label === "missing standards") ||
-                          fullGenerateProofGaps.some((item) => /outfall/i.test(item.label))) ? (
-                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            {fullGenerateProofGaps.some((item) => item.label === "missing standards") ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenSidePanel("standards")}
-                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-800 hover:bg-amber-50"
-                              >
-                                Add/accept standards
-                                <span className="mt-1 block text-[11px] font-medium text-amber-700">
-                                  Open standards review. Acceptance remains review-required.
-                                </span>
-                              </button>
-                            ) : null}
-                            {fullGenerateProofGaps.some((item) => /outfall/i.test(item.label)) ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!buildingPlacements.some((item) => item.type === "outfall")) {
-                                    handleAddObject("outfall", {
-                                      label: "Outfall / Discharge Point",
-                                      placed: false,
-                                      meta: {
-                                        review_status: "engineer_review_required",
-                                        verification_status: "placeholder_needs_review",
-                                      },
-                                    });
-                                  }
-                                  handleOpenSidePanel("objects");
-                                  setStatusMessage("Outfall / discharge point placeholder added for review-required placement. Verification is still needed.");
-                                }}
-                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-800 hover:bg-amber-50"
-                              >
-                                Add outfall / discharge point
-                                <span className="mt-1 block text-[11px] font-medium text-amber-700">
-                                  Create or place a review-required discharge point placeholder.
-                                </span>
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : null}
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
@@ -23330,27 +23243,29 @@ function PerformanceAIDashboardView({
                     {sidePanelForRender === "deliverables" ? (
                       <>
                         {!backendResult || fullGeneratePreflightBlockers.length ? (
-                          <div className="rounded-2xl border border-red-200 bg-red-50 p-4" data-testid="deliverables-blocked-explanation">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-600">Review package blocked</p>
-                            <p className="mt-1 text-sm font-semibold text-red-950">
-                              Review package blocked because {(!backendResult && !fullGeneratePreflightBlockers.length)
-                                ? "no system run evidence has been generated yet"
-                                : canonicalWorkspaceBlockerText}.
+                          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="deliverables-blocked-explanation">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Review package</p>
+                            <p className="mt-1 text-sm font-semibold text-amber-950">
+                              Not ready to export yet.
                             </p>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {(fullGeneratePreflightBlockers.length
-                                ? fullGeneratePreflightBlockers.slice(0, 4)
-                                : [{ label: "run Generate after setup is ready", action: "generate" as SidePanelKey }]
-                              ).map((item) => (
-                                <button
-                                  key={item.label}
-                                  type="button"
-                                  onClick={() => handleOpenSidePanel(item.action)}
-                                  className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-700 hover:bg-red-100"
-                                >
-                                  Fix: {item.label}
-                                </button>
-                              ))}
+                            <p className="mt-1 text-xs font-medium text-amber-800">
+                              Run a draft first, or ask Civora what is missing. Field use stays outside Civora.
+                            </p>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSidePanel("generate")}
+                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
+                              >
+                                Generate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSidePanel("chat")}
+                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
+                              >
+                                Ask why
+                              </button>
                             </div>
                           </div>
                         ) : null}
@@ -23422,53 +23337,13 @@ function PerformanceAIDashboardView({
                               </div>
                             ))}
                           </div>
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Format support status</p>
-                            <div className="mt-2 space-y-2">
-                              {deliverableSupportRows.map(([label, item]) => (
-                                <div key={label} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                                  <span className="font-semibold text-slate-700">{label}</span>
-                                  <span className={`max-w-[180px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                    item.status === "block" ? "text-red-600" : "text-amber-600"
-                                  }`}>
-                                    {item.value}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Package support status</p>
-                            <div className="mt-2 space-y-2">
-                              {capabilityAuditRows
-                                .filter((item) =>
-                                  [
-                                    "production_evidence",
-                                    "cost_book_pricing",
-                                    "export_package_report",
-                                    "review_document_support_package",
-                                    "engineer_review_package",
-                                    "reactive_rerun_evidence",
-                                    "cad_geometry_handoff",
-                                  ].includes(item.key),
-                                )
-                                .map((item) => (
-                                  <div key={item.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <span className="font-semibold text-slate-700">{item.label}</span>
-                                      <span className={`max-w-[170px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                        item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
-                                      }`}>
-                                        {item.value}
-                                      </span>
-                                    </div>
-                                    {item.status === "block" || item.status === "idle" ? (
-                                      <p className="mt-1 text-xs text-slate-500">{item.exactFix}</p>
-                                    ) : null}
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSidePanel("chat")}
+                            className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-white"
+                          >
+                            Ask Civora for package details
+                          </button>
                           <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                             Civora provides review evidence only. Field use and professional responsibility remain outside Civora.
                           </p>
