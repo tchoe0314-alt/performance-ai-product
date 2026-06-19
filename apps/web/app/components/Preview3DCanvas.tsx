@@ -57,6 +57,15 @@ const describeConfidence = (value: Preview3DItem["confidence"]) => {
   return "review required";
 };
 
+const confidenceState = (item: Preview3DItem) => {
+  const text = `${item.confidence || ""} ${item.source || ""} ${(item.blockers || []).join(" ")}`.toLowerCase();
+  if (item.unsupported || text.includes("blocked")) return "blocked";
+  if (text.includes("stale") || text.includes("dirty")) return "stale";
+  if (text.includes("low") || text.includes("infer") || text.includes("missing")) return "low";
+  if (text.includes("import")) return "imported";
+  return "verified";
+};
+
 const createTextSprite = (label: string, color = "#0f172a") => {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
@@ -300,6 +309,7 @@ export default function Preview3DCanvas({
       const palette = layerPalette[layer] || { top: item.color || "#cbd5e1", side: item.color || "#94a3b8", line: "#f8fafc" };
       const heightFt = Math.max(layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" ? 0.45 : 1, item.height || 1);
       const baseY = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
+      const state = confidenceState(item);
       const object = new THREE.Group();
       object.userData = {
         itemId: id,
@@ -313,12 +323,22 @@ export default function Preview3DCanvas({
       };
 
       const cadMaterial = new THREE.MeshStandardMaterial({
-        color: item.unsupported ? "#f59e0b" : palette.top,
+        color: state === "blocked" ? "#dc2626" : state === "low" ? "#94a3b8" : item.unsupported ? "#f59e0b" : palette.top,
         roughness: 0.64,
-        transparent: item.unsupported || layer === "CONSTRAINT",
-        opacity: item.unsupported ? 0.58 : layer === "CONSTRAINT" ? 0.68 : 1,
+        transparent: item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
+        opacity: item.unsupported ? 0.58 : state === "low" ? 0.72 : state === "imported" ? 0.82 : state === "stale" ? 0.76 : layer === "CONSTRAINT" ? 0.68 : 1,
       });
       let renderedCadGeometry = false;
+      const addExactEdges = (mesh: THREE.Mesh, color = palette.line, opacity = 0.62) => {
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(mesh.geometry),
+          new THREE.LineBasicMaterial({ color, transparent: true, opacity }),
+        );
+        edges.position.copy(mesh.position);
+        edges.rotation.copy(mesh.rotation);
+        edges.scale.copy(mesh.scale);
+        object.add(edges);
+      };
       if (item.unsupported) {
         const placeholder = new THREE.Mesh(
           new THREE.BoxGeometry(Math.max(item.w, 1), 0.7, Math.max(item.h, 1)),
@@ -350,6 +370,23 @@ export default function Preview3DCanvas({
           const mesh = new THREE.Mesh(geometry, cadMaterial);
           mesh.userData = object.userData;
           object.add(mesh);
+          addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.42 : 0.62);
+          if (layer === "PARKING") {
+            const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: state === "low" ? 0.34 : 0.58 });
+            const bounds = new THREE.Box3().setFromObject(mesh);
+            const stripeCount = Math.max(3, Math.min(14, Math.floor((bounds.max.x - bounds.min.x) / 9)));
+            for (let stripeIndex = 1; stripeIndex < stripeCount; stripeIndex += 1) {
+              const x = bounds.min.x + ((bounds.max.x - bounds.min.x) * stripeIndex) / stripeCount;
+              const line = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                  new THREE.Vector3(x, baseY + Math.max(heightFt, 0.35) + 0.08, bounds.min.z),
+                  new THREE.Vector3(x, baseY + Math.max(heightFt, 0.35) + 0.08, bounds.max.z),
+                ]),
+                stripeMaterial,
+              );
+              object.add(line);
+            }
+          }
         } else {
           const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
           const tube = new THREE.Mesh(
@@ -358,6 +395,13 @@ export default function Preview3DCanvas({
           );
           tube.userData = object.userData;
           object.add(tube);
+          if (layer === "ROAD") {
+            const centerline = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints(points.map((point) => point.clone().add(new THREE.Vector3(0, 0.12, 0)))),
+              new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: state === "low" ? 0.32 : 0.72 }),
+            );
+            object.add(centerline);
+          }
         }
         renderedCadGeometry = true;
       } else if (item.geometryType === "circle" && typeof item.radius === "number" && item.radius > 0) {
@@ -381,12 +425,14 @@ export default function Preview3DCanvas({
       }
 
       if (renderedCadGeometry) {
-        const outline = new THREE.LineSegments(
-          new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w, 1), 0.08, Math.max(item.h, 1))),
-          new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.55 }),
-        );
-        outline.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + Math.max(heightFt, 0.35) + 0.08));
-        object.add(outline);
+        if (state === "low" || state === "imported" || state === "stale" || state === "blocked") {
+          const reviewRing = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w, 1), 0.08, Math.max(item.h, 1))),
+            new THREE.LineBasicMaterial({ color: state === "blocked" ? "#dc2626" : "#f59e0b", transparent: true, opacity: 0.28 }),
+          );
+          reviewRing.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + Math.max(heightFt, 0.35) + 0.08));
+          object.add(reviewRing);
+        }
       } else if (layer === "DRAINAGE") {
         const depth = Math.max(1.2, Math.abs(Math.min(baseY, 0)) || Math.min(heightFt, 4));
         const basin = new THREE.Mesh(

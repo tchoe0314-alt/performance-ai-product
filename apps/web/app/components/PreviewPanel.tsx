@@ -213,6 +213,74 @@ const normalizeSystemLabel = (value: unknown) => {
 const formatClearance = (value: number | null | undefined) =>
   value === null || value === undefined || Number.isNaN(value) ? "Needs source" : `${value.toFixed(1)} ft`;
 
+type PreviewSourceState = "verified" | "imported" | "inferred" | "stale" | "blocked" | "fallback";
+
+const resolveSourceState = (item: BuildingPlacement): PreviewSourceState => {
+  const meta = item.meta ?? {};
+  const statusText = [
+    meta.source_confidence,
+    meta.cad_source_confidence,
+    meta.classification_status,
+    meta.engineering_status,
+    meta.review_status,
+    meta.handoff_status,
+    meta.source,
+    item.source,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (item.meta?.unsupported_entity_placeholder || statusText.includes("blocked")) return "blocked";
+  if (statusText.includes("stale") || statusText.includes("dirty")) return "stale";
+  if (statusText.includes("inferred") || statusText.includes("low") || item.source === "inferred") return "inferred";
+  if (statusText.includes("import") || item.source === "detected_from_image") return "imported";
+  const hasPathGeometry =
+    (item.geometryType === "polygon" || item.geometryType === "polyline" || item.geometryType === "point") &&
+    Array.isArray(item.geometry) &&
+    item.geometry.length > 0;
+  if (!hasPathGeometry && item.geometryType !== "rect" && item.type !== "site") return "fallback";
+  return "verified";
+};
+
+const sourceStateLabel = (state: PreviewSourceState) => {
+  if (state === "verified") return "Source-backed geometry";
+  if (state === "imported") return "Imported geometry - review required";
+  if (state === "inferred") return "Inferred geometry - low confidence";
+  if (state === "stale") return "Stale geometry - rerun affected systems";
+  if (state === "blocked") return "Blocked geometry - review required";
+  return "Fallback geometry - bounds only";
+};
+
+const utilityStrokeColor = (item: BuildingPlacement) => {
+  const text = `${item.type || ""} ${item.label || ""} ${item.meta?.system || ""} ${item.meta?.discipline || ""}`.toLowerCase();
+  if (text.includes("water") || text.includes("hydrant")) return "#0284c7";
+  if (text.includes("sanitary") || text.includes("sewer") || text.includes("manhole")) return "#7c3aed";
+  if (text.includes("storm") || text.includes("drain") || text.includes("inlet")) return "#0f766e";
+  if (text.includes("electric") || text.includes("power")) return "#ca8a04";
+  if (text.includes("gas")) return "#dc2626";
+  return "#7c3aed";
+};
+
+const polygonCentroid = (points: Array<[number, number]>): [number, number] => {
+  if (!points.length) return [0, 0];
+  const sum = points.reduce(
+    (acc, pt) => {
+      acc.x += pt[0];
+      acc.y += pt[1];
+      return acc;
+    },
+    { x: 0, y: 0 },
+  );
+  return [sum.x / points.length, sum.y / points.length];
+};
+
+const scalePolygonTowardCenter = (points: Array<[number, number]>, scale: number): Array<[number, number]> => {
+  const [cx, cy] = polygonCentroid(points);
+  return points.map(([x, y]) => [cx + (x - cx) * scale, cy + (y - cy) * scale]);
+};
+
+const firstMetaNumber = (item: BuildingPlacement, keys: string[]): number | null => readMetaNumber(item.meta, keys);
+
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
   previewTotalPhaseCount: number;
@@ -811,6 +879,15 @@ export default function PreviewPanel({
   const resolveSvgVisualStyle = useCallback(
     (item: BuildingPlacement, selected = false) => {
       const kind = resolveVisualKind(item);
+      const sourceState = resolveSourceState(item);
+      const blocked = sourceState === "blocked";
+      const lowConfidence = sourceState === "inferred" || sourceState === "fallback";
+      const imported = sourceState === "imported";
+      const stale = sourceState === "stale";
+      const dash =
+        blocked ? "1.2 0.8" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
+      const stateStroke = (fallback: string) => (selected ? "#fbbf24" : blocked ? "#dc2626" : fallback);
+      const stateOpacity = blocked ? 0.92 : lowConfidence ? 0.76 : 1;
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
           building: { fill: "rgba(226, 218, 202, 0.72)", stroke: "#8b7355" },
@@ -825,32 +902,34 @@ export default function PreviewPanel({
         const style = standardPalette[kind] ?? standardPalette.fallback;
         return {
           fill: style.fill,
-          stroke: selected ? "#f59e0b" : style.stroke,
+          stroke: selected ? "#f59e0b" : blocked ? "#dc2626" : style.stroke,
           strokeWidth: selected ? 0.82 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.58 : 0.42,
+          strokeDasharray: dash,
+          opacity: stateOpacity,
         };
       }
       if (kind === "road") {
-        return { fill: "rgba(71, 85, 105, 0.11)", stroke: selected ? "#fbbf24" : "#475569", strokeWidth: selected ? 1.18 : 0.78 };
+        return { fill: "rgba(71, 85, 105, 0.11)", stroke: stateStroke("#475569"), strokeWidth: selected ? 1.18 : 0.78, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "parking") {
-        return { fill: "rgba(100, 116, 139, 0.16)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.72 : 0.34 };
+        return { fill: "rgba(100, 116, 139, 0.16)", stroke: stateStroke("#64748b"), strokeWidth: selected ? 0.72 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "water") {
-        return { fill: "rgba(125, 211, 252, 0.26)", stroke: selected ? "#fbbf24" : "#0284c7", strokeWidth: selected ? 0.82 : 0.42 };
+        return { fill: "rgba(125, 211, 252, 0.26)", stroke: stateStroke("#0284c7"), strokeWidth: selected ? 0.82 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "landscape") {
-        return { fill: "rgba(134, 239, 172, 0.18)", stroke: selected ? "#fbbf24" : "#16a34a", strokeWidth: selected ? 0.72 : 0.34 };
+        return { fill: "rgba(134, 239, 172, 0.18)", stroke: stateStroke("#16a34a"), strokeWidth: selected ? 0.72 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "sidewalk") {
-        return { fill: "rgba(248, 250, 252, 0.46)", stroke: selected ? "#fbbf24" : "#94a3b8", strokeWidth: selected ? 0.75 : 0.42 };
+        return { fill: "rgba(248, 250, 252, 0.46)", stroke: stateStroke("#94a3b8"), strokeWidth: selected ? 0.75 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "utility") {
-        return { fill: "rgba(37, 99, 235, 0.08)", stroke: selected ? "#fbbf24" : "#2563eb", strokeWidth: selected ? 0.78 : 0.46 };
+        return { fill: "rgba(37, 99, 235, 0.08)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: selected ? 0.78 : 0.46, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "building") {
-        return { fill: "rgba(226, 218, 202, 0.76)", stroke: selected ? "#fbbf24" : "#8b7355", strokeWidth: selected ? 0.82 : 0.42 };
+        return { fill: "rgba(226, 218, 202, 0.76)", stroke: stateStroke("#8b7355"), strokeWidth: selected ? 0.82 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
       }
-      return { fill: "rgba(148, 163, 184, 0.14)", stroke: selected ? "#fbbf24" : "#64748b", strokeWidth: selected ? 0.75 : 0.38 };
+      return { fill: "rgba(148, 163, 184, 0.14)", stroke: stateStroke("#64748b"), strokeWidth: selected ? 0.75 : 0.38, strokeDasharray: dash, opacity: stateOpacity };
     },
     [isHighQuality, resolveVisualKind],
   );
@@ -6861,18 +6940,27 @@ export default function PreviewPanel({
                             const visualKind = resolveVisualKind(item);
                             const visualStyle = resolveSvgVisualStyle(item, selectedBuildingId === item.id);
                             const isSelectedPolyline = selectedBuildingId === item.id;
+                            const sourceState = resolveSourceState(item);
                             const isCorridorLine = visualKind === "road" || item.type === "driveway";
                             const isUtilityLine = visualKind === "utility";
+                            const corridorWidthFt =
+                              firstMetaNumber(item, ["corridor_width_ft", "pavement_width_ft", "width_ft", "road_width_ft"]) ??
+                              (isCorridorLine ? Math.max(Math.min(item.w, item.d), 18) : null);
+                            const corridorStrokeWidth =
+                              corridorWidthFt && isCorridorLine
+                                ? Math.max(1.15, Math.min(5.5, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100))
+                                : visualStyle.strokeWidth;
                             return (
                               <g key={`poly-${item.id}`}>
                                 {isHighQuality && isCorridorLine ? (
                                   <polyline
                                     points={points.join(" ")}
                                     fill="none"
-                                    stroke="rgba(15, 23, 42, 0.16)"
-                                    strokeWidth={2.15}
+                                    stroke={sourceState === "fallback" ? "rgba(100,116,139,0.2)" : "rgba(15, 23, 42, 0.16)"}
+                                    strokeWidth={corridorStrokeWidth}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
+                                    strokeDasharray={sourceState === "fallback" ? "1.4 1" : undefined}
                                   />
                                 ) : null}
                                 {isSelectedPolyline ? (
@@ -6889,10 +6977,11 @@ export default function PreviewPanel({
                                   points={points.join(" ")}
                                   fill="none"
                                   stroke={visualStyle.stroke}
-                                  strokeWidth={visualStyle.strokeWidth}
+                                  strokeWidth={isCorridorLine && isHighQuality ? Math.max(0.22, corridorStrokeWidth * 0.12) : visualStyle.strokeWidth}
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
-                                  strokeDasharray={isUtilityLine ? "1.2 0.85" : undefined}
+                                  strokeDasharray={visualStyle.strokeDasharray || (isUtilityLine ? "1.2 0.85" : undefined)}
+                                  opacity={visualStyle.opacity}
                                 />
                                 {isHighQuality && isCorridorLine ? (
                                   <polyline
@@ -6919,7 +7008,9 @@ export default function PreviewPanel({
                                           fill="#ffffff"
                                           stroke={visualStyle.stroke}
                                           strokeWidth={0.18}
-                                        />
+                                        >
+                                          <title>{sourceStateLabel(sourceState)}</title>
+                                        </circle>
                                       );
                                     })}
                                   </g>
@@ -7062,7 +7153,9 @@ export default function PreviewPanel({
                             if (points.length < 3) return null;
                             const isSelectedPolygon = selectedBuildingId === item.id;
                             const visualKind = resolveVisualKind(item);
+                            const sourceState = resolveSourceState(item);
                             const visualStyle = resolveSvgVisualStyle(item, isSelectedPolygon);
+                            const geometry = (item.geometry || []) as Array<[number, number]>;
                             const bounds = points.reduce(
                               (acc, point) => {
                                 const [rawX, rawY] = String(point).split(",").map((value) => Number(value));
@@ -7088,6 +7181,24 @@ export default function PreviewPanel({
                               })
                               .filter(Boolean)
                               .join(" ");
+                            const innerShelf = visualKind === "water" ? scalePolygonTowardCenter(geometry, 0.78) : [];
+                            const bottomShelf = visualKind === "water" ? scalePolygonTowardCenter(geometry, 0.48) : [];
+                            const waterSurface =
+                              visualKind === "water" &&
+                              firstMetaNumber(item, ["normal_pool_elevation_ft", "water_surface_elevation_ft", "normal_pool_ft"]) !== null
+                                ? scalePolygonTowardCenter(geometry, 0.62)
+                                : [];
+                            const roadAxis =
+                              visualKind === "road"
+                                ? (() => {
+                                    const shapeBounds = boundsForSiteGeometry(geometry);
+                                    const y = shapeBounds.minY + shapeBounds.height / 2;
+                                    const x = shapeBounds.minX + shapeBounds.width / 2;
+                                    return shapeBounds.width >= shapeBounds.height
+                                      ? ([[shapeBounds.minX, y], [shapeBounds.maxX, y]] as Array<[number, number]>)
+                                      : ([[x, shapeBounds.minY], [x, shapeBounds.maxY]] as Array<[number, number]>);
+                                  })()
+                                : [];
                             return (
                               <g key={`custom-poly-${item.id}`}>
                                 <polygon
@@ -7095,8 +7206,12 @@ export default function PreviewPanel({
                                   fill={visualStyle.fill}
                                   stroke={visualStyle.stroke}
                                   strokeWidth={visualStyle.strokeWidth}
+                                  strokeDasharray={visualStyle.strokeDasharray}
+                                  opacity={visualStyle.opacity}
                                   strokeLinejoin="round"
-                                />
+                                >
+                                  <title>{sourceStateLabel(sourceState)}</title>
+                                </polygon>
                                 {isHighQuality && visualKind === "parking" ? (
                                   <g opacity={0.72}>
                                     <line
@@ -7128,23 +7243,42 @@ export default function PreviewPanel({
                                   </g>
                                 ) : null}
                                 {isHighQuality && visualKind === "water" && innerPolygonPoints ? (
-                                  <polygon
-                                    points={innerPolygonPoints}
-                                    fill="none"
-                                    stroke="rgba(224,242,254,0.7)"
-                                    strokeWidth={0.16}
-                                    strokeLinejoin="round"
-                                  />
+                                  <>
+                                    <polygon
+                                      points={(innerShelf.length ? innerShelf.map(sitePointToSvgPercent).join(" ") : innerPolygonPoints)}
+                                      fill="none"
+                                      stroke="rgba(224,242,254,0.7)"
+                                      strokeWidth={0.16}
+                                      strokeLinejoin="round"
+                                    />
+                                    {bottomShelf.length ? (
+                                      <polygon
+                                        points={bottomShelf.map(sitePointToSvgPercent).join(" ")}
+                                        fill="rgba(2,132,199,0.1)"
+                                        stroke="rgba(3,105,161,0.6)"
+                                        strokeWidth={0.14}
+                                        strokeLinejoin="round"
+                                      />
+                                    ) : null}
+                                    {waterSurface.length ? (
+                                      <polygon
+                                        points={waterSurface.map(sitePointToSvgPercent).join(" ")}
+                                        fill="rgba(125,211,252,0.24)"
+                                        stroke="rgba(14,165,233,0.58)"
+                                        strokeWidth={0.12}
+                                        strokeLinejoin="round"
+                                      />
+                                    ) : null}
+                                  </>
                                 ) : null}
-                                {isHighQuality && visualKind === "road" ? (
-                                  <line
-                                    x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.12}
-                                    y1={(bounds.minY + bounds.maxY) / 2}
-                                    x2={bounds.maxX - (bounds.maxX - bounds.minX) * 0.12}
-                                    y2={(bounds.minY + bounds.maxY) / 2}
+                                {isHighQuality && visualKind === "road" && roadAxis.length === 2 ? (
+                                  <polyline
+                                    points={roadAxis.map(sitePointToSvgPercent).join(" ")}
+                                    fill="none"
                                     stroke="rgba(248,250,252,0.62)"
                                     strokeWidth={0.14}
-                                    strokeDasharray="1.25 1"
+                                    strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
+                                    strokeLinecap="round"
                                   />
                                 ) : null}
                               </g>
