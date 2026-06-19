@@ -16277,6 +16277,19 @@ function PerformanceAIDashboardView({
     "Construction release remains blocked inside Civora; outputs are review materials only.";
   const rightRailWorkflowCards: WorkflowRailCard[] = [
     {
+      title: "Next Recommended Step",
+      status: progressTimelineCurrentStep?.status?.replace(/_/g, " ") || "pending",
+      tone: progressTimelineCurrentStep?.status === "blocked"
+        ? "block"
+        : progressTimelineCurrentStep?.status === "completed"
+          ? "ok"
+          : "review",
+      metric: progressTimelineCurrentStep?.label || setupWizardState.current_step_label || "Workflow",
+      detail: nextSetupAction || progressTimelineState.next_action || "Open the current workflow step.",
+      action: progressTimelineCurrentStep?.action_label || setupWizardState.primary_action_label || "Open step",
+      panel: (progressTimelineCurrentStep?.action_panel || setupWizardCurrentStep?.panel || "site_existing") as SidePanelKey,
+    },
+    {
       title: "Project Health",
       status: sidebarTruthCounts.blocked ? "Blocked" : sidebarTruthCounts.review ? "Review required" : sidebarHasTruthEvidence ? "Traceable" : "No evidence",
       tone: sidebarTruthCounts.blocked ? "block" : sidebarTruthCounts.review || sidebarHasTruthEvidence ? "review" : "idle",
@@ -16295,28 +16308,6 @@ function PerformanceAIDashboardView({
       detail: setupWizardState.current_step_label || setupWizardCurrentStep?.label || "Setup has not started.",
       action: "Open setup step",
       panel: (setupWizardCurrentStep?.panel || "site_existing") as SidePanelKey,
-    },
-    {
-      title: "Next Recommended Step",
-      status: progressTimelineCurrentStep?.status?.replace(/_/g, " ") || "pending",
-      tone: progressTimelineCurrentStep?.status === "blocked"
-        ? "block"
-        : progressTimelineCurrentStep?.status === "completed"
-          ? "ok"
-          : "review",
-      metric: progressTimelineCurrentStep?.label || setupWizardState.current_step_label || "Workflow",
-      detail: nextSetupAction || progressTimelineState.next_action || "Open the current workflow step.",
-      action: progressTimelineCurrentStep?.action_label || setupWizardState.primary_action_label || "Open step",
-      panel: (progressTimelineCurrentStep?.action_panel || setupWizardCurrentStep?.panel || "site_existing") as SidePanelKey,
-    },
-    {
-      title: "Construction Release Blocked",
-      status: "Blocked",
-      tone: "block",
-      metric: exportBlockText ? "Gate blocker recorded" : "Civora release guardrail",
-      detail: releaseBlockedDetail,
-      action: "Open release gates",
-      panel: "deliverables",
     },
     {
       title: "Engineer Review Required",
@@ -16492,6 +16483,58 @@ function PerformanceAIDashboardView({
     { key: "quantities", label: "Quantities", panel: "quantities" },
     { key: "reports", label: "Reports", panel: "reports" },
   ];
+  const modeStarterCards: Array<{
+    key: PrimaryWorkflowKey;
+    title: string;
+    detail: string;
+    action: string;
+    panel: SidePanelKey;
+  }> = [
+    {
+      key: "setup",
+      title: siteScaleLocked ? "Site is locked" : "Lock site boundary",
+      detail: siteScaleLocked ? "Review sources and standards next." : "Set the boundary before relying on objects.",
+      action: siteScaleLocked ? "Review sources" : "Open setup",
+      panel: siteScaleLocked ? "data" : "site_existing",
+    },
+    {
+      key: "draw",
+      title: "Draw or edit",
+      detail: "Use Select, Draw, Modify, Measure, Snaps, and Layers from the command bar.",
+      action: "Open canvas tools",
+      panel: "model",
+    },
+    {
+      key: "design",
+      title: "Generate systems",
+      detail: "Run grading, drainage, utilities, roadway, and quantities when setup gates are ready.",
+      action: "Open run controls",
+      panel: "generate",
+    },
+    {
+      key: "analyze",
+      title: "Check blockers",
+      detail: previewBlockedReasons[0] || "Review conflicts, source confidence, and unresolved requirements.",
+      action: "Open issues",
+      panel: "analysis",
+    },
+    {
+      key: "review",
+      title: "Review evidence",
+      detail: "Inspect source confidence, assumptions, QA/QC, and reviewer assignments.",
+      action: "Open review",
+      panel: "reports",
+    },
+    {
+      key: "deliver",
+      title: "Prepare review package",
+      detail: "Create review sheets, reports, DXF/LandXML traces, and export audits.",
+      action: "Open sheets",
+      panel: "deliverables",
+    },
+  ];
+  const activeModeStarterCard =
+    modeStarterCards.find((card) => card.key === activePrimaryWorkflowKey) ?? modeStarterCards[0];
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -17129,6 +17172,28 @@ function PerformanceAIDashboardView({
                       </p>
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSidePanel("deliverables")}
+                    className="w-full rounded-lg border border-red-100 bg-red-50/80 px-3 py-2 text-left transition hover:bg-red-50"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-red-500">
+                          Release Guardrail
+                        </p>
+                        <p className="mt-1 truncate text-sm font-semibold text-red-700">
+                          Review materials only
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-red-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-600">
+                        Blocked
+                      </span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-red-700">
+                      {releaseBlockedDetail}
+                    </p>
+                  </button>
                 </div>
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
@@ -22872,6 +22937,7 @@ function PerformanceAIDashboardView({
 	                              key={tool.label}
 	                              type="button"
 	                              onClick={tool.action}
+	                              title={tool.label}
 	                              data-testid={tool.testId}
 	                              className={`flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[13px] font-semibold transition ${
 	                                tool.active
@@ -22892,6 +22958,7 @@ function PerformanceAIDashboardView({
 	                              key={mode}
 	                              type="button"
 	                              data-testid={mode === "2d" ? "preview-mode-2d" : "preview-mode-3d"}
+	                              title={mode === "2d" ? "Show 2D plan preview" : "Show 3D model preview"}
 	                              onClick={() => {
 	                                setPreviewMode(mode);
 	                                if (mode === "3d") {
@@ -22913,6 +22980,7 @@ function PerformanceAIDashboardView({
 	                              key={quality}
 	                              type="button"
 	                              data-testid={quality === "standard" ? "preview-quality-standard" : "preview-quality-high"}
+	                              title={quality === "standard" ? "Use faster standard rendering" : "Use richer high quality rendering"}
 	                              onClick={() => setPreviewQuality(quality)}
 	                              className={`h-8 rounded-md px-3 text-xs font-semibold capitalize ${
 	                                previewQuality === quality ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
@@ -22925,6 +22993,7 @@ function PerformanceAIDashboardView({
 	                        <button
 	                          type="button"
 	                          onClick={() => setRightRailCollapsed((value) => !value)}
+	                          title={rightRailCollapsed ? "Show reviewer drawer" : "Hide reviewer drawer"}
 	                          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-50"
 	                        >
 	                          {rightRailCollapsed ? "Show review" : "Hide review"}
@@ -22994,6 +23063,30 @@ function PerformanceAIDashboardView({
 	                    >
 	                      Open full layer details
 	                    </button>
+	                  </div>
+	                ) : null}
+	                {!selectedBuilding && !layerManagerOpen ? (
+	                  <div className="absolute left-3 top-[9.75rem] z-40 hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/90 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]">
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div className="min-w-0">
+	                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+	                          {activePrimaryWorkflowKey}
+	                        </p>
+	                        <p className="mt-1 text-sm font-semibold text-slate-950">
+	                          {activeModeStarterCard.title}
+	                        </p>
+	                        <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500">
+	                          {activeModeStarterCard.detail}
+	                        </p>
+	                      </div>
+	                      <button
+	                        type="button"
+	                        onClick={() => handleOpenPanelFromDrawer(activeModeStarterCard.panel)}
+	                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                      >
+	                        {activeModeStarterCard.action}
+	                      </button>
+	                    </div>
 	                  </div>
 	                ) : null}
 	                {selectedBuilding ? (
@@ -23257,7 +23350,7 @@ function PerformanceAIDashboardView({
                 </div>
                 {bottomPanelContentRendered ? (
                   <div
-                    className={`civora-motion-bottom-panel grid gap-3 overflow-y-auto px-3 py-3 lg:grid-cols-[auto,1fr] ${
+                    className={`civora-motion-bottom-panel grid gap-3 overflow-y-auto px-3 py-3 ${
                       bottomPanelSize === "compact"
                         ? "max-h-[20svh]"
                         : bottomPanelSize === "tall"
@@ -23267,7 +23360,7 @@ function PerformanceAIDashboardView({
                     data-motion-state={bottomPanelContentVisible ? "open" : "closed"}
                     aria-hidden={bottomPanelCollapsed}
                   >
-                    <div className="grid min-w-0 grid-cols-2 gap-1 sm:flex sm:overflow-x-auto lg:flex-col lg:overflow-visible">
+                    <div className="flex min-w-0 flex-wrap gap-1 overflow-x-auto">
                       {bottomPanelTabs.map((tab) => (
                         <button
                           key={tab.key}
@@ -23276,7 +23369,7 @@ function PerformanceAIDashboardView({
                             setActiveBottomPanelTab(tab.key);
                             handleOpenSidePanel(tab.panel);
                           }}
-                          className={`min-w-0 whitespace-normal rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition sm:whitespace-nowrap ${
+                          className={`min-w-0 whitespace-nowrap rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
                             activeBottomPanelTab === tab.key
                               ? "border-slate-950 bg-slate-950 text-white"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -23286,6 +23379,27 @@ function PerformanceAIDashboardView({
                         </button>
                       ))}
                     </div>
+                    {bottomPanelSize !== "tall" ? (
+                      <div className="grid min-w-0 gap-2 rounded-lg border border-slate-200 bg-white p-2 sm:grid-cols-2 xl:grid-cols-3">
+                        {activeBottomReviewRows.slice(0, bottomPanelSize === "compact" ? 3 : 6).map((row) => (
+                          <button
+                            key={`${activeBottomPanelTab}-card-${row.id}`}
+                            type="button"
+                            onClick={() => handleOpenSidePanel(row.panel)}
+                            className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:bg-white"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="min-w-0 truncate text-xs font-semibold text-slate-900">{row.name}</p>
+                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] ${reviewTonePillClass(row.tone)}`}>
+                                {row.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 line-clamp-1 text-[11px] font-medium text-slate-500">{row.source}</p>
+                            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{row.action}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
                     <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 bg-white">
                       <table className="w-full min-w-0 border-collapse text-left text-xs md:min-w-[760px]">
                         <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.12em] text-slate-500">
@@ -23330,6 +23444,7 @@ function PerformanceAIDashboardView({
                         </tbody>
                       </table>
                     </div>
+                    )}
                   </div>
                 ) : null}
               </div>

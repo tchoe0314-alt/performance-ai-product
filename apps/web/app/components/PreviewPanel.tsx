@@ -7038,16 +7038,62 @@ export default function PreviewPanel({
                             const points = (item.geometry || []).map(sitePointToSvgPercent);
                             if (points.length < 3) return null;
                             const isSelectedPolygon = selectedBuildingId === item.id;
+                            const visualKind = resolveVisualKind(item);
                             const visualStyle = resolveSvgVisualStyle(item, isSelectedPolygon);
+                            const bounds = points.reduce(
+                              (acc, point) => {
+                                const [rawX, rawY] = String(point).split(",").map((value) => Number(value));
+                                if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return acc;
+                                return {
+                                  minX: Math.min(acc.minX, rawX),
+                                  maxX: Math.max(acc.maxX, rawX),
+                                  minY: Math.min(acc.minY, rawY),
+                                  maxY: Math.max(acc.maxY, rawY),
+                                };
+                              },
+                              { minX: 100, maxX: 0, minY: 100, maxY: 0 },
+                            );
+                            const stripeCount = Math.min(12, Math.max(4, Math.round((bounds.maxX - bounds.minX) / 3.2)));
                             return (
-                              <polygon
-                                key={`custom-poly-${item.id}`}
-                                points={points.join(" ")}
-                                fill={visualStyle.fill}
-                                stroke={visualStyle.stroke}
-                                strokeWidth={visualStyle.strokeWidth}
-                                strokeLinejoin="round"
-                              />
+                              <g key={`custom-poly-${item.id}`}>
+                                <polygon
+                                  points={points.join(" ")}
+                                  fill={visualStyle.fill}
+                                  stroke={visualStyle.stroke}
+                                  strokeWidth={visualStyle.strokeWidth}
+                                  strokeLinejoin="round"
+                                />
+                                {isHighQuality && visualKind === "parking" ? (
+                                  <g opacity={0.72}>
+                                    <line
+                                      x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
+                                      y1={(bounds.minY + bounds.maxY) / 2}
+                                      x2={bounds.maxX - (bounds.maxX - bounds.minX) * 0.1}
+                                      y2={(bounds.minY + bounds.maxY) / 2}
+                                      stroke="rgba(248,250,252,0.75)"
+                                      strokeWidth={0.18}
+                                      strokeDasharray="1.1 0.8"
+                                    />
+                                    {Array.from({ length: stripeCount }).map((_, stripeIdx) => {
+                                      const x =
+                                        bounds.minX +
+                                        (bounds.maxX - bounds.minX) *
+                                          (0.12 + (stripeIdx / Math.max(stripeCount - 1, 1)) * 0.76);
+                                      return (
+                                        <line
+                                          key={`poly-parking-stall-${item.id}-${stripeIdx}`}
+                                          x1={x}
+                                          y1={bounds.minY + (bounds.maxY - bounds.minY) * 0.16}
+                                          x2={x}
+                                          y2={bounds.maxY - (bounds.maxY - bounds.minY) * 0.16}
+                                          stroke="rgba(248,250,252,0.48)"
+                                          strokeWidth={0.1}
+                                        />
+                                      );
+                                    })}
+                                  </g>
+                                ) : null}
+                              </g>
                             );
                           })}
                         {visibleCadObjects
@@ -7904,7 +7950,7 @@ export default function PreviewPanel({
                             {showBox && isHighQuality && visualKind === "utility" ? (
                               <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-violet-500/80" />
                             ) : null}
-                            {isSelected && isEditableVertexGeometry && Array.isArray(item.geometry)
+                            {isSelected && allowEdits && isEditableVertexGeometry && Array.isArray(item.geometry)
                               ? item.geometry.map((pt, idx) => {
                                   const handleLeft = ((pt[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
                                   const handleTop = ((pt[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
@@ -7960,6 +8006,7 @@ export default function PreviewPanel({
                                 })
                               : null}
                             {isSelected &&
+                            allowEdits &&
                             isEditableVertexGeometry &&
                             Array.isArray(item.geometry) &&
                             item.geometry.length > 1 &&
@@ -8015,12 +8062,13 @@ export default function PreviewPanel({
                                 })}
                               </svg>
                             ) : null}
-                            {isSelected && isEditableVertexGeometry ? (
+                            {isSelected && allowEdits && isEditableVertexGeometry ? (
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
                                 Vertex edit
                               </div>
                             ) : null}
                             {isSelected &&
+                            allowEdits &&
                             isEditableVertexGeometry &&
                             lastPolylineEdit?.id === item.id ? (
                               <button
@@ -8035,7 +8083,7 @@ export default function PreviewPanel({
                                 Undo
                               </button>
                             ) : null}
-                            {isSelected && isEditableVertexGeometry && selectedVertex?.id === item.id ? (
+                            {isSelected && allowEdits && isEditableVertexGeometry && selectedVertex?.id === item.id ? (
                               <button
                                 type="button"
                                 className="absolute -bottom-16 left-1/2 -translate-x-1/2 rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-rose-600 shadow"
@@ -8049,6 +8097,7 @@ export default function PreviewPanel({
                               </button>
                             ) : null}
                             {isSelected &&
+                            allowEdits &&
                             !isPolyline &&
                             lastRectEdit?.id === item.id ? (
                               <button
@@ -8064,6 +8113,7 @@ export default function PreviewPanel({
                               </button>
                             ) : null}
                             {isSelected &&
+                            allowEdits &&
                             isEditableVertexGeometry &&
                             !polylineInsertHintDismissed &&
                             (isPolygon || item.type === "custom" || item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
@@ -8071,27 +8121,33 @@ export default function PreviewPanel({
                                 Click a segment to add a vertex
                               </div>
                             ) : null}
-                            {isSelected && caps.rotatable ? (
+                            {isSelected && allowEdits && caps.rotatable ? (
                               <button
                                 type="button"
+                                title="Rotate selected object"
+                                aria-label="Rotate selected object"
                                 className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
                                 onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
                               >
                                 R
                               </button>
                             ) : null}
-                            {isSelected && caps.resizable ? (
+                            {isSelected && allowEdits && caps.resizable ? (
                               <button
                                 type="button"
+                                title="Resize selected object"
+                                aria-label="Resize selected object"
                                 className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
                                 onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
                               >
                                 Z
                               </button>
                             ) : null}
-                            {isSelected && caps.deletable ? (
+                            {isSelected && allowEdits && caps.deletable ? (
                               <button
                                 type="button"
+                                title="Delete selected object"
+                                aria-label="Delete selected object"
                                 className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600 shadow"
                                 onClick={(event) => {
                                   event.stopPropagation();
@@ -8107,12 +8163,12 @@ export default function PreviewPanel({
                                 ×
                               </button>
                             ) : null}
-                            {isSelected && shouldRevealObjectLabel(item) && caps.movable && !isPolyline ? (
+                            {isSelected && allowEdits && shouldRevealObjectLabel(item) && caps.movable && !isPolyline ? (
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
                                 Snap 5ft
                               </div>
                             ) : null}
-                            {isSelected && shouldRevealObjectLabel(item) && typeof item.x === "number" && typeof item.y === "number" ? (
+                            {isSelected && allowEdits && shouldRevealObjectLabel(item) && typeof item.x === "number" && typeof item.y === "number" ? (
                               <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
                                 X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
                               </div>
