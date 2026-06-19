@@ -23,6 +23,17 @@ async function timedOpen(page: Page, buttonName: RegExp | string, expectedPanelT
   return Date.now() - start;
 }
 
+async function expectSectionToggles(page: Page, testId: string, headerName: RegExp | string, visibleBodyText: RegExp | string) {
+  const section = page.getByTestId(testId);
+  await expect(section).toHaveAttribute("open", "", { timeout: 4_000 });
+  await expect(section).toContainText(visibleBodyText);
+  await section.getByText(headerName).first().click();
+  await expect(section).not.toHaveAttribute("open", "");
+  await section.getByText(headerName).first().click();
+  await expect(section).toHaveAttribute("open", "");
+  await expect(section).toContainText(visibleBodyText);
+}
+
 test.describe("real website workflow clarity", () => {
   test("uses one visible workflow home per major action and stays responsive", async ({ page }) => {
     await openDemoWorkspace(page);
@@ -32,6 +43,13 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByText("Run engines with gates").first()).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Open canvas from sidebar" })).toHaveCount(1);
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
+
+    await expectSectionToggles(page, "setup-address-truth", "Address / Location", /Type project address/);
+    await expectSectionToggles(page, "setup-site-box-controls", "Site Boundary", /Width \(ft\)/);
+    await page.getByTestId("setup-survey-terrain-card").getByText("Survey / Terrain").first().click();
+    await expect(page.getByTestId("setup-survey-terrain-card")).toHaveAttribute("open", "");
+    await page.getByTestId("setup-detect-inside-site").getByText("Auto Site Context").first().click();
+    await expect(page.getByTestId("setup-detect-inside-site")).toHaveAttribute("open", "");
 
     const objectOpenMs = await timedOpen(page, /^Objects$/, /Object manager|Objects/);
     const generateOpenMs = await timedOpen(page, "Generate", /Generate Systems/);

@@ -18127,7 +18127,33 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-address-truth">
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-address-truth" open>
+                      <summary className="flex cursor-pointer items-center gap-3 text-left">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / Location</span>
+                          <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
+                            {pendingAddressEdit ? siteAddress.trim() : siteInputs?.address || siteAddress.trim() || "No address applied"}
+                          </span>
+                        </span>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          pendingAddressEdit
+                            ? "bg-amber-50 text-amber-700"
+                            : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                            ? "bg-emerald-50 text-emerald-700"
+                            : siteAddress.trim()
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {pendingAddressEdit
+                            ? "Needs apply"
+                            : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                            ? "Applied"
+                            : siteAddress.trim()
+                              ? "Needs apply"
+                              : "Not set"}
+                        </span>
+                      </summary>
+                      <div className="mt-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / location</p>
@@ -18219,8 +18245,23 @@ function PerformanceAIDashboardView({
                           Upload map
                         </button>
                       </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-site-box-controls">
+                      </div>
+                    </details>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-site-box-controls" open>
+                      <summary className="flex cursor-pointer items-center gap-3 text-left">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site Boundary</span>
+                          <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
+                            {siteScaleLocked ? "Locked project area" : "Move or resize before locking"}
+                          </span>
+                        </span>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                        }`}>
+                          {siteScaleLocked ? "Locked" : "Editable"}
+                        </span>
+                      </summary>
+                      <div className="mt-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site boundary / size box</p>
@@ -18330,8 +18371,33 @@ function PerformanceAIDashboardView({
                           {siteScaleLocked ? "Unlock site" : "Lock site"}
                         </button>
                       </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-survey-terrain-card">
+                      </div>
+                    </details>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-survey-terrain-card">
+                      <summary className="flex cursor-pointer items-center gap-3 text-left">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Survey / Terrain</span>
+                          <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
+                            {hasTerrainSource
+                              ? "Terrain source available"
+                              : surveyPreviewPoints.length
+                                ? "Survey points imported"
+                                : hasAssumedTerrainSlope
+                                  ? `Using assumed ${surveySlopeEstimate?.slope_percent?.toFixed(1)}% slope`
+                                  : "Add survey, map, or use assumed slope"}
+                          </span>
+                        </span>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          hasVerifiedSurveyControl
+                            ? "bg-emerald-50 text-emerald-700"
+                            : hasTerrainSource || surveyPreviewPoints.length || hasAssumedTerrainSlope
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {hasVerifiedSurveyControl ? "Survey" : hasTerrainSource || surveyPreviewPoints.length || hasAssumedTerrainSlope ? "Review" : "Optional"}
+                        </span>
+                      </summary>
+                      <div className="mt-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Survey / terrain</p>
@@ -18403,8 +18469,41 @@ function PerformanceAIDashboardView({
                           event.currentTarget.value = "";
                         }}
                       />
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-detect-inside-site">
+                      </div>
+                    </details>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-detect-inside-site">
+                      <summary className="flex cursor-pointer items-center gap-3 text-left">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Auto Site Context</span>
+                          <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
+                            {onlineDiscoveryBusy || autoExistingConditionsStatus.status === "running"
+                              ? "Checking available sources"
+                              : siteScaleLocked
+                                ? autoExistingConditionsStatus.status === "ready"
+                                  ? "Source candidates ready for review"
+                                  : "Auto-checks after site lock"
+                                : "Lock the site first"}
+                          </span>
+                        </span>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          autoExistingConditionsStatus.status === "ready"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : autoExistingConditionsStatus.status === "running"
+                              ? "bg-sky-50 text-sky-700"
+                              : siteScaleLocked
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {autoExistingConditionsStatus.status === "running"
+                            ? "Checking"
+                            : autoExistingConditionsStatus.status === "ready"
+                              ? "Review"
+                              : siteScaleLocked
+                                ? "Armed"
+                                : "Waiting"}
+                        </span>
+                      </summary>
+                      <div className="mt-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Auto site context</p>
@@ -18495,7 +18594,8 @@ function PerformanceAIDashboardView({
                           </span>
                         </button>
                       </div>
-                    </div>
+                      </div>
+                    </details>
                     <div className="hidden" data-testid="assumed-terrain-slope-control">
                       <div className="flex items-start justify-between gap-3">
                         <div>
