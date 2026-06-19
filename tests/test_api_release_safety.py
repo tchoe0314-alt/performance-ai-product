@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 import importlib
 from io import BytesIO
@@ -12,21 +11,16 @@ from fastapi.testclient import TestClient
 from starlette.datastructures import Headers
 
 from backend.application.file_workflows import _copy_upload_with_limit, _validate_upload_metadata
-from backend.services.auth_store import AuthStore
-from backend.services.database import Database
-from backend.services.project_store import ProjectStore
 from backend.api.app import (
     ChatLearningCronPayload,
     GeocodePayload,
     ProfessionalReleasePayload,
     RegisterPayload,
-    AdminBootstrapPayload,
     _RATE_LIMIT_DEFAULTS,
     _RATE_LIMIT_EVENTS,
     _cors_allow_origins,
     _runtime_debug_payload,
     app,
-    admin_bootstrap_owner,
     chat_learning_cron,
     geocode_address,
     register,
@@ -227,59 +221,6 @@ class ApiReleaseSafetyTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertIn("Public registration is disabled", str(ctx.exception.detail))
-
-    def test_admin_bootstrap_is_disabled_without_secret(self) -> None:
-        with patch.dict(os.environ, {"CIVORA_ADMIN_BOOTSTRAP_SECRET": ""}, clear=False):
-            with self.assertRaises(HTTPException) as ctx:
-                admin_bootstrap_owner(
-                    AdminBootstrapPayload(email="owner@example.com", password="long-enough", reset_users=True),
-                    x_civora_admin_bootstrap_secret="anything",
-                )
-
-        self.assertEqual(ctx.exception.status_code, 404)
-        self.assertIn("not configured", str(ctx.exception.detail))
-
-    def test_admin_bootstrap_rejects_wrong_secret(self) -> None:
-        with patch.dict(os.environ, {"CIVORA_ADMIN_BOOTSTRAP_SECRET": "correct-secret"}, clear=False):
-            with self.assertRaises(HTTPException) as ctx:
-                admin_bootstrap_owner(
-                    AdminBootstrapPayload(email="owner@example.com", password="long-enough", reset_users=True),
-                    x_civora_admin_bootstrap_secret="wrong-secret",
-                )
-
-        self.assertEqual(ctx.exception.status_code, 403)
-        self.assertIn("Invalid admin bootstrap secret", str(ctx.exception.detail))
-
-    def test_admin_bootstrap_can_reset_users_and_create_owner(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db = Database(Path(tmpdir) / "performance_ai.db")
-            auth_store = AuthStore(db)
-            project_store = ProjectStore(db)
-            auth_store.register_user(email="old@example.com", password="old-password", name="Old User")
-
-            with patch.object(api_app_module, "DB", db), patch.object(api_app_module, "AUTH_STORE", auth_store), patch.object(api_app_module, "PROJECT_STORE", project_store):
-                with patch.dict(os.environ, {"CIVORA_ADMIN_BOOTSTRAP_SECRET": "bootstrap-secret"}, clear=False):
-                    result = admin_bootstrap_owner(
-                        AdminBootstrapPayload(
-                            email="owner@example.com",
-                            password="new-password",
-                            name="Owner User",
-                            reset_users=True,
-                        ),
-                        x_civora_admin_bootstrap_secret="bootstrap-secret",
-                    )
-
-            self.assertTrue(result["success"])
-            self.assertTrue(result["reset_users"])
-            self.assertEqual(result["users_before"], 1)
-            self.assertEqual(result["users_after"], 1)
-            self.assertEqual(result["user"]["email"], "owner@example.com")
-            self.assertEqual(result["organization"]["role"], "owner")
-            self.assertFalse(result["platform_admin_supported"])
-            login = auth_store.login(email="owner@example.com", password="new-password")
-            self.assertEqual(login["user"]["email"], "owner@example.com")
-            with self.assertRaises(ValueError):
-                auth_store.login(email="old@example.com", password="old-password")
 
     def test_auth_status_route_is_rate_limited(self) -> None:
         client = TestClient(app)

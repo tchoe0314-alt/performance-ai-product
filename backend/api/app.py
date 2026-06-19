@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import secrets
 import time
 import uuid
 import urllib.parse
@@ -203,124 +202,6 @@ def _public_registration_allowed() -> bool:
     return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
 
 
-def _admin_bootstrap_secret() -> str:
-    return str(os.getenv("CIVORA_ADMIN_BOOTSTRAP_SECRET") or "").strip()
-
-
-def _require_admin_bootstrap_secret(header_secret: Optional[str]) -> None:
-    configured = _admin_bootstrap_secret()
-    provided = str(header_secret or "").strip()
-    if not configured:
-        raise HTTPException(status_code=404, detail="Admin bootstrap is not configured.")
-    if not provided or not secrets.compare_digest(configured, provided):
-        raise HTTPException(status_code=403, detail="Invalid admin bootstrap secret.")
-
-
-def _hash_bootstrap_password(password: str, salt_hex: str) -> str:
-    return hashlib.pbkdf2_hmac(
-        "sha256",
-        str(password or "").encode("utf-8"),
-        bytes.fromhex(salt_hex),
-        200_000,
-    ).hex()
-
-
-def _bootstrap_owner_user(payload: AdminBootstrapPayload) -> Dict[str, Any]:
-    email = str(payload.email or "").strip().lower()
-    password = str(payload.password or "")
-    name = str(payload.name or "").strip() or "Civora Admin"
-    if not email:
-        raise HTTPException(status_code=400, detail="Email is required.")
-    if len(password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-
-    now = time.time()
-    connection = DB.connect()
-    try:
-        before_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
-        if payload.reset_users:
-            connection.execute("DELETE FROM users")
-
-        existing = None
-        if not payload.reset_users:
-            existing = connection.execute(
-                "SELECT user_id, email, name, created_at, updated_at FROM users WHERE email = ?",
-                (email,),
-            ).fetchone()
-
-        salt = os.urandom(16).hex()
-        password_hash = _hash_bootstrap_password(password, salt)
-        if existing is not None:
-            if not payload.reset_existing_password:
-                raise HTTPException(status_code=409, detail="User already exists and reset_existing_password is false.")
-            user_id = existing["user_id"]
-            connection.execute(
-                """
-                UPDATE users
-                SET name = ?, password_salt = ?, password_hash = ?, updated_at = ?
-                WHERE user_id = ?
-                """,
-                (name, salt, password_hash, now, user_id),
-            )
-            connection.execute("DELETE FROM auth_tokens WHERE user_id = ?", (user_id,))
-            created = False
-            password_reset = True
-        else:
-            user_id = f"user_{uuid.uuid4().hex[:12]}"
-            connection.execute(
-                """
-                INSERT INTO users (user_id, email, name, password_salt, password_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (user_id, email, name, salt, password_hash, now, now),
-            )
-            created = True
-            password_reset = False
-        connection.commit()
-    except HTTPException:
-        connection.rollback()
-        raise
-    except Exception as exc:
-        connection.rollback()
-        raise HTTPException(status_code=500, detail="Admin bootstrap failed.") from exc
-    finally:
-        connection.close()
-
-    organization = PROJECT_STORE.ensure_default_organization(user_id=user_id)
-    connection = DB.connect()
-    try:
-        after_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
-        org_role_row = connection.execute(
-            "SELECT role FROM organization_members WHERE organization_id = ? AND user_id = ?",
-            (organization["organization_id"], user_id),
-        ).fetchone()
-    finally:
-        connection.close()
-
-    return {
-        "success": True,
-        "status": "bootstrapped",
-        "reset_users": bool(payload.reset_users),
-        "users_before": before_count,
-        "users_after": after_count,
-        "created": created,
-        "password_reset": password_reset,
-        "user": {
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-        },
-        "organization": {
-            "organization_id": organization["organization_id"],
-            "name": organization["name"],
-            "role": org_role_row["role"] if org_role_row else "owner",
-        },
-        "admin_scope": "workspace_owner",
-        "platform_admin_supported": False,
-        "message": "Bootstrap account is ready. Remove CIVORA_ADMIN_BOOTSTRAP_SECRET after use to disable this route.",
-    }
-
-
 _RATE_LIMIT_DEFAULTS: Dict[str, tuple[int, int]] = {
     "auth": (30, 60),
     "health": (120, 60),
@@ -433,14 +314,6 @@ class GeocodeResponse(BaseModel):
 class LoginPayload(BaseModel):
     email: str
     password: str
-
-
-class AdminBootstrapPayload(BaseModel):
-    email: str
-    password: str
-    name: str = "Civora Admin"
-    reset_users: bool = False
-    reset_existing_password: bool = True
 
 
 class OrchestratePayload(BaseModel):
@@ -1247,16 +1120,6 @@ def login(payload: LoginPayload, _rate_limit: None = Depends(rate_limit("auth"))
         email=payload.email,
         password=payload.password,
     )
-
-
-@app.post("/api/admin/bootstrap-owner")
-def admin_bootstrap_owner(
-    payload: AdminBootstrapPayload,
-    x_civora_admin_bootstrap_secret: Optional[str] = Header(default=None),
-    _rate_limit: None = Depends(rate_limit("debug")),
-) -> Dict[str, Any]:
-    _require_admin_bootstrap_secret(x_civora_admin_bootstrap_secret)
-    return _bootstrap_owner_user(payload)
 
 
 @app.get("/api/auth/me")
