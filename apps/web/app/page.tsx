@@ -1647,6 +1647,9 @@ function CustomGeometryHandoffDetails({
 
 type SystemStatus = "fresh" | "stale" | "not_generated";
 
+const isEngineeringSystemStatus = (value: unknown): value is SystemStatus =>
+  value === "fresh" || value === "stale" || value === "not_generated";
+
 const DEFAULT_SYSTEM_STATUS: Record<
   "roads" | "parking" | "grading" | "drainage" | "utilities",
   SystemStatus
@@ -2331,7 +2334,7 @@ function WorkflowFocusPanel({
 }: WorkflowFocusPanelProps) {
   const sections = [
     ["What is ready", ready.length ? ready : ["Nothing is ready yet."], "text-emerald-700"],
-    ["What is blocked", blocked.length ? blocked : ["No explicit blockers recorded."], "text-red-600"],
+    ["What is blocked", blocked.length ? blocked : ["No blockers recorded for this view; Civora outputs remain review-required."], "text-red-600"],
     ["What Civora can do", civoraCan, "text-slate-800"],
     ["What you must provide", userMust.length ? userMust : ["No additional user input recorded for this step."], "text-slate-800"],
   ] as const;
@@ -2887,6 +2890,7 @@ function PerformanceAIDashboardView({
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobToasts, setJobToasts] = useState<JobToast[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
+  const [moveEditFeedback, setMoveEditFeedback] = useState("");
   const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
   const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealth | null>(null);
   const [deploymentHealthError, setDeploymentHealthError] = useState("");
@@ -5701,9 +5705,50 @@ function PerformanceAIDashboardView({
       })
       .filter(Boolean) as BuildingPlacement[];
 
+    const siteBoundaryGeometry = siteInputs?.site_boundary_geometry;
+    const hasRestoredSiteObject = [...siteObjectPlacements, ...parsedPlacements, ...pondPlacements, ...inletPlacements]
+      .some((item) => item.type === "site");
+    const restoredSiteBoundary =
+      !hasRestoredSiteObject && lot.w && lot.h
+        ? [{
+            id: "restored-site-boundary",
+            label: "Site Boundary",
+            type: "site" as SiteObjectType,
+            x: 0,
+            y: 0,
+            w: Number(lot.w),
+            d: Number(lot.h),
+            rotation: 0,
+            locked: Boolean(siteInputs?.site_alignment_locked),
+            placed: true,
+            source: siteBoundaryGeometry?.source === "manual_drawn" ? "manual_drawn" : "user",
+            generated: false,
+            geometryType: siteBoundaryGeometry?.type === "polygon" ? "polygon" as const : undefined,
+            geometry: Array.isArray(siteBoundaryGeometry?.vertices)
+              ? siteBoundaryGeometry.vertices
+                  .map((point) => [Number(point.x), Number(point.y)] as [number, number])
+                  .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+              : undefined,
+            capabilities: {
+              movable: false,
+              resizable: false,
+              rotatable: false,
+              deletable: false,
+            },
+            systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+            meta: {
+              category: "site",
+              site_boundary_state: siteInputs?.site_boundary_state || (siteInputs?.site_alignment_locked ? "locked_canonical" : "draft_editable"),
+              source: siteBoundaryGeometry?.source || "project_input",
+              engineering_status: "review_required",
+              construction_release_allowed: false,
+              units: manualFields.units ?? "ft",
+            },
+          } satisfies BuildingPlacement]
+        : [];
     const mergedPlacements = siteObjectPlacements.length
       ? siteObjectPlacements
-      : [...parsedPlacements, ...pondPlacements, ...inletPlacements];
+      : [...restoredSiteBoundary, ...parsedPlacements, ...pondPlacements, ...inletPlacements];
     setBuildingPlacements(mergedPlacements);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
@@ -5740,6 +5785,16 @@ function PerformanceAIDashboardView({
     setGrading(disciplines.includes("grading"));
     setDrainage(disciplines.includes("drainage"));
     setUtilities(disciplines.includes("utility"));
+    const restoredSystemState = projectInput.meta?.system_dirty_state;
+    if (restoredSystemState && typeof restoredSystemState === "object") {
+      setSystemStatuses({
+        roads: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).roads) ? (restoredSystemState as Record<string, SystemStatus>).roads : DEFAULT_SYSTEM_STATUS.roads,
+        parking: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).parking) ? (restoredSystemState as Record<string, SystemStatus>).parking : DEFAULT_SYSTEM_STATUS.parking,
+        grading: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).grading) ? (restoredSystemState as Record<string, SystemStatus>).grading : DEFAULT_SYSTEM_STATUS.grading,
+        drainage: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).drainage) ? (restoredSystemState as Record<string, SystemStatus>).drainage : DEFAULT_SYSTEM_STATUS.drainage,
+        utilities: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).utilities) ? (restoredSystemState as Record<string, SystemStatus>).utilities : DEFAULT_SYSTEM_STATUS.utilities,
+      });
+    }
     const nextThread = restoredThread.length ? restoredThread : [createWelcomeMessage()];
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
@@ -8476,6 +8531,45 @@ function PerformanceAIDashboardView({
     return false;
   };
 
+  const onlineDiscovery =
+    (siteInputs?.online_existing_conditions_discovery_v1 ??
+      (currentPlanMeta.online_existing_conditions_discovery_v1 as OnlineExistingConditionsDiscovery | undefined) ??
+      {}) as OnlineExistingConditionsDiscovery;
+  const onlineDiscoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
+  const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
+  const onlineMissingSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) <= 0);
+  const onlineDiscoveryCandidateCount = Number(onlineDiscovery.candidate_count ?? 0);
+  const localGisProviderRegistry =
+    (siteInputs?.local_gis_provider_registry_v1 ??
+      onlineDiscovery.local_gis_provider_registry_v1 ??
+      (currentPlanMeta.local_gis_provider_registry_v1 as LocalGisProviderRegistry | undefined) ??
+      {}) as LocalGisProviderRegistry;
+  const localGisProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
+  const configuredLocalGisProviders = localGisProviders.filter((provider) => Boolean(provider.service_url || provider.arcgis?.service_url));
+  const onlineSourceLookupUnavailable =
+    hasAppliedAddress &&
+    onlineDiscoveryCandidateCount === 0 &&
+    (String(onlineDiscovery.status || "").includes("failed") ||
+      (onlineDiscoverySources.length === 0 && configuredLocalGisProviders.length === 0));
+  const onlineSourceLookupLabel = !hasAppliedAddress
+    ? "Needs address/location first"
+    : onlineDiscoveryCandidateCount > 0
+      ? `${onlineDiscoveryCandidateCount} candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} for review`
+      : onlineSourceLookupUnavailable
+        ? "Address applied; online source lookup not configured/available."
+        : "Address applied; no online source candidates accepted.";
+  const generatePreflightNotes = [
+    hasAssumedTerrainSlope
+      ? "assumed terrain slope / survey-control still needed"
+      : "",
+    hasAppliedAddress && onlineSourceLookupUnavailable
+      ? "Address applied; online source lookup not configured/available."
+      : "",
+    buildingPlacements.some((item) => item.type === "site")
+      ? "Site boundary count is separate from design object counts."
+      : "",
+  ].filter(Boolean);
+
   const getGeneratePreflightBlockers = useCallback(
     (target: SystemGenerationTarget) => {
       const lot = resolveLotBounds();
@@ -8519,6 +8613,12 @@ function PerformanceAIDashboardView({
       if (!siteScaleLocked) blockers.push({ label: "site boundary exists but is not locked", action: "site_existing" });
       if (needsGrading && !hasTerrainSource) blockers.push({ label: "missing terrain/source", action: "import_survey" });
       if (!hasStandardsEvidence) blockers.push({ label: "missing standards", action: "standards" });
+      if (needsAll && hasAppliedAddress && onlineSourceLookupUnavailable) {
+        blockers.push({ label: "Address applied; online source lookup not configured/available.", action: "data" });
+      }
+      if (needsAll && !hasVerifiedSurveyControl && hasAssumedTerrainSlope) {
+        blockers.push({ label: "assumed terrain slope / survey-control still needed", action: "import_survey" });
+      }
       if (needsAll || target === "roads" || target === "utilities") {
         if (hasBuildingDraft && !buildingPlaced) {
           blockers.push({ label: "office building exists but needs placement", action: "objects" });
@@ -8564,9 +8664,56 @@ function PerformanceAIDashboardView({
       }
       return Array.from(new Map(blockers.map((item) => [item.label, item])).values());
     },
-    [buildingPlacements, hasStandardsEvidence, hasTerrainSource, resolveLotBounds, siteScaleLocked],
+    [
+      buildingPlacements,
+      hasAppliedAddress,
+      hasAssumedTerrainSlope,
+      hasStandardsEvidence,
+      hasTerrainSource,
+      hasVerifiedSurveyControl,
+      onlineSourceLookupUnavailable,
+      resolveLotBounds,
+      siteScaleLocked,
+    ],
   );
   const fullGeneratePreflightBlockers = getGeneratePreflightBlockers("full");
+  const canonicalWorkspaceBlockers = useMemo(
+    () =>
+      uniqueStrings([
+        ...fullGeneratePreflightBlockers.map((item) => item.label),
+        ...issues.map((issue) => issue.message),
+        ...analysisIssues.map((issue) => issue.message),
+        siteScaleLocked && siteInputs?.site_boundary_state === "draft_editable"
+          ? "site locked state contradicts draft boundary source"
+          : "",
+        !siteScaleLocked && siteInputs?.site_boundary_state === "locked_canonical"
+          ? "site unlocked state contradicts locked boundary source"
+          : "",
+      ]).filter(Boolean),
+    [
+      analysisIssues,
+      fullGeneratePreflightBlockers,
+      issues,
+      siteInputs?.site_boundary_state,
+      siteScaleLocked,
+    ],
+  );
+  const canonicalWorkspaceBlockerText =
+    canonicalWorkspaceBlockers.length
+      ? canonicalWorkspaceBlockers.join("; ")
+      : "No blockers recorded for the active workspace; Civora outputs remain review-required.";
+  const restoreTruthLabel =
+    workspaceRestoreState === "failed"
+      ? "Could not restore saved workspace"
+      : effectiveDemoWorkspaceEnabled
+        ? "Local demo only"
+        : workspaceRestoreState === "restored" && currentProject?.project_id
+          ? "Restored saved workspace"
+          : currentProject?.project_id && currentProject?.updated_at
+            ? "Project saved; restore available after reload"
+            : currentProject?.project_id
+              ? "Project saved; restore status pending"
+              : "Restore unavailable";
 
   const tryHandleInfoIntent = (message: string): boolean => {
     const normalized = message.toLowerCase();
@@ -8642,11 +8789,7 @@ function PerformanceAIDashboardView({
         .filter(([, status]) => status === "fresh")
         .map(([system]) => system);
       const lines = [
-        effectiveDemoWorkspaceEnabled
-          ? "Workspace persistence: Local demo only."
-          : currentProject?.project_id && currentProject?.updated_at
-            ? `Workspace persistence: Saved reloadable, last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}.`
-            : "Workspace persistence: unsaved draft, not reloadable yet.",
+        `Workspace persistence: ${restoreTruthLabel}${currentProject?.updated_at ? `, last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}` : ""}.`,
         hasAppliedAddress
           ? `Address state: applied (${appliedAddressLabel || "coordinate context"}). ${onlineSourceLookupUnavailable ? "Address applied; online source lookup not configured/available." : onlineSourceLookupLabel}`
           : siteAddress.trim()
@@ -8667,22 +8810,10 @@ function PerformanceAIDashboardView({
     }
 
     if (/(what is blocked|what's blocked|what.*blocked|blocked right now)/i.test(normalized)) {
-      const blockers = uniqueStrings([
-        ...fullGeneratePreflightBlockers.map((item) => item.label),
-        ...pendingPlacementObjects.map((item) => `${item.label} exists but is not placed`),
-        ...generatePreflightNotes,
-        siteScaleLocked && siteInputs?.site_boundary_state === "draft_editable"
-          ? "site locked state contradicts draft boundary source"
-          : "",
-        !siteScaleLocked && siteInputs?.site_boundary_state === "locked_canonical"
-          ? "site unlocked state contradicts locked boundary source"
-          : "",
-        ...previewBlockedReasons,
-      ]);
       appendChatMessage(
         "assistant",
-        blockers.length
-          ? `Current blockers:\n${blockers.map((reason) => `- ${reason}`).join("\n")}`
+        canonicalWorkspaceBlockers.length
+          ? `Current blockers:\n${canonicalWorkspaceBlockers.map((reason) => `- ${reason}`).join("\n")}`
           : "No current blockers are recorded. Outputs remain review-required.",
         "status",
       );
@@ -8701,7 +8832,7 @@ function PerformanceAIDashboardView({
       }
       appendChatMessage(
         "assistant",
-        `${visibleAction} This is the next visible UI action; all outputs remain review-required.`,
+        `${visibleAction} Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
         "status",
       );
       return true;
@@ -12178,19 +12309,31 @@ function PerformanceAIDashboardView({
               },
             }
           : undefined;
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+        manual_fields: currentInput?.manual_fields,
+      };
+      setCurrentProject((project) =>
+        project
+          ? {
+              ...project,
+              project_input: nextProjectInput,
+              latest_result: latestResultOverride ?? project.latest_result,
+              has_result: latestResultOverride ? true : project.has_result,
+              updated_at: Date.now() / 1000,
+            }
+          : project,
+      );
       await saveProject({
         silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-          },
-          manual_fields: currentInput?.manual_fields,
-        },
+        projectInputOverride: nextProjectInput,
         latestResultOverride,
       });
       setSiteScaleLocked(false);
@@ -12576,45 +12719,6 @@ function PerformanceAIDashboardView({
     projectId,
     siteName,
   ]);
-
-  const onlineDiscovery =
-    (siteInputs?.online_existing_conditions_discovery_v1 ??
-      (currentPlanMeta.online_existing_conditions_discovery_v1 as OnlineExistingConditionsDiscovery | undefined) ??
-      {}) as OnlineExistingConditionsDiscovery;
-  const onlineDiscoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
-  const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
-  const onlineMissingSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) <= 0);
-  const onlineDiscoveryCandidateCount = Number(onlineDiscovery.candidate_count ?? 0);
-  const localGisProviderRegistry =
-    (siteInputs?.local_gis_provider_registry_v1 ??
-      onlineDiscovery.local_gis_provider_registry_v1 ??
-      (currentPlanMeta.local_gis_provider_registry_v1 as LocalGisProviderRegistry | undefined) ??
-      {}) as LocalGisProviderRegistry;
-  const localGisProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
-  const configuredLocalGisProviders = localGisProviders.filter((provider) => Boolean(provider.service_url || provider.arcgis?.service_url));
-  const onlineSourceLookupUnavailable =
-    hasAppliedAddress &&
-    onlineDiscoveryCandidateCount === 0 &&
-    (String(onlineDiscovery.status || "").includes("failed") ||
-      (onlineDiscoverySources.length === 0 && configuredLocalGisProviders.length === 0));
-  const onlineSourceLookupLabel = !hasAppliedAddress
-    ? "Needs address/location first"
-    : onlineDiscoveryCandidateCount > 0
-      ? `${onlineDiscoveryCandidateCount} candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} for review`
-      : onlineSourceLookupUnavailable
-        ? "Address applied; online source lookup not configured/available."
-        : "Address applied; no online source candidates accepted.";
-  const generatePreflightNotes = [
-    hasAssumedTerrainSlope
-      ? "terrain slope is assumed; survey/control still needed."
-      : "",
-    hasAppliedAddress && onlineSourceLookupUnavailable
-      ? "Address applied; online source lookup not configured/available."
-      : "",
-    buildingPlacements.some((item) => item.type === "site")
-      ? "Site boundary count is separate from design object counts."
-      : "",
-  ].filter(Boolean);
 
   const ensureSiteLocked = useCallback(
     (action: string) => {
@@ -15331,8 +15435,20 @@ function PerformanceAIDashboardView({
     if ((target === "grading" || target === "drainage" || target === "storm") && !hasTerrainSource) {
       blockers.push("missing terrain/source: add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
     }
+    if (!hasStandardsEvidence) {
+      blockers.push("missing standards");
+    }
+    if (hasAppliedAddress && onlineSourceLookupUnavailable) {
+      blockers.push("Address applied; online source lookup not configured/available.");
+    }
+    if (hasAssumedTerrainSlope && !hasVerifiedSurveyControl) {
+      blockers.push("assumed terrain slope / survey-control still needed");
+    }
     if ((target === "drainage" || target === "storm") && !hasBasinPlaced) {
       blockers.push(hasBasinObject ? "detention basin exists but needs placement." : "missing detention basin.");
+    }
+    if ((target === "drainage" || target === "storm") && !buildingPlacements.some((item) => item.type === "outfall" && item.placed)) {
+      blockers.push(buildingPlacements.some((item) => item.type === "outfall") ? "outfall exists but is not placed" : "missing outfall");
     }
     if (target === "roadway" && confirmedObjectCounts.buildings === 0 && confirmedObjectCounts.access === 0) {
       blockers.push("Add at least one building, entrance, driveway, road, or parking object.");
@@ -15673,8 +15789,8 @@ function PerformanceAIDashboardView({
       {
         key: "data",
         label: "Data",
-        state: siteScaleLocked || hasTerrainSource ? "complete" : "not_configured",
-        detail: siteScaleLocked ? "Site locked" : "Needs site setup",
+        state: canonicalWorkspaceBlockers.some((item) => /source|standards|survey|terrain|address/i.test(item)) ? "blocked" : siteScaleLocked || hasTerrainSource ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /source|standards|survey|terrain|address/i.test(item)) || (siteScaleLocked ? "Site locked" : "Needs site setup"),
       },
       {
         key: "roadway",
@@ -15685,23 +15801,23 @@ function PerformanceAIDashboardView({
       {
         key: "grading",
         label: "Grading",
-        state: siteTooLargeForGrading ? "blocked" : systemStatuses.grading === "fresh" ? "complete" : "not_configured",
-        detail: siteTooLargeForGrading ? "Site too large" : systemStatuses.grading === "fresh" ? "Complete" : "Needs terrain/run",
+        state: canonicalWorkspaceBlockers.some((item) => /terrain|survey|grading|site too large/i.test(item)) ? "blocked" : siteTooLargeForGrading ? "blocked" : systemStatuses.grading === "fresh" ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /terrain|survey|grading|site too large/i.test(item)) || (siteTooLargeForGrading ? "Site too large" : systemStatuses.grading === "fresh" ? "Complete" : "Needs terrain/run"),
       },
       {
         key: "drainage",
         label: "Drainage",
-        state: hasHardSystemBlock ? "blocked" : systemStatuses.drainage === "fresh" ? "complete" : "not_configured",
-        detail: hasHardSystemBlock ? "Review blockers" : systemStatuses.drainage === "fresh" ? "Complete" : "Needs basin/run",
+        state: canonicalWorkspaceBlockers.some((item) => /outfall|basin|drainage|terrain|survey/i.test(item)) || hasHardSystemBlock ? "blocked" : systemStatuses.drainage === "fresh" ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /outfall|basin|drainage|terrain|survey/i.test(item)) || (hasHardSystemBlock ? "Review blockers" : systemStatuses.drainage === "fresh" ? "Complete" : "Needs basin/run"),
       },
       {
         key: "utilities",
         label: "Utilities",
-        state: hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
-        detail: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+        state: canonicalWorkspaceBlockers.some((item) => /utility|standards|source/i.test(item)) || hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /utility|standards|source/i.test(item)) || (hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered"),
       },
     ],
-    [hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
+    [canonicalWorkspaceBlockers, hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
   );
   const selectedBuilding = useMemo(
     () => buildingPlacements.find((item) => item.id === activePlacementId) ?? null,
@@ -16604,6 +16720,7 @@ function PerformanceAIDashboardView({
   };
   const persistedProgressTimeline = currentPlanMeta.progress_timeline_v1;
   const bottomBlockerItems = [
+    ...canonicalWorkspaceBlockers,
     ...previewBlockedReasons,
     ...issues.map((issue) => issue.message),
     ...analysisIssues.map((issue) => issue.message),
@@ -17101,6 +17218,7 @@ function PerformanceAIDashboardView({
           ? "ok"
           : "idle";
   const activePanelBlockers = uniqueStrings([
+    ...canonicalWorkspaceBlockers,
     ...previewBlockedReasons,
     ...bottomBlockerItems,
     exportBlockText,
@@ -17157,7 +17275,7 @@ function PerformanceAIDashboardView({
     },
     {
       label: "Blockers / missing inputs",
-      value: activePanelBlockers.length ? activePanelBlockers.join(" ") : "No panel-specific blocker is recorded.",
+      value: activePanelBlockers.length ? activePanelBlockers.join(" ") : canonicalWorkspaceBlockerText,
       tone: activePanelBlockers.length ? "block" : activePanelStatusTone,
     },
     {
@@ -17242,6 +17360,7 @@ function PerformanceAIDashboardView({
       ].filter(Boolean) as string[],
       blocked: [
         !siteScaleLocked ? "Site boundary is not locked" : "",
+        ...canonicalWorkspaceBlockers,
         ...systemBlockedLabels,
         hasHardSystemBlock ? "Hard system blocker recorded" : "",
       ].filter(Boolean) as string[],
@@ -17275,7 +17394,7 @@ function PerformanceAIDashboardView({
         sidebarAssumptions.length ? `${sidebarAssumptions.length} assumption categorie(s) listed` : "",
         sidebarTrustScore !== "not reported" ? `Trust score ${sidebarTrustScore}` : "",
       ].filter(Boolean) as string[],
-      blocked: reviewBlockedLabels.length ? reviewBlockedLabels.slice(0, 5) : [],
+      blocked: canonicalWorkspaceBlockers.length ? canonicalWorkspaceBlockers.slice(0, 5) : reviewBlockedLabels.slice(0, 5),
       civoraCan: ["Summarize QA issues", "Link to engineering health panels", "Prepare review-only evidence", "Apply supported safe fixes"],
       userMust: ["Complete engineer review", "Accept or reject assumptions", "Clear construction-release-blocked export gates"],
       nextActionLabel: "Open QA issues",
@@ -17290,6 +17409,7 @@ function PerformanceAIDashboardView({
         planPreviewUrl ? "Preview is review ready" : "",
       ].filter(Boolean) as string[],
       blocked: [
+        ...canonicalWorkspaceBlockers.slice(0, 5),
         exportBlockText,
         !backendResult ? "Run systems before preparing deliverables" : "",
         ...(getPlanSheetBlockers ? getPlanSheetBlockers().slice(0, 3) : []),
@@ -17430,14 +17550,11 @@ function PerformanceAIDashboardView({
                 </span>
                 <span className="flex items-center justify-between gap-2">
                   <span>Sync</span>
-                  <span className={currentProject?.project_id && !effectiveDemoWorkspaceEnabled ? "text-slate-900" : "text-amber-700"}>
-                    {workspaceRestoreState === "failed"
-                      ? "Could not restore saved workspace"
-                      : effectiveDemoWorkspaceEnabled
-                      ? "Local demo only"
-                      : currentProject?.project_id
-                        ? "Saved reloadable"
-                        : "Unsaved draft"}
+                  <span
+                    data-testid="workspace-restore-status"
+                    className={currentProject?.project_id && !effectiveDemoWorkspaceEnabled ? "text-slate-900" : "text-amber-700"}
+                  >
+                    {restoreTruthLabel}
                   </span>
                 </span>
               </div>
@@ -20664,6 +20781,48 @@ function PerformanceAIDashboardView({
                             ))}
                           </div>
                         ) : null}
+                        {(fullGeneratePreflightBlockers.some((item) => item.label === "missing standards") ||
+                          fullGeneratePreflightBlockers.some((item) => /outfall/i.test(item.label))) ? (
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {fullGeneratePreflightBlockers.some((item) => item.label === "missing standards") ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSidePanel("standards")}
+                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-800 hover:bg-amber-50"
+                              >
+                                Add/accept standards
+                                <span className="mt-1 block text-[11px] font-medium text-amber-700">
+                                  Open standards review. Acceptance remains review-required.
+                                </span>
+                              </button>
+                            ) : null}
+                            {fullGeneratePreflightBlockers.some((item) => /outfall/i.test(item.label)) ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!buildingPlacements.some((item) => item.type === "outfall")) {
+                                    handleAddObject("outfall", {
+                                      label: "Outfall / Discharge Point",
+                                      placed: false,
+                                      meta: {
+                                        review_status: "engineer_review_required",
+                                        verification_status: "placeholder_needs_review",
+                                      },
+                                    });
+                                  }
+                                  handleOpenSidePanel("objects");
+                                  setStatusMessage("Outfall / discharge point placeholder added for review-required placement. Verification is still needed.");
+                                }}
+                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-800 hover:bg-amber-50"
+                              >
+                                Add outfall / discharge point
+                                <span className="mt-1 block text-[11px] font-medium text-amber-700">
+                                  Create or place a review-required discharge point placeholder.
+                                </span>
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
@@ -20706,14 +20865,31 @@ function PerformanceAIDashboardView({
                         })}
                         <button
                           type="button"
-                          onClick={() => handleGenerateSystem("full")}
-                          className="col-span-2 rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-white transition hover:bg-slate-800"
+                          onClick={() => {
+                            if (fullGeneratePreflightBlockers.length) {
+                              setStatusMessage(`Full Generate blocked: ${canonicalWorkspaceBlockerText}`);
+                              setRightRailCollapsed(false);
+                              handleOpenSidePanel("generate");
+                              appendChatMessage(
+                                "assistant",
+                                `Full Generate is blocked:\n${canonicalWorkspaceBlockers.map((item) => `- ${item}`).join("\n")}`,
+                                "status",
+                              );
+                              return;
+                            }
+                            void handleGenerateSystem("full");
+                          }}
+                          className={`col-span-2 rounded-xl border px-3 py-3 text-left transition ${
+                            fullGeneratePreflightBlockers.length
+                              ? "border-red-200 bg-red-50 text-red-800 hover:bg-red-100"
+                              : "border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
+                          }`}
                         >
                           <span className="block text-xs font-semibold uppercase tracking-[0.14em]">
-                            Full System Run
+                            {fullGeneratePreflightBlockers.length ? "Full System Run Blocked" : "Full System Run"}
                           </span>
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/65">
-                            Roads, grading, drainage, utilities
+                          <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${fullGeneratePreflightBlockers.length ? "text-red-600" : "text-white/65"}`}>
+                            {fullGeneratePreflightBlockers.length ? canonicalWorkspaceBlockers[0] || "Open preflight blockers" : "Roads, grading, drainage, utilities"}
                           </span>
                         </button>
                       </div>
@@ -23600,7 +23776,7 @@ function PerformanceAIDashboardView({
                             <p className="mt-1 text-sm font-semibold text-red-950">
                               Review package blocked because {(!backendResult && !fullGeneratePreflightBlockers.length)
                                 ? "no system run evidence has been generated yet"
-                                : fullGeneratePreflightBlockers.map((item) => item.label).join("; ")}.
+                                : canonicalWorkspaceBlockerText}.
                             </p>
                             <div className="mt-3 flex flex-wrap gap-2">
                               {(fullGeneratePreflightBlockers.length
@@ -24118,9 +24294,21 @@ function PerformanceAIDashboardView({
 	                      <button
 	                        type="button"
 	                        onClick={() => {
+	                          if (selectedBuilding.locked || selectedBuilding.capabilities?.movable === false) {
+	                            const message = `Move/edit blocked: ${selectedBuilding.label} is locked or not movable.`;
+	                            setPlacementModeEnabled(false);
+	                            setMoveEditFeedback(message);
+	                            setStatusMessage(message);
+	                            appendChatMessage("assistant", message, "status");
+	                            return;
+	                          }
 	                          setPlacementModeEnabled(true);
 	                          setPreviewInteraction("edit");
+	                          const message = `Move/edit mode active for ${selectedBuilding.label}.`;
+	                          setMoveEditFeedback(message);
+	                          setStatusMessage(`${message} Drag it on the canvas or use object details.`);
 	                        }}
+	                        data-testid="selected-object-edit-button"
 	                        className="rounded-lg border border-slate-950 bg-slate-950 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white"
 	                      >
 	                        Edit
@@ -24143,6 +24331,11 @@ function PerformanceAIDashboardView({
 	                        Details
 	                      </button>
 	                    </div>
+	                    {moveEditFeedback ? (
+	                      <p data-testid="selected-object-move-edit-feedback" className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-700">
+	                        {moveEditFeedback}
+	                      </p>
+	                    ) : null}
 	                  </div>
 	                ) : null}
 	                <div
