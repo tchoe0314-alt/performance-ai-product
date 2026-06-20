@@ -51,6 +51,37 @@ type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "p
 type CadPoint = { x: number; y: number };
 type CadSymbolKind = "hydrant" | "inlet" | "manhole" | "valve" | "tree" | "light" | "sign" | "utility_marker" | "benchmark" | "note_callout";
 type CadDimensionMode = "linear" | "aligned";
+type CadToolRequest = {
+  id: number;
+  tool:
+    | "select"
+    | "line"
+    | "polyline"
+    | "area"
+    | "box"
+    | "point"
+    | "circle"
+    | "arc"
+    | "text"
+    | "move"
+    | "copy"
+    | "rotate"
+    | "scale"
+    | "offset"
+    | "trim"
+    | "extend"
+    | "fillet"
+    | "delete"
+    | "dimension"
+    | "symbol"
+    | "layer"
+    | "properties"
+    | "snap"
+    | "ortho"
+    | "undo"
+    | "redo"
+    | "command";
+};
 type CadHistoryEntry = {
   id: string;
   label: string;
@@ -418,6 +449,7 @@ type PreviewPanelProps = {
     placementMode: boolean;
     selectedId: string | null;
   };
+  cadToolRequest?: CadToolRequest | null;
 };
 
 export default function PreviewPanel({
@@ -503,6 +535,7 @@ export default function PreviewPanel({
   gradingBlocker,
   stormHydrologyOverlay,
   debugStats,
+  cadToolRequest,
 }: PreviewPanelProps) {
   const previewLabels = useMemo(
     () => (Array.isArray(planPreviewAnnotations?.labels) ? planPreviewAnnotations?.labels : []),
@@ -2605,6 +2638,147 @@ export default function PreviewPanel({
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     updateCadObject,
+  ]);
+
+  const lastCadToolRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!cadToolRequest || cadToolRequest.id === lastCadToolRequestIdRef.current) return;
+    lastCadToolRequestIdRef.current = cadToolRequest.id;
+    onSetPreviewMode("2d");
+    onSetPreviewInteraction("edit");
+
+    const activateDrawMode = (mode: DrawMode, label: string) => {
+      setDraftPoints([]);
+      setDraftPreviewPoint(null);
+      setDrawMode(mode);
+      pushCadCommandFeedback(label, "info", `${label} tool active. Pick points on the canvas, then Finish when shown.`);
+    };
+
+    switch (cadToolRequest.tool) {
+      case "select":
+        setDrawMode("select");
+        setDraftPoints([]);
+        setDraftPreviewPoint(null);
+        pushCadCommandFeedback("SELECT", "info", "SELECT tool active. Click an object on the canvas or choose one from the object list.");
+        break;
+      case "line":
+        activateDrawMode("polyline", "LINE");
+        break;
+      case "polyline":
+        activateDrawMode("polyline", "PLINE");
+        break;
+      case "area":
+        activateDrawMode("polygon", "AREA");
+        break;
+      case "box":
+        activateDrawMode("rect", "RECTANGLE");
+        break;
+      case "point":
+        activateDrawMode("point", "POINT");
+        break;
+      case "circle":
+        setCadCommandDraft(`CIRCLE ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 25`);
+        pushCadCommandFeedback("CIRCLE", "info", "CIRCLE command loaded. Adjust center/radius in the command line, then press Run.");
+        break;
+      case "arc":
+        setCadCommandDraft(`ARC ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 40 0 90`);
+        pushCadCommandFeedback("ARC", "info", "ARC command loaded. Adjust center/radius/start/end in the command line, then press Run.");
+        break;
+      case "text":
+        setCadCommandDraft(`TEXT ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} note`);
+        pushCadCommandFeedback("TEXT", "info", "TEXT command loaded. Edit the point and note text, then press Run.");
+        break;
+      case "move":
+        transformSelectedCadObjects("move");
+        break;
+      case "copy":
+        setCadCommandDraft("COPY selected 10,10");
+        pushCadCommandFeedback("COPY", "info", "COPY command loaded. Select an object, adjust the vector if needed, then press Run.");
+        break;
+      case "rotate":
+        transformSelectedCadObjects("rotate");
+        break;
+      case "scale":
+        transformSelectedCadObjects("scale");
+        break;
+      case "offset":
+        offsetSelectedCadObjectBy(cadOffsetDistance);
+        break;
+      case "trim":
+        trimExtendSelectedCadObject("trim");
+        break;
+      case "extend":
+        trimExtendSelectedCadObject("extend");
+        break;
+      case "fillet":
+        filletSelectedCadObject();
+        break;
+      case "delete":
+        if (selectedDeletableObject) {
+          onRemoveBuilding(selectedDeletableObject.id);
+          pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected draft object.");
+        } else {
+          pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft object first.");
+        }
+        break;
+      case "dimension":
+        applySelectedCadDimension();
+        break;
+      case "symbol":
+        insertCadSymbol();
+        break;
+      case "layer":
+        applySelectedCadLayer();
+        break;
+      case "properties":
+        applyCadProperties();
+        break;
+      case "snap":
+        setCadSnapEnabled((value) => {
+          pushCadCommandFeedback("SNAP", "info", `SNAP ${!value ? "on" : "off"}.`);
+          return !value;
+        });
+        break;
+      case "ortho":
+        setCadOrthoEnabled((value) => {
+          pushCadCommandFeedback("ORTHO", "info", `ORTHO ${!value ? "on" : "off"}.`);
+          return !value;
+        });
+        break;
+      case "undo":
+        undoCadCommand();
+        break;
+      case "redo":
+        redoCadCommand();
+        break;
+      case "command":
+        setCadCommandDraft((value) => value || "LINE 0,0 100,0");
+        pushCadCommandFeedback("COMMAND", "info", "Command line focused. Type a command or run the loaded example.");
+        break;
+      default:
+        break;
+    }
+  }, [
+    applyCadProperties,
+    applySelectedCadDimension,
+    applySelectedCadLayer,
+    cadOffsetDistance,
+    cadToolRequest,
+    filletSelectedCadObject,
+    insertCadSymbol,
+    lotHeight,
+    lotWidth,
+    offsetSelectedCadObjectBy,
+    onRemoveBuilding,
+    onSetPreviewInteraction,
+    onSetPreviewMode,
+    pushCadCommandFeedback,
+    redoCadCommand,
+    selectedDeletableObject,
+    transformSelectedCadObjects,
+    trimExtendSelectedCadObject,
+    undoCadCommand,
   ]);
 
   useEffect(() => {

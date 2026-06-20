@@ -461,6 +461,37 @@ type SidebarNavItem = {
   status: SidebarStatus;
 };
 type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "deliver";
+type CadToolRequestForPreview = {
+  id: number;
+  tool:
+    | "select"
+    | "line"
+    | "polyline"
+    | "area"
+    | "box"
+    | "point"
+    | "circle"
+    | "arc"
+    | "text"
+    | "move"
+    | "copy"
+    | "rotate"
+    | "scale"
+    | "offset"
+    | "trim"
+    | "extend"
+    | "fillet"
+    | "delete"
+    | "dimension"
+    | "symbol"
+    | "layer"
+    | "properties"
+    | "snap"
+    | "ortho"
+    | "undo"
+    | "redo"
+    | "command";
+};
 type PrimaryWorkflowItem = {
   key: PrimaryWorkflowKey;
   label: string;
@@ -2429,6 +2460,7 @@ function PerformanceAIDashboardView({
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
   const [rightRailCollapsed, setRightRailCollapsed] = useState(true);
   const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(true);
+  const [cadToolRequest, setCadToolRequest] = useState<CadToolRequestForPreview | null>(null);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
@@ -16012,6 +16044,60 @@ function PerformanceAIDashboardView({
     }
     handleOpenSidePanel(panel);
   }, [handleOpenSidePanel]);
+  const triggerCadTool = useCallback((tool: CadToolRequestForPreview["tool"], label: string) => {
+    setPreviewInteraction("edit");
+    setWorkspaceChromeMinimized(false);
+    handleOpenPanelFromDrawer("model");
+    setCadToolRequest({ id: Date.now(), tool });
+    setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
+  }, [handleOpenPanelFromDrawer]);
+  const cadToolGroups: Array<{
+    title: string;
+    tools: Array<{ label: string; tool: CadToolRequestForPreview["tool"]; hint: string }>;
+  }> = [
+    {
+      title: "Draw",
+      tools: [
+        { label: "Select", tool: "select", hint: "Pick objects" },
+        { label: "Line", tool: "line", hint: "2+ points" },
+        { label: "Polyline", tool: "polyline", hint: "Connected line" },
+        { label: "Area", tool: "area", hint: "Closed polygon" },
+        { label: "Box", tool: "box", hint: "Rectangle" },
+        { label: "Point", tool: "point", hint: "Marker" },
+        { label: "Circle", tool: "circle", hint: "Command loaded" },
+        { label: "Arc", tool: "arc", hint: "Command loaded" },
+        { label: "Text", tool: "text", hint: "Command loaded" },
+      ],
+    },
+    {
+      title: "Modify",
+      tools: [
+        { label: "Move", tool: "move", hint: "Selected objects" },
+        { label: "Copy", tool: "copy", hint: "Selected + vector" },
+        { label: "Rotate", tool: "rotate", hint: "Selected objects" },
+        { label: "Scale", tool: "scale", hint: "Selected objects" },
+        { label: "Offset", tool: "offset", hint: "Selected geometry" },
+        { label: "Trim", tool: "trim", hint: "Selected line" },
+        { label: "Extend", tool: "extend", hint: "Selected line" },
+        { label: "Fillet", tool: "fillet", hint: "Selected vertex" },
+        { label: "Delete", tool: "delete", hint: "Selected object" },
+      ],
+    },
+    {
+      title: "Annotate / Organize",
+      tools: [
+        { label: "Dimension", tool: "dimension", hint: "Selected geometry" },
+        { label: "Symbol", tool: "symbol", hint: "Insert current symbol" },
+        { label: "Layer", tool: "layer", hint: "Apply layer" },
+        { label: "Properties", tool: "properties", hint: "Apply object props" },
+        { label: "Snap", tool: "snap", hint: "Toggle snap" },
+        { label: "Ortho", tool: "ortho", hint: "Toggle ortho" },
+        { label: "Undo", tool: "undo", hint: "Last CAD edit" },
+        { label: "Redo", tool: "redo", hint: "Redo CAD edit" },
+        { label: "Command", tool: "command", hint: "Typed commands" },
+      ],
+    },
+  ];
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
     const nextPanel = workspacePanelByMode[mode];
     setActiveWorkspaceMode(mode);
@@ -16253,14 +16339,14 @@ function PerformanceAIDashboardView({
     {
       label: "Select",
       icon: MousePointer2,
-      modes: ["draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      modes: ["draw", "design", "analyze", "deliver"] as PrimaryWorkflowKey[],
       action: () => setPreviewInteraction("static"),
       active: previewInteraction === "static",
     },
     {
       label: "Pan",
       icon: Hand,
-      modes: ["draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      modes: ["draw", "design", "analyze", "deliver"] as PrimaryWorkflowKey[],
       action: () => setPreviewInteraction("static"),
       active: false,
     },
@@ -16298,7 +16384,7 @@ function PerformanceAIDashboardView({
     {
       label: "Measure",
       icon: Ruler,
-      modes: ["draw", "analyze", "review"] as PrimaryWorkflowKey[],
+      modes: ["draw", "analyze"] as PrimaryWorkflowKey[],
       action: () => setShowMeasurements((value) => !value),
       active: showMeasurements,
     },
@@ -16312,7 +16398,7 @@ function PerformanceAIDashboardView({
     {
       label: "Layers",
       icon: Layers,
-      modes: ["setup", "draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      modes: ["setup", "draw", "design", "analyze", "deliver"] as PrimaryWorkflowKey[],
       action: () => setLayerManagerOpen((value) => !value),
       active: layerManagerOpen,
     },
@@ -16326,7 +16412,7 @@ function PerformanceAIDashboardView({
     {
       label: "Issues",
       icon: AlertCircle,
-      modes: ["analyze", "review"] as PrimaryWorkflowKey[],
+      modes: ["analyze"] as PrimaryWorkflowKey[],
       action: () => handleOpenPanelFromDrawer("analysis"),
       active: sidePanelForRender === "analysis",
     },
@@ -18108,10 +18194,9 @@ function PerformanceAIDashboardView({
                         ) : null}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Objects</button>
                       <button type="button" onClick={() => handleOpenSidePanel("analysis")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Review</button>
-                      <button type="button" data-testid="open-generate-panel" onClick={() => handleOpenSidePanel("generate")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Generate</button>
                       <button type="button" onClick={() => handleOpenSidePanel("deliverables")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Deliver</button>
                     </div>
                   </div>
@@ -22267,70 +22352,42 @@ function PerformanceAIDashboardView({
                         <span className="min-w-0 flex-1">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">CAD Tools</span>
                           <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
-                            Lines, areas, boxes, points, snaps, layers, dimensions
+                            Draw, modify, annotate, organize, command
                           </span>
                         </span>
                         <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-700">
-                          Canvas
+                          {cadToolGroups.reduce((count, group) => count + group.tools.length, 0)} tools
                         </span>
                       </summary>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewInteraction("edit");
-                            handleOpenSidePanel("model");
-                            setStatusMessage("Canvas CAD tools are active. Use line, area, box, point, snaps, dimensions, layers, and command input on the canvas.");
-                          }}
-                          className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800"
-                        >
-                          Open canvas CAD tools
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
-                            Draw and modify geometry
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewInteraction("edit");
-                            handleOpenSidePanel("layers");
-                            setStatusMessage("Layer controls opened. Use layers with CAD objects for visibility, review, and export organization.");
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                        >
-                          Open layers
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Visibility and CAD layers
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewInteraction("edit");
-                            handleOpenSidePanel("model");
-                            setStatusMessage("Use Add Line, Add Area, Add Box, or Add Point in the canvas draw toolbar.");
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                        >
-                          Draw line / area / box / point
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Manual draft objects
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewInteraction("edit");
-                            handleOpenSidePanel("model");
-                            setStatusMessage("CAD precision tools include coordinate entry, snaps, ortho, offsets, trims, fillets, dimensions, symbols, undo, and redo.");
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                        >
-                          Precision tools
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Snaps, command input, dimensions
-                          </span>
-                        </button>
+                      <div className="mt-4 space-y-4">
+                        {cadToolGroups.map((group) => (
+                          <div key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                            <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                              {group.title}
+                            </p>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {group.tools.map((item) => (
+                                <button
+                                  key={`${group.title}-${item.tool}`}
+                                  type="button"
+                                  onClick={() => triggerCadTool(item.tool, item.label)}
+                                  data-testid={`cad-tool-${item.tool}`}
+                                  className="min-h-[58px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-left transition hover:border-slate-950 hover:bg-white"
+                                >
+                                  <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">
+                                    {item.label}
+                                  </span>
+                                  <span className="mt-1 block text-[10px] font-medium leading-3 text-slate-500">
+                                    {item.hint}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                          These are draft/edit tools for Civora’s canvas. Native DWG parity, full AutoCAD constraints, xrefs, UCS, and production CAD release are still outside this web editor.
+                        </p>
                       </div>
                     </details>
 	                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -23142,7 +23199,7 @@ function PerformanceAIDashboardView({
                                 onClick={() => handleOpenSidePanel("generate")}
                                 className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
                               >
-                                Generate
+                                Prepare draft
                               </button>
                               <button
                                 type="button"
@@ -23738,6 +23795,7 @@ function PerformanceAIDashboardView({
                   placementMode: placementModeEnabled || Boolean(activePlacementId),
                   selectedId: activePlacementId,
                 }}
+                cadToolRequest={cadToolRequest}
               />
                   </div>
                 </div>
