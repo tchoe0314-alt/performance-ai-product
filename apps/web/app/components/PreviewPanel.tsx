@@ -265,10 +265,7 @@ const resolveSourceState = (item: BuildingPlacement): PreviewSourceState => {
   if (statusText.includes("stale") || statusText.includes("dirty")) return "stale";
   if (statusText.includes("inferred") || statusText.includes("low") || item.source === "inferred") return "inferred";
   if (statusText.includes("import") || item.source === "detected_from_image") return "imported";
-  const hasPathGeometry =
-    (item.geometryType === "polygon" || item.geometryType === "polyline" || item.geometryType === "point") &&
-    Array.isArray(item.geometry) &&
-    item.geometry.length > 0;
+  const hasPathGeometry = hasExplicitFootprintGeometry(item);
   if (!hasPathGeometry && item.geometryType !== "rect" && item.type !== "site") return "fallback";
   return "verified";
 };
@@ -322,6 +319,22 @@ const scalePolygonTowardCenter = (points: Array<[number, number]>, scale: number
 };
 
 const firstMetaNumber = (item: BuildingPlacement, keys: string[]): number | null => readMetaNumber(item.meta, keys);
+
+const hasExplicitFootprintGeometry = (item: BuildingPlacement) =>
+  (item.geometryType === "polygon" || item.geometryType === "polyline" || item.geometryType === "point") &&
+  Array.isArray(item.geometry) &&
+  item.geometry.length > 0;
+
+const supportsParkingModuleRendering = (item: BuildingPlacement) => {
+  const params = (item.meta as { parkingParams?: ParkingParams } | undefined)?.parkingParams ?? {};
+  const stallDepth = Number.isFinite(params.stallDepth) ? Number(params.stallDepth) : 18;
+  const aisleWidth = Number.isFinite(params.aisleWidth) ? Number(params.aisleWidth) : 24;
+  const stallWidth = Number.isFinite(params.stallWidth) ? Number(params.stallWidth) : 9;
+  const loading = params.loading === "single" ? "single" : "double";
+  const minDepth = stallDepth * (loading === "double" ? 2 : 1) + aisleWidth;
+  const minWidth = Math.max(stallWidth * 2.5, 24);
+  return item.type === "parking" && item.w >= minWidth && item.d >= minDepth * 0.82;
+};
 
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
@@ -1000,8 +1013,8 @@ export default function PreviewPanel({
     [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements, hoveredObjectId],
   );
   const shouldRevealObjectLabel = useCallback(
-    (item: BuildingPlacement) => hoveredObjectId === item.id,
-    [hoveredObjectId],
+    (item: BuildingPlacement) => hoveredObjectId === item.id || selectedBuildingId === item.id,
+    [hoveredObjectId, selectedBuildingId],
   );
   const show3D = previewMode === "3d" && !showMap;
   useEffect(() => {
@@ -1513,6 +1526,23 @@ export default function PreviewPanel({
     () => [...buildingPlacements, ...cadEntityPreviewObjects].filter((item) => !hiddenCadLayers.includes(getCadLayer(item))),
     [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers],
   );
+
+  const sourceStateSummary = useMemo(() => {
+    const counts = {
+      verified: 0,
+      review: 0,
+      fallback: 0,
+    };
+    visibleCadObjects
+      .filter((item) => item.type !== "site" && item.placed)
+      .forEach((item) => {
+        const state = resolveSourceState(item);
+        if (state === "verified") counts.verified += 1;
+        else if (state === "fallback") counts.fallback += 1;
+        else counts.review += 1;
+      });
+    return counts;
+  }, [visibleCadObjects]);
 
   const cadSegments = useMemo(() => {
     const segments: CadSegment2D[] = [];
@@ -3923,6 +3953,7 @@ export default function PreviewPanel({
   }, [alignToRoadRequest, mapAvailable, mapLoaded, onSetSiteRotationDeg]);
 
   const buildParkingModules = useCallback((item: BuildingPlacement, accessPoints: Array<{ x: number; y: number }>) => {
+    if (!supportsParkingModuleRendering(item)) return [];
     const x = item.x ?? 0;
     const y = item.y ?? 0;
     const params = (item.meta as { parkingParams?: ParkingParams })?.parkingParams ?? {};
@@ -5030,6 +5061,7 @@ export default function PreviewPanel({
     return () => window.cancelAnimationFrame(handle);
   }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements, updateFocusTransform]);
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
+  const activePreviewMode: "2d" | "3d" = previewMode;
   return (
     <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
       <div className="mb-3 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -5393,7 +5425,7 @@ export default function PreviewPanel({
                   data-testid="preview-toolbar-mode-2d"
                   onClick={() => onSetPreviewMode("2d")}
                   className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
-                    previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    activePreviewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                   }`}
                 >
                   2D
@@ -5619,6 +5651,14 @@ export default function PreviewPanel({
               ) : null}
               <span>{Math.round(canvasView.scale * 100)}%</span>
               <span>{cadHistory.at(-1)?.label || "No command"}</span>
+              <span data-testid="preview-source-confidence-summary">
+                Source-backed {sourceStateSummary.verified} / review {sourceStateSummary.review}
+              </span>
+              {sourceStateSummary.fallback ? (
+                <span data-testid="preview-fallback-geometry-summary">
+                  Fallback bounds {sourceStateSummary.fallback}
+                </span>
+              ) : null}
               {draftPoints.length ? (
                 <>
                   {drawMode !== "rect" ? (
@@ -6332,6 +6372,54 @@ export default function PreviewPanel({
           {show3D ? (
             preview3DEffectiveItems.length ? (
               <div className="relative min-w-0">
+                <div className="absolute right-3 top-[8.5rem] z-[120] flex flex-wrap items-center justify-end gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
+                  <button
+                    type="button"
+                    data-testid="preview-mode-2d"
+                    aria-label="Show 2D plan preview"
+                    onClick={() => onSetPreviewMode("2d")}
+                    className="h-8 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600"
+                  >
+                    2D
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="preview-mode-3d"
+                    aria-label="Show 3D model preview"
+                    onClick={() => onSetPreviewMode("3d")}
+                    className="h-8 rounded-md border border-slate-900 bg-slate-950 px-2.5 text-xs font-semibold text-white"
+                  >
+                    3D
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="preview-quality-standard"
+                    onClick={() => {
+                      if (previewQuality === "standard") return;
+                      onQueuePreviewRefresh("Requesting standard-quality preview...");
+                      onSetPreviewQuality("standard");
+                    }}
+                    className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                      previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="preview-quality-high"
+                    onClick={() => {
+                      if (previewQuality === "high") return;
+                      onQueuePreviewRefresh("Requesting high-quality preview...");
+                      onSetPreviewQuality("high");
+                    }}
+                    className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                      previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    High
+                  </button>
+                </div>
                 <Preview3DCanvas
                   items={preview3DEffectiveItems}
                   interactive={allowEdits}
@@ -6526,6 +6614,73 @@ export default function PreviewPanel({
                 });
               }}
             >
+              <div className="absolute right-3 top-[8.5rem] z-[85] flex max-w-[calc(100%-1.5rem)] flex-wrap items-center justify-end gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
+                <button
+                  type="button"
+                  data-testid="preview-mode-2d"
+                  aria-label="Show 2D plan preview"
+                  onClick={() => onSetPreviewMode("2d")}
+                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                    previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  2D
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-mode-3d"
+                  aria-label="Show 3D model preview"
+                  onClick={() => {
+                    if (!canUse3D) return;
+                    onSetPreviewMode("3d");
+                  }}
+                  disabled={!canUse3D}
+                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                    activePreviewMode === "3d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600 disabled:text-slate-300"
+                  }`}
+                >
+                  3D
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-quality-standard"
+                  onClick={() => {
+                    if (previewQuality === "standard") return;
+                    onQueuePreviewRefresh("Requesting standard-quality preview...");
+                    onSetPreviewQuality("standard");
+                  }}
+                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                    previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  Standard
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-quality-high"
+                  onClick={() => {
+                    if (previewQuality === "high") return;
+                    onQueuePreviewRefresh("Requesting high-quality preview...");
+                    onSetPreviewQuality("high");
+                  }}
+                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                    previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  High
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-interaction-edit"
+                  aria-label="Use canvas edit tool"
+                  onClick={() => onSetPreviewInteraction("edit")}
+                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                    allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  Edit
+                </button>
+              </div>
               {previewMode === "2d" ? (
                 <div className="absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 sm:bottom-2 md:hidden">
                   <div className="grid grid-cols-4 gap-1.5 pb-1 min-[420px]:grid-cols-7">
@@ -6675,6 +6830,40 @@ export default function PreviewPanel({
                   }`}
                   style={{ width: "100%", height: "100%" }}
                 />
+                {!showMap && previewMode === "2d" ? (
+                  <div
+                    data-testid="preview-map-fallback-surface"
+                    className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)]"
+                  >
+                    <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(100,116,139,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(100,116,139,0.12)_1px,transparent_1px)] [background-size:48px_48px]" />
+                    <div className="absolute left-[-8%] top-[18%] h-10 w-[116%] rotate-[-8deg] rounded-full bg-slate-300/18" />
+                    <div className="absolute right-[-18%] top-[58%] h-8 w-[74%] rotate-[18deg] rounded-full bg-slate-300/16" />
+                    <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-center gap-2">
+                      <span
+                        data-testid="preview-source-confidence-chip"
+                        className="rounded-md border border-slate-200 bg-white/88 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur"
+                      >
+                        {mapAvailable ? "Map loading or unavailable" : "Local review grid"}
+                      </span>
+                      <span className="rounded-md border border-slate-200 bg-white/88 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur">
+                        Source-backed {sourceStateSummary.verified}
+                      </span>
+                      {sourceStateSummary.review ? (
+                        <span className="rounded-md border border-amber-200 bg-amber-50/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-800 shadow-sm backdrop-blur">
+                          Review {sourceStateSummary.review}
+                        </span>
+                      ) : null}
+                      {sourceStateSummary.fallback ? (
+                        <span
+                          data-testid="preview-fallback-geometry-chip"
+                          className="rounded-md border border-slate-300 bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur"
+                        >
+                          Fallback bounds {sourceStateSummary.fallback}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 {debugStats?.enabled ? (
                   <div className="pointer-events-none absolute left-5 top-5 z-30 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
                     <div className="font-semibold">Map Debug</div>
@@ -6731,7 +6920,7 @@ export default function PreviewPanel({
                       </div>
                     </div>
                     <div
-                      className="civora-preview-zoom-controls absolute right-4 top-4 z-[45] flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white/92 shadow-sm backdrop-blur"
+                      className="civora-preview-zoom-controls absolute right-4 top-[4.75rem] z-[45] flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white/92 shadow-sm backdrop-blur"
                       onMouseDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
                     >
@@ -7180,6 +7369,7 @@ export default function PreviewPanel({
                               <g key={`poly-${item.id}`}>
                                 {isHighQuality && isCorridorLine ? (
                                   <polyline
+                                    data-testid="plan-road-corridor"
                                     points={points.join(" ")}
                                     fill="none"
                                     stroke={sourceState === "fallback" ? "rgba(100,116,139,0.2)" : "rgba(15, 23, 42, 0.16)"}
@@ -7200,6 +7390,7 @@ export default function PreviewPanel({
                                   />
                                 ) : null}
                                 <polyline
+                                  data-testid="plan-polyline-object"
                                   points={points.join(" ")}
                                   fill="none"
                                   stroke={visualStyle.stroke}
@@ -7285,7 +7476,7 @@ export default function PreviewPanel({
                                   />
                                 )}
                                 {isHighQuality && visualKind === "water" ? (
-                                  <>
+                                  <g data-testid="plan-basin-shelf-cues">
                                     <path
                                       d={roundedSiteShapePath(
                                         {
@@ -7307,7 +7498,7 @@ export default function PreviewPanel({
                                       strokeWidth={0.18}
                                       strokeLinecap="round"
                                     />
-                                  </>
+                                  </g>
                                 ) : null}
                                 {isHighQuality && visualKind === "building" ? (
                                   <>
@@ -7329,8 +7520,8 @@ export default function PreviewPanel({
                                     />
                                   </>
                                 ) : null}
-                                {isHighQuality && visualKind === "parking" ? (
-                                  <>
+                                {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
+                                  <g data-testid="plan-parking-stall-cues">
                                     <line
                                       x1={rect.left + rect.width * 0.08}
                                       y1={rect.top + rect.height * 0.5}
@@ -7354,7 +7545,7 @@ export default function PreviewPanel({
                                         />
                                       );
                                     })}
-                                  </>
+                                  </g>
                                 ) : null}
                                 {selected ? (
                                   <rect
@@ -7428,6 +7619,7 @@ export default function PreviewPanel({
                             return (
                               <g key={`custom-poly-${item.id}`}>
                                 <polygon
+                                  data-testid="plan-polygon-object"
                                   points={points.join(" ")}
                                   fill={visualStyle.fill}
                                   stroke={visualStyle.stroke}
@@ -7438,8 +7630,8 @@ export default function PreviewPanel({
                                 >
                                   <title>{sourceStateLabel(sourceState)}</title>
                                 </polygon>
-                                {isHighQuality && visualKind === "parking" ? (
-                                  <g opacity={0.72}>
+                                {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
+                                  <g data-testid="plan-parking-stall-cues" opacity={0.72}>
                                     <line
                                       x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
                                       y1={(bounds.minY + bounds.maxY) / 2}
@@ -7469,7 +7661,7 @@ export default function PreviewPanel({
                                   </g>
                                 ) : null}
                                 {isHighQuality && visualKind === "water" && innerPolygonPoints ? (
-                                  <>
+                                  <g data-testid="plan-basin-shelf-cues">
                                     <polygon
                                       points={(innerShelf.length ? innerShelf.map(sitePointToSvgPercent).join(" ") : innerPolygonPoints)}
                                       fill="none"
@@ -7495,7 +7687,7 @@ export default function PreviewPanel({
                                         strokeLinejoin="round"
                                       />
                                     ) : null}
-                                  </>
+                                  </g>
                                 ) : null}
                                 {isHighQuality && visualKind === "road" && roadAxis.length === 2 ? (
                                   <polyline
@@ -8218,6 +8410,8 @@ export default function PreviewPanel({
                         const showBoxChrome = showBox && (isSelected || Boolean(isAccessHighlight));
                         const isSite = item.type === "site";
                         const visualKind = resolveVisualKind(item);
+                        const sourceState = resolveSourceState(item);
+                        const revealSourceBadge = !isSite && shouldRevealObjectLabel(item) && sourceState !== "verified";
                         const allowItemInteraction =
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
@@ -8293,6 +8487,18 @@ export default function PreviewPanel({
                             ) : null}
                             {showBox && isHighQuality && visualKind === "utility" ? (
                               <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-violet-500/80" />
+                            ) : null}
+                            {revealSourceBadge ? (
+                              <div
+                                data-testid={sourceState === "fallback" ? "preview-fallback-object-badge" : "preview-source-review-object-badge"}
+                                className={`pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-[calc(100%+6px)] whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] shadow ${
+                                  sourceState === "fallback"
+                                    ? "border-slate-300 bg-white text-slate-700"
+                                    : "border-amber-200 bg-amber-50 text-amber-800"
+                                }`}
+                              >
+                                {sourceState === "fallback" ? "Fallback review geometry" : sourceStateLabel(sourceState)}
+                              </div>
                             ) : null}
                             {isSelected && allowEdits && isEditableVertexGeometry && Array.isArray(item.geometry)
                               ? item.geometry.map((pt, idx) => {
