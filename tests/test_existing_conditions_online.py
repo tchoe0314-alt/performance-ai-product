@@ -56,6 +56,37 @@ class _RoutingSession:
         return _Response({"type": "FeatureCollection", "features": [{"id": "A", "properties": {}, "geometry": {"type": "Polygon", "coordinates": []}}]})
 
 
+class _BoundaryRoutingSession:
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append({"url": url, "params": params, "timeout": timeout})
+        if "geocoder" in url:
+            return _Response(
+                {
+                    "result": {
+                        "addressMatches": [
+                            {"matchedAddress": "1 MAIN ST", "coordinates": {"x": -96.8, "y": 32.8}},
+                        ]
+                    }
+                }
+            )
+        if "epqs" in url:
+            return _Response({"value": {"elevation": 512.25}})
+        if "Buildings" in url:
+            return _Response(
+                {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {"id": "inside", "properties": {}, "geometry": {"type": "Point", "coordinates": [-96.8001, 32.8001]}},
+                        {"id": "outside", "properties": {}, "geometry": {"type": "Point", "coordinates": [-96.9, 32.9]}},
+                    ],
+                }
+            )
+        return _Response({"type": "FeatureCollection", "features": []})
+
+
 class _GretnaRoutingSession:
     def __init__(self):
         self.calls = []
@@ -511,6 +542,33 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertTrue(all(item["review_required"] for item in feature_report["feature_candidates"]))
         self.assertTrue(all(item["acceptance_status"] == "pending" for item in feature_report["feature_candidates"]))
         self.assertFalse(any(item["canonical_object_allowed"] for item in feature_report["feature_candidates"]))
+        self.assertTrue(all(item.get("evidence_source") for item in feature_report["feature_candidates"]))
+        self.assertIn("terrain", {item["feature_type"] for item in feature_report["feature_candidates"]})
+
+    def test_active_site_boundary_marks_outside_candidates(self) -> None:
+        result = fetch_online_existing_conditions(
+            address="1 Main St",
+            building_footprints_service_url="https://county.example/arcgis/rest/services/Buildings/MapServer",
+            include_floodplain=False,
+            include_wetlands=False,
+            include_parcels=False,
+            include_roads=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            include_contours=False,
+            active_site_boundary={"west": -96.801, "south": 32.799, "east": -96.799, "north": 32.801},
+            session=_BoundaryRoutingSession(),
+        )
+
+        report = result["map_feature_detection_report_v1"]
+        inside_ids = {item["source_feature_id"] for item in report["feature_candidates"]}
+        outside_ids = {item["source_feature_id"] for item in report["outside_site_candidates"]}
+
+        self.assertIn("inside", inside_ids)
+        self.assertIn("terrain-elevation-sample", inside_ids)
+        self.assertIn("outside", outside_ids)
+        self.assertTrue(all(item.get("review_required") for item in report["feature_candidates"]))
 
     def test_online_discovery_does_not_satisfy_survey_or_control(self) -> None:
         result = fetch_online_existing_conditions(

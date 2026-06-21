@@ -1025,6 +1025,46 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("No building footprint GIS source is configured.", result["assistant_message"])
         self.assertIn("candidate/review-required", result["assistant_message"])
 
+    def test_chat_answers_auto_site_context_questions(self):
+        record = _record()
+        discovery = {
+            "version": "online_existing_conditions_discovery_v1",
+            "candidate_count": 3,
+            "sources": [
+                {"key": "parcel_site_boundary", "label": "parcel/site boundary", "provider": "county parcels", "candidate_count": 1, "blockers": ["parcel candidates are review-required"]},
+                {"key": "road_row", "label": "road/ROW data", "provider": "county roads", "candidate_count": 1, "blockers": ["road candidates are review-required"]},
+                {"key": "terrain_dem_lidar", "label": "terrain/DEM/LiDAR", "provider": "USGS 3DEP EPQS", "candidate_count": 1, "blockers": ["terrain candidates are review-required"]},
+                {"key": "building_footprints", "label": "building footprints", "status": "unconfigured", "candidate_count": 0, "blockers": ["No building footprint GIS source is configured."]},
+                {"key": "public_utilities", "label": "public utility layers", "status": "unconfigured", "candidate_count": 0, "blockers": ["No existing utilities GIS source is configured."]},
+            ],
+            "missing_sources": [
+                {"key": "building_footprints", "label": "building footprints", "missing": ["No building footprint GIS source is configured."]},
+                {"key": "public_utilities", "label": "public utility layers", "missing": ["No existing utilities GIS source is configured."]},
+            ],
+            "survey_control": {"survey_control_satisfied": False},
+        }
+        record["project_input"]["meta"] = {"site_inputs": {"online_existing_conditions_discovery_v1": discovery}}
+        store = RecordingProjectStore(record)
+
+        questions = {
+            "what did you find?": ["Found candidates", "parcel/site boundary", "road/ROW data", "terrain/DEM/LiDAR"],
+            "why didn't it find buildings?": ["buildings", "provider", "will not report source success"],
+            "why didn't it find utilities?": ["utilities", "provider", "will not report source success"],
+            "is this survey control?": ["No.", "do not establish survey control"],
+            "what is missing from this site?": ["Missing from this site context", "building footprints", "public utility layers"],
+        }
+
+        for question, expected_parts in questions.items():
+            result = decide_chat(
+                {"message": question, "context": {"current_project": {"project_id": "project_123"}}},
+                decide_chat_message=decide_chat_message,
+                project_store=store,
+                user_id="user_1",
+            )
+            for expected in expected_parts:
+                self.assertIn(expected, result["assistant_message"])
+            self.assertNotIn("construction-ready", result["assistant_message"].lower())
+
     def test_chat_explains_why_buildings_were_not_found(self):
         record = _record()
         record["project_input"]["meta"] = {

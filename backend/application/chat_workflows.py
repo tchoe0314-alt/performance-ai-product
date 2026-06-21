@@ -27,9 +27,11 @@ from backend.planning.cad_entity_model import (
     cad_entity_operation_result,
     cad_entities_to_site_object_candidates,
     history_event,
+    locked_layer_blocker,
     manual_drawn_objects_to_cad_entities,
     normalize_cad_entity,
     plan_pdf_elements_to_cad_entities,
+    refresh_dimension_associations,
 )
 from backend.planning.common import safe_float, safe_str
 from backend.planning.design_alternatives import (
@@ -685,11 +687,69 @@ def _collect_selected_cad_entity_ids(context: Dict[str, Any], model: Dict[str, A
     return selected
 
 
+def _cad_lookup_key(value: Any) -> str:
+    raw = safe_str(value).lower()
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in raw).strip("_")
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned
+
+
+def _cad_layer_id_from_phrase(model: Dict[str, Any], phrase: str) -> str:
+    target = _cad_lookup_key(phrase)
+    aliases = {
+        "utilities": "utilities",
+        "utility": "utility",
+        "drainage": "drainage",
+        "drain": "drainage",
+        "existing": "existing",
+    }
+    target = aliases.get(target, target)
+    variants = {target}
+    if target.endswith("ies"):
+        variants.add(target[:-3] + "y")
+    if target.endswith("y"):
+        variants.add(target[:-1] + "ies")
+    if target and not target.endswith("s"):
+        variants.add(f"{target}s")
+    for layer in _safe_list(model.get("layers")):
+        rec = _safe_dict(layer)
+        keys = {_cad_lookup_key(rec.get("id")), _cad_lookup_key(rec.get("layer_id")), _cad_lookup_key(rec.get("name"))}
+        if variants & keys or any(any(key.endswith(f"_{variant}") or variant in key.split("_") for variant in variants) for key in keys if key):
+            return safe_str(rec.get("id") or rec.get("layer_id"))
+    return f"layer_{target}" if target else ""
+
+
+def _cad_style_id_from_phrase(model: Dict[str, Any], phrase: str) -> str:
+    target = _cad_lookup_key(phrase)
+    for style in _safe_list(model.get("styles")):
+        rec = _safe_dict(style)
+        keys = {_cad_lookup_key(rec.get("id")), _cad_lookup_key(rec.get("style_id")), _cad_lookup_key(rec.get("name"))}
+        if target in keys or any(key.endswith(f"_{target}") or target in key.split("_") for key in keys if key):
+            return safe_str(rec.get("id") or rec.get("style_id"))
+    return f"style_{target}" if target else ""
+
+
+def _cad_layer_phrase(message: str) -> str:
+    patterns = (
+        r"\b(?:hide|show|lock|unlock|print|plot|make printable|make non-printable)\s+(.+?)\s+layer\b",
+        r"\b(?:move|change|set)\s+selected(?:\s+cad\s+entit(?:y|ies)|\s+cad\s+object)?\s+(?:to|onto)\s+(.+?)\s+layer\b",
+        r"\b(?:layer|to layer)\s+([a-zA-Z0-9_.-]+)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if match:
+            return safe_str(match.group(1))
+    return ""
+
+
 def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], model: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
     if "command line" in lowered or "cad command" in lowered:
         return None
-    if any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin")) and "cad entity" not in lowered and "cad object" not in lowered:
+    if "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("why", "what", "show", "which", "update", "refresh", "recalculate", "recalc")):
+        return None
+    if any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin")) and "cad entity" not in lowered and "cad object" not in lowered and "layer" not in lowered:
         return None
     command_tokens = (
         "create",
@@ -705,11 +765,21 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "change layer",
         "change style",
         "set style",
+        "show layers",
+        "hide",
+        "lock",
+        "unlock",
+        "printable",
+        "company layer style",
         "line",
         "polyline",
         "rectangle",
         "dimension",
         "text",
+        "callout",
+        "leader",
+        "note",
+        "label",
         "cad entity",
         "cad object",
     )
@@ -747,7 +817,27 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "next_best_action": "Review the changed CAD entities and their source confidence before downstream use.",
     }
 
+    if "show layers" in lowered or ("list" in lowered and "layers" in lowered):
+        return None
+    if "layer" in lowered and any(token in lowered for token in ("hide", "show", "lock", "unlock", "printable", "non-printable", "non printable")):
+        phrase = _cad_layer_phrase(message)
+        layer_id = _cad_layer_id_from_phrase(model, phrase)
+        if not layer_id:
+            return {**base, "action": "set_layer_visibility", "missing_inputs": ["target layer"], "next_best_action": "Name the target layer, for example: hide utilities layer."}
+        if "hide" in lowered:
+            return {**base, "action": "set_layer_visibility", "layer_id": layer_id, "visible": False}
+        if re.search(r"\bshow\b", lowered):
+            return {**base, "action": "set_layer_visibility", "layer_id": layer_id, "visible": True}
+        if "unlock" in lowered:
+            return {**base, "action": "set_layer_locked", "layer_id": layer_id, "locked": False}
+        if "lock" in lowered:
+            return {**base, "action": "set_layer_locked", "layer_id": layer_id, "locked": True}
+        return {**base, "action": "set_layer_printable", "layer_id": layer_id, "printable": "non-printable" not in lowered and "non printable" not in lowered}
+    if "company layer style" in lowered or "company layer standards" in lowered:
+        return {**base, "action": "use_company_layer_style"}
+
     wants_create = any(token in lowered for token in ("create", "draw", "add"))
+    targeted_dimension = "dimension" in lowered and (bool(selected_ids) or "this line" in lowered or "this circle" in lowered or "this arc" in lowered)
     if re.search(r"\b(line|segment)\b", lowered) and wants_create:
         if len(points) < 2:
             return {**base, "action": "create_line", "entity_type": "line", "missing_inputs": ["line start point", "line end point"], "next_best_action": "Provide start and end coordinates, for example: create line from 0,0 to 25,0."}
@@ -760,10 +850,25 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         if len(points) < 1 or len(values) < 4:
             return {**base, "action": "create_rectangle", "entity_type": "rectangle", "missing_inputs": ["rectangle origin", "rectangle width", "rectangle height"], "next_best_action": "Provide origin, width, and height, for example: create rectangle at 0,0 width 40 height 20."}
         return {**base, "action": "create_rectangle", "entity_type": "rectangle", "geometry": {"origin": points[0], "width": abs(values[-2]), "height": abs(values[-1]), "units": "ft"}}
-    if "dimension" in lowered and wants_create:
-        if len(points) < 2:
+    if "dimension" in lowered and (wants_create or targeted_dimension):
+        if len(points) < 2 and not selected_ids:
+            if lowered in {"add dimension", "add dimensions"}:
+                return None
             return {**base, "action": "create_dimension", "entity_type": "dimension", "missing_inputs": ["dimension start point", "dimension end point"], "next_best_action": "Provide two measurement points for the dimension."}
-        return {**base, "action": "create_dimension", "entity_type": "dimension", "geometry": {"start": points[0], "end": points[1], "points": points[:2], "units": "ft"}}
+        dimension_type = "angular" if "angular" in lowered else "diameter" if "diameter" in lowered else "radius" if "radius" in lowered else "linear" if "linear" in lowered else "aligned"
+        geometry = {"units": "ft"}
+        if len(points) >= 2:
+            geometry.update({"start": points[0], "end": points[1], "points": points[:3] if dimension_type == "angular" else points[:2]})
+        return {**base, "action": "create_dimension", "entity_type": "dimension", "dimension_type": dimension_type, "geometry": geometry, "units": "deg" if dimension_type == "angular" else "ft", "precision": 1 if dimension_type == "angular" else 2}
+    if any(token in lowered for token in ("callout", "leader", "note", "label")) and wants_create:
+        text_match = re.search(r"['\"]([^'\"]+)['\"]", message)
+        text = text_match.group(1).strip() if text_match else ("Callout" if "callout" in lowered else "Note" if "note" in lowered else "Label")
+        annotation_type = "callout" if "callout" in lowered else "leader" if "leader" in lowered else "note" if "note" in lowered else "label"
+        if annotation_type in {"callout", "leader"} and len(points) < 2:
+            return {**base, "action": f"create_{annotation_type}", "entity_type": annotation_type, "missing_inputs": ["leader start point", "leader text point"], "next_best_action": "Provide leader/callout points, for example: add callout \"review inlet\" from 0,0 to 5,5."}
+        if annotation_type in {"note", "label"} and not points:
+            return {**base, "action": f"create_{annotation_type}", "entity_type": annotation_type, "missing_inputs": ["annotation insertion point"], "next_best_action": "Provide an insertion point for the annotation."}
+        return {**base, "action": f"create_{annotation_type}", "entity_type": annotation_type, "text": text, "geometry": {"insert": points[-1] if points else {"x": 0, "y": 0}, "points": points, "text": text, "units": "ft"}}
     if re.search(r"\btext\b", lowered) and wants_create:
         text_match = re.search(r"['\"]([^'\"]+)['\"]", message)
         label = text_match.group(1).strip() if text_match else ""
@@ -777,7 +882,9 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return {**base, "action": "create_text", "entity_type": "text", "geometry": {"insert": points[0], "text": label, "height": 1.0, "units": "ft"}}
 
     selected_action = ""
-    if "move" in lowered:
+    if "layer" in lowered and any(token in lowered for token in ("set", "change", "move")) and re.search(r"\b(?:to|onto)\s+.+?\s+layer\b", message, flags=re.IGNORECASE):
+        selected_action = "change_layer"
+    elif "move" in lowered:
         selected_action = "move_grip" if "grip" in lowered else "move_selected"
     elif "copy" in lowered:
         selected_action = "copy_selected"
@@ -806,8 +913,18 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
     if not selected_ids:
         return {**base, "action": selected_action, "missing_inputs": ["selected CAD entity"], "next_best_action": "Select one or more persistent CAD entities, then retry the command."}
     if selected_action == "move_grip":
-        grip_id = safe_str(context.get("selected_cad_grip_id") or context.get("selected_grip_id") or context.get("grip_id") or context.get("active_cad_grip_id"))
-        entity_id = safe_str(context.get("selected_cad_grip_entity_id") or context.get("selected_grip_entity_id") or context.get("grip_entity_id") or selected_ids[0])
+        grip_id = safe_str(
+            context.get("selected_cad_grip_id")
+            or context.get("selected_grip_id")
+            or context.get("grip_id")
+            or context.get("active_cad_grip_id")
+        )
+        entity_id = safe_str(
+            context.get("selected_cad_grip_entity_id")
+            or context.get("selected_grip_entity_id")
+            or context.get("grip_entity_id")
+            or selected_ids[0]
+        )
         if not grip_id:
             return {**base, "action": selected_action, "entity_id": entity_id, "missing_inputs": ["selected CAD grip"], "next_best_action": "Select a visible CAD grip point, then retry the grip move."}
         if len(values) < 2:
@@ -828,14 +945,14 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
             return {**base, "action": selected_action, "missing_inputs": ["positive scale factor"], "next_best_action": "Provide a positive scale factor, for example: scale selected CAD entity by 2."}
         return {**base, "action": selected_action, "scale_factor": values[0]}
     if selected_action == "change_layer":
-        match = re.search(r"(?:layer|to layer)\s+([a-zA-Z0-9_.-]+)", message)
-        layer_id = safe_str(match.group(1) if match else "")
+        phrase = _cad_layer_phrase(message)
+        layer_id = _cad_layer_id_from_phrase(model, phrase)
         if not layer_id:
             return {**base, "action": selected_action, "missing_inputs": ["target layer"], "next_best_action": "Name the target layer, for example: change selected CAD entity to layer utility."}
         return {**base, "action": selected_action, "layer_id": layer_id}
     if selected_action == "change_style":
         match = re.search(r"(?:style|to style)\s+([a-zA-Z0-9_.-]+)", message)
-        style_id = safe_str(match.group(1) if match else "")
+        style_id = _cad_style_id_from_phrase(model, safe_str(match.group(1) if match else ""))
         if not style_id:
             return {**base, "action": selected_action, "missing_inputs": ["target style"], "next_best_action": "Name the target style, for example: set selected CAD entity style dashed."}
         return {**base, "action": selected_action, "style_id": style_id}
@@ -851,13 +968,15 @@ def _cad_entity_chat_response(
     user_id: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
-    if ("pdf" in lowered and "cad" in lowered) or ("raster line" in lowered and "cad" in lowered):
+    if ("pdf" in lowered and "cad" in lowered) or ("raster line" in lowered and "cad" in lowered) or "dxf" in lowered or "dwg" in lowered or "autocad" in lowered:
         return None
     mentions_cad_entity = "cad entit" in lowered or "cad object" in lowered or "drawn object" in lowered
     mentions_cad = bool(re.search(r"\bcad\b", lowered)) or mentions_cad_entity
     asks_list = any(phrase in lowered for phrase in ("what cad entities", "list cad entities", "cad entities are in", "what cad objects"))
     asks_review_only = "why" in lowered and ("review-only" in lowered or "review only" in lowered or "cad object" in lowered or "cad entity" in lowered)
     asks_stale_invalid = ("stale" in lowered or "invalid" in lowered) and ("cad" in lowered or "entity" in lowered or "object" in lowered)
+    asks_dimension_stale = "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("why", "what", "show", "which"))
+    asks_update_stale_dimensions = "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("update", "refresh", "recalculate", "recalc"))
     asks_history = mentions_cad and any(phrase in lowered for phrase in ("show cad history", "cad history", "revision timeline", "cad timeline"))
     asks_changed = mentions_cad and any(phrase in lowered for phrase in ("what changed in cad", "what changed on cad", "cad changes", "changed in cad"))
     asks_object_changed = any(phrase in lowered for phrase in ("what changed on this object", "what changed on this cad object", "show this object history", "object history"))
@@ -867,6 +986,8 @@ def _cad_entity_chat_response(
     asks_candidate = "convert" in lowered and "site object" in lowered and ("cad" in lowered or "entity" in lowered)
     asks_selection = any(phrase in lowered for phrase in ("what is selected", "what's selected", "current selection", "selected cad entities", "selected cad objects"))
     asks_grip_blocker = "why" in lowered and "grip" in lowered and any(phrase in lowered for phrase in ("can't", "cannot", "cant", "won't", "blocked", "edit"))
+    asks_layers = "show layers" in lowered or ("list" in lowered and "layers" in lowered)
+    asks_layer_edit_blocker = "why" in lowered and "layer" in lowered and any(phrase in lowered for phrase in ("can't", "cannot", "cant", "won't", "blocked", "edit"))
 
     if record:
         project_input = deepcopy(_safe_dict(record.get("project_input")))
@@ -876,6 +997,8 @@ def _cad_entity_chat_response(
         latest_result = _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
     final_plan = _safe_dict(latest_result.get("final_plan"))
     meta = _safe_dict(final_plan.get("meta") or latest_result.get("metadata") or latest_result.get("meta"))
+    if not _safe_dict(meta.get("active_customer_template")):
+        meta["active_customer_template"] = _safe_dict(GLOBAL_CUSTOMER_TEMPLATE_MANAGER.snapshot().get("active_template"))
     model = build_cad_entity_model(meta, project_input=project_input)
     entities = [_safe_dict(item) for item in _safe_list(model.get("entities"))]
     chat_operation = _cad_entity_chat_command_operation(message, context, model)
@@ -884,6 +1007,8 @@ def _cad_entity_chat_response(
         or asks_list
         or asks_review_only
         or asks_stale_invalid
+        or asks_dimension_stale
+        or asks_update_stale_dimensions
         or asks_history
         or asks_changed
         or asks_object_changed
@@ -893,6 +1018,8 @@ def _cad_entity_chat_response(
         or asks_candidate
         or asks_selection
         or asks_grip_blocker
+        or asks_layers
+        or asks_layer_edit_blocker
         or chat_operation
     ):
         return None
@@ -926,7 +1053,14 @@ def _cad_entity_chat_response(
         missing_inputs = _safe_list(operation_result.get("missing_inputs"))
         safety_blockers = _safe_list(operation_result.get("safety_blockers"))
         selection_action = safe_str(operation_result.get("selected_action")) in {"select_single", "select_add", "select_multi", "select_window", "clear_selection"}
-        changed = bool(operation_result.get("created_entity_ids") or operation_result.get("updated_entity_ids") or operation_result.get("deleted_entity_ids") or (selection_action and not missing_inputs and not safety_blockers))
+        changed = bool(
+            operation_result.get("created_entity_ids")
+            or operation_result.get("updated_entity_ids")
+            or operation_result.get("deleted_entity_ids")
+            or operation_result.get("updated_layer_ids")
+            or operation_result.get("updated_style_ids")
+            or (selection_action and not missing_inputs and not safety_blockers)
+        )
         if changed:
             meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: next_source_model}, project_input=project_input)
             final_plan["meta"] = meta
@@ -1072,7 +1206,7 @@ def _cad_entity_chat_response(
             {},
             assistant_message=(
                 f"{len(candidates)} CAD entity candidate(s) can be presented as review-required site object candidates. "
-                "None are accepted as engineering evidence or approved for construction from the CAD conversion alone."
+                "None are accepted engineering evidence or construction-release evidence from the CAD conversion alone."
             ),
             intent="cad_entity_model",
             run_mode="none",
@@ -1096,13 +1230,72 @@ def _cad_entity_chat_response(
     selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
     selected_ids = set(selected_object_ids + selected_geometry_ids + _safe_list(_safe_dict(model.get("selection")).get("selected_entity_ids")))
 
+    if asks_layers:
+        lines = ["CAD layers:"]
+        for layer in _safe_list(model.get("layers"))[:20]:
+            rec = _safe_dict(layer)
+            lines.append(
+                f"- {safe_str(rec.get('id'))}: {safe_str(rec.get('name'))}, color={safe_str(rec.get('color'))}, "
+                f"linetype={safe_str(rec.get('linetype'))}, lineweight={safe_str(rec.get('lineweight'))}, "
+                f"visible={bool(rec.get('visible'))}, locked={bool(rec.get('locked'))}, printable={bool(rec.get('printable'))}, "
+                f"source={safe_str(rec.get('source'))}, review_required=true"
+            )
+        if not _safe_list(model.get("layers")):
+            lines.append("- No CAD layer registry records are saved yet.")
+        lines.append("Layer/style settings are drafting/review metadata only; printable controls sheet/export trace and does not indicate construction readiness.")
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_layer_style_manager",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="reported_cad_layers",
+            affected_systems=["cad_entity_model"],
+            assumptions=["Layer answers use cad_entity_model_v1 registry records and remain review-only."],
+            next_best_action="Review layer visibility, lock, and printable flags before plotting or downstream review.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model},
+            outcome="understood_and_answered",
+            state_changed=False,
+        )
 
+    if asks_layer_edit_blocker:
+        phrase = _cad_layer_phrase(message)
+        layer_id = _cad_layer_id_from_phrase(model, phrase) if phrase else ""
+        layers_by_id = {safe_str(_safe_dict(layer).get("id")): _safe_dict(layer) for layer in _safe_list(model.get("layers"))}
+        selected_entities = [entity for entity in entities if safe_str(entity.get("id")) in selected_ids]
+        selected_layer = layers_by_id.get(layer_id) if layer_id else layers_by_id.get(safe_str((selected_entities[0] if selected_entities else {}).get("layer_id")))
+        if selected_layer and selected_layer.get("locked"):
+            blocker = locked_layer_blocker(selected_layer)
+        else:
+            blocker = "layer_edit_not_blocked_by_layer_lock" if selected_layer else "target_layer_missing"
+        lines = [
+            f"Layer edit blocker: {blocker}.",
+            "Locked layers prevent CAD entity edits and layer/style assignment changes until unlocked through review.",
+            "This is a drafting/review guard only and does not change engineering evidence or construction readiness.",
+        ]
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_layer_style_manager",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="explained_cad_layer_edit_blocker",
+            affected_systems=["cad_entity_model"],
+            next_best_action="Unlock the layer after review or move the entity to an editable review layer.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model, "cad_layer_edit_blocker": blocker},
+            outcome="understood_and_answered",
+            state_changed=False,
+            blocker=blocker,
+        )
 
     if asks_selection:
         selection = _safe_dict(model.get("selection"))
         selected_cad_ids = [safe_str(item) for item in _safe_list(selection.get("selected_entity_ids")) if safe_str(item)]
         lines = ["Selected CAD entity IDs:"]
-        lines.append(", ".join(selected_cad_ids) if selected_cad_ids else "None.")
+        if selected_cad_ids:
+            lines.append(", ".join(selected_cad_ids))
+        else:
+            lines.append("None.")
         grips = _safe_list(selection.get("grips"))
         blockers = _safe_list(selection.get("blockers"))
         if grips:
@@ -1117,7 +1310,21 @@ def _cad_entity_chat_response(
                 rec = _safe_dict(blocker)
                 lines.append(f"- {safe_str(rec.get('entity_id'))}: {safe_str(rec.get('reason'))}")
         lines.append("Selection is over persistent cad_entity_model_v1 entity IDs and remains drafting/review-only.")
-        return _truthful_decision_update({}, assistant_message="\n".join(lines), intent="cad_entity_selection", run_mode="none", needs_clarification=False, action_taken="reported_selected_cad_entities", affected_systems=["cad_entity_model", "cad_geometry"], assumptions=["CAD selection answers use persistent CAD entity IDs, not loose UI-only geometry."], next_best_action="Use grips or CAD commands for drafting/review edits, then rerun affected downstream checks before reliance.", command_payload_updates={CAD_ENTITY_MODEL_VERSION: model}, outcome="understood_and_answered", state_changed=False, blocker="; ".join(safe_str(_safe_dict(item).get("reason")) for item in blockers[:4]))
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_entity_selection",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="reported_selected_cad_entities",
+            affected_systems=["cad_entity_model", "cad_geometry"],
+            assumptions=["CAD selection answers use persistent CAD entity IDs, not loose UI-only geometry."],
+            next_best_action="Use grips or CAD commands for drafting/review edits, then rerun affected downstream checks before reliance.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model},
+            outcome="understood_and_answered",
+            state_changed=False,
+            blocker="; ".join(safe_str(_safe_dict(item).get("reason")) for item in blockers[:4]),
+        )
 
     if asks_grip_blocker:
         selection = _safe_dict(model.get("selection"))
@@ -1132,7 +1339,20 @@ def _cad_entity_chat_response(
         else:
             lines = ["No grip blocker is recorded on the selected CAD entity. If an edit failed, select a visible grip and retry with a valid displacement."]
         lines.append("Grip edits remain review_required=true, draft_review_required=true, and construction_release_allowed=false.")
-        return _truthful_decision_update({}, assistant_message="\n".join(lines), intent="cad_entity_grip_edit", run_mode="none", needs_clarification=False, action_taken="explained_cad_grip_edit_blocker", affected_systems=["cad_entity_model", "cad_geometry"], next_best_action="Select an editable grip on a line/polyline/polygon/rectangle/circle/text/dimension/block reference, then retry.", command_payload_updates={CAD_ENTITY_MODEL_VERSION: model}, outcome="understood_and_answered", state_changed=False, blocker="; ".join(safe_str(_safe_dict(item).get("reason")) for item in blockers[:4]) or "missing selected entity")
+        return _truthful_decision_update(
+            {},
+            assistant_message="\n".join(lines),
+            intent="cad_entity_grip_edit",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="explained_cad_grip_edit_blocker",
+            affected_systems=["cad_entity_model", "cad_geometry"],
+            next_best_action="Select an editable grip on a line/polyline/polygon/rectangle/circle/text/dimension/block reference, then retry.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model},
+            outcome="understood_and_answered",
+            state_changed=False,
+            blocker="; ".join(safe_str(_safe_dict(item).get("reason")) for item in blockers[:4]) or "missing selected entity",
+        )
 
     if asks_undo or asks_restore:
         undo_redo = _safe_dict(model.get("undo_redo"))
@@ -1164,6 +1384,63 @@ def _cad_entity_chat_response(
             outcome="understood_but_blocked",
             state_changed=False,
             blocker=lines[0],
+        )
+
+    if asks_update_stale_dimensions:
+        stale_dimensions = [
+            entity
+            for entity in entities
+            if entity.get("type") == "dimension" and (entity.get("dirty") or entity.get("stale") or entity.get("review_status") == "stale")
+        ]
+        if not (record and project_store and user_id):
+            return _truthful_decision_update(
+                {},
+                assistant_message="I can refresh stale dimension associations only after a saved project is loaded, so the persistent CAD entity model and history can be updated safely.",
+                intent="cad_dimension_annotation",
+                run_mode="none",
+                needs_clarification=True,
+                action_taken="blocked_stale_dimension_update_missing_project",
+                action_blocked_reason="No saved canonical project record is available.",
+                required_missing_inputs=["saved project"],
+                affected_systems=["cad_entity_model", "cad_dimensions"],
+                next_best_action="Save or load the project, then retry updating stale dimensions.",
+                command_payload_updates={CAD_ENTITY_MODEL_VERSION: model},
+                outcome="understood_but_blocked",
+                state_changed=False,
+                blocker="No saved canonical project record is available.",
+            )
+        changed_refs: List[str] = []
+        for entity in stale_dimensions:
+            changed_refs.extend(_safe_list(_safe_dict(entity.get("dimension")).get("measured_entity_refs")))
+        source_model = _safe_dict(meta.get(CAD_ENTITY_MODEL_VERSION))
+        refreshed_entities, association_events = refresh_dimension_associations(
+            _safe_list(source_model.get("entities")) or entities,
+            changed_entity_ids=changed_refs,
+            actor=user_id or "user",
+        )
+        source_model["entities"] = refreshed_entities
+        source_model["history"] = _safe_list(source_model.get("history")) + association_events
+        meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model({**meta, CAD_ENTITY_MODEL_VERSION: source_model}, project_input=project_input)
+        final_plan["meta"] = meta
+        latest_result["final_plan"] = final_plan
+        _save_project_record(project_store, {**record, "_user_id": user_id}, project_input=project_input, latest_result=latest_result)
+        model = meta[CAD_ENTITY_MODEL_VERSION]
+        return _truthful_decision_update(
+            {},
+            assistant_message=(
+                f"Refreshed {len(association_events)} stale dimension association(s) where the measured CAD entity still exists. "
+                "They remain stale/dirty review aids until reviewed; engineering quantities were not updated."
+            ),
+            intent="cad_dimension_annotation",
+            run_mode="none",
+            needs_clarification=False,
+            action_taken="updated_stale_dimension_associations",
+            affected_systems=["cad_entity_model", "cad_dimensions", "cad_history"],
+            assumptions=["Dimension refresh updates drafting/review association metadata only and does not mutate engineering evidence."],
+            next_best_action="Review refreshed dimensions before relying on them in exports or reports.",
+            command_payload_updates={CAD_ENTITY_MODEL_VERSION: model, "updated_dimension_entity_ids": [safe_str(event.get("entity_id")) for event in association_events]},
+            outcome="understood_and_executed",
+            state_changed=bool(association_events),
         )
 
     if asks_history or asks_changed or asks_object_changed:
@@ -1219,19 +1496,23 @@ def _cad_entity_chat_response(
             blocker="; ".join(safe_str(item.get("reason")) for item in blockers[:4] if isinstance(item, dict)),
         )
 
-    if asks_stale_invalid:
-        lines = ["CAD entities that are stale or invalid:"]
-        if stale_invalid:
-            for entity in stale_invalid[:10]:
+    if asks_stale_invalid or asks_dimension_stale:
+        dimension_only = asks_dimension_stale and not asks_stale_invalid
+        lines = ["Stale dimensions:" if dimension_only else "CAD entities that are stale or invalid:"]
+        rows = [entity for entity in stale_invalid if entity.get("type") == "dimension"] if dimension_only else stale_invalid
+        if rows:
+            for entity in rows[:10]:
                 blockers = ", ".join(safe_str(item) for item in _safe_list(entity.get("validation_blockers")) if safe_str(item))
-                lines.append(f"- {safe_str(entity.get('id'))} ({safe_str(entity.get('type'))}): {blockers or 'stale/dirty rerun review required'}")
+                dim = _safe_dict(entity.get("dimension"))
+                reason = safe_str(dim.get("association_dirty_reason") or dim.get("association_status"))
+                lines.append(f"- {safe_str(entity.get('id'))} ({safe_str(entity.get('type'))}): {blockers or reason or 'stale/dirty rerun review required'}")
         else:
             lines.append("- None visible in the current CAD entity model.")
-        lines.append("CAD entities remain review-only and cannot create construction release.")
-        action_taken = "reported_stale_invalid_cad_entities"
+        lines.append("Dimensions and CAD entities remain review-only and cannot create construction release or update engineering quantities by themselves.")
+        action_taken = "explained_stale_dimension_status" if dimension_only else "reported_stale_invalid_cad_entities"
     elif asks_review_only:
         lines = [
-            "This CAD object is review-only because CAD/manual/imported geometry is drafting evidence, not survey-backed or engineer-approved evidence by itself.",
+            "This CAD object is review-only because CAD/manual/imported geometry is drafting evidence, not survey-backed or externally reviewed evidence by itself.",
             "It needs valid geometry, source-confidence review, accepted source evidence where applicable, and external professional/user review before downstream reliance.",
             "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
         ]
@@ -1373,7 +1654,7 @@ def _dwg_compatibility_chat_response(message: str, context: Dict[str, Any]) -> O
         next_best_action = "Attach the Civil 3D workflow record with preserved_elements, lost_limited_elements, screenshots/evidence URI, and source artifact hashes."
     elif mentions_civil3d and asks_ready:
         assistant_message = (
-            f"No. This is not Civil3D-ready or approved for construction by Civora. Civil 3D workflow status is {civil3d_status}. "
+            f"No. This is not Civil3D-ready or field-use release evidence from Civora. Civil 3D workflow status is {civil3d_status}. "
             "DXF and LandXML remain the exchange paths unless an external workflow record exists; even externally_verified_review_only means review-only "
             "import/workflow evidence, not approval, stamping, sealing, certification, or submission readiness."
         )
@@ -1649,20 +1930,19 @@ def _geometry_edit_distance_from_message(message: str) -> Optional[float]:
 
 def _cad_command_line_chat_response(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     lowered = _normalized_text(message)
-    if ("pdf" in lowered and "cad" in lowered) or ("raster line" in lowered and "cad" in lowered):
+    if ("pdf" in lowered and "cad" in lowered) or ("raster line" in lowered and "cad" in lowered) or "dxf" in lowered or "dwg" in lowered or "autocad" in lowered:
         return None
     mentions_command_line = (
         "command line" in lowered
         or "typed command" in lowered
         or "cad command" in lowered
-        or "autocad" in lowered
         or re.search(r"\b(line|pline|rectangle|circle|arc|offset|trim|extend|fillet|move|rotate|scale|copy|delete|dim|text|layer|snap|ortho)\b", lowered)
     )
     if not mentions_command_line:
         return None
     asks_available = any(phrase in lowered for phrase in ("what commands", "available commands", "commands are available", "how do i use", "help"))
     asks_blocked = any(token in lowered for token in ("blocked", "can't", "cannot", "wont", "won't", "why"))
-    if not asks_available and not asks_blocked and "command line" not in lowered and "cad command" not in lowered and "autocad" not in lowered:
+    if not asks_available and not asks_blocked and "command line" not in lowered and "cad command" not in lowered:
         return None
 
     selected_object_ids, selected_geometry_ids = _collect_selected_ids(context)
@@ -2863,17 +3143,18 @@ def _address_from_online_message(message: str, record: Optional[Dict[str, Any]])
     return ""
 
 
-def _summarize_online_discovery(discovery: Dict[str, Any], *, why_buildings: bool = False) -> str:
+def _summarize_online_discovery(discovery: Dict[str, Any], *, why_source_key: str = "") -> str:
     if not discovery:
         return "I do not have an online existing-conditions discovery report saved for this project yet."
     sources = [_safe_dict(item) for item in _safe_list(discovery.get("sources")) if _safe_dict(item)]
     found = [item for item in sources if int(item.get("candidate_count") or 0) > 0]
     missing = [item for item in sources if int(item.get("candidate_count") or 0) <= 0]
-    if why_buildings:
-        building = next((item for item in sources if safe_str(item.get("key")) == "building_footprints"), {})
-        blockers = _safe_list(_safe_dict(building).get("blockers"))
-        reason = safe_str(blockers[0] if blockers else "", "No building footprint source is configured or available.")
-        return f"It did not find buildings because: {reason} Building footprints stay candidate/review-required until a configured provider returns features and the user reviews them."
+    if why_source_key:
+        target = next((item for item in sources if safe_str(item.get("key")) == why_source_key), {})
+        label = safe_str(_safe_dict(target).get("label") or why_source_key)
+        blockers = _safe_list(_safe_dict(target).get("blockers"))
+        reason = safe_str(blockers[0] if blockers else "", f"No {label} source is configured or available.")
+        return f"It did not find {label} because: {reason} {label.capitalize()} stays candidate/review-required until a configured provider returns features and the user reviews them."
     lines = []
     packs = [
         safe_str(_safe_dict(item).get("label") or _safe_dict(item).get("pack_id"))
@@ -2906,6 +3187,20 @@ def _summarize_online_discovery(discovery: Dict[str, Any], *, why_buildings: boo
     return " ".join(lines)
 
 
+def _summarize_online_missing(discovery: Dict[str, Any]) -> str:
+    if not discovery:
+        return "I do not have an online existing-conditions discovery report saved for this project yet."
+    missing = [_safe_dict(item) for item in _safe_list(discovery.get("missing_sources")) if _safe_dict(item)]
+    if not missing:
+        return "No missing online source categories are listed in the saved site-context summary. Review is still required, and online data is not survey/control."
+    lines = ["Missing from this site context:"]
+    for item in missing[:8]:
+        reasons = _safe_list(item.get("missing"))
+        lines.append(f"- {safe_str(item.get('label') or item.get('key'))}: {safe_str(reasons[0] if reasons else 'missing/unavailable')}")
+    lines.append("This is a source-availability summary only; it is not a final reliance or completeness statement.")
+    return "\n".join(lines)
+
+
 def _online_discovery_chat_response(
     *,
     message: str,
@@ -2918,6 +3213,7 @@ def _online_discovery_chat_response(
         phrase in normalized
         for phrase in (
             "what sources are available here",
+            "what did you find",
             "what did you find online",
             "what did you find from online",
             "what online sources",
@@ -2926,7 +3222,10 @@ def _online_discovery_chat_response(
     )
     asks_find = any(phrase in normalized for phrase in ("find providers for this address", "find gis providers for this address", "find site data from this address", "find site data", "use online sources if available"))
     asks_building_gap = "why" in normalized and any(phrase in normalized for phrase in ("didn't it find buildings", "did not find buildings", "no buildings", "building footprints"))
-    if not any((asks_summary, asks_find, asks_building_gap)):
+    asks_utility_gap = "why" in normalized and any(phrase in normalized for phrase in ("didn't it find utilities", "did not find utilities", "no utilities", "utility", "utilities"))
+    asks_missing_site = "missing" in normalized and any(phrase in normalized for phrase in ("this site", "site context", "from this site"))
+    asks_survey_control = "survey control" in normalized and any(phrase in normalized for phrase in ("is this", "is it", "does this", "online", "site context"))
+    if not any((asks_summary, asks_find, asks_building_gap, asks_utility_gap, asks_missing_site, asks_survey_control)):
         return None
     if not record:
         return _truthful_decision_update(
@@ -3022,9 +3321,21 @@ def _online_discovery_chat_response(
             state_changed=True,
         )
     discovery = _online_discovery_from_record(record)
+    if asks_summary and not discovery and not any((asks_building_gap, asks_utility_gap, asks_missing_site, asks_survey_control)):
+        return None
+    if asks_survey_control:
+        assistant_message = (
+            "No. Auto Site Context and online GIS results are review-required context only. "
+            "They do not establish survey control, boundary control, benchmark datum, utility locate, construction approval, stamp, seal, certification, or engineer-of-record responsibility."
+        )
+    elif asks_missing_site:
+        assistant_message = _summarize_online_missing(discovery)
+    else:
+        source_key = "building_footprints" if asks_building_gap else "public_utilities" if asks_utility_gap else ""
+        assistant_message = _summarize_online_discovery(discovery, why_source_key=source_key)
     return _truthful_decision_update(
         {},
-        assistant_message=_summarize_online_discovery(discovery, why_buildings=asks_building_gap),
+        assistant_message=assistant_message,
         intent="conversation",
         run_mode="none",
         design_prompt="",

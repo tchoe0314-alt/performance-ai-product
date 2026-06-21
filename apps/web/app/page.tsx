@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   AlertCircle,
@@ -9,10 +9,16 @@ import {
   ClipboardCheck,
   CheckCircle2,
   Circle,
+  Crosshair,
   FileText,
   Gauge,
+  Hand,
   Layers,
   MapPinned,
+  MousePointer2,
+  Move,
+  Pencil,
+  Ruler,
   Route,
   Settings,
   SlidersHorizontal,
@@ -491,20 +497,7 @@ type ReviewTableRow = {
   updated: string;
   action: string;
   panel: SidePanelKey;
-};
-type WorkflowRailCard = {
-  title: string;
-  status: string;
-  tone: ReviewTableTone;
-  metric: string;
-  detail: string;
-  action: string;
-  panel: SidePanelKey;
-};
-type PanelReviewSection = {
-  label: string;
-  value: string;
-  tone: ReviewTableTone;
+  issueIndex?: number;
 };
 type SidebarNavItem = {
   label: string;
@@ -597,18 +590,28 @@ const DEFAULT_BLANK_SITE_WIDTH_FT = 300;
 const DEFAULT_BLANK_SITE_DEPTH_FT = 300;
 const OVERSIZED_SITE_MESSAGE =
   "Selected site is very large. Zoom in or reduce site area before grading.";
+const ACTIVE_PROJECT_STORAGE_KEY = "civora.activeProjectId";
 
-function buildAssumedSlopeEstimate(): SurveySlopeResponse {
+function isHardGenerateBlocker(label: string): boolean {
+  return (
+    label === "missing site boundary dimensions" ||
+    label === "site boundary exists but is not locked" ||
+    label === OVERSIZED_SITE_MESSAGE
+  );
+}
+
+function buildAssumedSlopeEstimate(slopePercent = 8): SurveySlopeResponse {
+  const safeSlopePercent = Number.isFinite(slopePercent) && slopePercent > 0 ? slopePercent : 8;
   return {
     success: true,
-    slope_ratio: 0.015,
-    slope_percent: 1.5,
+    slope_ratio: safeSlopePercent / 100,
+    slope_percent: safeSlopePercent,
     downhill_dx: 1,
     downhill_dy: 1,
     direction: "southeast",
     point_count: 0,
     warnings: [
-      "First-pass assumed slope for early layout only. Replace with survey, DEM, or map terrain before final engineering.",
+      "Assumed terrain slope for early layout only. Survey/control is still required before engineering reliance.",
     ],
   };
 }
@@ -1638,6 +1641,9 @@ function CustomGeometryHandoffDetails({
 
 type SystemStatus = "fresh" | "stale" | "not_generated";
 
+const isEngineeringSystemStatus = (value: unknown): value is SystemStatus =>
+  value === "fresh" || value === "stale" || value === "not_generated";
+
 const DEFAULT_SYSTEM_STATUS: Record<
   "roads" | "parking" | "grading" | "drainage" | "utilities",
   SystemStatus
@@ -2295,79 +2301,6 @@ function statusTextClass(status?: string): string {
   return "text-red-600";
 }
 
-type WorkflowFocusPanelProps = {
-  title: string;
-  subtitle: string;
-  ready: string[];
-  blocked: string[];
-  civoraCan: string[];
-  userMust: string[];
-  nextActionLabel: string;
-  onNextAction: () => void;
-  nextActionDisabled?: boolean;
-  safetyNote?: ReactNode;
-};
-
-function WorkflowFocusPanel({
-  title,
-  subtitle,
-  ready,
-  blocked,
-  civoraCan,
-  userMust,
-  nextActionLabel,
-  onNextAction,
-  nextActionDisabled = false,
-  safetyNote = "engineer-review-required · construction-release-blocked until external review clears it",
-}: WorkflowFocusPanelProps) {
-  const sections = [
-    ["What is ready", ready.length ? ready : ["Nothing is ready yet."], "text-emerald-700"],
-    ["What is blocked", blocked.length ? blocked : ["No explicit blockers recorded."], "text-red-600"],
-    ["What Civora can do", civoraCan, "text-slate-800"],
-    ["What you must provide", userMust.length ? userMust : ["No additional user input recorded for this step."], "text-slate-800"],
-  ] as const;
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</p>
-          <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{subtitle}</p>
-        </div>
-        <span className="shrink-0 rounded-full border border-red-100 bg-red-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-700">
-          construction-release-blocked
-        </span>
-      </div>
-      <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-        {safetyNote}
-      </p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {sections.map(([label, items, tone]) => (
-          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
-              {items.slice(0, 4).map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${tone === "text-red-600" ? "bg-red-500" : tone === "text-emerald-700" ? "bg-emerald-500" : "bg-slate-400"}`} />
-                  <span className={tone}>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={onNextAction}
-        disabled={nextActionDisabled}
-        className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-      >
-        {nextActionLabel}
-      </button>
-    </section>
-  );
-}
-
 function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
   if (!job?.updated_at) return false;
   const status = String(job.status || "").toLowerCase();
@@ -2421,13 +2354,6 @@ type DeploymentHealth = {
     provider?: string;
     last_deploy_time?: string;
     user_safe_messages?: string[];
-  };
-  support?: {
-    support_contact?: string;
-    support_contact_configured?: boolean;
-    bug_report_url?: string;
-    bug_report_configured?: boolean;
-    user_safe_message?: string;
   };
 };
 
@@ -2611,13 +2537,15 @@ function PerformanceAIDashboardView({
     forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled || queryDemoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("site_existing");
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
+  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
   const [sidebarRendered, setSidebarRendered] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomPanelContentRendered, setBottomPanelContentRendered] = useState(true);
   const [bottomPanelContentVisible, setBottomPanelContentVisible] = useState(true);
+  const [bottomPanelSize, setBottomPanelSize] = useState<"compact" | "standard" | "tall">("standard");
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [issueReportMessage, setIssueReportMessage] = useState("");
   const [issueReportCopied, setIssueReportCopied] = useState(false);
@@ -2649,6 +2577,7 @@ function PerformanceAIDashboardView({
   const [maxParkingSlopePct, setMaxParkingSlopePct] = useState("");
   const [maxRoadGradePct, setMaxRoadGradePct] = useState("");
   const [maxAdaCrossSlopePct, setMaxAdaCrossSlopePct] = useState("");
+  const [assumedTerrainSlopePct, setAssumedTerrainSlopePct] = useState("8");
   const [roads, setRoads] = useState(true);
   const [grading, setGrading] = useState(true);
   const [drainage, setDrainage] = useState(true);
@@ -2671,6 +2600,18 @@ function PerformanceAIDashboardView({
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [objectPrompt, setObjectPrompt] = useState("");
+  const [guidedObjectDrafts, setGuidedObjectDrafts] = useState<Record<string, string>>({
+    office_sf: "25000",
+    parking_spaces: "96",
+    detention_basin_sf: "12000",
+    public_water: "Public water main",
+    public_sanitary: "Public sanitary sewer",
+    storm_sewer: "Storm sewer",
+    driveway: "Driveway",
+    sidewalks: "Sidewalks",
+    ada_route: "ADA route",
+    assumed_terrain_slope: "8",
+  });
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
 
@@ -2838,6 +2779,7 @@ function PerformanceAIDashboardView({
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
+  const [layerManagerOpen, setLayerManagerOpen] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
   const [objectOutlineColor, setObjectOutlineColor] = useState("#1f2937");
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
@@ -2869,6 +2811,8 @@ function PerformanceAIDashboardView({
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobToasts, setJobToasts] = useState<JobToast[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
+  const [moveEditFeedback, setMoveEditFeedback] = useState("");
+  const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
   const [deploymentHealth, setDeploymentHealth] = useState<DeploymentHealth | null>(null);
   const [deploymentHealthError, setDeploymentHealthError] = useState("");
   const [deploymentHealthLoading, setDeploymentHealthLoading] = useState(false);
@@ -2909,6 +2853,7 @@ function PerformanceAIDashboardView({
   const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget) => Promise<void>) | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([createWelcomeMessage()]);
   const suppressProjectAutoLoadRef = useRef(false);
+  const restoredActiveProjectRef = useRef(false);
   const chatAutosaveTimeoutRef = useRef<number | null>(null);
   const autosaveSuspendRef = useRef(false);
   const demoWorkspaceSeededRef = useRef(false);
@@ -2933,6 +2878,7 @@ function PerformanceAIDashboardView({
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setLeftSidebarOpen(false);
+      setRightRailCollapsed(true);
     }
   }, []);
 
@@ -2940,8 +2886,8 @@ function PerformanceAIDashboardView({
     let timeout: number | undefined;
     let frame: number | undefined;
 
-    if (activeSidePanel) {
-      setRenderedSidePanel(activeSidePanel);
+    if (!rightRailCollapsed) {
+      setRenderedSidePanel(activeSidePanel ?? "dashboard");
       frame = window.requestAnimationFrame(() => setSidePanelVisible(true));
     } else {
       setSidePanelVisible(false);
@@ -2952,7 +2898,7 @@ function PerformanceAIDashboardView({
       if (frame !== undefined) window.cancelAnimationFrame(frame);
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
-  }, [activeSidePanel]);
+  }, [activeSidePanel, rightRailCollapsed]);
 
   useEffect(() => {
     let timeout: number | undefined;
@@ -3281,8 +3227,7 @@ function PerformanceAIDashboardView({
       manualFields.building_depth = buildingDepthValue;
     }
 
-    const placementOverrides = (placementsOverride ?? buildingPlacements)
-      .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
+    const allPlacementSnapshots = (placementsOverride ?? buildingPlacements)
       .map((placement) => ({
         id: placement.id,
         name: placement.label,
@@ -3297,6 +3242,7 @@ function PerformanceAIDashboardView({
         use: placement.use,
         stall_count: placement.stallCount,
         locked: placement.locked,
+        placed: Boolean(placement.placed),
         source: placement.source,
         generated: placement.generated,
         geometry_type: placement.geometryType,
@@ -3304,6 +3250,9 @@ function PerformanceAIDashboardView({
         meta: placement.meta,
         systemDependencies: placement.systemDependencies,
       }));
+    const placementOverrides = allPlacementSnapshots
+      .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
+      .map((placement) => placement);
     const canonicalGeometryHandoffs = placementOverrides
       .map((placement) =>
         placement.type === "custom"
@@ -3413,8 +3362,8 @@ function PerformanceAIDashboardView({
       manualFields.site_plan = { parking_count: resolvedParkingCount };
     }
 
-    if (placementOverrides.length) {
-      manualFields.site_objects = placementOverrides.map((placement) => ({
+    if (allPlacementSnapshots.length) {
+      manualFields.site_objects = allPlacementSnapshots.map((placement) => ({
         id: placement.id,
         name: placement.label,
         label: placement.label,
@@ -3426,6 +3375,7 @@ function PerformanceAIDashboardView({
         height_ft: placement.height_ft,
         rotation: placement.rotation,
         locked: placement.locked,
+        placed: placement.placed,
         source: placement.source,
         generated: placement.generated,
         geometry_type: placement.geometry_type,
@@ -3470,6 +3420,13 @@ function PerformanceAIDashboardView({
         max_ada_cross_slope_pct: maxAdaSlopeValue,
       };
     }
+    if (surveySlopeEstimate?.slope_percent && Number(surveySlopeEstimate.point_count ?? 0) === 0) {
+      manualFields.grading = {
+        ...(manualFields.grading ?? {}),
+        assumed_terrain_source: true,
+        assumed_terrain_slope_pct: surveySlopeEstimate.slope_percent,
+      } as ManualFields["grading"] & Record<string, unknown>;
+    }
 
     if (pipeMinSlopeValue !== null) {
       manualFields.drainage = {
@@ -3504,6 +3461,8 @@ function PerformanceAIDashboardView({
     drainageConnectOrphans,
     drainageForcedInlets,
     drainageMaxSlopeAdjust,
+    surveySlopeEstimate?.point_count,
+    surveySlopeEstimate?.slope_percent,
   ]);
 
   const payloadPreview = useMemo(
@@ -3749,7 +3708,10 @@ function PerformanceAIDashboardView({
       setApprovalError(null);
     }
   }, [visibleActiveJob?.status]);
-  const currentPlanMeta = useMemo<PlanMeta>(() => backendResult?.final_plan?.meta ?? {}, [backendResult]);
+  const currentPlanMeta = useMemo<PlanMeta>(
+    () => backendResult?.final_plan?.meta ?? currentProject?.latest_result?.final_plan?.meta ?? {},
+    [backendResult, currentProject?.latest_result],
+  );
   const planPdfAnalysis = currentPlanMeta.plan_pdf_analysis_v1;
   const planPdfEditableSheet = currentPlanMeta.plan_pdf_editable_sheet_v1 ?? planPdfAnalysis?.editable_sheet;
   const planPdfElements = useMemo<PlanPdfElement[]>(
@@ -3817,16 +3779,36 @@ function PerformanceAIDashboardView({
     return null;
   }, [currentPlanMeta]);
   const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  const appliedAddressLabel = String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim();
+  const hasAppliedAddress = Boolean(appliedAddressLabel || (siteInputs?.geocode?.lat && siteInputs?.geocode?.lng));
   const hasLocationEvidence =
-    Boolean(siteInputs?.address || siteAddress.trim()) ||
+    hasAppliedAddress ||
     Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
     Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
   const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
+  const hasAssumedTerrainSlope =
+    Boolean(surveySlopeEstimate?.slope_percent) &&
+    Number(surveySlopeEstimate?.point_count ?? 0) === 0;
   const hasTerrainSource =
     !debugNoTerrain &&
     ((Boolean(surveyFileName) && useSurveyForGrading) ||
       Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
       Boolean(surveySlopeEstimate?.slope_percent));
+  const currentPlanMetaRecord = currentPlanMeta as Record<string, unknown>;
+  const hasStandardsEvidence = Boolean(
+    minSlopePct ||
+      pipeMinSlopePct ||
+      maxParkingSlopePct ||
+      maxRoadGradePct ||
+      maxAdaCrossSlopePct ||
+      currentPlanMetaRecord.standards_package ||
+      currentPlanMetaRecord.standards_source_registry ||
+      currentPlanMetaRecord.standards_acceptance_report,
+  );
+  const pendingAddressEdit = Boolean(
+    siteAddress.trim() &&
+      siteAddress.trim() !== String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim(),
+  );
   const smartFixBlockedReasons = useMemo(() => {
     const releaseReview = currentPlanMeta.release_review && typeof currentPlanMeta.release_review === "object"
       ? currentPlanMeta.release_review as Record<string, unknown>
@@ -3894,9 +3876,10 @@ function PerformanceAIDashboardView({
   const smartFixItems = smartFixRecommendations.recommendations ?? [];
   const topSmartFix = smartFixRecommendations.next_best_recommendation ?? smartFixItems[0];
   const candidateReviewInbox = useMemo<CandidateReviewInbox>(() => {
-    const stored = currentPlanMeta.candidate_review_inbox_v1;
+    const stored = currentPlanMeta.candidate_review_inbox_v1 ?? siteInputs?.candidate_review_inbox_v1;
     if (stored?.candidates?.length) return stored;
-    const mapCandidates = (currentPlanMeta.map_feature_detection_report_v1?.feature_candidates ?? []).map((item, index) => {
+    const mapFeatureReport = currentPlanMeta.map_feature_detection_report_v1 ?? siteInputs?.map_feature_detection_report_v1;
+    const mapCandidates = (mapFeatureReport?.feature_candidates ?? []).map((item, index) => {
       const rec = item as Record<string, unknown>;
       const featureType = String(rec.feature_type ?? "map_feature_candidate");
       return {
@@ -3912,7 +3895,7 @@ function PerformanceAIDashboardView({
                   ? "utility"
                   : "floodplain_wetland_constraint",
         label: featureType.replaceAll("_", " "),
-        source: String(rec.evidence_source ?? rec.source_name ?? rec.source_type ?? "authorized map/GIS source"),
+        source: String(rec.evidence_source ?? rec.source_name ?? rec.source_type ?? "map/GIS source"),
         provider: String(rec.source_name ?? rec.source_type ?? "map/GIS"),
         source_url: String(rec.source_url ?? ""),
         confidence: typeof rec.confidence === "number" || typeof rec.confidence === "string" ? rec.confidence : "unknown",
@@ -3961,7 +3944,7 @@ function PerformanceAIDashboardView({
       construction_release_blocked: true,
       truth_label: "Accepted candidates are project draft/review-required evidence only.",
     };
-  }, [currentPlanMeta]);
+  }, [currentPlanMeta, siteInputs]);
   const designAlternatives = useMemo<DesignAlternativesV1>(() => {
     const stored = currentPlanMeta.design_alternatives_v1;
     if (stored?.alternatives?.length) return stored;
@@ -5405,6 +5388,8 @@ function PerformanceAIDashboardView({
       max_parking_slope_pct?: number;
       max_road_grade_pct?: number;
       max_ada_cross_slope_pct?: number;
+      assumed_terrain_source?: boolean;
+      assumed_terrain_slope_pct?: number;
     };
     const drainageFields = (manualFields.drainage ?? {}) as NonNullable<ManualFields["drainage"]>;
     const drainageForced = Array.isArray(drainageFields?.forced_inlets)
@@ -5480,7 +5465,7 @@ function PerformanceAIDashboardView({
         const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
-        const placed = Number.isFinite(x) && Number.isFinite(y);
+        const placed = rec.placed === false ? false : Number.isFinite(x) && Number.isFinite(y);
         const geometryType = isCustomGeometryMode(rec.geometry_type) ? rec.geometry_type : undefined;
         const geometry = normalizeGeometryPoints(rec.geometry);
         return {
@@ -5532,7 +5517,7 @@ function PerformanceAIDashboardView({
         const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
-        const placed = Number.isFinite(x) && Number.isFinite(y);
+        const placed = rec.placed === false ? false : Number.isFinite(x) && Number.isFinite(y);
         return {
           id: typeof rec.id === "string" ? rec.id : `basin-${Date.now()}-${idx}`,
           label:
@@ -5606,7 +5591,7 @@ function PerformanceAIDashboardView({
         const w = typeof rawW === "number" ? rawW : rawW !== undefined ? Number(rawW) : NaN;
         const d = typeof rawD === "number" ? rawD : rawD !== undefined ? Number(rawD) : NaN;
         if (!Number.isFinite(w) || !Number.isFinite(d)) return null;
-        const placed = Number.isFinite(x) && Number.isFinite(y);
+        const placed = rec.placed === false ? false : Number.isFinite(x) && Number.isFinite(y);
         const geometryType = isCustomGeometryMode(rec.geometry_type) ? rec.geometry_type : undefined;
         const geometry = normalizeGeometryPoints(rec.geometry);
         return {
@@ -5645,14 +5630,61 @@ function PerformanceAIDashboardView({
       })
       .filter(Boolean) as BuildingPlacement[];
 
+    const siteBoundaryGeometry = siteInputs?.site_boundary_geometry;
+    const hasRestoredSiteObject = [...siteObjectPlacements, ...parsedPlacements, ...pondPlacements, ...inletPlacements]
+      .some((item) => item.type === "site");
+    const restoredSiteBoundary =
+      !hasRestoredSiteObject && lot.w && lot.h
+        ? [{
+            id: "restored-site-boundary",
+            label: "Site Boundary",
+            type: "site" as SiteObjectType,
+            x: 0,
+            y: 0,
+            w: Number(lot.w),
+            d: Number(lot.h),
+            rotation: 0,
+            locked: Boolean(siteInputs?.site_alignment_locked),
+            placed: true,
+            source: siteBoundaryGeometry?.source === "manual_drawn" ? "manual_drawn" : "user",
+            generated: false,
+            geometryType: siteBoundaryGeometry?.type === "polygon" ? "polygon" as const : undefined,
+            geometry: Array.isArray(siteBoundaryGeometry?.vertices)
+              ? siteBoundaryGeometry.vertices
+                  .map((point) => [Number(point.x), Number(point.y)] as [number, number])
+                  .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+              : undefined,
+            capabilities: {
+              movable: false,
+              resizable: false,
+              rotatable: false,
+              deletable: false,
+            },
+            systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+            meta: {
+              category: "site",
+              site_boundary_state: siteInputs?.site_boundary_state || (siteInputs?.site_alignment_locked ? "locked_canonical" : "draft_editable"),
+              source: siteBoundaryGeometry?.source || "project_input",
+              engineering_status: "review_required",
+              construction_release_allowed: false,
+              units: manualFields.units ?? "ft",
+            },
+          } satisfies BuildingPlacement]
+        : [];
     const mergedPlacements = siteObjectPlacements.length
       ? siteObjectPlacements
-      : [...parsedPlacements, ...pondPlacements, ...inletPlacements];
+      : [...restoredSiteBoundary, ...parsedPlacements, ...pondPlacements, ...inletPlacements];
     setBuildingPlacements(mergedPlacements);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
     setParkingCount(String(sitePlan.parking_count ?? ""));
     setMinSlopePct(String(gradingFields.min_slope_pct ?? ""));
+    if (typeof (gradingFields as Record<string, unknown>).assumed_terrain_slope_pct === "number") {
+      const slopePct = Number((gradingFields as Record<string, unknown>).assumed_terrain_slope_pct);
+      setAssumedTerrainSlopePct(String(slopePct));
+      setSurveySlopeEstimate(buildAssumedSlopeEstimate(slopePct));
+      setUseSurveyForGrading(false);
+    }
     setPipeMinSlopePct(String(drainageFields.min_pipe_slope_pct ?? ""));
     setDrainageForcedInlets(
       drainageForced
@@ -5678,6 +5710,16 @@ function PerformanceAIDashboardView({
     setGrading(disciplines.includes("grading"));
     setDrainage(disciplines.includes("drainage"));
     setUtilities(disciplines.includes("utility"));
+    const restoredSystemState = projectInput.meta?.system_dirty_state;
+    if (restoredSystemState && typeof restoredSystemState === "object") {
+      setSystemStatuses({
+        roads: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).roads) ? (restoredSystemState as Record<string, SystemStatus>).roads : DEFAULT_SYSTEM_STATUS.roads,
+        parking: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).parking) ? (restoredSystemState as Record<string, SystemStatus>).parking : DEFAULT_SYSTEM_STATUS.parking,
+        grading: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).grading) ? (restoredSystemState as Record<string, SystemStatus>).grading : DEFAULT_SYSTEM_STATUS.grading,
+        drainage: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).drainage) ? (restoredSystemState as Record<string, SystemStatus>).drainage : DEFAULT_SYSTEM_STATUS.drainage,
+        utilities: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).utilities) ? (restoredSystemState as Record<string, SystemStatus>).utilities : DEFAULT_SYSTEM_STATUS.utilities,
+      });
+    }
     const nextThread = restoredThread.length ? restoredThread : [createWelcomeMessage()];
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
@@ -6104,6 +6146,9 @@ function PerformanceAIDashboardView({
         style?: Record<string, string>;
         geometryType?: "polygon" | "polyline" | "rect";
         placed?: boolean;
+        width?: number;
+        depth?: number;
+        meta?: Record<string, unknown>;
       },
     ) => {
       const catalog = SITE_OBJECT_CATALOG[type];
@@ -6149,8 +6194,11 @@ function PerformanceAIDashboardView({
       const lot = resolveLotBounds();
       const existingCount =
         buildingPlacements.filter((item) => item.type === type).length + 1;
-      const defaults =
-        type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD };
+      const defaults = {
+        ...(type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD }),
+        ...(options?.width ? { w: options.width } : {}),
+        ...(options?.depth ? { d: options.depth } : {}),
+      };
       const defaultHeight = catalog.defaultH ?? 0;
       const autoPlaced = Boolean(options?.placed);
       const autoX =
@@ -6207,6 +6255,7 @@ function PerformanceAIDashboardView({
           category: catalog.category,
           ...(parkingParams ? { parkingParams } : {}),
           ...(options?.style ? { style: options.style } : {}),
+          ...(options?.meta ?? {}),
         },
       };
       if (type === "parking" && parkingParams) {
@@ -6265,6 +6314,7 @@ function PerformanceAIDashboardView({
         ];
       }
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      markSystemsStale(systemsImpactedByPlacement(nextPlacement));
       setActivePlacementId(nextPlacement.id);
       setPlacementModeEnabled(true);
       setPreviewMode("2d");
@@ -6299,6 +6349,8 @@ function PerformanceAIDashboardView({
       resolveLotBounds,
       buildDefaultPolyline,
       computeParkingFootprint,
+      markSystemsStale,
+      systemsImpactedByPlacement,
     ],
   );
 
@@ -6317,6 +6369,102 @@ function PerformanceAIDashboardView({
     });
     setObjectPrompt("");
   }, [handleAddObject, objectOutlineColor, objectPrompt, parsePromptToObjects, setStatusMessage]);
+
+  const handleApplyAssumedTerrainSlope = useCallback(() => {
+    const slopePct = parsePositiveNumber(assumedTerrainSlopePct) ?? 8;
+    const slopeEstimate = buildAssumedSlopeEstimate(slopePct);
+    setAssumedTerrainSlopePct(String(slopePct));
+    setUseSurveyForGrading(false);
+    setSurveySlopeEstimate(slopeEstimate);
+    setStatusMessage(`Assumed ${slopePct}% terrain slope added for review-only preflight. Survey/control is still required.`);
+  }, [assumedTerrainSlopePct]);
+
+  const handleGuidedObjectCard = useCallback(
+    (key: string) => {
+      const rawValue = guidedObjectDrafts[key] ?? "";
+      const value = parsePositiveNumber(rawValue);
+      const currentLot = resolveLotBounds();
+      const placeNow = siteScaleLocked && Boolean(currentLot.w && currentLot.h);
+      if (key === "office_sf") {
+        const sf = value ?? 25000;
+        const width = Math.max(60, Math.round(Math.sqrt(sf * 1.8)));
+        const depth = Math.max(40, Math.round(sf / width));
+        setBuildingWidth(String(width));
+        setBuildingDepth(String(depth));
+        handleAddObject("office_building", {
+          label: `Office Building ${Math.round(sf).toLocaleString()} SF`,
+          placed: placeNow,
+          style: { program_sf: String(Math.round(sf)) },
+          width,
+          depth,
+        });
+        setStatusMessage(placeNow ? "Office building draft placed for review." : "Office building draft added to Needs placement.");
+        return;
+      }
+      if (key === "parking_spaces") {
+        const spaces = value ?? 96;
+        setParkingCount(String(Math.round(spaces)));
+        handleAddObject("parking", {
+          label: `Parking ${Math.round(spaces)} spaces`,
+          placed: placeNow,
+          style: { requested_spaces: String(Math.round(spaces)) },
+        });
+        setStatusMessage(placeNow ? "Parking layout draft placed for review." : "Parking layout draft added to Needs placement.");
+        return;
+      }
+      if (key === "detention_basin_sf") {
+        const sf = value ?? 12000;
+        const width = Math.max(70, Math.round(Math.sqrt(sf * 1.5)));
+        const depth = Math.max(45, Math.round(sf / width));
+        const previousWidth = buildingWidth;
+        const previousDepth = buildingDepth;
+        setBuildingWidth(String(width));
+        setBuildingDepth(String(depth));
+        handleAddObject("basin", {
+          label: `Detention Basin ${Math.round(sf).toLocaleString()} SF`,
+          placed: placeNow,
+          style: { storage_area_sf: String(Math.round(sf)) },
+          width,
+          depth,
+        });
+        setBuildingWidth(previousWidth);
+        setBuildingDepth(previousDepth);
+        setStatusMessage(placeNow ? "Detention basin draft placed for review." : "Detention basin draft added to Needs placement.");
+        return;
+      }
+      if (key === "assumed_terrain_slope") {
+        const slopePct = value ?? 8;
+        setAssumedTerrainSlopePct(String(slopePct));
+        const slopeEstimate = buildAssumedSlopeEstimate(slopePct);
+        setUseSurveyForGrading(false);
+        setSurveySlopeEstimate(slopeEstimate);
+        setStatusMessage(`Assumed ${slopePct}% terrain slope added for review-required setup. Survey/control still needed.`);
+        return;
+      }
+      const utilityCards: Record<string, { type: SiteObjectType; label: string; meta: Record<string, unknown> }> = {
+        public_water: { type: "utility_corridor", label: rawValue || "Public water connection", meta: { utilityKind: "public_water" } },
+        public_sanitary: { type: "utility_corridor", label: rawValue || "Public sanitary connection", meta: { utilityKind: "public_sanitary" } },
+        storm_sewer: { type: "utility_corridor", label: rawValue || "Storm sewer connection", meta: { utilityKind: "storm_sewer" } },
+        driveway: { type: "driveway", label: rawValue || "Driveway", meta: { accessKind: "driveway" } },
+        sidewalks: { type: "sidewalk", label: rawValue || "Sidewalks", meta: { routeKind: "sidewalk" } },
+        ada_route: { type: "sidewalk", label: rawValue || "ADA route", meta: { routeKind: "ada_route", review_status: "engineer_review_required" } },
+      };
+      const card = utilityCards[key];
+      if (!card) return;
+      handleAddObject(card.type, {
+        label: card.label,
+        placed: placeNow,
+        geometryType: "polyline",
+        style: card.meta as Record<string, string>,
+        meta: {
+          ...card.meta,
+          review_status: "engineer_review_required",
+        },
+      });
+      setStatusMessage(placeNow ? `${card.label} draft placed for review.` : `${card.label} draft added to Needs placement.`);
+    },
+    [buildingDepth, buildingWidth, guidedObjectDrafts, handleAddObject, resolveLotBounds, siteScaleLocked],
+  );
 
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
@@ -7043,19 +7191,43 @@ function PerformanceAIDashboardView({
 
   const handleSelectPlacementTarget = useCallback((id: string) => {
     const lot = resolveLotBounds();
+    const target = buildingPlacements.find((item) => item.id === id);
     if (!lot.w || !lot.h) {
-      askClarification(
-        "I need a site boundary before placing objects. What size should the site be?",
-        "place_object_missing_site",
-        { id },
+      const message = `Cannot place ${target?.label || "object"} yet: site width and depth are missing. Set or draw a site boundary first.`;
+      askClarification(message, "place_object_missing_site", { id });
+      return;
+    }
+    if (target && target.type === "site") {
+      setStatusMessage("Site boundary is already configured and cannot be moved from the object tray.");
+      return;
+    }
+    if (target && !target.placed) {
+      const nextX = Math.min(Math.max(16, (lot.w - target.w) / 2), Math.max(0, lot.w - target.w));
+      const nextY = Math.min(Math.max(16, (lot.h - target.d) / 2), Math.max(0, lot.h - target.d));
+      setBuildingPlacements((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                x: Number.isFinite(nextX) ? nextX : 0,
+                y: Number.isFinite(nextY) ? nextY : 0,
+                placed: true,
+              }
+            : item,
+        ),
       );
+      markSystemsStale(systemsImpactedByPlacement(target));
+      setPreviewMode("2d");
+      setPreviewInteraction("edit");
+      setActivePlacementId(id);
+      setPlacementModeEnabled(false);
+      setStatusMessage(`${target.label} placed as a visible draft. Select it to move or edit.`);
       return;
     }
     setPreviewMode("2d");
     setPreviewInteraction("edit");
     setActivePlacementId(id);
     setPlacementModeEnabled(true);
-    const target = buildingPlacements.find((item) => item.id === id);
     console.debug("[placement] select-target", {
       id,
       type: target?.type,
@@ -7066,7 +7238,7 @@ function PerformanceAIDashboardView({
         ? `Ready to place ${target.label}. Click on the canvas to drop it.`
         : "Placement active. Click on the canvas to drop the object.",
     );
-  }, [askClarification, buildingPlacements, resolveLotBounds]);
+  }, [askClarification, buildingPlacements, markSystemsStale, resolveLotBounds, systemsImpactedByPlacement]);
 
   function askClarification(question: string, action: string, payload?: Record<string, unknown>) {
     setPendingClarification({ action, payload, question });
@@ -7220,11 +7392,16 @@ function PerformanceAIDashboardView({
       has_preview: Boolean(planPreviewUrl),
       site_locked: siteScaleLocked,
       site_address: siteAddress,
+      applied_address: appliedAddressLabel,
+      online_source_lookup: onlineSourceLookupLabel,
       has_location_evidence: hasLocationEvidence,
       has_site_boundary: buildingPlacements.some((item) => item.type === "site"),
       has_terrain_source: hasTerrainSource,
+      has_assumed_terrain_slope: hasAssumedTerrainSlope,
       has_verified_survey_control: hasVerifiedSurveyControl,
       placed_object_count: placedObjectCount,
+      pending_placement_count: pendingPlacementObjects.length,
+      pending_placement_objects: pendingPlacementObjects.map((item) => ({ id: item.id, label: item.label, type: item.type })),
       system_statuses: systemStatuses,
       map_analysis_success: Boolean(mapAnalysis?.success),
       setup_wizard_state_v1: setupWizardState,
@@ -8256,7 +8433,7 @@ function PerformanceAIDashboardView({
     if (/why is this not for construction|not for construction/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "This stays inside the review-preparation workflow because sheets and plots are review-only production aids. Field/submittal use, legal responsibility, and professional decisions remain outside Civora.",
+        "This is not for construction because sheets and plots are review-only production aids. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
         "status",
       );
       return true;
@@ -8278,6 +8455,180 @@ function PerformanceAIDashboardView({
 
     return false;
   };
+
+  const onlineDiscovery =
+    (siteInputs?.online_existing_conditions_discovery_v1 ??
+      (currentPlanMeta.online_existing_conditions_discovery_v1 as OnlineExistingConditionsDiscovery | undefined) ??
+      {}) as OnlineExistingConditionsDiscovery;
+  const onlineDiscoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
+  const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
+  const onlineMissingSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) <= 0);
+  const onlineDiscoveryCandidateCount = Number(onlineDiscovery.candidate_count ?? 0);
+  const localGisProviderRegistry =
+    (siteInputs?.local_gis_provider_registry_v1 ??
+      onlineDiscovery.local_gis_provider_registry_v1 ??
+      (currentPlanMeta.local_gis_provider_registry_v1 as LocalGisProviderRegistry | undefined) ??
+      {}) as LocalGisProviderRegistry;
+  const localGisProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
+  const configuredLocalGisProviders = localGisProviders.filter((provider) => Boolean(provider.service_url || provider.arcgis?.service_url));
+  const onlineSourceLookupUnavailable =
+    hasAppliedAddress &&
+    onlineDiscoveryCandidateCount === 0 &&
+    (String(onlineDiscovery.status || "").includes("failed") ||
+      (onlineDiscoverySources.length === 0 && configuredLocalGisProviders.length === 0));
+  const onlineSourceLookupLabel = !hasAppliedAddress
+    ? "Needs address/location first"
+    : onlineDiscoveryCandidateCount > 0
+      ? `${onlineDiscoveryCandidateCount} candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} for review`
+      : onlineSourceLookupUnavailable
+        ? "Address applied; online source lookup not configured/available."
+        : "Address applied; no online source candidates accepted.";
+  const getGeneratePreflightBlockers = useCallback(
+    (target: SystemGenerationTarget) => {
+      const lot = resolveLotBounds();
+      const missingBoundary = !(lot.w && lot.h);
+      const areaAcres = siteAreaAcresFromSize(lot.w, lot.h);
+      const needsAll = target === "full";
+      const needsGrading = needsAll || target === "grading" || target === "drainage";
+      const needsDrainage = needsAll || target === "drainage";
+      const needsUtilities = needsAll || target === "utilities";
+      const needsParking = needsAll || target === "parking" || target === "roads";
+      const hasBasinDraft = buildingPlacements.some((item) => item.type === "basin");
+      const basinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
+      const hasBuildingDraft = buildingPlacements.some((item) =>
+        ["building", "retail_building", "multifamily_building", "industrial_building", "office_building", "pad"].includes(item.type ?? ""),
+      );
+      const buildingPlaced = buildingPlacements.some((item) =>
+        item.placed && ["building", "retail_building", "multifamily_building", "industrial_building", "office_building", "pad"].includes(item.type ?? ""),
+      );
+      const hasOutfallDraft = buildingPlacements.some((item) => item.type === "outfall");
+      const outfallPlaced = buildingPlacements.some((item) => item.type === "outfall" && item.placed);
+      const hasUtilityDraft = buildingPlacements.some((item) =>
+        ["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+        ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || "")),
+      );
+      const utilityPlaced = buildingPlacements.some((item) =>
+        item.placed &&
+        (["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+          ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || ""))),
+      );
+      const hasParkingDraft = buildingPlacements.some((item) => item.type === "parking");
+      const parkingPlaced = buildingPlacements.some((item) => item.type === "parking" && item.placed);
+      const hasAdaDraft = buildingPlacements.some((item) =>
+        item.type === "sidewalk" && String(item.meta?.routeKind || "").includes("ada"),
+      );
+      const adaPlaced = buildingPlacements.some((item) =>
+        item.placed && item.type === "sidewalk" && String(item.meta?.routeKind || "").includes("ada"),
+      );
+      const blockers: Array<{ label: string; action: SidePanelKey }> = [];
+
+      if (missingBoundary) blockers.push({ label: "missing site boundary dimensions", action: "site_existing" });
+      if (!siteScaleLocked) blockers.push({ label: "site boundary exists but is not locked", action: "site_existing" });
+      if (needsGrading && !hasTerrainSource) blockers.push({ label: "missing terrain/source", action: "import_survey" });
+      if (!hasStandardsEvidence) blockers.push({ label: "missing standards", action: "standards" });
+      if (needsAll && hasAppliedAddress && onlineSourceLookupUnavailable) {
+        blockers.push({ label: "Address applied; online source lookup not configured/available.", action: "data" });
+      }
+      if (needsAll && !hasVerifiedSurveyControl && hasAssumedTerrainSlope) {
+        blockers.push({ label: "assumed terrain slope / survey-control still needed", action: "import_survey" });
+      }
+      if (needsAll || target === "roads" || target === "utilities") {
+        if (hasBuildingDraft && !buildingPlaced) {
+          blockers.push({ label: "office building exists but needs placement", action: "objects" });
+        } else if (!hasBuildingDraft) {
+          blockers.push({ label: "missing office building", action: "objects" });
+        }
+      }
+      if (needsDrainage) {
+        if (hasBasinDraft && !basinPlaced) {
+          blockers.push({ label: "detention basin exists but needs placement", action: "objects" });
+        } else if (!hasBasinDraft) {
+          blockers.push({ label: "missing detention basin", action: "objects" });
+        }
+        if (hasOutfallDraft && !outfallPlaced) {
+          blockers.push({ label: "outfall exists but is not placed", action: "objects" });
+        } else if (!hasOutfallDraft) {
+          blockers.push({ label: "missing outfall", action: "objects" });
+        }
+      }
+      if (needsUtilities) {
+        if (hasUtilityDraft && !utilityPlaced) {
+          blockers.push({ label: "utility connection exists but is not placed", action: "objects" });
+        } else if (!hasUtilityDraft) {
+          blockers.push({ label: "missing utility connection", action: "objects" });
+        }
+      }
+      if (needsParking) {
+        if (hasParkingDraft && !parkingPlaced) {
+          blockers.push({ label: "parking layout exists but is not placed", action: "objects" });
+        } else if (!hasParkingDraft) {
+          blockers.push({ label: "missing parking layout", action: "objects" });
+        }
+      }
+      if (needsAll) {
+        if (hasAdaDraft && !adaPlaced) {
+          blockers.push({ label: "ADA route exists but is not placed", action: "objects" });
+        } else if (!hasAdaDraft) {
+          blockers.push({ label: "missing ADA route", action: "objects" });
+        }
+      }
+      if (areaAcres > SITE_GRADING_HARD_BLOCK_ACRES && needsGrading) {
+        blockers.push({ label: OVERSIZED_SITE_MESSAGE, action: "site_existing" });
+      }
+      return Array.from(new Map(blockers.map((item) => [item.label, item])).values());
+    },
+    [
+      buildingPlacements,
+      hasAppliedAddress,
+      hasAssumedTerrainSlope,
+      hasStandardsEvidence,
+      hasTerrainSource,
+      hasVerifiedSurveyControl,
+      onlineSourceLookupUnavailable,
+      resolveLotBounds,
+      siteScaleLocked,
+    ],
+  );
+  const fullGeneratePreflightBlockers = getGeneratePreflightBlockers("full");
+  const fullGenerateHardBlockers = fullGeneratePreflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
+  const fullGenerateProofGaps = fullGeneratePreflightBlockers.filter((item) => !isHardGenerateBlocker(item.label));
+  const canonicalWorkspaceBlockers = useMemo(
+    () =>
+      uniqueStrings([
+        ...fullGeneratePreflightBlockers.map((item) => item.label),
+        ...issues.map((issue) => issue.message),
+        ...analysisIssues.map((issue) => issue.message),
+        siteScaleLocked && siteInputs?.site_boundary_state === "draft_editable"
+          ? "site locked state contradicts draft boundary source"
+          : "",
+        !siteScaleLocked && siteInputs?.site_boundary_state === "locked_canonical"
+          ? "site unlocked state contradicts locked boundary source"
+          : "",
+      ]).filter(Boolean),
+    [
+      analysisIssues,
+      fullGeneratePreflightBlockers,
+      issues,
+      siteInputs?.site_boundary_state,
+      siteScaleLocked,
+    ],
+  );
+  const canonicalWorkspaceBlockerText =
+    canonicalWorkspaceBlockers.length
+      ? canonicalWorkspaceBlockers.join("; ")
+      : "No blockers recorded for the active workspace; Civora outputs remain review-required.";
+  const restoreTruthLabel =
+    workspaceRestoreState === "failed"
+      ? "Could not restore saved workspace"
+      : effectiveDemoWorkspaceEnabled
+        ? "Local demo only"
+        : workspaceRestoreState === "restored" && currentProject?.project_id
+          ? "Restored saved workspace"
+          : currentProject?.project_id && currentProject?.updated_at
+            ? "Project saved; restore available after reload"
+            : currentProject?.project_id
+              ? "Project saved; restore status pending"
+              : "Restore unavailable";
 
   const tryHandleInfoIntent = (message: string): boolean => {
     const normalized = message.toLowerCase();
@@ -8342,6 +8693,81 @@ function PerformanceAIDashboardView({
         `Selected object: ${formatPlacement(selected)}`,
         "status",
       );
+      return true;
+    }
+
+    if (/(what changed|what has changed|changes|revision state|revision status)/i.test(normalized)) {
+      const staleSystems = Object.entries(systemStatuses)
+        .filter(([, status]) => status === "stale")
+        .map(([system]) => system);
+      const freshSystems = Object.entries(systemStatuses)
+        .filter(([, status]) => status === "fresh")
+        .map(([system]) => system);
+      const lines = [
+        `Workspace persistence: ${restoreTruthLabel}${currentProject?.updated_at ? `, last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}` : ""}.`,
+        hasAppliedAddress
+          ? `Address state: applied (${appliedAddressLabel || "coordinate context"}). ${onlineSourceLookupUnavailable ? "Address applied; online source lookup not configured/available." : onlineSourceLookupLabel}`
+          : siteAddress.trim()
+            ? "Address state: entered but not applied."
+            : "Address state: missing.",
+        `${placedObjects.length} placed object${placedObjects.length === 1 ? "" : "s"} and ${pendingPlacementObjects.length} pending placement object${pendingPlacementObjects.length === 1 ? "" : "s"}.`,
+        hasAssumedTerrainSlope
+          ? "Terrain slope is assumed; survey/control still needed."
+          : hasVerifiedSurveyControl
+            ? "Survey/control is uploaded for review."
+            : "Survey/control still needed.",
+        staleSystems.length ? `Changed systems needing rerun: ${staleSystems.join(", ")}.` : "No stale systems are marked from object/control edits.",
+        freshSystems.length ? `Current generated systems: ${freshSystems.join(", ")}.` : "No generated systems are marked current yet.",
+        planSheetSet.revisions.length ? `Sheet revisions: ${planSheetSet.revisions.length}.` : "No sheet revision entries recorded yet.",
+      ];
+      appendChatMessage("assistant", lines.join("\n"), "status");
+      return true;
+    }
+
+    if (/(what is blocked|what's blocked|what.*blocked|blocked right now)/i.test(normalized)) {
+      appendChatMessage(
+        "assistant",
+        canonicalWorkspaceBlockers.length
+          ? `Current blockers:\n${canonicalWorkspaceBlockers.map((reason) => `- ${reason}`).join("\n")}`
+          : "No current blockers are recorded. Outputs remain review-required.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/(what do i need next|what should i do next|what next|next step|where should i start|what do i do next)/i.test(normalized)) {
+      const firstBlocker = fullGeneratePreflightBlockers[0];
+      const visibleAction = firstBlocker
+        ? `Open ${sidePanelCopy[firstBlocker.action].title} and fix: ${firstBlocker.label}.`
+        : pendingPlacementObjects.length
+          ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
+          : progressTimelineState.next_action || nextSetupAction;
+      if (firstBlocker) {
+        handleOpenSidePanel(firstBlocker.action);
+      }
+      appendChatMessage(
+        "assistant",
+        `${visibleAction} Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(why is this review[- ]only|why.*review[- ]only|why.*engineer review|required review)/i.test(normalized)) {
+      const lines = [
+        "Civora is review-only because it is showing draft layouts, source evidence, assumptions, blockers, and generated artifacts for qualified review.",
+        hasAppliedAddress
+          ? `Address context is applied (${appliedAddressLabel || "coordinate context"}), but address/GIS context is not survey/control.`
+          : "Address/location evidence is not fully applied yet.",
+        hasAssumedTerrainSlope
+          ? "Terrain slope is assumed; survey/control still needed."
+          : hasVerifiedSurveyControl
+            ? "Survey/control is uploaded for review but still requires professional verification."
+            : "Survey/control is still missing.",
+        `${placedObjects.length} design object${placedObjects.length === 1 ? "" : "s"} placed; ${pendingPlacementObjects.length} still need placement.`,
+        "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+      ];
+      appendChatMessage("assistant", lines.join("\n"), "status");
       return true;
     }
 
@@ -8519,10 +8945,10 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|responsible professional|professional responsibility)/i.test(normalized)) {
+    if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field use and professional responsibility remain outside Civora. Submittal use, legal responsibility, and professional decisions remain outside Civora.",
+        "No. Civora cannot stamp, seal, sign, certify, submit, approve construction, or act as engineer of record. Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field use and professional responsibility remain outside Civora.",
         "status",
       );
       return true;
@@ -8972,7 +9398,7 @@ function PerformanceAIDashboardView({
         } else if (/(map|terrain)/.test(lower)) {
           setUseSurveyForGrading(false);
         } else if (/(assume|assumed|fallback)/.test(lower)) {
-          slopeEstimateOverride = buildAssumedSlopeEstimate();
+          slopeEstimateOverride = buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8);
           setUseSurveyForGrading(false);
           setSurveySlopeEstimate(slopeEstimateOverride);
         } else {
@@ -9152,7 +9578,7 @@ function PerformanceAIDashboardView({
         | "full"
         | undefined;
       if (target) {
-        const slopeEstimateOverride = buildAssumedSlopeEstimate();
+        const slopeEstimateOverride = buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8);
         setUseSurveyForGrading(false);
         setSurveySlopeEstimate(slopeEstimateOverride);
         setPendingClarification(null);
@@ -9418,6 +9844,10 @@ function PerformanceAIDashboardView({
       resolvedProjectIdRef.current = data.project.project_id;
       setProjectId(data.project.project_id);
       setCurrentProject(data.project);
+      setWorkspaceRestoreState("restored");
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
+      }
       upsertProjectSummary(data.project);
       if (!silent) {
         setStatusMessage(
@@ -9622,18 +10052,33 @@ function PerformanceAIDashboardView({
       setPlanPreviewUrl("");
       setPlanPreviewSummary(null);
       setStatusMessage(`Loaded project "${project.name}".`);
+      setWorkspaceRestoreState("restored");
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
+      }
       loadProjectResultInBackground(project);
       if (activeJobId && (!projectId || currentProjectActiveJob?.project_id === id || activeJob?.project_id === id)) {
         void loadJob(activeJobId);
       }
     } catch (error) {
+      setWorkspaceRestoreState("failed");
       setStatusMessage(
-        error instanceof Error ? error.message : "Project load failed.",
+        error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.",
       );
     } finally {
       autosaveSuspendRef.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!token || effectiveDemoWorkspaceEnabled || restoredActiveProjectRef.current) return;
+    if (currentProject?.project_id || projectId) return;
+    if (typeof window === "undefined") return;
+    const savedProjectId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+    if (!savedProjectId) return;
+    restoredActiveProjectRef.current = true;
+    void loadProject(savedProjectId);
+  }, [token, effectiveDemoWorkspaceEnabled, currentProject?.project_id, projectId]);
 
   const ensureProjectDraft = async (): Promise<string | null> => {
     if (!token) return null;
@@ -10233,7 +10678,7 @@ function PerformanceAIDashboardView({
     <h1>${escapeHtml(analysis.source_pdf?.filename || "Plan PDF")} extraction review</h1>
     <p>${escapeHtml(analysis.page_count ?? 0)} page(s) · ${escapeHtml(analysis.source_confidence || "imported_pdf_review_required")} · review required</p>
     <div class="banner">
-      PDF-derived labels, dimensions, title blocks, and edits are imported source evidence only. They are not survey-backed field/submittal evidence and require qualified review before reliance.
+      PDF-derived labels, dimensions, title blocks, and edits are imported source evidence only. They are not survey-backed, engineer-approved, stamped, sealed, signed, certified, approved for construction, or construction-release evidence.
     </div>
     <div class="grid">
       ${planPdfExtractionSummaryRows
@@ -11291,7 +11736,10 @@ function PerformanceAIDashboardView({
     setActiveSidePanel(null);
     setRenderedSidePanel(null);
     setSidePanelVisible(false);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+    setRightRailCollapsed(true);
+    setBottomPanelCollapsed(true);
+    setSiteDrawRequest((value) => value + 1);
+    if (typeof window !== "undefined") {
       setLeftSidebarOpen(false);
     }
     scrollToDrawingSurface();
@@ -11317,6 +11765,13 @@ function PerformanceAIDashboardView({
     }
     setActiveWorkspaceMode("canvas");
     setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
+    setBottomPanelCollapsed(true);
+    if (typeof window !== "undefined") {
+      setLeftSidebarOpen(false);
+    }
     setShowSiteBounds(true);
     setSiteSelectionMode(true);
     setPreviewInteraction("edit");
@@ -11699,14 +12154,33 @@ function PerformanceAIDashboardView({
           evidence_source: geocode.provider ?? "geocoder",
           truth_label:
             "Address/geocode is location context only; it is not a site boundary, survey, control, or final reliance source.",
-        };
+      };
       let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
+      const activeViewportBounds = (currentInput?.meta?.site_inputs?.viewport_bounds ?? {}) as {
+        west?: number;
+        south?: number;
+        east?: number;
+        north?: number;
+      };
+      const activeSiteBoundary =
+        Number.isFinite(Number(activeViewportBounds.west)) &&
+        Number.isFinite(Number(activeViewportBounds.south)) &&
+        Number.isFinite(Number(activeViewportBounds.east)) &&
+        Number.isFinite(Number(activeViewportBounds.north))
+          ? {
+              west: Number(activeViewportBounds.west),
+              south: Number(activeViewportBounds.south),
+              east: Number(activeViewportBounds.east),
+              north: Number(activeViewportBounds.north),
+            }
+          : undefined;
       try {
         onlineFetch = await postJson<OnlineExistingConditionsFetchResponse>(
           "/api/existing-conditions/fetch-online",
           {
             address: geocode.display_name,
-            bbox: undefined,
+            bbox: activeSiteBoundary,
+            active_site_boundary: activeSiteBoundary ?? {},
             include_floodplain: true,
             include_wetlands: true,
             include_parcels: true,
@@ -11769,31 +12243,50 @@ function PerformanceAIDashboardView({
               },
             }
           : undefined;
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+        manual_fields: currentInput?.manual_fields,
+      };
+      setCurrentProject((project) =>
+        project
+          ? {
+              ...project,
+              project_input: nextProjectInput,
+              latest_result: latestResultOverride ?? project.latest_result,
+              has_result: latestResultOverride ? true : project.has_result,
+              updated_at: Date.now() / 1000,
+            }
+          : project,
+      );
       await saveProject({
         silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-          },
-          manual_fields: currentInput?.manual_fields,
-        },
+        projectInputOverride: nextProjectInput,
         latestResultOverride,
       });
       setSiteScaleLocked(false);
+      setSiteAddress(geocode.display_name);
       setShowSiteBounds(true);
       setPreviewQuality("high");
       setSiteSelectionMode(true);
       setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
       const candidateCount = Number(onlineFetch?.online_existing_conditions_discovery_v1?.candidate_count ?? 0);
+      const lookupUnavailable =
+        candidateCount === 0 &&
+        (String(onlineFetch?.online_existing_conditions_discovery_v1?.status || "").includes("failed") ||
+          (!configuredLocalGisProviders.length && !(onlineFetch?.online_existing_conditions_discovery_v1?.sources ?? []).length));
       setStatusMessage(
         candidateCount > 0
           ? `Address applied. Found ${candidateCount} online source candidate${candidateCount === 1 ? "" : "s"} for review.`
-          : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
+          : lookupUnavailable
+            ? "Address applied; online source lookup not configured/available."
+            : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
       );
       setSelectedAddressSuggestion(geocode);
     } catch (error) {
@@ -12161,22 +12654,6 @@ function PerformanceAIDashboardView({
     siteName,
   ]);
 
-  const onlineDiscovery =
-    (siteInputs?.online_existing_conditions_discovery_v1 ??
-      (currentPlanMeta.online_existing_conditions_discovery_v1 as OnlineExistingConditionsDiscovery | undefined) ??
-      {}) as OnlineExistingConditionsDiscovery;
-  const onlineDiscoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
-  const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
-  const onlineMissingSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) <= 0);
-  const onlineDiscoveryCandidateCount = Number(onlineDiscovery.candidate_count ?? 0);
-  const localGisProviderRegistry =
-    (siteInputs?.local_gis_provider_registry_v1 ??
-      onlineDiscovery.local_gis_provider_registry_v1 ??
-      (currentPlanMeta.local_gis_provider_registry_v1 as LocalGisProviderRegistry | undefined) ??
-      {}) as LocalGisProviderRegistry;
-  const localGisProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
-  const configuredLocalGisProviders = localGisProviders.filter((provider) => Boolean(provider.service_url || provider.arcgis?.service_url));
-
   const ensureSiteLocked = useCallback(
     (action: string) => {
       if (siteScaleLocked) return true;
@@ -12351,7 +12828,7 @@ function PerformanceAIDashboardView({
         code === "NO_VALID_OUTFALL" ||
         code === "NO_PONDS_DEFINED"
       ) {
-        return Boolean(pickBestLowPoint());
+        return true;
       }
       if (code === "ORPHAN_INLETS" || code === "POOR_SLOPE") return true;
       return false;
@@ -12372,8 +12849,8 @@ function PerformanceAIDashboardView({
       forcedBasins?: Array<Record<string, unknown>>;
       connectOrphans?: boolean;
       allowSlopeAdjust?: boolean;
-    }) => {
-      if (!ensureSiteLocked("drainage")) return;
+    }): Promise<boolean> => {
+      if (!ensureSiteLocked("drainage")) return false;
       const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null, placementsOverride);
       const omitField = { source: "omit", value: null } as const;
       const nextManualFields = {
@@ -12450,10 +12927,12 @@ function PerformanceAIDashboardView({
             "status",
           );
           setStatusMessage(`Drainage autofix queued as ${jobId}.`);
+          return true;
         } catch (error) {
           const message = error instanceof Error ? error.message : "Drainage autofix failed.";
           appendChatMessage("assistant", message, "status");
           setStatusMessage(message);
+          return false;
         }
       } else {
         await executePlanAction({
@@ -12463,6 +12942,7 @@ function PerformanceAIDashboardView({
         });
       }
       setSystemStatuses((prev) => ({ ...prev, drainage: "fresh" }));
+      return true;
     },
     [
       buildPayloadFromOverrides,
@@ -12487,6 +12967,20 @@ function PerformanceAIDashboardView({
       target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
       options?: { slopeEstimateOverride?: SurveySlopeResponse | null },
     ) => {
+      const preflightBlockers = getGeneratePreflightBlockers(target);
+      const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
+      if (hardPreflightBlockers.length) {
+        const firstPanel = hardPreflightBlockers[0]?.action ?? "generate";
+        setRightRailCollapsed(false);
+        setActiveSidePanel(firstPanel);
+        appendChatMessage(
+          "assistant",
+          `Draft generation needs the site first:\n${hardPreflightBlockers.map((item) => `- ${item.label}`).join("\n")}`,
+          "status",
+        );
+        setStatusMessage(`Draft generation needs site setup: ${hardPreflightBlockers[0].label}.`);
+        return;
+      }
       if (!hasSiteBoundary()) {
         askClarification(
           "I need a site boundary before generating systems. What size should the site be?",
@@ -12498,43 +12992,11 @@ function PerformanceAIDashboardView({
       if (!ensureSiteLocked(target)) {
         return;
       }
-      const hasBasin =
-        target === "drainage" || target === "full"
-          ? buildingPlacements.some((item) => item.type === "basin" && item.placed)
-          : true;
-      if (!hasBasin && (target === "drainage" || target === "full")) {
-        askClarification(
-          "Drainage needs a basin or outfall target. Do you want me to add a basin object for you?",
-          "drainage_missing_basin",
-          { target },
-        );
-        return;
-      }
-      if (target === "roads") {
-        const hasRoadAnchor = buildingPlacements.some((item) =>
-          ["road", "driveway", "entrance", "building"].includes(item.type ?? ""),
-        );
-        if (!hasRoadAnchor) {
-          setStatusMessage("Add a building or entrance before generating roads.");
-          return;
-        }
-      }
       if (target === "grading" || target === "drainage" || target === "full") {
         const lot = resolveLotBounds();
         const siteAreaAcres = siteAreaAcresFromSize(lot.w, lot.h);
         if (target === "grading" && siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES) {
           setStatusMessage(OVERSIZED_SITE_MESSAGE);
-          return;
-        }
-        const effectiveSlopeEstimate = options?.slopeEstimateOverride ?? surveySlopeEstimate;
-        const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
-        const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
-        if (!hasSurvey && !hasMapTerrain && !effectiveSlopeEstimate?.slope_percent) {
-          askClarification(
-            "I need a terrain source for grading. Use survey, map terrain, or a first‑pass assumed slope?",
-            "grading_source",
-            { target },
-          );
           return;
         }
       }
@@ -12543,7 +13005,14 @@ function PerformanceAIDashboardView({
       const nextManualFields = {
         ...(requestPayload.manual_fields ?? {}),
       } as Record<string, unknown>;
-      const slopeEstimateOverride = options?.slopeEstimateOverride ?? null;
+      const targetUsesTerrain = target === "grading" || target === "drainage" || target === "full";
+      const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
+      const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
+      const slopeEstimateOverride =
+        options?.slopeEstimateOverride ??
+        (targetUsesTerrain && !hasSurvey && !hasMapTerrain && !surveySlopeEstimate?.slope_percent
+          ? buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8)
+          : null);
       if (slopeEstimateOverride?.slope_percent) {
         nextManualFields.grading = {
           ...((typeof nextManualFields.grading === "object" && nextManualFields.grading !== null
@@ -12603,7 +13072,7 @@ function PerformanceAIDashboardView({
       await executePlanAction({
         mode: "run",
         requestPayload: systemRequestPayload,
-        assistantPrefix: `Generating ${systemLabel} around your placed layout...`,
+        assistantPrefix: `Generating a review draft for ${systemLabel} around the locked site...`,
         timeoutMs: queueLongRun ? undefined : 20_000,
         allowQueueFallback: true,
         forceQueue: queueLongRun,
@@ -12622,9 +13091,11 @@ function PerformanceAIDashboardView({
     },
     [
       askClarification,
+      assumedTerrainSlopePct,
       buildPayloadFromOverrides,
       buildingPlacements,
       executePlanAction,
+      getGeneratePreflightBlockers,
       hasSiteBoundary,
       ensureSiteLocked,
       minSlopePct,
@@ -12725,8 +13196,10 @@ function PerformanceAIDashboardView({
           ts: Date.now(),
         });
         setFocusObjectId(inletPlacement.id);
-        await runDrainageAutofix({ placementsOverride: [...buildingPlacements, inletPlacement], forcedInlets: nextForced });
-        setStatusMessage("Applied inlet placement. Drainage regenerated.");
+        const queued = await runDrainageAutofix({ placementsOverride: [...buildingPlacements, inletPlacement], forcedInlets: nextForced });
+        if (queued) {
+          setStatusMessage("Applied inlet placement. Drainage regenerated.");
+        }
         return;
       }
 
@@ -12736,8 +13209,10 @@ function PerformanceAIDashboardView({
           return;
         }
         setDrainageConnectOrphans(true);
-        await runDrainageAutofix({ connectOrphans: true });
-        setStatusMessage("Applied orphan inlet connection. Drainage regenerated.");
+        const queued = await runDrainageAutofix({ connectOrphans: true });
+        if (queued) {
+          setStatusMessage("Applied orphan inlet connection. Drainage regenerated.");
+        }
         return;
       }
 
@@ -12747,8 +13222,10 @@ function PerformanceAIDashboardView({
           return;
         }
         setDrainageAllowSlopeAdjust(true);
-        await runDrainageAutofix({ allowSlopeAdjust: true });
-        setStatusMessage("Applied slope adjustment attempt. Drainage regenerated.");
+        const queued = await runDrainageAutofix({ allowSlopeAdjust: true });
+        if (queued) {
+          setStatusMessage("Applied slope adjustment attempt. Drainage regenerated.");
+        }
         return;
       }
 
@@ -12809,11 +13286,13 @@ function PerformanceAIDashboardView({
             generated: placement.generated,
             systemDependencies: placement.systemDependencies,
           }));
-        await runDrainageAutofix({
+        const queued = await runDrainageAutofix({
           placementsOverride: nextPlacements,
           forcedBasins,
         });
-        setStatusMessage("Applied basin placement. Drainage regenerated.");
+        if (queued) {
+          setStatusMessage("Applied basin placement. Drainage regenerated.");
+        }
         return;
       }
     },
@@ -13438,8 +13917,8 @@ function PerformanceAIDashboardView({
       engineer_review_required: true,
       not_for_construction: true,
       civora_limitations: [
-        "Civora outputs are review-preparation materials only; field/submittal use remains outside Civora.",
-        "Review sheets are review-only plan-production aids and require qualified review before reliance.",
+        "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+        "Review sheets are review-only plan-production aids and are not approved construction documents.",
       ],
       sheet_set: {
         ...planSheetSet,
@@ -13527,7 +14006,7 @@ function PerformanceAIDashboardView({
     <div class="watermark">${escapeHtml(planSheetSet.plotStyles.reviewWatermark)}</div>
     <h1>${escapeHtml(activeSheet.titleBlock.sheetTitle)}</h1>
     <p>${escapeHtml(planSheetSet.name)} · ${escapeHtml(activeSheet.size)} · Review package only</p>
-    <div class="notice">Review-required plan-production aid only. Field/submittal use, legal responsibility, and professional decisions remain outside Civora.</div>
+    <div class="notice">Review-required plan-production aid only. Not an approved construction document. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.</div>
     <h2>Viewports</h2>
     ${activeSheet.viewports
       .map(
@@ -14327,7 +14806,19 @@ function PerformanceAIDashboardView({
   const siteTooLargeForGrading = siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES;
   const missingSite = !(lotBounds.w && lotBounds.h);
   const missingImage = !mapSnapshotPath;
+  const placedObjects = buildingPlacements.filter((item) => item.placed && item.type !== "site");
+  const pendingPlacementObjects = buildingPlacements.filter((item) => !item.placed && item.type !== "site");
+  const hasBasinObject = buildingPlacements.some((item) => item.type === "basin");
   const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
+  const hasUtilityConnectionObject = buildingPlacements.some((item) =>
+    ["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+    ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || "")),
+  );
+  const hasUtilityConnectionPlaced = buildingPlacements.some((item) =>
+    item.placed &&
+    (["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
+      ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || ""))),
+  );
   const siteSizeSet = Boolean(parsePositiveNumber(lotWidth) && parsePositiveNumber(lotHeight));
   const gradingSourceSummary = useMemo(() => {
     const hasSurvey = Boolean(siteInputs?.survey_file?.stored_filename || siteInputs?.survey_file?.survey_url);
@@ -14812,7 +15303,11 @@ function PerformanceAIDashboardView({
   const existingConditionRows = [
     {
       label: "Address / location evidence",
-      value: hasLocationEvidence ? "Imported / applied" : "Missing",
+      value: hasAppliedAddress
+        ? `Applied: ${appliedAddressLabel || "coordinate context"}`
+        : hasLocationEvidence
+          ? "Map/image location context"
+          : "Missing",
       status: hasLocationEvidence ? "review" : "block",
       action: "Setup panel -> enter an address, pick a geocode suggestion, then Apply address.",
     },
@@ -14836,8 +15331,8 @@ function PerformanceAIDashboardView({
     },
     {
       label: "GIS / map context",
-      value: mapAnalysis?.success ? "Analyzed" : uploadedImageApiUrl || uploadedImagePreviewUrl ? "Image uploaded" : "Missing",
-      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl ? "review" : "block",
+      value: mapAnalysis?.success ? "Analyzed" : uploadedImageApiUrl || uploadedImagePreviewUrl ? "Image uploaded" : onlineSourceLookupLabel,
+      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl || hasAppliedAddress ? "review" : "block",
       action: "Setup panel -> upload a map snapshot and run Analyze map snapshot.",
     },
   ] as const;
@@ -14849,10 +15344,22 @@ function PerformanceAIDashboardView({
       blockers.push(OVERSIZED_SITE_MESSAGE);
     }
     if ((target === "grading" || target === "drainage" || target === "storm") && !hasTerrainSource) {
-      blockers.push("Add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
+      blockers.push("missing terrain/source: add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
+    }
+    if (!hasStandardsEvidence) {
+      blockers.push("missing standards");
+    }
+    if (hasAppliedAddress && onlineSourceLookupUnavailable) {
+      blockers.push("Address applied; online source lookup not configured/available.");
+    }
+    if (hasAssumedTerrainSlope && !hasVerifiedSurveyControl) {
+      blockers.push("assumed terrain slope / survey-control still needed");
     }
     if ((target === "drainage" || target === "storm") && !hasBasinPlaced) {
-      blockers.push("Place a basin or outfall target.");
+      blockers.push(hasBasinObject ? "detention basin exists but needs placement." : "missing detention basin.");
+    }
+    if ((target === "drainage" || target === "storm") && !buildingPlacements.some((item) => item.type === "outfall" && item.placed)) {
+      blockers.push(buildingPlacements.some((item) => item.type === "outfall") ? "outfall exists but is not placed" : "missing outfall");
     }
     if (target === "roadway" && confirmedObjectCounts.buildings === 0 && confirmedObjectCounts.access === 0) {
       blockers.push("Add at least one building, entrance, driveway, road, or parking object.");
@@ -14862,6 +15369,9 @@ function PerformanceAIDashboardView({
     }
     if ((target === "sanitary" || target === "water") && confirmedObjectCounts.buildings === 0) {
       blockers.push("Add buildings or service/demand targets.");
+    }
+    if ((target === "sanitary" || target === "water" || target === "utilities") && !hasUtilityConnectionPlaced) {
+      blockers.push(hasUtilityConnectionObject ? "utility connection exists but is not placed." : "missing utility connection.");
     }
     if (hasHardSystemBlock && target !== "roadway") {
       blockers.push("Resolve active hard model blockers.");
@@ -14908,20 +15418,9 @@ function PerformanceAIDashboardView({
     !siteScaleLocked ? "Setup panel -> Lock site boundary." : "",
     existingConditionRows.some((item) => item.status === "block") ? "Data panel -> resolve missing existing-condition evidence." : "",
     placedObjectCount <= 1 ? "Objects panel -> add or draw buildings, parking, roads, basin/outfall, and utility points/lines." : "",
-    systemReadinessRows.some((row) => row.blockers.length) ? `Generate Systems panel -> ${systemReadinessRows.find((row) => row.blockers.length)?.label}: ${systemReadinessRows.find((row) => row.blockers.length)?.blockers[0]}` : "",
+    systemReadinessRows.some((row) => row.blockers.some(isHardGenerateBlocker)) ? `Generate Systems panel -> ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.label}: ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.blockers.find(isHardGenerateBlocker)}` : "",
     getExportBlockReason() ? `Deliver panel -> export blocked: ${getExportBlockReason()}.` : "",
   ].filter(Boolean);
-  const formatSupportValue = (value: string, blocked = false) => ({ value, status: blocked ? "block" : "review" });
-  const dwgCompatibilityMessage = "Unsupported natively; use DXF/LandXML review artifacts or an external conversion hook with workflow record";
-  const deliverableSupportRows = [
-    ["DXF", formatSupportValue(getExportBlockReason() || (backendResult ? "Review export available" : "Needs planner run"), Boolean(getExportBlockReason()))],
-    ["Engineer-review report", formatSupportValue(getExportBlockReason() || (backendResult ? "Available" : "Needs planner run"), Boolean(getExportBlockReason()))],
-    ["LandXML", formatSupportValue("Not generated in this UI yet", true)],
-    ["Civil 3D", formatSupportValue("Needs target workflow record; no native Civil 3D package", true)],
-    ["DWG", formatSupportValue(dwgCompatibilityMessage, true)],
-    ["Review support package", formatSupportValue(backendResult ? "Review-only package; independent professional review required" : "Needs run and review gates", !backendResult)],
-    ["Independent professional review", formatSupportValue("Required outside Civora")],
-  ] as const;
   const capabilityAuditRows = useMemo<CapabilityExposure[]>(() => {
     const meta = currentPlanMeta as Record<string, unknown>;
     const readRecord = (key: string): Record<string, unknown> =>
@@ -15190,8 +15689,8 @@ function PerformanceAIDashboardView({
       {
         key: "data",
         label: "Data",
-        state: siteScaleLocked || hasTerrainSource ? "complete" : "not_configured",
-        detail: siteScaleLocked ? "Site locked" : "Needs site setup",
+        state: canonicalWorkspaceBlockers.some((item) => /source|standards|survey|terrain|address/i.test(item)) ? "blocked" : siteScaleLocked || hasTerrainSource ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /source|standards|survey|terrain|address/i.test(item)) || (siteScaleLocked ? "Site locked" : "Needs site setup"),
       },
       {
         key: "roadway",
@@ -15202,23 +15701,23 @@ function PerformanceAIDashboardView({
       {
         key: "grading",
         label: "Grading",
-        state: siteTooLargeForGrading ? "blocked" : systemStatuses.grading === "fresh" ? "complete" : "not_configured",
-        detail: siteTooLargeForGrading ? "Site too large" : systemStatuses.grading === "fresh" ? "Complete" : "Needs terrain/run",
+        state: canonicalWorkspaceBlockers.some((item) => /terrain|survey|grading|site too large/i.test(item)) ? "blocked" : siteTooLargeForGrading ? "blocked" : systemStatuses.grading === "fresh" ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /terrain|survey|grading|site too large/i.test(item)) || (siteTooLargeForGrading ? "Site too large" : systemStatuses.grading === "fresh" ? "Complete" : "Needs terrain/run"),
       },
       {
         key: "drainage",
         label: "Drainage",
-        state: hasHardSystemBlock ? "blocked" : systemStatuses.drainage === "fresh" ? "complete" : "not_configured",
-        detail: hasHardSystemBlock ? "Review blockers" : systemStatuses.drainage === "fresh" ? "Complete" : "Needs basin/run",
+        state: canonicalWorkspaceBlockers.some((item) => /outfall|basin|drainage|terrain|survey/i.test(item)) || hasHardSystemBlock ? "blocked" : systemStatuses.drainage === "fresh" ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /outfall|basin|drainage|terrain|survey/i.test(item)) || (hasHardSystemBlock ? "Review blockers" : systemStatuses.drainage === "fresh" ? "Complete" : "Needs basin/run"),
       },
       {
         key: "utilities",
         label: "Utilities",
-        state: hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
-        detail: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+        state: canonicalWorkspaceBlockers.some((item) => /utility|standards|source/i.test(item)) || hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
+        detail: canonicalWorkspaceBlockers.find((item) => /utility|standards|source/i.test(item)) || (hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered"),
       },
     ],
-    [hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
+    [canonicalWorkspaceBlockers, hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
   );
   const selectedBuilding = useMemo(
     () => buildingPlacements.find((item) => item.id === activePlacementId) ?? null,
@@ -15279,7 +15778,9 @@ function PerformanceAIDashboardView({
     { panel: "system_landscape", label: "Landscape" },
     { panel: "analysis", label: "Review & QA" },
   ];
-  const sidePanelForRender = activeSidePanel ?? renderedSidePanel;
+  const sidePanelForRender = rightRailCollapsed
+    ? null
+    : activeSidePanel ?? renderedSidePanel ?? "dashboard";
   const utilityCatalogPipes = utilityCatalog?.pipes ?? [];
   const utilityCatalogParts = utilityCatalog?.parts ?? [];
   const filteredUtilityPipes = utilityCatalogNetworkFilter === "all"
@@ -15345,6 +15846,13 @@ function PerformanceAIDashboardView({
     if (sidePanelCloseTimeoutRef.current !== null) {
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
       sidePanelCloseTimeoutRef.current = null;
+    }
+    setLayerManagerOpen(false);
+    if (panel) {
+      setRightRailCollapsed(false);
+    }
+    if (panel === "chat") {
+      setBottomPanelCollapsed(true);
     }
     setActiveSidePanel(panel);
     if (!panel) return;
@@ -15550,7 +16058,7 @@ function PerformanceAIDashboardView({
 	      panel: "model",
 	      icon: Box,
 	      status: siteScaleLocked ? panelStatus("model") : "review",
-	      metric: `${placedObjectCount} object${placedObjectCount === 1 ? "" : "s"}`,
+	      metric: `${placedObjects.length} placed / ${pendingPlacementObjects.length} pending`,
 	    },
 	    {
 	      key: "design",
@@ -15629,6 +16137,121 @@ function PerformanceAIDashboardView({
 	      { label: "Settings", panel: "settings", detail: "Workspace defaults", status: panelStatus("settings") },
 	    ],
 	  };
+  const contextualToolbarTools = [
+    {
+      label: "Address",
+      icon: MapPinned,
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("site_existing"),
+      active: sidePanelForRender === "site_existing",
+    },
+    {
+      label: siteScaleLocked ? "Unlock" : "Lock site",
+      icon: Crosshair,
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
+      action: siteScaleLocked ? handleUnlockSite : () => void handleApplySite(),
+      active: siteScaleLocked,
+      testId: "site-lock-toolbar",
+    },
+    {
+      label: "Import",
+      icon: FileText,
+      modes: ["setup", "deliver"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("import_survey"),
+      active: sidePanelForRender === "import_survey",
+    },
+    {
+      label: "Select",
+      icon: MousePointer2,
+      modes: ["draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      action: () => setPreviewInteraction("static"),
+      active: previewInteraction === "static",
+    },
+    {
+      label: "Pan",
+      icon: Hand,
+      modes: ["draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      action: () => setPreviewInteraction("static"),
+      active: false,
+    },
+    {
+      label: "Draw Site Boundary",
+      icon: Crosshair,
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
+      action: handleStartSiteBoundaryDraw,
+      active: !siteScaleLocked && activePrimaryWorkflowKey === "draw",
+      testId: "draw-site-boundary-toolbar",
+    },
+    {
+      label: "Change Site Boundary",
+      icon: Crosshair,
+      modes: ["draw"] as PrimaryWorkflowKey[],
+      action: handleUnlockSite,
+      active: siteScaleLocked,
+      testId: "change-site-boundary-toolbar",
+    },
+    {
+      label: "Draw",
+      icon: Pencil,
+      modes: ["draw"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("model"),
+      active: activePrimaryWorkflowKey === "draw",
+    },
+    {
+      label: "Modify",
+      icon: Move,
+      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
+      action: () => setPreviewInteraction("edit"),
+      active: previewInteraction === "edit",
+      testId: "preview-interaction-edit",
+    },
+    {
+      label: "Measure",
+      icon: Ruler,
+      modes: ["draw", "analyze", "review"] as PrimaryWorkflowKey[],
+      action: () => setShowMeasurements((value) => !value),
+      active: showMeasurements,
+    },
+    {
+      label: "Snaps",
+      icon: Crosshair,
+      modes: ["draw"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("model"),
+      active: previewInteraction === "edit",
+    },
+    {
+      label: "Layers",
+      icon: Layers,
+      modes: ["setup", "draw", "design", "analyze", "review", "deliver"] as PrimaryWorkflowKey[],
+      action: () => setLayerManagerOpen((value) => !value),
+      active: layerManagerOpen,
+    },
+    {
+      label: "Run",
+      icon: SlidersHorizontal,
+      modes: ["design", "analyze"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("generate"),
+      active: sidePanelForRender === "generate",
+    },
+    {
+      label: "Issues",
+      icon: AlertCircle,
+      modes: ["analyze", "review"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("analysis"),
+      active: sidePanelForRender === "analysis",
+    },
+    {
+      label: "Sheets",
+      icon: FileText,
+      modes: ["deliver"] as PrimaryWorkflowKey[],
+      action: () => handleOpenPanelFromDrawer("deliverables"),
+      active: sidePanelForRender === "deliverables",
+    },
+  ].filter((tool) => tool.modes.includes(activePrimaryWorkflowKey));
+  const selectedObjectConfidence = selectedBuilding
+    ? sourceConfidenceByObjectId.get(selectedBuilding.id)
+    : null;
+  const visibleLayerCount = Object.values(previewLayers).filter(Boolean).length;
   const sidebarStaleSystems = (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
     .filter(([, status]) => status === "stale")
     .map(([system]) => system);
@@ -15774,12 +16397,14 @@ function PerformanceAIDashboardView({
     {
       id: "address_location",
       label: "Address / Location",
-      status: hasLocationEvidence || siteAddress.trim() ? "needs_review" : "not_started",
+      status: hasAppliedAddress ? "needs_review" : siteAddress.trim() ? "pending" : "not_started",
       panel: "site_existing",
-      next_action: hasLocationEvidence || siteAddress.trim()
-        ? "Review the geocode/source and continue to site boundary."
+      next_action: hasAppliedAddress
+        ? `Address applied: ${appliedAddressLabel || "location context available"}. Continue to site boundary.`
+        : siteAddress.trim()
+          ? "Apply the entered address or choose a geocode suggestion."
         : "Enter an address, provide coordinates, or choose a blank site.",
-      review_required: Boolean(hasLocationEvidence || siteAddress.trim()),
+      review_required: Boolean(hasAppliedAddress || siteAddress.trim()),
     },
     {
       id: "site_boundary",
@@ -15796,15 +16421,15 @@ function PerformanceAIDashboardView({
     {
       id: "online_sources_candidates",
       label: "Online Sources / Candidates",
-      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl ? "needs_review" : hasLocationEvidence || siteAddress.trim() ? "not_started" : "blocked",
+      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl || hasAppliedAddress ? "needs_review" : "blocked",
       panel: "data",
       next_action: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl
         ? "Review the source result; no online/GIS candidate is auto-accepted."
-        : hasLocationEvidence || siteAddress.trim()
-          ? "Run online/source discovery or upload an authorized map/GIS source."
+        : hasAppliedAddress
+          ? onlineSourceLookupLabel
           : "Add address/location evidence before source discovery.",
-      why_blocked: hasLocationEvidence || siteAddress.trim() ? "" : "Online/source discovery needs a location or uploaded source.",
-      review_required: Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl),
+      why_blocked: hasAppliedAddress ? "" : "Online/source discovery needs a location or uploaded source.",
+      review_required: Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl || hasAppliedAddress),
     },
     {
       id: "survey_terrain_control",
@@ -15813,7 +16438,9 @@ function PerformanceAIDashboardView({
       panel: "import_survey",
       next_action: hasVerifiedSurveyControl
         ? "Continue to standards acceptance."
-        : hasTerrainSource || surveyPreviewPoints.length
+        : hasAssumedTerrainSlope
+          ? "Terrain slope is assumed; survey/control still needed."
+          : hasTerrainSource || surveyPreviewPoints.length
           ? "Review survey/control, datum, benchmark, coordinate system, and terrain source."
           : "Upload survey/topo/control evidence or explicitly choose an assumed terrain path.",
       why_blocked: hasVerifiedSurveyControl || hasTerrainSource || surveyPreviewPoints.length ? "" : "Survey/control remains an explicit gate.",
@@ -15993,6 +16620,7 @@ function PerformanceAIDashboardView({
   };
   const persistedProgressTimeline = currentPlanMeta.progress_timeline_v1;
   const bottomBlockerItems = [
+    ...canonicalWorkspaceBlockers,
     ...previewBlockedReasons,
     ...issues.map((issue) => issue.message),
     ...analysisIssues.map((issue) => issue.message),
@@ -16140,12 +16768,9 @@ function PerformanceAIDashboardView({
     `Visible status: ${visibleStatusSummary}`,
     `Site: ${siteScaleLocked ? "locked" : "not locked"}; ${lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "size unavailable"}`,
     `Systems: ${Object.entries(systemStatuses).map(([key, value]) => `${key}=${value}`).join(", ")}`,
-    `Source confidence: entries=${sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length}; low=${sourceConfidenceSummary.low_confidence_count ?? 0}; needs_control=${sourceConfidenceSummary.needs_survey_control_count ?? 0}`,
-    `Upload/source context: survey_control=${hasVerifiedSurveyControl ? "present" : "not confirmed"}; terrain=${hasTerrainSource ? "present" : "missing"}; pdf=${planPdfAnalysis ? "imported" : "none"}`,
-    `Support path: ${deploymentHealth?.support?.bug_report_url || deploymentHealth?.support?.support_contact || "support@civora.ai"}`,
     `User message: ${issueReportMessage.trim() || "(add details before sending)"}`,
     "",
-    "Reminder: outputs are review-preparation materials only. Field/submittal use remains outside Civora.",
+    "Reminder: outputs are review-required materials only. Field use remains outside Civora.",
   ].join("\n");
   const handleCopyIssueDiagnostic = async () => {
     try {
@@ -16165,75 +16790,44 @@ function PerformanceAIDashboardView({
         : tone === "ok"
           ? "bg-emerald-50 text-emerald-700"
           : "bg-slate-100 text-slate-500";
-  const reviewToneBorderClass = (tone: ReviewTableTone) =>
-    tone === "block"
-      ? "border-red-200 bg-red-50/70"
-      : tone === "review"
-        ? "border-amber-200 bg-amber-50/70"
-        : tone === "ok"
-          ? "border-emerald-200 bg-emerald-50/70"
-          : "border-slate-200 bg-slate-50";
-  const releaseBlockedDetail =
-    exportBlockText ||
-    "Construction release remains blocked inside Civora; outputs are review materials only.";
-  const rightRailWorkflowCards: WorkflowRailCard[] = [
-    {
-      title: "Project Health",
-      status: sidebarTruthCounts.blocked ? "Blocked" : sidebarTruthCounts.review ? "Review required" : sidebarHasTruthEvidence ? "Traceable" : "No evidence",
-      tone: sidebarTruthCounts.blocked ? "block" : sidebarTruthCounts.review || sidebarHasTruthEvidence ? "review" : "idle",
-      metric: sidebarTruthScore !== null ? `${sidebarTruthScore}% evidence score` : "Not evaluated",
-      detail: sidebarHasTruthEvidence
-        ? `${sidebarTruthCounts.blocked} blocked, ${sidebarTruthCounts.review} review, ${sidebarTruthCounts.ready} traceable item(s).`
-        : "Start setup to create traceable project state.",
-      action: "Open dashboard",
-      panel: "dashboard",
-    },
-    {
-      title: "Setup Progress",
-      status: String(setupWizardState.current_status || "not_started").replace(/_/g, " "),
-      tone: setupWizardState.blocked_step_ids?.length ? "block" : setupWizardState.needs_review_step_ids?.length ? "review" : setupWizardState.completed_count === setupWizardState.total_count ? "ok" : "idle",
-      metric: `${setupWizardState.completed_count ?? 0}/${setupWizardState.total_count ?? setupWizardSteps.length} steps`,
-      detail: setupWizardState.current_step_label || setupWizardCurrentStep?.label || "Setup has not started.",
-      action: "Open setup step",
-      panel: (setupWizardCurrentStep?.panel || "site_existing") as SidePanelKey,
-    },
-    {
-      title: "Next Recommended Step",
-      status: progressTimelineCurrentStep?.status?.replace(/_/g, " ") || "pending",
-      tone: progressTimelineCurrentStep?.status === "blocked"
-        ? "block"
-        : progressTimelineCurrentStep?.status === "completed"
-          ? "ok"
-          : "review",
-      metric: progressTimelineCurrentStep?.label || setupWizardState.current_step_label || "Workflow",
-      detail: nextSetupAction || progressTimelineState.next_action || "Open the current workflow step.",
-      action: progressTimelineCurrentStep?.action_label || setupWizardState.primary_action_label || "Open step",
-      panel: (progressTimelineCurrentStep?.action_panel || setupWizardCurrentStep?.panel || "site_existing") as SidePanelKey,
-    },
-    {
-      title: "Construction Release Blocked",
-      status: "Blocked",
-      tone: "block",
-      metric: exportBlockText ? "Gate blocker recorded" : "Civora release guardrail",
-      detail: releaseBlockedDetail,
-      action: "Open release gates",
-      panel: "deliverables",
-    },
-    {
-      title: "Engineer Review Required",
-      status: "Required",
-      tone: "review",
-      metric: backendResult ? "Package evidence exists" : "Awaiting generated evidence",
-      detail: sidebarHasTruthEvidence
-        ? "All generated and drawn geometry remains review-only until external professional review."
-        : "No project evidence has been evaluated yet.",
-      action: "Open review package",
-      panel: "reports",
-    },
-  ];
+  const prioritizedIssueEntries = (() => {
+    const picked = new Set<number>();
+    const seenActions = new Set<string>();
+    const entries: Array<{ issue: Issue; index: number }> = [];
+    issues.forEach((issue, index) => {
+      const applyLabel = drainageIssueApplyLabel(issue);
+      if (!applyLabel || seenActions.has(applyLabel)) return;
+      seenActions.add(applyLabel);
+      picked.add(index);
+      entries.push({ issue, index });
+    });
+    issues.forEach((issue, index) => {
+      if (picked.has(index)) return;
+      entries.push({ issue, index });
+    });
+    return entries;
+  })();
   const issueRows: ReviewTableRow[] = (
-    bottomBlockerItems.length
-      ? bottomBlockerItems.slice(0, 6).map((item, index) => ({
+    issues.length
+      ? prioritizedIssueEntries.slice(0, 6).map(({ issue, index }, rowIndex) => {
+          const message = typeof issue.message === "string" ? issue.message : JSON.stringify(issue.message ?? "Review issue");
+          const applyLabel = drainageIssueApplyLabel(issue);
+          const isBlockedIssue = issue.severity === "error";
+          return {
+            id: `ISS-${rowIndex + 1}`,
+            name: message,
+            source: String(issue.context?.system ?? issue.context?.discipline ?? "QA / blocker"),
+            status: isBlockedIssue ? "Blocked" : "Open issues",
+            tone: isBlockedIssue ? "block" : "review",
+            assigned: "Project team",
+            updated: "Current session",
+            action: applyLabel ?? "Open issues",
+            panel: "analysis" as const,
+            issueIndex: index,
+          };
+        })
+      : bottomBlockerItems.length
+        ? bottomBlockerItems.slice(0, 6).map((item, index) => ({
           id: `ISS-${index + 1}`,
           name: item,
           source: "QA / blocker",
@@ -16244,7 +16838,7 @@ function PerformanceAIDashboardView({
           action: "Open issues",
           panel: "analysis" as const,
         }))
-      : [
+        : [
           {
             id: "ISS-0",
             name: sidebarHasTruthEvidence
@@ -16393,6 +16987,58 @@ function PerformanceAIDashboardView({
     { key: "quantities", label: "Quantities", panel: "quantities" },
     { key: "reports", label: "Reports", panel: "reports" },
   ];
+  const modeStarterCards: Array<{
+    key: PrimaryWorkflowKey;
+    title: string;
+    detail: string;
+    action: string;
+    panel: SidePanelKey;
+  }> = [
+    {
+      key: "setup",
+      title: siteScaleLocked ? "Site is locked" : "Lock site boundary",
+      detail: siteScaleLocked ? "Review sources and standards next." : "Set the boundary before relying on objects.",
+      action: siteScaleLocked ? "Review sources" : "Open setup",
+      panel: siteScaleLocked ? "data" : "site_existing",
+    },
+    {
+      key: "draw",
+      title: "Draw or edit",
+      detail: "Use Select, Draw, Modify, Measure, Snaps, and Layers from the command bar.",
+      action: "Open canvas tools",
+      panel: "model",
+    },
+    {
+      key: "design",
+      title: "Generate systems",
+      detail: "Run grading, drainage, utilities, roadway, and quantities when setup gates are ready.",
+      action: "Open run controls",
+      panel: "generate",
+    },
+    {
+      key: "analyze",
+      title: "Check blockers",
+      detail: previewBlockedReasons[0] || "Review conflicts, source confidence, and unresolved requirements.",
+      action: "Open issues",
+      panel: "analysis",
+    },
+    {
+      key: "review",
+      title: "Review evidence",
+      detail: "Inspect source confidence, assumptions, QA/QC, and reviewer assignments.",
+      action: "Open review",
+      panel: "reports",
+    },
+    {
+      key: "deliver",
+      title: "Prepare review package",
+      detail: "Create review sheets, reports, DXF/LandXML traces, and export audits.",
+      action: "Open sheets",
+      panel: "deliverables",
+    },
+  ];
+  const activeModeStarterCard =
+    modeStarterCards.find((card) => card.key === activePrimaryWorkflowKey) ?? modeStarterCards[0];
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -16405,216 +17051,6 @@ function PerformanceAIDashboardView({
       : sidePanelForRender
         ? sidePanelCopy[sidePanelForRender].desc
         : "";
-  const activePanelStatus = sidePanelForRender ? panelStatus(sidePanelForRender) : "idle";
-  const activePanelStatusTone: ReviewTableTone =
-    activePanelStatus === "block"
-      ? "block"
-      : activePanelStatus === "review"
-        ? "review"
-        : activePanelStatus === "ok"
-          ? "ok"
-          : "idle";
-  const activePanelBlockers = uniqueStrings([
-    ...previewBlockedReasons,
-    ...bottomBlockerItems,
-    exportBlockText,
-    !siteScaleLocked && ["site_existing", "model", "generate", "grading", "drainage", "utilities", "roadway", "deliverables"].includes(sidePanelForRender || "")
-      ? "Site boundary is not locked."
-      : "",
-    !hasTerrainSource && ["import_survey", "data", "grading", "generate", "deliverables"].includes(sidePanelForRender || "")
-      ? "Terrain, survey, DEM, or accepted source path is missing."
-      : "",
-    sourceConfidenceSummary.low_confidence_count
-      ? `${sourceConfidenceSummary.low_confidence_count} low-confidence source item(s) need review.`
-      : "",
-    sourceConfidenceSummary.stale_or_missing_count
-      ? `${sourceConfidenceSummary.stale_or_missing_count} stale or missing source item(s).`
-      : "",
-  ]).slice(0, 3);
-  const activePanelEvidence = uniqueStrings([
-    sidebarHasTruthEvidence ? `${sidebarTruthCounts.ready} traceable, ${sidebarTruthCounts.review} review, ${sidebarTruthCounts.blocked} blocked evidence item(s).` : "",
-    backendResult ? "Generated plan output is available." : "",
-    hasTerrainSource ? "Terrain/source input is present." : "",
-    quantityRows.length ? `${quantityRows.length} quantity row(s) available.` : "",
-    candidateReviewItems.length ? `${candidateReviewItems.length} candidate source item(s).` : "",
-    selectedJob ? `Selected job ${selectedJob.job_id} has audit details.` : "",
-  ]).slice(0, 3);
-  const activePanelActions = uniqueStrings([
-    sidePanelForRender === "deliverables" || sidePanelForRender === "reports"
-      ? "Open release gates or export engineer-review materials when unblocked."
-      : "",
-    sidePanelForRender === "jobs" ? "Refresh, retry, resume, or inspect job artifacts." : "",
-    sidePanelForRender === "data" || sidePanelForRender === "import_survey"
-      ? "Review source confidence, imports, standards, GIS, and PDFs."
-      : "",
-    sidePanelForRender === "generate" ? "Run systems or open a blocked discipline panel." : "",
-    sidePanelForRender === "model" || sidePanelForRender === "objects" ? "Draw, place, edit, and inspect model objects." : "",
-    "Resolve blockers before relying on deliverables.",
-  ]).slice(0, 3);
-  const activePanelReviewSections: PanelReviewSection[] = [
-    {
-      label: "Summary",
-      value: activePanelDescription || "Review this workflow panel.",
-      tone: activePanelStatusTone,
-    },
-    {
-      label: "Current status",
-      value:
-        activePanelStatus === "block"
-          ? "Blocked"
-          : activePanelStatus === "review"
-            ? "Review required"
-            : activePanelStatus === "ok"
-              ? "Traceable"
-              : "Not started",
-      tone: activePanelStatusTone,
-    },
-    {
-      label: "Blockers / missing inputs",
-      value: activePanelBlockers.length ? activePanelBlockers.join(" ") : "No panel-specific blocker is recorded.",
-      tone: activePanelBlockers.length ? "block" : activePanelStatusTone,
-    },
-    {
-      label: "Evidence",
-      value: activePanelEvidence.length ? activePanelEvidence.join(" ") : "Evidence appears after setup, imports, generated systems, or review packages.",
-      tone: activePanelEvidence.length ? "ok" : "idle",
-    },
-    {
-      label: "Actions",
-      value: activePanelActions.join(" "),
-      tone: activePanelStatusTone,
-    },
-    {
-      label: "Details / audit trail",
-      value: "Detailed cards, tables, jobs, source IDs, and audit records stay below in collapsible review sections where available.",
-      tone: "idle",
-    },
-  ];
-  const visibleReleaseGuardrail =
-    "Review-only. Engineer review required. Construction release blocked until approved outside Civora.";
-  const systemReadyLabels = Object.entries(systemStatuses)
-    .filter(([, status]) => status === "fresh")
-    .map(([system]) => `${system} output is current`);
-  const systemBlockedLabels = systemReadinessRows
-    .filter((row) => row.blockers.length > 0)
-    .flatMap((row) => row.blockers.map((blocker) => `${row.label}: ${blocker}`));
-  const reviewBlockedLabels = [
-    ...previewBlockedReasons,
-    ...bottomBlockerItems,
-    exportBlockText,
-  ].filter(Boolean) as string[];
-  const workflowFocusPanels = {
-    setup: {
-      title: "Setup workflow",
-      subtitle: "Get the site frame, source evidence, and lockable boundary ready before design work.",
-      ready: [
-        siteScaleLocked ? "Site boundary is locked" : "",
-        siteAddress.trim() || siteInputs?.address ? "Address/location evidence exists" : "",
-        hasTerrainSource ? "Terrain source is present" : "",
-        surveyPreviewPoints.length ? `${surveyPreviewPoints.length} survey/control point(s) loaded` : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        ...setupBlockedText,
-        !siteScaleLocked ? "Site boundary must be drawn or locked" : "",
-        !hasTerrainSource ? "Survey, topo, DEM, or assumed terrain path is still needed" : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Geocode an address", "Analyze a map snapshot", "Draw or lock the site boundary", "Carry review-required assumptions forward visibly"],
-      userMust: [
-        "Confirm the site boundary and dimensions",
-        "Provide survey/control, terrain, or approve an assumed source path",
-        "Review standards before relying on generated systems",
-      ],
-      nextActionLabel: setupWizardState.primary_action_label || "Continue setup",
-      onNextAction: () => setupWizardCurrentStep && handleSetupWizardAction(setupWizardCurrentStep),
-    },
-    data: {
-      title: "Data workflow",
-      subtitle: "Keep sources, standards, catalogs, PDFs, and confidence evidence organized for review.",
-      ready: [
-        hasTerrainSource ? "Terrain source is loaded" : "",
-        mapAnalysis?.success ? "GIS/map analysis is available" : "",
-        planPdfAnalysis ? "Plan PDF extraction is available" : "",
-        utilityCatalog ? "Utility catalog is loaded" : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        !hasVerifiedSurveyControl ? "Verified survey/control has not been accepted" : "",
-        sourceConfidenceSummary.low_confidence_count ? `${sourceConfidenceSummary.low_confidence_count} low-confidence source item(s)` : "",
-        sourceConfidenceSummary.stale_or_missing_count ? `${sourceConfidenceSummary.stale_or_missing_count} stale or missing source item(s)` : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Import survey/topo and PDFs", "Extract review candidates", "Surface source-confidence issues", "Open standards, templates, catalogs, and libraries"],
-      userMust: ["Provide authoritative survey/control and datum", "Accept or reject source candidates", "Confirm firm standards and catalogs"],
-      nextActionLabel: hasTerrainSource ? "Review source confidence" : "Import survey or terrain",
-      onNextAction: () => handleOpenSidePanel(hasTerrainSource ? "data" : "import_survey"),
-    },
-    design: {
-      title: "Design / Systems workflow",
-      subtitle: "Run or inspect civil systems only after setup and source gates are clear enough for review.",
-      ready: [
-        placedObjectCount ? `${placedObjectCount} object(s) on canvas` : "",
-        ...systemReadyLabels,
-        hasGradingSurface ? "Grading surface is rendered" : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        !siteScaleLocked ? "Site boundary is not locked" : "",
-        ...systemBlockedLabels,
-        hasHardSystemBlock ? "Hard system blocker recorded" : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Place and edit objects", "Run full or discipline-specific systems", "Queue partial reruns for stale systems", "Show discipline health panels"],
-      userMust: ["Provide missing terrain/basin/program inputs", "Review generated geometry before relying on it", "Confirm assumptions and stale-system reruns"],
-      nextActionLabel: siteScaleLocked ? "Run systems" : "Open setup",
-      onNextAction: () => handleOpenSidePanel(siteScaleLocked ? "generate" : "site_existing"),
-    },
-    analyze: {
-      title: "Analyze workflow",
-      subtitle: "Review issues, access checks, system health, quantities, jobs, and catalog evidence.",
-      ready: [
-        backendResult ? "Generated result is available for review" : "",
-        quantityRows.length ? `${quantityRows.length} quantity row(s) available` : "",
-        systemHealthItems.filter((item) => item.state === "complete").length ? `${systemHealthItems.filter((item) => item.state === "complete").length} system health item(s) complete` : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        ...bottomBlockerItems.slice(0, 4),
-        systemHealthItems.filter((item) => item.state === "blocked").length ? `${systemHealthItems.filter((item) => item.state === "blocked").length} system health item(s) blocked` : "",
-      ].filter(Boolean) as string[],
-      civoraCan: ["Run access analysis", "Show issue guidance", "Inspect jobs and quantities", "Open system health evidence"],
-      userMust: ["Review every warning before package handoff", "Resolve missing inputs or source gaps", "Decide whether to rerun affected systems"],
-      nextActionLabel: "Run access analysis",
-      onNextAction: handleAnalyzeSiteAccess,
-    },
-    review: {
-      title: "Review workflow",
-      subtitle: "Keep blockers, assumptions, engineering health, and release gates visible before delivery.",
-      ready: [
-        backendResult ? "Review package evidence exists" : "",
-        sidebarAssumptions.length ? `${sidebarAssumptions.length} assumption categorie(s) listed` : "",
-        sidebarTrustScore !== "not reported" ? `Trust score ${sidebarTrustScore}` : "",
-      ].filter(Boolean) as string[],
-      blocked: reviewBlockedLabels.length ? reviewBlockedLabels.slice(0, 5) : [],
-      civoraCan: ["Summarize QA issues", "Link to engineering health panels", "Prepare review-only evidence", "Apply supported safe fixes"],
-      userMust: ["Complete engineer review", "Accept or reject assumptions", "Clear construction-release-blocked export gates"],
-      nextActionLabel: "Open QA issues",
-      onNextAction: () => handleOpenSidePanel("analysis"),
-    },
-    deliver: {
-      title: "Deliver workflow",
-      subtitle: "Prepare sheets, reports, DXF, and package evidence as review-only deliverables.",
-      ready: [
-        backendResult ? "Review report data is available" : "",
-        planSheetSet.sheets.length ? `${planSheetSet.sheets.length} sheet(s) in package` : "",
-        planPreviewUrl ? "Preview is review ready" : "",
-      ].filter(Boolean) as string[],
-      blocked: [
-        exportBlockText,
-        !backendResult ? "Run systems before preparing deliverables" : "",
-        ...(getPlanSheetBlockers ? getPlanSheetBlockers().slice(0, 3) : []),
-      ].filter(Boolean) as string[],
-      civoraCan: ["Create review sheets", "Export report evidence", "Export DXF when gates clear", "Show smart-fix recommendations"],
-      userMust: ["Review title block, sheets, and support status", "Provide missing package inputs", "Complete licensed professional review before field use"],
-      nextActionLabel: exportBlockText ? "Show blocker details" : "Export review report",
-      onNextAction: () => exportBlockText ? handleOpenSidePanel("reports") : handleExportReport(),
-      nextActionDisabled: !exportBlockText && Boolean(getExportBlockReason()),
-    },
-  };
   const deployment = deploymentHealth?.deployment;
   const deploymentBackendStatus =
     deploymentHealthError
@@ -16633,14 +17069,6 @@ function PerformanceAIDashboardView({
       : deploymentHealthLoading
         ? ["Checking deployment health..."]
         : ["Deployment health has not reported yet."];
-  const supportContact = deploymentHealth?.support?.support_contact || "support@civora.ai";
-  const supportHref = supportContact.startsWith("http")
-    ? supportContact
-    : `mailto:${supportContact}?subject=Civora%20pilot%20support`;
-  const bugReportHref = deploymentHealth?.support?.bug_report_url || "/pilot#operations";
-  const supportMessage =
-    deploymentHealth?.support?.user_safe_message ||
-    "Use support or the report-issue path for pilot issues; pause reliance on affected outputs when source, review, or export status is unclear.";
   const frontendBuildVersion =
     process.env.NEXT_PUBLIC_BUILD_VERSION ||
     process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
@@ -16722,13 +17150,13 @@ function PerformanceAIDashboardView({
           onLogout={handleLogout}
         />
 
-        <div className="flex h-[calc(100svh-4rem)] min-h-0 w-full max-w-full flex-col overflow-hidden lg:h-[calc(100vh-4rem)] lg:flex-row">
+        <div className="relative h-[calc(100svh-4rem)] min-h-0 w-full max-w-full overflow-hidden lg:h-[calc(100vh-4rem)]">
           {sidebarRendered ? (
 		          <aside
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar fixed inset-x-3 top-20 z-40 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/98 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:static lg:inset-auto lg:z-auto lg:h-full lg:max-h-none lg:w-[276px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:shadow-[18px_0_40px_-36px_rgba(15,23,42,0.5)]"
+            className="civora-motion-sidebar fixed inset-x-3 top-20 z-50 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/96 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:bottom-4 lg:left-4 lg:right-auto lg:top-20 lg:h-auto lg:max-h-none lg:w-[248px]"
           >
             <button
               type="button"
@@ -16752,8 +17180,11 @@ function PerformanceAIDashboardView({
                 </span>
                 <span className="flex items-center justify-between gap-2">
                   <span>Sync</span>
-                  <span className={currentProject?.project_id ? "text-slate-900" : "text-amber-700"}>
-                    {currentProject?.project_id ? "Saved" : "Draft"}
+                  <span
+                    data-testid="workspace-restore-status"
+                    className={currentProject?.project_id && !effectiveDemoWorkspaceEnabled ? "text-slate-900" : "text-amber-700"}
+                  >
+                    {restoreTruthLabel}
                   </span>
                 </span>
               </div>
@@ -16761,7 +17192,7 @@ function PerformanceAIDashboardView({
             <button
               type="button"
               onClick={() => handleOpenPanelFromDrawer((setupWizardCurrentStep?.panel as SidePanelKey) || "site_existing")}
-              className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50"
+              className="hidden"
               data-testid="setup-wizard-sidebar-card"
             >
               <div className="flex items-start justify-between gap-3">
@@ -16781,8 +17212,8 @@ function PerformanceAIDashboardView({
 	                {setupWizardState.next_action}
 	              </p>
 	            </button>
-	            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-950 p-2 text-white" data-testid="primary-workflow-sidebar">
-	              <div className="grid grid-cols-2 gap-1.5">
+	            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="primary-workflow-sidebar">
+	              <div className="space-y-1.5">
 	                {primaryWorkflowItems.map((item) => {
 	                  const Icon = item.icon;
 	                  const isActive = activePrimaryWorkflowKey === item.key;
@@ -16793,36 +17224,36 @@ function PerformanceAIDashboardView({
 	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.key === "design" ? "Generate" : undefined}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
-	                      className={`min-h-20 rounded-lg border px-2.5 py-2 text-left transition ${
+	                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${
 	                        isActive
-	                          ? "border-white bg-white text-slate-950"
-	                          : "border-white/10 bg-white/5 text-white/78 hover:bg-white/10 hover:text-white"
+	                          ? "border-blue-200 bg-blue-50 text-blue-700"
+	                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
 	                      }`}
 	                    >
-	                      <span className="flex items-center justify-between gap-2">
-	                        <Icon className="h-4 w-4 shrink-0" />
-	                        <span className={`h-2 w-2 rounded-full ${
-	                          item.status === "ok"
-	                            ? "bg-emerald-400"
-	                            : item.status === "block"
-	                              ? "bg-red-400"
-	                              : item.status === "review"
-	                                ? "bg-amber-300"
-	                                : "bg-slate-400"
-	                        }`} />
+	                      <Icon className="h-4 w-4 shrink-0" />
+	                      <span className="min-w-0 flex-1">
+	                        <span className="block truncate text-sm font-semibold">{item.label}</span>
+	                        <span className={`mt-0.5 block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${
+	                          isActive ? "text-blue-500" : "text-slate-400"
+	                        }`}>
+	                          {item.metric}
+	                        </span>
 	                      </span>
-	                      <span className="mt-2 block text-sm font-semibold">{item.label}</span>
-	                      <span className={`mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.12em] ${
-	                        isActive ? "text-slate-500" : "text-white/45"
-	                      }`}>
-	                        {item.metric}
-	                      </span>
+	                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+	                        item.status === "ok"
+	                          ? "bg-emerald-500"
+	                          : item.status === "block"
+	                            ? "bg-red-500"
+	                            : item.status === "review"
+	                              ? "bg-amber-400"
+	                              : "bg-slate-300"
+	                      }`} />
 	                    </button>
 	                  );
 	                })}
 	              </div>
 	            </div>
-	            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="workflow-actions-sidebar">
+	            <div className="hidden" data-testid="workflow-actions-sidebar">
 	              <div className="flex items-center justify-between gap-3">
 	                <div>
 	                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -16876,7 +17307,7 @@ function PerformanceAIDashboardView({
 	                })}
 	              </div>
 	            </div>
-	            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="compact-truth-sidebar">
+	            <div className="hidden" data-testid="compact-truth-sidebar">
 	              <div className="flex items-start justify-between gap-3">
 	                <div>
 	                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Truth Status</p>
@@ -17072,7 +17503,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-              className="civora-motion-right-panel fixed inset-x-0 bottom-0 top-auto z-50 order-3 flex max-h-[82svh] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/98 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-4 sm:max-h-[78svh] sm:rounded-xl lg:static lg:inset-auto lg:z-auto lg:m-3 lg:ml-0 lg:h-[calc(100%-1.5rem)] lg:max-h-none lg:w-[372px] lg:shadow-[var(--civora-shadow-panel)]"
+            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-50 order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/96 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-20 lg:h-auto lg:max-h-none lg:w-[388px] lg:rounded-xl lg:shadow-[var(--civora-shadow-panel)]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
@@ -17086,106 +17517,16 @@ function PerformanceAIDashboardView({
                   onClick={() => {
                     if (sidePanelCloseTimeoutRef.current !== null) {
                       window.clearTimeout(sidePanelCloseTimeoutRef.current);
-                    }
-                    setSidePanelVisible(false);
-                    sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
-                      setActiveSidePanel(null);
-                      setRenderedSidePanel(null);
                       sidePanelCloseTimeoutRef.current = null;
-                    }, 180);
+                    }
+                    setRightRailCollapsed(true);
                   }}
                   className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
                 >
-                  Close
+                  Minimize
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4">
-                <section className="civora-review-shell mb-4" aria-label={`${activePanelTitle} review summary`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Panel review order</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-950">{activePanelTitle}</p>
-                    </div>
-                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(activePanelStatusTone)}`}>
-                      {activePanelReviewSections[1]?.value}
-                    </span>
-                  </div>
-                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-semibold leading-5 text-amber-800">
-                    {visibleReleaseGuardrail}
-                  </p>
-                  <div className="mt-3 grid gap-2">
-                    {activePanelReviewSections.map((section, index) => {
-                      const isDetail = section.label === "Details / audit trail";
-                      const body = (
-                        <p className="mt-1 text-xs font-medium leading-5 text-slate-600">
-                          {section.value}
-                        </p>
-                      );
-                      return isDetail ? (
-                        <details key={section.label} className="civora-review-section">
-                          <summary className="flex cursor-pointer items-center justify-between gap-3">
-                            <span>
-                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                                {index + 1}. {section.label}
-                              </span>
-                            </span>
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(section.tone)}`}>
-                              Audit
-                            </span>
-                          </summary>
-                          {body}
-                        </details>
-                      ) : (
-                        <div key={section.label} className="civora-review-section">
-                          <div className="flex items-start justify-between gap-3">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                              {index + 1}. {section.label}
-                            </p>
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(section.tone)}`}>
-                              {section.tone === "block" ? "Blocked" : section.tone === "review" ? "Review" : section.tone === "ok" ? "Evidence" : "Info"}
-                            </span>
-                          </div>
-                          {body}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-                <details className="civora-review-shell mb-4" open={activePanelStatus === "block"}>
-                  <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Review gates
-                  </summary>
-                  <div className="mt-3 space-y-2">
-                  {rightRailWorkflowCards.map((card) => (
-                    <button
-                      key={card.title}
-                      type="button"
-                      onClick={() => handleOpenSidePanel(card.panel)}
-                      className={`w-full rounded-lg border px-3 py-2.5 text-left transition hover:bg-white ${reviewToneBorderClass(card.tone)}`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            {card.title}
-                          </p>
-                          <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                            {card.metric}
-                          </p>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${reviewTonePillClass(card.tone)}`}>
-                          {card.status}
-                        </span>
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-slate-600">
-                        {card.detail}
-                      </p>
-                      <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        {card.action}
-                      </p>
-                    </button>
-                  ))}
-                  </div>
-                </details>
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
                     <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -17415,16 +17756,12 @@ function PerformanceAIDashboardView({
 	                            {[deployment?.provider, deployment?.environment, deployment?.commit_ref].filter(Boolean).join(" / ")}
 	                          </p>
 	                        ) : null}
-	                        <p className="mt-2 text-xs leading-5 text-slate-500">{supportMessage}</p>
 	                        <div className="mt-3 flex flex-wrap gap-2">
-	                          <a href={supportHref} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+	                          <a href="mailto:support@civora.ai?subject=Civora%20pilot%20support" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
 	                            Contact Support
 	                          </a>
-	                          <a href={bugReportHref} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
-	                            Report Issue
-	                          </a>
-	                          <a href="/pilot/starter" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
-	                            Starter Guide
+	                          <a href="/pilot#operations" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50">
+	                            Bug Report Flow
 	                          </a>
 	                        </div>
 	                      </div>
@@ -17673,15 +18010,14 @@ function PerformanceAIDashboardView({
                       </summary>
                       <div className="mt-3 space-y-2 text-sm text-slate-600">
                         {[
-                          ["Review-only", "Useful for checking, discussion, coordination, or package preparation; still requires qualified review before reliance."],
-                          ["Ready", "Enough current, traceable evidence exists to begin review. Field/submittal use remains outside Civora."],
-                          ["Needs Source", "Traceable evidence is missing, such as survey/control, standards, utility records, source files, dimensions, or accepted candidate data."],
-                          ["Needs Review", "A user, reviewer, or responsible professional must check the output, source, or assumption."],
-                          ["Needs Engineer Review", "A responsible professional must evaluate the output, assumptions, sources, and next action outside Civora before use."],
-                          ["Blocked", "A missing input, stale output, unsupported export, unresolved conflict, or source-confidence issue prevents the next review step."],
-                          ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, accepted standards, dimensions, jurisdiction, or source evidence."],
+                          ["Ready", "Enough current, traceable evidence exists for review."],
+                          ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
+                          ["Blocked", "Missing evidence, stale output, unsupported export, or unresolved conflict prevents the next review step."],
+                          ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
                           ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
                           ["Visual preview only", "The view is a visual aid and is not evidence by itself."],
+                          ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
+                          ["Field use", "Remains outside Civora and requires independent licensed-professional review."],
                         ].map(([label, desc]) => (
                           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="font-semibold text-slate-800">{label}</p>
@@ -17695,9 +18031,6 @@ function PerformanceAIDashboardView({
                         Report issue
                       </summary>
                       <div className="mt-3 space-y-3">
-                        <p className="text-sm leading-6 text-slate-600">
-                          Copy this user-safe summary into the pilot support channel or issue form. It includes project/workflow status and source-confidence counts, but no secrets or private environment values.
-                        </p>
                         <textarea
                           value={issueReportMessage}
                           onChange={(event) => setIssueReportMessage(event.target.value)}
@@ -17719,20 +18052,6 @@ function PerformanceAIDashboardView({
                         >
                           {issueReportCopied ? "Copied" : "Copy diagnostic summary"}
                         </button>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <a
-                            href={supportHref}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                          >
-                            Contact support
-                          </a>
-                          <a
-                            href={bugReportHref}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                          >
-                            Open issue path
-                          </a>
-                        </div>
                       </div>
                     </details>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -17740,8 +18059,8 @@ function PerformanceAIDashboardView({
                       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                         {[
                           ["/pilot#onboarding", "Onboarding"],
-                          ["/pilot/starter", "Starter guide"],
-                          ["/pilot#data", "Data guidance"],
+                          ["/pilot#operations", "Pilot operations"],
+                          ["/pilot#responsibility", "Responsibility"],
                         ].map(([href, label]) => (
                           <a
                             key={href}
@@ -17908,202 +18227,383 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.setup} />
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={handleStartBlankSite}
-                        aria-label="Start a blank site and clear address map evidence"
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                      >
-                        Start from blank site
-                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Clear address map evidence
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
-                        aria-label={siteScaleLocked ? "Unlock site boundary for editing" : "Lock current site boundary for engineer review"}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                      >
-                        {siteScaleLocked ? "Change site boundary" : "Lock site boundary"}
-                        <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          {siteScaleLocked ? "Unlock for editing" : "Engineer review required"}
-                        </span>
-                      </button>
-                    </div>
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Detailed setup controls and evidence
-                      </summary>
-                      <div className="mt-3 space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-address-truth">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project setup</p>
-                          <p className="mt-1 text-lg font-semibold text-slate-950">Start the site</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / location</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {pendingAddressEdit ? siteAddress.trim() : siteInputs?.address || siteAddress.trim() || "No address applied"}
+                          </p>
                           <p className="mt-1 text-xs text-slate-500">
-                            Set the address or blank site, define size, draw the boundary, then lock it before generating systems.
+                            {pendingAddressEdit
+                              ? "Address edited but not applied to project evidence yet."
+                              : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                              ? `Geocode context only: ${Number(siteInputs.geocode.lat).toFixed(5)}, ${Number(siteInputs.geocode.lng).toFixed(5)}`
+                              : siteAddress.trim()
+                                ? "Address typed but not applied to project evidence yet."
+                                : "Start from address or blank site before locking the boundary."}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-slate-600">
+                            Source lookup: {onlineSourceLookupLabel}
                           </p>
                         </div>
-                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
-                          Engineer review required
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          pendingAddressEdit
+                            ? "bg-amber-50 text-amber-700"
+                            : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                            ? "bg-emerald-50 text-emerald-700"
+                            : siteAddress.trim()
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {pendingAddressEdit
+                            ? "Needs apply"
+                            : siteInputs?.geocode?.lat && siteInputs?.geocode?.lng
+                            ? "Applied"
+                            : siteAddress.trim()
+                              ? "Needs apply"
+                          : "Not set"}
                         </span>
                       </div>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveSidePanel("site_existing");
-                            siteAddressInputRef.current?.focus();
-                            setStatusMessage("Enter an address, choose a suggestion if one appears, then apply the address.");
-                          }}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
-                        >
-                          Start from address
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Geocode first, then add map or terrain
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleStartBlankSite}
-                          aria-label="Start a blank site and clear address map evidence"
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-white"
-                        >
-                          Start from blank site
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Begin with editable width and length
-                          </span>
-                        </button>
-                      </div>
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Address / location
-                          <input
-                            ref={siteAddressInputRef}
-                            value={siteAddress}
-                            onChange={(event) => {
-                              setSiteAddress(event.target.value);
-                              setSelectedAddressSuggestion(null);
-                            }}
-                            placeholder="123 Main St, City, State"
-                            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 focus:border-slate-400 focus:outline-none"
-                          />
-                        </label>
-                        {addressSuggestions.length && !siteScaleLocked ? (
-                          <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
-                            {addressSuggestions.map((suggestion) => (
-                              <button
-                                key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
-                                type="button"
-                                aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
-                                onClick={() => {
-                                  setSelectedAddressSuggestion(suggestion);
-                                  setSiteAddress(suggestion.display_name ?? siteAddress);
-                                  setAddressSuggestions([]);
-                                }}
-                                className={`w-full rounded-lg px-3 py-2 text-left text-[12px] transition ${
-                                  selectedAddressSuggestion?.display_name === suggestion.display_name
-                                    ? "bg-slate-900 text-white"
-                                    : "hover:bg-slate-50"
-                                }`}
-                              >
-                                <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
-                              </button>
-                            ))}
+                      {hasAppliedAddress ? (
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="auto-site-context-summary">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Found</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-700" data-testid="auto-site-context-found">
+                                {onlineFoundSources.length
+                                  ? onlineFoundSources.map((source) => `${source.label || source.key} (${source.candidate_count ?? 0})`).join(", ")
+                                  : "No configured/source-backed candidates found yet"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">Missing</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-700" data-testid="auto-site-context-missing">
+                                {onlineMissingSources.length
+                                  ? onlineMissingSources.map((source) => source.label || source.key || "source").join(", ")
+                                  : "No missing sources reported"}
+                              </p>
+                            </div>
                           </div>
-                        ) : null}
-                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          <button
-                            type="button"
-                            onClick={() => void saveSiteAddress()}
-                            disabled={!siteAddress.trim()}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Apply address
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => mapSnapshotInputRef.current?.click()}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                          >
-                            Upload map
-                          </button>
+                          <p className="mt-2 text-[11px] font-medium text-slate-500">
+                            All detected source items are review-required context only. This is not survey/control or construction-ready evidence.
+                          </p>
+                          {candidateReviewItems.filter((item) => item.candidate_type !== "standards").length ? (
+                            <div className="mt-3 space-y-2" data-testid="auto-site-context-candidates">
+                              {candidateReviewItems
+                                .filter((item) => item.candidate_type !== "standards")
+                                .slice(0, 6)
+                                .map((item) => (
+                                  <div key={item.candidate_id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-xs font-semibold text-slate-800">{item.label || item.candidate_type}</p>
+                                        <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
+                                          {item.provider || item.source || "source-labeled candidate"} · review required
+                                        </p>
+                                      </div>
+                                      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                                        {item.status || "pending"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          ) : null}
                         </div>
-                      </div>
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Site size</p>
-                        <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
-                          <label className="flex flex-col gap-1 font-semibold">
-                            Width / length (ft)
-                            <input
-                              type="number"
-                              value={lotWidth}
-                              disabled={siteScaleLocked}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setLotWidth(nextValue);
-                                setBuildingPlacements((prev) =>
-                                  prev.map((item) =>
-                                    item.type === "site"
-                                      ? { ...item, w: parsePositiveNumber(nextValue) ?? item.w }
-                                      : item,
-                                  ),
-                                );
-                              }}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 disabled:cursor-not-allowed disabled:opacity-60"
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1 font-semibold">
-                            Depth / length (ft)
-                            <input
-                              type="number"
-                              value={lotHeight}
-                              disabled={siteScaleLocked}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setLotHeight(nextValue);
-                                setBuildingPlacements((prev) =>
-                                  prev.map((item) =>
-                                    item.type === "site"
-                                      ? { ...item, d: parsePositiveNumber(nextValue) ?? item.d }
-                                      : item,
-                                  ),
-                                );
-                              }}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 disabled:cursor-not-allowed disabled:opacity-60"
-                            />
-                          </label>
-                        </div>
-                        <p className="mt-2 text-xs font-semibold text-slate-500">
-                          {siteSizeSet
-                            ? `${(((parsePositiveNumber(lotWidth) ?? 0) * (parsePositiveNumber(lotHeight) ?? 0)) / SQFT_PER_ACRE).toFixed(2)} acres`
-                            : "Set both dimensions, or ask chat to create an acreage-based blank site."}
-                        </p>
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          {[1, 5, 10].map((acres) => (
+                      ) : null}
+                      <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Type project address
+                        <input
+                          ref={siteAddressInputRef}
+                          aria-label="Type project address"
+                          value={siteAddress}
+                          onChange={(event) => {
+                            setSiteAddress(event.target.value);
+                            setSelectedAddressSuggestion(null);
+                          }}
+                          placeholder="123 Main St, City, State"
+                          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 focus:border-slate-400 focus:outline-none"
+                        />
+                      </label>
+                      {addressSuggestions.length && !siteScaleLocked ? (
+                        <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                          {addressSuggestions.map((suggestion) => (
                             <button
-                              key={acres}
+                              key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
                               type="button"
-                              disabled={siteScaleLocked}
+                              aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
                               onClick={() => {
-                                const side = Math.round(Math.sqrt(acres * SQFT_PER_ACRE));
-                                setLotWidth(String(side));
-                                setLotHeight(String(side));
-                                autoFitSite(side, side, "Blank Site Boundary", undefined, true, false);
-                                setSiteSelectionMode(true);
-                                setStatusMessage(`Set a blank ${acres}-acre site. Review dimensions, then draw or lock the boundary.`);
+                                setSelectedAddressSuggestion(suggestion);
+                                setSiteAddress(suggestion.display_name ?? siteAddress);
+                                setAddressSuggestions([]);
                               }}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              className={`w-full rounded-lg px-3 py-2 text-left text-[12px] transition ${
+                                selectedAddressSuggestion?.display_name === suggestion.display_name
+                                  ? "bg-slate-900 text-white"
+                                  : "hover:bg-slate-50"
+                              }`}
                             >
-                              {acres} acre{acres === 1 ? "" : "s"}
+                              <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
                             </button>
                           ))}
                         </div>
+                      ) : null}
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => void saveSiteAddress()}
+                          disabled={!siteAddress.trim() || onlineDiscoveryBusy}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {onlineDiscoveryBusy ? "Applying..." : "Apply address"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => mapSnapshotInputRef.current?.click()}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white"
+                        >
+                          Upload map
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void saveSiteAddress()}
+                          disabled={!hasAppliedAddress || onlineDiscoveryBusy}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2"
+                          data-testid="rerun-site-context"
+                        >
+                          Rerun site context
+                        </button>
                       </div>
-                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2" data-testid="setup-wizard-current-step">
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-site-box-controls">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site boundary / size box</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {siteScaleLocked ? "Locked project area" : "Move or resize before locking"}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            Draw the boundary, or type a size and move the box on the canvas. Only the locked area drives generation.
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                        }`}>
+                          {siteScaleLocked ? "Locked" : "Editable"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+                        <label className="flex flex-col gap-1 font-semibold">
+                          Width (ft)
+                          <input
+                            type="number"
+                            value={lotWidth}
+                            disabled={siteScaleLocked}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setLotWidth(nextValue);
+                              const width = parsePositiveNumber(nextValue);
+                              const height = parsePositiveNumber(lotHeight);
+                              if (width && height) {
+                                autoFitSite(width, height, "Draft Site Boundary", undefined, false, false);
+                              }
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 font-semibold">
+                          Depth (ft)
+                          <input
+                            type="number"
+                            value={lotHeight}
+                            disabled={siteScaleLocked}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setLotHeight(nextValue);
+                              const width = parsePositiveNumber(lotWidth);
+                              const height = parsePositiveNumber(nextValue);
+                              if (width && height) {
+                                autoFitSite(width, height, "Draft Site Boundary", undefined, false, false);
+                              }
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        </label>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        {siteSizeSet
+                          ? `${(((parsePositiveNumber(lotWidth) ?? 0) * (parsePositiveNumber(lotHeight) ?? 0)) / SQFT_PER_ACRE).toFixed(2)} acres`
+                          : "Type width/depth or pick a quick size."}
+                      </p>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {[1, 4.2, 10].map((acres) => (
+                          <button
+                            key={acres}
+                            type="button"
+                            disabled={siteScaleLocked}
+                            onClick={() => {
+                              const side = Math.round(Math.sqrt(acres * SQFT_PER_ACRE));
+                              setLotWidth(String(side));
+                              setLotHeight(String(side));
+                              autoFitSite(side, side, `${acres} Acre Draft Site`, undefined, true, false);
+                              setSiteSelectionMode(true);
+                              setShowSiteBounds(true);
+                              setPreviewInteraction("edit");
+                              setStatusMessage(`Created a movable ${acres}-acre site box. Move it on the canvas, then lock the site.`);
+                            }}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {acres} acre{acres === 1 ? "" : "s"}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={handleStartSiteBoundaryDraw}
+                          disabled={siteScaleLocked}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Draw boundary
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveWorkspaceMode("canvas");
+                            setActiveSidePanel(null);
+                            setRenderedSidePanel(null);
+                            setSidePanelVisible(false);
+                            setRightRailCollapsed(true);
+                            setSiteSelectionMode(true);
+                            setShowSiteBounds(true);
+                            setPreviewInteraction("edit");
+                            scrollToDrawingSurface();
+                            setStatusMessage(siteScaleLocked ? "Unlock the site before moving the site box." : "Move or resize the draft site box on the canvas, then lock the site.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                        >
+                          Move box
+                        </button>
+                        <button
+                          type="button"
+                          onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
+                          className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] ${
+                            siteScaleLocked
+                              ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                              : "border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
+                          }`}
+                        >
+                          {siteScaleLocked ? "Unlock site" : "Lock site"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="setup-detect-inside-site">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detect inside site</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">
+                            {siteScaleLocked ? "Ready to review source context" : "Lock the site first"}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            Civora only uses the locked project area for draft systems. Source items outside it stay context, not design scope.
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {siteScaleLocked ? "Inside only" : "Waiting"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          disabled={!siteScaleLocked}
+                          onClick={() => {
+                            setStatusMessage("Reviewing configured sources inside the locked site. Outside context remains ignored for generation.");
+                            void runSelectedDetections();
+                          }}
+                          className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          Detect buildings / roads / grading
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">
+                            Uses available sources inside site
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!siteScaleLocked}
+                          onClick={() => {
+                            handleOpenSidePanel("objects");
+                            setStatusMessage("Add or draw project objects inside the locked site.");
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Draw / add objects
+                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Building, parking, basin, roads, utilities
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="assumed-terrain-slope-control">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Assumed terrain slope</p>
+                          <p className="mt-1 text-sm font-semibold text-amber-950">
+                            {hasAssumedTerrainSlope
+                              ? `Assumed ${surveySlopeEstimate?.slope_percent?.toFixed(1)}% slope active`
+                              : "No assumed terrain slope active"}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-amber-800">
+                            Assumed/review-required only. Survey/control still needed separately.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                          Review required
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr,auto]">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                          Slope %
+                          <input
+                            type="number"
+                            min="0.1"
+                            step="0.1"
+                            value={assumedTerrainSlopePct}
+                            onChange={(event) => setAssumedTerrainSlopePct(event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleApplyAssumedTerrainSlope}
+                          className="rounded-lg border border-amber-900 bg-amber-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-amber-800 sm:self-end"
+                        >
+                          Use assumed slope
+                        </button>
+                      </div>
+                    </div>
+                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Advanced sources and imports
+                      </summary>
+                      <div className="mt-3 space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Source tools</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">Optional evidence for better review</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Upload/import sources here when you have them. They improve confidence, but they do not replace survey/control or engineer review.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleStartBlankSite}
+                        aria-label="Start a blank site from advanced source tools and clear address map evidence"
+                        className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
+                      >
+                        Clear address/source and start blank
+                      </button>
+                      <div className="hidden" data-testid="setup-wizard-current-step">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">Auto Setup Wizard</p>
                           <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${setupWizardStatusClass(setupWizardState.current_status)}`}>
@@ -18144,7 +18644,7 @@ function PerformanceAIDashboardView({
                           ))}
                         </div>
                       </div>
-                      <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3" open>
+                      <details className="hidden">
                         <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Wizard steps
                         </summary>
@@ -18410,7 +18910,11 @@ function PerformanceAIDashboardView({
                         <button
                           type="button"
                           onClick={siteScaleLocked ? handleUnlockSite : () => void handleApplySite()}
-                          aria-label={siteScaleLocked ? "Unlock site boundary for editing" : "Lock current site boundary for engineer review"}
+                          aria-label={
+                            siteScaleLocked
+                              ? "Unlock site boundary from detailed setup controls for editing"
+                              : "Lock current site boundary from detailed setup controls for engineer review"
+                          }
                           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
                         >
                           <span>{siteScaleLocked ? "Change site boundary" : "Lock site boundary"}</span>
@@ -18573,7 +19077,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "data" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.data} />
                     <details className="rounded-2xl border border-slate-200 bg-white p-4">
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Detailed source evidence and import tools
@@ -18621,7 +19124,7 @@ function PerformanceAIDashboardView({
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Source Confidence Map</p>
                             <p className="mt-1 text-xs font-medium text-slate-500">
-                              {sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length} visible source/object/layer entries. Use this to find needs-source, needs-review, and blocked evidence before relying on outputs.
+                              {sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length} visible source/object/layer entries. Review only.
                             </p>
                           </div>
                           <span className="shrink-0 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-red-700">
@@ -18653,17 +19156,11 @@ function PerformanceAIDashboardView({
                                   <p className="mt-1 line-clamp-2 text-xs text-slate-500">
                                     {entry.why_low_confidence || entry.next_action}
                                   </p>
-                                ) : (
-                                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-                                    Verify source type, source date, coordinate context, and reviewer acceptance before reliance.
-                                  </p>
-                                )}
+                                ) : null}
                               </div>
                             ))
                           ) : (
-                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500">
-                              No source confidence entries are available yet. Add an address, upload survey/control or PDFs, import accepted source files, or draw review candidates before generating systems.
-                            </div>
+                            <p className="text-xs text-slate-500">No source confidence entries are available yet.</p>
                           )}
                         </div>
                       </div>
@@ -18766,8 +19263,21 @@ function PerformanceAIDashboardView({
                                 )}
                                 {planPdfElements
                                   .filter((element) => element.page_index === 0 && element.bbox && planPdfFirstPage?.width && planPdfFirstPage?.height)
+                                  .sort((left, right) => {
+                                    const leftBox = left.bbox;
+                                    const rightBox = right.bbox;
+                                    const leftArea = leftBox
+                                      ? Math.max(1, Number(leftBox.x1 ?? 0) - Number(leftBox.x0 ?? 0)) *
+                                        Math.max(1, Number(leftBox.y1 ?? 0) - Number(leftBox.y0 ?? 0))
+                                      : 0;
+                                    const rightArea = rightBox
+                                      ? Math.max(1, Number(rightBox.x1 ?? 0) - Number(rightBox.x0 ?? 0)) *
+                                        Math.max(1, Number(rightBox.y1 ?? 0) - Number(rightBox.y0 ?? 0))
+                                      : 0;
+                                    return rightArea - leftArea;
+                                  })
                                   .slice(0, 40)
-                                  .map((element) => {
+                                  .map((element, index) => {
                                     const bbox = element.bbox;
                                     const width = Number(planPdfFirstPage?.width ?? 1);
                                     const height = Number(planPdfFirstPage?.height ?? 1);
@@ -18792,6 +19302,7 @@ function PerformanceAIDashboardView({
                                           top: `${Math.max(0, Math.min(100, 100 - (y1 / height) * 100))}%`,
                                           width: `${Math.max(2, Math.min(80, ((x1 - x0) / width) * 100))}%`,
                                           height: `${Math.max(2, Math.min(20, ((y1 - y0) / height) * 100))}%`,
+                                          zIndex: 20 + index,
                                         }}
                                       >
                                         <span className="sr-only">{element.text}</span>
@@ -18919,12 +19430,13 @@ function PerformanceAIDashboardView({
                                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Extracted Elements</p>
                                   <span className="text-[11px] font-semibold text-slate-400">{planPdfElements.length}</span>
                                 </div>
-                                <div className="mt-2 max-h-48 space-y-1 overflow-auto pr-1">
+                                <div className="mt-2 max-h-48 space-y-1 overflow-auto pr-1" data-testid="plan-pdf-extracted-elements">
                                   {planPdfElements.length ? (
                                     planPdfElements.slice(0, 80).map((element) => (
                                       <button
                                         key={element.element_id}
                                         type="button"
+                                        aria-label={`Select extracted PDF list element ${element.text || element.type || "PDF element"}`}
                                         onClick={() => setSelectedPlanPdfElementId(element.element_id)}
                                         className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
                                           selectedPlanPdfElement?.element_id === element.element_id
@@ -19547,7 +20059,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "model" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.design} />
                     {!siteScaleLocked ? (
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Setup required</p>
@@ -19823,31 +20334,72 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "generate" ? (
                   <div className="space-y-4">
-                    <WorkflowFocusPanel {...workflowFocusPanels.design} nextActionLabel="Run full system" onNextAction={() => handleGenerateSystem("full")} />
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Generate systems
                       </p>
                       <p className="mt-1 text-sm text-slate-600">
-                        Run one discipline or regenerate the whole coordinated model.
+                        Start a review draft from the locked site. Missing proof stays visible for review and package readiness.
                       </p>
+                      <div className={`mt-3 rounded-xl border p-3 ${
+                        fullGenerateHardBlockers.length
+                          ? "border-red-200 bg-red-50"
+                          : fullGenerateProofGaps.length
+                            ? "border-amber-200 bg-amber-50"
+                            : "border-emerald-200 bg-emerald-50"
+                      }`} data-testid="generate-preflight-blockers">
+                        <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                          fullGenerateHardBlockers.length ? "text-red-600" : fullGenerateProofGaps.length ? "text-amber-700" : "text-emerald-700"
+                        }`}>
+                          {fullGenerateHardBlockers.length ? "Site needed" : "Ready to draft"}
+                        </p>
+                        {fullGenerateHardBlockers.length ? (
+                          <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs">
+                            <span className="font-semibold text-red-800">{fullGenerateHardBlockers[0]?.label || "Lock the site before drafting."}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSidePanel(fullGenerateHardBlockers[0]?.action ?? "site_existing")}
+                              className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-red-700 hover:bg-red-100"
+                            >
+                              Open setup
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-white/70 bg-white px-3 py-2 text-xs">
+                            <span className={`font-semibold ${fullGenerateProofGaps.length ? "text-amber-800" : "text-emerald-800"}`}>
+                              Run a review draft now. {fullGenerateProofGaps.length ? "Extra proof can be added later." : "Setup looks ready."}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSidePanel("chat")}
+                              className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+                            >
+                              Ask why
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
-                          const blocked = row.blockers.length > 0;
+                          const hardBlockers = row.blockers.filter(isHardGenerateBlocker);
+                          const proofGaps = row.blockers.filter((item) => !isHardGenerateBlocker(item));
+                          const blocked = hardBlockers.length > 0;
                           const statusLabel = blocked
-                            ? row.blockers[0]
+                            ? hardBlockers[0]
                             : row.status === "fresh"
                               ? "Run complete / current"
                               : busy || visibleActiveJob
                                 ? "Queue or wait for current run"
-                                : "Ready to run";
+                                : proofGaps.length
+                                  ? `Draft can run; proof gap: ${proofGaps[0]}`
+                                  : "Ready to run";
                           return (
                             <button
                               key={row.key}
                               type="button"
                               data-testid={`generate-${row.key}`}
                               onClick={() => blocked ? handleOpenSidePanel(row.panel) : handleGenerateSystem(row.runTarget)}
-                              title={blocked ? `Blocked: ${row.blockers.join("; ")}` : `Run ${row.label}`}
+                              title={blocked ? `Blocked: ${hardBlockers.join("; ")}` : proofGaps.length ? `Run ${row.label}; proof gaps remain: ${proofGaps.join("; ")}` : `Run ${row.label}`}
                               className={`rounded-xl border px-3 py-3 text-left transition ${
                                 blocked
                                   ? "border-red-100 bg-red-50 hover:border-red-200"
@@ -19860,9 +20412,9 @@ function PerformanceAIDashboardView({
                                 {row.label}
                               </span>
                               <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                blocked ? "text-red-500" : "text-slate-400"
+                                blocked ? "text-red-500" : proofGaps.length ? "text-amber-600" : "text-slate-400"
                               }`}>
-                                {blocked ? "Blocked" : row.status.replace("_", " ")}
+                                {blocked ? "Blocked" : proofGaps.length ? "Proof gaps" : row.status.replace("_", " ")}
                               </span>
                               <span className="mt-2 block text-[11px] leading-4 text-slate-500">
                                 {statusLabel}
@@ -19872,14 +20424,31 @@ function PerformanceAIDashboardView({
                         })}
                         <button
                           type="button"
-                          onClick={() => handleGenerateSystem("full")}
-                          className="col-span-2 rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-white transition hover:bg-slate-800"
+                          onClick={() => {
+                            if (fullGenerateHardBlockers.length) {
+                              setStatusMessage(`Draft generation needs site setup: ${fullGenerateHardBlockers[0]?.label}.`);
+                              setRightRailCollapsed(false);
+                              handleOpenSidePanel("generate");
+                              appendChatMessage(
+                                "assistant",
+                                `Draft generation needs the site first:\n${fullGenerateHardBlockers.map((item) => `- ${item.label}`).join("\n")}`,
+                                "status",
+                              );
+                              return;
+                            }
+                            void handleGenerateSystem("full");
+                          }}
+                          className={`col-span-2 rounded-xl border px-3 py-3 text-left transition ${
+                            fullGenerateHardBlockers.length
+                              ? "border-red-200 bg-red-50 text-red-800 hover:bg-red-100"
+                              : "border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
+                          }`}
                         >
                           <span className="block text-xs font-semibold uppercase tracking-[0.14em]">
-                            Full System Run
+                            {fullGenerateHardBlockers.length ? "Lock Site Before Draft" : "Run Draft Generation"}
                           </span>
-                          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/65">
-                            Roads, grading, drainage, utilities
+                          <span className={`mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] ${fullGenerateHardBlockers.length ? "text-red-600" : "text-white/65"}`}>
+                            {fullGenerateHardBlockers.length ? fullGenerateHardBlockers[0]?.label || "Site setup required" : "Runs what it can; proof gaps stay visible"}
                           </span>
                         </button>
                       </div>
@@ -21015,6 +21584,23 @@ function PerformanceAIDashboardView({
                               <p className="mt-1 font-semibold text-slate-900">{selectedBuilding.placed ? "Placed" : "Unplaced"}</p>
                             </div>
                           </div>
+                          <p className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                            selectedBuilding.type === "site"
+                              ? "border-slate-200 bg-slate-50 text-slate-600"
+                              : selectedBuilding.locked
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : selectedBuilding.placed
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "border-amber-200 bg-amber-50 text-amber-800"
+                          }`}>
+                            {selectedBuilding.type === "site"
+                              ? "Move/edit blocked: site boundary is controlled from Setup."
+                              : selectedBuilding.locked
+                                ? "Move/edit blocked: object is locked. Unlock it to edit."
+                                : selectedBuilding.placed
+                                  ? "Move/edit controls available for this draft object."
+                                  : "Move/edit blocked: object needs placement first."}
+                          </p>
                           <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                             {selectedBuilding.locked ? "Unlock object" : "Lock object"}
                           </button>
@@ -21167,7 +21753,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "analysis" ? (
                   <div className="space-y-3">
-                    <WorkflowFocusPanel {...workflowFocusPanels.analyze} />
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         ["Model issues", issues.length],
@@ -21826,6 +22411,105 @@ function PerformanceAIDashboardView({
                       </div>
                     </div>
 
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="guided-scenario-cards">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Guided scenario cards</p>
+                          <p className="mt-1 text-sm text-slate-600">Cards create review-required draft objects. If the site is locked, Civora places a first-pass draft; otherwise they land in Needs placement.</p>
+                        </div>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Design objects: {placedObjects.length} placed / {pendingPlacementObjects.length} pending
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Site boundary is counted separately: {buildingPlacements.some((item) => item.type === "site") ? "1 configured boundary" : "no configured boundary"}.
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-amber-700" data-testid="guided-assumed-slope-status">
+                        {hasAssumedTerrainSlope
+                          ? `Assumed terrain slope active: ${surveySlopeEstimate?.slope_percent?.toFixed(1)}% (review-required; survey/control still needed).`
+                          : "Assumed terrain slope: not active."}
+                      </p>
+                      <div className="mt-3 grid gap-2">
+                        {[
+                          ["office_sf", "Office building SF", "number", "office building"],
+                          ["parking_spaces", "Parking spaces", "number", "parking layout"],
+                          ["detention_basin_sf", "Detention basin SF", "number", "basin"],
+                          ["public_water", "Public water", "text", "utility connection"],
+                          ["public_sanitary", "Public sanitary", "text", "utility connection"],
+                          ["storm_sewer", "Storm sewer", "text", "utility connection"],
+                          ["driveway", "Driveway", "text", "access"],
+                          ["sidewalks", "Sidewalks", "text", "pedestrian route"],
+                          ["ada_route", "ADA route", "text", "accessible route"],
+                          ["assumed_terrain_slope", "Assumed terrain slope %", "number", "review-required terrain note"],
+                        ].map(([key, label, inputType, hint]) => (
+                          <div key={key} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr,1.1fr,auto] sm:items-end">
+                            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              {label}
+                              <input
+                                type={inputType}
+                                value={guidedObjectDrafts[key] ?? ""}
+                                onChange={(event) =>
+                                  setGuidedObjectDrafts((prev) => ({
+                                    ...prev,
+                                    [key]: event.target.value,
+                                  }))
+                                }
+                                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                            <p className="text-xs font-medium text-slate-500">
+                              Creates {hint}; {siteScaleLocked ? "placed as a draft for review" : "pending with one Place button"}.
+                            </p>
+                            <button
+                              type="button"
+                              aria-label={`Add ${label}`}
+                              onClick={() => handleGuidedObjectCard(key)}
+                              className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="needs-placement-tray">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Needs placement</p>
+                          <p className="mt-1 text-sm font-semibold text-amber-950">
+                            {pendingPlacementObjects.length
+                              ? `${pendingPlacementObjects.length} draft object${pendingPlacementObjects.length === 1 ? "" : "s"} must be placed before Generate can rely on them.`
+                              : "No pending placement objects."}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                          Pending {pendingPlacementObjects.length}
+                        </span>
+                      </div>
+                      {pendingPlacementObjects.length ? (
+                        <div className="mt-3 space-y-2">
+                          {pendingPlacementObjects.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm">
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-slate-900">{item.label}</p>
+                                <p className="text-xs font-medium text-slate-500">
+                                  {SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object"} · {item.w} ft x {item.d} ft
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectPlacementTarget(item.id)}
+                                className="shrink-0 rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
+                              >
+                                Place
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Shape tools</p>
                       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -21916,7 +22600,7 @@ function PerformanceAIDashboardView({
                           Canvas Objects
                         </p>
                         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                          {buildingPlacements.length}
+                          {placedObjects.length} placed / {pendingPlacementObjects.length} pending
                         </span>
                       </div>
                       <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
@@ -22038,13 +22722,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" || sidePanelForRender === "deliverables" ? (
                   <div className="space-y-3">
-                    {sidePanelForRender === "deliverables" ? (
-                      <WorkflowFocusPanel {...workflowFocusPanels.deliver} />
-                    ) : sidePanelForRender === "quantities" ? (
-                      <WorkflowFocusPanel {...workflowFocusPanels.analyze} nextActionLabel="Review quantities" onNextAction={() => handleOpenSidePanel("quantities")} />
-                    ) : (
-                      <WorkflowFocusPanel {...workflowFocusPanels.review} />
-                    )}
                     {(sidePanelForRender === "reports" || sidePanelForRender === "deliverables") ? (
                       <details className="rounded-2xl border border-slate-200 bg-white p-4" open={sidePanelForRender === "deliverables"}>
                         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -22644,6 +23321,33 @@ function PerformanceAIDashboardView({
                     ) : null}
                     {sidePanelForRender === "deliverables" ? (
                       <>
+                        {!backendResult || fullGeneratePreflightBlockers.length ? (
+                          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="deliverables-blocked-explanation">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Review package</p>
+                            <p className="mt-1 text-sm font-semibold text-amber-950">
+                              Not ready to export yet.
+                            </p>
+                            <p className="mt-1 text-xs font-medium text-amber-800">
+                              Run a draft first, or ask Civora what is missing. Field use stays outside Civora.
+                            </p>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSidePanel("generate")}
+                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
+                              >
+                                Generate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSidePanel("chat")}
+                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
+                              >
+                                Ask why
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                         <PlanSheetEditor
                           sheetSet={{ ...planSheetSet, blockers: getPlanSheetBlockers() }}
                           onUpdateTitleBlock={handlePlanSheetTitleBlockUpdate}
@@ -22712,53 +23416,13 @@ function PerformanceAIDashboardView({
                               </div>
                             ))}
                           </div>
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Format support status</p>
-                            <div className="mt-2 space-y-2">
-                              {deliverableSupportRows.map(([label, item]) => (
-                                <div key={label} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                                  <span className="font-semibold text-slate-700">{label}</span>
-                                  <span className={`max-w-[180px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                    item.status === "block" ? "text-red-600" : "text-amber-600"
-                                  }`}>
-                                    {item.value}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Package support status</p>
-                            <div className="mt-2 space-y-2">
-                              {capabilityAuditRows
-                                .filter((item) =>
-                                  [
-                                    "production_evidence",
-                                    "cost_book_pricing",
-                                    "export_package_report",
-                                    "review_document_support_package",
-                                    "engineer_review_package",
-                                    "reactive_rerun_evidence",
-                                    "cad_geometry_handoff",
-                                  ].includes(item.key),
-                                )
-                                .map((item) => (
-                                  <div key={item.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <span className="font-semibold text-slate-700">{item.label}</span>
-                                      <span className={`max-w-[170px] text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                        item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
-                                      }`}>
-                                        {item.value}
-                                      </span>
-                                    </div>
-                                    {item.status === "block" || item.status === "idle" ? (
-                                      <p className="mt-1 text-xs text-slate-500">{item.exactFix}</p>
-                                    ) : null}
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSidePanel("chat")}
+                            className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-white"
+                          >
+                            Ask Civora for package details
+                          </button>
                           <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                             Civora provides review evidence only. Field use and professional responsibility remain outside Civora.
                           </p>
@@ -22892,50 +23556,307 @@ function PerformanceAIDashboardView({
               </div>
             </aside>
           ) : null}
-          <main data-testid="workspace-canvas-shell" className="order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
-	            <div className="flex w-full max-w-full flex-1 flex-col gap-3 px-2 pb-36 pt-3 sm:gap-4 sm:px-4 sm:pb-40 md:px-5 lg:pb-4 lg:pt-4">
-	              <div className="flex w-full flex-col">
-	                <div className="mx-auto mb-3 w-full max-w-[1600px] rounded-xl border border-slate-200 bg-white/95 px-2 py-2 shadow-sm">
-	                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-	                    <div className="min-w-0 px-1">
-	                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Civora Workspace</p>
-	                      <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-	                        {primaryWorkflowItems.find((item) => item.key === activePrimaryWorkflowKey)?.caption || "Review-first civil design workspace"}
-	                      </p>
+          {rightRailCollapsed ? (
+            <button
+              type="button"
+              onClick={() => {
+                setRightRailCollapsed(false);
+                setActiveSidePanel((panel) => panel ?? "dashboard");
+              }}
+              className="fixed right-3 top-24 z-[60] rounded-l-xl border border-r-0 border-slate-200 bg-white/95 px-3 py-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.6)] backdrop-blur transition hover:bg-slate-50 lg:top-28"
+              aria-label="Reopen reviewer drawer"
+              data-testid="reopen-reviewer-drawer"
+            >
+              Review
+            </button>
+          ) : null}
+          <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
+	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
+	              <div className="contents">
+	                <div className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200 bg-white/92 px-3 py-3 shadow-[0_22px_80px_-44px_rgba(15,23,42,0.7)] backdrop-blur-xl lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}>
+	                  <div className="flex flex-col gap-3">
+	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+	                      <div className="min-w-0">
+	                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Civora Workspace</p>
+	                        <p className="mt-1 truncate text-base font-semibold text-slate-950">
+	                          {siteName || currentProject?.name || "Untitled Project"}
+	                        </p>
+	                      </div>
+	                      <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
+	                        {primaryWorkflowItems.map((item) => {
+	                          const isActive = activePrimaryWorkflowKey === item.key;
+	                          return (
+	                            <button
+	                              key={`top-${item.key}`}
+	                              type="button"
+	                              aria-label={item.key === "design" ? "Generate" : undefined}
+	                              onClick={() => handleOpenPanelFromDrawer(item.panel)}
+	                              className={`min-h-9 min-w-[78px] rounded-md px-2.5 py-1.5 text-center text-xs font-semibold transition ${
+	                                isActive
+	                                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
+	                                  : "text-slate-600 hover:bg-white hover:text-slate-950"
+	                              }`}
+	                            >
+	                              {item.label}
+	                            </button>
+	                          );
+	                        })}
+	                      </div>
 	                    </div>
-	                    <div className="grid grid-cols-2 gap-1 min-[420px]:grid-cols-3 sm:grid-cols-6 lg:min-w-[680px]">
-	                      {primaryWorkflowItems.map((item) => {
-	                        const isActive = activePrimaryWorkflowKey === item.key;
-	                        return (
-	                          <button
-	                            key={`top-${item.key}`}
-	                            type="button"
-	                            aria-label={item.key === "design" ? "Generate" : undefined}
-	                            onClick={() => handleOpenPanelFromDrawer(item.panel)}
-	                            className={`min-h-12 rounded-lg border px-2 py-2 text-left transition sm:min-h-14 ${
-	                              isActive
-	                                ? "border-slate-950 bg-slate-950 text-white"
-	                                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white hover:text-slate-950"
-	                            }`}
-	                          >
-	                            <span className="block truncate text-xs font-semibold">{item.label}</span>
-	                            <span className={`mt-0.5 block truncate text-[10px] font-semibold uppercase tracking-[0.1em] ${
-	                              isActive ? "text-white/55" : "text-slate-400"
-	                            }`}>
-	                              {item.metric}
-	                            </span>
-	                          </button>
-	                        );
-	                      })}
+	                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+	                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+	                        {contextualToolbarTools.map((tool) => {
+	                          const Icon = tool.icon;
+	                          return (
+	                            <button
+	                              key={tool.label}
+	                              type="button"
+	                              onClick={tool.action}
+	                              title={tool.label}
+	                              data-testid={tool.testId}
+	                              className={`flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[13px] font-semibold transition ${
+	                                tool.active
+	                                  ? "border-blue-200 bg-blue-50 text-blue-700"
+	                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+	                              }`}
+	                            >
+	                              <Icon className="h-4 w-4" />
+	                              <span>{tool.label}</span>
+	                            </button>
+	                          );
+	                        })}
+	                      </div>
+	                      <div className="flex shrink-0 items-center gap-2">
+	                        <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+	                          {(["2d", "3d"] as const).map((mode) => (
+	                            <button
+	                              key={mode}
+	                              type="button"
+	                              data-testid={mode === "2d" ? "preview-mode-2d" : "preview-mode-3d"}
+	                              title={mode === "2d" ? "Show 2D plan preview" : "Show 3D model preview"}
+	                              onClick={() => {
+	                                setPreviewMode(mode);
+	                                if (mode === "3d") {
+	                                  setRightRailCollapsed(true);
+	                                  setBottomPanelCollapsed(true);
+	                                }
+	                              }}
+	                              className={`h-8 rounded-md px-3 text-xs font-semibold uppercase tracking-[0.08em] ${
+	                                previewMode === mode ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
+	                              }`}
+	                            >
+	                              {mode}
+	                            </button>
+	                          ))}
+	                        </div>
+	                        <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+	                          {(["standard", "high"] as const).map((quality) => (
+	                            <button
+	                              key={quality}
+	                              type="button"
+	                              data-testid={quality === "standard" ? "preview-quality-standard" : "preview-quality-high"}
+	                              title={quality === "standard" ? "Use faster standard rendering" : "Use richer high quality rendering"}
+	                              onClick={() => setPreviewQuality(quality)}
+	                              className={`h-8 rounded-md px-3 text-xs font-semibold capitalize ${
+	                                previewQuality === quality ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
+	                              }`}
+	                            >
+	                              {quality}
+	                            </button>
+	                          ))}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => setRightRailCollapsed((value) => !value)}
+	                          title={rightRailCollapsed ? "Show reviewer drawer" : "Hide reviewer drawer"}
+	                          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-50"
+	                        >
+	                          {rightRailCollapsed ? "Show review" : "Hide review"}
+	                        </button>
+	                      </div>
 	                    </div>
 	                  </div>
 	                </div>
+	                {layerManagerOpen ? (
+	                  <div
+	                    data-testid="floating-layer-manager"
+	                    className={`absolute right-3 top-[9.75rem] z-40 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:top-[9rem] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
+	                  >
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div>
+	                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Layers</p>
+	                        <p className="mt-1 text-xs font-semibold text-slate-700">{visibleLayerCount}/{Object.keys(previewLayers).length} visible</p>
+	                      </div>
+	                      <button
+	                        type="button"
+	                        onClick={() => setLayerManagerOpen(false)}
+	                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
+	                      >
+	                        Close
+	                      </button>
+	                    </div>
+	                    <div className="mt-3 grid grid-cols-2 gap-2">
+	                      {[
+	                        ["Show all", { buildings: true, roads: true, grading: true, drainage: true, utilities: true, structures: true, lots: true }],
+	                        ["Proposed", { buildings: true, roads: true, grading: false, drainage: true, utilities: true, structures: true, lots: false }],
+	                        ["Utilities", { buildings: false, roads: true, grading: false, drainage: true, utilities: true, structures: true, lots: false }],
+	                        ["Clean", { buildings: true, roads: true, grading: false, drainage: false, utilities: false, structures: false, lots: false }],
+	                      ].map(([label, preset]) => (
+	                        <button
+	                          key={String(label)}
+	                          type="button"
+	                          onClick={() => setPreviewLayers(preset as typeof previewLayers)}
+	                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+	                        >
+	                          {String(label)}
+	                        </button>
+	                      ))}
+	                    </div>
+	                    <div className="mt-3 space-y-1.5">
+	                      {Object.entries(previewLayers).map(([key, value]) => (
+	                        <label
+	                          key={`floating-layer-${key}`}
+	                          className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold capitalize text-slate-700"
+	                        >
+	                          <span>{key.replace("_", " ")}</span>
+	                          <span className="flex items-center gap-2">
+	                            <span className={`h-2 w-2 rounded-full ${value ? "bg-emerald-500" : "bg-slate-300"}`} />
+	                            <input
+	                              type="checkbox"
+	                              checked={Boolean(value)}
+	                              onChange={(event) => setPreviewLayers((prev) => ({ ...prev, [key]: event.target.checked }))}
+	                              className="h-4 w-4 accent-slate-950"
+	                            />
+	                          </span>
+	                        </label>
+	                      ))}
+	                    </div>
+	                    <button
+	                      type="button"
+	                      onClick={() => handleOpenPanelFromDrawer("layers")}
+	                      className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                    >
+	                      Open full layer details
+	                    </button>
+	                  </div>
+	                ) : null}
+	                {!selectedBuilding && !layerManagerOpen && activePrimaryWorkflowKey !== "draw" ? (
+	                  <div className="absolute left-3 top-[9.75rem] z-40 hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/90 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]">
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div className="min-w-0">
+	                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+	                          {activePrimaryWorkflowKey}
+	                        </p>
+	                        <p className="mt-1 text-sm font-semibold text-slate-950">
+	                          {activeModeStarterCard.title}
+	                        </p>
+	                        <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500">
+	                          {activeModeStarterCard.detail}
+	                        </p>
+	                      </div>
+	                      <button
+	                        type="button"
+	                        onClick={() => handleOpenPanelFromDrawer(activeModeStarterCard.panel)}
+	                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                      >
+	                        {activeModeStarterCard.action}
+	                      </button>
+	                    </div>
+	                  </div>
+	                ) : null}
+	                {selectedBuilding ? (
+	                  <div
+	                    data-testid="floating-object-inspector"
+	                    className="absolute left-3 top-[9.75rem] z-40 hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
+	                  >
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div className="min-w-0">
+	                        <p className="truncate text-sm font-semibold text-slate-950">{selectedBuilding.label}</p>
+	                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+	                          {selectedBuilding.type} · {selectedBuilding.placed ? "placed" : "not placed"}
+	                        </p>
+	                      </div>
+	                      <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+	                        selectedObjectConfidence?.confidence_band === "higher"
+	                          ? "bg-emerald-50 text-emerald-700"
+	                          : selectedObjectConfidence?.confidence_band === "review"
+	                            ? "bg-amber-50 text-amber-700"
+	                            : "bg-slate-100 text-slate-600"
+	                      }`}>
+	                        {selectedObjectConfidence?.visible_badge || selectedBuilding.source || "draft"}
+	                      </span>
+	                    </div>
+	                    <div className="mt-3 grid grid-cols-3 gap-2">
+	                      {[
+	                        ["W", `${Math.round(selectedBuilding.w)} ft`],
+	                        ["D", `${Math.round(selectedBuilding.d)} ft`],
+	                        ["Rot", `${Math.round(selectedBuilding.rotation ?? 0)}°`],
+	                      ].map(([label, value]) => (
+	                        <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+	                          <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+	                          <p className="mt-0.5 font-semibold text-slate-800">{value}</p>
+	                        </div>
+	                      ))}
+	                    </div>
+	                    {selectedObjectConfidence?.why_low_confidence || selectedObjectConfidence?.next_action ? (
+	                      <p className="mt-2 line-clamp-2 rounded-lg border border-amber-100 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-700">
+	                        {selectedObjectConfidence.why_low_confidence || selectedObjectConfidence.next_action}
+	                      </p>
+	                    ) : null}
+	                    <div className="mt-3 grid grid-cols-3 gap-2">
+	                      <button
+	                        type="button"
+	                        onClick={() => {
+	                          if (selectedBuilding.locked || selectedBuilding.capabilities?.movable === false) {
+	                            const message = `Move/edit blocked: ${selectedBuilding.label} is locked or not movable.`;
+	                            setPlacementModeEnabled(false);
+	                            setMoveEditFeedback(message);
+	                            setStatusMessage(message);
+	                            appendChatMessage("assistant", message, "status");
+	                            return;
+	                          }
+	                          setPlacementModeEnabled(true);
+	                          setPreviewInteraction("edit");
+	                          const message = `Move/edit mode active for ${selectedBuilding.label}.`;
+	                          setMoveEditFeedback(message);
+	                          setStatusMessage(`${message} Drag it on the canvas or use object details.`);
+	                        }}
+	                        data-testid="selected-object-edit-button"
+	                        className="rounded-lg border border-slate-950 bg-slate-950 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white"
+	                      >
+	                        Edit
+	                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() => {
+	                          setFocusObjectId(selectedBuilding.id);
+	                          setActiveSidePanel(null);
+	                        }}
+	                        className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                      >
+	                        Focus
+	                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() => handleOpenPanelFromDrawer("details")}
+	                        className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+	                      >
+	                        Details
+	                      </button>
+	                    </div>
+	                    {moveEditFeedback ? (
+	                      <p data-testid="selected-object-move-edit-feedback" className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-700">
+	                        {moveEditFeedback}
+	                      </p>
+	                    ) : null}
+	                  </div>
+	                ) : null}
 	                <div
 	                  data-testid="workspace-canvas-frame"
-	                  className="civora-canvas mx-auto w-full max-w-full overflow-hidden p-1"
+	                  className="absolute inset-0 z-0 h-full w-full overflow-hidden"
                   style={{
                     width: "100%",
-                    height: `clamp(420px, calc(100svh - 18rem), ${previewHeightPx}px)`,
+                    height: "100%",
                   }}
                 >
                   <div className="h-full w-full">
@@ -23080,7 +24001,7 @@ function PerformanceAIDashboardView({
               </div>
               <div
                 data-testid="bottom-review-panel"
-                className="mx-auto w-full max-w-[1600px] overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm"
+                className={`fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] left-3 right-3 z-40 overflow-hidden rounded-xl border border-slate-200 bg-white/94 shadow-[0_24px_80px_-46px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:bottom-4 lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
               >
                 <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2">
                   <div className="min-w-0">
@@ -23093,21 +24014,45 @@ function PerformanceAIDashboardView({
                         : "No project evidence yet. Start setup to create traceable state."}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setBottomPanelCollapsed((value) => !value)}
-                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                  >
-                    {bottomPanelCollapsed ? "Open" : "Collapse"}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {!bottomPanelCollapsed ? (
+                      <div className="hidden rounded-lg border border-slate-200 bg-slate-50 p-1 sm:flex">
+                        {(["compact", "standard", "tall"] as const).map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => setBottomPanelSize(size)}
+                            className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                              bottomPanelSize === size ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setBottomPanelCollapsed((value) => !value)}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                    >
+                      {bottomPanelCollapsed ? "Open" : "Collapse"}
+                    </button>
+                  </div>
                 </div>
                 {bottomPanelContentRendered ? (
                   <div
-                    className="civora-motion-bottom-panel grid max-h-[42svh] gap-3 overflow-y-auto px-3 py-3 lg:max-h-none lg:grid-cols-[auto,1fr] lg:overflow-visible"
+                    className={`civora-motion-bottom-panel grid gap-3 overflow-y-auto px-3 py-3 ${
+                      bottomPanelSize === "compact"
+                        ? "max-h-[20svh]"
+                        : bottomPanelSize === "tall"
+                          ? "max-h-[54svh]"
+                          : "max-h-[36svh]"
+                    }`}
                     data-motion-state={bottomPanelContentVisible ? "open" : "closed"}
                     aria-hidden={bottomPanelCollapsed}
                   >
-                    <div className="grid min-w-0 grid-cols-2 gap-1 sm:flex sm:overflow-x-auto lg:flex-col lg:overflow-visible">
+                    <div className="flex min-w-0 flex-wrap gap-1 overflow-x-auto">
                       {bottomPanelTabs.map((tab) => (
                         <button
                           key={tab.key}
@@ -23116,7 +24061,7 @@ function PerformanceAIDashboardView({
                             setActiveBottomPanelTab(tab.key);
                             handleOpenSidePanel(tab.panel);
                           }}
-                          className={`min-w-0 whitespace-normal rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition sm:whitespace-nowrap ${
+                          className={`min-w-0 whitespace-nowrap rounded-lg border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
                             activeBottomPanelTab === tab.key
                               ? "border-slate-950 bg-slate-950 text-white"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -23126,6 +24071,58 @@ function PerformanceAIDashboardView({
                         </button>
                       ))}
                     </div>
+                    {bottomPanelSize !== "tall" ? (
+                      <div className="grid min-w-0 gap-2 rounded-lg border border-slate-200 bg-white p-2 sm:grid-cols-2 xl:grid-cols-3">
+                        {activeBottomReviewRows.slice(0, bottomPanelSize === "compact" ? 3 : 6).map((row) => {
+                          const rowIssue =
+                            typeof row.issueIndex === "number" ? issues[row.issueIndex] : null;
+                          const rowApplyLabel = rowIssue ? drainageIssueApplyLabel(rowIssue) : null;
+                          const rowCanApply = rowIssue ? canApplyDrainageIssue(rowIssue) : false;
+                          return (
+                          <div
+                            key={`${activeBottomPanelTab}-card-${row.id}`}
+                            onClick={() => handleOpenSidePanel(row.panel)}
+                            className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:bg-white"
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                handleOpenSidePanel(row.panel);
+                              }
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="min-w-0 truncate text-xs font-semibold text-slate-900">{row.name}</p>
+                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] ${reviewTonePillClass(row.tone)}`}>
+                                {row.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 line-clamp-1 text-[11px] font-medium text-slate-500">{row.source}</p>
+                            {rowApplyLabel && rowIssue ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleApplyDrainageIssue(rowIssue);
+                                }}
+                                disabled={!rowCanApply}
+                                className={`mt-2 rounded-lg border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  rowCanApply
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    : "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+                                }`}
+                              >
+                                {rowApplyLabel}
+                              </button>
+                            ) : (
+                              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{row.action}</p>
+                            )}
+                          </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
                     <div className="min-w-0 overflow-x-auto rounded-lg border border-slate-200 bg-white">
                       <table className="w-full min-w-0 border-collapse text-left text-xs md:min-w-[760px]">
                         <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.12em] text-slate-500">
@@ -23138,7 +24135,12 @@ function PerformanceAIDashboardView({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
-                          {activeBottomReviewRows.map((row) => (
+                          {activeBottomReviewRows.map((row) => {
+                            const rowIssue =
+                              typeof row.issueIndex === "number" ? issues[row.issueIndex] : null;
+                            const rowApplyLabel = rowIssue ? drainageIssueApplyLabel(rowIssue) : null;
+                            const rowCanApply = rowIssue ? canApplyDrainageIssue(rowIssue) : false;
+                            return (
                             <tr key={`${activeBottomPanelTab}-${row.id}`} className="align-top">
                               <td className="px-3 py-3">
                                 <p className="break-words font-semibold text-slate-900">{row.name}</p>
@@ -23157,19 +24159,36 @@ function PerformanceAIDashboardView({
                                 <p className="mt-1 text-[11px] text-slate-500">{row.updated}</p>
                               </td>
                               <td className="hidden px-3 py-3 md:table-cell">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSidePanel(row.panel)}
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-                                >
-                                  {row.action}
-                                </button>
+                                {rowApplyLabel && rowIssue ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleApplyDrainageIssue(rowIssue)}
+                                    disabled={!rowCanApply}
+                                    className={`rounded-lg border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                      rowCanApply
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                        : "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+                                    }`}
+                                  >
+                                    {rowApplyLabel}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSidePanel(row.panel)}
+                                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+                                  >
+                                    {row.action}
+                                  </button>
+                                )}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -24224,7 +25243,7 @@ function PerformanceAIDashboardView({
                         ) : !hasTerrainSource ? (
                           <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs terrain</span>
                         ) : !hasBasinPlaced ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs basin</span>
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">{hasBasinObject ? "Needs basin placement" : "Needs basin"}</span>
                         ) : null}
                       </div>
                     </button>
@@ -24252,7 +25271,7 @@ function PerformanceAIDashboardView({
                         ) : !hasTerrainSource ? (
                           <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs terrain</span>
                         ) : !hasBasinPlaced ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs basin</span>
+                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">{hasBasinObject ? "Needs basin placement" : "Needs basin"}</span>
                         ) : null}
                       </div>
                     </button>
@@ -24274,6 +25293,14 @@ function PerformanceAIDashboardView({
               activePlanTool={activePlanTool}
               thinkingState={thinkingState}
               statusText={chatSummary || statusMessage}
+              commandContext={{
+                mode: activePrimaryWorkflowKey,
+                interaction: previewInteraction,
+                layer: activePlacementId ? "selected" : "C-DRAFT",
+                selectedCount: activePlacementId ? 1 : 0,
+                snap: previewInteraction === "edit" ? "on" : "ready",
+                view: `${previewMode.toUpperCase()} / ${previewQuality}`,
+              }}
             />
           ) : null}
         </div>
