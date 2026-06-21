@@ -22,6 +22,14 @@ type PinnedCommandBarProps = {
   activePlanTool: PlanToolMode;
   thinkingState: ThinkingState;
   statusText: string;
+  commandContext?: {
+    mode: string;
+    interaction: string;
+    layer: string;
+    selectedCount: number;
+    snap: string;
+    view: string;
+  };
 };
 
 export default function PinnedCommandBar({
@@ -36,6 +44,7 @@ export default function PinnedCommandBar({
   activePlanTool,
   thinkingState,
   statusText,
+  commandContext,
 }: PinnedCommandBarProps) {
   const isWorking = busy || hasVisibleActiveJob;
   const canSend = Boolean(prompt.trim() || imageName) && !isWorking;
@@ -44,7 +53,7 @@ export default function PinnedCommandBar({
     <div
       data-testid="floating-command-bar"
       data-command-bar-id="pinned-civora-command-bar"
-      className="civora-motion-command-bar fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto w-auto max-w-3xl rounded-xl border border-slate-200 bg-white/96 p-2 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.62)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:w-[calc(100vw-2rem)]"
+      className="civora-motion-command-bar fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto w-auto max-w-3xl rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:w-[calc(100vw-2rem)]"
     >
       {isWorking ? (
         <div className="mb-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -64,13 +73,30 @@ export default function PinnedCommandBar({
           {statusText}
         </p>
       ) : null}
+      {commandContext ? (
+        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          {[
+            ["Mode", commandContext.mode],
+            ["Tool", commandContext.interaction],
+            ["Layer", commandContext.layer],
+            ["Sel", String(commandContext.selectedCount)],
+            ["Snap", commandContext.snap],
+            ["View", commandContext.view],
+          ].map(([label, value]) => (
+            <span key={label} className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2">
+              <span className="text-slate-400">{label}</span>
+              <span className="text-slate-700">{value}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="flex min-w-0 items-end gap-2">
         <button
           type="button"
           onClick={onOpenHistory}
           aria-label="Open Civora chat history"
           title="Open chat history"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-white"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 transition hover:border-blue-200 hover:bg-white hover:text-blue-700"
         >
           <MessageSquareText className="h-5 w-5" />
         </button>
@@ -80,7 +106,7 @@ export default function PinnedCommandBar({
           onKeyDown={onPromptKeyDown}
           placeholder="Ask Civora..."
           rows={1}
-          className="max-h-24 min-h-11 flex-1 resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium leading-5 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200"
+          className="max-h-24 min-h-11 flex-1 resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium leading-5 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
         />
         <button
           type="button"
@@ -88,7 +114,7 @@ export default function PinnedCommandBar({
           disabled={!canSend}
           aria-label="Send message to Civora"
           title={isWorking ? "Civora is working" : "Send"}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-45"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
         >
           {isWorking && activePlanTool === "run" ? (
             <Loader2 className="h-5 w-5 animate-spin" />
