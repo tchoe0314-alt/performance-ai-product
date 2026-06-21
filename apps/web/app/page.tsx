@@ -342,6 +342,39 @@ type AutoExistingConditionsUiStatus = {
   candidateCount: number;
   missing: string[];
 };
+type AutoSiteContextFlowSummary = {
+  candidateCount: number;
+  candidateLabels: string[];
+  missingLabels: string[];
+  status: string;
+  message: string;
+  reviewRequired: boolean;
+};
+type GenerateFlowSummary = {
+  version: "generate_flow_summary_v1";
+  generated_at: string;
+  target: SystemGenerationTarget;
+  ran: string[];
+  skipped: string[];
+  needs_review: string[];
+  notes: string[];
+  blocked: boolean;
+  next_action: string;
+  auto_site_context: AutoSiteContextFlowSummary;
+  safety_wording: string;
+};
+type ReviewPackageFlowSummary = {
+  version: "review_package_flow_summary_v1";
+  generated_at: string;
+  outputs_created: string[];
+  missing: string[];
+  blocked: boolean;
+  next_action: string;
+  auto_site_context: AutoSiteContextFlowSummary;
+  review_only: true;
+  engineer_review_required: true;
+  safety_wording: string;
+};
 type LocalGisProviderRegistryResponse = LocalGisProviderRegistry & {
   status?: string;
   providers?: LocalGisProvider[];
@@ -2668,6 +2701,9 @@ function PerformanceAIDashboardView({
     candidateCount: 0,
     missing: [],
   });
+  const [generateFlowSummary, setGenerateFlowSummary] = useState<GenerateFlowSummary | null>(null);
+  const [reviewPackageFlowSummary, setReviewPackageFlowSummary] = useState<ReviewPackageFlowSummary | null>(null);
+  const [exportActionMessage, setExportActionMessage] = useState("");
   const [providerSourceType, setProviderSourceType] = useState("parcels");
   const [providerServiceUrl, setProviderServiceUrl] = useState("");
   const [providerLayerId, setProviderLayerId] = useState("0");
@@ -5163,6 +5199,32 @@ function PerformanceAIDashboardView({
           site_rotation_deg: 0,
           site_alignment_locked: true,
           use_survey_for_grading: true,
+          online_existing_conditions_discovery_v1: {
+            version: "online_existing_conditions_discovery_v1",
+            status: "candidates_found",
+            candidate_count: 3,
+            sources: [
+              { key: "parcel_site_boundary", label: "parcel/site boundary", provider: "Demo Parcels", candidate_count: 1, review_required: true },
+              { key: "road_row", label: "road/ROW data", provider: "Demo Roads", candidate_count: 1, review_required: true },
+              { key: "terrain_dem_lidar", label: "terrain/DEM/LiDAR", provider: "Demo Terrain", candidate_count: 1, review_required: true },
+              { key: "public_utilities", label: "public utility layers", provider: "", candidate_count: 0, review_required: true },
+            ],
+            missing_sources: [{ key: "public_utilities", label: "public utility layers" }],
+            review_required: true,
+            acceptance_status: "candidate",
+          },
+          auto_existing_conditions_v1: {
+            version: "auto_existing_conditions_v1",
+            status: "ready_for_review",
+            triggered_by: "site_lock",
+            clipped_to_locked_site: true,
+            candidate_count: 3,
+            missing_sources: ["public utility layers"],
+            review_required: true,
+            construction_release_allowed: false,
+            truth_label:
+              "Automatic existing-condition detection creates review-required candidates only; it is not survey/control or construction-release evidence.",
+          },
         },
       },
     };
@@ -8243,6 +8305,63 @@ function PerformanceAIDashboardView({
       : onlineSourceLookupUnavailable
         ? "Address applied; online source lookup not configured/available."
         : "Address applied; no online source candidates accepted.";
+  const autoSiteContextFlowSummary = useMemo<AutoSiteContextFlowSummary>(() => {
+    const autoContext =
+      ((siteInputs?.auto_existing_conditions_v1 ??
+        (currentPlanMeta as Record<string, unknown>).auto_existing_conditions_v1 ??
+        {}) as Record<string, unknown>);
+    const discoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
+    const candidateLabels = uniqueStrings([
+      ...discoverySources
+        .filter((source) => Number(source.candidate_count ?? 0) > 0)
+        .map((source) => source.label || source.key || source.source_type),
+      Number(autoContext.candidate_count ?? 0) > 0 ? "Auto Site Context source candidates" : "",
+    ]).slice(0, 8);
+    const discoveryMissing = Array.isArray((onlineDiscovery as Record<string, unknown>).missing_sources)
+      ? ((onlineDiscovery as Record<string, unknown>).missing_sources as unknown[])
+      : [];
+    const missingLabels = uniqueStrings([
+      ...discoverySources
+        .filter((source) => Number(source.candidate_count ?? 0) <= 0)
+        .map((source) => source.label || source.key || source.source_type),
+      ...discoveryMissing.map((source) => {
+        if (source && typeof source === "object") {
+          const record = source as Record<string, unknown>;
+          return record.label || record.key || record.source_type;
+        }
+        return source;
+      }),
+      ...(Array.isArray(autoContext.missing_sources) ? autoContext.missing_sources : []),
+    ]).slice(0, 8);
+    const candidateCount = Math.max(
+      Number(autoContext.candidate_count ?? 0),
+      Number(onlineDiscovery.candidate_count ?? 0),
+      autoExistingConditionsStatus.candidateCount,
+      candidateLabels.length,
+    );
+    const status = String(autoContext.status || onlineDiscovery.status || autoExistingConditionsStatus.status || "waiting");
+    const message =
+      candidateCount > 0
+        ? `Apply Address found ${candidateCount} review-required source candidate${candidateCount === 1 ? "" : "s"} that Generate can use as context.`
+        : missingLabels.length
+          ? `Apply Address did not find accepted source candidates; missing sources carry as notes: ${missingLabels.slice(0, 3).join(", ")}.`
+          : autoExistingConditionsStatus.message || "Auto Site Context has not produced review candidates yet.";
+    return {
+      candidateCount,
+      candidateLabels,
+      missingLabels,
+      status,
+      message,
+      reviewRequired: true,
+    };
+  }, [
+    autoExistingConditionsStatus.candidateCount,
+    autoExistingConditionsStatus.message,
+    autoExistingConditionsStatus.status,
+    (currentPlanMeta as Record<string, unknown>).auto_existing_conditions_v1,
+    onlineDiscovery,
+    siteInputs?.auto_existing_conditions_v1,
+  ]);
   const getGeneratePreflightBlockers = useCallback(
     (target: SystemGenerationTarget) => {
       const lot = resolveLotBounds();
@@ -8476,17 +8595,56 @@ function PerformanceAIDashboardView({
             : "Survey/control still needed.",
         staleSystems.length ? `Changed systems needing rerun: ${staleSystems.join(", ")}.` : "No stale systems are marked from object/control edits.",
         freshSystems.length ? `Current generated systems: ${freshSystems.join(", ")}.` : "No generated systems are marked current yet.",
+        generateFlowSummary
+          ? `Last Generate: ran ${generateFlowSummary.ran.join(", ") || "none"}; skipped ${generateFlowSummary.skipped.join(", ") || "none"}; needs review ${generateFlowSummary.needs_review.slice(0, 3).join("; ") || "standard engineer review"}.`
+          : "Generate has not recorded a run summary yet.",
+        reviewPackageFlowSummary
+          ? `Last Review Package: created ${reviewPackageFlowSummary.outputs_created.join(", ")}; missing ${reviewPackageFlowSummary.missing.slice(0, 3).join("; ") || "none recorded"}.`
+          : "No review package summary has been made yet.",
+        autoSiteContextFlowSummary.candidateCount > 0 || autoSiteContextFlowSummary.missingLabels.length
+          ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review candidate(s); missing ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
+          : "Auto Site Context has no recorded candidates yet.",
         planSheetSet.revisions.length ? `Sheet revisions: ${planSheetSet.revisions.length}.` : "No sheet revision entries recorded yet.",
       ];
       appendChatMessage("assistant", lines.join("\n"), "status");
       return true;
     }
 
-    if (/(what is blocked|what's blocked|what.*blocked|blocked right now)/i.test(normalized)) {
+    if (/(what ran|what did.*run|which systems ran|what systems ran)/i.test(normalized)) {
+      const freshSystems = Object.entries(systemStatuses)
+        .filter(([, status]) => status === "fresh")
+        .map(([system]) => system);
       appendChatMessage(
         "assistant",
-        canonicalWorkspaceBlockers.length
-          ? `Current blockers:\n${canonicalWorkspaceBlockers.map((reason) => `- ${reason}`).join("\n")}`
+        generateFlowSummary
+          ? `Last Generate ran: ${generateFlowSummary.ran.join(", ") || "none"}. Current fresh systems: ${freshSystems.join(", ") || "none"}. Review-only output; engineer review is required.`
+          : `No Generate run summary is recorded yet. Current fresh systems: ${freshSystems.join(", ") || "none"}.`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(what did you skip|what.*skipped|what was skipped|skipped systems)/i.test(normalized)) {
+      appendChatMessage(
+        "assistant",
+        generateFlowSummary
+          ? `Skipped: ${generateFlowSummary.skipped.join(", ") || "none"}. Needs review: ${generateFlowSummary.needs_review.slice(0, 5).join("; ") || "standard engineer review"}.`
+          : "No skipped-system summary is recorded yet because Generate has not run in this workspace state.",
+        "status",
+      );
+      return true;
+    }
+
+    if (/(what is blocked|what's blocked|what.*blocked|blocked right now)/i.test(normalized)) {
+      const flowBlockers = uniqueStrings([
+        ...(generateFlowSummary?.blocked ? generateFlowSummary.needs_review : []),
+        ...(reviewPackageFlowSummary?.missing ?? []),
+        getExportBlockReason(),
+      ]);
+      appendChatMessage(
+        "assistant",
+        canonicalWorkspaceBlockers.length || flowBlockers.length
+          ? `Current blockers:\n${uniqueStrings([...canonicalWorkspaceBlockers, ...flowBlockers]).map((reason) => `- ${reason}`).join("\n")}`
           : "No current blockers are recorded. Outputs remain review-required.",
         "status",
       );
@@ -8497,9 +8655,13 @@ function PerformanceAIDashboardView({
       const firstBlocker = fullGeneratePreflightBlockers[0];
       const visibleAction = firstBlocker
         ? `Open ${sidePanelCopy[firstBlocker.action].title} and fix: ${firstBlocker.label}.`
-        : pendingPlacementObjects.length
-          ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
-          : progressTimelineState.next_action || nextSetupAction;
+        : reviewPackageFlowSummary?.missing.length
+          ? reviewPackageFlowSummary.next_action
+          : generateFlowSummary?.needs_review.length
+            ? generateFlowSummary.next_action
+            : pendingPlacementObjects.length
+              ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
+              : progressTimelineState.next_action || nextSetupAction;
 	      appendChatMessage(
 	        "assistant",
 	        `${visibleAction} Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
@@ -8681,11 +8843,12 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(why.*export|can(?:not|'t) export|export.*blocked|why.*download)/i.test(normalized)) {
+    if (/(can i export|can we export|export now|why.*export|can(?:not|'t) export|export.*blocked|why.*download)/i.test(normalized)) {
       const reason = getExportBlockReason();
       const exportBlockers = [
         ...(progressTimelineState.export_blockers ?? []),
         ...previewBlockedReasons,
+        ...(reviewPackageFlowSummary?.missing ?? []),
       ].filter(Boolean);
       const blockerText = exportBlockers.length
         ? ` Current export/review blockers: ${Array.from(new Set(exportBlockers)).slice(0, 4).join("; ")}.`
@@ -13101,6 +13264,42 @@ function PerformanceAIDashboardView({
     ],
   );
 
+  const persistFlowMetadata = useCallback(
+    async (
+      updates: Partial<{
+        generate_flow_summary_v1: GenerateFlowSummary;
+        review_package_flow_summary_v1: ReviewPackageFlowSummary;
+      }>,
+    ) => {
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const currentInputMode = currentInput?.input_mode === "assisted" ? "assisted" : "user";
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: currentInputMode,
+        strict_mode: currentInput?.strict_mode ?? false,
+        allow_ai_fill_for_blanks: currentInput?.allow_ai_fill_for_blanks ?? false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: {
+            ...((currentInput?.meta?.site_inputs ?? {}) as SiteInputs),
+            ...updates,
+          },
+        },
+      };
+      setCurrentProject((project) =>
+        project
+          ? {
+              ...project,
+              project_input: nextProjectInput,
+              updated_at: Date.now() / 1000,
+            }
+          : project,
+      );
+      await saveProject({ silent: true, projectInputOverride: nextProjectInput });
+    },
+    [currentProject, payloadPreview, saveProject],
+  );
+
   const handleGenerateSystem = useCallback(
     async (
       target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
@@ -13108,15 +13307,56 @@ function PerformanceAIDashboardView({
     ) => {
       const preflightBlockers = getGeneratePreflightBlockers(target);
       const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
+      const reviewNotes = uniqueStrings([
+        ...preflightBlockers.filter((item) => !isHardGenerateBlocker(item.label)).map((item) => item.label),
+        ...autoSiteContextFlowSummary.missingLabels.map((item) => `Auto Site Context missing source: ${item}`),
+        autoSiteContextFlowSummary.candidateCount > 0
+          ? `Auto Site Context source candidates available for review: ${autoSiteContextFlowSummary.candidateLabels.join(", ") || `${autoSiteContextFlowSummary.candidateCount} candidate(s)`}`
+          : "",
+        hasAssumedTerrainSlope ? "review-only assumed terrain slope; survey/control still needed" : "",
+      ]);
+      const targetSystems =
+        target === "full"
+          ? (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[])
+          : ([target] as EngineeringSystemKey[]);
+      const blockedSummary = (reason: string, nextAction: string): GenerateFlowSummary => ({
+        version: "generate_flow_summary_v1",
+        generated_at: new Date().toISOString(),
+        target,
+        ran: [],
+        skipped: targetSystems,
+        needs_review: uniqueStrings([reason, ...reviewNotes]),
+        notes: reviewNotes,
+        blocked: true,
+        next_action: nextAction,
+        auto_site_context: autoSiteContextFlowSummary,
+        safety_wording:
+          "Generate creates review-required drafts only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+      });
+      const recordGenerateSummary = (summary: GenerateFlowSummary) => {
+        setGenerateFlowSummary(summary);
+        void persistFlowMetadata({ generate_flow_summary_v1: summary });
+      };
       if (hardPreflightBlockers.length) {
+        const firstHardBlocker = hardPreflightBlockers[0];
+        const summary = blockedSummary(
+          firstHardBlocker.label,
+          `Open ${toReadableLabel(firstHardBlocker.action)} and fix: ${firstHardBlocker.label}.`,
+        );
+        recordGenerateSummary(summary);
         appendChatMessage(
           "assistant",
-          `I’ll run what Civora can draft now. Missing inputs will stay visible as notes:\n${hardPreflightBlockers.map((item) => `- ${item.label}`).join("\n")}`,
+          `Generate is blocked: ${firstHardBlocker.label}. Next action: ${summary.next_action}`,
           "status",
         );
-        setStatusMessage("Running draft generation with missing inputs tracked as notes.");
+        setStatusMessage(`Generate blocked: ${firstHardBlocker.label}`);
+        handleOpenSidePanel(firstHardBlocker.action);
+        return;
       }
       if (!hasSiteBoundary()) {
+        const summary = blockedSummary("missing site boundary dimensions", "Set site width/depth or draw a site boundary, then lock the site.");
+        recordGenerateSummary(summary);
+        setStatusMessage("Generate blocked: set and lock a site boundary first.");
         askClarification(
           "I need a site boundary before generating systems. What size should the site be?",
           "set_site_then_generate",
@@ -13125,12 +13365,17 @@ function PerformanceAIDashboardView({
         return;
       }
       if (!ensureSiteLocked(target)) {
+        const summary = blockedSummary("site boundary exists but is not locked", "Lock the site boundary in Setup before running Generate.");
+        recordGenerateSummary(summary);
+        setStatusMessage("Generate blocked: lock the site boundary first.");
         return;
       }
       if (target === "grading" || target === "drainage" || target === "full") {
         const lot = resolveLotBounds();
         const siteAreaAcres = siteAreaAcresFromSize(lot.w, lot.h);
         if (target === "grading" && siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES) {
+          const summary = blockedSummary(OVERSIZED_SITE_MESSAGE, "Reduce the site area or zoom to a smaller grading area.");
+          recordGenerateSummary(summary);
           setStatusMessage(OVERSIZED_SITE_MESSAGE);
           return;
         }
@@ -13199,10 +13444,38 @@ function PerformanceAIDashboardView({
           meta: {
             ...(requestPayload.meta ?? {}),
             requested_system: target,
+            auto_site_context_review_summary: autoSiteContextFlowSummary,
+            generate_notes: reviewNotes,
           },
           prompt_text: null,
         },
         target,
+      );
+      const runSummary: GenerateFlowSummary = {
+        version: "generate_flow_summary_v1",
+        generated_at: new Date().toISOString(),
+        target,
+        ran: targetSystems,
+        skipped: [],
+        needs_review: reviewNotes,
+        notes: reviewNotes,
+        blocked: false,
+        next_action: reviewNotes.length
+          ? "Review the generated draft notes and provide or accept missing sources before relying on outputs."
+          : "Review the generated draft package; outputs remain engineer-review-required.",
+        auto_site_context: autoSiteContextFlowSummary,
+        safety_wording:
+          "Generate creates review-required drafts only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+      };
+      recordGenerateSummary(runSummary);
+      appendChatMessage(
+        "assistant",
+        [
+          `Generate started. Ran: ${runSummary.ran.join(", ")}.`,
+          runSummary.skipped.length ? `Skipped: ${runSummary.skipped.join(", ")}.` : "Skipped: none.",
+          runSummary.needs_review.length ? `Needs review: ${runSummary.needs_review.slice(0, 5).join("; ")}.` : "Needs review: standard engineer review.",
+        ].join(" "),
+        "status",
       );
       await executePlanAction({
         mode: "run",
@@ -13233,7 +13506,10 @@ function PerformanceAIDashboardView({
       getGeneratePreflightBlockers,
       hasSiteBoundary,
       ensureSiteLocked,
+      autoSiteContextFlowSummary,
+      hasAssumedTerrainSlope,
       minSlopePct,
+      persistFlowMetadata,
       projectId,
       resolveLotBounds,
       siteInputs?.geocode?.lat,
@@ -14052,6 +14328,114 @@ function PerformanceAIDashboardView({
     setStatusMessage("New review sheet added.");
   };
 
+  const handleMakeReviewPackage = () => {
+    const blockers = getPlanSheetBlockers();
+    const missing = uniqueStrings([
+      ...blockers,
+      !backendResult ? "generated system result is missing" : "",
+      !planPreviewUrl ? "model preview is missing" : "",
+      ...autoSiteContextFlowSummary.missingLabels.map((item) => `Auto Site Context source missing: ${item}`),
+    ]);
+    const outputsCreated = uniqueStrings([
+      "review sheet package",
+      planSheetSet.sheets.length ? "sheet index" : "",
+      planPreviewUrl ? "model preview reference" : "",
+      backendResult ? "generated result summary" : "",
+      autoSiteContextFlowSummary.candidateCount > 0 ? "Auto Site Context source/missing summary" : "",
+    ]);
+    const summary: ReviewPackageFlowSummary = {
+      version: "review_package_flow_summary_v1",
+      generated_at: new Date().toISOString(),
+      outputs_created: outputsCreated.length ? outputsCreated : ["review package shell"],
+      missing,
+      blocked: !outputsCreated.length || (!backendResult && !planPreviewUrl && !planSheetSet.sheets.length),
+      next_action: missing.length
+        ? `Review missing package inputs: ${missing.slice(0, 3).join("; ")}.`
+        : "Export the review-only package or send it for qualified review.",
+      auto_site_context: autoSiteContextFlowSummary,
+      review_only: true,
+      engineer_review_required: true,
+      safety_wording:
+        "Review package output is review-only and engineer-review-required. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+    };
+    setReviewPackageFlowSummary(summary);
+    void persistFlowMetadata({ review_package_flow_summary_v1: summary });
+    setPlanSheetSet((current) => {
+      const projectName = siteName || currentProject?.name || "Untitled Project";
+      const sheets = current.sheets.length ? current.sheets : [createDefaultPlanSheet(0, projectName)];
+      const activeSheetId = current.activeSheetId || sheets[0]?.id || "";
+      const activeSheet = sheets.find((sheet) => sheet.id === activeSheetId) ?? sheets[0];
+      const sourceNote = autoSiteContextFlowSummary.candidateCount
+        ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review-required source candidate(s). Missing: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
+        : `Auto Site Context: no accepted source candidates. Missing: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`;
+      const existingSourceNote = activeSheet?.annotations.some((item) => item.text.startsWith("Auto Site Context:"));
+      const nextSheets = sheets.map((sheet) =>
+        sheet.id === activeSheet?.id && !existingSourceNote
+          ? {
+              ...sheet,
+              annotations: [
+                ...sheet.annotations,
+                {
+                  id: `auto-site-context-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  type: "note" as const,
+                  text: sourceNote,
+                  x: 10,
+                  y: 18,
+                },
+              ],
+              detailBlocks: [
+                ...sheet.detailBlocks,
+                {
+                  id: `review-package-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  title: "Review Package Source Summary",
+                  rows: [
+                    ["Review candidates", String(autoSiteContextFlowSummary.candidateCount)],
+                    ["Missing sources", autoSiteContextFlowSummary.missingLabels.join(", ") || "None reported"],
+                    ["Package status", summary.blocked ? "Blocked / missing inputs" : "Review-only package created"],
+                  ] as Array<[string, string]>,
+                },
+              ],
+            }
+          : sheet,
+      );
+      return {
+        ...current,
+        name: `${projectName} Review Package`,
+        status: "review",
+        mode: "sheet_layout",
+        sheets: nextSheets,
+        activeSheetId: activeSheet?.id || activeSheetId,
+        sheetIndex: nextSheets.map((sheet) => ({
+          sheetNumber: sheet.titleBlock.sheetNumber,
+          title: sheet.titleBlock.sheetTitle,
+        })),
+        revisions: current.revisions.length
+          ? current.revisions
+          : [
+              {
+                id: `revision-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                revision: "REV-1",
+                note: "Review package assembled from available outputs; missing inputs remain listed for reviewer action.",
+                date: new Date().toISOString().slice(0, 10),
+                reviewer: "Reviewer",
+              },
+            ],
+        blockers: missing,
+        updatedAt: summary.generated_at,
+      };
+    });
+    appendChatMessage(
+      "assistant",
+      [
+        `Made a review-only package from what exists: ${summary.outputs_created.join(", ")}.`,
+        summary.missing.length ? `Missing: ${summary.missing.slice(0, 5).join("; ")}.` : "Missing: none currently recorded.",
+        "Engineer review is required; Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+      ].join(" "),
+      "status",
+    );
+    setStatusMessage(summary.blocked ? `Review package blocked: ${summary.next_action}` : "Review package created. Engineer review required.");
+  };
+
   const handlePlanSheetExportJson = () => {
     const projectName = siteName || currentProject?.name || "civora-project";
     const safeProjectName = projectName
@@ -14069,6 +14453,8 @@ function PerformanceAIDashboardView({
         "Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
         "Review sheets are review-only plan-production aids and are not approved construction documents.",
       ],
+      review_package_summary: reviewPackageFlowSummary,
+      auto_site_context_summary: autoSiteContextFlowSummary,
       sheet_set: {
         ...planSheetSet,
         mode: "sheet_layout",
@@ -14165,6 +14551,13 @@ function PerformanceAIDashboardView({
       .join("")}
     <h2>Sheet Index</h2>
     <table>${planSheetSet.sheetIndex.map((item) => `<tr><td>${escapeHtml(item.sheetNumber)}</td><td>${escapeHtml(item.title)}</td></tr>`).join("")}</table>
+    <h2>Auto Site Context</h2>
+    <table>
+      <tr><td>Review candidates</td><td>${autoSiteContextFlowSummary.candidateCount}</td></tr>
+      <tr><td>Candidate sources</td><td>${escapeHtml(autoSiteContextFlowSummary.candidateLabels.join(", ") || "None recorded")}</td></tr>
+      <tr><td>Missing sources</td><td>${escapeHtml(autoSiteContextFlowSummary.missingLabels.join(", ") || "None reported")}</td></tr>
+      <tr><td>Status</td><td>${escapeHtml(autoSiteContextFlowSummary.status)}</td></tr>
+    </table>
     <h2>Plot Styles</h2>
     <table>${planSheetSet.plotStyles.mappings
       .map((item) => `<tr><td>${escapeHtml(item.layer)}</td><td>${escapeHtml(item.color)}</td><td>${escapeHtml(item.lineweight)}</td><td>${escapeHtml(item.linetype)}</td></tr>`)
@@ -14276,10 +14669,12 @@ function PerformanceAIDashboardView({
   const handleExportDxf = async () => {
     const blockReason = getExportBlockReason();
     if (blockReason) {
+      setExportActionMessage(`Export blocked: ${blockReason}`);
       setStatusMessage(`Export blocked: ${blockReason}`);
       return;
     }
     if (visibleActiveJob) {
+      setExportActionMessage("Export blocked: an export or generation job is already running.");
       setStatusMessage("An export or generation job is already running. Wait for it to finish before starting another export.");
       return;
     }
@@ -14291,6 +14686,7 @@ function PerformanceAIDashboardView({
         { token },
       );
       setActiveJobId(queued.job.job_id);
+      setExportActionMessage(`DXF review export queued as ${queued.job.job_id}.`);
       setStatusMessage(`DXF review export queued as ${queued.job.job_id}.`);
       appendChatMessage(
         "assistant",
@@ -14298,8 +14694,10 @@ function PerformanceAIDashboardView({
         "status",
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : "DXF export failed.";
+      setExportActionMessage(message);
       setStatusMessage(
-        error instanceof Error ? error.message : "DXF export failed.",
+        message,
       );
     } finally {
       setBusy(false);
@@ -14309,10 +14707,12 @@ function PerformanceAIDashboardView({
   const handleExportReport = async () => {
     const blockReason = getExportBlockReason();
     if (blockReason) {
+      setExportActionMessage(`Export blocked: ${blockReason}`);
       setStatusMessage(`Export blocked: ${blockReason}`);
       return;
     }
     if (visibleActiveJob) {
+      setExportActionMessage("Export blocked: an export or generation job is already running.");
       setStatusMessage("An export or generation job is already running. Wait for it to finish before starting another export.");
       return;
     }
@@ -14324,6 +14724,7 @@ function PerformanceAIDashboardView({
         { token },
       );
       setActiveJobId(queued.job.job_id);
+      setExportActionMessage(`Engineer-review report queued as ${queued.job.job_id}.`);
       setStatusMessage(`Engineer-review report queued as ${queued.job.job_id}.`);
       appendChatMessage(
         "assistant",
@@ -14331,8 +14732,10 @@ function PerformanceAIDashboardView({
         "status",
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Report export failed.";
+      setExportActionMessage(message);
       setStatusMessage(
-        error instanceof Error ? error.message : "Report export failed.",
+        message,
       );
     } finally {
       setBusy(false);
@@ -20446,6 +20849,34 @@ function PerformanceAIDashboardView({
                             Ask
                           </button>
                         </div>
+                        <div className="mt-3 rounded-lg border border-white/70 bg-white px-3 py-2 text-xs" data-testid="generate-auto-site-context">
+                          <p className="font-semibold uppercase tracking-[0.12em] text-slate-500">Auto Site Context</p>
+                          <p className="mt-1 font-medium text-slate-700">{autoSiteContextFlowSummary.message}</p>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
+                              <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Review candidates</span>
+                              <span className="mt-1 block font-semibold text-slate-800">{autoSiteContextFlowSummary.candidateCount}</span>
+                            </div>
+                            <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2">
+                              <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Missing sources</span>
+                              <span className="mt-1 block font-semibold text-slate-800">{autoSiteContextFlowSummary.missingLabels.length}</span>
+                            </div>
+                          </div>
+                        </div>
+                        {generateFlowSummary ? (
+                          <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${generateFlowSummary.blocked ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="generate-flow-summary">
+                            <p className="font-semibold uppercase tracking-[0.12em]">
+                              {generateFlowSummary.blocked ? "Generate blocked" : "Generate started"}
+                            </p>
+                            <p className="mt-1">
+                              Ran: {generateFlowSummary.ran.join(", ") || "none"} · Skipped: {generateFlowSummary.skipped.join(", ") || "none"}
+                            </p>
+                            <p className="mt-1">
+                              Needs review: {generateFlowSummary.needs_review.slice(0, 3).join("; ") || "standard engineer review"}
+                            </p>
+                            <p className="mt-1 font-semibold">Next: {generateFlowSummary.next_action}</p>
+                          </div>
+                        ) : null}
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2">
                         {systemReadinessRows.map((row) => {
@@ -20479,13 +20910,14 @@ function PerformanceAIDashboardView({
                         })}
                         <button
                           type="button"
+                          data-testid="generate-main-action"
                           onClick={() => {
                             void handleGenerateSystem("full");
                           }}
                           className="col-span-2 rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-white transition hover:bg-slate-800"
                         >
                           <span className="block text-xs font-semibold uppercase tracking-[0.14em]">
-                            Run Draft Generation
+                            Generate
                           </span>
                           <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/65">
                             Runs what it can; missing inputs stay as notes
@@ -23244,33 +23676,47 @@ function PerformanceAIDashboardView({
                     ) : null}
                     {sidePanelForRender === "deliverables" ? (
                       <>
-                        {!backendResult || fullGeneratePreflightBlockers.length ? (
-                          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="deliverables-blocked-explanation">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Review package</p>
-                            <p className="mt-1 text-sm font-semibold text-amber-950">
-                              Not ready to export yet.
-                            </p>
-                            <p className="mt-1 text-xs font-medium text-amber-800">
-                              Run a draft first, or ask Civora what is missing. Field use stays outside Civora.
-                            </p>
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenSidePanel("generate")}
-                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
-                              >
-                                Prepare draft
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenSidePanel("chat")}
-                                className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
-                              >
-                                Ask why
-                              </button>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deliver-review-package-flow">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review package</p>
+                              <p className="mt-1 text-sm font-semibold text-slate-900">
+                                Make a review package from what exists.
+                              </p>
+                              <p className="mt-1 text-xs font-medium text-slate-500">
+                                Missing generated results, previews, and sources stay listed as review/missing items.
+                              </p>
                             </div>
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              reviewPackageFlowSummary?.blocked ? "bg-red-50 text-red-600" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                            }`}>
+                              {reviewPackageFlowSummary?.blocked ? "Blocked" : reviewPackageFlowSummary ? "Made" : "Review"}
+                            </span>
                           </div>
-                        ) : null}
+                          <button
+                            type="button"
+                            onClick={handleMakeReviewPackage}
+                            className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
+                          >
+                            Make Review Package
+                            <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-white/70">
+                              Creates available review deliverables and records exact missing items.
+                            </span>
+                          </button>
+                          {reviewPackageFlowSummary ? (
+                            <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${reviewPackageFlowSummary.blocked ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="deliver-review-package-summary">
+                              <p className="font-semibold uppercase tracking-[0.12em]">
+                                {reviewPackageFlowSummary.blocked ? "Package blocked" : "Package made"}
+                              </p>
+                              <p className="mt-1">Created: {reviewPackageFlowSummary.outputs_created.join(", ")}</p>
+                              <p className="mt-1">Missing: {reviewPackageFlowSummary.missing.slice(0, 4).join("; ") || "none recorded"}</p>
+                              <p className="mt-1 font-semibold">Next: {reviewPackageFlowSummary.next_action}</p>
+                            </div>
+                          ) : null}
+                          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                            Review-only and engineer-review-required. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
+                          </p>
+                        </div>
                         <PlanSheetEditor
                           sheetSet={{ ...planSheetSet, blockers: getPlanSheetBlockers() }}
                           onUpdateTitleBlock={handlePlanSheetTitleBlockUpdate}
@@ -23404,6 +23850,11 @@ function PerformanceAIDashboardView({
                           <button type="button" onClick={handleExportDxf} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export DXF</button>
                           <button type="button" onClick={handleExportReport} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export Report</button>
                         </div>
+                        {exportActionMessage ? (
+                          <p data-testid="deliver-export-status" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                            {exportActionMessage}
+                          </p>
+                        ) : null}
                       </>
                     ) : null}
                   </div>
@@ -25053,92 +25504,16 @@ function PerformanceAIDashboardView({
                       );
                     })}
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 md:grid-cols-3">
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateSystem("roads")}
-                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>Roads</span>
-                        {missingSite ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
-                        ) : null}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateSystem("parking")}
-                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>Parking</span>
-                        {missingSite ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
-                        ) : null}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateSystem("grading")}
-                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>Grading</span>
-                        {missingSite ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
-                        ) : !hasTerrainSource ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs terrain</span>
-                        ) : siteTooLargeForGrading ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Too large</span>
-                        ) : null}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateSystem("drainage")}
-                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>Drainage</span>
-                        {missingSite ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
-                        ) : !hasTerrainSource ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs terrain</span>
-                        ) : !hasBasinPlaced ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">{hasBasinObject ? "Needs basin placement" : "Needs basin"}</span>
-                        ) : null}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateSystem("utilities")}
-                      className="rounded-xl border border-slate-200 bg-white px-2 py-2 transition hover:bg-slate-50"
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>Utilities</span>
-                        {missingSite ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Needs site</span>
-                        ) : null}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateSystem("full")}
-                      className="rounded-xl border border-slate-900 bg-slate-950 px-2 py-2 text-white transition hover:bg-slate-800"
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>Full Site</span>
-                        {missingSite ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs site</span>
-                        ) : !hasTerrainSource ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">Needs terrain</span>
-                        ) : !hasBasinPlaced ? (
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-amber-200">{hasBasinObject ? "Needs basin placement" : "Needs basin"}</span>
-                        ) : null}
-                      </div>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSidePanel("generate")}
+                    className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Open Generate
+                    <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
+                      Use the Generate panel for the single main action and exact system reasons.
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>
