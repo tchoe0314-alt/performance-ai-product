@@ -16824,7 +16824,7 @@ function PerformanceAIDashboardView({
       modes: ["setup", "draw"] as PrimaryWorkflowKey[],
       action: () => setPreviewInteraction("edit"),
       active: previewInteraction === "edit",
-      testId: "preview-interaction-edit",
+      testId: "workspace-preview-interaction-edit",
     },
     {
       label: "Measure",
@@ -24052,7 +24052,7 @@ function PerformanceAIDashboardView({
 	                            <button
 	                              key={mode}
 	                              type="button"
-	                              data-testid={mode === "2d" ? "preview-mode-2d" : "preview-mode-3d"}
+	                              data-testid={mode === "2d" ? "workspace-preview-mode-2d" : "workspace-preview-mode-3d"}
 	                              title={mode === "2d" ? "Show 2D plan preview" : "Show 3D model preview"}
 	                              onClick={() => {
 	                                setPreviewMode(mode);
@@ -24074,7 +24074,7 @@ function PerformanceAIDashboardView({
 	                            <button
 	                              key={quality}
 	                              type="button"
-	                              data-testid={quality === "standard" ? "preview-quality-standard" : "preview-quality-high"}
+	                              data-testid={quality === "standard" ? "workspace-preview-quality-standard" : "workspace-preview-quality-high"}
 	                              title={quality === "standard" ? "Use faster standard rendering" : "Use richer high quality rendering"}
 	                              onClick={() => setPreviewQuality(quality)}
 	                              className={`h-8 rounded-md px-3 text-xs font-semibold capitalize ${
