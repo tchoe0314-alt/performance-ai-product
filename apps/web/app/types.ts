@@ -1151,6 +1151,8 @@ export type PlanMeta = {
   map_feature_detection_report_v1?: {
     candidate_count?: number;
     feature_candidates?: Array<Record<string, unknown>>;
+    outside_site_candidate_count?: number;
+    outside_site_candidates?: Array<Record<string, unknown>>;
   };
   online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
   local_gis_provider_registry_v1?: LocalGisProviderRegistry;
@@ -1360,7 +1362,13 @@ export type SiteInputs = {
   location_context?: Record<string, unknown>;
   online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
   local_gis_provider_registry_v1?: LocalGisProviderRegistry;
-  map_feature_detection_report_v1?: Record<string, unknown>;
+  map_feature_detection_report_v1?: {
+    candidate_count?: number;
+    feature_candidates?: Array<Record<string, unknown>>;
+    outside_site_candidate_count?: number;
+    outside_site_candidates?: Array<Record<string, unknown>>;
+  };
+  candidate_review_inbox_v1?: CandidateReviewInbox;
   existing_conditions_package?: Record<string, unknown>;
   auto_existing_conditions_v1?: Record<string, unknown>;
   viewport_bounds?: {
@@ -1964,7 +1972,7 @@ export type BuildingPlacement = {
   type?: SiteObjectType;
   use?: string;
   stallCount?: number;
-  source?: "user" | "manual_drawn" | "generated" | "inferred" | "detected_from_image" | "user_confirmed";
+  source?: "user" | "manual_drawn" | "generated" | "inferred" | "detected_from_image" | "detected_from_gis" | "user_confirmed";
   generated?: boolean;
   confidence?: number;
   confirmed?: boolean;

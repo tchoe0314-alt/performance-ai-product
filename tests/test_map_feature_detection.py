@@ -226,6 +226,51 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertEqual(rejected["audit_trail"][0]["action"], "rejected_candidate")
         self.assertEqual(rejected["audit_trail"][0]["reason"], "Wrong parcel.")
 
+    def test_active_site_boundary_marks_outside_candidates(self) -> None:
+        report = build_map_feature_detection_report(
+            active_site_boundary={"west": -96.81, "south": 32.77, "east": -96.79, "north": 32.79},
+            gis_layers={
+                "building_footprints": [
+                    {
+                        "id": "inside-building",
+                        "geometry": {"type": "Point", "coordinates": [-96.8, 32.78]},
+                        "source_name": "city_buildings",
+                    },
+                    {
+                        "id": "outside-building",
+                        "geometry": {"type": "Point", "coordinates": [-96.7, 32.9]},
+                        "source_name": "city_buildings",
+                    },
+                ]
+            },
+        )
+
+        self.assertEqual(report["candidate_count"], 1)
+        self.assertEqual(report["outside_site_candidate_count"], 1)
+        self.assertEqual(report["feature_candidates"][0]["source_feature_id"], "inside-building")
+        self.assertEqual(report["outside_site_candidates"][0]["source_feature_id"], "outside-building")
+        self.assertTrue(report["outside_site_candidates"][0]["outside_site"])
+
+    def test_elevation_source_creates_review_required_terrain_candidate(self) -> None:
+        report = build_map_feature_detection_report(
+            source_results={
+                "elevation": {
+                    "success": True,
+                    "source_type": "usgs_3dep_epqs",
+                    "source": "https://epqs.nationalmap.gov",
+                    "lat": 32.78,
+                    "lng": -96.8,
+                    "elevation": 518.4,
+                    "units": "feet",
+                    "truth_label": "Public DEM/elevation context is not a topographic survey.",
+                }
+            }
+        )
+
+        self.assertEqual(report["feature_candidates"][0]["feature_type"], "terrain")
+        self.assertTrue(report["feature_candidates"][0]["review_required"])
+        self.assertIn("topographic survey", report["feature_candidates"][0]["blockers"][0])
+
     def test_detection_report_does_not_use_readiness_or_professional_responsibility_words(self) -> None:
         report = build_map_feature_detection_report(
             image_detections=[

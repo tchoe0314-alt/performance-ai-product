@@ -3607,6 +3607,7 @@ function PerformanceAIDashboardView({
         .join(" | "),
     };
   });
+  const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
   useEffect(() => {
     if (selectedPlanPdfElement?.element_id && selectedPlanPdfElement.element_id !== selectedPlanPdfElementId) {
       setSelectedPlanPdfElementId(selectedPlanPdfElement.element_id);
@@ -3624,8 +3625,7 @@ function PerformanceAIDashboardView({
     const audit = currentPlanMeta.engine_depth_audit;
     if (audit?.engine_depth_dashboard_v1?.version) return audit.engine_depth_dashboard_v1;
     return null;
-  }, [currentPlanMeta]);
-  const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  }, [currentPlanMeta, siteInputs]);
   const appliedAddressLabel = String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim();
   const hasAppliedAddress = Boolean(appliedAddressLabel || (siteInputs?.geocode?.lat && siteInputs?.geocode?.lng));
   const hasLocationEvidence =
@@ -3723,9 +3723,10 @@ function PerformanceAIDashboardView({
   const smartFixItems = smartFixRecommendations.recommendations ?? [];
   const topSmartFix = smartFixRecommendations.next_best_recommendation ?? smartFixItems[0];
   const candidateReviewInbox = useMemo<CandidateReviewInbox>(() => {
-    const stored = currentPlanMeta.candidate_review_inbox_v1;
+    const stored = siteInputs?.candidate_review_inbox_v1 ?? currentPlanMeta.candidate_review_inbox_v1;
     if (stored?.candidates?.length) return stored;
-    const mapCandidates = (currentPlanMeta.map_feature_detection_report_v1?.feature_candidates ?? []).map((item, index) => {
+    const mapFeatureReport = siteInputs?.map_feature_detection_report_v1 ?? currentPlanMeta.map_feature_detection_report_v1;
+    const mapCandidates = (mapFeatureReport?.feature_candidates ?? []).map((item, index) => {
       const rec = item as Record<string, unknown>;
       const featureType = String(rec.feature_type ?? "map_feature_candidate");
       return {
@@ -12281,13 +12282,32 @@ function PerformanceAIDashboardView({
           truth_label:
             "Address/geocode is location context only; it is not a site boundary, survey, control, or final reliance source.",
         };
+      const activeViewportBounds = (nextSiteInputs.viewport_bounds ?? {}) as {
+        west?: number;
+        south?: number;
+        east?: number;
+        north?: number;
+      };
+      const activeSiteBoundary =
+        Number.isFinite(Number(activeViewportBounds.west)) &&
+        Number.isFinite(Number(activeViewportBounds.south)) &&
+        Number.isFinite(Number(activeViewportBounds.east)) &&
+        Number.isFinite(Number(activeViewportBounds.north))
+          ? {
+              west: Number(activeViewportBounds.west),
+              south: Number(activeViewportBounds.south),
+              east: Number(activeViewportBounds.east),
+              north: Number(activeViewportBounds.north),
+            }
+          : undefined;
       let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
       try {
         onlineFetch = await postJson<OnlineExistingConditionsFetchResponse>(
           "/api/existing-conditions/fetch-online",
           {
             address: geocode.display_name,
-            bbox: undefined,
+            bbox: activeSiteBoundary,
+            active_site_boundary: activeSiteBoundary ?? {},
             include_floodplain: true,
             include_wetlands: true,
             include_parcels: true,
@@ -18305,14 +18325,45 @@ function PerformanceAIDashboardView({
                           ))}
                         </div>
                       ) : null}
+                      {hasAppliedAddress ? (
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="auto-site-context-summary">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Found</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-700" data-testid="auto-site-context-found">
+                                {onlineFoundSources.length
+                                  ? onlineFoundSources
+                                      .map((source) => `${source.label || source.key}${source.candidate_count ? ` (${source.candidate_count})` : ""}`)
+                                      .join(", ")
+                                  : "No source candidates found yet"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-600">Missing</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-700" data-testid="auto-site-context-missing">
+                                {onlineMissingSources.length
+                                  ? onlineMissingSources.map((source) => source.label || source.key || "Unavailable source").join(", ")
+                                  : "No missing sources reported"}
+                              </p>
+                            </div>
+                          </div>
+                          <p className="mt-2 text-xs font-medium text-slate-500" data-testid="auto-site-context-candidates">
+                            {onlineDiscoveryBusy
+                              ? "Checking parcel, roads, buildings, terrain/elevation, floodplain/wetlands, and configured utilities..."
+                              : onlineDiscovery.version
+                                ? `${onlineDiscoveryCandidateCount} review required candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} returned. Nothing is survey/control or ready for construction.`
+                                : "Apply Address runs Auto Site Context automatically."}
+                          </p>
+                        </div>
+                      ) : null}
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <button
                           type="button"
                           onClick={() => void saveSiteAddress()}
-                          disabled={!siteAddress.trim()}
+                          disabled={!siteAddress.trim() || onlineDiscoveryBusy}
                           className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          Apply address
+                          {onlineDiscoveryBusy ? "Applying..." : "Apply address"}
                         </button>
                         <button
                           type="button"
@@ -18320,6 +18371,15 @@ function PerformanceAIDashboardView({
                           className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-white"
                         >
                           Upload map
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void saveSiteAddress()}
+                          disabled={!hasAppliedAddress || onlineDiscoveryBusy}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2"
+                          data-testid="rerun-site-context"
+                        >
+                          Rerun site context
                         </button>
                       </div>
                       </div>

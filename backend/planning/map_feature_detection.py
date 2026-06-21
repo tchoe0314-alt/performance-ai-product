@@ -14,10 +14,12 @@ FEATURE_TYPES = {
     "road_or_drive",
     "parking_area",
     "parcel_or_site_boundary",
+    "terrain",
     "sidewalk_or_path",
     "water/pond/basin",
     "vegetation/tree_area",
     "constraint_area",
+    "utility",
 }
 
 SOURCE_TYPES = {
@@ -61,8 +63,8 @@ GIS_LAYER_FEATURE_TYPES = {
     "row": "constraint_area",
     "floodplain": "constraint_area",
     "wetlands": "constraint_area",
-    "existing_utilities": "constraint_area",
-    "utilities": "constraint_area",
+    "existing_utilities": "utility",
+    "utilities": "utility",
     "zoning": "constraint_area",
     "constraints": "constraint_area",
 }
@@ -87,6 +89,7 @@ DRAFT_OBJECT_TYPES = {
     "road_or_drive": "road",
     "parking_area": "parking",
     "parcel_or_site_boundary": "site_boundary_candidate",
+    "terrain": "terrain_candidate",
     "sidewalk_or_path": "sidewalk",
     "water/pond/basin": "basin",
     "vegetation/tree_area": "open_space",
@@ -99,6 +102,7 @@ FEATURE_TYPE_LABELS = {
     "road_or_drive": "road/ROW",
     "parking_area": "parking area",
     "parcel_or_site_boundary": "parcel/site boundary",
+    "terrain": "terrain/elevation",
     "sidewalk_or_path": "sidewalk/path",
     "water/pond/basin": "water/wetland/floodplain constraint",
     "vegetation/tree_area": "vegetation/tree area",
@@ -158,11 +162,27 @@ def build_map_feature_detection_report(
     inferred_candidates: Optional[List[Dict[str, Any]]] = None,
     source_results: Optional[Dict[str, Any]] = None,
     configured_sources: Optional[Dict[str, Any]] = None,
+    active_site_boundary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     candidates: List[Dict[str, Any]] = []
+    outside_site_candidates: List[Dict[str, Any]] = []
     blockers: List[Dict[str, Any]] = []
     source_discovery = build_source_discovery(source_results=source_results, configured_sources=configured_sources, gis_layers=gis_layers)
     layers = safe_dict(gis_layers)
+    boundary = safe_dict(active_site_boundary)
+
+    def add_candidate(candidate: Dict[str, Any]) -> None:
+        relation = _site_relation(candidate.get("geometry"), boundary)
+        if relation == "outside_site":
+            candidate["site_relation"] = "outside_site"
+            candidate["outside_site"] = True
+            outside_site_candidates.append(candidate)
+            return
+        if relation:
+            candidate["site_relation"] = relation
+            candidate["outside_site"] = False
+        candidates.append(candidate)
+
     for layer_name, raw_layer in layers.items():
         feature_type = GIS_LAYER_FEATURE_TYPES.get(safe_str(layer_name))
         if not feature_type:
@@ -172,7 +192,7 @@ def build_map_feature_detection_report(
             source = safe_str(rec.get("source_url") or rec.get("source") or safe_dict(raw_layer).get("source_url") or safe_dict(raw_layer).get("source"), "")
             source_name = safe_str(rec.get("source_name") or rec.get("source_type") or safe_dict(raw_layer).get("source_name") or safe_dict(raw_layer).get("source_type"), f"gis_layer:{layer_name}")
             accepted = _official_source_accepted(rec) or _official_source_accepted(safe_dict(raw_layer))
-            candidates.append(
+            add_candidate(
                 _candidate(
                     feature_type=feature_type,
                     source_type="official_gis",
@@ -189,6 +209,29 @@ def build_map_feature_detection_report(
                 )
             )
 
+    elevation = safe_dict(safe_dict(source_results).get("elevation"))
+    if elevation.get("success"):
+        add_candidate(
+            _candidate(
+                feature_type="terrain",
+                source_type="official_gis",
+                geometry={"type": "Point", "coordinates": [safe_float(elevation.get("lng")), safe_float(elevation.get("lat"))]},
+                confidence=0.72,
+                source_url=safe_str(elevation.get("source")),
+                source_name=safe_str(elevation.get("source_type"), "usgs_3dep_epqs"),
+                blockers=[safe_str(elevation.get("truth_label"), "Public DEM/elevation context is not a topographic survey.")],
+                review_required=True,
+                acceptance_status="pending",
+                seed=f"terrain:{elevation.get('source')}:{elevation.get('lat')}:{elevation.get('lng')}:{elevation.get('elevation')}",
+                source_feature_id="terrain-elevation-sample",
+                properties={
+                    "elevation": elevation.get("elevation"),
+                    "units": elevation.get("units"),
+                    "source_date": elevation.get("source_date"),
+                },
+            )
+        )
+
     for idx, detection in enumerate(safe_list(image_detections)):
         rec = safe_dict(detection)
         kind = safe_str(rec.get("kind") or rec.get("feature_type") or rec.get("type"))
@@ -196,7 +239,7 @@ def build_map_feature_detection_report(
         if not feature_type:
             continue
         confidence = min(max(safe_float(rec.get("confidence"), 0.35), 0.05), 0.7)
-        candidates.append(
+        add_candidate(
             _candidate(
                 feature_type=feature_type,
                 source_type="image_detected_candidate",
@@ -251,6 +294,8 @@ def build_map_feature_detection_report(
         "source_discovery": source_discovery,
         "feature_candidates": candidates,
         "candidate_count": len(candidates),
+        "outside_site_candidates": outside_site_candidates,
+        "outside_site_candidate_count": len(outside_site_candidates),
         "blockers": blockers,
         "trusted_canonical_object_count": 0,
         "construction_release_allowed": False,
@@ -389,6 +434,74 @@ def _candidate(
         "canonical_object_allowed": False,
         "draft_object_allowed_after_acceptance": True,
     }
+
+
+def _site_relation(geometry: Any, boundary: Dict[str, Any]) -> str:
+    if not boundary:
+        return ""
+    boundary_bbox = _geometry_bbox(boundary) or _bbox_from_mapping(boundary)
+    candidate_bbox = _geometry_bbox(geometry) or _bbox_from_mapping(safe_dict(geometry))
+    if not boundary_bbox or not candidate_bbox:
+        return "site_boundary_present_unchecked"
+    if _bboxes_intersect(candidate_bbox, boundary_bbox):
+        return "inside_or_intersects_site"
+    return "outside_site"
+
+
+def _bbox_from_mapping(value: Dict[str, Any]) -> Optional[tuple[float, float, float, float]]:
+    west = value.get("west", value.get("min_lng", value.get("xmin")))
+    south = value.get("south", value.get("min_lat", value.get("ymin")))
+    east = value.get("east", value.get("max_lng", value.get("xmax")))
+    north = value.get("north", value.get("max_lat", value.get("ymax")))
+    if any(item in (None, "") for item in (west, south, east, north)):
+        return None
+    return (safe_float(west), safe_float(south), safe_float(east), safe_float(north))
+
+
+def _geometry_bbox(geometry: Any) -> Optional[tuple[float, float, float, float]]:
+    rec = safe_dict(geometry)
+    if not rec:
+        return None
+    raw_bbox = rec.get("bbox")
+    if isinstance(raw_bbox, list) and len(raw_bbox) >= 4:
+        return (safe_float(raw_bbox[0]), safe_float(raw_bbox[1]), safe_float(raw_bbox[2]), safe_float(raw_bbox[3]))
+    if rec.get("type") == "Feature":
+        return _geometry_bbox(rec.get("geometry"))
+    if rec.get("type") == "FeatureCollection":
+        boxes = [_geometry_bbox(feature) for feature in safe_list(rec.get("features"))]
+        boxes = [box for box in boxes if box]
+        if not boxes:
+            return None
+        return (
+            min(box[0] for box in boxes),
+            min(box[1] for box in boxes),
+            max(box[2] for box in boxes),
+            max(box[3] for box in boxes),
+        )
+    points: List[tuple[float, float]] = []
+
+    def collect(coords: Any) -> None:
+        if (
+            isinstance(coords, (list, tuple))
+            and len(coords) >= 2
+            and isinstance(coords[0], (int, float))
+            and isinstance(coords[1], (int, float))
+        ):
+            points.append((safe_float(coords[0]), safe_float(coords[1])))
+            return
+        for item in safe_list(coords):
+            collect(item)
+
+    collect(rec.get("coordinates"))
+    if not points:
+        return None
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _bboxes_intersect(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+    return not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
 
 
 def _layer_features(raw_layer: Any) -> List[Dict[str, Any]]:

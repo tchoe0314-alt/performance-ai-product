@@ -685,6 +685,7 @@ def fetch_online_existing_conditions(
     include_elevation: bool = True,
     standards_jurisdiction: Optional[Dict[str, Any]] = None,
     provider_registry: Optional[Dict[str, Any]] = None,
+    active_site_boundary: Optional[Dict[str, Any]] = None,
     session: Any = requests,
 ) -> Dict[str, Any]:
     source_results: Dict[str, Dict[str, Any]] = {}
@@ -726,6 +727,7 @@ def fetch_online_existing_conditions(
             location_context=location_context,
             gis_layers={layer: [] for layer in REQUIRED_GIS_LAYERS},
             source_results=source_results,
+            active_site_boundary=active_site_boundary,
         )
         discovery_report = build_online_existing_conditions_discovery_report(
             source_results=source_results,
@@ -942,6 +944,7 @@ def fetch_online_existing_conditions(
         location_context=location_context,
         gis_layers=online_layers.get("gis_layers"),
         source_results=source_results,
+        active_site_boundary=active_site_boundary,
     )
     discovery_report = build_online_existing_conditions_discovery_report(
         source_results=source_results,

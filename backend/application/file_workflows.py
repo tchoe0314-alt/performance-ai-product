@@ -401,6 +401,7 @@ def fetch_existing_conditions_online(
     include_utilities: bool = True,
     include_contours: bool = True,
     include_elevation: bool = True,
+    active_site_boundary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     registry = build_provider_registry(providers=(provider_registry or {}).get("providers") if provider_registry else None)
     parcel_url = parcel_service_url or str(os.getenv("CIVORA_PARCEL_ARCGIS_SERVICE_URL") or "")
@@ -431,6 +432,7 @@ def fetch_existing_conditions_online(
         include_contours=include_contours,
         include_elevation=include_elevation,
         provider_registry=registry,
+        active_site_boundary=active_site_boundary,
     )
     canonical = result.get("canonical_existing_conditions") or {}
     package_meta = {

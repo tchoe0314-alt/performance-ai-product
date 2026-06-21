@@ -3106,17 +3106,20 @@ def _address_from_online_message(message: str, record: Optional[Dict[str, Any]])
     return ""
 
 
-def _summarize_online_discovery(discovery: Dict[str, Any], *, why_buildings: bool = False) -> str:
+def _summarize_online_discovery(discovery: Dict[str, Any], *, why_source_key: str = "") -> str:
     if not discovery:
         return "I do not have an online existing-conditions discovery report saved for this project yet."
     sources = [_safe_dict(item) for item in _safe_list(discovery.get("sources")) if _safe_dict(item)]
     found = [item for item in sources if int(item.get("candidate_count") or 0) > 0]
     missing = [item for item in sources if int(item.get("candidate_count") or 0) <= 0]
-    if why_buildings:
-        building = next((item for item in sources if safe_str(item.get("key")) == "building_footprints"), {})
-        blockers = _safe_list(_safe_dict(building).get("blockers"))
-        reason = safe_str(blockers[0] if blockers else "", "No building footprint source is configured or available.")
-        return f"It did not find buildings because: {reason} Building footprints stay candidate/review-required until a configured provider returns features and the user reviews them."
+    if why_source_key:
+        target = next((item for item in sources if safe_str(item.get("key")) == why_source_key), {})
+        if not target and "utilit" in why_source_key:
+            target = next((item for item in sources if "utilit" in safe_str(item.get("key") or item.get("label")).lower()), {})
+        label = safe_str(_safe_dict(target).get("label") or why_source_key)
+        blockers = _safe_list(_safe_dict(target).get("blockers"))
+        reason = safe_str(blockers[0] if blockers else "", f"No {label} source is configured or available.")
+        return f"It did not find {label} because: {reason} {label.capitalize()} stays candidate/review-required until a configured provider returns features and the user reviews them."
     lines = []
     packs = [
         safe_str(_safe_dict(item).get("label") or _safe_dict(item).get("pack_id"))
@@ -3149,6 +3152,23 @@ def _summarize_online_discovery(discovery: Dict[str, Any], *, why_buildings: boo
     return " ".join(lines)
 
 
+def _summarize_online_missing(discovery: Dict[str, Any]) -> str:
+    if not discovery:
+        return "I do not have an online existing-conditions discovery report saved for this project yet."
+    missing = [_safe_dict(item) for item in _safe_list(discovery.get("missing_sources")) if _safe_dict(item)]
+    if not missing:
+        sources = [_safe_dict(item) for item in _safe_list(discovery.get("sources")) if _safe_dict(item)]
+        missing = [item for item in sources if int(item.get("candidate_count") or 0) <= 0]
+    if not missing:
+        return "No missing online source categories are listed in the saved site-context summary. Review is still required, and online data is not survey/control."
+    lines = ["Missing from this site context:"]
+    for item in missing[:8]:
+        reasons = _safe_list(item.get("missing") or item.get("blockers"))
+        lines.append(f"- {safe_str(item.get('label') or item.get('key'))}: {safe_str(reasons[0] if reasons else 'missing/unavailable')}")
+    lines.append("This is a source-availability summary only; it is not a final reliance or completeness statement.")
+    return "\n".join(lines)
+
+
 def _online_discovery_chat_response(
     *,
     message: str,
@@ -3161,6 +3181,7 @@ def _online_discovery_chat_response(
         phrase in normalized
         for phrase in (
             "what sources are available here",
+            "what did you find",
             "what did you find online",
             "what did you find from online",
             "what online sources",
@@ -3169,7 +3190,10 @@ def _online_discovery_chat_response(
     )
     asks_find = any(phrase in normalized for phrase in ("find providers for this address", "find gis providers for this address", "find site data from this address", "find site data", "use online sources if available"))
     asks_building_gap = "why" in normalized and any(phrase in normalized for phrase in ("didn't it find buildings", "did not find buildings", "no buildings", "building footprints"))
-    if not any((asks_summary, asks_find, asks_building_gap)):
+    asks_utility_gap = "why" in normalized and any(phrase in normalized for phrase in ("didn't it find utilities", "did not find utilities", "no utilities", "utility", "utilities"))
+    asks_missing_site = "missing" in normalized and any(phrase in normalized for phrase in ("this site", "site context", "from this site"))
+    asks_survey_control = "survey control" in normalized and any(phrase in normalized for phrase in ("is this", "is it", "does this", "online", "site context"))
+    if not any((asks_summary, asks_find, asks_building_gap, asks_utility_gap, asks_missing_site, asks_survey_control)):
         return None
     if not record:
         return _truthful_decision_update(
@@ -3265,9 +3289,21 @@ def _online_discovery_chat_response(
             state_changed=True,
         )
     discovery = _online_discovery_from_record(record)
+    if asks_summary and not discovery and not any((asks_building_gap, asks_utility_gap, asks_missing_site, asks_survey_control)):
+        return None
+    if asks_survey_control:
+        assistant_message = (
+            "No. Auto Site Context and online GIS results are review-required context only. "
+            "This does not establish survey control, boundary control, benchmark datum, utility locate, construction approval, stamp, seal, certification, or engineer-of-record responsibility."
+        )
+    elif asks_missing_site:
+        assistant_message = _summarize_online_missing(discovery)
+    else:
+        source_key = "building_footprints" if asks_building_gap else "public_utilities" if asks_utility_gap else ""
+        assistant_message = _summarize_online_discovery(discovery, why_source_key=source_key)
     return _truthful_decision_update(
         {},
-        assistant_message=_summarize_online_discovery(discovery, why_buildings=asks_building_gap),
+        assistant_message=assistant_message,
         intent="conversation",
         run_mode="none",
         design_prompt="",
@@ -3481,7 +3517,11 @@ def _provider_registry_chat_response(
             and safe_str(item.get("status")) != "unconfigured"
         ]
         if not configured:
-            reason = f"No configured local GIS provider is registered for {missing_source_type}."
+            reason = (
+                "No existing utilities GIS source is configured."
+                if missing_source_type == "utilities"
+                else f"No configured local GIS provider is registered for {missing_source_type}."
+            )
             next_action = f"Add a {missing_source_type} ArcGIS REST provider, then re-apply the address."
         else:
             statuses = ", ".join(
@@ -3495,7 +3535,10 @@ def _provider_registry_chat_response(
             next_action = "Run provider health and confirm the configured ArcGIS layer has query access and features inside the address search area."
         return _truthful_decision_update(
             {},
-            assistant_message=f"{reason} Civora will not report source success when a provider is missing, unhealthy, stale/unknown, or returns no candidates.",
+            assistant_message=(
+                f"{reason} Civora will not report source success when a provider is missing, unhealthy, stale/unknown, or returns no candidates. "
+                "Any returned GIS data stays candidate/review-required."
+            ),
             intent="conversation",
             run_mode="none",
             design_prompt="",

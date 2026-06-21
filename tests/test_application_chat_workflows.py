@@ -1358,6 +1358,18 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
                     "blockers": ["building footprints provider responded but returned no features inside the address search area."],
                     "review_required": True,
                 },
+                {
+                    "key": "public_utilities",
+                    "label": "public utility layers",
+                    "provider": "",
+                    "status": "unconfigured",
+                    "candidate_count": 0,
+                    "blockers": ["No existing utilities GIS source is configured."],
+                    "review_required": True,
+                },
+            ],
+            "missing_sources": [
+                {"key": "public_utilities", "label": "public utility layers", "missing": ["No existing utilities GIS source is configured."]},
             ],
         }
         record["project_input"]["meta"] = {
@@ -1408,6 +1420,24 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
             project_store=store,
             user_id="user_1",
         )
+        utilities = decide_chat(
+            {"message": "why didn't it find utilities?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        missing = decide_chat(
+            {"message": "what is missing from this site?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        survey_control = decide_chat(
+            {"message": "is this site context survey control?", "context": {"current_project": {"project_id": "project_123"}}},
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
         parcel = decide_chat(
             {"message": "use the parcel boundary", "context": {"current_project": {"project_id": "project_123"}}},
             decide_chat_message=decide_chat_message,
@@ -1421,6 +1451,11 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("building footprints provider responded but returned no features", found["assistant_message"])
         self.assertIn("provider record(s) are configured", buildings["assistant_message"])
         self.assertIn("will not report source success", buildings["assistant_message"])
+        self.assertIn("No existing utilities GIS source is configured.", utilities["assistant_message"])
+        self.assertIn("candidate/review-required", utilities["assistant_message"])
+        self.assertIn("Missing from this site context", missing["assistant_message"])
+        self.assertIn("public utility layers", missing["assistant_message"])
+        self.assertIn("does not establish survey control", survey_control["assistant_message"])
         self.assertEqual(parcel["action_taken"], "accepted_candidate_review_items")
         self.assertIn("accepted as draft/review-required evidence", parcel["assistant_message"])
         self.assertNotIn("construction-ready", parcel["assistant_message"].lower())
