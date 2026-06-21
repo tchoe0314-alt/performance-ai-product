@@ -2762,6 +2762,7 @@ function PerformanceAIDashboardView({
   const [statusMessage, setStatusMessage] = useState("");
   const [moveEditFeedback, setMoveEditFeedback] = useState("");
   const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
+  const [projectDrawerNotice, setProjectDrawerNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
@@ -8506,6 +8507,26 @@ function PerformanceAIDashboardView({
             : currentProject?.project_id
               ? "Project saved; restore status pending"
               : "Restore unavailable";
+  const projectDrawerStateLabel =
+    effectiveDemoWorkspaceEnabled
+      ? "Local demo"
+      : workspaceRestoreState === "failed"
+        ? "Could not restore"
+        : currentProject?.project_id
+          ? "Saved"
+          : token
+            ? "Unsaved draft"
+            : "Restore unavailable";
+  const projectDrawerStateDetail =
+    effectiveDemoWorkspaceEnabled
+      ? "Demo changes stay local and are not saved to project storage."
+      : workspaceRestoreState === "failed"
+        ? projectDrawerNotice || "The saved project could not be restored from the backend."
+        : currentProject?.project_id
+          ? "This browser can restore the active saved project after reload."
+          : token
+            ? "This clean workspace has not been saved yet."
+            : "Sign in and connect to the backend to list, save, open, or delete projects.";
 
   const tryHandleInfoIntent = (message: string): boolean => {
     const normalized = message.toLowerCase();
@@ -9767,6 +9788,7 @@ function PerformanceAIDashboardView({
         window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
       }
       upsertProjectSummary(data.project);
+      setProjectDrawerNotice("Saved. Reload will restore this project on this browser.");
       if (!silent) {
         setStatusMessage(
           `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
@@ -9774,10 +9796,11 @@ function PerformanceAIDashboardView({
       }
       return data.project;
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Project save failed.";
+      setProjectDrawerNotice(`Save blocked: ${message}`);
       if (!silent) {
-        setStatusMessage(
-          error instanceof Error ? error.message : "Project save failed.",
-        );
+        setStatusMessage(message);
       }
       return null;
     } finally {
@@ -9970,6 +9993,7 @@ function PerformanceAIDashboardView({
       setPlanPreviewUrl("");
       setPlanPreviewSummary(null);
       setStatusMessage(`Loaded project "${project.name}".`);
+      setProjectDrawerNotice(`Restored "${project.name || "Untitled Project"}".`);
       setWorkspaceRestoreState("restored");
       if (typeof window !== "undefined") {
         window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
@@ -9980,9 +10004,10 @@ function PerformanceAIDashboardView({
       }
     } catch (error) {
       setWorkspaceRestoreState("failed");
-      setStatusMessage(
-        error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.",
-      );
+      const message =
+        error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.";
+      setProjectDrawerNotice(message);
+      setStatusMessage(message);
     } finally {
       autosaveSuspendRef.current = false;
     }
@@ -13802,12 +13827,31 @@ function PerformanceAIDashboardView({
 
   const resetWorkspaceState = useCallback(() => {
     debugLog("reset-workspace");
+    setCadToolRequest(null);
     setPlanPreviewUrl("");
+    setPlanPreviewProjectId(null);
     setPlanPreviewSummary(null);
     setPlanPreviewAnnotations(null);
     setPreviewRefreshing(false);
     setPreviewRefreshNote(null);
     setBackendResult(null);
+    setGenerateFlowSummary(null);
+    setReviewPackageFlowSummary(null);
+    setExportActionMessage("");
+    setPlanPdfUploadState("idle");
+    setSelectedPlanPdfElementId("");
+    setPlanPdfElementDraftText("");
+    setPlanPdfMoveX("");
+    setPlanPdfMoveY("");
+    setSelectedRunId("");
+    setActiveJobId("");
+    setSelectedJobId("");
+    setJobs([]);
+    setJobToasts([]);
+    setApprovalInFlight(false);
+    setApprovalPhaseLabel(null);
+    setApprovalError(null);
+    setApprovalPendingJobId(null);
     setUploadedImageApiUrl("");
     setUploadedImagePreviewUrl("");
     setImageUploadState("idle");
@@ -13831,7 +13875,6 @@ function PerformanceAIDashboardView({
       candidateCount: 0,
       missing: [],
     });
-    setSelectedPlanPdfElementId("");
     setLayerManagerOpen(false);
     setPreviewFullscreenOpen(false);
     setSelectedJobId("");
@@ -13862,12 +13905,21 @@ function PerformanceAIDashboardView({
     setSelectedIssueId(null);
     setPendingClarification(null);
     setPlanSheetSet(createDefaultPlanSheetSet("Untitled Project"));
-  }, []);
+  }, [setJobs]);
 
   const handleNewProject = async () => {
     debugLog("new-project-start");
     projectLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
+    autosaveSuspendRef.current = true;
+    if (chatAutosaveTimeoutRef.current !== null) {
+      window.clearTimeout(chatAutosaveTimeoutRef.current);
+      chatAutosaveTimeoutRef.current = null;
+    }
+    if (controlAutosaveTimeoutRef.current !== null) {
+      window.clearTimeout(controlAutosaveTimeoutRef.current);
+      controlAutosaveTimeoutRef.current = null;
+    }
     draftProjectPromiseRef.current = null;
     resolvedProjectIdRef.current = "";
     setProjectId("");
@@ -13932,64 +13984,29 @@ function PerformanceAIDashboardView({
     setChatMessages(nextThread);
     if (typeof window !== "undefined") {
       try {
+        window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
         window.localStorage.removeItem(getChatThreadStorageKey("draft"));
       } catch {
         // Ignore local storage failures.
       }
     }
+    setWorkspaceRestoreState("idle");
+    setProjectDrawerNotice("Unsaved draft. Save Project will persist this clean workspace.");
     setStatusMessage("Started a new project.");
-    try {
-      if (token) {
-        draftProjectPromiseRef.current = saveProject({
-          silent: true,
-          projectIdOverride: null,
-          nameOverride: "",
-          fileNameOverride: "",
-          projectInputOverride: {
-            input_mode: "user",
-            strict_mode: false,
-            prompt_text: null,
-            image_path: null,
-            meta: {
-              chat_thread: [createWelcomeMessage()],
-              auto_named: false,
-              auto_file_named: false,
-            },
-            manual_fields: {
-              project_name: "",
-              file_name: "",
-              units: "ft",
-              project_type: "",
-              lot: { x: 0, y: 0, w: 0, h: 0 },
-              setback: 0,
-              building_width: 0,
-              building_depth: 0,
-              site_plan: { parking_count: 0 },
-              disciplines: ["corridor", "grading", "drainage", "utility"],
-            },
-            allow_ai_fill_for_blanks: false,
-          },
-          latestResultOverride: {},
-          autoNamedOverride: false,
-          autoFileNamedOverride: false,
-        });
-        const createdProject = await draftProjectPromiseRef.current;
-        if (createdProject?.project_id) {
-          resolvedProjectIdRef.current = createdProject.project_id;
-          setProjectId(createdProject.project_id);
-          setCurrentProject(createdProject);
-          debugLog("new-project-created", { projectId: createdProject.project_id });
-          await refreshProjects(token);
-        }
-      }
-    } finally {
-      draftProjectPromiseRef.current = null;
-      suppressProjectAutoLoadRef.current = false;
-    }
+    draftProjectPromiseRef.current = null;
+    suppressProjectAutoLoadRef.current = false;
+    window.setTimeout(() => {
+      autosaveSuspendRef.current = false;
+    }, 0);
   };
 
   const handleDeleteProject = async (projectIdToDelete: string) => {
-    if (!token) return;
+    if (!token) {
+      const message = "Delete blocked: sign in and reconnect to the backend before deleting saved projects.";
+      setProjectDrawerNotice(message);
+      setStatusMessage(message);
+      return;
+    }
     const target = projects.find((item) => item.project_id === projectIdToDelete);
     const confirmed = window.confirm(
       `Delete "${target?.name || "Untitled Project"}"? This cannot be undone.`,
@@ -13997,9 +14014,12 @@ function PerformanceAIDashboardView({
     if (!confirmed) return;
     try {
       setStatusMessage("Deleting project...");
-      await deleteJson<{ success: boolean }>(`/api/projects/${projectIdToDelete}`, {
+      const response = await deleteJson<{ success: boolean }>(`/api/projects/${projectIdToDelete}`, {
         token,
       });
+      if (!response.success) {
+        throw new Error("Delete blocked: the backend did not confirm deletion.");
+      }
       if (typeof window !== "undefined") {
         try {
           window.localStorage.removeItem(getChatThreadStorageKey(projectIdToDelete));
@@ -14013,11 +14033,13 @@ function PerformanceAIDashboardView({
       } else {
         await refreshProjects(token);
       }
+      setProjectDrawerNotice("Project deleted.");
       setStatusMessage("Project deleted.");
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Could not delete project.",
-      );
+      const message =
+        error instanceof Error ? `Delete blocked: ${error.message}` : "Delete blocked: could not delete project.";
+      setProjectDrawerNotice(message);
+      setStatusMessage(message);
     }
   };
 
@@ -17665,6 +17687,10 @@ function PerformanceAIDashboardView({
         <AppHeader
           userEmail={effectiveUser.email}
           onOpenDashboard={() => handleOpenSidePanel("dashboard")}
+          onOpenProjects={() => {
+            if (token) void refreshProjects(token);
+            handleOpenSidePanel("projects");
+          }}
           onOpenWorkspace={() => {
             setWorkspaceChromeMinimized(false);
             setLeftSidebarOpen(true);
@@ -18068,63 +18094,114 @@ function PerformanceAIDashboardView({
 	                  </div>
 	                ) : null}
                 {sidePanelForRender === "projects" ? (
-                  <div className="space-y-3">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await handleNewProject();
-                        setActiveSidePanel(null);
-                      }}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                    >
-                      + New Project
-                    </button>
-                    {sortedProjects.length ? (
-                      sortedProjects.map((projectSummary) => (
-                        <div
-                          key={projectSummary.project_id}
-                          className={`relative w-full rounded-2xl border px-4 py-3 text-left transition ${
-                            projectSummary.project_id === projectId
-                              ? "border-slate-900 bg-slate-950 text-white"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  <div className="space-y-4" data-testid="projects-drawer">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Project state
+                        </p>
+                        <span
+                          data-testid="project-drawer-state"
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                            projectDrawerStateLabel === "Saved"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : projectDrawerStateLabel === "Could not restore"
+                                ? "bg-red-50 text-red-700"
+                                : "bg-amber-50 text-amber-700"
                           }`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void loadProject(projectSummary.project_id);
-                              setActiveSidePanel(null);
-                            }}
-                            className="block w-full text-left"
-                          >
-                            <p className="text-sm font-semibold">
-                              {projectSummary.name || "Untitled Project"}
-                            </p>
-                            <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-70">
-                              {projectSummary.description ||
-                                (projectSummary.updated_at
-                                  ? `Updated ${new Date(projectSummary.updated_at * 1000).toLocaleDateString()}`
-                                  : "No description")}
-                            </p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleDeleteProject(projectSummary.project_id);
-                            }}
-                            className={`absolute right-3 top-3 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                          {projectDrawerStateLabel}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold text-slate-900">
+                        {siteName || currentProject?.name || "Untitled Project"}
+                      </p>
+                      <p data-testid="project-drawer-detail" className="mt-1 text-xs leading-5 text-slate-600">
+                        {projectDrawerNotice || projectDrawerStateDetail}
+                      </p>
+                      <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Review-only workspace. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await handleNewProject();
+                        }}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                      >
+                        New Project
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveProject()}
+                        className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                      >
+                        Save Project
+                      </button>
+                    </div>
+                    {sortedProjects.length ? (
+                      <div className="space-y-2">
+                        {sortedProjects.map((projectSummary) => (
+                          <div
+                            key={projectSummary.project_id}
+                            className={`w-full rounded-xl border px-3 py-3 text-left transition ${
                               projectSummary.project_id === projectId
-                                ? "border-white/40 text-white/80 hover:bg-white/10"
-                                : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                                ? "border-slate-900 bg-slate-950 text-white"
+                                : "border-slate-200 bg-white text-slate-700"
                             }`}
                           >
-                            Delete
-                          </button>
-                        </div>
-                      ))
+                            <div className="flex items-start justify-between gap-3">
+                              <button
+                                type="button"
+                                aria-label={`Open project ${projectSummary.name || "Untitled Project"}`}
+                                onClick={() => {
+                                  void loadProject(projectSummary.project_id);
+                                }}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <p className="truncate text-sm font-semibold">
+                                  {projectSummary.name || "Untitled Project"}
+                                </p>
+                                <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-70">
+                                  {projectSummary.description ||
+                                    (projectSummary.updated_at
+                                      ? `Updated ${new Date(projectSummary.updated_at * 1000).toLocaleDateString()}`
+                                      : "No description")}
+                                </p>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Delete project ${projectSummary.name || "Untitled Project"}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleDeleteProject(projectSummary.project_id);
+                                }}
+                                className={`shrink-0 rounded-lg border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  projectSummary.project_id === projectId
+                                    ? "border-white/40 text-white/80 hover:bg-white/10"
+                                    : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                                }`}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     ) : (
-                      <p className="text-sm text-slate-500">No projects yet.</p>
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center">
+                        <p className="text-sm font-semibold text-slate-900">No saved projects yet.</p>
+                        <p className="mt-1 text-xs text-slate-500">Start clean, then Save Project when this draft should be restored later.</p>
+                        <button
+                          type="button"
+                          onClick={() => void handleNewProject()}
+                          className="mt-3 rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-semibold text-white"
+                        >
+                          New Project
+                        </button>
+                      </div>
                     )}
                   </div>
                 ) : null}
