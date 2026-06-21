@@ -1,11 +1,12 @@
 "use client";
 
-import { Bell, CircleHelp, MessageSquare, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Undo2 } from "lucide-react";
+import { Bell, CircleHelp, FolderOpen, MessageSquare, PanelLeftClose, PanelLeftOpen, RotateCcw, Search, Undo2 } from "lucide-react";
 
 type AppHeaderProps = {
   userEmail: string;
   onOpenDashboard: () => void;
   onOpenWorkspace: () => void;
+  onOpenProjects: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
   sidebarOpen: boolean;
@@ -17,6 +18,7 @@ export default function AppHeader({
   userEmail,
   onOpenDashboard,
   onOpenWorkspace,
+  onOpenProjects,
   onOpenDocs,
   onOpenChat,
   sidebarOpen,
@@ -61,6 +63,15 @@ export default function AppHeader({
           >
             <MessageSquare className="h-4 w-4" />
             Chat
+          </button>
+          <button
+            type="button"
+            onClick={onOpenProjects}
+            aria-label="Open projects from header"
+            className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 md:inline-flex"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Projects
           </button>
           <button
             type="button"

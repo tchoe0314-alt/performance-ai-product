@@ -39,7 +39,9 @@ test.describe("real website workflow clarity", () => {
 
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open workspace controls" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open projects from header" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open projects from header" })).toBeVisible();
+    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open chat from header" })).toBeVisible();
     await page.getByRole("button", { name: "Open workspace controls" }).click();
     await expect(page.getByRole("button", { name: "Minimize Civora workspace controls" })).toBeVisible();
