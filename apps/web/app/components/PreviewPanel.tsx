@@ -1940,6 +1940,18 @@ export default function PreviewPanel({
     [onUpdateBuilding],
   );
   const undoCadCommand = useCallback(() => {
+    const recordUndoFeedback = (status: CadCommandHistoryEntry["status"], message: string) => {
+      setCadCommandStatus(message);
+      setCadCommandHistory((prev) => [
+        ...prev.slice(-11),
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          command: "UNDO",
+          status,
+          message,
+        },
+      ]);
+    };
     const entry = cadHistory[cadHistory.length - 1];
     if (!entry) {
       if (lastPolylineEdit || lastRectEdit) {
@@ -1947,19 +1959,39 @@ export default function PreviewPanel({
         const rectTs = lastRectEdit?.ts ?? 0;
         if (polyTs >= rectTs) applyPolylineUndo();
         else applyRectUndo();
+        recordUndoFeedback("applied", "UNDO restored the last canvas drawing edit.");
+      } else {
+        recordUndoFeedback("blocked", "UNDO blocked: no draft CAD history is available.");
       }
       return;
     }
     applyCadHistorySnapshot(entry.before);
     setCadHistory((prev) => prev.slice(0, -1));
     setCadRedoStack((prev) => [...prev, entry]);
+    recordUndoFeedback("applied", "UNDO restored the last draft CAD object edit.");
   }, [applyCadHistorySnapshot, applyPolylineUndo, applyRectUndo, cadHistory, lastPolylineEdit, lastRectEdit]);
   const redoCadCommand = useCallback(() => {
+    const recordRedoFeedback = (status: CadCommandHistoryEntry["status"], message: string) => {
+      setCadCommandStatus(message);
+      setCadCommandHistory((prev) => [
+        ...prev.slice(-11),
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          command: "REDO",
+          status,
+          message,
+        },
+      ]);
+    };
     const entry = cadRedoStack[cadRedoStack.length - 1];
-    if (!entry) return;
+    if (!entry) {
+      recordRedoFeedback("blocked", "REDO blocked: no draft CAD redo history is available.");
+      return;
+    }
     applyCadHistorySnapshot(entry.after);
     setCadRedoStack((prev) => prev.slice(0, -1));
     setCadHistory((prev) => [...prev, entry]);
+    recordRedoFeedback("applied", "REDO restored the draft CAD object edit.");
   }, [applyCadHistorySnapshot, cadRedoStack]);
   const parseCadNumber = useCallback((value: string, fallback = 0) => {
     const parsed = Number(value);
@@ -2168,12 +2200,23 @@ export default function PreviewPanel({
     onSetPreviewInteraction("edit");
   }, [cadCoordinateDraft.x, cadCoordinateDraft.y, lotHeight, lotWidth, onSetPreviewInteraction, parseCadNumber, selectedCadObject, updateCadObject]);
   const applySelectedCadLayer = useCallback(() => {
+    if (!selectedCadIds.length) {
+      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: select one or more editable draft CAD objects first.");
+      return;
+    }
+    let appliedCount = 0;
     selectedCadIds.forEach((id) => {
       const target = buildingPlacements.find((item) => item.id === id);
       if (!target || target.locked || target.type === "site") return;
       updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: cadLayerDraft || "C-DRAFT" } }, "Layer");
+      appliedCount += 1;
     });
-  }, [buildingPlacements, cadLayerDraft, selectedCadIds, updateCadObject]);
+    if (appliedCount) {
+      pushCadCommandFeedback("LAYER", "applied", `LAYER applied to ${appliedCount} draft object${appliedCount === 1 ? "" : "s"}.`);
+    } else {
+      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: selected objects are locked or not editable draft CAD objects.");
+    }
+  }, [buildingPlacements, cadLayerDraft, pushCadCommandFeedback, selectedCadIds, updateCadObject]);
   const offsetSelectedCadObject = useCallback(() => {
     if (!selectedCadObject) return;
     const distance = parseCadNumber(cadOffsetDistance, 0);
@@ -2347,7 +2390,10 @@ export default function PreviewPanel({
   }, [cadDimensionLabelDraft, cadDimensionMode, pushCadCommandFeedback, selectedCadMetrics, selectedCadObject, updateCadObject]);
 
   const applyCadProperties = useCallback(() => {
-    if (!selectedCadObject) return;
+    if (!selectedCadObject) {
+      pushCadCommandFeedback("PROPERTIES", "blocked", "PROPERTIES blocked: select one editable draft CAD object first.");
+      return;
+    }
     const safeName = cadPropertyDraft.name.trim() || selectedCadObject.label || "CAD object";
     const safeLayer = cadPropertyDraft.layer.trim().toUpperCase() || "C-DRAFT";
     const safeType = cadPropertyDraft.type.trim() || selectedCadObject.type || "custom";
@@ -2378,7 +2424,8 @@ export default function PreviewPanel({
       },
       "Properties",
     );
-  }, [cadPropertyDraft, selectedCadObject, updateCadObject]);
+    pushCadCommandFeedback("PROPERTIES", "applied", "PROPERTIES applied to selected draft object.");
+  }, [cadPropertyDraft, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
 
   const insertCadSymbol = useCallback(() => {
     const x = clampValue(parseCadNumber(cadCoordinateDraft.x, lotWidth / 2), 0, lotWidth);
@@ -2420,7 +2467,8 @@ export default function PreviewPanel({
       },
     });
     setCadCommandStatus(`${labels[cadSymbolDraft]} symbol inserted for draft review.`);
-  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, cadSymbolDraft, lotHeight, lotWidth, onCreateCustomGeometry, parseCadNumber]);
+    pushCadCommandFeedback("SYMBOL", "applied", `SYMBOL inserted: ${labels[cadSymbolDraft]} remains draft/review-required.`);
+  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, cadSymbolDraft, lotHeight, lotWidth, onCreateCustomGeometry, parseCadNumber, pushCadCommandFeedback]);
 
   const toggleCadLayerVisibility = useCallback((layer: string) => {
     setHiddenCadLayers((prev) => prev.includes(layer) ? prev.filter((item) => item !== layer) : [...prev, layer]);
