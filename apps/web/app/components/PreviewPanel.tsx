@@ -718,6 +718,7 @@ export default function PreviewPanel({
     name: "",
     type: "",
     layer: "C-DRAFT",
+    color: "#2563eb",
     elevation: "",
     material: "",
     size: "",
@@ -1527,6 +1528,56 @@ export default function PreviewPanel({
     [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers],
   );
 
+  const cadObjectRows = useMemo(() => {
+    const seen = new Set<string>();
+    const classifySource = (item: BuildingPlacement, origin: "project" | "cad_preview" | "detected") => {
+      const source = String(item.source || item.meta?.source || item.meta?.canonical_source_type || "").toLowerCase();
+      const state = resolveSourceState(item);
+      if (origin === "detected" || source.includes("detected")) return "detected";
+      if (source.includes("import") || state === "imported") return "uploaded/imported";
+      if (origin === "cad_preview" || item.generated || source.includes("generated")) return "generated/review";
+      return "manual draft";
+    };
+    const rows = [
+      ...buildingPlacements.map((item) => ({ item, origin: "project" as const })),
+      ...cadEntityPreviewObjects.map((item) => ({ item, origin: "cad_preview" as const })),
+      ...suggestedPlacements.map((item) => ({ item, origin: "detected" as const })),
+    ];
+    return rows
+      .filter(({ item }) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return !hiddenCadLayers.includes(getCadLayer(item));
+      })
+      .map(({ item, origin }) => {
+        const isProjectObject = buildingPlacements.some((candidate) => candidate.id === item.id);
+        const source = classifySource(item, origin);
+        const sourceState = resolveSourceState(item);
+        const status =
+          item.locked || item.type === "site"
+            ? "locked"
+            : sourceState === "blocked"
+              ? "blocked"
+              : sourceState === "stale"
+                ? "stale/review"
+                : source === "manual draft"
+                  ? "draft/review"
+                  : "review";
+        return {
+          item,
+          layer: getCadLayer(item),
+          source,
+          status,
+          editable: isProjectObject && !item.locked && item.type !== "site",
+          deletable: isProjectObject && !item.locked && item.type !== "site",
+        };
+      });
+  }, [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers, suggestedPlacements]);
+  const selectedCadObjectRow = useMemo(
+    () => cadObjectRows.find((row) => row.item.id === selectedBuildingId) ?? null,
+    [cadObjectRows, selectedBuildingId],
+  );
+
   const sourceStateSummary = useMemo(() => {
     const counts = {
       verified: 0,
@@ -1923,6 +1974,10 @@ export default function PreviewPanel({
       layer: getCadLayer(selectedCadObject),
     };
   }, [getCadLayer, getObjectGeometryPoints, selectedCadObject]);
+  const selectedCadLengthLabel = selectedCadMetrics ? `${selectedCadMetrics.totalLength.toFixed(1)} ft` : "Select object";
+  const selectedCadAngleLabel = selectedCadMetrics ? `${selectedCadMetrics.firstAngle.toFixed(1)} deg` : "Select object";
+  const selectedCadSegmentLabel = selectedCadMetrics ? String(selectedCadMetrics.segmentCount) : "--";
+  const selectedCadLayerLabel = selectedCadMetrics?.layer || "C-DRAFT";
   const topologyIssues = useMemo(
     () => validateTopology(visibleCadObjects.map((item) => ({
       id: item.id,
@@ -1948,6 +2003,10 @@ export default function PreviewPanel({
       name: selectedCadObject.label || "",
       type: selectedCadObject.type || "custom",
       layer,
+      color:
+        typeof selectedCadObject.meta?.ui_color === "string" && /^#[0-9a-f]{6}$/i.test(selectedCadObject.meta.ui_color)
+          ? selectedCadObject.meta.ui_color
+          : "#2563eb",
       elevation: String(symbolAttributes.elevation || selectedCadObject.meta?.elevation || ""),
       material: String(symbolAttributes.material || selectedCadObject.meta?.material || ""),
       size: String(symbolAttributes.size || selectedCadObject.meta?.size || ""),
@@ -2435,6 +2494,7 @@ export default function PreviewPanel({
         meta: {
           ...(selectedCadObject.meta ?? {}),
           cad_layer: safeLayer,
+          ui_color: /^#[0-9a-f]{6}$/i.test(cadPropertyDraft.color) ? cadPropertyDraft.color : selectedCadObject.meta?.ui_color,
           source_note: cadPropertyDraft.sourceNote.trim(),
           review_note: cadPropertyDraft.reviewNote.trim(),
           source: cadPropertyDraft.source.trim() || "manual_drawn",
@@ -2503,6 +2563,26 @@ export default function PreviewPanel({
   const toggleCadLayerVisibility = useCallback((layer: string) => {
     setHiddenCadLayers((prev) => prev.includes(layer) ? prev.filter((item) => item !== layer) : [...prev, layer]);
   }, []);
+
+  const deleteSelectedCadObject = useCallback(() => {
+    if (!selectedBuildingId) {
+      pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked project draft object first.");
+      return;
+    }
+    const targetObject = buildingPlacements.find((item) => item.id === selectedBuildingId);
+    if (!targetObject || targetObject.type === "site" || targetObject.locked) {
+      pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: selected object is locked, detected-only, imported preview-only, or not a project draft object.");
+      return;
+    }
+    setLastRectEdit({
+      id: targetObject.id,
+      snapshot: { ...targetObject },
+      action: "delete",
+      ts: Date.now(),
+    });
+    onRemoveBuilding(targetObject.id);
+    pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected project draft object. Affected systems remain review-required until rerun.");
+  }, [buildingPlacements, onRemoveBuilding, pushCadCommandFeedback, selectedBuildingId]);
 
   const runCadCommand = useCallback(() => {
     const raw = cadCommandDraft.trim();
@@ -2622,12 +2702,7 @@ export default function PreviewPanel({
       return;
     }
     if (commandKey === "DELETE" || commandKey === "ERASE") {
-      if (!selectedDeletableObject) {
-        pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft CAD object first.");
-        return;
-      }
-      onRemoveBuilding(selectedDeletableObject.id);
-      pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected draft object. Downstream systems remain review-required until rerun.");
+      deleteSelectedCadObject();
       return;
     }
     if (commandKey === "OFFSET") {
@@ -2701,18 +2776,17 @@ export default function PreviewPanel({
     cadSnapEnabled,
     cadTransformValue,
     createCadCommandGeometry,
+    deleteSelectedCadObject,
     filletSelectedCadObject,
     moveSelectedCadObjectsByVector,
     offsetSelectedCadObjectBy,
     onSetPreviewInteraction,
-    onRemoveBuilding,
     parseCadNumber,
     parseCadPointToken,
     parseCadPointTokens,
     pushCadCommandFeedback,
     selectedCadIds,
     selectedCadObject,
-    selectedDeletableObject,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     updateCadObject,
@@ -2793,12 +2867,7 @@ export default function PreviewPanel({
         filletSelectedCadObject();
         break;
       case "delete":
-        if (selectedDeletableObject) {
-          onRemoveBuilding(selectedDeletableObject.id);
-          pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected draft object.");
-        } else {
-          pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft object first.");
-        }
+        deleteSelectedCadObject();
         break;
       case "dimension":
         applySelectedCadDimension();
@@ -2843,17 +2912,16 @@ export default function PreviewPanel({
     applySelectedCadLayer,
     cadOffsetDistance,
     cadToolRequest,
+    deleteSelectedCadObject,
     filletSelectedCadObject,
     insertCadSymbol,
     lotHeight,
     lotWidth,
     offsetSelectedCadObjectBy,
-    onRemoveBuilding,
     onSetPreviewInteraction,
     onSetPreviewMode,
     pushCadCommandFeedback,
     redoCadCommand,
-    selectedDeletableObject,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     undoCadCommand,
@@ -5068,7 +5136,7 @@ export default function PreviewPanel({
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
-              Design Canvas
+              Draw Canvas / Drafting
             </span>
             <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
               <button
@@ -5135,6 +5203,79 @@ export default function PreviewPanel({
                 Edit
               </button>
             </div>
+            {previewMode === "2d" ? (
+              <div className="fixed left-3 right-3 top-20 z-[200] flex max-h-[34vh] min-w-0 max-w-full flex-wrap items-center gap-1 overflow-y-auto rounded-lg border border-slate-200 bg-white/96 p-1 shadow-[0_20px_70px_-38px_rgba(15,23,42,0.7)] backdrop-blur" data-testid="cad-precision-tools">
+                {drawModeButtons.filter((item) => ["select", "polyline", "polygon", "rect", "point"].includes(item.mode)).map((item) => {
+                  const Icon = item.icon;
+                  const active = drawMode === item.mode;
+                  const disabled = Boolean(item.disabled);
+                  const label = item.mode === "polyline" ? "Line" : item.mode === "polygon" ? "Area" : item.mode === "rect" ? "Box" : item.mode === "point" ? "Point" : item.label;
+                  return (
+                    <button
+                      key={`top-cad-${item.mode}`}
+                      type="button"
+                      aria-label={item.label}
+                      title={disabled ? item.disabledLabel ?? item.label : item.label}
+                      disabled={disabled}
+                      onClick={() => {
+                        if (disabled) {
+                          pushCadCommandFeedback(label, "blocked", item.disabledLabel || drawObjectsDisabledLabel);
+                          return;
+                        }
+                        setDrawMode(item.mode);
+                        clearDraftGeometry();
+                        if (item.mode !== "select") onSetPreviewInteraction("edit");
+                        pushCadCommandFeedback(label, "info", `${label} tool active. Pick on the canvas${item.mode === "polyline" || item.mode === "polygon" ? ", then Finish." : "."}`);
+                      }}
+                      className={`inline-flex h-8 items-center gap-1 rounded-md border px-2 text-[10px] font-semibold ${
+                        active ? "border-slate-900 bg-slate-950 text-white" : disabled ? "border-slate-200 bg-white text-slate-300" : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </button>
+                  );
+                })}
+                <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
+                <section className="flex min-w-0 flex-wrap items-center gap-1" data-testid="cad-object-manager">
+                  <select
+                    aria-label="CAD object list"
+                    data-testid="cad-object-list"
+                    value={selectedBuildingId ?? ""}
+                    onChange={(event) => {
+                      const id = event.target.value || null;
+                      onSelectBuilding(id);
+                      setDrawMode("select");
+                      onSetPreviewInteraction("edit");
+                      const row = cadObjectRows.find((item) => item.item.id === id);
+                      pushCadCommandFeedback("SELECT", "info", row ? `Selected ${row.item.label || row.item.type || "CAD object"} from the object list.` : "Object selection cleared.");
+                    }}
+                    className="h-8 min-w-[210px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                  >
+                    <option value="">Select object</option>
+                    {cadObjectRows.map((row) => (
+                      <option key={`top-visible-object-${row.item.id}`} value={row.item.id}>
+                        {row.item.label || row.item.type || "CAD object"} · {row.layer} · {row.source}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                    {selectedCadObjectRow ? `${selectedCadObjectRow.source} / ${selectedCadObjectRow.status}` : `${cadObjectRows.length} shown`}
+                  </span>
+                  <input aria-label="CAD object name" value={cadPropertyDraft.name} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="h-8 w-36 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700" />
+                  <input aria-label="CAD object layer property" value={cadPropertyDraft.layer} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))} placeholder="Layer" className="h-8 w-24 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700" />
+                  <input aria-label="CAD object color" type="color" value={cadPropertyDraft.color} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, color: event.target.value }))} className="h-8 w-9 rounded-md border border-slate-200 bg-white p-1" />
+                  <button type="button" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-8 rounded-md border border-slate-900 bg-slate-950 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
+                  <button type="button" onClick={deleteSelectedCadObject} disabled={!selectedBuildingId} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40" aria-label="Delete selected CAD object">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </section>
+                <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Command</span>
+                <input aria-label="CAD command input" value={cadCommandDraft} onChange={(event) => setCadCommandDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); runCadCommand(); } }} placeholder="LINE 0,0 100,0" className="h-8 w-44 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700" />
+                <button type="button" onClick={runCadCommand} className="h-8 rounded-md border border-slate-900 bg-slate-950 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">Run</button>
+                <span className="max-w-60 truncate px-1 text-[11px] font-semibold text-slate-500" data-testid="cad-command-feedback-panel" aria-live="polite">{cadCommandStatus}</span>
+              </div>
+            ) : null}
             <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               {previewQuality === "high" ? "High Quality" : "Standard"}
             </span>
@@ -5281,7 +5422,7 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
           <div className="relative isolate z-40 mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
             <div className="pointer-events-none flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
               <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
@@ -5417,7 +5558,7 @@ export default function PreviewPanel({
                 ) : null}
               </div>
             </div>
-            <div className="pointer-events-none relative z-[80] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
+            <div className="pointer-events-none relative z-[80] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2" data-testid="cad-covered-toolbar">
               <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
                 <button
@@ -5508,6 +5649,60 @@ export default function PreviewPanel({
                       </button>
                     );
                   })}
+                </section>
+              ) : null}
+              {previewMode === "2d" ? (
+                <section className="pointer-events-auto flex min-w-0 max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="cad-covered-object-manager">
+                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
+                  <select
+                    aria-label="Covered CAD object list"
+                    data-testid="cad-covered-object-list"
+                    value={selectedBuildingId ?? ""}
+                    onChange={(event) => {
+                      const id = event.target.value || null;
+                      onSelectBuilding(id);
+                      setDrawMode("select");
+                      onSetPreviewInteraction("edit");
+                      const row = cadObjectRows.find((item) => item.item.id === id);
+                      pushCadCommandFeedback("SELECT", "info", row ? `Selected ${row.item.label || row.item.type || "CAD object"} from the object list.` : "Object selection cleared.");
+                    }}
+                    className="h-9 min-w-[180px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                  >
+                    <option value="">Select object</option>
+                    {cadObjectRows.map((row) => (
+                      <option key={`visible-cad-object-${row.item.id}`} value={row.item.id}>
+                        {row.item.label || row.item.type || "CAD object"} · {row.layer} · {row.source}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                    {selectedCadObjectRow ? `${selectedCadObjectRow.source} / ${selectedCadObjectRow.status}` : `${cadObjectRows.length} shown`}
+                  </span>
+                  <input
+                    aria-label="Covered CAD object name"
+                    value={cadPropertyDraft.name}
+                    onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))}
+                    placeholder="Name"
+                    className="h-9 w-36 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                  />
+                  <input
+                    aria-label="Covered CAD object layer property"
+                    value={cadPropertyDraft.layer}
+                    onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))}
+                    placeholder="Layer"
+                    className="h-9 w-28 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                  />
+                  <input
+                    aria-label="Covered CAD object color"
+                    type="color"
+                    value={cadPropertyDraft.color}
+                    onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, color: event.target.value }))}
+                    className="h-9 w-10 rounded-md border border-slate-200 bg-white p-1"
+                  />
+                  <button type="button" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
+                  <button type="button" onClick={deleteSelectedCadObject} disabled={!selectedBuildingId} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40" aria-label="Delete selected CAD object">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </section>
               ) : null}
               {previewMode === "2d" ? (
@@ -5614,6 +5809,28 @@ export default function PreviewPanel({
                   </button>
                 ))}
               </section>
+              {previewMode === "2d" ? (
+                <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Command</span>
+                  <input
+                    aria-label="Covered CAD command input"
+                    value={cadCommandDraft}
+                    onChange={(event) => setCadCommandDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        runCadCommand();
+                      }
+                    }}
+                    placeholder="LINE 0,0 100,0"
+                    className="h-9 w-52 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                  />
+                  <button type="button" onClick={runCadCommand} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white">Run</button>
+                  <span className="max-w-72 truncate px-2 text-[11px] font-semibold text-slate-500" data-testid="cad-covered-command-feedback-panel" aria-live="polite">
+                    {cadCommandStatus}
+                  </span>
+                </section>
+              ) : null}
               <section className="pointer-events-auto ml-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Export</span>
                 {planPreviewUrl || showMap ? (
@@ -6004,11 +6221,101 @@ export default function PreviewPanel({
               </div>
             </div>
           ) : null}
-          {previewMode === "2d" ? (
-            <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
+          {false && previewMode === "2d" ? (
+            <div className="civora-cad-dock pointer-events-auto fixed inset-x-3 top-[13rem] z-[120] grid max-h-[42vh] gap-3 overflow-y-auto rounded-xl border border-slate-200 bg-white/96 p-3 shadow-[0_24px_80px_-42px_rgba(15,23,42,0.7)] backdrop-blur lg:left-[18rem] lg:grid-cols-[1.2fr_1fr_1fr]" data-testid="cad-precision-tools">
+              <div className="lg:col-span-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Draw Canvas / Drafting</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">Object manager and CAD review tools</p>
+                  </div>
+                  <p className="max-w-2xl text-xs leading-5 text-slate-500">
+                    Drafting changes are editable review geometry only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
+                  </p>
+                </div>
+              </div>
+              <section className="min-w-0" data-testid="cad-object-manager">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Objects</p>
+                  <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    {cadObjectRows.length} shown
+                  </span>
+                </div>
+                <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="cad-object-list">
+                  {cadObjectRows.length ? (
+                    cadObjectRows.map((row) => {
+                      const selected = selectedBuildingId === row.item.id;
+                      return (
+                        <button
+                          key={`cad-object-row-${row.item.id}`}
+                          type="button"
+                          data-testid="cad-object-list-row"
+                          aria-pressed={selected}
+                          onClick={() => {
+                            onSelectBuilding(row.item.id);
+                            setDrawMode("select");
+                            onSetPreviewInteraction("edit");
+                            pushCadCommandFeedback("SELECT", "info", `Selected ${row.item.label || row.item.type || "CAD object"} from the object list.`);
+                          }}
+                          className={`w-full rounded-md border px-2 py-2 text-left transition ${
+                            selected
+                              ? "border-amber-300 bg-amber-50 shadow-[0_0_0_2px_rgba(251,191,36,0.18)]"
+                              : "border-transparent bg-white hover:border-slate-200"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-semibold text-slate-900">{row.item.label || row.item.type || "CAD object"}</p>
+                              <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+                                {row.layer} · {row.item.geometryType || "rect"} · {row.item.type || "object"}
+                              </p>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] ${
+                              selected ? "bg-amber-200 text-amber-900" : "bg-slate-100 text-slate-600"
+                            }`}>
+                              {selected ? "selected" : row.status}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                              {row.source}
+                            </span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] ${
+                              row.editable ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"
+                            }`}>
+                              {row.editable ? "editable" : "review only"}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <p className="rounded-md bg-white px-3 py-4 text-sm text-slate-500">No draft or preview objects are visible on the current layers.</p>
+                  )}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={deleteSelectedCadObject}
+                    disabled={!selectedBuildingId}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyCadProperties}
+                    disabled={!selectedCadObject}
+                    className="inline-flex h-9 items-center justify-center rounded-md border border-slate-900 bg-slate-950 px-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Apply Properties
+                  </button>
+                </div>
+              </section>
               <section className="min-w-0">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Draw tools / command</p>
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -6032,6 +6339,54 @@ export default function PreviewPanel({
                     </button>
                   </div>
                 </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs sm:grid-cols-4">
+                  {drawModeButtons.map((item) => {
+                    const Icon = item.icon;
+                    const active = drawMode === item.mode;
+                    const disabled = Boolean(item.disabled);
+                    const compactLabel =
+                      item.mode === "site"
+                        ? "Site"
+                        : item.mode === "polyline"
+                          ? "Line"
+                          : item.mode === "polygon"
+                            ? "Area"
+                            : item.mode === "rect"
+                              ? "Box"
+                              : item.mode === "point"
+                                ? "Point"
+                                : item.label;
+                    return (
+                      <button
+                        key={`cad-dock-draw-${item.mode}`}
+                        type="button"
+                        title={disabled ? item.disabledLabel ?? item.label : item.label}
+                        aria-label={item.label}
+                        disabled={disabled}
+                        onClick={() => {
+                          if (disabled) {
+                            pushCadCommandFeedback(compactLabel, "blocked", item.disabledLabel || drawObjectsDisabledLabel);
+                            return;
+                          }
+                          setDrawMode(item.mode);
+                          clearDraftGeometry();
+                          if (item.mode !== "select") onSetPreviewInteraction("edit");
+                          pushCadCommandFeedback(compactLabel, "info", `${compactLabel} tool active. Pick on the canvas${item.mode === "polyline" || item.mode === "polygon" || item.mode === "site" ? ", then Finish." : "."}`);
+                        }}
+                        className={`inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-semibold ${
+                          active
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : disabled
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        <span className="truncate">{compactLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700 sm:grid-cols-4">
                   <label className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2">
                     <input type="checkbox" checked={cadSnapEnabled} onChange={(event) => setCadSnapEnabled(event.target.checked)} className="h-4 w-4 accent-slate-950" />
@@ -6042,7 +6397,7 @@ export default function PreviewPanel({
                     Ortho
                   </label>
                   <span className="flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
-                    {activeSnapPoint ? activeSnapPoint.kind : "No snap"}
+                    {activeSnapPoint?.kind ?? "No snap"}
                   </span>
                   <span className="flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] uppercase tracking-[0.12em] text-slate-500">
                     {cadHistory.at(-1)?.label || "No command"}
@@ -6112,10 +6467,10 @@ export default function PreviewPanel({
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Readout / transform</p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   {[
-                    ["Length", selectedCadMetrics ? `${selectedCadMetrics.totalLength.toFixed(1)} ft` : "Select object"],
-                    ["Angle", selectedCadMetrics ? `${selectedCadMetrics.firstAngle.toFixed(1)} deg` : "Select object"],
-                    ["Segments", selectedCadMetrics ? String(selectedCadMetrics.segmentCount) : "--"],
-                    ["Layer", selectedCadMetrics?.layer || "C-DRAFT"],
+                    ["Length", selectedCadLengthLabel],
+                    ["Angle", selectedCadAngleLabel],
+                    ["Segments", selectedCadSegmentLabel],
+                    ["Layer", selectedCadLayerLabel],
                   ].map(([label, value]) => (
                     <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
@@ -6155,8 +6510,8 @@ export default function PreviewPanel({
                   <button type="button" onClick={applySelectedCadDimension} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 disabled:opacity-40">Dim</button>
                 </div>
               </section>
-              <section className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Modify / layers</p>
+              <details className="min-w-0 rounded-lg border border-slate-200 bg-white p-3" data-testid="cad-modify-tools">
+                <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Modify / layers</summary>
                 <div className="mt-3 grid grid-cols-4 gap-2">
                   <button type="button" aria-label="Offset selected CAD object" title="Offset selected CAD object" onClick={offsetSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Ruler className="h-4 w-4" /></button>
                   <button type="button" aria-label="Trim selected CAD object" title="Trim selected CAD object" onClick={() => trimExtendSelectedCadObject("trim")} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scissors className="h-4 w-4" /></button>
@@ -6197,9 +6552,9 @@ export default function PreviewPanel({
                     );
                   })}
                 </div>
-              </section>
-              <section className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Symbols / properties</p>
+              </details>
+              <details className="min-w-0 rounded-lg border border-slate-200 bg-white p-3" data-testid="cad-symbol-property-tools">
+                <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Symbols / properties</summary>
                 <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
                   <select
                     aria-label="CAD symbol"
@@ -6225,6 +6580,10 @@ export default function PreviewPanel({
                   <input aria-label="CAD object name" value={cadPropertyDraft.name} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD object type" value={cadPropertyDraft.type} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, type: event.target.value }))} placeholder="Type" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD object layer property" value={cadPropertyDraft.layer} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))} placeholder="Layer" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+                  <label className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    <span>Color</span>
+                    <input aria-label="CAD object color" type="color" value={cadPropertyDraft.color} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, color: event.target.value }))} className="h-6 w-full min-w-0 cursor-pointer border-0 bg-transparent p-0" />
+                  </label>
                   <input aria-label="CAD symbol elevation attribute" value={cadPropertyDraft.elevation} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, elevation: event.target.value }))} placeholder="Elevation" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD symbol material attribute" value={cadPropertyDraft.material} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, material: event.target.value }))} placeholder="Material" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
                   <input aria-label="CAD symbol size attribute" value={cadPropertyDraft.size} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, size: event.target.value }))} placeholder="Size" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
@@ -6252,7 +6611,7 @@ export default function PreviewPanel({
                     <p>Topology checks: no visible CAD blockers.</p>
                   )}
                 </div>
-              </section>
+              </details>
             </div>
           ) : null}
           <div className="civora-coordination-dock mb-3 grid gap-3 xl:grid-cols-[1.1fr_1.4fr_1fr]">
