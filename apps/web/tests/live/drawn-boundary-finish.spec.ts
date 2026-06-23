@@ -5,21 +5,37 @@ async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number) 
   const point = await surface.evaluate(
     (element, ratios) => {
       const rect = element.getBoundingClientRect();
-      const x = rect.left + rect.width * ratios.xRatio;
-      const visibleYs: number[] = [];
-      for (let index = 0; index <= 120; index += 1) {
-        const y = rect.top + (rect.height * index) / 120;
-        const hit = document.elementFromPoint(x, y);
-        if (hit === element || element.contains(hit)) {
-          visibleYs.push(y);
+      const clamp = (value: number) => Math.max(0.08, Math.min(0.92, value));
+      const candidates: Array<{ x: number; y: number; distance: number }> = [];
+      const xOffsets = [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32];
+      const yOffsets = [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24];
+      for (const xOffset of xOffsets) {
+        for (const yOffset of yOffsets) {
+          const nextXRatio = clamp(ratios.xRatio + xOffset);
+          const nextYRatio = clamp(ratios.yRatio + yOffset);
+          const x = rect.left + rect.width * nextXRatio;
+          const y = rect.top + rect.height * nextYRatio;
+          const hit = document.elementFromPoint(x, y);
+          const blocked = hit?.closest?.(
+            '[data-object-overlay],button,input,select,textarea,aside,header,[data-testid="cad-precision-tools"],[data-testid="workspace-right-panel"]',
+          );
+          if ((hit === element || element.contains(hit)) && !blocked) {
+            candidates.push({
+              x,
+              y,
+              distance: Math.abs(nextXRatio - ratios.xRatio) + Math.abs(nextYRatio - ratios.yRatio),
+            });
+          }
         }
       }
-      if (!visibleYs.length) {
-        return { x, y: rect.top + rect.height * ratios.yRatio };
+      if (candidates.length) {
+        candidates.sort((a, b) => a.distance - b.distance);
+        return { x: candidates[0].x, y: candidates[0].y };
       }
-      const top = visibleYs[0];
-      const bottom = visibleYs[visibleYs.length - 1];
-      return { x, y: top + (bottom - top) * ratios.yRatio };
+      return {
+        x: rect.left + rect.width * clamp(ratios.xRatio),
+        y: rect.top + rect.height * clamp(ratios.yRatio),
+      };
     },
     { xRatio, yRatio },
   );
@@ -27,9 +43,15 @@ async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number) 
 }
 
 async function openSetupControls(page: Page) {
+  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+  if (await workspaceButton.isVisible().catch(() => false)) {
+    await workspaceButton.click({ noWaitAfter: true });
+  }
   const sidebarSetup = page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Setup\b/i });
   if (await sidebarSetup.isVisible().catch(() => false)) {
     await sidebarSetup.click({ noWaitAfter: true });
+  } else if (await page.getByRole("button", { name: /^Setup\b/i }).first().isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: /^Setup\b/i }).first().click({ noWaitAfter: true });
   } else {
     await page.getByTestId("workspace-canvas-shell").getByRole("button", { name: /^Setup$/ }).click({ noWaitAfter: true });
   }
@@ -40,12 +62,28 @@ async function openSetupControls(page: Page) {
       await setupDetails.locator("summary").filter({ hasText: "Detailed setup controls and evidence" }).click();
     }
   }
+  const addressDetails = page.getByTestId("setup-address-truth");
+  if (await addressDetails.isVisible().catch(() => false)) {
+    const isOpen = await addressDetails.evaluate((element) => element.hasAttribute("open"));
+    if (!isOpen) {
+      await addressDetails.locator("summary").click();
+    }
+  }
+  const siteDetails = page.getByTestId("setup-site-box-controls");
+  if (await siteDetails.isVisible().catch(() => false)) {
+    const isOpen = await siteDetails.evaluate((element) => element.hasAttribute("open"));
+    if (!isOpen) {
+      await siteDetails.locator("summary").click();
+    }
+  }
 }
 
 async function openBlankWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundary=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("Detention Basin A").first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /^Draw\b/i }).first().click();
+  await expect(page.getByTestId("workspace-right-panel")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Detention Basin A").filter({ visible: true }).first()).toBeVisible({ timeout: 30_000 });
 
   await openSetupControls(page);
   await page.getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" }).click({ noWaitAfter: true });
@@ -59,12 +97,41 @@ async function openBlankWorkspace(page: Page) {
 }
 
 async function startBoundaryDraw(page: Page) {
-  const toolbarButton = page.getByTestId("draw-site-boundary-toolbar");
+  const toolbarButton = page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first();
   if (await toolbarButton.isVisible().catch(() => false)) {
+    const alreadyActive = await toolbarButton.evaluate((element) =>
+      element.className.includes("bg-slate-950") || element.getAttribute("aria-pressed") === "true",
+    );
+    if (alreadyActive) return;
     await toolbarButton.click();
     return;
   }
-  await page.getByTestId("workspace-canvas-shell").getByRole("button", { name: "Draw Site Boundary" }).click();
+  const canvasButton = page.getByTestId("workspace-canvas-shell").getByRole("button", { name: "Draw Site Boundary" }).first();
+  const alreadyActive = await canvasButton.evaluate((element) =>
+    element.className.includes("bg-slate-950") || element.getAttribute("aria-pressed") === "true",
+  );
+  if (alreadyActive) return;
+  await canvasButton.click();
+}
+
+async function lockCurrentSiteFromSetup(page: Page) {
+  const siteControls = page.getByTestId("setup-site-box-controls");
+  const currentLock = siteControls.getByRole("button", { name: /^Lock site$/ }).filter({ visible: true }).first();
+  if (await currentLock.isVisible().catch(() => false)) {
+    await currentLock.click();
+    return;
+  }
+
+  const legacyLock = page
+    .getByRole("button", { name: "Lock current site boundary from detailed setup controls for engineer review" })
+    .filter({ visible: true })
+    .first();
+  if (await legacyLock.isVisible().catch(() => false)) {
+    await legacyLock.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: /Lock site boundary|Lock site/i }).filter({ visible: true }).first().click();
 }
 
 async function finishDraft(page: Page, canvas: Locator) {
@@ -76,9 +143,28 @@ async function finishDraft(page: Page, canvas: Locator) {
 }
 
 async function clickCanvasTool(canvas: Locator, name: string) {
-  const tool = canvas.getByRole("button", { name });
+  const toolByName: Record<string, string> = {
+    "Add Line": "line",
+    "Add Area": "area",
+    "Add Box": "box",
+    "Add Point": "point",
+  };
+  const managerToolId = toolByName[name];
+  if (managerToolId) {
+    const drawPanelButton = canvas.page().getByRole("button", { name: /^Draw\b/i }).filter({ visible: true }).first();
+    if (await drawPanelButton.isVisible().catch(() => false)) {
+      await drawPanelButton.click();
+    }
+    const managerTool = canvas.page().getByTestId(`cad-tool-${managerToolId}`).filter({ visible: true }).first();
+    await expect(managerTool).toBeEnabled();
+    await managerTool.click();
+    await expect(canvas).toContainText(new RegExp(`${name.replace("Add ", "").toUpperCase()}|${managerToolId.toUpperCase()}|tool active`, "i"));
+    return;
+  }
+
+  const tool = canvas.getByRole("button", { name }).filter({ visible: true }).first();
   await expect(tool).toBeEnabled();
-  await tool.evaluate((element: HTMLElement) => element.click());
+  await tool.click();
 }
 
 async function clickVisibleControl(control: Locator) {
@@ -101,17 +187,17 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     await expect(canvas).toContainText("Locked canonical site");
-    await expect(page.getByTestId("draw-site-boundary-toolbar")).toBeVisible();
-    await expect(page.getByTestId("change-site-boundary-toolbar")).toBeVisible();
+    await expect(page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByTestId("change-site-boundary-toolbar").filter({ visible: true }).first()).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
     await expect(canvas.getByRole("button", { name: "Add Area" })).toBeEnabled();
     await expect(canvas.getByRole("button", { name: "Add Box" })).toBeEnabled();
     await expect(canvas.getByRole("button", { name: "Add Point" })).toBeEnabled();
 
-    await page.getByTestId("change-site-boundary-toolbar").click();
+    await page.getByTestId("change-site-boundary-toolbar").filter({ visible: true }).first().click();
     await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
     await openSetupControls(page);
-    await page.getByRole("button", { name: "Lock current site boundary from detailed setup controls for engineer review" }).click();
+    await lockCurrentSiteFromSetup(page);
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     const relockClose = page.getByRole("button", { name: "Close" });
     if (await relockClose.isVisible().catch(() => false)) {
@@ -126,14 +212,14 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickCanvasTool(canvas, "Add Box");
     await clickSurfaceAt(surface, 0.28, 0.5);
     await clickSurfaceAt(surface, 0.44, 0.66);
-    await expect(page.getByText("Custom Rectangle 1").first()).toBeVisible();
+    await expect(page.getByText("Custom Rectangle 1").filter({ visible: true }).first()).toBeVisible();
 
     await clickCanvasTool(canvas, "Add Area");
     await clickSurfaceAt(surface, 0.5, 0.52);
     await clickSurfaceAt(surface, 0.66, 0.58);
     await clickSurfaceAt(surface, 0.58, 0.72);
     await finishDraft(page, canvas);
-    await expect(page.getByText("Custom Area 2").first()).toBeVisible();
+    await expect(page.getByText("Custom Area 2").filter({ visible: true }).first()).toBeVisible();
 
     await clickCanvasTool(canvas, "Add Line");
     await clickSurfaceAt(surface, 0.24, 0.74);
@@ -151,22 +237,17 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(page.locator("p.whitespace-pre-wrap").filter({ hasText: "draft geometry and still requires engineer review" })).toBeVisible();
 
     await page.getByRole("button", { name: /^Draw\b/i }).first().click();
-    await page.getByRole("button", { name: "Selected Details" }).click();
     const rightPanel = page.getByTestId("workspace-right-panel");
     await expect(rightPanel.locator("p").filter({ hasText: /^Basin \/ Detention Pond \d+$/ })).toBeVisible();
-    await expect(rightPanel.locator('input[value="manual_drawn"]')).toBeVisible();
-    await expect(
-      rightPanel.locator("button", { hasText: /Basin \/ Detention Pond \d+/ }).filter({
-        hasText: "Canonical geometry · Draft review required",
-      }),
-    ).toBeVisible();
+    await expect(rightPanel).toContainText("manual_drawn");
+    await expect(rightPanel).toContainText("Canonical geometry · Draft review required");
   });
 
   test("mobile keeps draw controls reachable", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundaryMobile=1", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("draw-site-boundary-toolbar")).toBeVisible();
+    await expect(page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Add Line" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add Area" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add Box" })).toBeVisible();
@@ -201,9 +282,9 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("CAD Y coordinate").fill("120");
     await cadTools.getByRole("button", { name: "XY" }).click();
     await finishDraft(page, canvas);
-    await expect(page.getByText("Custom Line 1").first()).toBeVisible();
+    await expect(page.getByText("Custom Line 1").filter({ visible: true }).first()).toBeVisible();
 
-    await page.getByLabel("Select Custom Line 1").click();
+    await clickVisibleControl(page.getByLabel("Select Custom Line 1"));
     await expect(cadTools).toContainText("Length");
     await expect(cadTools).toContainText("Angle");
     await expect(page.getByTestId("cad-topology-status")).toContainText("Topology");
@@ -225,17 +306,21 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText("FILLET blocked");
 
+    const snapToggle = cadTools.getByLabel("Snap");
+    if (await snapToggle.isChecked()) {
+      await snapToggle.uncheck();
+    }
     await clickCanvasTool(canvas, "Add Area");
-    await clickSurfaceAt(surface, 0.48, 0.5);
-    await clickSurfaceAt(surface, 0.62, 0.56);
-    await clickSurfaceAt(surface, 0.54, 0.7);
+    await clickSurfaceAt(surface, 0.72, 0.32);
+    await clickSurfaceAt(surface, 0.86, 0.42);
+    await clickSurfaceAt(surface, 0.78, 0.56);
     await finishDraft(page, canvas);
-    await expect(page.getByText("Custom Area 2").first()).toBeVisible();
-    await page.getByLabel("Select Custom Area 2").click();
+    await expect(page.getByText("Custom Area 2").filter({ visible: true }).first()).toBeVisible();
+    await clickVisibleControl(page.getByLabel("Select Custom Area 2"));
     await cadTools.getByLabel("CAD command input").fill("fillet 4");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText("FILLET applied");
-    await page.getByLabel("Select Custom Line 1").click();
+    await clickVisibleControl(page.getByLabel("Select Custom Line 1"));
 
     await cadTools.getByLabel("CAD layer").selectOption("C-UTIL");
     await clickVisibleControl(cadTools.getByRole("button", { name: "Layer" }));
@@ -252,10 +337,10 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("CAD X coordinate").fill("300");
     await cadTools.getByLabel("CAD Y coordinate").fill("140");
     await cadTools.getByLabel("CAD symbol", { exact: true }).selectOption("hydrant");
-    await cadTools.getByRole("button", { name: "Insert" }).click();
+    await clickVisibleControl(cadTools.getByRole("button", { name: "Insert" }));
     await expect(page.getByTestId("cad-symbol").first()).toBeVisible();
 
-    await page.getByLabel("Select Custom Line 1").click();
+    await clickVisibleControl(page.getByLabel("Select Custom Line 1"));
     await cadTools.getByLabel("CAD object name").fill("Draft Utility Review Line");
     await cadTools.getByLabel("CAD object type").fill("custom");
     await cadTools.getByLabel("CAD object layer property").fill("C-UTIL");

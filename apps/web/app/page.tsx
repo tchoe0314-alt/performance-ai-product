@@ -18854,6 +18854,17 @@ function PerformanceAIDashboardView({
                         </button>
                         <button
                           type="button"
+                          onClick={handleStartBlankSite}
+                          aria-label="Start a blank site from detailed setup controls and clear address map evidence"
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 sm:col-span-2"
+                        >
+                          Start blank site
+                          <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
+                            Clears address/map evidence and keeps output review-only.
+                          </span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void saveSiteAddress()}
                           disabled={!hasAppliedAddress || onlineDiscoveryBusy}
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2"
@@ -25595,7 +25606,7 @@ function PerformanceAIDashboardView({
               </div>
             </div>
 	          </main>
-          {activeSidePanel !== "chat" ? (
+          {activeSidePanel !== "chat" && activePrimaryWorkflowKey !== "draw" && activePrimaryWorkflowKey !== "objects" ? (
             <PinnedCommandBar
               prompt={prompt}
               imageName={imageName}

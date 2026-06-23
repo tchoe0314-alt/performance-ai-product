@@ -829,8 +829,17 @@ export default function PreviewPanel({
   const canUse3D = showMap || hasLiveObjects || preview3DEffectiveItems.length > 0 || Boolean(planPreviewUrl);
   const showHover = previewInteraction === "static";
   const allowEdits = previewInteraction === "edit";
-  const drawingSurfaceActive = drawMode !== "select" || allowEdits || showMap;
-  const overlayPointerEvents = allowMapInteraction || !drawingSurfaceActive ? "pointer-events-none" : "pointer-events-auto";
+  const activeDrawMode =
+    (drawMode === "site" && !siteLocked) ||
+    ((drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect" || drawMode === "point") && canDrawObjects);
+  const drawingSurfaceInteractive =
+    placementMode ||
+    activeDrawMode ||
+    Boolean(draggingBuildingId && draggingMode) ||
+    Boolean(rotateDragStart) ||
+    Boolean(canvasPanStart) ||
+    (showMap && previewInteraction === "edit" && !mapLocked);
+  const overlayPointerEvents = drawingSurfaceInteractive ? "pointer-events-auto" : "pointer-events-none";
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
@@ -2729,6 +2738,9 @@ export default function PreviewPanel({
     const activateDrawMode = (mode: DrawMode, label: string) => {
       setDraftPoints([]);
       setDraftPreviewPoint(null);
+      onSelectBuilding(null);
+      setSelectedVertex(null);
+      setCadSelectionSet([]);
       setDrawMode(mode);
       pushCadCommandFeedback(label, "info", `${label} tool active. Pick points on the canvas, then Finish when shown.`);
     };
@@ -2849,6 +2861,7 @@ export default function PreviewPanel({
     lotWidth,
     offsetSelectedCadObjectBy,
     onRemoveBuilding,
+    onSelectBuilding,
     onSetPreviewInteraction,
     onSetPreviewMode,
     pushCadCommandFeedback,
@@ -5492,6 +5505,9 @@ export default function PreviewPanel({
                           setDrawMode(item.mode);
                           clearDraftGeometry();
                           if (item.mode !== "select") {
+                            onSelectBuilding(null);
+                            setSelectedVertex(null);
+                            setCadSelectionSet([]);
                             onSetPreviewInteraction("edit");
                           }
                         }}
@@ -5859,6 +5875,9 @@ export default function PreviewPanel({
                         setDrawMode(item.mode);
                         clearDraftGeometry();
                         if (item.mode !== "select") {
+                          onSelectBuilding(null);
+                          setSelectedVertex(null);
+                          setCadSelectionSet([]);
                           onSetPreviewInteraction("edit");
                           window.requestAnimationFrame(() => {
                             previewRef.current?.scrollIntoView({
@@ -6680,6 +6699,22 @@ export default function PreviewPanel({
                 >
                   Edit
                 </button>
+                {siteLocked && onUnlockSite ? (
+                  <button
+                    type="button"
+                    title="Unlock the site boundary for editing"
+                    aria-label="Change Site Boundary"
+                    onClick={() => {
+                      onUnlockSite();
+                      clearDraftGeometry();
+                      setDrawMode("select");
+                      onSetPreviewInteraction("edit");
+                    }}
+                    className="h-8 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600"
+                  >
+                    Change Site
+                  </button>
+                ) : null}
               </div>
               {previewMode === "2d" ? (
                 <div className="absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 sm:bottom-2 md:hidden">
@@ -6704,6 +6739,7 @@ export default function PreviewPanel({
                         <button
                           key={`mobile-${item.mode}`}
                           type="button"
+                          data-testid={compactViewport && item.mode === "site" ? "draw-site-boundary-toolbar" : undefined}
                           title={disabled ? item.disabledLabel ?? item.label : item.label}
                           aria-label={item.label}
                           disabled={disabled}
@@ -8408,6 +8444,7 @@ export default function PreviewPanel({
                         const isCustomArea = isPolygon;
                         const showBox = !isPolyline && !isCustomArea;
                         const showBoxChrome = showBox && (isSelected || Boolean(isAccessHighlight));
+                        const showSelectionAffordances = isSelected && allowEdits && drawMode === "select";
                         const isSite = item.type === "site";
                         const visualKind = resolveVisualKind(item);
                         const sourceState = resolveSourceState(item);
@@ -8500,7 +8537,7 @@ export default function PreviewPanel({
                                 {sourceState === "fallback" ? "Fallback review geometry" : sourceStateLabel(sourceState)}
                               </div>
                             ) : null}
-                            {isSelected && allowEdits && isEditableVertexGeometry && Array.isArray(item.geometry)
+                            {showSelectionAffordances && isEditableVertexGeometry && Array.isArray(item.geometry)
                               ? item.geometry.map((pt, idx) => {
                                   const handleLeft = ((pt[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
                                   const handleTop = ((pt[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
@@ -8555,8 +8592,7 @@ export default function PreviewPanel({
                                   );
                                 })
                               : null}
-                            {isSelected &&
-                            allowEdits &&
+                            {showSelectionAffordances &&
                             isEditableVertexGeometry &&
                             Array.isArray(item.geometry) &&
                             item.geometry.length > 1 &&
@@ -8612,13 +8648,12 @@ export default function PreviewPanel({
                                 })}
                               </svg>
                             ) : null}
-                            {isSelected && allowEdits && isEditableVertexGeometry ? (
+                            {showSelectionAffordances && isEditableVertexGeometry ? (
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
                                 Vertex edit
                               </div>
                             ) : null}
-                            {isSelected &&
-                            allowEdits &&
+                            {showSelectionAffordances &&
                             isEditableVertexGeometry &&
                             lastPolylineEdit?.id === item.id ? (
                               <button
@@ -8633,7 +8668,7 @@ export default function PreviewPanel({
                                 Undo
                               </button>
                             ) : null}
-                            {isSelected && allowEdits && isEditableVertexGeometry && selectedVertex?.id === item.id ? (
+                            {showSelectionAffordances && isEditableVertexGeometry && selectedVertex?.id === item.id ? (
                               <button
                                 type="button"
                                 className="absolute -bottom-16 left-1/2 -translate-x-1/2 rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-rose-600 shadow"
@@ -8646,8 +8681,7 @@ export default function PreviewPanel({
                                 Delete vertex
                               </button>
                             ) : null}
-                            {isSelected &&
-                            allowEdits &&
+                            {showSelectionAffordances &&
                             !isPolyline &&
                             lastRectEdit?.id === item.id ? (
                               <button
@@ -8662,8 +8696,7 @@ export default function PreviewPanel({
                                 Undo
                               </button>
                             ) : null}
-                            {isSelected &&
-                            allowEdits &&
+                            {showSelectionAffordances &&
                             isEditableVertexGeometry &&
                             !polylineInsertHintDismissed &&
                             (isPolygon || item.type === "custom" || item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
@@ -8671,7 +8704,7 @@ export default function PreviewPanel({
                                 Click a segment to add a vertex
                               </div>
                             ) : null}
-                            {isSelected && allowEdits && caps.rotatable ? (
+                            {showSelectionAffordances && caps.rotatable ? (
                               <button
                                 type="button"
                                 title="Rotate selected object"
@@ -8682,7 +8715,7 @@ export default function PreviewPanel({
                                 R
                               </button>
                             ) : null}
-                            {isSelected && allowEdits && caps.resizable ? (
+                            {showSelectionAffordances && caps.resizable ? (
                               <button
                                 type="button"
                                 title="Resize selected object"
@@ -8693,7 +8726,7 @@ export default function PreviewPanel({
                                 Z
                               </button>
                             ) : null}
-                            {isSelected && allowEdits && caps.deletable ? (
+                            {showSelectionAffordances && caps.deletable ? (
                               <button
                                 type="button"
                                 title="Delete selected object"
@@ -8713,12 +8746,12 @@ export default function PreviewPanel({
                                 ×
                               </button>
                             ) : null}
-                            {isSelected && allowEdits && shouldRevealObjectLabel(item) && caps.movable && !isPolyline ? (
+                            {showSelectionAffordances && shouldRevealObjectLabel(item) && caps.movable && !isPolyline ? (
                               <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
                                 Snap 5ft
                               </div>
                             ) : null}
-                            {isSelected && allowEdits && shouldRevealObjectLabel(item) && typeof item.x === "number" && typeof item.y === "number" ? (
+                            {showSelectionAffordances && shouldRevealObjectLabel(item) && typeof item.x === "number" && typeof item.y === "number" ? (
                               <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
                                 X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
                               </div>
