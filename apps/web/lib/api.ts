@@ -34,6 +34,46 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
+export type ApiErrorKind =
+  | "auth_expired"
+  | "backend_unreachable"
+  | "api_blocked"
+  | "rate_limited"
+  | "upload_too_large"
+  | "unsupported_file"
+  | "request_failed";
+
+export class CivoraApiError extends Error {
+  kind: ApiErrorKind;
+  status?: number;
+
+  constructor(message: string, kind: ApiErrorKind, status?: number) {
+    super(message);
+    this.name = "CivoraApiError";
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
+export function classifyApiError(error: unknown): ApiErrorKind {
+  if (error instanceof CivoraApiError) return error.kind;
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    if (message.includes("session expired") || message.includes("sign in again")) return "auth_expired";
+    if (message.includes("could not reach the backend") || message.includes("backend url")) return "backend_unreachable";
+    if (message.includes("cors") || message.includes("api blocked")) return "api_blocked";
+    if (message.includes("too many requests") || message.includes("rate")) return "rate_limited";
+    if (message.includes("too large")) return "upload_too_large";
+    if (message.includes("not supported") || message.includes("unsupported")) return "unsupported_file";
+  }
+  return "request_failed";
+}
+
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
+}
+
 function buildHeaders(token?: string | null, json = true): HeadersInit {
   const headers: Record<string, string> = {};
 
@@ -77,14 +117,15 @@ function formatNetworkError(error: unknown): Error {
       return error;
     }
     if (error.name === "TypeError" || /fetch/i.test(error.message)) {
-      return new Error(
-        "Civora AI could not reach the backend. Check the live backend URL, CORS settings, and deployment health.",
+      return new CivoraApiError(
+        "Backend unreachable or CORS/API blocked. Check the backend URL, CORS settings, and deployment health, then retry.",
+        "backend_unreachable",
       );
     }
     return error;
   }
 
-  return new Error("Civora AI could not reach the backend.");
+  return new CivoraApiError("Backend unreachable. Check the backend URL and retry.", "backend_unreachable");
 }
 
 export async function readJsonResponse<T>(response: Response): Promise<T> {
@@ -99,17 +140,29 @@ export async function readJsonResponse<T>(response: Response): Promise<T> {
           : `Request failed with status ${response.status}`;
     const detail =
       response.status === 401
-        ? "Your session could not be verified. Sign in again to continue."
+        ? "Session expired. Sign in again."
         : response.status === 403
           ? rawDetail || "This account does not have access to that action."
           : response.status === 413
-            ? rawDetail || "That file is too large for the current upload limit."
+            ? rawDetail || "Upload too large. Choose a smaller file or compress it, then retry."
             : response.status === 415
-              ? rawDetail || "That file type is not supported for this upload."
+              ? rawDetail || "Unsupported file. Use an accepted file type for this upload."
               : response.status === 429
-                ? rawDetail || "Too many requests. Wait about a minute, then try again."
+                ? rawDetail || "Rate limited. Wait about a minute, then try again."
                 : rawDetail;
-    throw new Error(detail);
+    const kind: ApiErrorKind =
+      response.status === 401
+        ? "auth_expired"
+        : response.status === 403
+          ? "api_blocked"
+          : response.status === 413
+            ? "upload_too_large"
+            : response.status === 415
+              ? "unsupported_file"
+              : response.status === 429
+                ? "rate_limited"
+                : "request_failed";
+    throw new CivoraApiError(detail, kind, response.status);
   }
 
   return payload as T;
@@ -234,11 +287,15 @@ export async function postBinary(
           : `Request failed with status ${response.status}`;
     const detail =
       response.status === 401
-        ? "Your session could not be verified. Sign in again to continue."
+        ? "Session expired. Sign in again."
         : response.status === 429
-          ? "Too many requests. Wait a minute, then try again."
+          ? "Rate limited. Wait about a minute, then try again."
           : rawDetail;
-    throw new Error(detail);
+    throw new CivoraApiError(
+      detail,
+      response.status === 401 ? "auth_expired" : response.status === 429 ? "rate_limited" : "request_failed",
+      response.status,
+    );
   }
 
   return {

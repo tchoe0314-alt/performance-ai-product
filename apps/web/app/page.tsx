@@ -23,7 +23,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
-import { deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
+import { apiErrorMessage, classifyApiError, deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
 
 import type {
   Assumption,
@@ -2282,6 +2282,62 @@ function formatTimestamp(value?: number): string {
   }
 }
 
+function panelErrorMessage(error: unknown, fallback: string): string {
+  const kind = classifyApiError(error);
+  if (kind === "auth_expired") return "Session expired. Sign in again.";
+  if (kind === "backend_unreachable") return "Backend unreachable or CORS/API blocked. Check the backend connection, then retry.";
+  if (kind === "api_blocked") return "Backend API blocked. Check CORS or account access, then retry.";
+  if (kind === "rate_limited") return "Rate limited. Wait about a minute, then retry.";
+  if (kind === "upload_too_large") return "Upload too large. Choose a smaller file or compress it, then retry.";
+  if (kind === "unsupported_file") return "Unsupported file. Use an accepted file type for this upload.";
+  return apiErrorMessage(error, fallback);
+}
+
+function uploadStatusMessage(kind: "image" | "pdf" | "survey", error: unknown): string {
+  const label = kind === "image" ? "Image upload" : kind === "pdf" ? "PDF upload" : "Survey/topo upload";
+  return `${label} failed: ${panelErrorMessage(error, `${label} failed.`)}`;
+}
+
+function chatFailureMessage(error: unknown): string {
+  const kind = classifyApiError(error);
+  if (kind === "auth_expired") {
+    return "I could not reach your Civora session. Sign in again, then resend your message.";
+  }
+  if (kind === "backend_unreachable" || kind === "api_blocked") {
+    return "I could not reach the backend just now. Check the backend connection, then retry your message.";
+  }
+  if (kind === "rate_limited") {
+    return "The backend is rate limiting requests. Wait about a minute, then retry your message.";
+  }
+  return `I could not finish that request. ${apiErrorMessage(error, "Retry from chat or check the backend status.")}`;
+}
+
+function jobDetailMessage(job: JobSummary): string {
+  const status = String(job.status || "").toLowerCase();
+  if (job.stage_detail) return job.stage_detail;
+  if (job.error) return `Failed: ${job.error}`;
+  if (job.stage) return job.stage;
+  if (status === "queued") {
+    return "Queued. Waiting for a backend worker; refresh jobs if this does not move soon.";
+  }
+  if (status === "running") {
+    return "Running. Civora has not recorded the next stage detail yet.";
+  }
+  if (status === "awaiting_approval") {
+    return "Waiting at a review hold. Continue after you finish the review step.";
+  }
+  if (status === "failed") {
+    return "Failed before detailed stage notes were recorded. Retry or open the backend logs.";
+  }
+  if (status === "cancelled") {
+    return "Cancelled before completion.";
+  }
+  if (status === "completed") {
+    return "Completed. No additional detail was recorded.";
+  }
+  return "No job detail has been recorded yet. Refresh jobs or retry if the backend stays quiet.";
+}
+
 function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
   if (!job?.updated_at) return false;
   const status = String(job.status || "").toLowerCase();
@@ -2564,11 +2620,13 @@ function PerformanceAIDashboardView({
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
   const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
   const [planPdfUploadState, setPlanPdfUploadState] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
+  const [planPdfUploadMessage, setPlanPdfUploadMessage] = useState("");
   const [selectedPlanPdfElementId, setSelectedPlanPdfElementId] = useState("");
   const [planPdfElementDraftText, setPlanPdfElementDraftText] = useState("");
   const [planPdfMoveX, setPlanPdfMoveX] = useState("");
   const [planPdfMoveY, setPlanPdfMoveY] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
+  const [surveyUploadMessage, setSurveyUploadMessage] = useState("");
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [, setSurveyPoints] = useState<number[][]>([]);
   const [, setSurveyDiagnostics] = useState<{
@@ -2763,6 +2821,7 @@ function PerformanceAIDashboardView({
   const [moveEditFeedback, setMoveEditFeedback] = useState("");
   const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
   const [projectDrawerNotice, setProjectDrawerNotice] = useState("");
+  const [jobsPanelStatusMessage, setJobsPanelStatusMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
@@ -3532,6 +3591,10 @@ function PerformanceAIDashboardView({
   const visibleActiveJobStale = useMemo(
     () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
     [visibleActiveJob, jobClockMs],
+  );
+  const selectedJobStale = useMemo(
+    () => isLikelyStaleJob(selectedJob, jobClockMs),
+    [selectedJob, jobClockMs],
   );
   const thinkingState = useMemo(
     () =>
@@ -7389,6 +7452,7 @@ function PerformanceAIDashboardView({
   );
 
   const isConnectivityFailureMessage = (message: string) =>
+    message.toLowerCase().includes("backend unreachable") ||
     message.includes("could not reach the backend") ||
     message.includes("Failed to fetch") ||
     message.includes("Load failed") ||
@@ -7458,8 +7522,7 @@ function PerformanceAIDashboardView({
         }
         return;
       } catch (queueError) {
-        const queueMessage =
-          queueError instanceof Error ? queueError.message : "Job queue failed.";
+        const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
         appendChatMessage("assistant", queueMessage, "status");
         setStatusMessage(queueMessage);
         return;
@@ -7537,8 +7600,7 @@ function PerformanceAIDashboardView({
           );
           return;
         } catch (queueError) {
-          const queueMessage =
-            queueError instanceof Error ? queueError.message : "Job queue failed.";
+          const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
           appendChatMessage("assistant", queueMessage, "status");
           setStatusMessage(queueMessage);
           return;
@@ -7584,8 +7646,7 @@ function PerformanceAIDashboardView({
           );
           return;
         } catch (queueError) {
-          const queueMessage =
-            queueError instanceof Error ? queueError.message : "Job queue failed.";
+          const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
           appendChatMessage(
             "assistant",
             queueMessage,
@@ -7595,26 +7656,14 @@ function PerformanceAIDashboardView({
           return;
         }
       }
-      appendChatMessage(
-        "assistant",
-        error instanceof Error
-          ? error.message
-          : mode === "fix"
-            ? "I couldn’t complete the fix pass."
-            : mode === "improve"
-              ? "I couldn’t complete the improvement pass."
-              : "I couldn’t update the design.",
-        "status",
-      );
-      setStatusMessage(
-        error instanceof Error
-          ? error.message
-          : mode === "fix"
-            ? "Fix pass failed."
-            : mode === "improve"
-              ? "Improve pass failed."
-              : "Planner run failed.",
-      );
+      const message =
+        mode === "fix"
+          ? `Fix pass failed: ${panelErrorMessage(error, "Could not complete the fix pass.")} Next action: review blockers, then retry Fix.`
+          : mode === "improve"
+            ? `Improve pass failed: ${panelErrorMessage(error, "Could not complete the improvement pass.")} Next action: review inputs, then retry Improve.`
+            : `Generate failed: ${panelErrorMessage(error, "Could not update the design.")} Next action: check the blocker/status message, then press Generate again.`;
+      appendChatMessage("assistant", message, "status");
+      setStatusMessage(message);
     } finally {
       window.clearTimeout(timeoutId);
       signal?.removeEventListener("abort", handleAbort);
@@ -7933,25 +7982,25 @@ function PerformanceAIDashboardView({
           );
           return;
         } catch (queueError) {
+          const friendly = chatFailureMessage(queueError);
+          const technical = panelErrorMessage(queueError, "I couldn’t queue the design request either.");
           appendChatMessage(
             "assistant",
-            queueError instanceof Error ? queueError.message : "I couldn’t queue the design request either.",
+            friendly,
             "status",
           );
-          setStatusMessage(
-            queueError instanceof Error ? queueError.message : "Queued fallback failed.",
-          );
+          setStatusMessage(`Chat backend fallback failed: ${technical}`);
           return;
         }
       }
+      const friendly = chatFailureMessage(error);
+      const technical = panelErrorMessage(error, "Civora AI could not process that message.");
       appendChatMessage(
         "assistant",
-        error instanceof Error ? error.message : "I couldn’t process that message.",
+        friendly,
         "status",
       );
-      setStatusMessage(
-        error instanceof Error ? error.message : "Civora AI could not process that message.",
-      );
+      setStatusMessage(`Chat backend failed: ${technical}`);
       setBusy(false);
       setActivePlanTool("run");
     } finally {
@@ -8297,15 +8346,22 @@ function PerformanceAIDashboardView({
   const onlineSourceLookupUnavailable =
     hasAppliedAddress &&
     onlineDiscoveryCandidateCount === 0 &&
-    (String(onlineDiscovery.status || "").includes("failed") ||
-      (onlineDiscoverySources.length === 0 && configuredLocalGisProviders.length === 0));
+    String(onlineDiscovery.status || "").includes("failed");
+  const onlineSourceProvidersAbsent =
+    hasAppliedAddress &&
+    onlineDiscoveryCandidateCount === 0 &&
+    onlineDiscoverySources.length === 0 &&
+    configuredLocalGisProviders.length === 0 &&
+    !onlineSourceLookupUnavailable;
   const onlineSourceLookupLabel = !hasAppliedAddress
     ? "Needs address/location first"
     : onlineDiscoveryCandidateCount > 0
       ? `${onlineDiscoveryCandidateCount} candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} for review`
       : onlineSourceLookupUnavailable
-        ? "Address applied; online source lookup not configured/available."
-        : "Address applied; no online source candidates accepted.";
+        ? "Provider lookup failed; retry source discovery."
+        : onlineSourceProvidersAbsent
+          ? "No source providers configured."
+          : "Providers returned no usable features.";
   const autoSiteContextFlowSummary = useMemo<AutoSiteContextFlowSummary>(() => {
     const autoContext =
       ((siteInputs?.auto_existing_conditions_v1 ??
@@ -9714,7 +9770,14 @@ function PerformanceAIDashboardView({
     autoNamedOverride?: boolean;
     autoFileNamedOverride?: boolean;
   } = {}): Promise<ProjectRecord | null> => {
-    if (!token) return null;
+    if (!token) {
+      const message = "Save blocked: sign in/connect backend to save projects.";
+      if (!silent) {
+        setProjectDrawerNotice(message);
+        setStatusMessage(message);
+      }
+      return null;
+    }
     const effectiveProjectId =
       projectIdOverride !== undefined
         ? projectIdOverride
@@ -9796,8 +9859,7 @@ function PerformanceAIDashboardView({
       }
       return data.project;
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Project save failed.";
+      const message = panelErrorMessage(error, "Project save failed.");
       setProjectDrawerNotice(`Save blocked: ${message}`);
       if (!silent) {
         setStatusMessage(message);
@@ -10251,10 +10313,11 @@ function PerformanceAIDashboardView({
         }
       }
       if (job.status === "completed" && job.result) {
+        setJobsPanelStatusMessage("");
         if (isArtifactExportJob(job)) {
           const artifact = artifactFromJob(job);
           if (artifact?.download_path) {
-            await downloadArtifactPath(
+            await handleArtifactDownload(
               artifact.download_path,
               artifact.filename || (artifact.kind === "dxf" ? "civora-ai-plan.dxf" : "civora-ai-report.json"),
             );
@@ -10313,9 +10376,12 @@ function PerformanceAIDashboardView({
           } as ProjectRecord);
         }
       } else if (job.status === "failed") {
+        setJobsPanelStatusMessage(`Job failed: ${job.error || "No backend detail was recorded. Retry or inspect backend logs."}`);
         appendChatMessage(
           "assistant",
-          job.error ?? "The background job failed before Civora could finish the design.",
+          job.error
+            ? `The background job failed: ${job.error}. Retry from Jobs after checking the inputs.`
+            : "The background job failed before Civora could finish the design. Retry from Jobs after checking the inputs.",
           "status",
         );
         setStatusMessage(job.error ?? "Job failed.");
@@ -10336,7 +10402,9 @@ function PerformanceAIDashboardView({
         );
       }
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Job load failed.");
+      const message = `Job refresh failed: ${panelErrorMessage(error, "Could not refresh job detail.")}`;
+      setJobsPanelStatusMessage(message);
+      setStatusMessage(message);
     }
   };
 
@@ -10348,7 +10416,13 @@ function PerformanceAIDashboardView({
   }, [loadJob]);
 
   const uploadImage = async (file: File) => {
-    if (!token) return;
+    if (!token) {
+      const message = "Image upload failed: Sign in/connect backend to upload images.";
+      setImageUploadState("failed");
+      setImageUploadNote(message);
+      setStatusMessage(message);
+      return;
+    }
     const localPreviewUrl = URL.createObjectURL(file);
     setUploadedImagePreviewUrl(localPreviewUrl);
     setImageUploadState("uploading");
@@ -10444,16 +10518,29 @@ function PerformanceAIDashboardView({
     } catch (error) {
       setImageName(file.name);
       setImageUploadState("failed");
-      setImageUploadNote("Image upload failed.");
-      setStatusMessage(
-        error instanceof Error ? error.message : "Image upload failed.",
-      );
+      const message = uploadStatusMessage("image", error);
+      setImageUploadNote(message);
+      setStatusMessage(message);
     }
   };
 
   const uploadPlanPdf = async (file: File) => {
-    if (!token) return;
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
+      const message = "PDF upload failed: Unsupported file. Use a PDF plan file.";
+      setPlanPdfUploadState("failed");
+      setPlanPdfUploadMessage(message);
+      setStatusMessage(message);
+      return;
+    }
+    if (!token) {
+      const message = "PDF upload failed: Sign in/connect backend to upload plan PDFs.";
+      setPlanPdfUploadState("failed");
+      setPlanPdfUploadMessage(message);
+      setStatusMessage(message);
+      return;
+    }
     setPlanPdfUploadState("uploading");
+    setPlanPdfUploadMessage("Uploading PDF for review extraction...");
     setStatusMessage("Uploading plan PDF...");
     try {
       const activeProjectId = projectId || currentProject?.project_id || (await ensureProjectDraft());
@@ -10486,6 +10573,7 @@ function PerformanceAIDashboardView({
         }));
       }
       setPlanPdfUploadState("uploaded");
+      setPlanPdfUploadMessage("Plan PDF analyzed. Extracted objects are review-required.");
       setActiveWorkspaceMode("data");
       setStatusMessage("Plan PDF analyzed. All extracted objects are review-required.");
       appendChatMessage(
@@ -10495,7 +10583,9 @@ function PerformanceAIDashboardView({
       );
     } catch (error) {
       setPlanPdfUploadState("failed");
-      setStatusMessage(error instanceof Error ? error.message : "Plan PDF upload failed.");
+      const message = uploadStatusMessage("pdf", error);
+      setPlanPdfUploadMessage(message);
+      setStatusMessage(message);
     }
   };
 
@@ -10715,7 +10805,22 @@ function PerformanceAIDashboardView({
   };
 
   const uploadExistingConditions = async (file: File) => {
-    if (!token) return;
+    const supportedSurveyPattern = /\.(csv|geojson|json|dxf|shp|zip|gpkg|tif|tiff|las|laz|xml|landxml)$/i;
+    if (!supportedSurveyPattern.test(file.name)) {
+      const message = "Survey/topo upload failed: Unsupported file. Use CSV, DXF, LAS/LAZ, GeoTIFF, GeoJSON, SHP/ZIP, GPKG, XML, or LandXML.";
+      setSurveyFileName(file.name);
+      setSurveyUploadMessage(message);
+      setStatusMessage(message);
+      return;
+    }
+    if (!token) {
+      const message = "Survey/topo upload failed: Sign in/connect backend to upload existing-condition files.";
+      setSurveyFileName(file.name);
+      setSurveyUploadMessage(message);
+      setStatusMessage(message);
+      return;
+    }
+    setSurveyUploadMessage(`Uploading ${file.name} for source review...`);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -10791,6 +10896,11 @@ function PerformanceAIDashboardView({
         },
       });
       appendChatMessage("assistant", summarizeExistingConditionsUpload(data), "status");
+      setSurveyUploadMessage(
+        data.existing_conditions_package?.status === "ready"
+          ? "Survey/topo imported and ready for review."
+          : "Survey/topo imported; exact review blockers are recorded.",
+      );
       setStatusMessage(
         data.existing_conditions_package?.status === "ready"
           ? "Existing conditions imported and ready."
@@ -10798,9 +10908,9 @@ function PerformanceAIDashboardView({
       );
     } catch (error) {
       setSurveyFileName(file.name);
-      setStatusMessage(
-        error instanceof Error ? error.message : "Existing-condition upload failed.",
-      );
+      const message = uploadStatusMessage("survey", error);
+      setSurveyUploadMessage(message);
+      setStatusMessage(message);
     }
   };
 
@@ -11955,6 +12065,9 @@ function PerformanceAIDashboardView({
       const discovery = onlineFetch?.online_existing_conditions_discovery_v1;
       const sources = Array.isArray(discovery?.sources) ? discovery.sources : [];
       const candidateCount = Number(discovery?.candidate_count ?? 0);
+      const discoveryStatus = String(discovery?.status || onlineFetch?.status || "");
+      const providerFailed = discoveryStatus.includes("failed") || Boolean(discovery?.blockers?.length && candidateCount === 0);
+      const providersAbsent = candidateCount === 0 && sources.length === 0 && !configuredLocalGisProviders.length;
       const missing = sources
         .filter((source) => Number(source.candidate_count ?? 0) <= 0)
         .map((source) => String(source.label || source.key || source.source_type || "source unavailable"))
@@ -12069,22 +12182,30 @@ function PerformanceAIDashboardView({
         latestResultOverride,
       });
       setAutoExistingConditionsStatus({
-        status: candidateCount > 0 || slopeEstimateOverride || hasTerrainSource ? "ready" : "blocked",
+        status: providerFailed || providersAbsent ? "blocked" : candidateCount > 0 || slopeEstimateOverride || hasTerrainSource ? "ready" : "blocked",
         message:
-          candidateCount > 0
+          providerFailed
+            ? `Source provider lookup failed: ${(discovery?.blockers ?? [])[0] || "the backend/provider did not return source candidates"}. Retry source discovery after the provider responds.`
+            : providersAbsent
+              ? "No source providers are configured. Add GIS providers or upload survey/topo evidence before relying on source context."
+              : candidateCount > 0
             ? `Found ${candidateCount} source candidate${candidateCount === 1 ? "" : "s"} inside/near the locked site for review.`
             : slopeEstimateOverride
               ? `No source candidates were found yet. Grading has an explicit ${slopePct}% assumed slope for review only.`
-              : "No usable source candidates were found from configured providers.",
+              : "Configured providers returned no usable features inside/near the locked site.",
         candidateCount,
-        missing,
+        missing: providersAbsent ? ["source providers"] : providerFailed ? ["provider lookup"] : missing,
       });
       setStatusMessage(
-        candidateCount > 0
+        providerFailed
+          ? "Site locked. Existing-condition source lookup failed; retry after providers/backend respond."
+          : providersAbsent
+            ? "Site locked. No source providers are configured yet."
+            : candidateCount > 0
           ? `Site locked. Civora found ${candidateCount} existing-condition candidate${candidateCount === 1 ? "" : "s"} for review inside the site.`
           : slopeEstimateOverride
             ? `Site locked. No source candidates found yet; grading is using an explicit ${slopePct}% assumed slope for review only.`
-            : "Site locked. Existing-condition auto-detection ran, but configured sources did not return usable candidates.",
+            : "Site locked. Existing-condition providers returned no usable features inside the site.",
       );
         if (slopeEstimateOverride || hasTerrainSource) {
           void handleGenerateSystemRef.current?.("grading", { slopeEstimateOverride });
@@ -12105,6 +12226,7 @@ function PerformanceAIDashboardView({
     [
       assumedTerrainSlopePct,
       buildingPlacements,
+      configuredLocalGisProviders.length,
       currentProject,
       hasTerrainSource,
       hasVerifiedSurveyControl,
@@ -12402,7 +12524,17 @@ function PerformanceAIDashboardView({
   }, [activeSidePanel, buildingPlacements, previewHeightPx, siteScaleLocked]);
 
   const saveSiteAddress = async () => {
-    if (!token) return;
+    if (!token) {
+      const message = "Sign in/connect backend to apply address.";
+      setAutoExistingConditionsStatus({
+        status: "blocked",
+        message,
+        candidateCount: 0,
+        missing: ["backend session"],
+      });
+      setStatusMessage(message);
+      return;
+    }
     const trimmed = siteAddress.trim();
     const currentInput = currentProject?.project_input ?? payloadPreview;
     const nextSiteInputs = {
@@ -12446,6 +12578,12 @@ function PerformanceAIDashboardView({
           geocode?.message ||
           geocode?.blockers?.find((item) => item?.message)?.message ||
           "Address lookup did not return usable map coordinates.";
+        setAutoExistingConditionsStatus({
+          status: "blocked",
+          message: `Geocode failed: ${geocodeMessage} Check the address or place the site manually.`,
+          candidateCount: 0,
+          missing: ["geocode"],
+        });
         setStatusMessage(`${geocodeMessage} The map was not moved. You can still set site size or draw the boundary manually.`);
         return;
       }
@@ -12593,33 +12731,47 @@ function PerformanceAIDashboardView({
       setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
       autoExistingRunKeyRef.current = "";
       const candidateCount = Number(onlineFetch?.online_existing_conditions_discovery_v1?.candidate_count ?? 0);
+      const discoveryStatus = String(onlineFetch?.online_existing_conditions_discovery_v1?.status || onlineFetch?.status || "");
+      const providerSources = onlineFetch?.online_existing_conditions_discovery_v1?.sources ?? [];
       const lookupUnavailable =
         candidateCount === 0 &&
-        (String(onlineFetch?.online_existing_conditions_discovery_v1?.status || "").includes("failed") ||
-          (!configuredLocalGisProviders.length && !(onlineFetch?.online_existing_conditions_discovery_v1?.sources ?? []).length));
+        (discoveryStatus.includes("failed") ||
+          (!configuredLocalGisProviders.length && !providerSources.length));
+      const providerAbsent = candidateCount === 0 && !configuredLocalGisProviders.length && !providerSources.length;
       setStatusMessage(
         candidateCount > 0
           ? `Address applied. Found ${candidateCount} online source candidate${candidateCount === 1 ? "" : "s"} for review.`
           : lookupUnavailable
-            ? "Address applied; online source lookup not configured/available."
+            ? providerAbsent
+              ? "Address applied; no online/local source providers are configured yet."
+              : "Address applied; online source lookup failed or providers were unavailable."
             : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
       );
       setAutoExistingConditionsStatus({
-        status: siteScaleLocked ? "running" : "waiting",
-        message: siteScaleLocked
+        status: lookupUnavailable ? "blocked" : siteScaleLocked ? "running" : "waiting",
+        message: lookupUnavailable
+          ? providerAbsent
+            ? "Address applied, but no source providers are configured. Add GIS providers or upload survey/topo evidence before relying on source context."
+            : "Address applied, but provider lookup failed or was unavailable. Retry after the backend/providers respond."
+          : siteScaleLocked
           ? "Address changed. Civora will recheck sources inside the locked site."
           : "Address applied. Lock the site boundary to auto-check roads, buildings, terrain, constraints, and utilities inside it.",
         candidateCount,
-        missing: [],
+        missing: lookupUnavailable ? (providerAbsent ? ["source providers"] : ["provider lookup"]) : [],
       });
       setSelectedAddressSuggestion(geocode);
       if (siteScaleLocked) {
         void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
       }
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Geocoding failed.",
-      );
+      const message = `Geocode failed: ${panelErrorMessage(error, "Check the address or retry after the backend responds.")}`;
+      setAutoExistingConditionsStatus({
+        status: "blocked",
+        message,
+        candidateCount: 0,
+        missing: ["geocode"],
+      });
+      setStatusMessage(message);
     } finally {
       setOnlineDiscoveryBusy(false);
     }
@@ -13344,6 +13496,10 @@ function PerformanceAIDashboardView({
         target === "full"
           ? (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[])
           : ([target] as EngineeringSystemKey[]);
+      const skippedSystems =
+        target === "full"
+          ? []
+          : (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[]).filter((system) => system !== target);
       const blockedSummary = (reason: string, nextAction: string): GenerateFlowSummary => ({
         version: "generate_flow_summary_v1",
         generated_at: new Date().toISOString(),
@@ -13481,7 +13637,7 @@ function PerformanceAIDashboardView({
         generated_at: new Date().toISOString(),
         target,
         ran: targetSystems,
-        skipped: [],
+        skipped: skippedSystems,
         needs_review: reviewNotes,
         notes: reviewNotes,
         blocked: false,
@@ -13496,7 +13652,7 @@ function PerformanceAIDashboardView({
       appendChatMessage(
         "assistant",
         [
-          `Generate started. Ran: ${runSummary.ran.join(", ")}.`,
+          `${runSummary.skipped.length ? "Started, with skipped systems" : "Generate started"}. Ran: ${runSummary.ran.join(", ")}.`,
           runSummary.skipped.length ? `Skipped: ${runSummary.skipped.join(", ")}.` : "Skipped: none.",
           runSummary.needs_review.length ? `Needs review: ${runSummary.needs_review.slice(0, 5).join("; ")}.` : "Needs review: standard engineer review.",
         ].join(" "),
@@ -13839,6 +13995,7 @@ function PerformanceAIDashboardView({
     setReviewPackageFlowSummary(null);
     setExportActionMessage("");
     setPlanPdfUploadState("idle");
+    setPlanPdfUploadMessage("");
     setSelectedPlanPdfElementId("");
     setPlanPdfElementDraftText("");
     setPlanPdfMoveX("");
@@ -13857,6 +14014,7 @@ function PerformanceAIDashboardView({
     setImageUploadState("idle");
     setImageUploadNote(null);
     setSurveyFileName("");
+    setSurveyUploadMessage("");
     setSurveySlopeEstimate(null);
     setSurveyPoints([]);
     setSurveyPreviewPoints([]);
@@ -13879,6 +14037,7 @@ function PerformanceAIDashboardView({
     setPreviewFullscreenOpen(false);
     setSelectedJobId("");
     setMoveEditFeedback("");
+    setJobsPanelStatusMessage("");
     setWorkspaceRestoreState("idle");
     setSiteAddress("");
     setBuildingPlacements([]);
@@ -14074,6 +14233,20 @@ function PerformanceAIDashboardView({
     const filenameMatch = disposition?.match(/filename="?([^"]+)"?/i);
     const filename = filenameMatch?.[1] || fallbackFilename;
     downloadBlob(await response.blob(), filename);
+  };
+
+  const handleArtifactDownload = async (downloadPath: string, fallbackFilename: string) => {
+    try {
+      await downloadArtifactPath(downloadPath, fallbackFilename);
+      setExportActionMessage("Artifact downloaded. Review-only output; professional review is still required.");
+      setStatusMessage("Artifact downloaded. Review-only output; professional review is still required.");
+    } catch (error) {
+      const message = `Artifact download failed: ${panelErrorMessage(error, "Download the artifact again after the backend is reachable.")}`;
+      setExportActionMessage(message);
+      setStatusMessage(message);
+      setActiveWorkspaceMode("deliver");
+      setActiveSidePanel("deliverables");
+    }
   };
 
   const getPlanSheetBlockers = (sheetSetOverride = planSheetSet) => {
@@ -18140,6 +18313,13 @@ function PerformanceAIDashboardView({
                       >
                         Save Project
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSidePanel("jobs")}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                      >
+                        Open Jobs
+                      </button>
                     </div>
                     {sortedProjects.length ? (
                       <div className="space-y-2">
@@ -18815,7 +18995,11 @@ function PerformanceAIDashboardView({
                                   ? onlineFoundSources
                                       .map((source) => `${source.label || source.key}${source.candidate_count ? ` (${source.candidate_count})` : ""}`)
                                       .join(", ")
-                                  : "No source candidates found yet"}
+                                  : onlineSourceLookupUnavailable
+                                    ? "Provider lookup failed"
+                                    : onlineSourceProvidersAbsent
+                                      ? "No source providers configured"
+                                      : "Providers returned no usable features"}
                               </p>
                             </div>
                             <div>
@@ -18831,7 +19015,11 @@ function PerformanceAIDashboardView({
                             {onlineDiscoveryBusy
                               ? "Checking parcel, roads, buildings, terrain/elevation, floodplain/wetlands, and configured utilities..."
                               : onlineDiscovery.version
-                                ? `${onlineDiscoveryCandidateCount} review required candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} returned. Nothing is survey/control or ready for construction.`
+                                ? onlineSourceLookupUnavailable
+                                  ? "Provider lookup failed. Retry source discovery after the backend/providers respond; no source candidate is accepted."
+                                  : onlineSourceProvidersAbsent
+                                    ? "No source providers are configured. Add GIS providers or upload survey/topo evidence; no source candidate is accepted."
+                                    : `${onlineDiscoveryCandidateCount} review required candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} returned. Nothing is survey/control or ready for construction.`
                                 : "Apply Address runs Auto Site Context automatically."}
                           </p>
                         </div>
@@ -18845,6 +19033,11 @@ function PerformanceAIDashboardView({
                         >
                           {onlineDiscoveryBusy ? "Applying..." : "Apply address"}
                         </button>
+                        {autoExistingConditionsStatus.status === "blocked" ? (
+                          <p data-testid="apply-address-status" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 sm:col-span-2">
+                            {autoExistingConditionsStatus.message}
+                          </p>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => mapSnapshotInputRef.current?.click()}
@@ -19084,6 +19277,28 @@ function PerformanceAIDashboardView({
                           </span>
                         </button>
                       </div>
+                      {surveyUploadMessage ? (
+                        <p data-testid="survey-upload-status" className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
+                          surveyUploadMessage.toLowerCase().includes("failed")
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-slate-200 bg-slate-50 text-slate-600"
+                        }`}>
+                          {surveyUploadMessage}
+                        </p>
+                      ) : null}
+                      <input
+                        ref={mapSnapshotInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (file) {
+                            await uploadImage(file);
+                          }
+                          event.currentTarget.value = "";
+                        }}
+                      />
                       <input
                         ref={surveyInputRef}
                         type="file"
@@ -19430,7 +19645,11 @@ function PerformanceAIDashboardView({
                           </div>
                         ) : onlineDiscovery.version && !onlineDiscoveryBusy ? (
                           <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                            No online source candidates found from the currently available providers.
+                            {onlineSourceLookupUnavailable
+                              ? "Provider lookup failed. Retry source discovery after the backend/providers respond."
+                              : onlineSourceProvidersAbsent
+                                ? "No online/local source providers are configured yet. Add GIS providers or upload survey/topo evidence."
+                                : "Configured providers returned no usable source features inside/near the site."}
                           </p>
                         ) : null}
                         {onlineMissingSources.length ? (
@@ -19656,10 +19875,35 @@ function PerformanceAIDashboardView({
                           <span>Map snapshot / image</span>
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{uploadedImagePreviewUrl || uploadedImageApiUrl ? "Ready" : "Upload"}</span>
                         </button>
+                        {imageUploadState !== "idle" ? (
+                          <p data-testid="image-upload-status" className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                            imageUploadState === "failed"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-slate-200 bg-slate-50 text-slate-600"
+                          }`}>
+                            {imageUploadNote ||
+                              (imageUploadState === "uploading"
+                                ? "Uploading image..."
+                                : imageUploadState === "detecting"
+                                  ? "Detecting site features..."
+                                  : imageUploadState === "failed"
+                                    ? "Image upload failed."
+                                    : "Image uploaded.")}
+                          </p>
+                        ) : null}
                         <button type="button" onClick={() => surveyInputRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                           <span>Survey / topo file</span>
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{surveyPreviewPoints.length ? "Ready" : "Upload"}</span>
                         </button>
+                        {surveyUploadMessage ? (
+                          <p data-testid="survey-upload-status" className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                            surveyUploadMessage.toLowerCase().includes("failed")
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-slate-200 bg-slate-50 text-slate-600"
+                          }`}>
+                            {surveyUploadMessage}
+                          </p>
+                        ) : null}
                         <button type="button" onClick={() => handleOpenSidePanel("data")} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                           <span>Plan PDF visual editor</span>
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{planPdfAnalysis ? "Review" : "Open"}</span>
@@ -19669,6 +19913,19 @@ function PerformanceAIDashboardView({
                           <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{mapAnalysis?.success ? "Ready" : "Analyze"}</span>
                         </button>
                       </div>
+                      <input
+                        ref={mapSnapshotInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (file) {
+                            await uploadImage(file);
+                          }
+                          event.currentTarget.value = "";
+                        }}
+                      />
                       <input
                         ref={surveyInputRef}
                         type="file"
@@ -19916,6 +20173,15 @@ function PerformanceAIDashboardView({
                             Export PDF
                           </button>
                         </div>
+                        {planPdfUploadMessage ? (
+                          <p data-testid="pdf-upload-status" className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
+                            planPdfUploadState === "failed"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-slate-200 bg-slate-50 text-slate-600"
+                          }`}>
+                            {planPdfUploadMessage}
+                          </p>
+                        ) : null}
                         {planPdfAnalysis ? (
                           <div className="mt-3 grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
                             <div className="min-w-0">
@@ -20409,10 +20675,15 @@ function PerformanceAIDashboardView({
                         onClick={() => void saveSiteAddress()}
                         disabled={!siteAddress.trim()}
                         className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Apply address
-                      </button>
-                    </div>
+                        >
+                          Apply address
+                        </button>
+                        {autoExistingConditionsStatus.status === "blocked" ? (
+                          <p data-testid="apply-address-status" className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                            {autoExistingConditionsStatus.message}
+                          </p>
+                        ) : null}
+                      </div>
 
                   <div className="space-y-2 text-sm text-slate-700">
                       <button
@@ -20426,7 +20697,11 @@ function PerformanceAIDashboardView({
                         </span>
                       </button>
                       {imageUploadState !== "idle" ? (
-                        <p className="text-xs text-slate-500">
+                        <p data-testid="image-upload-status" className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                          imageUploadState === "failed"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-slate-200 bg-slate-50 text-slate-600"
+                        }`}>
                           {imageUploadNote ||
                             (imageUploadState === "uploading"
                               ? "Uploading image…"
@@ -20954,7 +21229,11 @@ function PerformanceAIDashboardView({
                         {generateFlowSummary ? (
                           <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${generateFlowSummary.blocked ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="generate-flow-summary">
                             <p className="font-semibold uppercase tracking-[0.12em]">
-                              {generateFlowSummary.blocked ? "Generate blocked" : "Generate started"}
+                              {generateFlowSummary.blocked
+                                ? "Generate blocked"
+                                : generateFlowSummary.skipped.length
+                                  ? "Started, with skipped systems"
+                                  : "Generate started"}
                             </p>
                             <p className="mt-1">
                               Ran: {generateFlowSummary.ran.join(", ") || "none"} · Skipped: {generateFlowSummary.skipped.join(", ") || "none"}
@@ -22362,6 +22641,15 @@ function PerformanceAIDashboardView({
                         <button type="button" onClick={() => surveyInputRef.current?.click()} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Survey file</button>
                         <button type="button" onClick={() => handleOpenSidePanel("data")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Plan PDF</button>
                       </div>
+                      {surveyUploadMessage ? (
+                        <p data-testid="survey-upload-status" className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
+                          surveyUploadMessage.toLowerCase().includes("failed")
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-slate-200 bg-slate-50 text-slate-600"
+                        }`}>
+                          {surveyUploadMessage}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generated outputs</p>
@@ -22398,7 +22686,19 @@ function PerformanceAIDashboardView({
                         </div>
                         <button
                           type="button"
-                          onClick={() => token && refreshJobs(token, { suppressError: true, force: true })}
+                          onClick={() => {
+                            if (!token) {
+                              setJobsPanelStatusMessage("Sign in/connect backend to refresh jobs.");
+                              return;
+                            }
+                            void refreshJobs(token, { force: true })
+                              .then(() => setJobsPanelStatusMessage("Jobs refreshed."))
+                              .catch((error) => {
+                                const message = `Job refresh failed: ${panelErrorMessage(error, "Could not refresh job history.")}`;
+                                setJobsPanelStatusMessage(message);
+                                setStatusMessage(message);
+                              });
+                          }}
                           className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
                         >
                           Refresh
@@ -22417,6 +22717,16 @@ function PerformanceAIDashboardView({
                           </div>
                         ))}
                       </div>
+                      {visibleActiveJobStale || selectedJobStale ? (
+                        <p data-testid="jobs-stale-warning" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                          Backend status is stale. Last update: {formatTimestamp((visibleActiveJobStale ? visibleActiveJob : selectedJob)?.updated_at)}. Refresh jobs, wait for the worker, or cancel/retry from the detail drawer.
+                        </p>
+                      ) : null}
+                      {jobsPanelStatusMessage ? (
+                        <p data-testid="jobs-refresh-status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                          {jobsPanelStatusMessage}
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -22457,7 +22767,7 @@ function PerformanceAIDashboardView({
                                 </span>
                               </div>
                               <p className={`mt-1 truncate text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
-                                {job.stage_detail || job.stage || formatTimestamp(job.updated_at)}
+                                {job.stage_detail || job.error || job.stage || jobDetailMessage(job)}
                               </p>
                             </button>
                           );
@@ -22490,7 +22800,7 @@ function PerformanceAIDashboardView({
                           />
                         </div>
                         <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-                          {selectedJob.stage_detail || selectedJob.error || selectedJob.stage || "No detail recorded yet."}
+                          {jobDetailMessage(selectedJob)}
                         </p>
                         <div className="mt-3 grid grid-cols-3 gap-2">
                           <button
@@ -22559,7 +22869,7 @@ function PerformanceAIDashboardView({
                             {artifact.download_path ? (
                               <button
                                 type="button"
-                                onClick={() => downloadArtifactPath(artifact.download_path || "", artifact.filename || "civora-artifact")}
+                                onClick={() => void handleArtifactDownload(artifact.download_path || "", artifact.filename || "civora-artifact")}
                                 className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
                               >
                                 Download

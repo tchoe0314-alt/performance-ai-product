@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getJson, postJson } from "../../lib/api";
+import { apiErrorMessage, classifyApiError, getJson, postJson } from "../../lib/api";
 
 import type { AuthStatus, UserRecord } from "../types";
 
@@ -51,10 +51,18 @@ export default function useAuthState({
   }, [onRefreshJobs]);
 
   const loadMe = useCallback(async (authToken: string) => {
-    const data = await getJson<{ user: UserRecord }>("/api/auth/me", {
-      token: authToken,
-    });
-    setUser(data.user);
+    try {
+      const data = await getJson<{ user: UserRecord }>("/api/auth/me", {
+        token: authToken,
+      });
+      setUser(data.user);
+      setAuthStatusError("");
+    } catch (error) {
+      if (classifyApiError(error) === "auth_expired") {
+        throw new Error("Session expired. Sign in again.");
+      }
+      throw error;
+    }
   }, []);
 
   const loadAuthStatus = useCallback(async () => {
@@ -64,10 +72,13 @@ export default function useAuthState({
       setAuthStatusError("");
     } catch (error) {
       setAuthStatus(null);
+      const kind = classifyApiError(error);
       setAuthStatusError(
-        error instanceof Error
-          ? error.message
-          : "Civora AI could not load backend status.",
+        kind === "backend_unreachable"
+          ? "Backend unreachable. Sign-in is unavailable until the backend responds."
+          : kind === "api_blocked"
+            ? "Backend API blocked. Check CORS or access settings, then retry sign-in."
+            : apiErrorMessage(error, "Civora AI could not load backend status."),
       );
     }
   }, []);
@@ -100,8 +111,13 @@ export default function useAuthState({
       await refreshJobsRef.current(data.token, { suppressError: true });
       onStatusMessage(`Signed in to Civora AI as ${data.user.name}.`);
     } catch (error) {
+      const kind = classifyApiError(error);
       setAuthError(
-        error instanceof Error ? error.message : "Authentication failed.",
+        kind === "backend_unreachable"
+          ? "Backend unreachable. Check the backend URL and try signing in again."
+          : kind === "api_blocked"
+            ? "Backend API blocked. Check CORS or access settings, then retry sign-in."
+            : apiErrorMessage(error, "Authentication failed."),
       );
     } finally {
       setAuthLoading(false);
@@ -133,9 +149,14 @@ export default function useAuthState({
         await refreshProjectsRef.current(stored);
         await refreshJobsRef.current(stored, { suppressError: true });
       })
-      .catch(() => {
+      .catch((error) => {
         clearStoredToken();
         setToken("");
+        setAuthStatusError(
+          error instanceof Error && error.message === "Session expired. Sign in again."
+            ? "Session expired. Sign in again."
+            : apiErrorMessage(error, "Backend unreachable. Sign in after the backend is available."),
+        );
       });
   }, [loadAuthStatus, loadMe]);
 
