@@ -538,3 +538,231 @@ body,
     transform: translateY(0);
   }
 }
+
+/* Chat 227: preview-first, Apple-clean workspace polish. */
+.civora-mode-rail {
+  gap: 0.45rem;
+}
+
+@media (min-width: 1024px) {
+  .civora-mode-rail {
+    width: 5.75rem !important;
+    padding: 0.625rem !important;
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    background: rgba(255, 255, 255, 0.78) !important;
+    box-shadow: 0 24px 68px -52px rgba(15, 23, 42, 0.62) !important;
+  }
+
+  .civora-mode-rail > button:first-child,
+  .civora-mode-rail [data-testid="workflow-actions-sidebar"],
+  .civora-mode-rail [data-testid="compact-truth-sidebar"],
+  .civora-mode-rail [data-testid="progress-timeline-sidebar"] {
+    display: none !important;
+  }
+
+  .civora-mode-rail > div.hidden.shrink-0 {
+    display: none;
+  }
+
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] {
+    margin-bottom: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] > div:first-child {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] button {
+    min-height: 3.55rem;
+    justify-content: center;
+    border-color: transparent !important;
+    background: transparent;
+    padding: 0.5rem 0.25rem;
+    text-align: center;
+  }
+
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] button > span:first-child {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] button > span:first-child > span {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] button > span:first-child > span > span:first-child {
+    max-width: 4.1rem;
+    text-align: center;
+    font-size: 0.66rem;
+    line-height: 1rem;
+  }
+
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] button > span:first-child > span > span:nth-child(2),
+  .civora-mode-rail [data-testid="primary-workflow-sidebar"] button > span:last-child {
+    display: none;
+  }
+
+  [data-testid="workspace-canvas-shell"] > div > div:first-child {
+    left: 6.75rem !important;
+    right: 26rem !important;
+    top: 0.75rem !important;
+    border-radius: 1rem !important;
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    background: rgba(255, 255, 255, 0.82) !important;
+    box-shadow: 0 20px 60px -48px rgba(15, 23, 42, 0.62) !important;
+  }
+
+  [data-testid="workspace-right-panel"] {
+    width: 24rem !important;
+  }
+
+  .civora-object-status-drawer {
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    background: rgba(255, 255, 255, 0.82) !important;
+    box-shadow: 0 28px 78px -56px rgba(15, 23, 42, 0.62) !important;
+  }
+
+  [data-testid="floating-object-inspector"] {
+    left: 6.75rem !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .civora-mode-rail {
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+  }
+}
+
+[data-testid="workspace-canvas-shell"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(244, 247, 251, 0.72)),
+    #f6f8fb;
+}
+
+.civora-preview-panel {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.civora-preview-panel > div:nth-child(2) {
+  min-height: 100% !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child {
+  position: absolute !important;
+  inset: 0.75rem 0.75rem auto auto !important;
+  z-index: 82 !important;
+  width: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  max-width: min(880px, calc(100% - 1.5rem));
+  overflow: visible !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+  border-radius: 1rem !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  background: rgba(255, 255, 255, 0.76) !important;
+  box-shadow: 0 20px 58px -48px rgba(15, 23, 42, 0.58) !important;
+  backdrop-filter: blur(18px);
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child > div:first-child {
+  display: none !important;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) {
+  border: 0 !important;
+  padding: 0.45rem !important;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child :where(section, button, label, select) {
+  pointer-events: auto;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child :where(section) {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  background: rgba(248, 250, 252, 0.72) !important;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child :where(button, label, select) {
+  border-radius: 0.625rem !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  box-shadow: none !important;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:first-child :where(span) {
+  letter-spacing: 0.08em;
+}
+
+.civora-preview-panel > div:nth-child(2) > div:not(:first-child):not(.civora-cad-dock):not(.civora-coordination-dock) {
+  border-radius: 0 !important;
+}
+
+.civora-preview-panel [data-testid="preview-fallback-geometry-summary"] {
+  display: none !important;
+}
+
+.civora-object-status-drawer :where(.rounded-2xl, .rounded-xl) {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: none !important;
+}
+
+.civora-object-status-drawer :where(.bg-slate-50) {
+  background-color: rgba(248, 250, 252, 0.76) !important;
+}
+
+.civora-object-status-drawer :where(p, span, button, input, select, textarea) {
+  letter-spacing: 0;
+}
+
+.civora-object-status-drawer :where(.uppercase) {
+  letter-spacing: 0.1em;
+}
+
+.civora-object-manager [draggable] {
+  border-radius: 0.875rem !important;
+}
+
+.civora-object-manager input[type="color"] {
+  padding: 0.1rem;
+}
+
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article) {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+}
+
+.civora-right-panel-sections[data-sections-collapsed="true"] > :where(div, section, details, article)::before {
+  color: #6b7280;
+}
+
+@media (max-width: 760px) {
+  .civora-preview-panel > div:nth-child(2) > div:first-child {
+    inset: auto 0.5rem 0.5rem 0.5rem !important;
+    max-width: none;
+  }
+
+  .civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) {
+    overflow-x: auto;
+  }
+
+  .civora-preview-panel > div:nth-child(2) > div:first-child :where(section) {
+    flex-wrap: nowrap !important;
+  }
+
+  [data-testid="workspace-right-panel"] {
+    max-width: 100vw;
+  }
+}

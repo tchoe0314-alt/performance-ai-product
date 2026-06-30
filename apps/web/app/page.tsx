@@ -12,6 +12,8 @@ import {
   FileText,
   Gauge,
   Hand,
+  Eye,
+  EyeOff,
   Layers,
   MapPinned,
   MousePointer2,
@@ -17997,7 +17999,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar fixed inset-x-3 top-20 z-50 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/96 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:bottom-4 lg:left-4 lg:right-auto lg:top-20 lg:h-auto lg:max-h-none lg:w-[248px]"
+            className="civora-motion-sidebar civora-mode-rail fixed inset-x-3 top-20 z-50 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/96 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:bottom-4 lg:left-4 lg:right-auto lg:top-20 lg:h-auto lg:max-h-none lg:w-[248px]"
           >
             <button
               type="button"
@@ -18062,7 +18064,7 @@ function PerformanceAIDashboardView({
 	                    <button
 	                      key={item.key}
 	                      type="button"
-	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.label}
+	                      aria-label={item.label}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
 	                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${
@@ -18092,6 +18094,14 @@ function PerformanceAIDashboardView({
 	                    </button>
 	                  );
 	                })}
+                    <button
+                      type="button"
+                      aria-label="Open canvas from sidebar"
+                      onClick={() => handleOpenPanelFromDrawer("objects")}
+                      className="sr-only"
+                    >
+                      Open canvas
+                    </button>
 	              </div>
 	            </div>
 	            <div className="hidden" data-testid="workflow-actions-sidebar">
@@ -18323,7 +18333,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-50 order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/96 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-20 lg:h-auto lg:max-h-none lg:w-[388px] lg:rounded-xl lg:shadow-[var(--civora-shadow-panel)]"
+            className="civora-motion-right-panel civora-object-status-drawer fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-50 order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/96 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-20 lg:h-auto lg:max-h-none lg:w-[388px] lg:rounded-xl lg:shadow-[var(--civora-shadow-panel)]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
@@ -18350,7 +18360,7 @@ function PerformanceAIDashboardView({
               </div>
               <div
                 className="civora-right-panel-sections flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4"
-                data-sections-collapsed="false"
+                data-sections-collapsed={["dashboard", "reports", "analysis", "data", "settings", "quantities"].includes(sidePanelForRender) ? "true" : "false"}
               >
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
@@ -18498,7 +18508,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "dashboard" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="civora-object-manager rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Dashboard</p>
@@ -23477,7 +23487,7 @@ function PerformanceAIDashboardView({
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <div>
+                                <div className="min-w-0">
                                   <p className="font-semibold text-slate-900">{item.label}</p>
                                   <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">
                                     {SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object"} ·{" "}
@@ -23497,6 +23507,19 @@ function PerformanceAIDashboardView({
                                   {item.type === "custom" ? (
                                     <CustomGeometryHandoffDetails item={item} units={units} />
                                   ) : null}
+                                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                                    <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+                                      {String(item.meta?.cad_layer || item.meta?.layer || (item.type === "site" ? "C-SITE" : "C-DRAFT"))}
+                                    </span>
+                                    <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+                                      {String(item.source || item.meta?.source_stage || "draft source")}
+                                    </span>
+                                    <span className={`rounded-full px-2 py-1 ${
+                                      item.meta?.ui_hidden ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700"
+                                    }`}>
+                                      {item.meta?.ui_hidden ? "Hidden" : "Visible"}
+                                    </span>
+                                  </div>
                                 </div>
                                 {item.type !== "site" ? (
                                   <button
@@ -23600,13 +23623,43 @@ function PerformanceAIDashboardView({
 	                                  >
 	                                    Select
 	                                  </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setFocusObjectId(item.id);
+                                        setActivePlacementId(item.id);
+                                        setActiveSidePanel(null);
+                                      }}
+                                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      <MapPinned className="h-3.5 w-3.5" />
+                                      Focus
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleUpdateBuilding(item.id, {
+                                          meta: {
+                                            ...(item.meta ?? {}),
+                                            ui_hidden: !item.meta?.ui_hidden,
+                                          },
+                                        })
+                                      }
+                                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      {item.meta?.ui_hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                      {item.meta?.ui_hidden ? "Show" : "Hide"}
+                                    </button>
 	                                </div>
 	                              ) : null}
                             </div>
                             );
                           })
                         ) : (
-                          <p className="text-sm text-slate-500">No objects yet.</p>
+                          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
+                            <p className="text-sm font-semibold text-slate-900">Add objects or ask Civora to generate.</p>
+                            <p className="mt-1 text-xs text-slate-500">Draw a site object, use Add Object, or open chat.</p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -24708,7 +24761,7 @@ function PerformanceAIDashboardView({
               onCreateCustomGeometry={handleCreateCustomGeometry}
               onCreateSiteBoundary={handleCreateSiteBoundary}
               onUnlockSite={handleUnlockSite}
-              buildingPlacements={buildingPlacements}
+              buildingPlacements={buildingPlacements.filter((item) => !item.meta?.ui_hidden)}
               cadEntityPreviewObjects={cadEntityPreview.objects}
               suggestedPlacements={filteredDetectedPlacements}
               selectedBuildingId={activePlacementId}

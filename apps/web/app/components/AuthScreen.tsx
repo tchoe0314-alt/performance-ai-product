@@ -173,16 +173,18 @@ export default function AuthScreen({
                   Request Access Mode
                 </button>
               </div>
-              <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
-                {authStatus ? (
-                  <span>
-                    Pilot access is invite-only. Use <strong>Sign In</strong> if you
-                    already have approved access, or request pilot access.
-                  </span>
-                ) : (
-                  <span>Account status will appear here once the Civora AI backend responds.</span>
-                )}
-              </div>
+              {!authStatusError ? (
+                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
+                  {authStatus ? (
+                    <span>
+                      Pilot access is invite-only. Use <strong>Sign In</strong> if you
+                      already have approved access, or request pilot access.
+                    </span>
+                  ) : (
+                    <span>Backend status will appear here once the Civora AI service responds.</span>
+                  )}
+                </div>
+              ) : null}
               {authStatusError ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                   {authStatusError}
@@ -234,6 +236,9 @@ export default function AuthScreen({
               {authError ? (
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                   {authError}
+                  <span className="mt-1 block text-xs font-medium text-red-600/80">
+                    Backend status unavailable.
+                  </span>
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-3">

@@ -154,7 +154,7 @@ export default function useAuthState({
         setToken("");
         setAuthStatusError(
           error instanceof Error && error.message === "Session expired. Sign in again."
-            ? "Session expired. Sign in again."
+            ? "Session expired. Sign in again. Backend status unavailable."
             : apiErrorMessage(error, "Backend unreachable. Sign in after the backend is available."),
         );
       });
