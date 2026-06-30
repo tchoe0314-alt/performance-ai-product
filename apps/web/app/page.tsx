@@ -2250,6 +2250,10 @@ import {
 } from "./utils/chat";
 
 import { uploadedImageSrc } from "./utils/auth";
+import {
+  markCivoraInteraction,
+  measureCivoraInteractionAfterPaint,
+} from "./utils/performanceProbes";
 
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
@@ -2854,6 +2858,10 @@ function PerformanceAIDashboardView({
   const lastJobPhaseSignatureRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
+  const panelOpenProbeRef = useRef<{ label: string; panel: SidePanelKey; startedAt: number } | null>(null);
+  const panelCloseProbeRef = useRef<{ label: string; panel: SidePanelKey | null; startedAt: number } | null>(null);
+  const previewModeProbeRef = useRef<{ value: "2d" | "3d"; startedAt: number } | null>(null);
+  const previewQualityProbeRef = useRef<{ value: "standard" | "high"; startedAt: number } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
   const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget, options?: { slopeEstimateOverride?: SurveySlopeResponse | null }) => Promise<void>) | null>(null);
@@ -2894,10 +2902,24 @@ function PerformanceAIDashboardView({
 
     if (!rightRailCollapsed) {
       setRenderedSidePanel(activeSidePanel ?? "dashboard");
-      frame = window.requestAnimationFrame(() => setSidePanelVisible(true));
+      frame = window.requestAnimationFrame(() => {
+        setSidePanelVisible(true);
+        const probe = panelOpenProbeRef.current;
+        if (probe && probe.panel === (activeSidePanel ?? "dashboard")) {
+          measureCivoraInteractionAfterPaint(probe.label, probe.startedAt, { panel: probe.panel });
+          panelOpenProbeRef.current = null;
+        }
+      });
     } else {
       setSidePanelVisible(false);
-      timeout = window.setTimeout(() => setRenderedSidePanel(null), 180);
+      timeout = window.setTimeout(() => {
+        setRenderedSidePanel(null);
+        const probe = panelCloseProbeRef.current;
+        if (probe) {
+          measureCivoraInteractionAfterPaint(probe.label, probe.startedAt, { panel: probe.panel ?? "none" });
+          panelCloseProbeRef.current = null;
+        }
+      }, 180);
     }
 
     return () => {
@@ -10024,6 +10046,7 @@ function PerformanceAIDashboardView({
 
   const loadProject = async (id: string) => {
     if (!token) return;
+    const loadStartedAt = markCivoraInteraction();
     autosaveSuspendRef.current = true;
     if (chatAutosaveTimeoutRef.current !== null) {
       window.clearTimeout(chatAutosaveTimeoutRef.current);
@@ -10057,6 +10080,9 @@ function PerformanceAIDashboardView({
       setStatusMessage(`Loaded project "${project.name}".`);
       setProjectDrawerNotice(`Restored "${project.name || "Untitled Project"}".`);
       setWorkspaceRestoreState("restored");
+      measureCivoraInteractionAfterPaint("projects.drawer.open_project", loadStartedAt, {
+        projectId: project.project_id,
+      });
       if (typeof window !== "undefined") {
         window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
       }
@@ -10070,6 +10096,7 @@ function PerformanceAIDashboardView({
         error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.";
       setProjectDrawerNotice(message);
       setStatusMessage(message);
+      measureCivoraInteractionAfterPaint("projects.drawer.open_project.failed", loadStartedAt, { projectId: id });
     } finally {
       autosaveSuspendRef.current = false;
     }
@@ -13482,6 +13509,7 @@ function PerformanceAIDashboardView({
       target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
       options?: { slopeEstimateOverride?: SurveySlopeResponse | null },
     ) => {
+      const generateStartedAt = markCivoraInteraction();
       const preflightBlockers = getGeneratePreflightBlockers(target);
       const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
       const reviewNotes = uniqueStrings([
@@ -13516,6 +13544,12 @@ function PerformanceAIDashboardView({
       });
       const recordGenerateSummary = (summary: GenerateFlowSummary) => {
         setGenerateFlowSummary(summary);
+        measureCivoraInteractionAfterPaint("generate.panel.response.visible", generateStartedAt, {
+          target,
+          blocked: summary.blocked,
+          ran: summary.ran.length,
+          skipped: summary.skipped.length,
+        });
         void persistFlowMetadata({ generate_flow_summary_v1: summary });
       };
       if (hardPreflightBlockers.length) {
@@ -13905,8 +13939,52 @@ function PerformanceAIDashboardView({
 
   const queuePreviewRefresh = (reason: string) => {
     if (!token) return;
+    const lowerReason = reason.toLowerCase();
+    if (
+      lowerReason.includes("quality") ||
+      lowerReason.includes("label density") ||
+      lowerReason.includes("entering edit mode")
+    ) {
+      return;
+    }
     previewRefreshIntentRef.current = { reason, track: true };
   };
+
+  const handleSetPreviewMode = useCallback(
+    (value: "2d" | "3d") => {
+      if (value !== previewMode) {
+        previewModeProbeRef.current = { value, startedAt: markCivoraInteraction() };
+      }
+      setPreviewMode(value);
+    },
+    [previewMode],
+  );
+
+  const handleSetPreviewQuality = useCallback(
+    (value: "standard" | "high") => {
+      if (value !== previewQuality) {
+        previewQualityProbeRef.current = { value, startedAt: markCivoraInteraction() };
+      }
+      setPreviewQuality(value);
+    },
+    [previewQuality],
+  );
+
+  useEffect(() => {
+    const probe = previewModeProbeRef.current;
+    if (!probe || probe.value !== previewMode) return;
+    measureCivoraInteractionAfterPaint(`preview.mode.${previewMode}`, probe.startedAt, { mode: previewMode });
+    previewModeProbeRef.current = null;
+  }, [previewMode]);
+
+  useEffect(() => {
+    const probe = previewQualityProbeRef.current;
+    if (!probe || probe.value !== previewQuality) return;
+    measureCivoraInteractionAfterPaint(`preview.quality.${previewQuality}`, probe.startedAt, {
+      quality: previewQuality,
+    });
+    previewQualityProbeRef.current = null;
+  }, [previewQuality]);
 
   const handlePreviewPlan = async () => {
     if (!token) return;
@@ -14067,6 +14145,7 @@ function PerformanceAIDashboardView({
   }, [setJobs]);
 
   const handleNewProject = async () => {
+    const newProjectStartedAt = markCivoraInteraction();
     debugLog("new-project-start");
     projectLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
@@ -14152,6 +14231,7 @@ function PerformanceAIDashboardView({
     setWorkspaceRestoreState("idle");
     setProjectDrawerNotice("Unsaved draft. Save Project will persist this clean workspace.");
     setStatusMessage("Started a new project.");
+    measureCivoraInteractionAfterPaint("projects.drawer.new_project", newProjectStartedAt);
     draftProjectPromiseRef.current = null;
     suppressProjectAutoLoadRef.current = false;
     window.setTimeout(() => {
@@ -14160,10 +14240,14 @@ function PerformanceAIDashboardView({
   };
 
   const handleDeleteProject = async (projectIdToDelete: string) => {
+    const deleteStartedAt = markCivoraInteraction();
     if (!token) {
       const message = "Delete blocked: sign in and reconnect to the backend before deleting saved projects.";
       setProjectDrawerNotice(message);
       setStatusMessage(message);
+      measureCivoraInteractionAfterPaint("projects.drawer.delete_project.blocked", deleteStartedAt, {
+        projectId: projectIdToDelete,
+      });
       return;
     }
     const target = projects.find((item) => item.project_id === projectIdToDelete);
@@ -14194,11 +14278,17 @@ function PerformanceAIDashboardView({
       }
       setProjectDrawerNotice("Project deleted.");
       setStatusMessage("Project deleted.");
+      measureCivoraInteractionAfterPaint("projects.drawer.delete_project", deleteStartedAt, {
+        projectId: projectIdToDelete,
+      });
     } catch (error) {
       const message =
         error instanceof Error ? `Delete blocked: ${error.message}` : "Delete blocked: could not delete project.";
       setProjectDrawerNotice(message);
       setStatusMessage(message);
+      measureCivoraInteractionAfterPaint("projects.drawer.delete_project.failed", deleteStartedAt, {
+        projectId: projectIdToDelete,
+      });
     }
   };
 
@@ -15149,11 +15239,7 @@ function PerformanceAIDashboardView({
     }
     requestPreviewInBackground(artifactPayload, { silentStatus: true });
   }, [
-    previewQuality,
-    previewLabelDensity,
-    previewInteraction,
     previewLayerList,
-    planPreviewUrl,
     token,
     artifactPayload,
     backendResult,
@@ -16594,6 +16680,13 @@ function PerformanceAIDashboardView({
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
       sidePanelCloseTimeoutRef.current = null;
     }
+    if (panel) {
+      panelOpenProbeRef.current = {
+        label: panel === "projects" ? "projects.drawer.open" : "panel.open",
+        panel,
+        startedAt: markCivoraInteraction(),
+      };
+    }
     setLayerManagerOpen(false);
     if (panel) {
       setRightRailCollapsed(false);
@@ -16647,13 +16740,23 @@ function PerformanceAIDashboardView({
     if (sidePanelCloseTimeoutRef.current !== null) {
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
     }
+    panelCloseProbeRef.current = {
+      label: activeSidePanel === "projects" ? "projects.drawer.close" : "panel.close",
+      panel: activeSidePanel,
+      startedAt: markCivoraInteraction(),
+    };
     setSidePanelVisible(false);
     sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
       setActiveSidePanel(null);
       setRenderedSidePanel(null);
+      const probe = panelCloseProbeRef.current;
+      if (probe) {
+        measureCivoraInteractionAfterPaint(probe.label, probe.startedAt, { panel: probe.panel ?? "none" });
+        panelCloseProbeRef.current = null;
+      }
       sidePanelCloseTimeoutRef.current = null;
     }, 180);
-  }, []);
+  }, [activeSidePanel]);
   const handleOpenPanelFromDrawer = useCallback((panel: SidePanelKey) => {
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setLeftSidebarOpen(false);
@@ -16663,11 +16766,13 @@ function PerformanceAIDashboardView({
     handleOpenSidePanel(panel);
   }, [handleOpenSidePanel]);
   const triggerCadTool = useCallback((tool: CadToolRequestForPreview["tool"], label: string) => {
+    const startedAt = markCivoraInteraction();
     setPreviewInteraction("edit");
     setWorkspaceChromeMinimized(false);
     handleOpenPanelFromDrawer("model");
     setCadToolRequest({ id: Date.now(), tool });
     setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
+    measureCivoraInteractionAfterPaint("draw.canvas.tool.click", startedAt, { tool, label });
   }, [handleOpenPanelFromDrawer]);
   const cadToolGroups: Array<{
     title: string;
@@ -24376,7 +24481,7 @@ function PerformanceAIDashboardView({
 	                              data-testid={mode === "2d" ? "workspace-preview-mode-2d" : "workspace-preview-mode-3d"}
 	                              title={mode === "2d" ? "Show 2D plan preview" : "Show 3D model preview"}
 	                              onClick={() => {
-	                                setPreviewMode(mode);
+	                                handleSetPreviewMode(mode);
 	                                if (mode === "3d") {
 	                                  setRightRailCollapsed(true);
 	                                  setBottomPanelCollapsed(true);
@@ -24397,7 +24502,7 @@ function PerformanceAIDashboardView({
 	                              type="button"
 	                              data-testid={quality === "standard" ? "workspace-preview-quality-standard" : "workspace-preview-quality-high"}
 	                              title={quality === "standard" ? "Use faster standard rendering" : "Use richer high quality rendering"}
-	                              onClick={() => setPreviewQuality(quality)}
+	                              onClick={() => handleSetPreviewQuality(quality)}
 	                              className={`h-8 rounded-md px-3 text-xs font-semibold capitalize ${
 	                                previewQuality === quality ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
 	                              }`}
@@ -24642,9 +24747,9 @@ function PerformanceAIDashboardView({
               onRemoveBuilding={handleRemoveBuilding}
               onRestoreBuilding={handleRestoreBuilding}
               onSelectBuilding={setActivePlacementId}
-                onSetPreviewMode={setPreviewMode}
+                onSetPreviewMode={handleSetPreviewMode}
                 onSetPreviewInteraction={setPreviewInteraction}
-                onSetPreviewQuality={setPreviewQuality}
+                onSetPreviewQuality={handleSetPreviewQuality}
                 onSetPreviewLabelDensity={(value) => {
                   setPreviewLabelDensityTouched(true);
                   setPreviewLabelDensity(value);

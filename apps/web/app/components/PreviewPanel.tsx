@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -39,7 +39,8 @@ import {
   type CadSegment2D,
   type CadSnapKind,
 } from "../utils/cadGeometryKernel";
-import Preview3DCanvas from "./Preview3DCanvas";
+
+const Preview3DCanvas = lazy(() => import("./Preview3DCanvas"));
 
 type PreviewPhaseLabel = { label: string } | null;
 type EngineeringSystemStatus = "fresh" | "stale" | "not_generated";
@@ -6439,16 +6440,27 @@ export default function PreviewPanel({
                     High
                   </button>
                 </div>
-                <Preview3DCanvas
-                  items={preview3DEffectiveItems}
-                  interactive={allowEdits}
-                  previewQuality={previewQuality}
-                  selectedItemId={selectedBuildingId}
-                  hasTerrainSource={hasTerrainSource}
-                  hasGradingSurface={hasGradingSurface}
-                  onSelectItem={onSelectBuilding}
-                  onOpenFullscreen={onOpenFullscreen}
-                />
+                <Suspense
+                  fallback={
+                    <div
+                      data-testid="civil-3d-viewer-loading"
+                      className="flex min-h-[520px] items-center justify-center rounded-xl border border-slate-200 bg-slate-950 text-xs font-semibold uppercase tracking-[0.18em] text-white"
+                    >
+                      Loading 3D preview...
+                    </div>
+                  }
+                >
+                  <Preview3DCanvas
+                    items={preview3DEffectiveItems}
+                    interactive={allowEdits}
+                    previewQuality={previewQuality}
+                    selectedItemId={selectedBuildingId}
+                    hasTerrainSource={hasTerrainSource}
+                    hasGradingSurface={hasGradingSurface}
+                    onSelectItem={onSelectBuilding}
+                    onOpenFullscreen={onOpenFullscreen}
+                  />
+                </Suspense>
                 {usingAnnotation3D ? (
                   <div
                     className={`pointer-events-none absolute left-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm ${
