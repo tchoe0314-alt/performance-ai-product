@@ -200,6 +200,27 @@ type UtilityCoordinationRow = {
   constructabilityScore: number;
 };
 
+type AiRealismArtifact = {
+  type: "high_quality_ai_render_v1";
+  project_id: string;
+  source_layout_hash: string;
+  source_objects_summary: {
+    total: number;
+    objects_included: string[];
+    counts_by_type: Record<string, number>;
+  };
+  missing_inputs: string[];
+  stale: boolean;
+  generated_timestamp: string;
+  review_only: true;
+  not_site_evidence: true;
+  construction_release_allowed: false;
+  image_data_url: string;
+};
+
+const AI_REALISM_WATERMARK =
+  "AI visualization from current review layout - not survey, source evidence, or construction approval.";
+
 const toFiniteNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -335,6 +356,14 @@ const supportsParkingModuleRendering = (item: BuildingPlacement) => {
   const minDepth = stallDepth * (loading === "double" ? 2 : 1) + aisleWidth;
   const minWidth = Math.max(stallWidth * 2.5, 24);
   return item.type === "parking" && item.w >= minWidth && item.d >= minDepth * 0.82;
+};
+
+const stableHash = (value: string) => {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 };
 
 type PreviewPanelProps = {
@@ -714,6 +743,9 @@ export default function PreviewPanel({
   const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
   const [cadDimensionMode, setCadDimensionMode] = useState<CadDimensionMode>("linear");
   const [cadDimensionLabelDraft, setCadDimensionLabelDraft] = useState("");
+  const [aiRealismEnabled, setAiRealismEnabled] = useState(false);
+  const [aiRealismArtifact, setAiRealismArtifact] = useState<AiRealismArtifact | null>(null);
+  const [aiRealismBlocker, setAiRealismBlocker] = useState<string | null>(null);
   const [cadPropertyDraft, setCadPropertyDraft] = useState({
     id: "",
     name: "",
@@ -883,6 +915,13 @@ export default function PreviewPanel({
     [lotHeight, lotWidth],
   );
   const isHighQuality = previewQuality === "high";
+  const aiRealismProviderConfigured = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("aiRealismProvider") === "mock") return true;
+    }
+    return Boolean(process.env.NEXT_PUBLIC_CIVORA_AI_REALISM_PROVIDER?.trim());
+  }, []);
   const cadPlanGrid = useMemo(() => {
     const major = 20;
     const minor = 10;
@@ -1042,6 +1081,135 @@ export default function PreviewPanel({
       ) ?? null,
     [buildingPlacements, suggestedPlacements, selectedBuildingId],
   );
+  const aiRealismSourceObjects = useMemo(
+    () =>
+      [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]
+        .filter(
+          (item) =>
+            item.type !== "site" &&
+            item.placed &&
+            Number.isFinite(item.x) &&
+            Number.isFinite(item.y),
+        )
+        .map((item) => ({
+          id: item.id,
+          label: item.label || item.type || item.id,
+          type: item.type || "custom",
+          x: Number(item.x ?? 0),
+          y: Number(item.y ?? 0),
+          w: Number(item.w ?? 0),
+          d: Number(item.d ?? 0),
+          h: Number(item.h ?? 0),
+          rotation: Number(item.rotation ?? 0),
+          geometryType: item.geometryType || "rect",
+          geometry: Array.isArray(item.geometry) ? item.geometry : undefined,
+          source: item.source || (item.generated ? "generated" : "user"),
+          confidence: typeof item.confidence === "number" ? item.confidence : null,
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements],
+  );
+  const aiRealismLayoutHash = useMemo(
+    () =>
+      stableHash(
+        JSON.stringify({
+          site: {
+            lotWidth,
+            lotHeight,
+            siteRotationDeg: siteRotationDeg ?? 0,
+            terrain: hasTerrainSource ? "terrain-source" : "terrain-missing",
+          },
+          objects: aiRealismSourceObjects,
+        }),
+      ),
+    [aiRealismSourceObjects, hasTerrainSource, lotHeight, lotWidth, siteRotationDeg],
+  );
+  const aiRealismSourceSummary = useMemo(() => {
+    const counts: Record<string, number> = {};
+    aiRealismSourceObjects.forEach((item) => {
+      counts[item.type] = (counts[item.type] ?? 0) + 1;
+    });
+    return {
+      total: aiRealismSourceObjects.length,
+      objects_included: aiRealismSourceObjects.map((item) => `${item.label} (${item.type})`),
+      counts_by_type: counts,
+    };
+  }, [aiRealismSourceObjects]);
+  const aiRealismMissingInputs = useMemo(() => {
+    const missing: string[] = [];
+    if (!hasTerrainSource) missing.push("terrain/source confidence");
+    if (!geocode?.lat || !geocode?.lng) missing.push("source-backed map/geocode context");
+    if (!aiRealismSourceObjects.some((item) => item.type === "road" || item.type === "driveway")) {
+      missing.push("roads/driveways");
+    }
+    if (!aiRealismSourceObjects.some((item) => item.type === "utility_corridor" || item.type === "hydrant" || item.type === "manhole" || item.type === "inlet" || item.type === "outfall")) {
+      missing.push("visible storm/sanitary/water utility context");
+    }
+    return missing;
+  }, [aiRealismSourceObjects, geocode?.lat, geocode?.lng, hasTerrainSource]);
+  const aiRealismStale = Boolean(
+    aiRealismArtifact && aiRealismArtifact.source_layout_hash !== aiRealismLayoutHash,
+  );
+  const generateAiRealismArtifact = useCallback(() => {
+    if (!aiRealismSourceObjects.length) {
+      setAiRealismBlocker("Add or generate site objects before creating AI realism.");
+      return;
+    }
+    if (!aiRealismProviderConfigured) {
+      setAiRealismBlocker("AI realism provider is not configured.");
+      return;
+    }
+    const generated_timestamp = new Date().toISOString();
+    const project_id = currentProjectId || planPreviewProjectId || "unsaved-review-layout";
+    const counts = aiRealismSourceSummary.counts_by_type;
+    const promptSummary = [
+      `${aiRealismSourceObjects.length} review layout objects`,
+      counts.building || counts.multifamily_building || counts.retail_building ? "building massing" : "",
+      counts.parking ? "parking fields" : "",
+      counts.road || counts.driveway ? "roads and driveways" : "",
+      counts.basin ? "detention basin" : "",
+      hasTerrainSource ? "terrain source present" : "terrain source missing",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const image_data_url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="Mock AI realism visualization from current review layout"><defs><linearGradient id="sky" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#dbeafe"/><stop offset="0.48" stop-color="#f8fafc"/><stop offset="1" stop-color="#b7d6b4"/></linearGradient><filter id="soft"><feGaussianBlur stdDeviation="0.45"/></filter></defs><rect width="1200" height="760" fill="url(#sky)"/><path d="M0 470 C220 390 390 480 610 410 C820 342 1010 412 1200 346 L1200 760 L0 760 Z" fill="#8bb17f"/><path d="M40 610 C230 520 390 576 578 502 C804 412 968 506 1180 418" fill="none" stroke="#4b5563" stroke-width="58" stroke-linecap="round"/><path d="M40 610 C230 520 390 576 578 502 C804 412 968 506 1180 418" fill="none" stroke="#e5e7eb" stroke-width="4" stroke-dasharray="24 18" opacity="0.85"/><rect x="195" y="214" width="176" height="82" rx="6" fill="#c7b897" stroke="#76664d" stroke-width="4" transform="skewY(-8)"/><rect x="535" y="188" width="176" height="82" rx="6" fill="#c7b897" stroke="#76664d" stroke-width="4" transform="skewY(-6)"/><rect x="188" y="540" width="128" height="68" rx="6" fill="#c7b897" stroke="#76664d" stroke-width="4" transform="skewY(-7)"/><rect x="410" y="352" width="310" height="128" rx="10" fill="#9ca3af" opacity="0.56"/><g stroke="#f8fafc" stroke-width="3" opacity="0.85">${Array.from({ length: 9 }).map((_, index) => `<line x1="${430 + index * 30}" y1="360" x2="${452 + index * 30}" y2="472"/>`).join("")}</g><ellipse cx="935" cy="598" rx="145" ry="68" fill="#7dd3fc" opacity="0.72" stroke="#0284c7" stroke-width="4"/><path d="M220 404 C350 378 508 392 635 360" fill="none" stroke="#f8fafc" stroke-width="18" opacity="0.82"/><text x="54" y="72" fill="#0f172a" font-family="Arial, sans-serif" font-size="26" font-weight="700">High Quality AI Realism Preview</text><text x="54" y="108" fill="#334155" font-family="Arial, sans-serif" font-size="18">${promptSummary}</text><rect x="48" y="676" width="1104" height="44" rx="8" fill="rgba(15,23,42,0.78)"/><text x="70" y="704" fill="#fff" font-family="Arial, sans-serif" font-size="18">${AI_REALISM_WATERMARK}</text></svg>`,
+    )}`;
+    setAiRealismArtifact({
+      type: "high_quality_ai_render_v1",
+      project_id,
+      source_layout_hash: aiRealismLayoutHash,
+      source_objects_summary: aiRealismSourceSummary,
+      missing_inputs: aiRealismMissingInputs,
+      stale: false,
+      generated_timestamp,
+      review_only: true,
+      not_site_evidence: true,
+      construction_release_allowed: false,
+      image_data_url,
+    });
+    setAiRealismBlocker(null);
+  }, [
+    aiRealismLayoutHash,
+    aiRealismMissingInputs,
+    aiRealismProviderConfigured,
+    aiRealismSourceObjects,
+    aiRealismSourceSummary,
+    currentProjectId,
+    hasTerrainSource,
+    planPreviewProjectId,
+  ]);
+  const aiRealismDisplayArtifact = useMemo(
+    () => (aiRealismArtifact ? { ...aiRealismArtifact, stale: aiRealismStale } : null),
+    [aiRealismArtifact, aiRealismStale],
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const debugWindow = window as unknown as Record<string, unknown>;
+    debugWindow.__civoraAiRealismArtifact = aiRealismDisplayArtifact;
+    debugWindow.__civoraAiRealismEnabled = aiRealismEnabled;
+    debugWindow.__civoraAiRealismLayoutHash = aiRealismLayoutHash;
+  }, [aiRealismDisplayArtifact, aiRealismEnabled, aiRealismLayoutHash]);
   const selectedDeletableObject =
     selectedObject && !selectedObject.locked ? selectedObject : null;
   const showEarthworkUx =
@@ -5157,8 +5325,45 @@ export default function PreviewPanel({
                 data-testid="high-quality-preview-only-label"
                 className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
               >
-                Visual preview only. Canonical geometry unchanged. Not engineering evidence.
+                Visual preview only. Presentation/realism mode. Canonical geometry unchanged. Not engineering evidence.
               </span>
+            ) : null}
+            {isHighQuality ? (
+              <div
+                data-testid="ai-realism-toggle-header"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1"
+                aria-label="AI Realism toggle"
+              >
+                <span className="px-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  AI Realism
+                </span>
+                <button
+                  type="button"
+                  data-testid="ai-realism-off-header"
+                  onClick={() => {
+                    setAiRealismEnabled(false);
+                    setAiRealismBlocker(null);
+                  }}
+                  className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                    !aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  Off
+                </button>
+                <button
+                  type="button"
+                  data-testid="ai-realism-on-header"
+                  onClick={() => {
+                    setAiRealismEnabled(true);
+                    if (!aiRealismArtifact) generateAiRealismArtifact();
+                  }}
+                  className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                    aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  On
+                </button>
+              </div>
             ) : null}
             {useLightHighQuality ? (
               <span
@@ -5179,9 +5384,9 @@ export default function PreviewPanel({
             </span>
           </div>
           <p className="max-w-3xl text-xs text-slate-500">
-            Visual anchoring keeps objects consistent in the model view. High Quality visuals are communication
-            previews only and never engineering evidence. Labels in this mode are visual aids, not source-confidence
-            claims.
+            Visual anchoring keeps objects consistent in the model view. High Quality is a presentation preview only
+            and never engineering evidence. AI Realism, when enabled, is a visualization from the current review layout
+            and is not used for QA, compliance, quantities, engineering generation, source confidence, or release.
           </p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
             <div className="inline-flex max-w-3xl items-start rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -6439,6 +6644,43 @@ export default function PreviewPanel({
                   >
                     High
                   </button>
+                  {isHighQuality ? (
+                    <div
+                      data-testid="ai-realism-toggle"
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5"
+                      aria-label="AI Realism toggle"
+                    >
+                      <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                        AI Realism
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="ai-realism-off"
+                        onClick={() => {
+                          setAiRealismEnabled(false);
+                          setAiRealismBlocker(null);
+                        }}
+                        className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                          !aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        Off
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="ai-realism-on"
+                        onClick={() => {
+                          setAiRealismEnabled(true);
+                          if (!aiRealismArtifact) generateAiRealismArtifact();
+                        }}
+                        className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                          aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        On
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
                 <Suspense
                   fallback={
@@ -6700,6 +6942,43 @@ export default function PreviewPanel({
                 >
                   High
                 </button>
+                {isHighQuality ? (
+                  <div
+                    data-testid="ai-realism-toggle"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5"
+                    aria-label="AI Realism toggle"
+                  >
+                    <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                      AI Realism
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="ai-realism-off"
+                      onClick={() => {
+                        setAiRealismEnabled(false);
+                        setAiRealismBlocker(null);
+                      }}
+                      className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                        !aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      Off
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="ai-realism-on"
+                      onClick={() => {
+                        setAiRealismEnabled(true);
+                        if (!aiRealismArtifact) generateAiRealismArtifact();
+                      }}
+                      className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                        aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      On
+                    </button>
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   data-testid="preview-interaction-edit"
@@ -6728,6 +7007,109 @@ export default function PreviewPanel({
                   </button>
                 ) : null}
               </div>
+              {isHighQuality && aiRealismEnabled ? (
+                <div
+                  data-testid="ai-realism-preview"
+                  className="absolute inset-0 z-[60] flex items-center justify-center overflow-hidden rounded-[24px] bg-slate-950"
+                  onClick={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onMouseMove={(event) => event.stopPropagation()}
+                  onMouseUp={(event) => event.stopPropagation()}
+                >
+                  {aiRealismDisplayArtifact ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        data-testid="ai-realism-image"
+                        src={aiRealismDisplayArtifact.image_data_url}
+                        alt="AI realism visualization generated from the current review layout"
+                        className="h-full w-full object-cover"
+                      />
+                      <div
+                        data-testid="ai-realism-watermark"
+                        className="absolute inset-x-4 bottom-4 rounded-lg border border-white/25 bg-slate-950/82 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur"
+                      >
+                        {AI_REALISM_WATERMARK}
+                      </div>
+                      <div
+                        data-testid="ai-realism-source-summary"
+                        className="absolute left-4 top-4 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            high_quality_ai_render_v1
+                          </p>
+                          <button
+                            type="button"
+                            data-testid="ai-realism-regenerate"
+                            onClick={generateAiRealismArtifact}
+                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+                          >
+                            Regenerate
+                          </button>
+                        </div>
+                        {aiRealismStale ? (
+                          <p
+                            data-testid="ai-realism-stale-warning"
+                            className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 font-semibold text-amber-800"
+                          >
+                            AI visualization is stale. Regenerate from current layout.
+                          </p>
+                        ) : null}
+                        <dl className="mt-2 grid gap-1">
+                          <div>
+                            <dt className="font-semibold text-slate-900">Objects included</dt>
+                            <dd data-testid="ai-realism-objects-included" className="text-slate-600">
+                              {aiRealismDisplayArtifact.source_objects_summary.objects_included.slice(0, 5).join(", ")}
+                              {aiRealismDisplayArtifact.source_objects_summary.total > 5 ? "..." : ""}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-slate-900">Missing context</dt>
+                            <dd data-testid="ai-realism-missing-context" className="text-slate-600">
+                              {aiRealismDisplayArtifact.missing_inputs.length
+                                ? aiRealismDisplayArtifact.missing_inputs.join(", ")
+                                : "None reported from current review layout."}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-slate-900">Terrain/source confidence</dt>
+                            <dd data-testid="ai-realism-terrain-confidence" className="text-slate-600">
+                              {hasTerrainSource
+                                ? "Terrain source present in review context; source confidence remains review-only."
+                                : "Terrain/source confidence missing or not source-backed."}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-slate-900">Generated timestamp</dt>
+                            <dd data-testid="ai-realism-generated-timestamp" className="text-slate-600">
+                              {aiRealismDisplayArtifact.generated_timestamp}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      data-testid="ai-realism-blocker"
+                      className="mx-4 max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-lg"
+                    >
+                      <p className="font-semibold">
+                        {aiRealismBlocker || "AI realism provider is not configured."}
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="ai-realism-regenerate"
+                        onClick={generateAiRealismArtifact}
+                        className="mt-3 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900"
+                      >
+                        Regenerate
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
               {previewMode === "2d" ? (
                 <div className="absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 sm:bottom-2 md:hidden">
                   <div className="grid grid-cols-4 gap-1.5 pb-1 min-[420px]:grid-cols-7">
