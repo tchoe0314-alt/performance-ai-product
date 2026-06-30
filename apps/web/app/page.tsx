@@ -5240,7 +5240,12 @@ function PerformanceAIDashboardView({
   useEffect(() => {
     if (demoWorkspaceSeededRef.current) return;
     if (!forceDemoWorkspace && !routeDemoWorkspaceEnabled && !isDemoWorkspaceQuery()) return;
-    const demoPlacements = createDemoPlacements();
+    const debugEmptyLayout =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("chat226EmptyLayout") === "1";
+    const demoPlacements = debugEmptyLayout
+      ? createDemoPlacements().filter((item) => item.type === "site")
+      : createDemoPlacements();
     const demoResult = createDemoPlanResponse();
     const demoProjectInput: ProjectInput = {
       prompt_text: "Demo UI QA workspace for a 9-acre mixed-use civil site.",
