@@ -298,7 +298,9 @@ test.describe("project drawer reliability", () => {
       await route.fallback();
     });
     await page.getByRole("button", { name: "Save Project" }).click();
-    await expect(page.getByTestId("project-drawer-detail")).toContainText(/Save blocked: Civora AI could not reach the backend/i);
+    await expect(page.getByTestId("project-drawer-detail")).toContainText(
+      /Save blocked: Backend unreachable or CORS\/API blocked/i,
+    );
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
