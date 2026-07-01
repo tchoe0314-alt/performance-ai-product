@@ -10,6 +10,7 @@ import {
   Circle,
   Crosshair,
   FileText,
+  FolderOpen,
   Gauge,
   Hand,
   Layers,
@@ -16774,11 +16775,11 @@ function PerformanceAIDashboardView({
     const startedAt = markCivoraInteraction();
     setPreviewInteraction("edit");
     setWorkspaceChromeMinimized(false);
-    handleOpenPanelFromDrawer("model");
+    setRightRailCollapsed(true);
     setCadToolRequest({ id: Date.now(), tool });
     setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
     measureCivoraInteractionAfterPaint("draw.canvas.tool.click", startedAt, { tool, label });
-  }, [handleOpenPanelFromDrawer]);
+  }, []);
   const cadToolGroups: Array<{
     title: string;
     tools: Array<{ label: string; tool: CadToolRequestForPreview["tool"]; hint: string }>;
@@ -17997,7 +17998,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar fixed inset-x-3 top-20 z-50 flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white/96 px-4 py-5 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.65)] backdrop-blur-xl lg:bottom-4 lg:left-4 lg:right-auto lg:top-20 lg:h-auto lg:max-h-none lg:w-[248px]"
+            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[41] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 py-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-auto lg:left-4 lg:right-auto lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:w-[88px]"
           >
             <button
               type="button"
@@ -18006,29 +18007,11 @@ function PerformanceAIDashboardView({
                 handleOpenSidePanel("projects");
               }}
               aria-label="Open projects"
-              className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:bg-white"
+              className="mb-2 rounded-lg border border-transparent bg-transparent px-2 py-2 text-center transition hover:bg-slate-50"
             >
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Project</p>
-              <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                {siteName || currentProject?.name || "Untitled Project"}
-              </p>
-              <div className="mt-2 grid gap-1 text-[11px] font-semibold text-slate-500">
-                <span className="flex items-center justify-between gap-2">
-                  <span>Site</span>
-                  <span className={siteScaleLocked ? "text-slate-900" : "text-amber-700"}>
-                    {siteScaleLocked ? "Locked" : "Not locked"}
-                  </span>
-                </span>
-                <span className="flex items-center justify-between gap-2">
-                  <span>Sync</span>
-                  <span
-                    data-testid="workspace-restore-status"
-                    className={currentProject?.project_id && !effectiveDemoWorkspaceEnabled ? "text-slate-900" : "text-amber-700"}
-                  >
-                    {restoreTruthLabel}
-                  </span>
-                </span>
-              </div>
+              <FolderOpen className="mx-auto h-4 w-4 text-slate-500" />
+              <p className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Projects</p>
+              <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>
             </button>
             <button
               type="button"
@@ -18053,7 +18036,7 @@ function PerformanceAIDashboardView({
 	                {setupWizardState.next_action}
 	              </p>
 	            </button>
-	            <div className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="primary-workflow-sidebar">
+	            <div className="rounded-lg border border-transparent bg-transparent" data-testid="primary-workflow-sidebar">
 	              <div className="space-y-1.5">
 	                {primaryWorkflowItems.map((item) => {
 	                  const Icon = item.icon;
@@ -18065,21 +18048,15 @@ function PerformanceAIDashboardView({
 	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.label}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
-	                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${
+	                      title={`${item.label}: ${item.metric}`}
+	                      className={`flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
 	                        isActive
-	                          ? "border-blue-200 bg-blue-50 text-blue-700"
-	                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+	                          ? "border-slate-950 bg-slate-950 text-white"
+	                          : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
 	                      }`}
 	                    >
 	                      <Icon className="h-4 w-4 shrink-0" />
-	                      <span className="min-w-0 flex-1">
-	                        <span className="block truncate text-sm font-semibold">{item.label}</span>
-	                        <span className={`mt-0.5 block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${
-	                          isActive ? "text-blue-500" : "text-slate-400"
-	                        }`}>
-	                          {item.metric}
-	                        </span>
-	                      </span>
+	                      <span className="block max-w-full truncate text-[10px] font-semibold uppercase tracking-[0.08em]">{item.label}</span>
 	                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
 	                        item.status === "ok"
 	                          ? "bg-emerald-500"
@@ -18323,7 +18300,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-50 order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white/96 shadow-[0_-28px_80px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-20 lg:h-auto lg:max-h-none lg:w-[388px] lg:rounded-xl lg:shadow-[var(--civora-shadow-panel)]"
+            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-[46] order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:w-[380px] lg:rounded-xl"
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
@@ -23395,7 +23372,7 @@ function PerformanceAIDashboardView({
 	                        <div>
 	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Draw & Object Manager</p>
 	                          <p className="mt-1 text-sm text-slate-600">
-	                            Manage placed and pending objects here. Draw manually with CAD tools, or ask Civora in chat to create objects for placement.
+	                            Select, focus, rename, recolor, layer, hide, and delete draft objects.
 	                          </p>
 	                        </div>
 	                        <button
@@ -23448,7 +23425,7 @@ function PerformanceAIDashboardView({
                       ) : null}
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Canvas Objects
@@ -23464,6 +23441,8 @@ function PerformanceAIDashboardView({
                             return (
                             <div
                               key={item.id}
+                              data-testid="object-manager-row"
+                              data-object-id={item.id}
                               draggable={!item.locked}
                               onDragStart={(event) => {
                                 if (item.locked) return;
@@ -23477,7 +23456,7 @@ function PerformanceAIDashboardView({
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <div>
+                                <div className="min-w-0">
                                   <p className="font-semibold text-slate-900">{item.label}</p>
                                   <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">
                                     {SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object"} ·{" "}
@@ -23502,6 +23481,7 @@ function PerformanceAIDashboardView({
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveBuilding(item.id)}
+                                    data-testid="object-manager-delete"
                                     className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-500"
                                   >
                                     Delete
@@ -23515,6 +23495,8 @@ function PerformanceAIDashboardView({
 	                                    <input
 	                                      type="text"
 	                                      value={item.label}
+                                        aria-label={`Rename ${item.label}`}
+                                        data-testid="object-manager-rename"
 	                                      onChange={(event) =>
 	                                        handleUpdateBuilding(item.id, {
 	                                          label: event.target.value || item.label,
@@ -23528,6 +23510,8 @@ function PerformanceAIDashboardView({
 	                                    <input
 	                                      type="color"
 	                                      value={String(item.meta?.ui_color || item.meta?.color || objectOutlineColor || "#64748b")}
+                                        aria-label={`Color ${item.label}`}
+                                        data-testid="object-manager-color"
 	                                      onChange={(event) =>
 	                                        handleUpdateBuilding(item.id, {
 	                                          meta: {
@@ -23539,6 +23523,34 @@ function PerformanceAIDashboardView({
 	                                      className="h-8 w-10 rounded border border-slate-200 bg-white"
 	                                    />
 	                                  </label>
+                                    <label className="col-span-2 flex flex-col gap-1">
+                                      Layer / type
+                                      <select
+                                        value={item.type ?? "custom"}
+                                        aria-label={`Layer type ${item.label}`}
+                                        data-testid="object-manager-type"
+                                        onChange={(event) => {
+                                          const nextType = event.target.value as SiteObjectType;
+                                          handleUpdateBuilding(item.id, {
+                                            type: nextType,
+                                            use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
+                                            meta: {
+                                              ...(item.meta ?? {}),
+                                              category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
+                                            },
+                                          });
+                                        }}
+                                        className="rounded-md border border-slate-200 px-2 py-1 text-sm"
+                                      >
+                                        {Object.entries(SITE_OBJECT_CATALOG)
+                                          .filter(([type]) => type !== "site")
+                                          .map(([type, catalog]) => (
+                                            <option key={type} value={type}>
+                                              {catalog.label}
+                                            </option>
+                                          ))}
+                                      </select>
+                                    </label>
 	                                  <label className="flex flex-col gap-1">
 	                                    Length
 	                                    <input
@@ -23586,6 +23598,7 @@ function PerformanceAIDashboardView({
 	                                      setActivePlacementId(item.id);
 	                                      setPlacementModeEnabled(true);
 	                                    }}
+                                      data-testid="object-manager-move"
 	                                    className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
 	                                  >
 	                                    {item.placed ? "Move on Canvas" : "Place on Canvas"}
@@ -23596,10 +23609,38 @@ function PerformanceAIDashboardView({
 	                                      setActivePlacementId(item.id);
 	                                      setPreviewInteraction("edit");
 	                                    }}
+                                      data-testid="object-manager-select"
 	                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
 	                                  >
 	                                    Select
 	                                  </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActivePlacementId(item.id);
+                                        setFocusObjectId(item.id);
+                                        setRightRailCollapsed(true);
+                                      }}
+                                      data-testid="object-manager-focus"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Focus
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleUpdateBuilding(item.id, {
+                                          meta: {
+                                            ...(item.meta ?? {}),
+                                            ui_hidden: !Boolean(item.meta?.ui_hidden),
+                                          },
+                                        })
+                                      }
+                                      data-testid="object-manager-visibility"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      {item.meta?.ui_hidden ? "Show" : "Hide"}
+                                    </button>
 	                                </div>
 	                              ) : null}
                             </div>
@@ -24410,7 +24451,7 @@ function PerformanceAIDashboardView({
 	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
 	              <div className="contents">
 	                <div
-	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200 bg-white/92 px-3 py-3 shadow-[0_22px_80px_-44px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-200 lg:left-[272px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"} ${workspaceChromeMinimized ? "hidden" : "opacity-100"}`}
+	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${workspaceChromeMinimized ? "hidden" : "opacity-100"}`}
 	                  aria-hidden={workspaceChromeMinimized}
 	                >
 	                  <div className="flex flex-col gap-3">
