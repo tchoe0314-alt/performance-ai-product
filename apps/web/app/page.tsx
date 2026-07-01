@@ -2829,8 +2829,15 @@ function PerformanceAIDashboardView({
   const [jobsPanelStatusMessage, setJobsPanelStatusMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
+  const [shortcutsOverlayOpen, setShortcutsOverlayOpen] = useState(false);
+  const [lastDraftAction, setLastDraftAction] = useState<
+    | { action: "add"; object: BuildingPlacement }
+    | { action: "delete"; object: BuildingPlacement }
+    | null
+  >(null);
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const commandInputRef = useRef<HTMLTextAreaElement | null>(null);
   const siteAddressInputRef = useRef<HTMLInputElement | null>(null);
   const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
   const planPdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -2892,7 +2899,6 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setLeftSidebarOpen(false);
       setRightRailCollapsed(true);
     }
   }, []);
@@ -8040,6 +8046,8 @@ function PerformanceAIDashboardView({
   const tryHandleObjectIntent = (message: string): boolean => {
     const lower = message.toLowerCase();
     const lot = resolveLotBounds();
+    const parkingCountCommandMatch = lower.match(/\badd\s+(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls)\b/);
+    const officeAreaCommandMatch = lower.match(/\badd\s+(\d{3,8})\s*(?:sf|sq\s*ft|square\s*feet)\s+office\s+building\b/);
     const addBuildingMatch = lower.match(
       /(add|create|place)\s+(a\s+)?building[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
     );
@@ -8050,6 +8058,120 @@ function PerformanceAIDashboardView({
       /(add|create|set)\s+(a\s+)?(lot|plot|site)[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
     );
     const plotAcreMatch = lower.match(/(add|create|set)\s+(a\s+)?(\d+(\.\d+)?)\s*acre/);
+
+    if (parkingCountCommandMatch) {
+      if (!lot.w || !lot.h) {
+        appendChatMessage("user", message);
+        appendChatMessage(
+          "assistant",
+          "Set or draw the site boundary first, then I can add parking at project scale.",
+          "status",
+        );
+        return true;
+      }
+      const stalls = Number(parkingCountCommandMatch[1]);
+      if (!Number.isFinite(stalls) || stalls <= 0) return false;
+      appendChatMessage("user", message);
+      setParkingCount(String(Math.round(stalls)));
+      const catalog = SITE_OBJECT_CATALOG.parking;
+      const nextPlacement: BuildingPlacement = {
+        id: `parking-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `Parking Field - ${Math.round(stalls)} stalls`,
+        type: "parking",
+        w: catalog.defaultW,
+        d: catalog.defaultD,
+        rotation: 0,
+        stallCount: Math.round(stalls),
+        locked: false,
+        placed: false,
+        source: "user",
+        generated: false,
+        capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
+        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+        meta: {
+          category: catalog.category,
+          parkingParams: {
+            stallWidth: parsePositiveNumber(parkingStallWidth) ?? 9,
+            stallDepth: parsePositiveNumber(parkingStallDepth) ?? 18,
+            aisleWidth: parsePositiveNumber(parkingAisleWidth) ?? 24,
+            adaAisleWidth: parsePositiveNumber(parkingAdaAisleWidth) ?? 8,
+            adaCount: parsePositiveNumber(parkingAdaCount) ?? 0,
+            compactCount: parsePositiveNumber(parkingCompactCount) ?? 0,
+            compactWidth: parsePositiveNumber(parkingCompactWidth) ?? 8,
+            angleDeg: parsePositiveNumber(parkingAngle) ?? 90,
+            loading: parkingLoading,
+            autoResizeToFitCount: false,
+            useMixedAngles: false,
+            compactZone: true,
+          },
+        },
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setLastDraftAction({ action: "add", object: nextPlacement });
+      setActivePlacementId(nextPlacement.id);
+      setPlacementModeEnabled(true);
+      setPreviewMode("2d");
+      setPreviewInteraction("edit");
+      appendChatMessage(
+        "assistant",
+        `Added a ${Math.round(stalls)} stall parking field to the placement tray. It is draft layout geometry and still needs placement/review.`,
+        "status",
+      );
+      setStatusMessage(`Added ${Math.round(stalls)} parking stalls as a pending object.`);
+      return true;
+    }
+
+    if (officeAreaCommandMatch) {
+      if (!lot.w || !lot.h) {
+        appendChatMessage("user", message);
+        appendChatMessage(
+          "assistant",
+          "Set or draw the site boundary first, then I can add an office building at project scale.",
+          "status",
+        );
+        return true;
+      }
+      const areaSf = Number(officeAreaCommandMatch[1]);
+      if (!Number.isFinite(areaSf) || areaSf <= 0) return false;
+      appendChatMessage("user", message);
+      const depth = Math.round(Math.sqrt(areaSf / 1.8));
+      const width = Math.round(areaSf / Math.max(depth, 1));
+      const catalog = SITE_OBJECT_CATALOG.office_building;
+      const nextPlacement: BuildingPlacement = {
+        id: `office_building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `Office Building - ${Math.round(areaSf).toLocaleString()} sf`,
+        type: "office_building",
+        use: catalog.use,
+        w: width,
+        d: depth,
+        h: catalog.defaultH ?? 36,
+        rotation: 0,
+        locked: false,
+        placed: false,
+        source: "user",
+        generated: false,
+        capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
+        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+        meta: {
+          category: catalog.category,
+          requested_area_sf: Math.round(areaSf),
+          sizing_method: "command_area_to_review_footprint",
+        },
+      };
+      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setLastDraftAction({ action: "add", object: nextPlacement });
+      setActivePlacementId(nextPlacement.id);
+      setPlacementModeEnabled(true);
+      setPreviewMode("2d");
+      setPreviewInteraction("edit");
+      appendChatMessage(
+        "assistant",
+        `Added a ${Math.round(areaSf).toLocaleString()} sf office building to the placement tray as a draft ${width} ft by ${depth} ft footprint.`,
+        "status",
+      );
+      setStatusMessage("Office building added as a pending draft object.");
+      return true;
+    }
 
     if (addBuildingMatch) {
       if (!lot.w || !lot.h) {
@@ -8078,6 +8200,7 @@ function PerformanceAIDashboardView({
         placed: false,
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setLastDraftAction({ action: "add", object: nextPlacement });
       appendChatMessage(
         "assistant",
         `Added a ${width} ft by ${depth} ft building to the placement tray. Use placement mode to drop it on the site or auto-place it.`,
@@ -8150,6 +8273,7 @@ function PerformanceAIDashboardView({
         meta: { category: catalog?.category },
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setLastDraftAction({ action: "add", object: nextPlacement });
       appendChatMessage(
         "assistant",
         `Added ${nextPlacement.label} to the placement tray. Place it on the canvas when you're ready.`,
@@ -8184,6 +8308,7 @@ function PerformanceAIDashboardView({
         placed: false,
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setLastDraftAction({ action: "add", object: nextPlacement });
       appendChatMessage(
         "assistant",
         `Added a basin object to the placement tray. You can place it manually or auto-place it.`,
@@ -8214,6 +8339,7 @@ function PerformanceAIDashboardView({
         placed: false,
       };
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      setLastDraftAction({ action: "add", object: nextPlacement });
       appendChatMessage(
         "assistant",
         "Added an entrance object to the placement tray. Place it on the canvas when ready.",
@@ -9285,9 +9411,190 @@ function PerformanceAIDashboardView({
     return asksForDesign && describesScope;
   };
 
+  const focusCommandInput = useCallback(() => {
+    setShortcutsOverlayOpen(false);
+    setRightRailCollapsed(true);
+    setWorkspaceChromeMinimized(true);
+    setPlacementModeEnabled(false);
+    setPreviewInteraction("static");
+    setCadToolRequest({ id: Date.now(), tool: "select" });
+    if (activeSidePanel !== "chat") {
+      setActiveWorkspaceMode("dashboard");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+    }
+    window.requestAnimationFrame(() => {
+      const input =
+        commandInputRef.current ??
+        (document.querySelector(
+          '[data-testid="civora-command-input"], textarea[placeholder="Ask Civora..."], textarea[placeholder^="Message Civora"]',
+        ) as HTMLTextAreaElement | null);
+      if (!input) {
+        setStatusMessage("Command input is not mounted. Open the chat panel or return to the canvas, then try / again.");
+        return;
+      }
+      input.focus();
+      input.select();
+    });
+  }, [activeSidePanel]);
+
+  const refuseUnsafeConstructionCommand = (message: string) => {
+    appendChatMessage("user", message);
+    appendChatMessage(
+      "assistant",
+      "I can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can help prepare review-only draft materials and call out blockers for a qualified professional to review.",
+      "status",
+    );
+    setStatusMessage("Construction authorization refused. Civora stays review-only.");
+    return true;
+  };
+
+  const tryHandlePowerCommand = (message: string): boolean => {
+    const normalized = message.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!normalized) return false;
+    if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
+      return refuseUnsafeConstructionCommand(message);
+    }
+    if (/^(start site|start a site|new site)$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleStartBlankSite();
+      handleOpenSidePanel("site_existing");
+      appendChatMessage("assistant", "Started a blank review site and opened Setup. Set or draw the boundary before relying on generated systems.", "status");
+      return true;
+    }
+    if (/^apply address$/.test(normalized)) {
+      appendChatMessage("user", message);
+      if (!siteAddress.trim()) {
+        handleOpenSidePanel("site_existing");
+        appendChatMessage("assistant", "Apply address is blocked: type a project address in Setup first.", "status");
+        setStatusMessage("Apply address blocked: no address is typed.");
+        return true;
+      }
+      void saveSiteAddress();
+      appendChatMessage("assistant", "Applying the typed address as source context. Exact provider/auth blockers will stay visible in Setup if the backend cannot apply it.", "status");
+      return true;
+    }
+    if (/^draw site boundary$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleOpenSidePanel("objects");
+      setActiveWorkspaceMode("canvas");
+      setWorkspaceChromeMinimized(false);
+      triggerCadTool("area", "Site boundary");
+      appendChatMessage("assistant", "Site boundary drawing is active. Draw the boundary on the canvas; it remains review-required until locked.", "status");
+      return true;
+    }
+    if (/^add water line$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleAddObject("utility_corridor", { label: "Water Line", geometryType: "polyline", meta: { network: "water", command_created: true } });
+      appendChatMessage("assistant", "Added a pending water-line utility corridor. Place/review it in Object Manager before generating utilities.", "status");
+      return true;
+    }
+    if (/^add sanitary line$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleAddObject("utility_corridor", { label: "Sanitary Line", geometryType: "polyline", meta: { network: "sanitary", command_created: true } });
+      appendChatMessage("assistant", "Added a pending sanitary-line utility corridor. Place/review it in Object Manager before generating utilities.", "status");
+      return true;
+    }
+    if (/^add storm sewer$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", meta: { network: "storm", command_created: true } });
+      appendChatMessage("assistant", "Added a pending storm-sewer utility corridor. Place/review it in Object Manager before generating drainage/utilities.", "status");
+      return true;
+    }
+    if (/^hide utilities$/.test(normalized)) {
+      appendChatMessage("user", message);
+      setPreviewLayers((prev) => ({ ...prev, utilities: false, drainage: false, structures: false }));
+      appendChatMessage("assistant", "Utility and drainage layers are hidden in the preview.", "status");
+      setStatusMessage("Utilities hidden.");
+      return true;
+    }
+    if (/^show only blockers$/.test(normalized)) {
+      appendChatMessage("user", message);
+      setActiveBottomPanelTab("issues");
+      setBottomPanelCollapsed(false);
+      handleOpenSidePanel("analysis");
+      appendChatMessage("assistant", "Opened the blocker/review view. If no blockers are recorded, the panel will show the exact empty state.", "status");
+      return true;
+    }
+    if (/^generate$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleOpenSidePanel("generate");
+      appendChatMessage("assistant", "Opened Generate. Use the existing Generate controls or ask for a specific system like 'generate drainage'.", "status");
+      return true;
+    }
+    if (/^(make review package|create review package)$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleCreateReviewSheet();
+      handleOpenSidePanel("deliverables");
+      appendChatMessage("assistant", "Opened Deliver and created/updated the review package sheet. It remains review-only and not construction-ready.", "status");
+      return true;
+    }
+    if (/^what changed\??$/.test(normalized)) {
+      appendChatMessage("user", message);
+      const changed = Object.entries(systemStatuses)
+        .filter(([, status]) => status === "stale")
+        .map(([system]) => system);
+      appendChatMessage(
+        "assistant",
+        changed.length
+          ? `Changed/stale systems: ${changed.join(", ")}. Regenerate only the affected systems after reviewing draft objects.`
+          : "No stale generated systems are currently marked. Draft object edits may still need review before export.",
+        "status",
+      );
+      return true;
+    }
+    if (/^what is blocked\??$/.test(normalized)) {
+      appendChatMessage("user", message);
+      const blockers = uniqueStrings([
+        ...issues.map((issue) => issue.message),
+        ...analysisIssues.map((issue) => issue.message),
+        ...(workflowReviewDashboard?.release_blockers ?? []),
+        ...(generateFlowSummary?.needs_review ?? []),
+      ]);
+      appendChatMessage(
+        "assistant",
+        blockers.length ? `Current blockers:\n${blockers.map((item) => `- ${item}`).join("\n")}` : "No blockers are currently recorded in the active workspace.",
+        "status",
+      );
+      return true;
+    }
+    if (/^what should i do next\??$/.test(normalized)) {
+      appendChatMessage("user", message);
+      const next = workflowActionHints[0] || progressTimelineState.next_action || (siteScaleLocked ? "Open Generate and run a review draft." : "Open Setup and lock a site boundary.");
+      appendChatMessage("assistant", `Next action: ${next}`, "status");
+      return true;
+    }
+    if (/^create ai realism$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleSetPreviewQuality("high");
+      handleSetPreviewMode("2d");
+      handleOpenSidePanel("model");
+      appendChatMessage("assistant", "Opened high-quality preview mode. Use the AI Realism toggle there; provider/layout blockers will be shown exactly in the preview panel.", "status");
+      return true;
+    }
+    if (/^turn ai realism off$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleSetPreviewQuality("standard");
+      appendChatMessage("assistant", "Turned presentation/AI realism preview mode off by returning to Standard preview quality.", "status");
+      return true;
+    }
+    return false;
+  };
+
   const handlePromptKeyDown = (
     event: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setShortcutsOverlayOpen(false);
+      setPlacementModeEnabled(false);
+      setActivePlacementId(null);
+      setPendingClarification(null);
+      setPreviewInteraction("static");
+      setCadToolRequest({ id: Date.now(), tool: "select" });
+      setStatusMessage("Active drawing/tool state cancelled.");
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       handleSendMessage();
@@ -9297,6 +9604,11 @@ function PerformanceAIDashboardView({
   const handleSendMessage = () => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
+    if (trimmed && /\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/i.test(trimmed)) {
+      refuseUnsafeConstructionCommand(trimmed);
+      setPrompt("");
+      return;
+    }
     const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
     const approvalCommand = Boolean(
       trimmed &&
@@ -9508,6 +9820,11 @@ function PerformanceAIDashboardView({
     if (trimmed) {
       const routeToOrchestrator = shouldRouteToOrchestrator(trimmed);
       if (!routeToOrchestrator) {
+        const handledPowerCommand = tryHandlePowerCommand(trimmed);
+        if (handledPowerCommand) {
+          setPrompt("");
+          return;
+        }
         const handledSheet = tryHandleSheetIntent(trimmed);
         if (handledSheet) {
           setPrompt("");
@@ -17042,6 +17359,201 @@ function PerformanceAIDashboardView({
 	      { label: "Settings", panel: "settings", detail: "Workspace defaults", status: panelStatus("settings") },
 	    ],
 	  };
+
+  const handleCancelActiveTool = useCallback(() => {
+    if (shortcutsOverlayOpen) {
+      setShortcutsOverlayOpen(false);
+      return;
+    }
+    if (activeSidePanel === "projects" && document.querySelector('[data-testid="projects-drawer"]')) {
+      handleCloseSidePanel();
+      setStatusMessage("Projects drawer closed.");
+      return;
+    }
+    if (previewFullscreenOpen) setPreviewFullscreenOpen(false);
+    setPlacementModeEnabled(false);
+    setActivePlacementId(null);
+    setPendingClarification(null);
+    setPreviewInteraction("static");
+    setCadToolRequest({ id: Date.now(), tool: "select" });
+    setStatusMessage("Active drawing/tool state cancelled.");
+  }, [activeSidePanel, handleCloseSidePanel, previewFullscreenOpen, shortcutsOverlayOpen]);
+
+  const handleDeleteSelectedObject = useCallback(() => {
+    const target = activePlacementId
+      ? buildingPlacements.find((item) => item.id === activePlacementId)
+      : null;
+    if (!target) {
+      const message = "Delete blocked: no object is selected.";
+      setStatusMessage(message);
+      appendChatMessage("assistant", message, "status");
+      return;
+    }
+    if (target.type === "site" || target.capabilities?.deletable === false) {
+      const message = `Delete blocked: ${target.label} cannot be deleted from shortcuts.`;
+      setStatusMessage(message);
+      appendChatMessage("assistant", message, "status");
+      return;
+    }
+    if (target.locked) {
+      const message = `Delete blocked: unlock ${target.label} before deleting it.`;
+      setStatusMessage(message);
+      appendChatMessage("assistant", message, "status");
+      return;
+    }
+    setLastDraftAction({ action: "delete", object: target });
+    handleRemoveBuilding(target.id);
+    appendChatMessage("assistant", `Deleted ${target.label}.`, "status");
+  }, [activePlacementId, buildingPlacements, handleRemoveBuilding]);
+
+  const handleUndoDraftAction = useCallback(() => {
+    if (!lastDraftAction) {
+      const message = "Undo blocked: no supported draft action is available to undo.";
+      setStatusMessage(message);
+      appendChatMessage("assistant", message, "status");
+      return;
+    }
+    if (lastDraftAction.action === "add") {
+      setBuildingPlacements((prev) => prev.filter((item) => item.id !== lastDraftAction.object.id));
+      setActivePlacementId((prev) => (prev === lastDraftAction.object.id ? null : prev));
+      setPlacementModeEnabled(false);
+      setStatusMessage(`Undo: removed ${lastDraftAction.object.label}.`);
+      appendChatMessage("assistant", `Undo: removed ${lastDraftAction.object.label}.`, "status");
+      setLastDraftAction(null);
+      return;
+    }
+    handleRestoreBuilding(lastDraftAction.object);
+    appendChatMessage("assistant", `Undo: restored ${lastDraftAction.object.label}.`, "status");
+    setLastDraftAction(null);
+  }, [handleRestoreBuilding, lastDraftAction]);
+
+  const handleShortcutSaveProject = useCallback(() => {
+    const effectiveProjectId = resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
+    if (!token) {
+      appendChatMessage("assistant", "Save blocked: sign in/connect backend to save projects.", "status");
+      setStatusMessage("Save blocked: sign in/connect backend to save projects.");
+      return;
+    }
+    if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
+      appendChatMessage("assistant", "Save blocked: demo workspace changes stay local and are not saved to pilot projects.", "status");
+      setStatusMessage("Demo workspace changes stay local and are not saved to pilot projects.");
+      return;
+    }
+    void saveProject().then((project) => {
+      appendChatMessage(
+        "assistant",
+        project
+          ? `Saved project "${project.name || "Untitled Project"}".`
+          : "Save blocked: sign in/connect backend to save projects.",
+        "status",
+      );
+    });
+  }, [currentProject?.project_id, effectiveDemoWorkspaceEnabled, projectId, saveProject, token]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      const meta = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleCancelActiveTool();
+        return;
+      }
+      if (meta && key === "k") {
+        event.preventDefault();
+        focusCommandInput();
+        return;
+      }
+      if (!meta && event.key === "/" && !isTyping) {
+        event.preventDefault();
+        focusCommandInput();
+        return;
+      }
+      if ((event.key === "?" || (event.shiftKey && event.key === "?")) && !isTyping) {
+        event.preventDefault();
+        setShortcutsOverlayOpen(true);
+        return;
+      }
+      if (meta && key === "s") {
+        event.preventDefault();
+        handleShortcutSaveProject();
+        return;
+      }
+      if (meta && key === "z") {
+        event.preventDefault();
+        handleUndoDraftAction();
+        return;
+      }
+      if (isTyping || meta || event.altKey) return;
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        handleDeleteSelectedObject();
+        return;
+      }
+      if (key === "g") {
+        event.preventDefault();
+        handleOpenSidePanel("generate");
+        setStatusMessage("Generate panel opened.");
+        return;
+      }
+      if (key === "d") {
+        event.preventDefault();
+        handleOpenWorkspaceMode("canvas");
+        handleOpenSidePanel("objects");
+        setStatusMessage("Draw Canvas mode opened.");
+        return;
+      }
+      if (key === "p") {
+        event.preventDefault();
+        handleOpenSidePanel("projects");
+        setStatusMessage("Projects drawer opened.");
+      }
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      handleCancelActiveTool();
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("keyup", onKeyUp, { capture: true });
+    document.addEventListener("keyup", onKeyUp, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+      window.removeEventListener("keyup", onKeyUp, { capture: true });
+      document.removeEventListener("keyup", onKeyUp, { capture: true });
+    };
+  }, [
+    focusCommandInput,
+    handleCancelActiveTool,
+    handleDeleteSelectedObject,
+    handleOpenSidePanel,
+    handleOpenWorkspaceMode,
+    handleShortcutSaveProject,
+    handleUndoDraftAction,
+  ]);
+
+  const supportedShortcuts = [
+    ["Esc", "Cancel active tool or close help"],
+    ["Delete", "Delete selected draft object"],
+    ["Cmd/Ctrl Z", "Undo supported draft action"],
+    ["Cmd/Ctrl S", "Save project"],
+    ["/ or Cmd/Ctrl K", "Focus command"],
+    ["G", "Open Generate"],
+    ["D", "Open Draw Canvas"],
+    ["P", "Open Projects"],
+    ["?", "Show shortcuts"],
+  ];
+
   const contextualToolbarTools = [
     {
       label: "Address",
@@ -17945,7 +18457,14 @@ function PerformanceAIDashboardView({
   }
 
   return (
-    <div className="civora-app-bg min-h-screen text-[var(--civora-text)]">
+    <div
+      className="civora-app-bg min-h-screen text-[var(--civora-text)]"
+      onKeyDownCapture={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        handleCancelActiveTool();
+      }}
+    >
       {jobToasts.length ? (
         <div className="fixed right-3 top-20 z-[70] flex w-[min(360px,calc(100vw-1.5rem))] flex-col gap-2">
           {jobToasts.map((toast) => (
@@ -20578,7 +21097,7 @@ function PerformanceAIDashboardView({
                             </div>
                           ))}
                       </div>
-                      <div className="mt-4 border-t border-slate-200 pt-4">
+	                <div className="mt-4 border-t border-slate-200 pt-4">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Online discovery</p>
                           <span className="text-[11px] font-semibold text-slate-500">
@@ -26063,16 +26582,52 @@ function PerformanceAIDashboardView({
                       Use the Generate panel for the single main action and exact system reasons.
                     </span>
                   </button>
+	                </div>
+	              </div>
+	            </div>
+	          </main>
+          {shortcutsOverlayOpen ? (
+            <div
+              data-testid="shortcuts-help-overlay"
+              className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-950/18 px-4 pt-[12vh] backdrop-blur-[2px]"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Keyboard shortcuts"
+            >
+              <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white/96 p-4 shadow-[0_28px_90px_-44px_rgba(15,23,42,0.72)] backdrop-blur-xl">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Shortcuts</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-950">Active workspace commands</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShortcutsOverlayOpen(false)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {supportedShortcuts.map(([keys, label]) => (
+                    <div key={keys} className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <span className="text-sm font-semibold text-slate-700">{label}</span>
+                      <span className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">
+                        {keys}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-	          </main>
+          ) : null}
           {activeSidePanel !== "chat" && activePrimaryWorkflowKey !== "draw" && activePrimaryWorkflowKey !== "objects" ? (
             <PinnedCommandBar
               prompt={prompt}
               imageName={imageName}
               onPromptChange={setPrompt}
               onPromptKeyDown={handlePromptKeyDown}
+              commandInputRef={commandInputRef}
               onSendMessage={handleSendMessage}
               onOpenHistory={() => handleOpenSidePanel("chat")}
               busy={busy}

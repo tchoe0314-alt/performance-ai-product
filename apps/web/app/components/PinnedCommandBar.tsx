@@ -15,6 +15,7 @@ type PinnedCommandBarProps = {
   imageName: string;
   onPromptChange: (value: string) => void;
   onPromptKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  commandInputRef?: React.RefObject<HTMLTextAreaElement | null>;
   onSendMessage: () => void;
   onOpenHistory: () => void;
   busy: boolean;
@@ -37,6 +38,7 @@ export default function PinnedCommandBar({
   imageName,
   onPromptChange,
   onPromptKeyDown,
+  commandInputRef,
   onSendMessage,
   onOpenHistory,
   busy,
@@ -101,6 +103,8 @@ export default function PinnedCommandBar({
           <MessageSquareText className="h-5 w-5" />
         </button>
         <textarea
+          ref={commandInputRef}
+          data-testid="civora-command-input"
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
           onKeyDown={onPromptKeyDown}
