@@ -1701,7 +1701,10 @@ export default function PreviewPanel({
   }, [buildingPlacements, cadEntityPreviewObjects, getCadLayer, suggestedPlacements]);
 
   const visibleCadObjects = useMemo(
-    () => [...buildingPlacements, ...cadEntityPreviewObjects].filter((item) => !hiddenCadLayers.includes(getCadLayer(item))),
+    () =>
+      [...buildingPlacements, ...cadEntityPreviewObjects].filter(
+        (item) => !hiddenCadLayers.includes(getCadLayer(item)) && !item.meta?.ui_hidden,
+      ),
     [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers],
   );
 

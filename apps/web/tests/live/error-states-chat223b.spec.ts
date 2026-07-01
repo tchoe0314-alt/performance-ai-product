@@ -100,7 +100,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
     await page.route("**/api/auth/status", async (route) => route.abort("connectionrefused"));
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText(/Backend unreachable|backend/i)).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("text=/Backend unreachable|Account status will appear here once/i").first()).toBeVisible({ timeout: 30_000 });
   });
 
   test("Apply Address shows signed-out blocker inline", async ({ page }) => {

@@ -77,10 +77,10 @@ test.describe("button functionality audit", () => {
 
     await openDemoWorkspace(page);
 
-    await expect(page.getByRole("button", { name: "Search unavailable" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Undo unavailable" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Redo unavailable" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Notifications unavailable" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Search unavailable" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Undo unavailable" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Redo unavailable" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Notifications unavailable" })).toHaveCount(0);
 
     const panels: Array<[RegExp | string, RegExp | string]> = [
       [/^Setup$/, /Project Setup/],
