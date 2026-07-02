@@ -43,14 +43,14 @@ export default function AppHeader({
           </div>
           <div className="hidden sm:block">
             <p className="text-[15px] font-semibold text-slate-950">Civora</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Review workspace</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Planning support</p>
           </div>
           <button
             type="button"
             onClick={onOpenDashboard}
             className="hidden rounded-lg border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100/70 hover:text-slate-950 md:inline-flex"
           >
-            Dashboard
+            Recent changes
           </button>
           <button
             type="button"
@@ -77,7 +77,7 @@ export default function AppHeader({
             className="hidden items-center gap-2 rounded-lg border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100/70 hover:text-slate-950 md:inline-flex"
           >
             <PanelLeftOpen className="h-4 w-4" />
-            Workspace
+            Setup
           </button>
         </div>
 

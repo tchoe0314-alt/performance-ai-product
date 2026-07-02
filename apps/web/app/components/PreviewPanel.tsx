@@ -5417,7 +5417,7 @@ export default function PreviewPanel({
           </div>
           <p className="max-w-3xl text-xs text-slate-500">
             Visual anchoring keeps objects consistent in the model view. High Quality is a presentation preview only
-            and never engineering evidence. AI Realism, when enabled, is a visualization from the current review layout
+            and never engineering evidence. AI Realism, when enabled, is an AI visualization from the current review layout
             and is not used for QA, compliance, quantities, engineering generation, source confidence, or release.
           </p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
