@@ -2426,6 +2426,64 @@ function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
 
 type ApprovalState = "idle" | "approving" | "starting";
 
+type ProjectStatusState = "working" | "blocked" | "needs review" | "stale" | "ready";
+
+type ProjectStatusArea = "setup" | "generate" | "deliver" | "chat" | "projects" | "ai realism";
+
+type ProjectStatusSummary = {
+  state: ProjectStatusState;
+  area: ProjectStatusArea;
+  title: string;
+  detail: string;
+  nextAction: string;
+  updatedAt: number;
+};
+
+const DEFAULT_PROJECT_STATUS: ProjectStatusSummary = {
+  state: "needs review",
+  area: "setup",
+  title: "Workspace needs review",
+  detail: "Start by applying an address or locking a site boundary.",
+  nextAction: "Open Setup and define the site before generating review drafts.",
+  updatedAt: 0,
+};
+
+const projectStatusToneClass: Record<ProjectStatusState, string> = {
+  working: "border-sky-200 bg-sky-50 text-sky-800",
+  blocked: "border-red-200 bg-red-50 text-red-800",
+  "needs review": "border-amber-200 bg-amber-50 text-amber-800",
+  stale: "border-orange-200 bg-orange-50 text-orange-800",
+  ready: "border-emerald-200 bg-emerald-50 text-emerald-800",
+};
+
+const formatProjectStatusText = (summary: ProjectStatusSummary) =>
+  `${summary.state}: ${summary.detail} Next: ${summary.nextAction}`;
+
+function ProjectStatusSummaryCard({ summary }: { summary: ProjectStatusSummary }) {
+  return (
+    <div
+      data-testid="project-status-summary"
+      className={`rounded-xl border px-3 py-2.5 text-xs shadow-sm ${projectStatusToneClass[summary.state]}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold uppercase tracking-[0.14em]">
+            {summary.state}
+          </p>
+          <p className="mt-1 text-sm font-semibold normal-case tracking-normal">
+            {summary.title}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
+          {summary.area}
+        </span>
+      </div>
+      <p className="mt-1 font-medium leading-5">{summary.detail}</p>
+      <p className="mt-1 font-semibold leading-5">Next: {summary.nextAction}</p>
+    </div>
+  );
+}
+
 type ArtifactJobResult = {
   artifact?: {
     kind?: string;
@@ -2892,6 +2950,8 @@ function PerformanceAIDashboardView({
   const [selectedJobId, setSelectedJobId] = useState("");
   const [jobToasts, setJobToasts] = useState<JobToast[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
+  const [projectStatusSummary, setProjectStatusSummary] =
+    useState<ProjectStatusSummary>(DEFAULT_PROJECT_STATUS);
   const [moveEditFeedback, setMoveEditFeedback] = useState("");
   const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
   const [projectDrawerNotice, setProjectDrawerNotice] = useState("");
@@ -5171,6 +5231,14 @@ function PerformanceAIDashboardView({
     return undefined;
   }, [currentManualFailures, issues]);
 
+  const updateProjectStatus = useCallback(
+    (summary: Omit<ProjectStatusSummary, "updatedAt">) => {
+      const nextSummary = { ...summary, updatedAt: Date.now() };
+      setProjectStatusSummary(nextSummary);
+      setStatusMessage(formatProjectStatusText(nextSummary));
+    },
+    [],
+  );
 
   const applyBackendResult = (data: PlanResponse) => {
     setBackendResult(data);
@@ -7715,13 +7783,23 @@ function PerformanceAIDashboardView({
   }) => {
     setBusy(true);
     setActivePlanTool(mode);
-    setStatusMessage(
+    updateProjectStatus({
+      state: "working",
+      area: "generate",
+      title:
+        mode === "fix"
+          ? "Fix pass working"
+          : mode === "improve"
+            ? "Improvement pass working"
+            : "Generate working",
+      detail:
       mode === "fix"
         ? "Civora AI is starting the fix run."
         : mode === "improve"
           ? "Civora AI is starting the improvement run."
-          : "Civora AI is starting the engineering run.",
-    );
+          : "Civora AI is starting the review draft run.",
+      nextAction: "Keep this project open until the run finishes or shows a blocker.",
+    });
     const shouldQueueStagedRun = Boolean((forceQueue || requestPayload?.full_design_mode) && token);
     if (shouldQueueStagedRun) {
       try {
@@ -7750,7 +7828,13 @@ function PerformanceAIDashboardView({
             .join(" "),
           "status",
         );
-        setStatusMessage(`Queued staged run ${queued.job.job_id}.`);
+        updateProjectStatus({
+          state: "working",
+          area: "generate",
+          title: "Generate queued",
+          detail: `Queued staged run ${queued.job.job_id}.`,
+          nextAction: "Open Jobs or watch the visible job status until the backend finishes.",
+        });
         if (clearPromptOnSuccess) {
           setPrompt("");
         }
@@ -7758,7 +7842,13 @@ function PerformanceAIDashboardView({
       } catch (queueError) {
         const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
         appendChatMessage("assistant", queueMessage, "status");
-        setStatusMessage(queueMessage);
+        updateProjectStatus({
+          state: "blocked",
+          area: "generate",
+          title: "Generate blocked",
+          detail: panelErrorMessage(queueError, "Job queue failed."),
+          nextAction: "Check the backend connection, then press Generate again.",
+        });
         return;
       } finally {
         setBusy(false);
@@ -7798,6 +7888,23 @@ function PerformanceAIDashboardView({
             ? "Civora AI generated an improved plan."
             : "Plan run completed.",
       );
+      updateProjectStatus({
+        state: "needs review",
+        area: "generate",
+        title:
+          mode === "fix"
+            ? "Fix pass needs review"
+            : mode === "improve"
+              ? "Improvement pass needs review"
+              : "Generate needs review",
+        detail:
+          mode === "fix"
+            ? "Civora AI ran a focused fix pass."
+            : mode === "improve"
+              ? "Civora AI generated an improved plan."
+              : "Plan run completed.",
+        nextAction: "Review the generated draft, blockers, assumptions, and preview before deliverables.",
+      });
       if (clearPromptOnSuccess) {
         setPrompt("");
       }
@@ -7829,14 +7936,24 @@ function PerformanceAIDashboardView({
               .join(" "),
             "status",
           );
-          setStatusMessage(
-            `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
-          );
+          updateProjectStatus({
+            state: "working",
+            area: "generate",
+            title: "Generate queued",
+            detail: `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
+            nextAction: "Open Jobs or watch the visible job status until the backend finishes.",
+          });
           return;
         } catch (queueError) {
           const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
           appendChatMessage("assistant", queueMessage, "status");
-          setStatusMessage(queueMessage);
+          updateProjectStatus({
+            state: "blocked",
+            area: "generate",
+            title: "Generate blocked",
+            detail: panelErrorMessage(queueError, "Job queue failed."),
+            nextAction: "Check the backend connection, then press Generate again.",
+          });
           return;
         }
       }
@@ -7875,9 +7992,13 @@ function PerformanceAIDashboardView({
               .join(" "),
             "status",
           );
-          setStatusMessage(
-            `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
-          );
+          updateProjectStatus({
+            state: "working",
+            area: "generate",
+            title: "Generate queued",
+            detail: `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
+            nextAction: "Open Jobs or watch the visible job status until the backend finishes.",
+          });
           return;
         } catch (queueError) {
           const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
@@ -7886,7 +8007,13 @@ function PerformanceAIDashboardView({
             queueMessage,
             "status",
           );
-          setStatusMessage(queueMessage);
+          updateProjectStatus({
+            state: "blocked",
+            area: "generate",
+            title: "Generate blocked",
+            detail: panelErrorMessage(queueError, "Job queue failed."),
+            nextAction: "Check the backend connection, then press Generate again.",
+          });
           return;
         }
       }
@@ -7897,7 +8024,13 @@ function PerformanceAIDashboardView({
             ? `Improve pass failed: ${panelErrorMessage(error, "Could not complete the improvement pass.")} Next action: review inputs, then retry Improve.`
             : `Generate failed: ${panelErrorMessage(error, "Could not update the design.")} Next action: check the blocker/status message, then press Generate again.`;
       appendChatMessage("assistant", message, "status");
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "generate",
+        title: mode === "run" ? "Generate blocked" : `${mode} blocked`,
+        detail: panelErrorMessage(error, mode === "run" ? "Could not update the design." : "Could not complete the run."),
+        nextAction: mode === "run" ? "Check the blocker/status message, then press Generate again." : "Review blockers, then retry.",
+      });
     } finally {
       window.clearTimeout(timeoutId);
       signal?.removeEventListener("abort", handleAbort);
@@ -9012,6 +9145,7 @@ function PerformanceAIDashboardView({
         .filter(([, status]) => status === "fresh")
         .map(([system]) => system);
       const lines = [
+        `Project status: ${projectStatusSummary.state}. ${projectStatusSummary.detail} Next: ${projectStatusSummary.nextAction}`,
         `Workspace persistence: ${restoreTruthLabel}${currentProject?.updated_at ? `, last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}` : ""}.`,
         hasAppliedAddress
           ? `Address state: applied (${appliedAddressLabel || "coordinate context"}). ${onlineSourceLookupUnavailable ? "Address applied; online source lookup not configured/available." : onlineSourceLookupLabel}`
@@ -9068,6 +9202,7 @@ function PerformanceAIDashboardView({
 
     if (/(what is blocked|what's blocked|what.*blocked|blocked right now)/i.test(normalized)) {
       const flowBlockers = uniqueStrings([
+        projectStatusSummary.state === "blocked" ? `${projectStatusSummary.title}: ${projectStatusSummary.detail}` : "",
         ...(generateFlowSummary?.blocked ? generateFlowSummary.needs_review : []),
         ...(reviewPackageFlowSummary?.missing ?? []),
         getExportBlockReason(),
@@ -9092,10 +9227,10 @@ function PerformanceAIDashboardView({
             ? generateFlowSummary.next_action
             : pendingPlacementObjects.length
               ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
-              : progressTimelineState.next_action || nextSetupAction;
+              : projectStatusSummary.nextAction || progressTimelineState.next_action || nextSetupAction;
 	      appendChatMessage(
 	        "assistant",
-	        `${visibleAction} Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
+	        `${visibleAction} Project status: ${projectStatusSummary.state}. Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
         "status",
       );
       return true;
@@ -9630,13 +9765,19 @@ function PerformanceAIDashboardView({
           '[data-testid="civora-command-input"], textarea[placeholder="Ask Civora..."], textarea[placeholder^="Message Civora"]',
         ) as HTMLTextAreaElement | null);
       if (!input) {
-        setStatusMessage("Command input is not mounted. Open the chat panel or return to the canvas, then try / again.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "chat",
+          title: "Command focus blocked",
+          detail: "Command input is not mounted.",
+          nextAction: "Open the chat panel or return to the canvas, then try / again.",
+        });
         return;
       }
       input.focus();
       input.select();
     });
-  }, [activeSidePanel]);
+  }, [activeSidePanel, updateProjectStatus]);
 
   const refuseUnsafeConstructionCommand = (message: string) => {
     appendChatMessage("user", message);
@@ -9645,7 +9786,13 @@ function PerformanceAIDashboardView({
       "I can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can help prepare review-only draft materials and call out blockers for a qualified professional to review.",
       "status",
     );
-    setStatusMessage("Construction authorization refused. Civora stays review-only.");
+    updateProjectStatus({
+      state: "blocked",
+      area: "chat",
+      title: "Command refused",
+      detail: "Construction authorization refused. Civora stays review-only.",
+      nextAction: "Ask for review-only draft materials, blocker review, or a review package instead.",
+    });
     return true;
   };
 
@@ -9667,7 +9814,13 @@ function PerformanceAIDashboardView({
       if (!siteAddress.trim()) {
         handleOpenSidePanel("site_existing");
         appendChatMessage("assistant", "Apply address is blocked: type a project address in Setup first.", "status");
-        setStatusMessage("Apply address blocked: no address is typed.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "setup",
+          title: "Apply address blocked",
+          detail: "No address is typed.",
+          nextAction: "Type a project address in Setup, then run apply address again.",
+        });
         return true;
       }
       void saveSiteAddress();
@@ -9726,6 +9879,13 @@ function PerformanceAIDashboardView({
         "status",
       );
       setStatusMessage(hiddenCount ? `Utilities hidden; ${hiddenCount} objects marked hidden.` : "Utilities hidden.");
+      updateProjectStatus({
+        state: "ready",
+        area: "chat",
+        title: "Utilities hidden",
+        detail: hiddenCount ? `${hiddenCount} utility/drainage object${hiddenCount === 1 ? "" : "s"} marked hidden.` : "Utility and drainage layers are hidden.",
+        nextAction: "Open Layers or Object Manager to review visibility.",
+      });
       return true;
     }
     if (/^show only blockers$/.test(normalized)) {
@@ -9734,6 +9894,13 @@ function PerformanceAIDashboardView({
       setBottomPanelCollapsed(false);
       handleOpenSidePanel("analysis");
       appendChatMessage("assistant", "Opened the blocker/review view. If no blockers are recorded, the panel will show the exact empty state.", "status");
+      updateProjectStatus({
+        state: canonicalWorkspaceBlockers.length ? "blocked" : "ready",
+        area: "chat",
+        title: "Blocker view opened",
+        detail: canonicalWorkspaceBlockers.length ? canonicalWorkspaceBlockers[0] : "No current blockers are recorded in the active workspace.",
+        nextAction: canonicalWorkspaceBlockers.length ? "Review the open blocker panel and fix the first blocker." : "Continue setup, generate, or deliver from the current workspace.",
+      });
       return true;
     }
     if (/^generate$/.test(normalized)) {
@@ -9744,9 +9911,9 @@ function PerformanceAIDashboardView({
     }
     if (/^(make review package|create review package)$/.test(normalized)) {
       appendChatMessage("user", message);
-      handleCreateReviewSheet();
       handleOpenSidePanel("deliverables");
-      appendChatMessage("assistant", "Opened Deliver and created/updated the review package sheet. It remains review-only and not construction-ready.", "status");
+      handleMakeReviewPackage();
+      appendChatMessage("assistant", "Opened Deliver and created/updated the review package summary. It remains review-only.", "status");
       return true;
     }
     if (/^what changed\??$/.test(normalized)) {
@@ -9758,7 +9925,7 @@ function PerformanceAIDashboardView({
         "assistant",
         changed.length
           ? `Changed/stale systems: ${changed.join(", ")}. Regenerate only the affected systems after reviewing draft objects.`
-          : "No stale generated systems are currently marked. Draft object edits may still need review before export.",
+          : `No stale generated systems are currently marked. Project status: ${projectStatusSummary.state}. ${projectStatusSummary.detail}`,
         "status",
       );
       return true;
@@ -9766,6 +9933,7 @@ function PerformanceAIDashboardView({
     if (/^what is blocked\??$/.test(normalized)) {
       appendChatMessage("user", message);
       const blockers = uniqueStrings([
+        projectStatusSummary.state === "blocked" ? `${projectStatusSummary.title}: ${projectStatusSummary.detail}` : "",
         ...issues.map((issue) => issue.message),
         ...analysisIssues.map((issue) => issue.message),
         ...(workflowReviewDashboard?.release_blockers ?? []),
@@ -9780,8 +9948,8 @@ function PerformanceAIDashboardView({
     }
     if (/^what should i do next\??$/.test(normalized)) {
       appendChatMessage("user", message);
-      const next = workflowActionHints[0] || progressTimelineState.next_action || (siteScaleLocked ? "Open Generate and run a review draft." : "Open Setup and lock a site boundary.");
-      appendChatMessage("assistant", `Next action: ${next}`, "status");
+      const next = projectStatusSummary.nextAction || workflowActionHints[0] || progressTimelineState.next_action || (siteScaleLocked ? "Open Generate and run a review draft." : "Open Setup and lock a site boundary.");
+      appendChatMessage("assistant", `Next action: ${next} Current status: ${projectStatusSummary.state}.`, "status");
       return true;
     }
     if (/^create ai realism$/.test(normalized)) {
@@ -10339,7 +10507,13 @@ function PerformanceAIDashboardView({
       const message = "Save blocked: sign in/connect backend to save projects.";
       if (!silent) {
         setProjectDrawerNotice(message);
-        setStatusMessage(message);
+        updateProjectStatus({
+          state: "blocked",
+          area: "projects",
+          title: "Save blocked",
+          detail: "Sign in/connect backend to save projects.",
+          nextAction: "Sign in or reconnect the backend, then press Save Project again.",
+        });
       }
       return null;
     }
@@ -10347,15 +10521,30 @@ function PerformanceAIDashboardView({
       projectIdOverride !== undefined
         ? projectIdOverride
         : resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
+    const resolvedName = (nameOverride ?? siteName).trim();
+    const resolvedFileName = (fileNameOverride ?? fileName).trim();
     if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
       if (!silent) {
-        setStatusMessage("Demo workspace changes stay local and are not saved to pilot projects.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "projects",
+          title: "Save blocked",
+          detail: "Demo workspace changes stay local and are not saved to pilot projects.",
+          nextAction: "Start a non-demo project or sign in/connect backend before saving.",
+        });
       }
       return currentProject;
     }
-    if (!silent) setBusy(true);
-    const resolvedName = (nameOverride ?? siteName).trim();
-    const resolvedFileName = (fileNameOverride ?? fileName).trim();
+    if (!silent) {
+      setBusy(true);
+      updateProjectStatus({
+        state: "working",
+        area: "projects",
+        title: "Saving project",
+        detail: `Saving "${resolvedName || "Untitled Project"}" to the project backend.`,
+        nextAction: "Keep the drawer open until the save finishes or shows a blocker.",
+      });
+    }
     const liveChatThread = chatMessagesRef.current;
     const projectInputToSave = projectInputOverride
       ? {
@@ -10418,16 +10607,26 @@ function PerformanceAIDashboardView({
       upsertProjectSummary(data.project);
       setProjectDrawerNotice("Saved. Reload will restore this project on this browser.");
       if (!silent) {
-        setStatusMessage(
-          `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
-        );
+        updateProjectStatus({
+          state: "ready",
+          area: "projects",
+          title: "Project saved",
+          detail: `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
+          nextAction: "Continue setup, generate a review draft, or open Deliver when ready.",
+        });
       }
       return data.project;
     } catch (error) {
       const message = panelErrorMessage(error, "Project save failed.");
       setProjectDrawerNotice(`Save blocked: ${message}`);
       if (!silent) {
-        setStatusMessage(message);
+        updateProjectStatus({
+          state: "blocked",
+          area: "projects",
+          title: "Save blocked",
+          detail: message,
+          nextAction: "Check auth/backend connectivity, then press Save Project again.",
+        });
       }
       return null;
     } finally {
@@ -10603,7 +10802,13 @@ function PerformanceAIDashboardView({
     projectLoadRequestRef.current = requestId;
     try {
       resetWorkspaceState();
-      setStatusMessage("Loading project...");
+      updateProjectStatus({
+        state: "working",
+        area: "projects",
+        title: "Opening project",
+        detail: "Loading the saved project workspace from the backend.",
+        nextAction: "Wait for the project drawer to restore the workspace or show a blocker.",
+      });
       const data = await getJson<{ project: ProjectRecord }>(
         `/api/projects/${id}`,
         { token },
@@ -10620,7 +10825,13 @@ function PerformanceAIDashboardView({
       setBackendResult(null);
       setPlanPreviewUrl("");
       setPlanPreviewSummary(null);
-      setStatusMessage(`Loaded project "${project.name}".`);
+      updateProjectStatus({
+        state: "ready",
+        area: "projects",
+        title: "Project opened",
+        detail: `Loaded project "${project.name || "Untitled Project"}".`,
+        nextAction: "Review the restored setup, objects, and generated outputs before continuing.",
+      });
       setProjectDrawerNotice(`Restored "${project.name || "Untitled Project"}".`);
       setWorkspaceRestoreState("restored");
       measureCivoraInteractionAfterPaint("projects.drawer.open_project", loadStartedAt, {
@@ -10638,7 +10849,13 @@ function PerformanceAIDashboardView({
       const message =
         error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.";
       setProjectDrawerNotice(message);
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "projects",
+        title: "Open blocked",
+        detail: message,
+        nextAction: "Check auth/backend connectivity, then open the project again.",
+      });
       measureCivoraInteractionAfterPaint("projects.drawer.open_project.failed", loadStartedAt, { projectId: id });
     } finally {
       autosaveSuspendRef.current = false;
@@ -11619,18 +11836,41 @@ function PerformanceAIDashboardView({
 
 
   const handleAnalyzeImageFeatures = useCallback(async (overridePath?: string) => {
-    if (!token) return;
+    if (!token) {
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Site context blocked",
+        detail: "Sign in/connect backend to detect site context.",
+        nextAction: "Sign in or reconnect backend, then run map/image detection again.",
+      });
+      return;
+    }
     const sourcePath = overridePath || mapSnapshotPath;
     if (!sourcePath) {
       askClarification(
         "Upload a site image or map snapshot before running detection. Want me to open the Site Inputs panel?",
         "upload_image_then_detect",
       );
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Site context blocked",
+        detail: "A site image or map snapshot is required before detection.",
+        nextAction: "Upload a site image or map snapshot, then run detection.",
+      });
       return;
     }
     clearGeneratedPreview();
     setImageUploadState("detecting");
     setImageUploadNote("Detecting site features…");
+    updateProjectStatus({
+      state: "working",
+      area: "setup",
+      title: "Detecting site context",
+      detail: "Civora is detecting site features from the uploaded map/image.",
+      nextAction: "Wait for detections, then review suggested objects before generating.",
+    });
     const width = parsePositiveNumber(lotWidth);
     const height = parsePositiveNumber(lotHeight);
     if (!width || !height) {
@@ -11640,6 +11880,13 @@ function PerformanceAIDashboardView({
       );
       setImageUploadState("uploaded");
       setImageUploadNote("Image uploaded. Set site dimensions to run detection.");
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Site context blocked",
+        detail: "Site boundary dimensions are required before detection.",
+        nextAction: "Set site width/depth or draw a boundary, then run detection again.",
+      });
       return;
     }
     try {
@@ -11673,11 +11920,27 @@ function PerformanceAIDashboardView({
       });
       setImageUploadState("uploaded");
       setImageUploadNote(mapped.length ? "Detection complete. Review suggested objects." : "No detections found.");
-      setStatusMessage(result.success ? "Detection complete. Review suggested objects." : result.message || "Detection failed.");
+      updateProjectStatus({
+        state: result.success ? "needs review" : "blocked",
+        area: "setup",
+        title: result.success ? "Site context needs review" : "Site context blocked",
+        detail: result.success
+          ? (mapped.length ? "Detection complete. Review suggested objects." : "Detection complete. No detections were found.")
+          : result.message || "Detection failed.",
+        nextAction: result.success
+          ? "Review suggested objects in Object Manager before generating."
+          : "Check the map/image source and retry detection.",
+      });
     } catch (error) {
       setImageUploadState("failed");
       setImageUploadNote("Detection failed.");
-      setStatusMessage(error instanceof Error ? error.message : "Detection failed.");
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Site context blocked",
+        detail: error instanceof Error ? error.message : "Detection failed.",
+        nextAction: "Check the uploaded map/image and backend connection, then retry detection.",
+      });
     }
   }, [
     askClarification,
@@ -11690,6 +11953,7 @@ function PerformanceAIDashboardView({
     payloadPreview,
     saveProject,
     token,
+    updateProjectStatus,
   ]);
 
   const handleAnalyzeSiteAccess = useCallback(() => {
@@ -12557,7 +12821,13 @@ function PerformanceAIDashboardView({
           candidateCount: 0,
           missing: ["address/geocode"],
         });
-        setStatusMessage("Site locked. Add an address to auto-detect existing conditions inside the site.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "setup",
+          title: "Site context blocked",
+          detail: "Site is locked, but address/geocode context is missing.",
+          nextAction: "Add an address or map center context, then recheck sources inside the site.",
+        });
         return;
       }
       if (!token) {
@@ -12567,7 +12837,13 @@ function PerformanceAIDashboardView({
           candidateCount: 0,
           missing: ["backend session"],
         });
-        setStatusMessage("Site locked. Automatic source discovery needs a backend session.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "setup",
+          title: "Site context blocked",
+          detail: "Automatic source discovery needs a backend session.",
+          nextAction: "Sign in or reconnect backend, then recheck sources inside the site.",
+        });
         return;
       }
       if (autoExistingRunKeyRef.current === runKey) {
@@ -12581,7 +12857,13 @@ function PerformanceAIDashboardView({
         candidateCount: 0,
         missing: [],
       });
-      setStatusMessage("Site locked. Civora is checking available existing-condition sources inside the boundary...");
+      updateProjectStatus({
+        state: "working",
+        area: "setup",
+        title: "Detecting site context",
+        detail: "Checking parcels, roads, buildings, constraints, utilities, elevation, and grading context inside the locked site.",
+        nextAction: "Wait for source candidates or an exact provider/backend blocker.",
+      });
 
       try {
         let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
@@ -12766,17 +13048,27 @@ function PerformanceAIDashboardView({
         candidateCount,
         missing: providersAbsent ? ["source providers"] : providerFailed ? ["provider lookup"] : missing,
       });
-      setStatusMessage(
-        providerFailed
-          ? "Site locked. Existing-condition source lookup failed; retry after providers/backend respond."
-          : providersAbsent
-            ? "Site locked. No source providers are configured yet."
-            : candidateCount > 0
-          ? `Site locked. Civora found ${candidateCount} existing-condition candidate${candidateCount === 1 ? "" : "s"} for review inside the site.`
-          : slopeEstimateOverride
-            ? `Site locked. No source candidates found yet; grading is using an explicit ${slopePct}% assumed slope for review only.`
-            : "Site locked. Existing-condition providers returned no usable features inside the site.",
-      );
+      updateProjectStatus({
+        state: providerFailed || providersAbsent ? "blocked" : "needs review",
+        area: "setup",
+        title: providerFailed || providersAbsent ? "Site context blocked" : "Site context needs review",
+        detail:
+          providerFailed
+            ? "Existing-condition source lookup failed; retry after providers/backend respond."
+            : providersAbsent
+              ? "No source providers are configured yet."
+              : candidateCount > 0
+                ? `Found ${candidateCount} existing-condition candidate${candidateCount === 1 ? "" : "s"} for review inside the site.`
+                : slopeEstimateOverride
+                  ? `No source candidates found yet; grading is using an explicit ${slopePct}% assumed slope for review only.`
+                  : "Existing-condition providers returned no usable features inside the site.",
+        nextAction:
+          providerFailed
+            ? "Retry source discovery after providers/backend respond."
+            : providersAbsent
+              ? "Add GIS providers or upload survey/topo evidence before relying on source context."
+              : "Review source candidates and assumptions before generating.",
+      });
         if (slopeEstimateOverride || hasTerrainSource) {
           void handleGenerateSystemRef.current?.("grading", { slopeEstimateOverride });
         }
@@ -12788,7 +13080,13 @@ function PerformanceAIDashboardView({
           candidateCount: 0,
           missing: ["automatic source discovery"],
         });
-        setStatusMessage(message);
+        updateProjectStatus({
+          state: "blocked",
+          area: "setup",
+          title: "Site context blocked",
+          detail: message,
+          nextAction: "Check backend/provider connectivity, then recheck sources inside the site.",
+        });
       } finally {
         setOnlineDiscoveryBusy(false);
       }
@@ -12809,6 +13107,7 @@ function PerformanceAIDashboardView({
       siteInputs,
       surveySlopeEstimate?.slope_percent,
       token,
+      updateProjectStatus,
       viewportCenter,
       viewportFootprint,
     ],
@@ -12818,7 +13117,13 @@ function PerformanceAIDashboardView({
     if (applyingSiteRef.current) return;
     if (siteScaleLocked) {
       if (hasSiteBoundary()) {
-        setStatusMessage("Site is already locked.");
+        updateProjectStatus({
+          state: "ready",
+          area: "setup",
+          title: "Site already locked",
+          detail: "Site boundary is already locked.",
+          nextAction: "Open Generate when you are ready to create review drafts.",
+        });
         return;
       }
       setSiteScaleLocked(false);
@@ -12830,16 +13135,35 @@ function PerformanceAIDashboardView({
     const width = visibleWidth ?? viewportFootprint?.widthFt;
     const height = visibleHeight ?? viewportFootprint?.heightFt;
     if (!width || !height) {
-      setStatusMessage("Set the site width and height before applying the site.");
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Apply site blocked",
+        detail: "Set the site width and height before applying the site.",
+        nextAction: "Type width/depth or draw a site boundary, then lock the site.",
+      });
       applyingSiteRef.current = false;
       return;
     }
     const selectedAreaAcres = siteAreaAcresFromSize(width, height);
     if (selectedAreaAcres > SITE_WARNING_ACRES) {
-      setStatusMessage(OVERSIZED_SITE_MESSAGE);
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Apply site blocked",
+        detail: OVERSIZED_SITE_MESSAGE,
+        nextAction: "Reduce the site area or zoom to a smaller review boundary.",
+      });
       applyingSiteRef.current = false;
       return;
     }
+    updateProjectStatus({
+      state: "working",
+      area: "setup",
+      title: "Applying site",
+      detail: "Civora is locking the site boundary and preparing site context checks.",
+      nextAction: "Wait for the boundary to lock, then review source context results.",
+    });
     const existingSite = buildingPlacements.find((item) => item.type === "site");
     if (existingSite && !existingSite.locked) {
       const existingBoundarySource =
@@ -12926,7 +13250,13 @@ function PerformanceAIDashboardView({
         lng: viewportCenter?.lng,
       };
       applyingSiteRef.current = false;
-      setStatusMessage("Site boundary locked. Checking available existing-condition sources inside the site...");
+      updateProjectStatus({
+        state: "working",
+        area: "setup",
+        title: "Detecting site context",
+        detail: "Site boundary locked. Checking available existing-condition sources inside the site.",
+        nextAction: "Review found candidates or blockers before generating.",
+      });
       void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
       return;
     }
@@ -12939,7 +13269,13 @@ function PerformanceAIDashboardView({
         (Math.abs((lastApplied.lat ?? 0) - viewportCenter.lat) < 1e-6 &&
           Math.abs((lastApplied.lng ?? 0) - viewportCenter.lng) < 1e-6))
     ) {
-      setStatusMessage("Site already matches the current viewport.");
+      updateProjectStatus({
+        state: "ready",
+        area: "setup",
+        title: "Site already applied",
+        detail: "Site already matches the current viewport.",
+        nextAction: "Open Generate when you are ready to create review drafts.",
+      });
       applyingSiteRef.current = false;
       return;
     }
@@ -13005,7 +13341,13 @@ function PerformanceAIDashboardView({
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setLeftSidebarOpen(false);
     }
-    setStatusMessage("Site applied and locked.");
+    updateProjectStatus({
+      state: "working",
+      area: "setup",
+      title: "Detecting site context",
+      detail: "Site applied and locked. Civora is checking source context inside the site.",
+      nextAction: "Review found candidates or blockers before generating.",
+    });
     lastAppliedSiteRef.current = {
       w: width,
       h: height,
@@ -13041,6 +13383,7 @@ function PerformanceAIDashboardView({
     payloadPreview,
     runAutoExistingConditionsAfterSiteLock,
     saveProject,
+    updateProjectStatus,
     viewportCenter,
     viewportFootprint,
   ]);
@@ -13102,7 +13445,13 @@ function PerformanceAIDashboardView({
         candidateCount: 0,
         missing: ["backend session"],
       });
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Apply address blocked",
+        detail: message,
+        nextAction: "Sign in or reconnect backend, then press Apply Address again.",
+      });
       return;
     }
     const trimmed = siteAddress.trim();
@@ -13134,11 +13483,24 @@ function PerformanceAIDashboardView({
           },
         },
       });
-      setStatusMessage("Site address cleared.");
+      updateProjectStatus({
+        state: "needs review",
+        area: "setup",
+        title: "Address cleared",
+        detail: "Site address cleared.",
+        nextAction: "Apply a new address or lock a manually drawn site boundary.",
+      });
       return;
     }
     try {
       setOnlineDiscoveryBusy(true);
+      updateProjectStatus({
+        state: "working",
+        area: "setup",
+        title: "Applying address",
+        detail: "Civora is geocoding the address and checking available source context.",
+        nextAction: "Wait for source candidates or an exact provider/auth blocker.",
+      });
       let geocode = selectedAddressSuggestion;
       if (!hasAddressCoordinates(geocode)) {
         geocode = await postJson<AddressSuggestion>("/api/geocode", { address: trimmed }, { token });
@@ -13154,7 +13516,13 @@ function PerformanceAIDashboardView({
           candidateCount: 0,
           missing: ["geocode"],
         });
-        setStatusMessage(`${geocodeMessage} The map was not moved. You can still set site size or draw the boundary manually.`);
+        updateProjectStatus({
+          state: "blocked",
+          area: "setup",
+          title: "Apply address blocked",
+          detail: `${geocodeMessage} The map was not moved.`,
+          nextAction: "Check the address, or set site size/draw the boundary manually.",
+        });
         return;
       }
       clearGeneratedPreview();
@@ -13308,15 +13676,28 @@ function PerformanceAIDashboardView({
         (discoveryStatus.includes("failed") ||
           (!configuredLocalGisProviders.length && !providerSources.length));
       const providerAbsent = candidateCount === 0 && !configuredLocalGisProviders.length && !providerSources.length;
-      setStatusMessage(
-        candidateCount > 0
-          ? `Address applied. Found ${candidateCount} online source candidate${candidateCount === 1 ? "" : "s"} for review.`
-          : lookupUnavailable
-            ? providerAbsent
-              ? "Address applied; no online/local source providers are configured yet."
-              : "Address applied; online source lookup failed or providers were unavailable."
-            : "Address applied. Online source discovery found no usable candidates yet; missing providers are listed in setup.",
-      );
+      updateProjectStatus({
+        state: lookupUnavailable ? "blocked" : candidateCount > 0 ? "needs review" : "ready",
+        area: "setup",
+        title: lookupUnavailable
+          ? "Address applied, source lookup blocked"
+          : candidateCount > 0
+            ? "Address applied, sources need review"
+            : "Address applied",
+        detail:
+          candidateCount > 0
+            ? `Found ${candidateCount} online source candidate${candidateCount === 1 ? "" : "s"} for review.`
+            : lookupUnavailable
+              ? providerAbsent
+                ? "Address applied; no online/local source providers are configured yet."
+                : "Address applied; online source lookup failed or providers were unavailable."
+              : "Online source discovery found no usable candidates yet; missing providers are listed in setup.",
+        nextAction: lookupUnavailable
+          ? "Add GIS providers or upload survey/topo evidence before relying on source context."
+          : siteScaleLocked
+            ? "Review source candidates, then generate review drafts when ready."
+            : "Lock the site boundary to check sources inside the site.",
+      });
       setAutoExistingConditionsStatus({
         status: lookupUnavailable ? "blocked" : siteScaleLocked ? "running" : "waiting",
         message: lookupUnavailable
@@ -13341,7 +13722,13 @@ function PerformanceAIDashboardView({
         candidateCount: 0,
         missing: ["geocode"],
       });
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Apply address blocked",
+        detail: message,
+        nextAction: "Check the address or retry after the backend responds.",
+      });
     } finally {
       setOnlineDiscoveryBusy(false);
     }
@@ -14107,14 +14494,26 @@ function PerformanceAIDashboardView({
           `Generate is blocked: ${firstHardBlocker.label}. Next action: ${summary.next_action}`,
           "status",
         );
-        setStatusMessage(`Generate blocked: ${firstHardBlocker.label}`);
+        updateProjectStatus({
+          state: "blocked",
+          area: "generate",
+          title: "Generate blocked",
+          detail: firstHardBlocker.label,
+          nextAction: summary.next_action,
+        });
         handleOpenSidePanel(firstHardBlocker.action);
         return;
       }
       if (!hasSiteBoundary()) {
         const summary = blockedSummary("missing site boundary dimensions", "Set site width/depth or draw a site boundary, then lock the site.");
         recordGenerateSummary(summary);
-        setStatusMessage("Generate blocked: set and lock a site boundary first.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "generate",
+          title: "Generate blocked",
+          detail: "Set and lock a site boundary first.",
+          nextAction: summary.next_action,
+        });
         askClarification(
           "I need a site boundary before generating systems. What size should the site be?",
           "set_site_then_generate",
@@ -14125,7 +14524,13 @@ function PerformanceAIDashboardView({
       if (!ensureSiteLocked(target)) {
         const summary = blockedSummary("site boundary exists but is not locked", "Lock the site boundary in Setup before running Generate.");
         recordGenerateSummary(summary);
-        setStatusMessage("Generate blocked: lock the site boundary first.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "generate",
+          title: "Generate blocked",
+          detail: "Site boundary exists but is not locked.",
+          nextAction: summary.next_action,
+        });
         return;
       }
       if (target === "grading" || target === "drainage" || target === "full") {
@@ -14134,7 +14539,13 @@ function PerformanceAIDashboardView({
         if (target === "grading" && siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES) {
           const summary = blockedSummary(OVERSIZED_SITE_MESSAGE, "Reduce the site area or zoom to a smaller grading area.");
           recordGenerateSummary(summary);
-          setStatusMessage(OVERSIZED_SITE_MESSAGE);
+          updateProjectStatus({
+            state: "blocked",
+            area: "generate",
+            title: "Generate blocked",
+            detail: OVERSIZED_SITE_MESSAGE,
+            nextAction: summary.next_action,
+          });
           return;
         }
       }
@@ -14190,7 +14601,13 @@ function PerformanceAIDashboardView({
           `This rerun will update ${reactiveValidation.changedSystems.join(", ")} from the saved checkpoint and may touch ${reactiveValidation.changedTargets.length} downstream stages. Run it now?`,
         );
         if (!confirmed) {
-          setStatusMessage("Reactive engineering rerun cancelled. Visual edits remain live; engineering outputs are still stale.");
+          updateProjectStatus({
+            state: "stale",
+            area: "generate",
+            title: "Generate stale",
+            detail: "Reactive engineering rerun cancelled. Visual edits remain live; engineering outputs are still stale.",
+            nextAction: "Review changed objects, then rerun affected systems when ready.",
+          });
           return;
         }
       }
@@ -14226,6 +14643,13 @@ function PerformanceAIDashboardView({
           "Generate creates review-required drafts only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
       };
       recordGenerateSummary(runSummary);
+      updateProjectStatus({
+        state: "working",
+        area: "generate",
+        title: "Generate working",
+        detail: `Running ${systemLabel} from the locked site.`,
+        nextAction: "Wait for the run to finish, queue, or show a blocker.",
+      });
       appendChatMessage(
         "assistant",
         [
@@ -14254,6 +14678,13 @@ function PerformanceAIDashboardView({
         });
         return next;
       });
+      updateProjectStatus({
+        state: "needs review",
+        area: "generate",
+        title: "Generate needs review",
+        detail: `${systemLabel} draft is current in this workspace.`,
+        nextAction: runSummary.next_action,
+      });
     },
     [
       askClarification,
@@ -14278,6 +14709,7 @@ function PerformanceAIDashboardView({
       withReactiveRerunContext,
       reactiveValidation,
       reactiveChangedSystems,
+      updateProjectStatus,
     ],
   );
 
@@ -14508,9 +14940,26 @@ function PerformanceAIDashboardView({
       if (value !== previewQuality) {
         previewQualityProbeRef.current = { value, startedAt: markCivoraInteraction() };
       }
+      if (value === "high") {
+        updateProjectStatus({
+          state: "working",
+          area: "ai realism",
+          title: "Creating AI realism",
+          detail: "Civora is switching to high-quality visual preview mode.",
+          nextAction: "Review the preview panel for provider, object, or layout blockers.",
+        });
+      } else {
+        updateProjectStatus({
+          state: "ready",
+          area: "ai realism",
+          title: "AI realism off",
+          detail: "Returned to Standard preview quality.",
+          nextAction: "Continue drafting or open Generate when ready.",
+        });
+      }
       setPreviewQuality(value);
     },
-    [previewQuality],
+    [previewQuality, updateProjectStatus],
   );
 
   useEffect(() => {
@@ -14787,7 +15236,13 @@ function PerformanceAIDashboardView({
     if (!token) {
       const message = "Delete blocked: sign in and reconnect to the backend before deleting saved projects.";
       setProjectDrawerNotice(message);
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "projects",
+        title: "Delete blocked",
+        detail: "Sign in and reconnect to the backend before deleting saved projects.",
+        nextAction: "Sign in or reconnect backend, then retry delete from Projects.",
+      });
       measureCivoraInteractionAfterPaint("projects.drawer.delete_project.blocked", deleteStartedAt, {
         projectId: projectIdToDelete,
       });
@@ -14799,7 +15254,13 @@ function PerformanceAIDashboardView({
     );
     if (!confirmed) return;
     try {
-      setStatusMessage("Deleting project...");
+      updateProjectStatus({
+        state: "working",
+        area: "projects",
+        title: "Deleting project",
+        detail: `Deleting "${target?.name || "Untitled Project"}" from saved projects.`,
+        nextAction: "Wait for the backend to confirm deletion or show a blocker.",
+      });
       const response = await deleteJson<{ success: boolean }>(`/api/projects/${projectIdToDelete}`, {
         token,
       });
@@ -14820,7 +15281,13 @@ function PerformanceAIDashboardView({
         await refreshProjects(token);
       }
       setProjectDrawerNotice("Project deleted.");
-      setStatusMessage("Project deleted.");
+      updateProjectStatus({
+        state: "ready",
+        area: "projects",
+        title: "Project deleted",
+        detail: "The saved project was deleted.",
+        nextAction: "Start or open another project before continuing.",
+      });
       measureCivoraInteractionAfterPaint("projects.drawer.delete_project", deleteStartedAt, {
         projectId: projectIdToDelete,
       });
@@ -14828,7 +15295,13 @@ function PerformanceAIDashboardView({
       const message =
         error instanceof Error ? `Delete blocked: ${error.message}` : "Delete blocked: could not delete project.";
       setProjectDrawerNotice(message);
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "projects",
+        title: "Delete blocked",
+        detail: message,
+        nextAction: "Check auth/backend connectivity, then retry delete from Projects.",
+      });
       measureCivoraInteractionAfterPaint("projects.drawer.delete_project.failed", deleteStartedAt, {
         projectId: projectIdToDelete,
       });
@@ -15157,6 +15630,13 @@ function PerformanceAIDashboardView({
   };
 
   const handleMakeReviewPackage = () => {
+    updateProjectStatus({
+      state: "working",
+      area: "deliver",
+      title: "Creating review package",
+      detail: "Civora is assembling available review deliverables and missing-item notes.",
+      nextAction: "Wait for the package summary to show created items or exact blockers.",
+    });
     const blockers = getPlanSheetBlockers();
     const missing = uniqueStrings([
       ...blockers,
@@ -15261,7 +15741,15 @@ function PerformanceAIDashboardView({
       ].join(" "),
       "status",
     );
-    setStatusMessage(summary.blocked ? `Review package blocked: ${summary.next_action}` : "Review package created. Engineer review required.");
+    updateProjectStatus({
+      state: summary.blocked ? "blocked" : "needs review",
+      area: "deliver",
+      title: summary.blocked ? "Review package blocked" : "Review package needs review",
+      detail: summary.blocked
+        ? `Missing package inputs: ${summary.missing.slice(0, 3).join("; ") || "no usable output created"}.`
+        : "Review package created from available outputs.",
+      nextAction: summary.next_action,
+    });
   };
 
   const handlePlanSheetExportJson = () => {
@@ -17180,6 +17668,13 @@ function PerformanceAIDashboardView({
   const activeCustomerTemplate = customerTemplates?.behavior?.active_template ?? null;
   const customerTemplateBlockerCount = Number(customerTemplates?.behavior?.blockers?.length ?? 0);
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
+  const showProjectStatusSummary =
+    sidePanelForRender === "site_existing" ||
+    sidePanelForRender === "generate" ||
+    sidePanelForRender === "deliverables" ||
+    sidePanelForRender === "chat" ||
+    sidePanelForRender === "projects" ||
+    sidePanelForRender === "model";
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
     dashboard: "dashboard",
@@ -17597,7 +18092,13 @@ function PerformanceAIDashboardView({
     }
     if (activeSidePanel === "projects" && document.querySelector('[data-testid="projects-drawer"]')) {
       handleCloseSidePanel();
-      setStatusMessage("Projects drawer closed.");
+      updateProjectStatus({
+        state: "ready",
+        area: "projects",
+        title: "Projects closed",
+        detail: "Projects drawer closed.",
+        nextAction: "Continue from the canvas or use / for commands.",
+      });
       return;
     }
     if (previewFullscreenOpen) setPreviewFullscreenOpen(false);
@@ -17607,8 +18108,14 @@ function PerformanceAIDashboardView({
     setPendingClarification(null);
     setPreviewInteraction("static");
     setCadToolRequest({ id: Date.now(), tool: "select" });
-    setStatusMessage("Active drawing/tool state cancelled.");
-  }, [activeSidePanel, handleCloseSidePanel, previewFullscreenOpen, shortcutsOverlayOpen]);
+    updateProjectStatus({
+      state: "ready",
+      area: "chat",
+      title: "Active tool cancelled",
+      detail: "Active drawing/tool state cancelled.",
+      nextAction: "Select another tool, continue drawing, or use the command bar.",
+    });
+  }, [activeSidePanel, handleCloseSidePanel, previewFullscreenOpen, shortcutsOverlayOpen, updateProjectStatus]);
 
   const handleDeleteSelectedObject = useCallback(() => {
     const target = activePlacementId
@@ -17617,33 +18124,64 @@ function PerformanceAIDashboardView({
     if (!target) {
       const message = "Delete blocked: no object is selected.";
       setObjectManagerStatusMessage(message);
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "chat",
+        title: "Delete blocked",
+        detail: "No object is selected.",
+        nextAction: "Select an editable draft object, then press Delete again.",
+      });
       appendChatMessage("assistant", message, "status");
       return;
     }
     if (target.type === "site" || target.capabilities?.deletable === false) {
       const message = `Delete blocked: ${target.label} cannot be deleted from shortcuts.`;
       setObjectManagerStatusMessage(message);
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "chat",
+        title: "Delete blocked",
+        detail: `${target.label} cannot be deleted from shortcuts.`,
+        nextAction: "Open Object Manager to review object locks and capabilities.",
+      });
       appendChatMessage("assistant", message, "status");
       return;
     }
     if (target.locked) {
       const message = `Delete blocked: unlock ${target.label} before deleting it.`;
       setObjectManagerStatusMessage(message);
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "chat",
+        title: "Delete blocked",
+        detail: `Unlock ${target.label} before deleting it.`,
+        nextAction: "Open Object Manager, unlock the object if appropriate, then delete.",
+      });
       appendChatMessage("assistant", message, "status");
       return;
     }
     setLastDraftAction({ action: "delete", object: target });
     handleRemoveBuilding(target.id);
     appendChatMessage("assistant", `Deleted ${target.label}.`, "status");
-  }, [activePlacementId, buildingPlacements, handleRemoveBuilding]);
+    updateProjectStatus({
+      state: "stale",
+      area: "chat",
+      title: "Object deleted",
+      detail: `Deleted ${target.label}. Generated systems may be stale.`,
+      nextAction: "Undo if needed, or rerun affected generated systems.",
+    });
+  }, [activePlacementId, buildingPlacements, handleRemoveBuilding, updateProjectStatus]);
 
   const handleUndoDraftAction = useCallback(() => {
     if (!lastDraftAction) {
       const message = "Undo blocked: no supported draft action is available to undo.";
-      setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "chat",
+        title: "Undo blocked",
+        detail: "No supported draft action is available to undo.",
+        nextAction: "Continue editing; the next supported draft add/delete can be undone.",
+      });
       appendChatMessage("assistant", message, "status");
       return;
     }
@@ -17651,26 +18189,51 @@ function PerformanceAIDashboardView({
       setBuildingPlacements((prev) => prev.filter((item) => item.id !== lastDraftAction.object.id));
       setActivePlacementId((prev) => (prev === lastDraftAction.object.id ? null : prev));
       setPlacementModeEnabled(false);
-      setStatusMessage(`Undo: removed ${lastDraftAction.object.label}.`);
+      updateProjectStatus({
+        state: "stale",
+        area: "chat",
+        title: "Undo complete",
+        detail: `Undo removed ${lastDraftAction.object.label}.`,
+        nextAction: "Review objects, then rerun affected generated systems if needed.",
+      });
       appendChatMessage("assistant", `Undo: removed ${lastDraftAction.object.label}.`, "status");
       setLastDraftAction(null);
       return;
     }
     handleRestoreBuilding(lastDraftAction.object);
     appendChatMessage("assistant", `Undo: restored ${lastDraftAction.object.label}.`, "status");
+    updateProjectStatus({
+      state: "stale",
+      area: "chat",
+      title: "Undo complete",
+      detail: `Undo restored ${lastDraftAction.object.label}.`,
+      nextAction: "Review objects, then rerun affected generated systems if needed.",
+    });
     setLastDraftAction(null);
-  }, [handleRestoreBuilding, lastDraftAction]);
+  }, [handleRestoreBuilding, lastDraftAction, updateProjectStatus]);
 
   const handleShortcutSaveProject = useCallback(() => {
     const effectiveProjectId = resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
     if (!token) {
       appendChatMessage("assistant", "Save blocked: sign in/connect backend to save projects.", "status");
-      setStatusMessage("Save blocked: sign in/connect backend to save projects.");
+      updateProjectStatus({
+        state: "blocked",
+        area: "projects",
+        title: "Save blocked",
+        detail: "Sign in/connect backend to save projects.",
+        nextAction: "Sign in or reconnect backend, then press Cmd/Ctrl+S again.",
+      });
       return;
     }
     if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
       appendChatMessage("assistant", "Save blocked: demo workspace changes stay local and are not saved to pilot projects.", "status");
-      setStatusMessage("Demo workspace changes stay local and are not saved to pilot projects.");
+      updateProjectStatus({
+        state: "blocked",
+        area: "projects",
+        title: "Save blocked",
+        detail: "Demo workspace changes stay local and are not saved to pilot projects.",
+        nextAction: "Start a non-demo project or sign in/connect backend before saving.",
+      });
       return;
     }
     void saveProject().then((project) => {
@@ -17682,7 +18245,7 @@ function PerformanceAIDashboardView({
         "status",
       );
     });
-  }, [currentProject?.project_id, effectiveDemoWorkspaceEnabled, projectId, saveProject, token]);
+  }, [currentProject?.project_id, effectiveDemoWorkspaceEnabled, projectId, saveProject, token, updateProjectStatus]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -17734,20 +18297,38 @@ function PerformanceAIDashboardView({
       if (key === "g") {
         event.preventDefault();
         handleOpenSidePanel("generate");
-        setStatusMessage("Generate panel opened.");
+        updateProjectStatus({
+          state: "ready",
+          area: "generate",
+          title: "Generate opened",
+          detail: "Generate panel opened.",
+          nextAction: "Choose a focused system or run the unambiguous generate control.",
+        });
         return;
       }
       if (key === "d") {
         event.preventDefault();
         handleOpenWorkspaceMode("canvas");
         handleOpenSidePanel("objects");
-        setStatusMessage("Draw Canvas mode opened.");
+        updateProjectStatus({
+          state: "ready",
+          area: "setup",
+          title: "Draw opened",
+          detail: "Draw Canvas mode opened.",
+          nextAction: "Select a draw/object tool or use the command bar.",
+        });
         return;
       }
       if (key === "p") {
         event.preventDefault();
         handleOpenSidePanel("projects");
-        setStatusMessage("Projects drawer opened.");
+        updateProjectStatus({
+          state: "ready",
+          area: "projects",
+          title: "Projects opened",
+          detail: "Projects drawer opened.",
+          nextAction: "Save, open, or delete a project from the drawer.",
+        });
       }
     };
 
@@ -17774,6 +18355,7 @@ function PerformanceAIDashboardView({
     handleOpenWorkspaceMode,
     handleShortcutSaveProject,
     handleUndoDraftAction,
+    updateProjectStatus,
   ]);
 
   const supportedShortcuts = [
@@ -19106,6 +19688,11 @@ function PerformanceAIDashboardView({
 	                    </div>
 	                  </div>
 	                ) : null}
+                {showProjectStatusSummary ? (
+                  <div className="mb-4">
+                    <ProjectStatusSummaryCard summary={projectStatusSummary} />
+                  </div>
+                ) : null}
                 {sidePanelForRender === "projects" ? (
                   <div className="space-y-4" data-testid="projects-drawer">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -27110,7 +27697,7 @@ function PerformanceAIDashboardView({
               hasVisibleActiveJob={Boolean(visibleActiveJob)}
               activePlanTool={activePlanTool}
               thinkingState={thinkingState}
-              statusText={chatSummary || statusMessage}
+              statusText={chatSummary || formatProjectStatusText(projectStatusSummary) || statusMessage}
               commandContext={{
                 mode: activePrimaryWorkflowKey,
                 interaction: previewInteraction,
