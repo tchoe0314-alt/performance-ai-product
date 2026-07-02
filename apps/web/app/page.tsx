@@ -1622,6 +1622,73 @@ const formatCustomGeometryMetrics = (item: BuildingPlacement) => {
   return parts.join(" · ");
 };
 
+const getObjectDisplayType = (item: BuildingPlacement) =>
+  SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object";
+
+const getObjectLayerLabel = (item: BuildingPlacement) => {
+  const rawLayer =
+    typeof item.meta?.layer === "string"
+      ? item.meta.layer
+      : typeof item.meta?.cad_layer === "string"
+        ? item.meta.cad_layer
+        : SITE_OBJECT_CATALOG[item.type ?? "custom"]?.category;
+  return rawLayer ? String(rawLayer).replace(/_/g, " ") : "draft";
+};
+
+const getObjectSourceLabel = (item: BuildingPlacement) => {
+  if (item.meta?.ai_realism_artifact) return "AI realism visualization only";
+  if (item.source === "manual_drawn") return "manual drawn";
+  if (item.source === "generated" || item.generated) return "generated draft";
+  if (item.source === "detected_from_gis") return "GIS review candidate";
+  if (item.source === "detected_from_image") return "image/PDF review candidate";
+  if (item.source === "inferred") return "inferred review candidate";
+  if (item.source === "user_confirmed") return "user confirmed draft";
+  return "user draft";
+};
+
+const getObjectReviewLabel = (item: BuildingPlacement) => {
+  if (item.type === "site") return "locked site boundary";
+  if (item.meta?.ai_realism_artifact) return "visualization only";
+  if (item.locked) return "locked";
+  if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") {
+    return "source review required";
+  }
+  if (item.type === "custom" || item.source === "manual_drawn") return "draft geometry review required";
+  return item.placed ? "draft placed" : "pending placement";
+};
+
+const getObjectDimensionsLabel = (item: BuildingPlacement) => {
+  if (item.type === "custom") return formatCustomGeometryMetrics(item);
+  const pieces = [`${Math.round(item.w)} ft x ${Math.round(item.d)} ft`];
+  if (typeof item.h === "number" && item.h > 0) pieces.push(`${Math.round(item.h)} ft high`);
+  if (item.type === "parking" && typeof item.stallCount === "number") {
+    pieces.push(`${Math.round(item.stallCount)} stalls`);
+  }
+  return pieces.join(" · ");
+};
+
+const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy") => {
+  if (item.type === "site") {
+    return `${action} blocked: locked site boundary is controlled from Setup.`;
+  }
+  if (item.meta?.ai_realism_artifact) {
+    return `${action} blocked: AI realism artifacts are visualization only, not editable site evidence.`;
+  }
+  if (action === "delete" && item.capabilities?.deletable === false) {
+    return `Delete blocked: ${item.label} is source-only or required project evidence.`;
+  }
+  if ((action === "rename" || action === "style" || action === "type") && item.locked) {
+    return `${action} blocked: unlock ${item.label} before editing metadata.`;
+  }
+  if (action === "delete" && item.locked) {
+    return `Delete blocked: unlock ${item.label} before deleting it.`;
+  }
+  if (action === "copy") {
+    return `Duplicate blocked: object copy is not supported yet for ${item.label}; select it and add a new object instead.`;
+  }
+  return null;
+};
+
 function CustomGeometryHandoffDetails({
   item,
   units,
@@ -2611,6 +2678,8 @@ function PerformanceAIDashboardView({
   const [buildingPlacements, setBuildingPlacements] = useState<BuildingPlacement[]>([]);
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
+  const [objectManagerStatusMessage, setObjectManagerStatusMessage] = useState("");
   const [objectPrompt, setObjectPrompt] = useState("");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
@@ -5250,7 +5319,12 @@ function PerformanceAIDashboardView({
     const debugEmptyLayout =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("chat226EmptyLayout") === "1";
-    const demoPlacements = debugEmptyLayout
+    const debugEmptyObjects =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("chat230EmptyObjects") === "1";
+    const demoPlacements = debugEmptyObjects
+      ? []
+      : debugEmptyLayout
       ? createDemoPlacements().filter((item) => item.type === "site")
       : createDemoPlacements();
     const demoResult = createDemoPlanResponse();
@@ -5864,6 +5938,14 @@ function PerformanceAIDashboardView({
       setFocusObjectId(null);
     }
   }, [buildingPlacements, debugLog, focusObjectId]);
+
+  useEffect(() => {
+    setSelectedObjectIds((prev) => {
+      const validIds = new Set(buildingPlacements.map((item) => item.id));
+      const next = prev.filter((id) => validIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [buildingPlacements]);
 
   useEffect(() => {
     if (!debugPreview) return;
@@ -6543,6 +6625,7 @@ function PerformanceAIDashboardView({
     debugLog("remove-object", { id });
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
     setActivePlacementId((prev) => (prev === id ? null : prev));
+    setSelectedObjectIds((prev) => prev.filter((itemId) => itemId !== id));
     setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
     setFocusObjectId((prev) => (prev === id ? null : prev));
     markSystemsStale(systemsImpactedByPlacement(target));
@@ -6569,6 +6652,123 @@ function PerformanceAIDashboardView({
         };
       });
   }, [clearGeneratedPreview, markSystemsStale, systemsImpactedByPlacement]);
+
+  const reportObjectActionBlocker = useCallback((message: string) => {
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+  }, []);
+
+  const handleObjectManagerSelect = useCallback((id: string) => {
+    setActivePlacementId(id);
+    setSelectedObjectIds([id]);
+    setPreviewInteraction("edit");
+  }, []);
+
+  const handleObjectManagerToggleMultiSelect = useCallback((id: string, checked: boolean) => {
+    setSelectedObjectIds((prev) => {
+      const next = checked
+        ? Array.from(new Set([...prev, id]))
+        : prev.filter((itemId) => itemId !== id);
+      if (checked) setActivePlacementId(id);
+      return next;
+    });
+  }, []);
+
+  const handleObjectManagerDelete = useCallback((item: BuildingPlacement) => {
+    const blocker = getObjectEditBlocker(item, "delete");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    setLastDraftAction({ action: "delete", object: item });
+    handleRemoveBuilding(item.id);
+    appendChatMessage("assistant", `Deleted ${item.label}.`, "status");
+  }, [handleRemoveBuilding, reportObjectActionBlocker]);
+
+  const handleObjectManagerCopy = useCallback((item: BuildingPlacement) => {
+    reportObjectActionBlocker(getObjectEditBlocker(item, "copy") ?? `Duplicate blocked: object copy is not supported yet for ${item.label}.`);
+  }, [reportObjectActionBlocker]);
+
+  const handleObjectManagerBulkVisibility = useCallback((hidden: boolean) => {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Bulk visibility blocked: select one or more objects first.");
+      return;
+    }
+    const blocked = targets
+      .map((item) => getObjectEditBlocker(item, "hide"))
+      .filter(Boolean) as string[];
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "hide"));
+    if (!editable.length) {
+      reportObjectActionBlocker(blocked[0] ?? "Bulk visibility blocked: selected objects cannot be hidden from the preview.");
+      return;
+    }
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, {
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: hidden,
+        },
+      });
+    });
+    const message = `${hidden ? "Hidden" : "Shown"} ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blocked.length ? `; ${blocked.length} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
+
+  const handleObjectManagerBulkColor = useCallback((color: string) => {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Bulk color blocked: select one or more editable objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "style"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Bulk color blocked: selected objects are locked, source-only, or not editable.");
+      return;
+    }
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, {
+        meta: {
+          ...(item.meta ?? {}),
+          ui_color: color,
+        },
+      });
+    });
+    const message = `Updated color for ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
+
+  const handleObjectManagerBulkType = useCallback((nextType: SiteObjectType) => {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Bulk layer/type blocked: select one or more editable objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "type"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Bulk layer/type blocked: selected objects are locked, source-only, or not editable.");
+      return;
+    }
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, {
+        type: nextType,
+        use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
+        meta: {
+          ...(item.meta ?? {}),
+          category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
+        },
+      });
+    });
+    const message = `Updated layer/type for ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
 
   const handleAcceptDetected = useCallback((id: string) => {
     clearGeneratedPreview();
@@ -9504,8 +9704,28 @@ function PerformanceAIDashboardView({
     if (/^hide utilities$/.test(normalized)) {
       appendChatMessage("user", message);
       setPreviewLayers((prev) => ({ ...prev, utilities: false, drainage: false, structures: false }));
-      appendChatMessage("assistant", "Utility and drainage layers are hidden in the preview.", "status");
-      setStatusMessage("Utilities hidden.");
+      const hiddenTypes: SiteObjectType[] = ["utility_corridor", "manhole", "hydrant", "inlet", "outfall", "basin"];
+      const hiddenCount = buildingPlacements.filter((item) => item.type && hiddenTypes.includes(item.type)).length;
+      setBuildingPlacements((prev) =>
+        prev.map((item) => {
+          if (!item.type || !hiddenTypes.includes(item.type)) return item;
+          return {
+            ...item,
+            meta: {
+              ...(item.meta ?? {}),
+              ui_hidden: true,
+            },
+          };
+        }),
+      );
+      appendChatMessage(
+        "assistant",
+        hiddenCount
+          ? `Utility and drainage layers are hidden in the preview. ${hiddenCount} utility/drainage object${hiddenCount === 1 ? "" : "s"} are marked hidden in Object Manager.`
+          : "Utility and drainage layers are hidden in the preview. No utility/drainage objects are in Object Manager yet.",
+        "status",
+      );
+      setStatusMessage(hiddenCount ? `Utilities hidden; ${hiddenCount} objects marked hidden.` : "Utilities hidden.");
       return true;
     }
     if (/^show only blockers$/.test(normalized)) {
@@ -16879,6 +17099,16 @@ function PerformanceAIDashboardView({
     () => buildingPlacements.find((item) => item.id === activePlacementId) ?? null,
     [activePlacementId, buildingPlacements],
   );
+  const selectedObjectSet = useMemo(() => new Set(selectedObjectIds), [selectedObjectIds]);
+  const selectedObjectRows = useMemo(
+    () => buildingPlacements.filter((item) => selectedObjectSet.has(item.id)),
+    [buildingPlacements, selectedObjectSet],
+  );
+  const hiddenObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden)).length;
+  const objectManagerTypes = useMemo(
+    () => Array.from(new Set(buildingPlacements.map((item) => getObjectDisplayType(item)))).sort(),
+    [buildingPlacements],
+  );
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     dashboard: { title: "Dashboard", desc: "Review project readiness, health, and active work." },
@@ -17373,6 +17603,7 @@ function PerformanceAIDashboardView({
     if (previewFullscreenOpen) setPreviewFullscreenOpen(false);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
+    setSelectedObjectIds([]);
     setPendingClarification(null);
     setPreviewInteraction("static");
     setCadToolRequest({ id: Date.now(), tool: "select" });
@@ -17385,18 +17616,21 @@ function PerformanceAIDashboardView({
       : null;
     if (!target) {
       const message = "Delete blocked: no object is selected.";
+      setObjectManagerStatusMessage(message);
       setStatusMessage(message);
       appendChatMessage("assistant", message, "status");
       return;
     }
     if (target.type === "site" || target.capabilities?.deletable === false) {
       const message = `Delete blocked: ${target.label} cannot be deleted from shortcuts.`;
+      setObjectManagerStatusMessage(message);
       setStatusMessage(message);
       appendChatMessage("assistant", message, "status");
       return;
     }
     if (target.locked) {
       const message = `Delete blocked: unlock ${target.label} before deleting it.`;
+      setObjectManagerStatusMessage(message);
       setStatusMessage(message);
       appendChatMessage("assistant", message, "status");
       return;
@@ -22986,8 +23220,18 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Selected object</p>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="selected-object-inspector">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Selected Object Inspector</p>
+                          <p className="mt-1 text-sm text-slate-600">Review-only object controls tied to the canvas selection.</p>
+                        </div>
+                        {selectedBuilding ? (
+                          <span className="shrink-0 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            {selectedBuilding.meta?.ui_hidden ? "Hidden" : "Visible"}
+                          </span>
+                        ) : null}
+                      </div>
                       {selectedBuilding ? (
                         <div className="mt-3 space-y-2 text-sm text-slate-700">
                           {sourceConfidenceByObjectId.get(selectedBuilding.id) ? (
@@ -23016,17 +23260,48 @@ function PerformanceAIDashboardView({
                             </div>
                           ) : null}
                           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Name</p>
-                            <p className="mt-1 font-semibold text-slate-900">{selectedBuilding.label}</p>
+                            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              Name
+                              <input
+                                type="text"
+                                value={selectedBuilding.label}
+                                onChange={(event) => {
+                                  const blocker = getObjectEditBlocker(selectedBuilding, "rename");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(selectedBuilding.id, { label: event.target.value });
+                                }}
+                                aria-label="Selected object name"
+                                data-testid="selected-object-name-input"
+                                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm font-semibold normal-case tracking-normal text-slate-900"
+                              />
+                              <span className="mt-1 block text-xs font-semibold normal-case tracking-normal text-slate-700" data-testid="selected-object-name-value">
+                                {selectedBuilding.label || "Unnamed object"}
+                              </span>
+                            </label>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-2 gap-2" data-testid="selected-object-inspector-facts">
                             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Size</p>
-                              <p className="mt-1 font-semibold text-slate-900">{Math.round(selectedBuilding.w)} x {Math.round(selectedBuilding.d)} ft</p>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Type</p>
+                              <p className="mt-1 font-semibold text-slate-900">{getObjectDisplayType(selectedBuilding)}</p>
                             </div>
                             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Status</p>
-                              <p className="mt-1 font-semibold text-slate-900">{selectedBuilding.placed ? "Placed" : "Unplaced"}</p>
+                              <p className="mt-1 font-semibold text-slate-900">{getObjectReviewLabel(selectedBuilding)}</p>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Source</p>
+                              <p className="mt-1 font-semibold text-slate-900">{getObjectSourceLabel(selectedBuilding)}</p>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Layer</p>
+                              <p className="mt-1 font-semibold text-slate-900">{getObjectLayerLabel(selectedBuilding)}</p>
+                            </div>
+                            <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Dimensions / metrics</p>
+                              <p className="mt-1 font-semibold text-slate-900">{getObjectDimensionsLabel(selectedBuilding)}</p>
                             </div>
                           </div>
                           <p className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
@@ -23046,9 +23321,30 @@ function PerformanceAIDashboardView({
                                   ? "Move/edit controls available for this draft object."
                                   : "Move/edit blocked: object needs placement first."}
                           </p>
-                          <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-                            {selectedBuilding.locked ? "Unlock object" : "Lock object"}
-                          </button>
+                          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                            Review-only: this object is draft/site evidence for qualified review, not construction-ready output.
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                              {selectedBuilding.locked ? "Unlock object" : "Lock object"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateBuilding(selectedBuilding.id, {
+                                  meta: {
+                                    ...(selectedBuilding.meta ?? {}),
+                                    ui_hidden: !Boolean(selectedBuilding.meta?.ui_hidden),
+                                  },
+                                })
+                              }
+                              disabled={selectedBuilding.type === "site"}
+                              data-testid="selected-object-hide-toggle"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {selectedBuilding.meta?.ui_hidden ? "Show object" : "Hide object"}
+                            </button>
+                          </div>
                           <div className="grid grid-cols-2 gap-2 text-[11px]">
                             <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
                               X
@@ -23092,17 +23388,17 @@ function PerformanceAIDashboardView({
                             <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
                               Source
                               <input
-                                value={selectedBuilding.source ?? "user"}
+                                value={getObjectSourceLabel(selectedBuilding)}
                                 readOnly
                                 className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 normal-case tracking-normal text-slate-700"
                               />
                             </label>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-2 gap-2" data-testid="selected-object-actions">
                             <button
                               type="button"
                               onClick={() => {
-                                setActivePlacementId(selectedBuilding.id);
+                                handleObjectManagerSelect(selectedBuilding.id);
                                 setPlacementModeEnabled(true);
                               }}
                               className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
@@ -23119,10 +23415,29 @@ function PerformanceAIDashboardView({
                             >
                               Focus
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerCopy(selectedBuilding)}
+                              data-testid="selected-object-copy"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                            >
+                              Copy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerDelete(selectedBuilding)}
+                              disabled={selectedBuilding.type === "site"}
+                              data-testid="selected-object-delete"
+                              className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
                           </div>
                         </div>
                       ) : (
-                        <p className="mt-3 text-sm text-slate-500">Select an object on the canvas or in Objects to inspect its details.</p>
+                        <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500" data-testid="selected-object-empty-state">
+                          No object selected. Select an object in Object Manager or on the canvas to inspect it.
+                        </p>
                       )}
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -23945,18 +24260,124 @@ function PerformanceAIDashboardView({
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Canvas Objects
-                        </p>
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                          {placedObjects.length} placed / {pendingPlacementObjects.length} pending
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Object Manager
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900" data-testid="object-manager-summary">
+                            {buildingPlacements.length} object{buildingPlacements.length === 1 ? "" : "s"} · {placedObjects.length} placed · {pendingPlacementObjects.length} pending
+                          </p>
+                          {objectManagerTypes.length ? (
+                            <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
+                              {objectManagerTypes.slice(0, 5).join(", ")}
+                            </p>
+                          ) : null}
+                        </div>
+                        <span className="shrink-0 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Selected {selectedObjectIds.length}
                         </span>
                       </div>
+                      {hiddenObjectCount ? (
+                        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="object-manager-hidden-state">
+                          <p className="text-xs font-semibold text-slate-700">
+                            {hiddenObjectCount} hidden object{hiddenObjectCount === 1 ? "" : "s"} are excluded from the preview.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              buildingPlacements
+                                .filter((item) => Boolean(item.meta?.ui_hidden))
+                                .forEach((item) => {
+                                  handleUpdateBuilding(item.id, {
+                                    meta: {
+                                      ...(item.meta ?? {}),
+                                      ui_hidden: false,
+                                    },
+                                  });
+                                });
+                              setStatusMessage("All hidden objects are visible again.");
+                            }}
+                            data-testid="object-manager-show-all"
+                            className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                          >
+                            Show all
+                          </button>
+                        </div>
+                      ) : null}
+                      {objectManagerStatusMessage ? (
+                        <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="object-manager-status">
+                          {objectManagerStatusMessage}
+                        </p>
+                      ) : null}
+                      {selectedObjectIds.length > 1 ? (
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="object-manager-multi-select">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-semibold text-slate-700">
+                              {selectedObjectRows.length} objects selected
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedObjectIds([])}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkVisibility(true)}
+                              data-testid="object-manager-bulk-hide"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Hide selected
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkVisibility(false)}
+                              data-testid="object-manager-bulk-show"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Show selected
+                            </button>
+                            <label className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Color
+                              <input
+                                type="color"
+                                defaultValue="#0f766e"
+                                onChange={(event) => handleObjectManagerBulkColor(event.target.value)}
+                                data-testid="object-manager-bulk-color"
+                                className="h-7 w-9 rounded border border-slate-200 bg-white"
+                              />
+                            </label>
+                            <select
+                              aria-label="Bulk layer type"
+                              data-testid="object-manager-bulk-type"
+                              defaultValue=""
+                              onChange={(event) => {
+                                if (!event.target.value) return;
+                                handleObjectManagerBulkType(event.target.value as SiteObjectType);
+                              }}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold text-slate-600"
+                            >
+                              <option value="">Layer/type</option>
+                              {Object.entries(SITE_OBJECT_CATALOG)
+                                .filter(([type]) => type !== "site")
+                                .map(([type, catalog]) => (
+                                  <option key={`bulk-${type}`} value={type}>
+                                    {catalog.label}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
                         {buildingPlacements.length ? (
                           buildingPlacements.map((item) => {
                             const confidenceEntry = sourceConfidenceByObjectId.get(item.id);
+                            const isSelected = activePlacementId === item.id || selectedObjectSet.has(item.id);
                             return (
                             <div
                               key={item.id}
@@ -23969,17 +24390,34 @@ function PerformanceAIDashboardView({
                                 setPlacementModeEnabled(true);
                               }}
                               className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 ${
-                                activePlacementId === item.id
+                                isSelected
                                   ? "border-slate-900 ring-2 ring-slate-200"
                                   : "border-slate-200"
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-slate-900">{item.label}</p>
-                                  <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">
-                                    {SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object"} ·{" "}
-                                    {item.placed ? "Placed" : "Unplaced"}
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedObjectSet.has(item.id)}
+                                      onChange={(event) => handleObjectManagerToggleMultiSelect(item.id, event.target.checked)}
+                                      aria-label={`Select ${item.label} for bulk actions`}
+                                      data-testid="object-manager-bulk-select"
+                                      className="mt-1 h-4 w-4 shrink-0 accent-slate-950"
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="truncate font-semibold text-slate-900">{item.label}</p>
+                                      <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">
+                                        {getObjectDisplayType(item)} · {item.placed ? "Placed" : "Unplaced"} · {item.meta?.ui_hidden ? "Hidden" : "Visible"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <p className="mt-2 text-[11px] font-medium text-slate-500" data-testid="object-manager-row-metrics">
+                                    {getObjectDimensionsLabel(item)}
+                                  </p>
+                                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400" data-testid="object-manager-row-status">
+                                    {getObjectSourceLabel(item)} · {getObjectReviewLabel(item)} · {getObjectLayerLabel(item)}
                                   </p>
                                   {confidenceEntry ? (
                                     <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
@@ -23996,16 +24434,14 @@ function PerformanceAIDashboardView({
                                     <CustomGeometryHandoffDetails item={item} units={units} />
                                   ) : null}
                                 </div>
-                                {item.type !== "site" ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveBuilding(item.id)}
-                                    data-testid="object-manager-delete"
-                                    className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-500"
-                                  >
-                                    Delete
-                                  </button>
-                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => handleObjectManagerDelete(item)}
+                                  data-testid="object-manager-delete"
+                                  className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-500"
+                                >
+                                  Delete
+                                </button>
                               </div>
 	                              {item.type !== "site" ? (
 	                                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
@@ -24018,7 +24454,7 @@ function PerformanceAIDashboardView({
                                         data-testid="object-manager-rename"
 	                                      onChange={(event) =>
 	                                        handleUpdateBuilding(item.id, {
-	                                          label: event.target.value || item.label,
+	                                          label: event.target.value,
 	                                        })
 	                                      }
 	                                      className="rounded-md border border-slate-200 px-2 py-1 text-sm"
@@ -24114,7 +24550,7 @@ function PerformanceAIDashboardView({
 	                                  <button
 	                                    type="button"
 	                                    onClick={() => {
-	                                      setActivePlacementId(item.id);
+	                                      handleObjectManagerSelect(item.id);
 	                                      setPlacementModeEnabled(true);
 	                                    }}
                                       data-testid="object-manager-move"
@@ -24124,10 +24560,7 @@ function PerformanceAIDashboardView({
 	                                  </button>
 	                                  <button
 	                                    type="button"
-	                                    onClick={() => {
-	                                      setActivePlacementId(item.id);
-	                                      setPreviewInteraction("edit");
-	                                    }}
+	                                    onClick={() => handleObjectManagerSelect(item.id)}
                                       data-testid="object-manager-select"
 	                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
 	                                  >
@@ -24136,7 +24569,7 @@ function PerformanceAIDashboardView({
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setActivePlacementId(item.id);
+                                        handleObjectManagerSelect(item.id);
                                         setFocusObjectId(item.id);
                                         setRightRailCollapsed(true);
                                       }}
@@ -24160,13 +24593,56 @@ function PerformanceAIDashboardView({
                                     >
                                       {item.meta?.ui_hidden ? "Show" : "Hide"}
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleObjectManagerSelect(item.id);
+                                        handleOpenPanelFromDrawer("details");
+                                      }}
+                                      data-testid="object-manager-inspect"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Inspect
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerCopy(item)}
+                                      data-testid="object-manager-copy"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Copy
+                                    </button>
 	                                </div>
-	                              ) : null}
+	                              ) : (
+                                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerSelect(item.id)}
+                                      data-testid="object-manager-select"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Select
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleObjectManagerSelect(item.id);
+                                        handleOpenPanelFromDrawer("details");
+                                      }}
+                                      data-testid="object-manager-inspect"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Inspect
+                                    </button>
+                                  </div>
+                                )}
                             </div>
                             );
                           })
                         ) : (
-                          <p className="text-sm text-slate-500">No objects yet.</p>
+                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500" data-testid="object-manager-empty-state">
+                            No objects yet. Draw, add, or ask Civora to create one.
+                          </p>
                         )}
                       </div>
                     </div>
