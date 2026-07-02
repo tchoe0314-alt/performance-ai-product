@@ -390,6 +390,7 @@ type PreviewPanelProps = {
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "edit") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
+  onAiRealismChange?: (event: { type: "generated" | "stale" | "blocked"; detail: string }) => void;
   onSetPreviewLabelDensity: (value: "low" | "standard" | "high") => void;
   onQueuePreviewRefresh: (reason: string) => void;
   previewRefreshing: boolean;
@@ -516,6 +517,7 @@ export default function PreviewPanel({
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
+  onAiRealismChange,
   onSetPreviewLabelDensity,
   onQueuePreviewRefresh,
   preview3DEffectiveItems,
@@ -1150,13 +1152,35 @@ export default function PreviewPanel({
   const aiRealismStale = Boolean(
     aiRealismArtifact && aiRealismArtifact.source_layout_hash !== aiRealismLayoutHash,
   );
+  const aiRealismStaleNoticeRef = useRef("");
+  useEffect(() => {
+    if (!aiRealismStale) {
+      aiRealismStaleNoticeRef.current = "";
+      return;
+    }
+    const key = `${aiRealismArtifact?.generated_timestamp || "artifact"}:${aiRealismLayoutHash}`;
+    if (aiRealismStaleNoticeRef.current === key) return;
+    aiRealismStaleNoticeRef.current = key;
+    onAiRealismChange?.({
+      type: "stale",
+      detail: "AI realism visualization is stale after the review layout changed.",
+    });
+  }, [aiRealismArtifact?.generated_timestamp, aiRealismLayoutHash, aiRealismStale, onAiRealismChange]);
   const generateAiRealismArtifact = useCallback(() => {
     if (!aiRealismSourceObjects.length) {
       setAiRealismBlocker("Add or generate site objects before creating AI realism.");
+      onAiRealismChange?.({
+        type: "blocked",
+        detail: "Add or generate site objects before creating AI realism.",
+      });
       return;
     }
     if (!aiRealismProviderConfigured) {
       setAiRealismBlocker("AI realism provider is not configured.");
+      onAiRealismChange?.({
+        type: "blocked",
+        detail: "AI realism provider is not configured.",
+      });
       return;
     }
     const generated_timestamp = new Date().toISOString();
@@ -1189,6 +1213,10 @@ export default function PreviewPanel({
       image_data_url,
     });
     setAiRealismBlocker(null);
+    onAiRealismChange?.({
+      type: "generated",
+      detail: "AI realism visualization regenerated from the current review layout.",
+    });
   }, [
     aiRealismLayoutHash,
     aiRealismMissingInputs,
@@ -1197,6 +1225,7 @@ export default function PreviewPanel({
     aiRealismSourceSummary,
     currentProjectId,
     hasTerrainSource,
+    onAiRealismChange,
     planPreviewProjectId,
   ]);
   const aiRealismDisplayArtifact = useMemo(

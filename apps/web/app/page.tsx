@@ -2459,6 +2459,40 @@ const projectStatusToneClass: Record<ProjectStatusState, string> = {
 const formatProjectStatusText = (summary: ProjectStatusSummary) =>
   `${summary.state}: ${summary.detail} Next: ${summary.nextAction}`;
 
+type RecentChangeType =
+  | "object_added"
+  | "object_deleted"
+  | "object_renamed"
+  | "object_style_changed"
+  | "object_type_changed"
+  | "object_visibility_changed"
+  | "site_boundary_unlocked"
+  | "site_boundary_relocked"
+  | "generate_recorded"
+  | "review_package_recorded"
+  | "ai_realism_recorded";
+
+type DraftUndoAction =
+  | { action: "add"; object: BuildingPlacement }
+  | { action: "delete"; object: BuildingPlacement }
+  | {
+      action: "update";
+      objectId: string;
+      before: BuildingPlacement;
+      after: BuildingPlacement;
+      label: string;
+    };
+
+type RecentChange = {
+  id: string;
+  type: RecentChangeType;
+  label: string;
+  detail: string;
+  createdAt: number;
+  undo?: DraftUndoAction;
+  undoBlockedReason?: string;
+};
+
 function ProjectStatusSummaryCard({ summary }: { summary: ProjectStatusSummary }) {
   return (
     <div
@@ -2959,11 +2993,9 @@ function PerformanceAIDashboardView({
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [shortcutsOverlayOpen, setShortcutsOverlayOpen] = useState(false);
-  const [lastDraftAction, setLastDraftAction] = useState<
-    | { action: "add"; object: BuildingPlacement }
-    | { action: "delete"; object: BuildingPlacement }
-    | null
-  >(null);
+  const [lastDraftAction, setLastDraftAction] = useState<DraftUndoAction | null>(null);
+  const [recentChanges, setRecentChanges] = useState<RecentChange[]>([]);
+  const [recentChangesOpen, setRecentChangesOpen] = useState(false);
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const commandInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -5240,6 +5272,25 @@ function PerformanceAIDashboardView({
     [],
   );
 
+  const recordRecentChange = useCallback((change: Omit<RecentChange, "id" | "createdAt">) => {
+    const nextChange: RecentChange = {
+      ...change,
+      id: `change-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: Date.now(),
+    };
+    setRecentChanges((current) => [nextChange, ...current].slice(0, 12));
+    setRecentChangesOpen(true);
+    return nextChange;
+  }, []);
+
+  const pushRecoveryMessage = useCallback(
+    (message: string) => {
+      setObjectManagerStatusMessage(message);
+      setStatusMessage(message);
+    },
+    [],
+  );
+
   const applyBackendResult = (data: PlanResponse) => {
     setBackendResult(data);
     if (Array.isArray(data?.assumptions)) {
@@ -6476,6 +6527,14 @@ function PerformanceAIDashboardView({
       setPlacementModeEnabled(true);
       setPreviewMode("2d");
       setPreviewInteraction("edit");
+      setLastDraftAction({ action: "add", object: nextPlacement });
+      recordRecentChange({
+        type: "object_added",
+        label: "Object added",
+        detail: `${nextPlacement.label} was added as draft geometry.`,
+        undo: { action: "add", object: nextPlacement },
+      });
+      pushRecoveryMessage(`Added ${nextPlacement.label}. Undo can remove this draft object.`);
       console.debug("[placement] add-object", {
         id: nextPlacement.id,
         type: nextPlacement.type,
@@ -6507,6 +6566,8 @@ function PerformanceAIDashboardView({
       buildDefaultPolyline,
       computeParkingFootprint,
       markSystemsStale,
+      pushRecoveryMessage,
+      recordRecentChange,
       systemsImpactedByPlacement,
     ],
   );
@@ -6643,11 +6704,64 @@ function PerformanceAIDashboardView({
         nextUpdates.d = footprint.d;
       }
     }
+    const nextObject = target ? { ...target, ...nextUpdates } : null;
+    let recentChange: Omit<RecentChange, "id" | "createdAt"> | null = null;
+    if (target && nextObject) {
+      const undo: DraftUndoAction = {
+        action: "update",
+        objectId: target.id,
+        before: target,
+        after: nextObject,
+        label: target.label,
+      };
+      if (typeof updates.label === "string" && updates.label !== target.label) {
+        recentChange = {
+          type: "object_renamed",
+          label: "Object renamed",
+          detail: `${target.label} renamed to ${updates.label || "Unnamed object"}.`,
+          undo,
+        };
+      } else if (updates.type && updates.type !== target.type) {
+        recentChange = {
+          type: "object_type_changed",
+          label: "Object type changed",
+          detail: `${target.label} changed from ${getObjectDisplayType(target)} to ${SITE_OBJECT_CATALOG[updates.type]?.label ?? updates.type}.`,
+          undo,
+        };
+      } else if (
+        updates.meta &&
+        "ui_hidden" in updates.meta &&
+        Boolean(updates.meta.ui_hidden) !== Boolean(target.meta?.ui_hidden)
+      ) {
+        recentChange = {
+          type: "object_visibility_changed",
+          label: Boolean(updates.meta.ui_hidden) ? "Object hidden" : "Object shown",
+          detail: `${target.label} is now ${Boolean(updates.meta.ui_hidden) ? "hidden from" : "visible in"} the preview.`,
+          undo,
+        };
+      } else if (
+        updates.meta &&
+        ("ui_color" in updates.meta || "color" in updates.meta || "style" in updates.meta)
+      ) {
+        recentChange = {
+          type: "object_style_changed",
+          label: "Object style changed",
+          detail: `${target.label} style changed.`,
+          undo,
+        };
+      }
+    }
     setBuildingPlacements((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
     );
     markSystemsStale(systemsImpactedByPlacement(target));
-    setStatusMessage("Object updated. Regenerate systems to reflect the new layout.");
+    if (recentChange?.undo) {
+      setLastDraftAction(recentChange.undo);
+      recordRecentChange(recentChange);
+      pushRecoveryMessage(`${recentChange.detail} Undo can restore the previous draft object state.`);
+    } else {
+      setStatusMessage("Object updated. Regenerate systems to reflect the new layout.");
+    }
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true });
@@ -6658,6 +6772,8 @@ function PerformanceAIDashboardView({
     currentProject,
     markSystemsStale,
     payloadPreview,
+    pushRecoveryMessage,
+    recordRecentChange,
     resolveParkingParams,
     systemsImpactedByPlacement,
   ]);
@@ -6697,11 +6813,23 @@ function PerformanceAIDashboardView({
     setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
     setFocusObjectId((prev) => (prev === id ? null : prev));
     markSystemsStale(systemsImpactedByPlacement(target));
-    setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
+    if (target) {
+      const undo: DraftUndoAction = { action: "delete", object: target };
+      setLastDraftAction(undo);
+      recordRecentChange({
+        type: "object_deleted",
+        label: "Object deleted",
+        detail: `${target.label} was removed from the draft layout.`,
+        undo,
+      });
+      pushRecoveryMessage(`Deleted ${target.label}. Undo can restore this draft object.`);
+    } else {
+      setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
+    }
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
-  }, [activePlacementId, buildingPlacements, clearGeneratedPreview, markSystemsStale, systemsImpactedByPlacement]);
+  }, [activePlacementId, buildingPlacements, clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordRecentChange, systemsImpactedByPlacement]);
 
   const handleRestoreBuilding = useCallback((snapshot: BuildingPlacement) => {
     clearGeneratedPreview();
@@ -6710,7 +6838,13 @@ function PerformanceAIDashboardView({
       return [...prev, { ...snapshot }];
     });
     markSystemsStale(systemsImpactedByPlacement(snapshot));
-    setStatusMessage("Undo: object restored.");
+    recordRecentChange({
+      type: "object_added",
+      label: "Object restored",
+      detail: `${snapshot.label} was restored from undo.`,
+      undoBlockedReason: "Restore is already an undo result; use object delete if you need to remove it again.",
+    });
+    pushRecoveryMessage(`Undo: restored ${snapshot.label}. Generated systems may be stale.`);
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => {
@@ -6719,7 +6853,7 @@ function PerformanceAIDashboardView({
           track: true,
         };
       });
-  }, [clearGeneratedPreview, markSystemsStale, systemsImpactedByPlacement]);
+  }, [clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordRecentChange, systemsImpactedByPlacement]);
 
   const reportObjectActionBlocker = useCallback((message: string) => {
     setObjectManagerStatusMessage(message);
@@ -9878,6 +10012,14 @@ function PerformanceAIDashboardView({
           : "Utility and drainage layers are hidden in the preview. No utility/drainage objects are in Object Manager yet.",
         "status",
       );
+      recordRecentChange({
+        type: "object_visibility_changed",
+        label: "Utilities hidden",
+        detail: hiddenCount
+          ? `${hiddenCount} utility/drainage object${hiddenCount === 1 ? "" : "s"} marked hidden.`
+          : "Utility and drainage layers hidden; no matching objects were present.",
+        undoBlockedReason: "Use Object Manager Show all to make hidden utility/drainage objects visible again.",
+      });
       setStatusMessage(hiddenCount ? `Utilities hidden; ${hiddenCount} objects marked hidden.` : "Utilities hidden.");
       updateProjectStatus({
         state: "ready",
@@ -12483,8 +12625,14 @@ function PerformanceAIDashboardView({
           : item,
       ),
     );
-    setStatusMessage("Site alignment locked.");
-  }, [autoFitSite, currentProject, payloadPreview, saveProject, siteScaleLocked]);
+    recordRecentChange({
+      type: "site_boundary_relocked",
+      label: "Site boundary relocked",
+      detail: "Site boundary was locked for review drafting.",
+      undoBlockedReason: "Use Change Site / Unlock to edit the boundary again.",
+    });
+    pushRecoveryMessage("Site alignment locked. Unlock is available from Setup if you need to revise the draft boundary.");
+  }, [autoFitSite, currentProject, payloadPreview, pushRecoveryMessage, recordRecentChange, saveProject, siteScaleLocked]);
 
   const handleUnlockSite = useCallback(() => {
     if (!siteScaleLocked) return;
@@ -12531,8 +12679,14 @@ function PerformanceAIDashboardView({
           : item,
       ),
     );
-    setStatusMessage("Site unlocked for editing.");
-  }, [currentProject, payloadPreview, saveProject, siteScaleLocked]);
+    recordRecentChange({
+      type: "site_boundary_unlocked",
+      label: "Site boundary unlocked",
+      detail: "Site boundary is editable again; generated systems may be stale.",
+      undoBlockedReason: "Relock the site boundary from Setup after review.",
+    });
+    pushRecoveryMessage("Site unlocked for editing. Relock the boundary before running Generate.");
+  }, [currentProject, payloadPreview, pushRecoveryMessage, recordRecentChange, saveProject, siteScaleLocked]);
 
   const handleStartBlankSite = useCallback(() => {
     const width = DEFAULT_BLANK_SITE_WIDTH_FT;
@@ -14474,6 +14628,14 @@ function PerformanceAIDashboardView({
       });
       const recordGenerateSummary = (summary: GenerateFlowSummary) => {
         setGenerateFlowSummary(summary);
+        recordRecentChange({
+          type: "generate_recorded",
+          label: summary.blocked ? "Generate blocked" : "Generate recorded",
+          detail: summary.blocked
+            ? `Generate blocked: ${summary.needs_review[0] || summary.next_action}`
+            : `Generate ran ${summary.ran.join(", ") || "none"}; skipped ${summary.skipped.join(", ") || "none"}.`,
+          undoBlockedReason: "Generate history is a review record. Undo draft object edits separately, then rerun Generate if needed.",
+        });
         measureCivoraInteractionAfterPaint("generate.panel.response.visible", generateStartedAt, {
           target,
           blocked: summary.blocked,
@@ -14709,6 +14871,7 @@ function PerformanceAIDashboardView({
       withReactiveRerunContext,
       reactiveValidation,
       reactiveChangedSystems,
+      recordRecentChange,
       updateProjectStatus,
     ],
   );
@@ -15667,6 +15830,14 @@ function PerformanceAIDashboardView({
         "Review package output is review-only and engineer-review-required. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
     };
     setReviewPackageFlowSummary(summary);
+    recordRecentChange({
+      type: "review_package_recorded",
+      label: summary.blocked ? "Review package blocked" : "Review package created",
+      detail: summary.blocked
+        ? `Review package blocked: ${summary.next_action}`
+        : `Review package created: ${summary.outputs_created.join(", ")}.`,
+      undoBlockedReason: "Review package history is a review record. Revise drafts and make the package again if needed.",
+    });
     void persistFlowMetadata({ review_package_flow_summary_v1: summary });
     setPlanSheetSet((current) => {
       const projectName = siteName || currentProject?.name || "Untitled Project";
@@ -18197,6 +18368,29 @@ function PerformanceAIDashboardView({
         nextAction: "Review objects, then rerun affected generated systems if needed.",
       });
       appendChatMessage("assistant", `Undo: removed ${lastDraftAction.object.label}.`, "status");
+      recordRecentChange({
+        type: "object_deleted",
+        label: "Undo removed object",
+        detail: `${lastDraftAction.object.label} was removed by undo.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      setLastDraftAction(null);
+      return;
+    }
+    if (lastDraftAction.action === "update") {
+      setBuildingPlacements((prev) =>
+        prev.map((item) => (item.id === lastDraftAction.objectId ? { ...lastDraftAction.before } : item)),
+      );
+      setActivePlacementId(lastDraftAction.objectId);
+      markSystemsStale(systemsImpactedByPlacement(lastDraftAction.before));
+      pushRecoveryMessage(`Undo: restored previous state for ${lastDraftAction.before.label}.`);
+      appendChatMessage("assistant", `Undo: restored previous state for ${lastDraftAction.before.label}.`, "status");
+      recordRecentChange({
+        type: "object_style_changed",
+        label: "Undo restored object",
+        detail: `${lastDraftAction.before.label} was restored to its previous draft state.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
       setLastDraftAction(null);
       return;
     }
@@ -18210,7 +18404,61 @@ function PerformanceAIDashboardView({
       nextAction: "Review objects, then rerun affected generated systems if needed.",
     });
     setLastDraftAction(null);
-  }, [handleRestoreBuilding, lastDraftAction, updateProjectStatus]);
+  }, [
+    handleRestoreBuilding,
+    lastDraftAction,
+    markSystemsStale,
+    pushRecoveryMessage,
+    recordRecentChange,
+    systemsImpactedByPlacement,
+    updateProjectStatus,
+  ]);
+
+  const handleUndoRecentChange = useCallback((change: RecentChange) => {
+    if (!change.undo) {
+      const message = `Undo blocked: ${change.undoBlockedReason || "this recent change does not have a reversible draft snapshot."}`;
+      pushRecoveryMessage(message);
+      appendChatMessage("assistant", message, "status");
+      return;
+    }
+    const undo = change.undo;
+    if (undo.action === "add") {
+      setBuildingPlacements((prev) => prev.filter((item) => item.id !== undo.object.id));
+      setActivePlacementId((prev) => (prev === undo.object.id ? null : prev));
+      setPlacementModeEnabled(false);
+      markSystemsStale(systemsImpactedByPlacement(undo.object));
+      pushRecoveryMessage(`Undo: removed ${undo.object.label}.`);
+      recordRecentChange({
+        type: "object_deleted",
+        label: "Undo removed object",
+        detail: `${undo.object.label} was removed by undo.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      return;
+    }
+    if (undo.action === "delete") {
+      handleRestoreBuilding(undo.object);
+      return;
+    }
+    setBuildingPlacements((prev) =>
+      prev.map((item) => (item.id === undo.objectId ? { ...undo.before } : item)),
+    );
+    setActivePlacementId(undo.objectId);
+    markSystemsStale(systemsImpactedByPlacement(undo.before));
+    pushRecoveryMessage(`Undo: restored previous state for ${undo.before.label}.`);
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Undo restored object",
+      detail: `${undo.before.label} was restored to its previous draft state.`,
+      undoBlockedReason: "This is already an undo result.",
+    });
+  }, [
+    handleRestoreBuilding,
+    markSystemsStale,
+    pushRecoveryMessage,
+    recordRecentChange,
+    systemsImpactedByPlacement,
+  ]);
 
   const handleShortcutSaveProject = useCallback(() => {
     const effectiveProjectId = resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
@@ -24883,7 +25131,13 @@ function PerformanceAIDashboardView({
                                     },
                                   });
                                 });
-                              setStatusMessage("All hidden objects are visible again.");
+                              recordRecentChange({
+                                type: "object_visibility_changed",
+                                label: "Objects shown",
+                                detail: "All hidden objects are visible again.",
+                                undoBlockedReason: "Hide specific objects again from Object Manager if needed.",
+                              });
+                              pushRecoveryMessage("All hidden objects are visible again.");
                             }}
                             data-testid="object-manager-show-all"
                             className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
@@ -24897,6 +25151,63 @@ function PerformanceAIDashboardView({
                           {objectManagerStatusMessage}
                         </p>
                       ) : null}
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="recent-changes-section">
+                        <div className="flex items-center justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setRecentChangesOpen((value) => !value)}
+                            aria-expanded={recentChangesOpen}
+                            className="min-w-0 text-left"
+                          >
+                            <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Recent changes
+                            </span>
+                            <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
+                              {recentChanges[0]?.detail || "No draft changes recorded yet."}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleUndoDraftAction}
+                            disabled={!lastDraftAction}
+                            data-testid="recent-changes-undo"
+                            className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Undo
+                          </button>
+                        </div>
+                        {recentChangesOpen ? (
+                          <div className="mt-3 space-y-2" data-testid="recent-changes-list">
+                            {recentChanges.length ? (
+                              recentChanges.map((change) => (
+                                <div key={change.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-slate-900">{change.label}</p>
+                                      <p className="mt-1 text-xs text-slate-500">{change.detail}</p>
+                                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                        {new Date(change.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUndoRecentChange(change)}
+                                      data-testid="recent-change-row-undo"
+                                      className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
+                                    >
+                                      {change.undo ? "Undo" : "Why blocked"}
+                                    </button>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-xs font-semibold text-slate-500">
+                                Recent draft UI changes will appear here. Engineering outputs remain review-required.
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                       {selectedObjectIds.length > 1 ? (
                         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="object-manager-multi-select">
                           <div className="flex items-center justify-between gap-3">
@@ -26378,6 +26689,20 @@ function PerformanceAIDashboardView({
                 onSetPreviewMode={handleSetPreviewMode}
                 onSetPreviewInteraction={setPreviewInteraction}
                 onSetPreviewQuality={handleSetPreviewQuality}
+                onAiRealismChange={(event) => {
+                  recordRecentChange({
+                    type: "ai_realism_recorded",
+                    label:
+                      event.type === "generated"
+                        ? "AI realism regenerated"
+                        : event.type === "stale"
+                          ? "AI realism stale"
+                          : "AI realism blocked",
+                    detail: event.detail,
+                    undoBlockedReason: "AI realism is a visual preview record. Regenerate from the current review layout instead of undoing it.",
+                  });
+                  pushRecoveryMessage(`${event.detail} AI realism remains visual preview only.`);
+                }}
                 onSetPreviewLabelDensity={(value) => {
                   setPreviewLabelDensityTouched(true);
                   setPreviewLabelDensity(value);
