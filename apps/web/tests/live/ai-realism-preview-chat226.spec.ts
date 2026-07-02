@@ -91,7 +91,7 @@ test.describe("Chat 226 AI realism preview", () => {
     await page.getByTestId("ai-realism-on").click();
     await expect(page.getByTestId("ai-realism-image")).toBeVisible();
 
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await page.getByRole("button", { name: "Object Manager" }).click();
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
     await page.getByLabel("CAD command input").fill("LINE 20,20 90,20");
     await page.getByLabel("CAD command input").press("Enter");

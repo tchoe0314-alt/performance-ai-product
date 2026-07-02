@@ -19568,6 +19568,7 @@ function PerformanceAIDashboardView({
             handleOpenSidePanel("projects");
           }}
           onOpenWorkspace={() => {
+            setWorkspaceChromeMinimized(false);
             handleOpenSidePanel("site_existing");
           }}
           onOpenDocs={() => handleOpenSidePanel("trust")}

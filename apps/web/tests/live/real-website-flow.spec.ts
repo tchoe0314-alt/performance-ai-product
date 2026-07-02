@@ -61,21 +61,21 @@ test.describe("real website workflow clarity", () => {
     await page.getByTestId("setup-detect-inside-site").getByText("Auto Site Context").first().click();
     await expect(page.getByTestId("setup-detect-inside-site")).toHaveAttribute("open", "");
 
-    const objectOpenMs = await timedOpen(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
+    const objectOpenMs = await timedOpen(page, "Object Manager", /Draw & Object Manager|CAD Tools/);
     await expect(page.getByTestId("draw-cad-tools-section")).toContainText(/Draw, modify, annotate, organize, command/);
     await expect(page.getByTestId("cad-tool-line")).toBeVisible();
     await page.getByTestId("cad-tool-line").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await page.getByRole("button", { name: "Object Manager" }).click();
     await page.getByTestId("cad-tool-snap").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SNAP (on|off)/);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await page.getByRole("button", { name: "Object Manager" }).click();
     await page.getByTestId("cad-tool-offset").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/OFFSET/);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await page.getByRole("button", { name: "Object Manager" }).click();
     await page.getByTestId("cad-tool-dimension").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIM/);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await page.getByRole("button", { name: "Object Manager" }).click();
     await page.getByTestId("cad-tool-command").click();
     await expect(page.getByLabel("CAD command input")).toHaveValue(/LINE/);
     const generateOpenMs = await timedOpen(page, "Generate", /Generate Systems/);
