@@ -17,6 +17,7 @@ type UseAuthStateOptions = {
   onRefreshJobs: (token: string, options?: RefreshJobsOptions) => Promise<void>;
   onStatusMessage?: (message: string) => void;
   onLogoutCleanup?: () => void;
+  skipInitialAuthStatus?: boolean;
 };
 
 const noop = () => {};
@@ -26,6 +27,7 @@ export default function useAuthState({
   onRefreshJobs,
   onStatusMessage = noop,
   onLogoutCleanup = noop,
+  skipInitialAuthStatus = false,
 }: UseAuthStateOptions) {
   const [token, setToken] = useState("");
   const [user, setUser] = useState<UserRecord | null>(null);
@@ -140,7 +142,9 @@ export default function useAuthState({
   }, [onLogoutCleanup, onStatusMessage, token]);
 
   useEffect(() => {
-    void loadAuthStatus();
+    if (!skipInitialAuthStatus) {
+      void loadAuthStatus();
+    }
     const stored = getStoredToken();
     if (!stored) return;
     setToken(stored);
@@ -158,7 +162,7 @@ export default function useAuthState({
             : apiErrorMessage(error, "Backend unreachable. Sign in after the backend is available."),
         );
       });
-  }, [loadAuthStatus, loadMe]);
+  }, [loadAuthStatus, loadMe, skipInitialAuthStatus]);
 
   return {
     token,

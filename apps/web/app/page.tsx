@@ -258,6 +258,7 @@ const cadEntityReviewBlockers = (entity: CadEntityModelEntityV1, modelBlockers: 
   );
 type SidePanelKey =
   | "projects"
+  | "trust"
   | "dashboard"
   | "model"
   | "site_existing"
@@ -294,6 +295,7 @@ type SidePanelKey =
   | "system_utilities"
   | "system_landscape";
 type WorkspaceMode =
+  | "trust"
   | "dashboard"
   | "setup"
   | "canvas"
@@ -3170,6 +3172,7 @@ function PerformanceAIDashboardView({
     onRefreshProjects: refreshProjects,
     onRefreshJobs: refreshJobs,
     onStatusMessage: setStatusMessage,
+    skipInitialAuthStatus: effectiveDemoWorkspaceEnabled,
     onLogoutCleanup: () => {
       setProjects([]);
       setJobs([]);
@@ -8269,9 +8272,9 @@ function PerformanceAIDashboardView({
         const uiPanel = chatCommandPayload.ui_navigation_target ?? chatMetadata.ui_navigation_target;
         const uiMode = chatCommandPayload.requested_ui_mode ?? chatMetadata.requested_ui_mode;
         const validPanels: SidePanelKey[] = [
-          "projects", "dashboard", "model", "site_existing", "import_survey", "objects", "generate", "grading", "drainage", "sanitary", "water", "utilities", "roadway", "landscape", "details", "layers", "analysis", "reports", "quantities", "deliverables", "files", "standards", "templates", "catalogs", "libraries", "data", "settings", "chat", "system_grading", "system_storm", "system_sanitary", "system_water", "system_roadway", "system_utilities", "system_landscape",
+          "projects", "trust", "dashboard", "model", "site_existing", "import_survey", "objects", "generate", "grading", "drainage", "sanitary", "water", "utilities", "roadway", "landscape", "details", "layers", "analysis", "reports", "quantities", "deliverables", "files", "standards", "templates", "catalogs", "libraries", "data", "settings", "chat", "system_grading", "system_storm", "system_sanitary", "system_water", "system_roadway", "system_utilities", "system_landscape",
         ];
-        const validModes: WorkspaceMode[] = ["dashboard", "setup", "canvas", "layers", "review", "deliver", "data", "settings"];
+        const validModes: WorkspaceMode[] = ["trust", "dashboard", "setup", "canvas", "layers", "review", "deliver", "data", "settings"];
         if (uiMode && validModes.includes(uiMode as WorkspaceMode)) {
           setActiveWorkspaceMode(uiMode as WorkspaceMode);
         }
@@ -17770,7 +17773,8 @@ function PerformanceAIDashboardView({
   );
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
-    dashboard: { title: "Dashboard", desc: "Review project readiness, health, and active work." },
+    trust: { title: "What Civora does", desc: "Clear product boundaries for planning, drafting, source context, review packages, and AI visualization." },
+    dashboard: { title: "Recent changes", desc: "Review project readiness, health, and active work." },
     model: { title: "Canvas", desc: "View, pan, zoom, inspect, and switch between 2D/3D preview modes." },
     site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
@@ -17783,10 +17787,10 @@ function PerformanceAIDashboardView({
     utilities: { title: "Utility Controls", desc: "Control utility generation and coordination assumptions." },
     roadway: { title: "Roadway Controls", desc: "Control roads, parking, and corridor behavior." },
     landscape: { title: "Landscape Controls", desc: "Place open space and landscape-related site objects." },
-    details: { title: "Sections", desc: "Review profiles, cross sections, selected objects, locks, and engineering metadata." },
+    details: { title: "Object Manager", desc: "Review profiles, cross sections, selected objects, locks, and object metadata." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
-    analysis: { title: "Issues", desc: "Track active model issues, access findings, blockers, and QA signals." },
-    reports: { title: "Review", desc: "Review engineer gates, assumptions, standards, conflicts, and system readiness." },
+    analysis: { title: "Recent changes", desc: "Track active issues, access findings, blockers, and QA signals." },
+    reports: { title: "Review package status", desc: "Review package gates, assumptions, standards, conflicts, and system readiness." },
     quantities: { title: "Quantities", desc: "Review takeoff totals, stale labels, source confidence, and cost inputs." },
     deliverables: { title: "Deliver", desc: "Review sheets, reports, quantities, profiles, sections, exports, and package gates." },
     files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
@@ -17797,7 +17801,7 @@ function PerformanceAIDashboardView({
     libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
     data: { title: "Data", desc: "Configure survey, terrain, GIS, parcels, standards sources, imported utilities, and confidence labels." },
     settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
-    chat: { title: "Civora AI", desc: "Conversation and assisted workflow control." },
+    chat: { title: "Chat", desc: "Conversation and assisted workflow control." },
     system_grading: { title: "Grading Health", desc: "Review what grading needs before it can be trusted." },
     system_storm: { title: "Storm Drainage Health", desc: "Review what storm drainage needs before it can be trusted." },
     system_sanitary: { title: "Sanitary Sewer Health", desc: "Review what sanitary needs before it can be trusted." },
@@ -17841,6 +17845,7 @@ function PerformanceAIDashboardView({
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
   const showProjectStatusSummary =
     sidePanelForRender === "site_existing" ||
+    sidePanelForRender === "trust" ||
     sidePanelForRender === "generate" ||
     sidePanelForRender === "deliverables" ||
     sidePanelForRender === "chat" ||
@@ -17848,6 +17853,7 @@ function PerformanceAIDashboardView({
     sidePanelForRender === "model";
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
+    trust: "trust",
     dashboard: "dashboard",
     model: "canvas",
     site_existing: "setup",
@@ -17885,6 +17891,7 @@ function PerformanceAIDashboardView({
     system_landscape: "review",
   };
   const workspacePanelByMode: Record<WorkspaceMode, SidePanelKey> = {
+    trust: "trust",
     dashboard: "dashboard",
     setup: "site_existing",
     canvas: "model",
@@ -17917,6 +17924,7 @@ function PerformanceAIDashboardView({
     if (!panel) return;
     setActiveWorkspaceMode(workspaceModeByPanel[panel]);
     const workflowByPanel: Partial<Record<SidePanelKey, CivoraWorkflowStep>> = {
+      trust: "Review",
       dashboard: "Review",
       model: "Concept",
       site_existing: "Concept",
@@ -18107,6 +18115,7 @@ function PerformanceAIDashboardView({
     return "idle";
   };
   const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus => {
+    if (mode === "trust") return "ok";
     if (mode === "dashboard") return panelStatus("dashboard");
     if (mode === "setup") return siteScaleLocked ? "ok" : "review";
     if (mode === "canvas") return panelStatus("model");
@@ -18117,7 +18126,7 @@ function PerformanceAIDashboardView({
     return "idle";
   };
 	  const sidebarModes: SidebarNavItem[] = [
-	    { label: "Dashboard", caption: "Project status", target: "dashboard", icon: Gauge, status: sidebarModeStatus("dashboard") },
+	    { label: "Recent changes", caption: "Project status", target: "dashboard", icon: Gauge, status: sidebarModeStatus("dashboard") },
 	    { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
 	    { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
     { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
@@ -18174,7 +18183,7 @@ function PerformanceAIDashboardView({
 	    },
 	    {
 	      key: "draw",
-	      label: "Canvas",
+	      label: "Draw",
 	      caption: "View and inspect",
 	      panel: "model",
 	      icon: Box,
@@ -18183,7 +18192,7 @@ function PerformanceAIDashboardView({
 	    },
 	    {
 	      key: "objects",
-	      label: "Draw",
+	      label: "Object Manager",
 	      caption: "Objects and CAD tools",
 	      panel: "objects",
 	      icon: Layers,
@@ -18201,7 +18210,7 @@ function PerformanceAIDashboardView({
 	    },
 	    {
 	      key: "analyze",
-	      label: "Analyze",
+	      label: "Recent changes",
 	      caption: "Issues, quantities, jobs",
 	      panel: "analysis",
 	      icon: Gauge,
@@ -18226,7 +18235,7 @@ function PerformanceAIDashboardView({
 	      { label: "Standards", panel: "standards", detail: panelStatus("standards") === "ok" ? "Review accepted sources" : "Add or accept standards", status: panelStatus("standards") },
 	    ],
 	    draw: [
-	      { label: "Canvas", panel: "model", detail: "CAD draw, 2D/3D, High Quality", status: panelStatus("model") },
+	      { label: "Draw", panel: "model", detail: "CAD draw, 2D/3D, AI visualization", status: panelStatus("model") },
 	      { label: "Layers", panel: "layers", detail: "Visibility, source badges, overlays", status: panelStatus("layers") },
 	    ],
 	    objects: [
@@ -19559,11 +19568,9 @@ function PerformanceAIDashboardView({
             handleOpenSidePanel("projects");
           }}
           onOpenWorkspace={() => {
-            setWorkspaceChromeMinimized(false);
-            setLeftSidebarOpen(true);
-            setRightRailCollapsed(true);
+            handleOpenSidePanel("site_existing");
           }}
-          onOpenDocs={() => handleOpenSidePanel("deliverables")}
+          onOpenDocs={() => handleOpenSidePanel("trust")}
           onOpenChat={() => handleOpenSidePanel("chat")}
           sidebarOpen={leftSidebarOpen}
           onToggleSidebar={() => {
@@ -19912,6 +19919,69 @@ function PerformanceAIDashboardView({
                 className="civora-right-panel-sections flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4"
                 data-sections-collapsed="false"
               >
+                {sidePanelForRender === "trust" ? (
+                  <div className="space-y-4" data-testid="civora-trust-panel">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Product boundary
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                        Civora supports site planning and review workflows. It helps teams gather source-backed context, draft layouts, prepare review packages, and create AI visualization from the current review layout.
+                      </p>
+                      <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
+                        Outputs are planning and review aids. Licensed professionals remain responsible for final decisions and field use.
+                      </p>
+                    </div>
+                    <div className="grid gap-3">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          What Civora does
+                        </p>
+                        <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-700">
+                          {[
+                            "Supports site planning and review workflows.",
+                            "Organizes source-backed context from project inputs, GIS-style sources, PDFs, imagery, and uploaded survey/topo files.",
+                            "Helps with layout and drafting, including objects, boundaries, drawings, and system drafts.",
+                            "Builds review package materials such as sheets, reports, quantities, blockers, and source notes.",
+                            "Creates AI visualization for presentation and review from the current layout; it is not evidence.",
+                          ].map((item) => (
+                            <li key={item} className="flex gap-2">
+                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          What Civora does not do
+                        </p>
+                        <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-700">
+                          {[
+                            "It does not replace licensed professionals.",
+                            "It does not stamp, seal, sign, certify, or approve construction.",
+                            "It does not submit construction documents.",
+                            "It does not act as engineer of record.",
+                            "It does not turn GIS, AI, PDF, satellite, or other source data into survey or control.",
+                          ].map((item) => (
+                            <li key={item} className="flex gap-2">
+                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Review package boundary
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                        Deliver creates review-only packages with visible missing items, source notes, and blockers so a project team can hand off clearer material for professional review.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 {isDisciplinePanel ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
                     <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
