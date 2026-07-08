@@ -18209,11 +18209,11 @@ function PerformanceAIDashboardView({
 	    {
 	      key: "draw",
 	      label: "Draw",
-	      caption: "View and inspect",
-	      panel: "model",
+	      caption: "Draw and manage objects",
+	      panel: "objects",
 	      icon: Box,
-	      status: siteScaleLocked ? panelStatus("model") : "review",
-	      metric: previewMode.toUpperCase(),
+	      status: siteScaleLocked ? panelStatus("objects") : "review",
+	      metric: `${placedObjects.length} objects`,
 	    },
 	    {
 	      key: "objects",
@@ -19661,7 +19661,7 @@ function PerformanceAIDashboardView({
 	                    <button
 	                      key={item.key}
 	                      type="button"
-	                      aria-label={item.key === "draw" ? "Open canvas from sidebar" : item.label}
+	                      aria-label={item.key === "draw" ? "Draw" : item.label}
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
 	                      title={`${item.label}: ${item.metric}`}
@@ -19685,6 +19685,21 @@ function PerformanceAIDashboardView({
 	                    </button>
 	                  );
 	                })}
+	                <button
+	                  type="button"
+	                  aria-label="Open canvas from sidebar"
+	                  onClick={() => handleOpenPanelFromDrawer("model")}
+	                  title="Canvas: view, pan, zoom, and inspect"
+	                  className={`flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
+	                    sidePanelForRender === "model"
+	                      ? "border-slate-950 bg-slate-950 text-white"
+	                      : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+	                  }`}
+	                >
+	                  <Box className="h-4 w-4 shrink-0" />
+	                  <span className="block max-w-full truncate text-[10px] font-semibold uppercase tracking-[0.08em]">Canvas</span>
+	                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300" />
+	                </button>
 	              </div>
 	            </div>
 	            <div className="hidden" data-testid="workflow-actions-sidebar">
@@ -25482,11 +25497,16 @@ function PerformanceAIDashboardView({
 	                                      value={item.label}
                                         aria-label={`Rename ${item.label}`}
                                         data-testid="object-manager-rename"
-	                                      onChange={(event) =>
+	                                      onChange={(event) => {
+                                          const blocker = getObjectEditBlocker(item, "rename");
+                                          if (blocker) {
+                                            reportObjectActionBlocker(blocker);
+                                            return;
+                                          }
 	                                        handleUpdateBuilding(item.id, {
 	                                          label: event.target.value,
-	                                        })
-	                                      }
+	                                        });
+	                                      }}
 	                                      className="rounded-md border border-slate-200 px-2 py-1 text-sm"
 	                                    />
 	                                  </label>
@@ -25497,14 +25517,19 @@ function PerformanceAIDashboardView({
 	                                      value={String(item.meta?.ui_color || item.meta?.color || objectOutlineColor || "#64748b")}
                                         aria-label={`Color ${item.label}`}
                                         data-testid="object-manager-color"
-	                                      onChange={(event) =>
+	                                      onChange={(event) => {
+                                          const blocker = getObjectEditBlocker(item, "style");
+                                          if (blocker) {
+                                            reportObjectActionBlocker(blocker);
+                                            return;
+                                          }
 	                                        handleUpdateBuilding(item.id, {
 	                                          meta: {
 	                                            ...(item.meta ?? {}),
 	                                            ui_color: event.target.value,
 	                                          },
-	                                        })
-	                                      }
+	                                        });
+	                                      }}
 	                                      className="h-8 w-10 rounded border border-slate-200 bg-white"
 	                                    />
 	                                  </label>
@@ -25515,6 +25540,11 @@ function PerformanceAIDashboardView({
                                         aria-label={`Layer type ${item.label}`}
                                         data-testid="object-manager-type"
                                         onChange={(event) => {
+                                          const blocker = getObjectEditBlocker(item, "type");
+                                          if (blocker) {
+                                            reportObjectActionBlocker(blocker);
+                                            return;
+                                          }
                                           const nextType = event.target.value as SiteObjectType;
                                           handleUpdateBuilding(item.id, {
                                             type: nextType,
@@ -25611,13 +25641,19 @@ function PerformanceAIDashboardView({
                                     <button
                                       type="button"
                                       onClick={() =>
+                                        {
+                                        const blocker = getObjectEditBlocker(item, "hide");
+                                        if (blocker) {
+                                          reportObjectActionBlocker(blocker);
+                                          return;
+                                        }
                                         handleUpdateBuilding(item.id, {
                                           meta: {
                                             ...(item.meta ?? {}),
                                             ui_hidden: !Boolean(item.meta?.ui_hidden),
                                           },
-                                        })
-                                      }
+                                        });
+                                      }}
                                       data-testid="object-manager-visibility"
                                       className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
                                     >
