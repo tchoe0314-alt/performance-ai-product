@@ -20671,7 +20671,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-3" data-testid="clean-setup-panel">
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-location">
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / Location</span>
@@ -20691,7 +20691,7 @@ function PerformanceAIDashboardView({
                       </summary>
                       <div className="border-t border-slate-100 px-4 py-4">
                         <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Project address
+                          Type project address
                           <input
                             ref={siteAddressInputRef}
                             aria-label="Type project address"
@@ -20731,6 +20731,17 @@ function PerformanceAIDashboardView({
                         >
                           {onlineDiscoveryBusy ? "Applying address..." : siteAddress.trim() ? "Apply Address" : "Enter Address First"}
                         </button>
+                        <button
+                          type="button"
+                          onClick={handleStartBlankSite}
+                          aria-label="Start a blank site from detailed setup controls and clear address map evidence"
+                          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Start blank site
+                          <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
+                            Clears address and map evidence; review-only drafting stays visible.
+                          </span>
+                        </button>
                         {autoExistingConditionsStatus.status === "blocked" ? (
                           <p data-testid="apply-address-status" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
                             {autoExistingConditionsStatus.message}
@@ -20739,7 +20750,7 @@ function PerformanceAIDashboardView({
                       </div>
                     </details>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-site-boundary">
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-site-box-controls">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site Boundary</span>
@@ -20799,7 +20810,7 @@ function PerformanceAIDashboardView({
                       </div>
                     </details>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-survey-terrain-sources">
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-survey-terrain-card">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Survey / Terrain / Sources</span>
@@ -20873,7 +20884,7 @@ function PerformanceAIDashboardView({
                       </div>
                     </details>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-auto-site-context">
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-detect-inside-site">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Auto Site Context Results</span>
