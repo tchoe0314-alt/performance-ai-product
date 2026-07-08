@@ -296,9 +296,22 @@ export default function Preview3DCanvas({
     terrain.receiveShadow = true;
     root.add(terrain);
 
-    const grid = new THREE.GridHelper(Math.max(modelBounds.spanX, modelBounds.spanY), previewQuality === "high" ? 20 : 10, "#94a3b8", "#cbd5e1");
-    grid.position.y = 0.035;
-    root.add(grid);
+    if (terrainState.mode === "fallback") {
+      const grid = new THREE.GridHelper(
+        Math.max(modelBounds.spanX, modelBounds.spanY),
+        previewQuality === "high" ? 10 : 8,
+        "#cbd5e1",
+        "#e2e8f0",
+      );
+      const gridMaterial = grid.material as THREE.Material | THREE.Material[];
+      const materials = Array.isArray(gridMaterial) ? gridMaterial : [gridMaterial];
+      materials.forEach((material) => {
+        material.transparent = true;
+        material.opacity = previewQuality === "high" ? 0.16 : 0.22;
+      });
+      grid.position.y = 0.035;
+      root.add(grid);
+    }
 
     const pickables: THREE.Object3D[] = [];
     const labels: THREE.Sprite[] = [];
@@ -371,7 +384,7 @@ export default function Preview3DCanvas({
           mesh.userData = object.userData;
           object.add(mesh);
           addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.42 : 0.62);
-          if (layer === "PARKING") {
+          if (layer === "PARKING" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
             const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: state === "low" ? 0.34 : 0.58 });
             const bounds = new THREE.Box3().setFromObject(mesh);
             const stripeCount = Math.max(3, Math.min(14, Math.floor((bounds.max.x - bounds.min.x) / 9)));
@@ -395,10 +408,10 @@ export default function Preview3DCanvas({
           );
           tube.userData = object.userData;
           object.add(tube);
-          if (layer === "ROAD") {
+          if (layer === "ROAD" && state !== "low") {
             const centerline = new THREE.Line(
               new THREE.BufferGeometry().setFromPoints(points.map((point) => point.clone().add(new THREE.Vector3(0, 0.12, 0)))),
-              new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: state === "low" ? 0.32 : 0.72 }),
+              new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.72 }),
             );
             object.add(centerline);
           }
@@ -505,7 +518,7 @@ export default function Preview3DCanvas({
       const needsBadge =
         object.userData.blockers.length > 0 ||
         /low|missing|review/i.test(String(object.userData.confidence));
-      if (needsBadge || previewQuality === "high") {
+      if (needsBadge) {
         const sprite = createTextSprite(needsBadge ? `${item.label} | review` : item.label, needsBadge ? "#b45309" : "#0f172a");
         sprite.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 8));
         labels.push(sprite);

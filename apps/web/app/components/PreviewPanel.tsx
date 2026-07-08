@@ -288,6 +288,16 @@ const resolveSourceState = (item: BuildingPlacement): PreviewSourceState => {
   if (statusText.includes("inferred") || statusText.includes("low") || item.source === "inferred") return "inferred";
   if (statusText.includes("import") || item.source === "detected_from_image") return "imported";
   const hasPathGeometry = hasExplicitFootprintGeometry(item);
+  const sourceBackedRect =
+    item.geometryType === "rect" &&
+    (item.source === "user" ||
+      item.source === "manual_drawn" ||
+      item.source === "user_confirmed" ||
+      statusText.includes("verified") ||
+      statusText.includes("source-backed") ||
+      statusText.includes("survey") ||
+      statusText.includes("import"));
+  if (!hasPathGeometry && item.geometryType === "rect" && item.type !== "site" && !sourceBackedRect) return "fallback";
   if (!hasPathGeometry && item.geometryType !== "rect" && item.type !== "site") return "fallback";
   return "verified";
 };
@@ -357,6 +367,11 @@ const supportsParkingModuleRendering = (item: BuildingPlacement) => {
   const minWidth = Math.max(stallWidth * 2.5, 24);
   return item.type === "parking" && item.w >= minWidth && item.d >= minDepth * 0.82;
 };
+
+const hasParkingGeometryEvidence = (item: BuildingPlacement) =>
+  supportsParkingModuleRendering(item) &&
+  Number.isFinite(item.w) &&
+  Number.isFinite(item.d);
 
 const stableHash = (value: string) => {
   let hash = 5381;
@@ -1056,6 +1071,25 @@ export default function PreviewPanel({
     },
     [],
   );
+  const rectCorridorAxis = useCallback((rect: { left: number; top: number; width: number; height: number }) => {
+    const inset = 0.12;
+    if (rect.width >= rect.height) {
+      return {
+        x1: rect.left + rect.width * inset,
+        y1: rect.top + rect.height / 2,
+        x2: rect.left + rect.width * (1 - inset),
+        y2: rect.top + rect.height / 2,
+        width: Math.max(0.85, Math.min(5.2, rect.height * 0.72)),
+      };
+    }
+    return {
+      x1: rect.left + rect.width / 2,
+      y1: rect.top + rect.height * inset,
+      x2: rect.left + rect.width / 2,
+      y2: rect.top + rect.height * (1 - inset),
+      width: Math.max(0.85, Math.min(5.2, rect.width * 0.72)),
+    };
+  }, []);
   const hoveredObject = useMemo(
     () =>
       [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
@@ -5418,7 +5452,7 @@ export default function PreviewPanel({
           <p className="max-w-3xl text-xs text-slate-500">
             Visual anchoring keeps objects consistent in the model view. High Quality is a presentation preview only
             and never engineering evidence. AI Realism, when enabled, is an AI visualization from the current review layout
-            and is not used for QA, compliance, quantities, engineering generation, source confidence, or release.
+            and is not source-confidence evidence or used for QA, compliance, quantities, engineering generation, or release.
           </p>
           {previewTotalPhaseCount > 0 && previewCompletedPhaseCount < previewTotalPhaseCount ? (
             <div className="inline-flex max-w-3xl items-start rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -7295,17 +7329,17 @@ export default function PreviewPanel({
                 {!showMap && previewMode === "2d" ? (
                   <div
                     data-testid="preview-map-fallback-surface"
-                    className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)]"
+                    className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#f8fafc_0%,#edf2ef_54%,#e8eef3_100%)]"
                   >
-                    <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(100,116,139,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(100,116,139,0.12)_1px,transparent_1px)] [background-size:48px_48px]" />
-                    <div className="absolute left-[-8%] top-[18%] h-10 w-[116%] rotate-[-8deg] rounded-full bg-slate-300/18" />
-                    <div className="absolute right-[-18%] top-[58%] h-8 w-[74%] rotate-[18deg] rounded-full bg-slate-300/16" />
+                    <div className="absolute left-[-9%] top-[16%] h-12 w-[118%] rotate-[-8deg] rounded-full bg-slate-400/10" />
+                    <div className="absolute right-[-18%] top-[58%] h-9 w-[74%] rotate-[18deg] rounded-full bg-slate-400/10" />
+                    <div className="absolute left-[8%] top-[8%] h-[76%] w-[84%] rounded-[28px] border border-white/70 bg-white/18 shadow-inner" />
                     <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-center gap-2">
                       <span
                         data-testid="preview-source-confidence-chip"
                         className="rounded-md border border-slate-200 bg-white/88 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur"
                       >
-                        {mapAvailable ? "Map loading or unavailable" : "Local review grid"}
+                        {mapAvailable ? "Map loading or unavailable" : "Local review canvas"}
                       </span>
                       <span className="rounded-md border border-slate-200 bg-white/88 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur">
                         Source-backed {sourceStateSummary.verified}
@@ -7472,17 +7506,17 @@ export default function PreviewPanel({
                         preserveAspectRatio="none"
                         style={viewportTransformStyle}
                       >
-                        <g data-testid="cad-plan-grid" opacity={showMap ? 0 : isHighQuality ? 0.9 : 0.62}>
+                        <g data-testid="cad-plan-grid" opacity={showMap ? 0 : isHighQuality ? 0.38 : 0.28}>
                           <rect
                             x={0}
                             y={0}
                             width={100}
                             height={100}
-                            fill={showMap ? "transparent" : isHighQuality ? "rgba(248,250,252,0.62)" : "rgba(255,255,255,0.5)"}
-                            stroke={isHighQuality ? "rgba(15,23,42,0.56)" : "rgba(100,116,139,0.42)"}
-                            strokeWidth={0.32}
+                            fill="transparent"
+                            stroke={isHighQuality ? "rgba(15,23,42,0.38)" : "rgba(100,116,139,0.28)"}
+                            strokeWidth={0.26}
                           />
-                          {cadPlanGrid.verticalMinor.map((x) => (
+                          {(!isHighQuality && !showGeneratedPlan ? cadPlanGrid.verticalMinor : []).map((x) => (
                             <line
                               key={`grid-v-minor-${x.toFixed(2)}`}
                               x1={x}
@@ -7493,7 +7527,7 @@ export default function PreviewPanel({
                               strokeWidth={0.08}
                             />
                           ))}
-                          {cadPlanGrid.horizontalMinor.map((y) => (
+                          {(!isHighQuality && !showGeneratedPlan ? cadPlanGrid.horizontalMinor : []).map((y) => (
                             <line
                               key={`grid-h-minor-${y.toFixed(2)}`}
                               x1={0}
@@ -7504,7 +7538,7 @@ export default function PreviewPanel({
                               strokeWidth={0.08}
                             />
                           ))}
-                          {cadPlanGrid.verticalMajor.map((x) => (
+                          {(!showGeneratedPlan ? cadPlanGrid.verticalMajor : []).map((x) => (
                             <line
                               key={`grid-v-major-${x.toFixed(2)}`}
                               x1={x}
@@ -7515,7 +7549,7 @@ export default function PreviewPanel({
                               strokeWidth={0.13}
                             />
                           ))}
-                          {cadPlanGrid.horizontalMajor.map((y) => (
+                          {(!showGeneratedPlan ? cadPlanGrid.horizontalMajor : []).map((y) => (
                             <line
                               key={`grid-h-major-${y.toFixed(2)}`}
                               x1={0}
@@ -7536,9 +7570,7 @@ export default function PreviewPanel({
                             strokeWidth={0.38}
                             strokeDasharray={siteLocked ? undefined : "2 1.2"}
                           />
-                          <text x={2.2} y={4.2} fontSize="2.2" fill="#475569" fontWeight={700}>
-                            SITE EXTENT
-                          </text>
+                          <title>Local review canvas site extent. Grid lines are hidden when plan or map context exists.</title>
                           <line
                             x1={4}
                             y1={95}
@@ -7904,10 +7936,12 @@ export default function PreviewPanel({
                             const selected = selectedBuildingId === item.id;
                             const visualKind = resolveVisualKind(item);
                             const visualStyle = resolveSvgVisualStyle(item, selected);
-                            const useShapePath = ["water", "landscape", "road", "sidewalk"].includes(visualKind);
+                            const sourceState = resolveSourceState(item);
+                            const useShapePath = ["water", "landscape", "sidewalk"].includes(visualKind);
                             const shapePath = useShapePath
                               ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
                               : null;
+                            const corridorAxis = visualKind === "road" ? rectCorridorAxis(rect) : null;
                             const cornerRadius =
                               visualKind === "road" || visualKind === "parking" || visualKind === "sidewalk"
                                 ? 0.35
@@ -7916,14 +7950,49 @@ export default function PreviewPanel({
                                   : 0.7;
                             return (
                               <g key={`rect-plan-${item.id}`} data-testid="plan-rect-object">
-                                {shapePath ? (
+                                {corridorAxis ? (
+                                  <>
+                                    <polyline
+                                      data-testid="plan-road-corridor"
+                                      points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                                      fill="none"
+                                      stroke={visualStyle.fill}
+                                      strokeWidth={corridorAxis.width}
+                                      strokeLinecap="round"
+                                      opacity={visualStyle.opacity}
+                                    >
+                                      <title>{sourceStateLabel(sourceState)}</title>
+                                    </polyline>
+                                    <polyline
+                                      points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                                      fill="none"
+                                      stroke={visualStyle.stroke}
+                                      strokeWidth={Math.max(0.24, visualStyle.strokeWidth)}
+                                      strokeLinecap="round"
+                                      strokeDasharray={visualStyle.strokeDasharray}
+                                      opacity={visualStyle.opacity}
+                                    />
+                                    {isHighQuality && sourceState !== "fallback" ? (
+                                      <polyline
+                                        points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                                        fill="none"
+                                        stroke="rgba(248,250,252,0.7)"
+                                        strokeWidth={0.16}
+                                        strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
+                                        strokeLinecap="round"
+                                      />
+                                    ) : null}
+                                  </>
+                                ) : shapePath ? (
                                   <path
                                     d={shapePath}
                                     fill={visualStyle.fill}
                                     stroke={visualStyle.stroke}
                                     strokeWidth={visualStyle.strokeWidth}
                                     strokeLinejoin="round"
-                                  />
+                                  >
+                                    <title>{sourceStateLabel(sourceState)}</title>
+                                  </path>
                                 ) : (
                                   <rect
                                     x={rect.left}
@@ -7935,7 +8004,9 @@ export default function PreviewPanel({
                                     stroke={visualStyle.stroke}
                                     strokeWidth={visualStyle.strokeWidth}
                                     strokeLinejoin="round"
-                                  />
+                                  >
+                                    <title>{sourceStateLabel(sourceState)}</title>
+                                  </rect>
                                 )}
                                 {isHighQuality && visualKind === "water" ? (
                                   <g data-testid="plan-basin-shelf-cues">
@@ -7982,7 +8053,7 @@ export default function PreviewPanel({
                                     />
                                   </>
                                 ) : null}
-                                {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
+                                {isHighQuality && visualKind === "parking" && hasParkingGeometryEvidence(item) ? (
                                   <g data-testid="plan-parking-stall-cues">
                                     <line
                                       x1={rect.left + rect.width * 0.08}
@@ -8010,17 +8081,28 @@ export default function PreviewPanel({
                                   </g>
                                 ) : null}
                                 {selected ? (
-                                  <rect
-                                    x={rect.left - 0.42}
-                                    y={rect.top - 0.42}
-                                    width={rect.width + 0.84}
-                                    height={rect.height + 0.84}
-                                    rx={0.7}
-                                    fill="none"
-                                    stroke="#f59e0b"
-                                    strokeWidth={0.32}
-                                    strokeDasharray="1.3 0.9"
-                                  />
+                                  corridorAxis ? (
+                                    <polyline
+                                      points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                                      fill="none"
+                                      stroke="#f59e0b"
+                                      strokeWidth={corridorAxis.width + 0.68}
+                                      strokeLinecap="round"
+                                      opacity={0.5}
+                                    />
+                                  ) : (
+                                    <rect
+                                      x={rect.left - 0.42}
+                                      y={rect.top - 0.42}
+                                      width={rect.width + 0.84}
+                                      height={rect.height + 0.84}
+                                      rx={0.7}
+                                      fill="none"
+                                      stroke="#f59e0b"
+                                      strokeWidth={0.32}
+                                      strokeDasharray="1.3 0.9"
+                                    />
+                                  )
                                 ) : null}
                               </g>
                             );
@@ -8278,7 +8360,7 @@ export default function PreviewPanel({
                             );
                           })}
                         {visibleCadObjects
-                          .filter((item) => item.type === "parking" && item.placed)
+                          .filter((item) => item.type === "parking" && item.placed && hasParkingGeometryEvidence(item))
                           .flatMap((item) =>
                             buildParkingModules(item, accessPointsForParking).map((module, idx) => {
                               const toPct = (pt: [number, number]) => sitePointToSvgPercent(pt);
