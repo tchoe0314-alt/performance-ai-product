@@ -314,7 +314,8 @@ export default function Preview3DCanvas({
     }
 
     const pickables: THREE.Object3D[] = [];
-    const labels: THREE.Sprite[] = [];
+    let visibleLabelCount = 0;
+    const maxVisibleLabels = previewQuality === "high" ? 8 : 5;
     items.forEach((item, index) => {
       const layer = normalizeLayer(item.layer);
       if (layer === "TERRAIN") return;
@@ -518,11 +519,11 @@ export default function Preview3DCanvas({
       const needsBadge =
         object.userData.blockers.length > 0 ||
         /low|missing|review/i.test(String(object.userData.confidence));
-      if (needsBadge) {
+      if (needsBadge && visibleLabelCount < maxVisibleLabels) {
         const sprite = createTextSprite(needsBadge ? `${item.label} | review` : item.label, needsBadge ? "#b45309" : "#0f172a");
         sprite.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 8));
-        labels.push(sprite);
         object.add(sprite);
+        visibleLabelCount += 1;
       }
 
       root.add(object);
@@ -609,7 +610,7 @@ export default function Preview3DCanvas({
         <p className="mt-1 text-[11px] text-slate-500">{terrainState.detail}</p>
       </div>
       <div className="pointer-events-none absolute bottom-4 left-4 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm">
-        Engineer-review visualization only | visual mode does not mutate canonical geometry
+        Review visualization only | visual mode does not mutate canonical geometry
       </div>
       <div className="pointer-events-none absolute right-4 top-20 rounded-full bg-slate-900/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white sm:top-4">
         Orbit | Pan | Zoom

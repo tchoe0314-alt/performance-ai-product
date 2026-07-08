@@ -39,6 +39,7 @@ import {
   type CadSegment2D,
   type CadSnapKind,
 } from "../utils/cadGeometryKernel";
+import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 
 const Preview3DCanvas = lazy(() => import("./Preview3DCanvas"));
 
@@ -219,7 +220,7 @@ type AiRealismArtifact = {
 };
 
 const AI_REALISM_WATERMARK =
-  "AI visualization from current review layout - not survey, source evidence, or construction approval.";
+  "AI visualization from current review layout - visual concept only, not engineering evidence.";
 
 const toFiniteNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -763,6 +764,7 @@ export default function PreviewPanel({
   const [aiRealismEnabled, setAiRealismEnabled] = useState(false);
   const [aiRealismArtifact, setAiRealismArtifact] = useState<AiRealismArtifact | null>(null);
   const [aiRealismBlocker, setAiRealismBlocker] = useState<string | null>(null);
+  const aiRealismGenerationFrameRef = useRef<number | null>(null);
   const [cadPropertyDraft, setCadPropertyDraft] = useState({
     id: "",
     name: "",
@@ -927,6 +929,14 @@ export default function PreviewPanel({
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
+  useEffect(
+    () => () => {
+      if (aiRealismGenerationFrameRef.current !== null) {
+        window.cancelAnimationFrame(aiRealismGenerationFrameRef.current);
+      }
+    },
+    [],
+  );
   const currentSiteSize = useMemo(
     () => ({ width: Math.max(lotWidth, 1), height: Math.max(lotHeight, 1) }),
     [lotHeight, lotWidth],
@@ -1262,6 +1272,31 @@ export default function PreviewPanel({
     onAiRealismChange,
     planPreviewProjectId,
   ]);
+  const setAiVisualizationOff = useCallback(() => {
+    const startedAt = markCivoraInteraction();
+    if (aiRealismGenerationFrameRef.current !== null) {
+      window.cancelAnimationFrame(aiRealismGenerationFrameRef.current);
+      aiRealismGenerationFrameRef.current = null;
+    }
+    setAiRealismEnabled(false);
+    setAiRealismBlocker(null);
+    measureCivoraInteractionAfterPaint("preview.aiVisualization.off", startedAt, {
+      hasArtifact: Boolean(aiRealismArtifact),
+    });
+  }, [aiRealismArtifact]);
+  const setAiVisualizationOn = useCallback(() => {
+    const startedAt = markCivoraInteraction();
+    setAiRealismEnabled(true);
+    measureCivoraInteractionAfterPaint("preview.aiVisualization.on", startedAt, {
+      hasArtifact: Boolean(aiRealismArtifact),
+      providerConfigured: aiRealismProviderConfigured,
+    });
+    if (aiRealismArtifact || aiRealismGenerationFrameRef.current !== null) return;
+    aiRealismGenerationFrameRef.current = window.requestAnimationFrame(() => {
+      aiRealismGenerationFrameRef.current = null;
+      generateAiRealismArtifact();
+    });
+  }, [aiRealismArtifact, aiRealismProviderConfigured, generateAiRealismArtifact]);
   const aiRealismDisplayArtifact = useMemo(
     () => (aiRealismArtifact ? { ...aiRealismArtifact, stale: aiRealismStale } : null),
     [aiRealismArtifact, aiRealismStale],
@@ -1626,8 +1661,15 @@ export default function PreviewPanel({
           return aArea - bArea;
         });
       const next = matches[0] ?? null;
-      setHoveredAnnotation(next);
-      setPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+      setHoveredAnnotation((current) => (current?.label === next?.label ? current : next));
+      const nextPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      setPoint((current) =>
+        current &&
+        Math.abs(current.x - nextPoint.x) < 6 &&
+        Math.abs(current.y - nextPoint.y) < 6
+          ? current
+          : nextPoint,
+      );
     },
     [hasInteractiveLabels, previewLabels, showHover],
   );
@@ -5398,18 +5440,14 @@ export default function PreviewPanel({
               <div
                 data-testid="ai-realism-toggle-header"
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1"
-                aria-label="AI Realism toggle"
+                aria-label="AI Visualization toggle"
               >
-                <span className="px-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  AI Realism
-                </span>
+                <span className="px-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">AI Visualization</span>
                 <button
                   type="button"
                   data-testid="ai-realism-off-header"
-                  onClick={() => {
-                    setAiRealismEnabled(false);
-                    setAiRealismBlocker(null);
-                  }}
+                  onClick={setAiVisualizationOff}
+                        aria-pressed={!aiRealismEnabled}
                   className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
                     !aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                   }`}
@@ -5419,10 +5457,8 @@ export default function PreviewPanel({
                 <button
                   type="button"
                   data-testid="ai-realism-on-header"
-                  onClick={() => {
-                    setAiRealismEnabled(true);
-                    if (!aiRealismArtifact) generateAiRealismArtifact();
-                  }}
+                  onClick={setAiVisualizationOn}
+                        aria-pressed={aiRealismEnabled}
                   className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
                     aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                   }`}
@@ -6714,18 +6750,14 @@ export default function PreviewPanel({
                     <div
                       data-testid="ai-realism-toggle"
                       className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5"
-                      aria-label="AI Realism toggle"
+                      aria-label="AI Visualization toggle"
                     >
-                      <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-                        AI Realism
-                      </span>
+                      <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">AI Visualization</span>
                       <button
                         type="button"
                         data-testid="ai-realism-off"
-                        onClick={() => {
-                          setAiRealismEnabled(false);
-                          setAiRealismBlocker(null);
-                        }}
+                        onClick={setAiVisualizationOff}
+                        aria-pressed={!aiRealismEnabled}
                         className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
                           !aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                         }`}
@@ -6735,10 +6767,8 @@ export default function PreviewPanel({
                       <button
                         type="button"
                         data-testid="ai-realism-on"
-                        onClick={() => {
-                          setAiRealismEnabled(true);
-                          if (!aiRealismArtifact) generateAiRealismArtifact();
-                        }}
+                        onClick={setAiVisualizationOn}
+                        aria-pressed={aiRealismEnabled}
                         className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
                           aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                         }`}
@@ -6865,7 +6895,13 @@ export default function PreviewPanel({
                   setDraftPreviewPoint(sitePoint ? [sitePoint.x, sitePoint.y] : null);
                   setActiveSnapPoint(sitePoint);
                   if (sitePoint) {
-                    setCursorSitePoint({ x: sitePoint.x, y: sitePoint.y });
+                    setCursorSitePoint((current) =>
+                      current &&
+                      Math.abs(current.x - sitePoint.x) < 0.5 &&
+                      Math.abs(current.y - sitePoint.y) < 0.5
+                        ? current
+                        : { x: sitePoint.x, y: sitePoint.y },
+                    );
                   }
                   return;
                 }
@@ -6881,7 +6917,14 @@ export default function PreviewPanel({
                 }
                 if (showHover && overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
                   const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
-                  setCursorSitePoint(sitePoint ? { x: sitePoint.x, y: sitePoint.y } : null);
+                  setCursorSitePoint((current) => {
+                    if (!sitePoint) return current === null ? current : null;
+                    return current &&
+                      Math.abs(current.x - sitePoint.x) < 0.5 &&
+                      Math.abs(current.y - sitePoint.y) < 0.5
+                      ? current
+                      : { x: sitePoint.x, y: sitePoint.y };
+                  });
                 } else if (!showHover) {
                   setCursorSitePoint(null);
                 } else {
@@ -7012,18 +7055,14 @@ export default function PreviewPanel({
                   <div
                     data-testid="ai-realism-toggle"
                     className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5"
-                    aria-label="AI Realism toggle"
+                    aria-label="AI Visualization toggle"
                   >
-                    <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-                      AI Realism
-                    </span>
+                    <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">AI Visualization</span>
                     <button
                       type="button"
                       data-testid="ai-realism-off"
-                      onClick={() => {
-                        setAiRealismEnabled(false);
-                        setAiRealismBlocker(null);
-                      }}
+                      onClick={setAiVisualizationOff}
+                        aria-pressed={!aiRealismEnabled}
                       className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
                         !aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                       }`}
@@ -7033,10 +7072,8 @@ export default function PreviewPanel({
                     <button
                       type="button"
                       data-testid="ai-realism-on"
-                      onClick={() => {
-                        setAiRealismEnabled(true);
-                        if (!aiRealismArtifact) generateAiRealismArtifact();
-                      }}
+                      onClick={setAiVisualizationOn}
+                        aria-pressed={aiRealismEnabled}
                       className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
                         aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                       }`}
@@ -7103,17 +7140,46 @@ export default function PreviewPanel({
                         className="absolute left-4 top-4 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            high_quality_ai_render_v1
-                          </p>
-                          <button
-                            type="button"
-                            data-testid="ai-realism-regenerate"
-                            onClick={generateAiRealismArtifact}
-                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
-                          >
-                            Regenerate
-                          </button>
+                          <div>
+                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              high_quality_ai_render_v1
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-slate-500">
+                              Source summary: {aiRealismDisplayArtifact.source_objects_summary.total} review object(s)
+                              {Object.keys(aiRealismDisplayArtifact.source_objects_summary.counts_by_type).length
+                                ? ` across ${Object.entries(aiRealismDisplayArtifact.source_objects_summary.counts_by_type)
+                                    .map(([type, count]) => `${type}: ${count}`)
+                                    .join(", ")}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            <a
+                              data-testid="ai-realism-view-snapshot"
+                              href={aiRealismDisplayArtifact.image_data_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+                            >
+                              View snapshot
+                            </a>
+                            <a
+                              data-testid="ai-realism-save-snapshot"
+                              href={aiRealismDisplayArtifact.image_data_url}
+                              download={`ai-visualization-${aiRealismDisplayArtifact.project_id}.svg`}
+                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+                            >
+                              Save snapshot
+                            </a>
+                            <button
+                              type="button"
+                              data-testid="ai-realism-regenerate"
+                              onClick={generateAiRealismArtifact}
+                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+                            >
+                              Regenerate
+                            </button>
+                          </div>
                         </div>
                         {aiRealismStale ? (
                           <p
