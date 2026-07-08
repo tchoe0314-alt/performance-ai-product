@@ -1112,10 +1112,10 @@ export default function PreviewPanel({
   }, [geocode, mapLoaded, showMap, previewQuality]);
   const selectedObject = useMemo(
     () =>
-      [...buildingPlacements, ...suggestedPlacements].find(
+      [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
         (item) => item.id === selectedBuildingId && item.type !== "site",
       ) ?? null,
-    [buildingPlacements, suggestedPlacements, selectedBuildingId],
+    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements, selectedBuildingId],
   );
   const aiRealismSourceObjects = useMemo(
     () =>
@@ -1274,7 +1274,12 @@ export default function PreviewPanel({
     debugWindow.__civoraAiRealismLayoutHash = aiRealismLayoutHash;
   }, [aiRealismDisplayArtifact, aiRealismEnabled, aiRealismLayoutHash]);
   const selectedDeletableObject =
-    selectedObject && !selectedObject.locked ? selectedObject : null;
+    selectedObject &&
+    !selectedObject.locked &&
+    selectedObject.type !== "site" &&
+    buildingPlacements.some((item) => item.id === selectedObject.id)
+      ? selectedObject
+      : null;
   const showEarthworkUx =
     previewMode === "2d" &&
     Boolean(gradingEarthworkUx) &&
@@ -1762,6 +1767,113 @@ export default function PreviewPanel({
     [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach((item) => layers.add(getCadLayer(item)));
     return Array.from(layers).sort();
   }, [buildingPlacements, cadEntityPreviewObjects, getCadLayer, suggestedPlacements]);
+  const objectManagerRows = useMemo(() => {
+    const rows = new Map<string, BuildingPlacement>();
+    [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach((item) => {
+      if (!rows.has(item.id)) rows.set(item.id, item);
+    });
+    return Array.from(rows.values()).sort((a, b) => {
+      const aHidden = a.meta?.ui_hidden ? 1 : 0;
+      const bHidden = b.meta?.ui_hidden ? 1 : 0;
+      if (aHidden !== bHidden) return aHidden - bHidden;
+      if (a.type === "site" && b.type !== "site") return -1;
+      if (b.type === "site" && a.type !== "site") return 1;
+      return (a.label || a.id).localeCompare(b.label || b.id);
+    });
+  }, [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements]);
+  const objectManagerCounts = useMemo(
+    () => ({
+      total: objectManagerRows.length,
+      visible: objectManagerRows.filter((item) => !item.meta?.ui_hidden && !hiddenCadLayers.includes(getCadLayer(item))).length,
+      draft: objectManagerRows.filter((item) => item.source === "manual_drawn" || item.type === "custom" || item.meta?.engineering_status === "draft_review_required").length,
+      generated: objectManagerRows.filter((item) => item.generated || item.source === "generated").length,
+    }),
+    [getCadLayer, hiddenCadLayers, objectManagerRows],
+  );
+  const getPreviewObjectTypeLabel = useCallback((item: BuildingPlacement) => {
+    return String(item.type || item.geometryType || "object").replace(/_/g, " ");
+  }, []);
+  const getPreviewObjectDimensionsLabel = useCallback((item: BuildingPlacement) => {
+    if (item.geometryType === "point") return "Point object";
+    const width = Number.isFinite(item.w) ? item.w.toFixed(1) : "--";
+    const depth = Number.isFinite(item.d) ? item.d.toFixed(1) : "--";
+    return `${width} ft x ${depth} ft`;
+  }, []);
+  const getPreviewObjectSourceLabel = useCallback((item: BuildingPlacement) => {
+    if (cadEntityPreviewObjects.some((candidate) => candidate.id === item.id)) return "Source-only CAD preview";
+    if (item.generated || item.source === "generated") return "Generated";
+    if (item.source === "manual_drawn") return "Manual draft";
+    if (item.source === "detected_from_image" || item.source === "detected_from_gis") return "Detected source";
+    if (item.source === "inferred") return "Inferred";
+    return item.source ? item.source.replace(/_/g, " ") : "User";
+  }, [cadEntityPreviewObjects]);
+  const getPreviewObjectStatusLabel = useCallback((item: BuildingPlacement) => {
+    const sourceState = resolveSourceState(item);
+    if (item.type === "site") return siteLocked ? "Site boundary locked" : "Site boundary draft";
+    if (item.locked) return "Locked";
+    if (item.meta?.ui_hidden) return "Hidden";
+    if (!item.placed) return "Unplaced";
+    if (sourceState !== "verified") return sourceStateLabel(sourceState);
+    return "Visible draft/review object";
+  }, [siteLocked]);
+  const previewObjectEditableSource = useCallback(
+    (item: BuildingPlacement) =>
+      buildingPlacements.some((candidate) => candidate.id === item.id) ||
+      suggestedPlacements.some((candidate) => candidate.id === item.id),
+    [buildingPlacements, suggestedPlacements],
+  );
+  const getPreviewObjectActionBlocker = useCallback(
+    (item: BuildingPlacement | null, action: "rename" | "style" | "type" | "hide" | "delete" | "focus") => {
+      if (!item) return `${action.toUpperCase()} blocked: select an object first.`;
+      if (action === "focus") return null;
+      if (item.type === "site") return `${action.toUpperCase()} blocked: site boundary is controlled from site setup/change-site tools.`;
+      if (!previewObjectEditableSource(item)) return `${action.toUpperCase()} blocked: ${item.label || item.id} is source-only preview geometry.`;
+      if (item.locked) return `${action.toUpperCase()} blocked: ${item.label || item.id} is locked. Unlock or use a draft copy before editing.`;
+      if (action === "delete" && !buildingPlacements.some((candidate) => candidate.id === item.id)) {
+        return "DELETE blocked: detected/source suggestions can be hidden or reviewed, but not deleted from the canonical canvas here.";
+      }
+      return null;
+    },
+    [buildingPlacements, previewObjectEditableSource],
+  );
+  const updatePreviewManagedObject = useCallback(
+    (item: BuildingPlacement, updates: Partial<BuildingPlacement>) => {
+      if (buildingPlacements.some((candidate) => candidate.id === item.id)) {
+        onUpdateBuilding(item.id, updates);
+        return true;
+      }
+      if (suggestedPlacements.some((candidate) => candidate.id === item.id)) {
+        onUpdateSuggested(item.id, updates);
+        return true;
+      }
+      return false;
+    },
+    [buildingPlacements, onUpdateBuilding, onUpdateSuggested, suggestedPlacements],
+  );
+  const focusPreviewManagedObject = useCallback(
+    (item: BuildingPlacement | null) => {
+      const blocker = getPreviewObjectActionBlocker(item, "focus");
+      if (!item || blocker) {
+        setCadCommandStatus(blocker || "FOCUS blocked: select an object first.");
+        return;
+      }
+      onSelectBuilding(item.id);
+      setHoveredObjectId(item.id);
+      const minX = item.x ?? 0;
+      const minY = item.y ?? 0;
+      const maxX = minX + Math.max(item.w, 1);
+      const maxY = minY + Math.max(item.d, 1);
+      const centerX = (minX + maxX) / 2 / Math.max(lotWidth, 1);
+      const centerY = (minY + maxY) / 2 / Math.max(lotHeight, 1);
+      setCanvasView({
+        scale: Math.min(Math.max(1 / Math.max(Math.max(item.w, 1) / Math.max(lotWidth, 1), Math.max(item.d, 1) / Math.max(lotHeight, 1), 0.34), 1), 3),
+        offsetX: (0.5 - centerX) * 160,
+        offsetY: (0.5 - centerY) * 160,
+      });
+      setCadCommandStatus(`Focused ${item.label || item.id}.`);
+    },
+    [getPreviewObjectActionBlocker, lotHeight, lotWidth, onSelectBuilding],
+  );
 
   const visibleCadObjects = useMemo(
     () =>
@@ -3197,7 +3309,10 @@ export default function PreviewPanel({
   }, [clearDraftGeometry, onSetPreviewInteraction, siteDrawRequest, siteLocked]);
 
   const finishDraftGeometry = useCallback(() => {
-    if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") return;
+    if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") {
+      pushCadCommandFeedback("FINISH", "blocked", "FINISH blocked: start Add Line, Add Area, Add Box, Add Point, or Draw Site Boundary first.");
+      return;
+    }
     const effectivePoints =
       draftPreviewPoint &&
       !draftPoints.some(
@@ -3206,7 +3321,18 @@ export default function PreviewPanel({
         ? [...draftPoints, draftPreviewPoint]
         : draftPoints;
     const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
-    if (effectivePoints.length < minPoints) return;
+    if (effectivePoints.length < minPoints) {
+      const message =
+        drawMode === "site"
+          ? `FINISH blocked: site boundary needs at least three points; ${effectivePoints.length} selected.`
+          : drawMode === "polygon"
+            ? `FINISH blocked: Add Area needs at least three points; ${effectivePoints.length} selected.`
+            : drawMode === "rect"
+              ? `FINISH blocked: Add Box needs two opposite corners; ${effectivePoints.length} selected.`
+              : `FINISH blocked: Add Line needs at least two points; ${effectivePoints.length} selected.`;
+      pushCadCommandFeedback("FINISH", "blocked", message);
+      return;
+    }
     if (drawMode === "site" || drawMode === "polygon") {
       const cleaned = cleanupPolygon(effectivePoints, 0.5);
       if (!cleaned.ok) {
@@ -3232,12 +3358,24 @@ export default function PreviewPanel({
         });
       }
       setCadCommandStatus("POLYGON cleaned and stored as draft review geometry.");
+      pushCadCommandFeedback(
+        drawMode === "site" ? "SITE" : "AREA",
+        "applied",
+        drawMode === "site"
+          ? "Site boundary captured from drawn points."
+          : "AREA created manual_drawn draft_review_required geometry.",
+      );
       setDraftPoints([]);
       setDraftPreviewPoint(null);
       setDrawMode("select");
       return;
     }
     onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
+    pushCadCommandFeedback(
+      drawMode === "rect" ? "BOX" : "LINE",
+      "applied",
+      `${drawMode === "rect" ? "BOX" : "LINE"} created manual_drawn draft_review_required geometry.`,
+    );
     clearDraftGeometry();
     setDrawMode("select");
   }, [
@@ -3247,18 +3385,49 @@ export default function PreviewPanel({
     drawMode,
     onCreateCustomGeometry,
     onCreateSiteBoundary,
+    pushCadCommandFeedback,
   ]);
 
   const draftPointCount = draftPoints.length;
   const finishDraftMinPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
   const finishDraftBlockedReason =
-    draftPoints.length && drawMode !== "rect" && draftPointCount < finishDraftMinPoints
+    drawMode !== "select" && drawMode !== "pan" && drawMode !== "point" && drawMode !== "rect" && draftPointCount < finishDraftMinPoints
       ? drawMode === "site"
         ? "Blocked: draw at least three boundary points before Finish."
         : drawMode === "polygon"
           ? "Blocked: draw at least three area points before Finish."
           : "Blocked: draw at least two line points before Finish."
       : null;
+  const activeDrawToolLabel =
+    drawMode === "site"
+      ? "Draw Site Boundary"
+      : drawMode === "polyline"
+        ? "Add Line"
+        : drawMode === "polygon"
+          ? "Add Area"
+          : drawMode === "rect"
+            ? "Add Box"
+            : drawMode === "point"
+              ? "Add Point"
+              : drawMode === "pan"
+                ? "Pan"
+                : "Select";
+  const activeDrawToolDetail =
+    drawMode === "site"
+      ? "Pick three or more boundary points, then Finish."
+      : drawMode === "polyline"
+        ? "Pick two or more vertices, then Finish."
+        : drawMode === "polygon"
+          ? "Pick three or more area vertices, then Finish."
+          : drawMode === "rect"
+            ? draftPoints.length
+              ? "Pick the opposite box corner."
+              : "Pick the first box corner."
+            : drawMode === "point"
+              ? "Click once to place a draft point."
+              : drawMode === "pan"
+                ? "Drag the canvas."
+                : "Click an object or use Object Manager.";
 
   const handleDrawPointer = useCallback(
     (
@@ -3323,6 +3492,38 @@ export default function PreviewPanel({
       resolveCadSnapPoint,
       screenToSitePoint,
     ],
+  );
+  const activateDrawTool = useCallback(
+    (mode: DrawMode, disabledLabel?: string) => {
+      if (disabledLabel) {
+        pushCadCommandFeedback("TOOL", "blocked", disabledLabel);
+        return;
+      }
+      setDrawMode(mode);
+      clearDraftGeometry();
+      if (mode !== "select") {
+        onSelectBuilding(null);
+        setSelectedVertex(null);
+        setCadSelectionSet([]);
+        onSetPreviewInteraction("edit");
+      }
+      const label =
+        mode === "polyline"
+          ? "Add Line"
+          : mode === "polygon"
+            ? "Add Area"
+            : mode === "rect"
+              ? "Add Box"
+              : mode === "point"
+                ? "Add Point"
+                : mode === "site"
+                  ? "Draw Site Boundary"
+                  : mode === "pan"
+                    ? "Pan"
+                    : "Select";
+      pushCadCommandFeedback("TOOL", "info", `${label} active. ${mode === "select" ? "Click an object or choose one from Object Manager." : "Use the canvas; Finish appears when needed."}`);
+    },
+    [clearDraftGeometry, onSelectBuilding, onSetPreviewInteraction, pushCadCommandFeedback],
   );
 
   const drawModeButtons: Array<{
@@ -5769,25 +5970,18 @@ export default function PreviewPanel({
                       <button
                         key={`grouped-${item.mode}`}
                         type="button"
+                        data-testid={`draw-tool-${item.mode}`}
                         title={disabled ? item.disabledLabel ?? item.label : item.label}
-                        aria-label={item.label}
-                        disabled={disabled}
+                        aria-label={item.mode === "site" ? "Site boundary drawing tool" : item.label}
+                        data-blocked={disabled ? "true" : undefined}
                         onClick={() => {
-                          if (disabled) return;
-                          setDrawMode(item.mode);
-                          clearDraftGeometry();
-                          if (item.mode !== "select") {
-                            onSelectBuilding(null);
-                            setSelectedVertex(null);
-                            setCadSelectionSet([]);
-                            onSetPreviewInteraction("edit");
-                          }
+                          activateDrawTool(item.mode, disabled ? item.disabledLabel ?? `${item.label} blocked.` : undefined);
                         }}
                         className={`relative z-[90] inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 transition ${
                           active
                             ? "border-slate-900 bg-slate-950 text-white"
                             : disabled
-                              ? "cursor-not-allowed border-slate-200 bg-white text-slate-300"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
                               : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         }`}
                       >
@@ -5796,6 +5990,165 @@ export default function PreviewPanel({
                       </button>
                     );
                   })}
+                </section>
+              ) : null}
+              {previewMode === "2d" ? (
+                <section className="pointer-events-auto flex min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="preview-object-manager">
+                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
+                  <select
+                    aria-label="Object Manager object list"
+                    data-testid="preview-object-manager-list"
+                    value={selectedBuildingId ?? ""}
+                    onChange={(event) => {
+                      const id = event.target.value || null;
+                      onSelectBuilding(id);
+                      setCadSelectionSet(id ? [id] : []);
+                      setSelectedVertex(null);
+                    }}
+                    className="h-9 min-w-[168px] max-w-[240px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
+                  >
+                    <option value="">
+                      {objectManagerCounts.total
+                        ? `${objectManagerCounts.total} objects: ${objectManagerCounts.visible} visible`
+                        : "No objects"}
+                    </option>
+                    {objectManagerRows.map((item) => (
+                      <option key={`manager-option-${item.id}`} value={item.id}>
+                        {item.label || item.id} - {getPreviewObjectTypeLabel(item)}
+                        {item.meta?.ui_hidden ? " - hidden" : ""}
+                        {item.generated || item.source === "generated" ? " - generated" : ""}
+                        {item.source === "manual_drawn" || item.type === "custom" ? " - draft" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="hidden h-9 items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 lg:inline-flex" data-testid="preview-object-manager-counts">
+                    {objectManagerCounts.draft} draft / {objectManagerCounts.generated} generated
+                  </span>
+                  {selectedObject ? (
+                    <>
+                      <input
+                        aria-label="Rename selected object"
+                        data-testid="preview-object-manager-rename"
+                        value={selectedObject.label || ""}
+                        onChange={(event) => {
+                          const blocker = getPreviewObjectActionBlocker(selectedObject, "rename");
+                          if (blocker) {
+                            setCadCommandStatus(blocker);
+                            return;
+                          }
+                          updatePreviewManagedObject(selectedObject, { label: event.target.value });
+                        }}
+                        className="h-9 min-w-[128px] max-w-[190px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800"
+                      />
+                      <span className="hidden h-9 max-w-[260px] items-center truncate rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 xl:inline-flex" data-testid="preview-object-manager-selected-status">
+                        {getPreviewObjectDimensionsLabel(selectedObject)} / {getPreviewObjectSourceLabel(selectedObject)} / {getPreviewObjectStatusLabel(selectedObject)}
+                      </span>
+                      <input
+                        type="color"
+                        aria-label="Change selected object color"
+                        data-testid="preview-object-manager-color"
+                        value={String(selectedObject.meta?.ui_color || selectedObject.meta?.color || "#64748b")}
+                        onChange={(event) => {
+                          const blocker = getPreviewObjectActionBlocker(selectedObject, "style");
+                          if (blocker) {
+                            setCadCommandStatus(blocker);
+                            return;
+                          }
+                          updatePreviewManagedObject(selectedObject, {
+                            meta: { ...(selectedObject.meta ?? {}), ui_color: event.target.value },
+                          });
+                        }}
+                        className="h-9 w-10 rounded-md border border-slate-200 bg-white p-1"
+                      />
+                      <select
+                        aria-label="Change selected object layer or type"
+                        data-testid="preview-object-manager-type"
+                        value={selectedObject.type ?? "custom"}
+                        onChange={(event) => {
+                          const blocker = getPreviewObjectActionBlocker(selectedObject, "type");
+                          if (blocker) {
+                            setCadCommandStatus(blocker);
+                            return;
+                          }
+                          const type = event.target.value as BuildingPlacement["type"];
+                          updatePreviewManagedObject(selectedObject, {
+                            type,
+                            meta: { ...(selectedObject.meta ?? {}), cad_layer: getCadLayer(selectedObject) },
+                          });
+                        }}
+                        className="h-9 max-w-[132px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold capitalize text-slate-700"
+                      >
+                        {[
+                          "building",
+                          "road",
+                          "parking",
+                          "sidewalk",
+                          "basin",
+                          "utility_corridor",
+                          "hydrant",
+                          "inlet",
+                          "manhole",
+                          "custom",
+                        ].map((type) => (
+                          <option key={`preview-object-type-${type}`} value={type}>
+                            {type.replace(/_/g, " ")}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        aria-label="Focus selected object"
+                        data-testid="preview-object-manager-focus"
+                        onClick={() => focusPreviewManagedObject(selectedObject)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={selectedObject.meta?.ui_hidden ? "Show selected object" : "Hide selected object"}
+                        data-testid="preview-object-manager-visibility"
+                        onClick={() => {
+                          const blocker = getPreviewObjectActionBlocker(selectedObject, "hide");
+                          if (blocker) {
+                            setCadCommandStatus(blocker);
+                            return;
+                          }
+                          updatePreviewManagedObject(selectedObject, {
+                            meta: {
+                              ...(selectedObject.meta ?? {}),
+                              ui_hidden: !Boolean(selectedObject.meta?.ui_hidden),
+                            },
+                          });
+                        }}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      >
+                        {selectedObject.meta?.ui_hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Delete selected object"
+                        data-testid="preview-object-manager-delete"
+                        onClick={() => {
+                          const blocker = getPreviewObjectActionBlocker(selectedObject, "delete");
+                          if (blocker) {
+                            setCadCommandStatus(blocker);
+                            return;
+                          }
+                          setLastRectEdit({
+                            id: selectedObject.id,
+                            snapshot: { ...selectedObject },
+                            action: "delete",
+                            ts: Date.now(),
+                          });
+                          onRemoveBuilding(selectedObject.id);
+                        }}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </>
+                  ) : null}
                 </section>
               ) : null}
               {previewMode === "2d" ? (
@@ -5921,6 +6274,12 @@ export default function PreviewPanel({
               </section>
             </div>
             <div className="pointer-events-auto relative z-[80] flex min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <span className="rounded-md border border-slate-900 bg-white px-2 py-1 text-slate-900" data-testid="draw-active-tool">
+                {activeDrawToolLabel}
+              </span>
+              <span className="max-w-[320px] truncate normal-case tracking-normal text-slate-600" data-testid="draw-active-tool-detail">
+                {activeDrawToolDetail}
+              </span>
               <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">
                 {drawMode === "site" && draftPoints.length
                   ? "Draft site boundary"
@@ -5953,9 +6312,12 @@ export default function PreviewPanel({
                     <button
                       type="button"
                       onClick={finishDraftGeometry}
-                      disabled={draftPointCount < finishDraftMinPoints}
                       title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                      className="relative z-[90] inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-3 text-xs text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      className={`relative z-[90] inline-flex h-8 items-center rounded-md border px-3 text-xs ${
+                        draftPointCount < finishDraftMinPoints
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : "border-slate-900 bg-slate-950 text-white"
+                      }`}
                     >
                       Finish
                     </button>
@@ -5967,14 +6329,33 @@ export default function PreviewPanel({
                   ) : null}
                   <button
                     type="button"
-                    onClick={clearDraftGeometry}
+                    onClick={() => {
+                      clearDraftGeometry();
+                      setDrawMode("select");
+                      setActiveSnapPoint(null);
+                      setCadCommandStatus("Cancelled active drawing tool.");
+                    }}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    aria-label="Clear draft geometry"
-                    title="Clear draft geometry"
+                    aria-label="Cancel active drawing tool"
+                    title="Cancel active drawing tool"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <X className="h-4 w-4" />
                   </button>
                 </>
+              ) : null}
+              {!draftPoints.length && drawMode !== "select" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearDraftGeometry();
+                    setDrawMode("select");
+                    setActiveSnapPoint(null);
+                    setCadCommandStatus("Cancelled active drawing tool.");
+                  }}
+                  className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
               ) : null}
               {exportBlockReason ? (
                 <span className="ml-auto text-amber-700">
@@ -7201,14 +7582,11 @@ export default function PreviewPanel({
                           type="button"
                           data-testid={compactViewport && item.mode === "site" ? "draw-site-boundary-toolbar" : undefined}
                           title={disabled ? item.disabledLabel ?? item.label : item.label}
-                          aria-label={item.label}
-                          disabled={disabled}
+                          aria-label={item.mode === "site" ? "Site boundary drawing tool" : item.label}
+                          data-blocked={disabled ? "true" : undefined}
                           onClick={() => {
-                            if (disabled) return;
-                            setDrawMode(item.mode);
-                            clearDraftGeometry();
-                            if (item.mode !== "select") {
-                              onSetPreviewInteraction("edit");
+                            activateDrawTool(item.mode, disabled ? item.disabledLabel ?? `${item.label} blocked.` : undefined);
+                            if (!disabled && item.mode !== "select") {
                               window.requestAnimationFrame(() => {
                                 previewRef.current?.scrollIntoView({
                                   behavior: "auto",
@@ -7222,7 +7600,7 @@ export default function PreviewPanel({
                             active
                               ? "border-slate-900 bg-slate-950 text-white"
                               : disabled
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300"
+                                ? "border-amber-200 bg-amber-50 text-amber-700"
                                 : "border-slate-200 bg-white text-slate-700"
                           }`}
                         >
@@ -7237,11 +7615,28 @@ export default function PreviewPanel({
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
-                        disabled={draftPointCount < finishDraftMinPoints}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                        className="relative z-[90] min-h-10 flex-1 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className={`relative z-[90] min-h-10 flex-1 rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
+                          draftPointCount < finishDraftMinPoints
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : "border-slate-900 bg-slate-950 text-white"
+                        }`}
                       >
                         Finish
+                      </button>
+                    ) : null}
+                    {drawMode !== "select" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearDraftGeometry();
+                          setDrawMode("select");
+                          setActiveSnapPoint(null);
+                          setCadCommandStatus("Cancelled active drawing tool.");
+                        }}
+                        className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
+                      >
+                        Cancel
                       </button>
                     ) : null}
                     {siteLocked && onUnlockSite ? (
