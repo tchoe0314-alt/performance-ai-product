@@ -251,6 +251,48 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertEqual(report["outside_site_candidates"][0]["source_feature_id"], "outside-building")
         self.assertTrue(report["outside_site_candidates"][0]["outside_site"])
 
+    def test_site_intelligence_summarizes_frontage_driveway_and_grading_context(self) -> None:
+        report = build_map_feature_detection_report(
+            active_site_boundary={"west": -96.81, "south": 32.77, "east": -96.79, "north": 32.79},
+            gis_layers={
+                "roads": [
+                    {
+                        "id": "road-west",
+                        "geometry": {"type": "LineString", "coordinates": [[-96.811, 32.77], [-96.811, 32.79]]},
+                        "source_name": "city_roads",
+                    }
+                ],
+                "building_footprints": [
+                    {
+                        "id": "inside-building",
+                        "geometry": {"type": "Point", "coordinates": [-96.8, 32.78]},
+                        "source_name": "city_buildings",
+                    }
+                ],
+            },
+            source_results={
+                "elevation": {
+                    "success": True,
+                    "source_type": "usgs_3dep_epqs",
+                    "source": "https://epqs.nationalmap.gov",
+                    "lat": 32.78,
+                    "lng": -96.8,
+                    "elevation": 518.4,
+                    "units": "feet",
+                }
+            },
+        )
+
+        summary = report["site_intelligence_summary_v1"]
+
+        self.assertEqual(summary["version"], "site_intelligence_summary_v1")
+        self.assertEqual(summary["road_frontage"]["likely_frontage_side"], "west")
+        self.assertEqual(summary["driveway_suggestions"][0]["frontage_side"], "west")
+        self.assertEqual(summary["grading_context"]["status"], "single_point_elevation")
+        self.assertFalse(summary["survey_control_satisfied"])
+        self.assertFalse(summary["construction_release_allowed"])
+        self.assertIn("review-required", summary["one_sentence"])
+
     def test_elevation_source_creates_review_required_terrain_candidate(self) -> None:
         report = build_map_feature_detection_report(
             source_results={

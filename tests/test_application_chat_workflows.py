@@ -1371,6 +1371,16 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
             "missing_sources": [
                 {"key": "public_utilities", "label": "public utility layers", "missing": ["No existing utilities GIS source is configured."]},
             ],
+            "site_intelligence_summary_v1": {
+                "version": "site_intelligence_summary_v1",
+                "one_sentence": "Found parcel/site boundary and road/ROW candidates inside the active site; review missing and assumed items before generating.",
+                "road_frontage": {"message": "Likely road frontage is on the west side based on source candidates."},
+                "driveway_suggestions": [{"message": "Use this as a starting suggestion only; confirm access spacing, sight distance, and jurisdiction standards."}],
+                "grading_context": {"message": "Public point elevation gives vertical context, not a grading surface or drainage direction."},
+                "review_required": True,
+                "survey_control_satisfied": False,
+                "construction_release_allowed": False,
+            },
         }
         record["project_input"]["meta"] = {
             "site_inputs": {
@@ -1448,6 +1458,9 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("Sarpy County tax parcels", configured["assistant_message"])
         self.assertIn("review-required", configured["assistant_message"])
         self.assertIn("parcel/site boundary", found["assistant_message"])
+        self.assertIn("Site Intelligence", found["assistant_message"])
+        self.assertIn("Likely road frontage", found["assistant_message"])
+        self.assertIn("not a grading surface", found["assistant_message"])
         self.assertIn("building footprints provider responded but returned no features", found["assistant_message"])
         self.assertIn("provider record(s) are configured", buildings["assistant_message"])
         self.assertIn("will not report source success", buildings["assistant_message"])

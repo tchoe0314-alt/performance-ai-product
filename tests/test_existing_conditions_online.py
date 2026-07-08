@@ -208,6 +208,27 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertEqual(result["elevation"], 512.25)
         self.assertIn("not a topographic survey", result["truth_label"])
 
+    def test_online_fetch_carries_site_intelligence_summary(self) -> None:
+        result = fetch_online_existing_conditions(
+            address="1 Main St",
+            active_site_boundary={"west": -96.81, "south": 32.77, "east": -96.79, "north": 32.79},
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            include_contours=False,
+            session=_RoutingSession(),
+        )
+
+        discovery_summary = result[ONLINE_DISCOVERY_VERSION]["site_intelligence_summary_v1"]
+        feature_summary = result["map_feature_detection_report_v1"]["site_intelligence_summary_v1"]
+
+        self.assertEqual(discovery_summary["version"], "site_intelligence_summary_v1")
+        self.assertEqual(discovery_summary, feature_summary)
+        self.assertIn("road_frontage", discovery_summary)
+        self.assertIn("grading_context", discovery_summary)
+        self.assertFalse(discovery_summary["survey_control_satisfied"])
+        self.assertFalse(discovery_summary["construction_release_allowed"])
+
     def test_fema_and_wetlands_arcgis_queries_become_gis_layers(self) -> None:
         payload = {"type": "FeatureCollection", "features": [{"id": "A", "properties": {}, "geometry": {"type": "Polygon", "coordinates": []}}]}
         fema = fetch_fema_floodplain({"west": -97, "south": 32, "east": -96, "north": 33}, session=_Session(payload))

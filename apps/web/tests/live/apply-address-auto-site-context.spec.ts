@@ -114,6 +114,24 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           review_required: true,
           acceptance_status: "candidate",
           construction_release_allowed: false,
+          site_intelligence_summary_v1: {
+            version: "site_intelligence_summary_v1",
+            one_sentence: "Found road/ROW, building footprints, and parcel candidates near the address; review missing and assumed items before generating.",
+            found: [
+              { feature_type: "building_footprint", label: "building footprint", count: 1, confidence: "source-backed" },
+              { feature_type: "road_or_drive", label: "road/ROW", count: 1, confidence: "source-backed" },
+              { feature_type: "parcel_or_site_boundary", label: "parcel/site boundary", count: 1, confidence: "source-backed" },
+            ],
+            missing: [{ source_type: "existing_utilities", label: "public utility layers", status: "missing_source" }],
+            assumed: [{ key: "terrain_direction", label: "Terrain/drainage direction", status: "single_point_context" }],
+            outside_site: [{ candidate_id: "offsite-building", label: "building footprint" }],
+            road_frontage: { status: "candidate", likely_frontage_side: "west", message: "Likely road frontage is on the west side based on source candidates." },
+            driveway_suggestions: [{ status: "candidate", frontage_side: "west", message: "Use this as a starting suggestion only; confirm access spacing, sight distance, and jurisdiction standards." }],
+            grading_context: { status: "single_point_elevation", message: "Public point elevation gives vertical context, not a grading surface or drainage direction." },
+            review_required: true,
+            survey_control_satisfied: false,
+            construction_release_allowed: false,
+          },
         },
         map_feature_detection_report_v1: {
           version: "map_feature_detection_report_v1",
@@ -149,7 +167,17 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");
   await expect(page.getByTestId("auto-site-context-missing")).toContainText("public utility layers");
   await expect(page.getByTestId("auto-site-context-candidates")).toContainText("review required");
+  await expect(page.getByTestId("site-intelligence-summary")).toBeVisible();
+  await expect(page.getByTestId("site-intelligence-one-sentence")).toContainText("Found road/ROW");
+  await expect(page.getByTestId("site-intelligence-found-count")).toContainText("Found 3");
+  await expect(page.getByTestId("site-intelligence-missing-count")).toContainText("Missing 1");
+  await expect(page.getByTestId("site-intelligence-assumed-count")).toContainText("Assumed 1");
+  await expect(page.getByTestId("site-intelligence-outside-count")).toContainText("Outside 1");
+  await expect(page.getByTestId("site-intelligence-frontage")).toContainText("west side");
+  await expect(page.getByTestId("site-intelligence-driveway")).toContainText("starting suggestion");
+  await expect(page.getByTestId("site-intelligence-grading")).toContainText("not a grading surface");
 
   expect(fetchOnlineCalled).toBeTruthy();
   expect(JSON.stringify(savedProjectInput)).toContain("online_existing_conditions_discovery_v1");
+  expect(JSON.stringify(savedProjectInput)).toContain("site_intelligence_summary_v1");
 });

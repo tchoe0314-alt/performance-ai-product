@@ -8956,6 +8956,31 @@ function PerformanceAIDashboardView({
     (siteInputs?.online_existing_conditions_discovery_v1 ??
       (currentPlanMeta.online_existing_conditions_discovery_v1 as OnlineExistingConditionsDiscovery | undefined) ??
       {}) as OnlineExistingConditionsDiscovery;
+  const mapFeatureDetectionReport =
+    ((siteInputs?.map_feature_detection_report_v1 ??
+      (currentPlanMeta.map_feature_detection_report_v1 as Record<string, unknown> | undefined) ??
+      {}) as Record<string, unknown>);
+  const siteIntelligenceSummary =
+    ((onlineDiscovery.site_intelligence_summary_v1 ??
+      mapFeatureDetectionReport.site_intelligence_summary_v1 ??
+      {}) as Record<string, unknown>);
+  const siteIntelligenceFound = Array.isArray(siteIntelligenceSummary.found)
+    ? (siteIntelligenceSummary.found as Array<Record<string, unknown>>)
+    : [];
+  const siteIntelligenceMissing = Array.isArray(siteIntelligenceSummary.missing)
+    ? (siteIntelligenceSummary.missing as Array<Record<string, unknown>>)
+    : [];
+  const siteIntelligenceAssumed = Array.isArray(siteIntelligenceSummary.assumed)
+    ? (siteIntelligenceSummary.assumed as Array<Record<string, unknown>>)
+    : [];
+  const siteIntelligenceOutside = Array.isArray(siteIntelligenceSummary.outside_site)
+    ? (siteIntelligenceSummary.outside_site as Array<Record<string, unknown>>)
+    : [];
+  const roadFrontageHint = (siteIntelligenceSummary.road_frontage ?? {}) as Record<string, unknown>;
+  const drivewaySuggestion = Array.isArray(siteIntelligenceSummary.driveway_suggestions)
+    ? ((siteIntelligenceSummary.driveway_suggestions as Array<Record<string, unknown>>)[0] ?? {})
+    : {};
+  const gradingContextHint = (siteIntelligenceSummary.grading_context ?? {}) as Record<string, unknown>;
   const onlineDiscoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
   const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
   const onlineMissingSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) <= 0);
@@ -19909,6 +19934,7 @@ function PerformanceAIDashboardView({
                         sidePanelCloseTimeoutRef.current = null;
                       }
                       setRightRailCollapsed(true);
+                      setSidePanelVisible(false);
                     }}
                     className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
                   >
@@ -20733,6 +20759,41 @@ function PerformanceAIDashboardView({
                       ) : null}
                       {hasAppliedAddress ? (
                         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="auto-site-context-summary">
+                          {siteIntelligenceSummary.version ? (
+                            <div className="mb-3 rounded-lg border border-white bg-white/80 p-3" data-testid="site-intelligence-summary">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Site Intelligence</p>
+                                  <p className="mt-1 text-sm font-semibold leading-5 text-slate-800" data-testid="site-intelligence-one-sentence">
+                                    {String(siteIntelligenceSummary.one_sentence || "Apply an address, lock the site, or add sources to build site intelligence.")}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                                  Review
+                                </span>
+                              </div>
+                              <div className="mt-3 grid gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:grid-cols-4">
+                                <span data-testid="site-intelligence-found-count">Found {siteIntelligenceFound.length}</span>
+                                <span data-testid="site-intelligence-missing-count">Missing {siteIntelligenceMissing.length}</span>
+                                <span data-testid="site-intelligence-assumed-count">Assumed {siteIntelligenceAssumed.length}</span>
+                                <span data-testid="site-intelligence-outside-count">Outside {siteIntelligenceOutside.length}</span>
+                              </div>
+                              <div className="mt-3 grid gap-2 text-xs text-slate-600 lg:grid-cols-3">
+                                <p data-testid="site-intelligence-frontage">
+                                  <span className="font-semibold text-slate-800">Frontage:</span>{" "}
+                                  {String(roadFrontageHint.message || "Road frontage was not inferred yet.")}
+                                </p>
+                                <p data-testid="site-intelligence-driveway">
+                                  <span className="font-semibold text-slate-800">Driveway:</span>{" "}
+                                  {String(drivewaySuggestion.message || "Confirm road frontage before driveway suggestions.")}
+                                </p>
+                                <p data-testid="site-intelligence-grading">
+                                  <span className="font-semibold text-slate-800">Grading:</span>{" "}
+                                  {String(gradingContextHint.message || "Add terrain or survey evidence before relying on grading direction.")}
+                                </p>
+                              </div>
+                            </div>
+                          ) : null}
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div>
                               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Found</p>

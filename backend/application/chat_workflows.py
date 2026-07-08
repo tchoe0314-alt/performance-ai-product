@@ -3128,6 +3128,20 @@ def _summarize_online_discovery(discovery: Dict[str, Any], *, why_source_key: st
     ]
     if packs:
         lines.append("Selected provider pack(s): " + "; ".join(packs[:4]) + ".")
+    intelligence = _safe_dict(discovery.get("site_intelligence_summary_v1"))
+    if intelligence:
+        sentence = safe_str(intelligence.get("one_sentence"))
+        if sentence:
+            lines.append(f"Site Intelligence: {sentence}")
+        frontage = _safe_dict(intelligence.get("road_frontage"))
+        if safe_str(frontage.get("message")):
+            lines.append(f"Road frontage: {safe_str(frontage.get('message'))}")
+        driveway = next((_safe_dict(item) for item in _safe_list(intelligence.get("driveway_suggestions")) if _safe_dict(item)), {})
+        if safe_str(driveway.get("message")):
+            lines.append(f"Driveway suggestion: {safe_str(driveway.get('message'))}")
+        grading = _safe_dict(intelligence.get("grading_context"))
+        if safe_str(grading.get("message")):
+            lines.append(f"Grading context: {safe_str(grading.get('message'))}")
     if found:
         lines.append(
             "Found candidates: "
@@ -3184,6 +3198,11 @@ def _online_discovery_chat_response(
             "what did you find",
             "what did you find online",
             "what did you find from online",
+            "what did auto site context detect",
+            "what did site context detect",
+            "what did it detect",
+            "what did it find",
+            "what did civora detect",
             "what online sources",
             "online existing conditions",
         )

@@ -736,6 +736,7 @@ def fetch_online_existing_conditions(
             standards_jurisdiction=standards_jurisdiction,
             provider_registry=registry,
         )
+        discovery_report["site_intelligence_summary_v1"] = safe_dict(feature_report.get("site_intelligence_summary_v1"))
         return {
             "success": False,
             "source_type": "online_existing_conditions_fetch",
@@ -953,6 +954,7 @@ def fetch_online_existing_conditions(
         standards_jurisdiction=standards_jurisdiction,
         provider_registry=registry,
     )
+    discovery_report["site_intelligence_summary_v1"] = safe_dict(feature_report.get("site_intelligence_summary_v1"))
     return {
         "success": any(bool(result.get("success")) for result in source_results.values()),
         "source_type": "online_existing_conditions_fetch",

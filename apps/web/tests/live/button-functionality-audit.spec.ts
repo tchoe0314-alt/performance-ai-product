@@ -11,12 +11,19 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
   if (await workspaceButton.isVisible()) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).first().click();
+  const directButton = page.getByRole("button", { name }).first();
+  if (await directButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await directButton.click();
+  } else if (name instanceof RegExp && name.source === "^Draw$") {
+    await page.getByRole("button", { name: "Open canvas from sidebar" }).click();
+  } else {
+    await directButton.click();
+  }
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
 async function openDrawTools(page: Page) {
-  await openWorkspacePanel(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
+  await openWorkspacePanel(page, "Object Manager", /Draw & Object Manager|CAD Tools/);
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 
@@ -84,10 +91,11 @@ test.describe("button functionality audit", () => {
 
     const panels: Array<[RegExp | string, RegExp | string]> = [
       [/^Setup$/, /Project Setup/],
-      [/^Draw$/, /Draw & Object Manager|CAD Tools/],
+      ["Open canvas from sidebar", /Canvas/],
+      ["Object Manager", /Draw & Object Manager|CAD Tools/],
       ["Generate", /Generate Systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
-      ["Dashboard", /Dashboard|Project/],
+      ["Recent changes", /Recent changes|History/],
     ];
 
     for (const [button, expected] of panels) {
@@ -98,9 +106,9 @@ test.describe("button functionality audit", () => {
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
     await page.getByRole("button", { name: "Open workspace controls" }).click();
-    await expect(page.getByRole("button", { name: "Minimize Civora workspace controls" })).toBeVisible();
-    await page.getByRole("button", { name: "Minimize Civora workspace controls" }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" })).toBeVisible();
+    await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" }).click();
+    await expect(page.getByTestId("workspace-right-panel")).toBeHidden();
 
     await page.getByRole("button", { name: "Hide left sidebar" }).click();
     await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();

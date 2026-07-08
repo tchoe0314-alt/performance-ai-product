@@ -1309,6 +1309,7 @@ export type OnlineExistingConditionsDiscovery = {
   blockers?: string[];
   survey_control?: Record<string, unknown>;
   local_gis_provider_registry_v1?: LocalGisProviderRegistry;
+  site_intelligence_summary_v1?: Record<string, unknown>;
   configured_provider_count?: number;
   review_required?: boolean;
   acceptance_status?: string;

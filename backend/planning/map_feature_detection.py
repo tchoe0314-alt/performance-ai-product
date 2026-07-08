@@ -150,7 +150,7 @@ def location_context_from_geocode(*, address: str = "", geocode: Optional[Dict[s
                 "confidence": rec.get("confidence"),
             }
         ],
-        "truth_label": "Address/geocode is location context only; it is not a site boundary, survey, control, or construction approval.",
+        "truth_label": "Address/geocode is location context only; it is not a site boundary, survey, control, or construction authorization.",
     }
 
 
@@ -287,6 +287,16 @@ def build_map_feature_detection_report(
                 }
             )
 
+    intelligence = _site_intelligence_summary(
+        candidates=candidates,
+        outside_site_candidates=outside_site_candidates,
+        blockers=blockers,
+        source_discovery=source_discovery,
+        active_site_boundary=boundary,
+        source_results=safe_dict(source_results),
+        location_context=safe_dict(location_context),
+    )
+
     return {
         "version": REPORT_VERSION,
         "status": "candidates_found" if candidates else "blocked_no_feature_source",
@@ -305,6 +315,7 @@ def build_map_feature_detection_report(
             "Feature candidates are evidence for engineer/user review only. Civora prepares traceable review packages and does not act as engineer of record."
         ),
         "chat_panel_summary": _chat_panel_summary(candidates, blockers),
+        "site_intelligence_summary_v1": intelligence,
     }
 
 
@@ -573,6 +584,298 @@ def _chat_panel_summary(candidates: List[Dict[str, Any]], blockers: List[Dict[st
         "message": message,
         "candidate_counts": {},
     }
+
+
+def _site_intelligence_summary(
+    *,
+    candidates: List[Dict[str, Any]],
+    outside_site_candidates: List[Dict[str, Any]],
+    blockers: List[Dict[str, Any]],
+    source_discovery: Dict[str, Dict[str, Any]],
+    active_site_boundary: Dict[str, Any],
+    source_results: Dict[str, Any],
+    location_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    counts: Dict[str, int] = {}
+    labels: Dict[str, str] = {}
+    for candidate in candidates:
+        feature_type = safe_str(candidate.get("feature_type"), "unknown")
+        counts[feature_type] = counts.get(feature_type, 0) + 1
+        labels[feature_type] = FEATURE_TYPE_LABELS.get(feature_type, feature_type.replace("_", " "))
+
+    found = [
+        {
+            "feature_type": feature_type,
+            "label": labels.get(feature_type, feature_type),
+            "count": count,
+            "confidence": _confidence_for_feature(candidates, feature_type),
+            "source_status": "source_backed_candidate",
+            "review_required": True,
+        }
+        for feature_type, count in sorted(counts.items())
+    ]
+    missing = [
+        {
+            "source_type": source_type,
+            "label": safe_str(record.get("label"), source_type),
+            "status": safe_str(record.get("status"), "missing_source"),
+            "next_action": safe_str(record.get("next_action") or record.get("blocker"), "Configure/import this source before relying on automatic detection."),
+        }
+        for source_type, record in source_discovery.items()
+        if safe_str(record.get("status")) in {"missing_source", "configured_no_features"}
+    ]
+    outside = [
+        {
+            "candidate_id": safe_str(candidate.get("candidate_id")),
+            "feature_type": safe_str(candidate.get("feature_type")),
+            "label": FEATURE_TYPE_LABELS.get(safe_str(candidate.get("feature_type")), safe_str(candidate.get("feature_type"))),
+            "source_feature_id": safe_str(candidate.get("source_feature_id")),
+            "reason": "Outside the active site boundary; ignored for generation unless the site boundary changes.",
+        }
+        for candidate in outside_site_candidates[:12]
+    ]
+    assumed: List[Dict[str, Any]] = []
+    elevation = safe_dict(source_results.get("elevation"))
+    if elevation.get("success"):
+        assumed.append(
+            {
+                "key": "terrain_direction",
+                "label": "Terrain/drainage direction",
+                "status": "single_point_context",
+                "value": f"{elevation.get('elevation')} {safe_str(elevation.get('units'), 'Feet')}".strip(),
+                "confidence": "low",
+                "review_required": True,
+                "message": "Only one public elevation sample is available; slope direction still needs survey, DEM grid, LiDAR, or user-approved terrain.",
+            }
+        )
+    elif safe_str(elevation.get("status")) not in {"", "skipped"}:
+        assumed.append(
+            {
+                "key": "terrain_direction",
+                "label": "Terrain/drainage direction",
+                "status": safe_str(elevation.get("status")),
+                "confidence": "unavailable",
+                "review_required": True,
+                "message": "Terrain direction could not be inferred from available sources.",
+            }
+        )
+
+    road_candidates = [
+        candidate
+        for candidate in [*candidates, *outside_site_candidates]
+        if safe_str(candidate.get("feature_type")) == "road_or_drive"
+    ]
+    building_candidates = [candidate for candidate in candidates if safe_str(candidate.get("feature_type")) == "building_footprint"]
+    parcel_candidates = [candidate for candidate in candidates if safe_str(candidate.get("feature_type")) == "parcel_or_site_boundary"]
+    boundary_bbox = _geometry_bbox(active_site_boundary) or _bbox_from_mapping(active_site_boundary)
+    road_frontage = _road_frontage_hint(road_candidates=road_candidates, boundary_bbox=boundary_bbox)
+    suggested_site_box = _suggested_site_box_hint(boundary_bbox=boundary_bbox, parcel_candidates=parcel_candidates, location_context=location_context)
+    driveway_suggestions = _driveway_suggestion_hints(road_candidates=road_candidates, boundary_bbox=boundary_bbox)
+    grading_context = _grading_context_hint(elevation=elevation, boundary_bbox=boundary_bbox)
+    confidence_labels = _confidence_labels(found=found, missing=missing, assumed=assumed, outside=outside)
+    one_sentence = _site_intelligence_sentence(
+        found=found,
+        missing=missing,
+        assumed=assumed,
+        outside=outside,
+        has_boundary=bool(boundary_bbox),
+        building_count=len(building_candidates),
+    )
+
+    return {
+        "version": "site_intelligence_summary_v1",
+        "status": "ready_for_review" if found or assumed else "missing_sources",
+        "one_sentence": one_sentence,
+        "found": found,
+        "missing": missing,
+        "assumed": assumed,
+        "outside_site": outside,
+        "road_frontage": road_frontage,
+        "driveway_suggestions": driveway_suggestions,
+        "suggested_site_box": suggested_site_box,
+        "grading_context": grading_context,
+        "confidence_labels": confidence_labels,
+        "blockers": [safe_str(item.get("message")) for item in blockers if safe_str(safe_dict(item).get("message"))][:12],
+        "review_required": True,
+        "survey_control_satisfied": False,
+        "construction_release_allowed": False,
+        "truth_label": "Auto Site Intelligence summarizes source-backed candidates and assumptions only; it is not survey/control, utility locate, professional authorization, certification, or construction release evidence.",
+    }
+
+
+def _confidence_for_feature(candidates: List[Dict[str, Any]], feature_type: str) -> str:
+    values = [safe_float(candidate.get("confidence"), 0.0) for candidate in candidates if safe_str(candidate.get("feature_type")) == feature_type]
+    if not values:
+        return "unavailable"
+    average = sum(values) / len(values)
+    if average >= 0.85:
+        return "source-backed"
+    if average >= 0.65:
+        return "medium"
+    return "low"
+
+
+def _road_frontage_hint(*, road_candidates: List[Dict[str, Any]], boundary_bbox: Optional[tuple[float, float, float, float]]) -> Dict[str, Any]:
+    if not road_candidates:
+        return {
+            "status": "missing",
+            "message": "No road/ROW candidate was found, so frontage and driveway side were not inferred.",
+            "review_required": True,
+        }
+    if not boundary_bbox:
+        return {
+            "status": "candidate_without_site_box",
+            "candidate_count": len(road_candidates),
+            "message": "Road candidates were found, but no active site boundary was available to infer frontage side.",
+            "review_required": True,
+        }
+    side_counts: Dict[str, int] = {"west": 0, "east": 0, "south": 0, "north": 0}
+    for candidate in road_candidates:
+        box = _geometry_bbox(candidate.get("geometry")) or _bbox_from_mapping(safe_dict(candidate.get("geometry")))
+        if not box:
+            continue
+        side = _nearest_bbox_side(box, boundary_bbox)
+        side_counts[side] = side_counts.get(side, 0) + 1
+    side = max(side_counts, key=lambda item: side_counts[item]) if any(side_counts.values()) else "unknown"
+    return {
+        "status": "candidate",
+        "candidate_count": len(road_candidates),
+        "likely_frontage_side": side,
+        "confidence": "medium" if side != "unknown" else "low",
+        "message": f"Likely road frontage is on the {side} side based on source candidates." if side != "unknown" else "Road candidates were found, but frontage side could not be inferred from geometry.",
+        "review_required": True,
+    }
+
+
+def _driveway_suggestion_hints(*, road_candidates: List[Dict[str, Any]], boundary_bbox: Optional[tuple[float, float, float, float]]) -> List[Dict[str, Any]]:
+    frontage = _road_frontage_hint(road_candidates=road_candidates, boundary_bbox=boundary_bbox)
+    side = safe_str(frontage.get("likely_frontage_side"))
+    if safe_str(frontage.get("status")) != "candidate" or side in {"", "unknown"}:
+        return [
+            {
+                "status": "blocked_missing_frontage",
+                "message": "Add/confirm road frontage before Civora can suggest a driveway side.",
+                "review_required": True,
+            }
+        ]
+    return [
+        {
+            "status": "candidate",
+            "label": f"Review driveway along {side} frontage",
+            "frontage_side": side,
+            "confidence": safe_str(frontage.get("confidence"), "medium"),
+            "message": "Use this as a starting suggestion only; confirm access spacing, sight distance, and jurisdiction standards.",
+            "review_required": True,
+        }
+    ]
+
+
+def _suggested_site_box_hint(
+    *,
+    boundary_bbox: Optional[tuple[float, float, float, float]],
+    parcel_candidates: List[Dict[str, Any]],
+    location_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    if boundary_bbox:
+        return {
+            "status": "active_site_boundary",
+            "source": "locked_or_draft_site_boundary",
+            "bbox": {"west": boundary_bbox[0], "south": boundary_bbox[1], "east": boundary_bbox[2], "north": boundary_bbox[3]},
+            "message": "Using the active site boundary for inside/outside filtering.",
+            "review_required": True,
+        }
+    if parcel_candidates:
+        first_bbox = _geometry_bbox(parcel_candidates[0].get("geometry"))
+        return {
+            "status": "parcel_candidate",
+            "source": "parcel_candidate",
+            "bbox": {"west": first_bbox[0], "south": first_bbox[1], "east": first_bbox[2], "north": first_bbox[3]} if first_bbox else {},
+            "message": "Use the parcel candidate as a starting site box only after review.",
+            "review_required": True,
+        }
+    coords = safe_dict(location_context.get("coordinates"))
+    if coords.get("lat") is not None and coords.get("lng") is not None:
+        return {
+            "status": "address_center_only",
+            "source": "geocode",
+            "center": {"lat": coords.get("lat"), "lng": coords.get("lng")},
+            "message": "No parcel/site boundary candidate was found; start from the geocode center and draw or size the site.",
+            "review_required": True,
+        }
+    return {
+        "status": "missing",
+        "message": "No address, parcel, or active site boundary is available for a suggested site box.",
+        "review_required": True,
+    }
+
+
+def _grading_context_hint(*, elevation: Dict[str, Any], boundary_bbox: Optional[tuple[float, float, float, float]]) -> Dict[str, Any]:
+    if elevation.get("success"):
+        return {
+            "status": "single_point_elevation",
+            "source": safe_str(elevation.get("source_type"), "usgs_3dep_epqs"),
+            "elevation": elevation.get("elevation"),
+            "units": safe_str(elevation.get("units"), "Feet"),
+            "confidence": "low",
+            "message": "Public point elevation gives vertical context, not a grading surface or drainage direction.",
+            "next_action": "Add survey/topo, DEM grid, LiDAR, or an explicit review assumption before relying on grading direction.",
+            "review_required": True,
+            "site_boundary_present": bool(boundary_bbox),
+        }
+    return {
+        "status": safe_str(elevation.get("status"), "missing"),
+        "confidence": "unavailable",
+        "message": "No terrain/elevation context is available yet.",
+        "next_action": "Upload survey/topo, configure terrain sources, or use an explicit assumed slope for review.",
+        "review_required": True,
+        "site_boundary_present": bool(boundary_bbox),
+    }
+
+
+def _nearest_bbox_side(candidate: tuple[float, float, float, float], boundary: tuple[float, float, float, float]) -> str:
+    candidate_x = (candidate[0] + candidate[2]) / 2.0
+    candidate_y = (candidate[1] + candidate[3]) / 2.0
+    distances = {
+        "west": abs(candidate_x - boundary[0]),
+        "east": abs(candidate_x - boundary[2]),
+        "south": abs(candidate_y - boundary[1]),
+        "north": abs(candidate_y - boundary[3]),
+    }
+    return min(distances, key=distances.get)
+
+
+def _confidence_labels(*, found: List[Dict[str, Any]], missing: List[Dict[str, Any]], assumed: List[Dict[str, Any]], outside: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    labels = [
+        {"label": "Found", "count": len(found), "meaning": "Source-backed candidates that still need review."},
+        {"label": "Missing", "count": len(missing), "meaning": "Sources absent, failed, or returned no usable features."},
+        {"label": "Assumed", "count": len(assumed), "meaning": "Helpful context or assumptions, not source proof."},
+        {"label": "Outside site", "count": len(outside), "meaning": "Candidates outside the active site boundary; ignored unless boundary changes."},
+    ]
+    return labels
+
+
+def _site_intelligence_sentence(
+    *,
+    found: List[Dict[str, Any]],
+    missing: List[Dict[str, Any]],
+    assumed: List[Dict[str, Any]],
+    outside: List[Dict[str, Any]],
+    has_boundary: bool,
+    building_count: int,
+) -> str:
+    if found:
+        found_labels = ", ".join(safe_str(item.get("label")) for item in found[:3] if safe_str(item.get("label")))
+        suffix = " inside the active site" if has_boundary else " near the address"
+        if building_count:
+            return f"Found {found_labels}{suffix}; buildings and other source candidates stay review-required."
+        return f"Found {found_labels}{suffix}; review missing and assumed items before generating."
+    if assumed:
+        return "No source-backed site features were found yet; only review assumptions/context are available."
+    if missing:
+        return "No source-backed site features were found because required providers are missing, unavailable, or empty."
+    if outside:
+        return "Source candidates were found outside the active site boundary and are ignored for generation."
+    return "Apply an address, configure/import sources, or draw the site to build Auto Site Intelligence."
 
 
 __all__ = [
