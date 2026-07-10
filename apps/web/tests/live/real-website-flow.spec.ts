@@ -58,7 +58,10 @@ test.describe("real website workflow clarity", () => {
     await expectSectionToggles(page, "setup-site-box-controls", "Site Boundary", /Width \(ft\)/);
     await page.getByTestId("setup-survey-terrain-card").getByText("Survey / Terrain").first().click();
     await expect(page.getByTestId("setup-survey-terrain-card")).toHaveAttribute("open", "");
-    await page.getByTestId("setup-detect-inside-site").getByText("Auto Site Context").first().click();
+    const siteContextDetails = page.getByTestId("setup-detect-inside-site");
+    if (!(await siteContextDetails.evaluate((node) => node.hasAttribute("open")))) {
+      await siteContextDetails.getByText("Auto Site Context").first().click();
+    }
     await expect(page.getByTestId("setup-detect-inside-site")).toHaveAttribute("open", "");
 
     const objectOpenMs = await timedOpen(page, "Object Manager", /Draw & Object Manager|CAD Tools/);

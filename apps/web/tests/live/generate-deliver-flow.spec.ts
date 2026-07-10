@@ -49,6 +49,10 @@ test.describe("Generate and Deliver product flow", () => {
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:/i, { timeout: 5_000 });
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Needs review:/i);
+    const systemDetails = page.getByTestId("generate-system-details");
+    if (!(await systemDetails.evaluate((node) => node.hasAttribute("open")))) {
+      await systemDetails.locator("summary").click();
+    }
     await page.getByTestId("generate-drainage").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/drainage/i);
 
