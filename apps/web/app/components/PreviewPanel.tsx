@@ -9461,6 +9461,7 @@ export default function PreviewPanel({
                               width: `${rectPct.width}%`,
                               height: `${rectPct.height}%`,
                               zIndex: hitZIndex,
+                              scrollMarginBottom: "10rem",
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: caps.movable ? (isPolyline ? "grab" : "move") : "default",
@@ -9486,7 +9487,7 @@ export default function PreviewPanel({
                             }}
                           >
                             <div
-                              className={`h-full w-full rounded-[8px] shadow-sm transition ${
+                              className={`pointer-events-none h-full w-full rounded-[8px] shadow-sm transition ${
                                 showBoxChrome ? `border ${borderColor}` : ""
                               } ${
                                 showBoxChrome && isSelected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-white/80 shadow-[0_0_0_6px_rgba(251,191,36,0.14)]" : ""
@@ -9786,6 +9787,7 @@ export default function PreviewPanel({
                               width: `${rectPct.width}%`,
                               height: `${rectPct.height}%`,
                               zIndex: hitZIndex,
+                              scrollMarginBottom: "10rem",
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: "move",
@@ -10293,6 +10295,7 @@ export default function PreviewPanel({
                               width: `${rectPct.width}%`,
                               height: `${rectPct.height}%`,
                               zIndex: hitZIndex,
+                              scrollMarginBottom: "10rem",
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: placementMode ? "move" : "default",
@@ -10309,7 +10312,7 @@ export default function PreviewPanel({
                             }}
                           >
                             <div
-                              className={`h-full w-full rounded-[8px] border bg-slate-900/10 transition ${borderColor}`}
+                              className={`pointer-events-none h-full w-full rounded-[8px] border bg-slate-900/10 transition ${borderColor}`}
                               style={outlineColor ? { borderColor: outlineColor } : undefined}
                             />
                             <button
@@ -10363,6 +10366,7 @@ export default function PreviewPanel({
                                 width: `${rectPct.width}%`,
                                 height: `${rectPct.height}%`,
                                 zIndex: hitZIndex,
+                                scrollMarginBottom: "10rem",
                                 transform: `rotate(${rotation}deg)`,
                                 transformOrigin: "center",
                                 cursor: "pointer",

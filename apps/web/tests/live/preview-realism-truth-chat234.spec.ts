@@ -34,9 +34,10 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await expect(page.getByTestId("plan-basin-shelf-cues").first()).toBeVisible();
     await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
 
-    const topVisibleOverlay = page
-      .locator('div[data-object-overlay][data-visual-kind="utility"][aria-label="Select Hydrant W-12"], [data-object-overlay][data-visual-kind]')
-      .first();
+    const hydrantOverlay = page.locator('div[data-object-overlay][aria-label="Select Hydrant W-12"]').first();
+    const topVisibleOverlay = (await hydrantOverlay.isVisible().catch(() => false))
+      ? hydrantOverlay
+      : page.locator("[data-object-overlay][data-visual-kind]").first();
     await topVisibleOverlay.hover();
     await expect(page.getByTestId("preview-fallback-object-badge").or(page.getByTestId("preview-source-review-object-badge")).first()).toBeVisible();
 
