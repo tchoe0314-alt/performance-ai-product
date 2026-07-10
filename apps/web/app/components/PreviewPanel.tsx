@@ -4032,6 +4032,13 @@ export default function PreviewPanel({
       rectPct.top + Math.max(rectPct.height, 0) > 0,
     [],
   );
+  const interactiveRectPercent = useCallback(
+    (item: BuildingPlacement, targetMap: mapboxgl.Map | null) => {
+      const anchored = mapAnchoredRectPercent(item, targetMap);
+      return rectIntersectsPreview(anchored) ? anchored : siteRectPercent(item);
+    },
+    [mapAnchoredRectPercent, rectIntersectsPreview, siteRectPercent],
+  );
 
   useEffect(() => {
     if (!mapAvailable) return;
@@ -9415,7 +9422,7 @@ export default function PreviewPanel({
                       .map((item) => {
                         const caps = getEditCapabilities(item);
                         const isSelected = selectedBuildingId === item.id;
-                        const rectPct = mapAnchoredRectPercent(item, mapRef.current);
+                        const rectPct = interactiveRectPercent(item, mapRef.current);
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const borderColorMap: Record<string, string> = {
                           site: previewQuality === "high" ? "border-white/70" : "border-slate-400",
@@ -9783,7 +9790,7 @@ export default function PreviewPanel({
                       {suggestedPlacements
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
-                        const rectPct = mapAnchoredRectPercent(item, mapRef.current);
+                        const rectPct = interactiveRectPercent(item, mapRef.current);
                         if (!rectIntersectsPreview(rectPct)) return null;
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
@@ -10270,7 +10277,7 @@ export default function PreviewPanel({
                     {visibleCadObjects
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
-                        const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
+                        const rectPct = interactiveRectPercent(item, fullscreenMapRef.current);
                         if (!rectIntersectsPreview(rectPct)) return null;
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const isSite = item.type === "site";
@@ -10349,7 +10356,7 @@ export default function PreviewPanel({
                       {suggestedPlacements
                         .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                         .map((item) => {
-                          const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
+                          const rectPct = interactiveRectPercent(item, fullscreenMapRef.current);
                           if (!rectIntersectsPreview(rectPct)) return null;
                           const rotation = showMap ? 0 : (item.rotation ?? 0);
                           const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
