@@ -49,6 +49,44 @@ async function openPdfPanel(page: Page) {
     return workflow;
   }
 
+  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+  if (await workspaceButton.isVisible().catch(() => false)) {
+    await workspaceButton.click();
+  }
+
+  const directPanels = [
+    page.getByRole("button", { name: /^Deliver$/ }).first(),
+    page.getByRole("button", { name: /^Setup$/ }).first(),
+    page.getByRole("button", { name: /^Import$/ }).first(),
+  ];
+  for (const panelButton of directPanels) {
+    if (await panelButton.isVisible().catch(() => false)) {
+      await panelButton.click();
+      await page.waitForTimeout(150);
+      for (const sectionName of ["Survey / Terrain / Sources", "Auto Site Context Results"]) {
+        const section = page.getByText(sectionName, { exact: true }).first();
+        if (await section.isVisible().catch(() => false)) {
+          await section.click();
+          await page.waitForTimeout(150);
+        }
+      }
+      for (const panelName of [/Files \/ PDFs/i, /Online Sources/i, /Plan PDF/i]) {
+        const nestedButton = page.getByRole("button", { name: panelName }).first();
+        if (await nestedButton.isVisible().catch(() => false)) {
+          await nestedButton.click();
+          await page.waitForTimeout(150);
+          const details = page.getByText("Detailed source evidence and import tools", { exact: true }).first();
+          if (await details.isVisible().catch(() => false)) {
+            await details.click();
+          }
+          if (await workflow.isVisible({ timeout: 5_000 }).catch(() => false)) {
+            return workflow;
+          }
+        }
+      }
+    }
+  }
+
   for (const name of [/Survey \/ Import/i, /Files \/ PDFs/i, /Files/i, /Plan PDF visual editor/i, /^Plan PDF$/i, /^Data$/i, /Data/i]) {
     const button = page.getByRole("button", { name }).first();
     if ((await button.count().catch(() => 0)) > 0) {
