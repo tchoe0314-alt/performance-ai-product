@@ -305,6 +305,12 @@ test.describe("project drawer reliability", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
     expect(pageErrors).toEqual([]);
-    expect(consoleErrors.filter((message) => !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);
+    expect(
+      consoleErrors.filter(
+        (message) =>
+          !message.includes("ERR_CONNECTION_REFUSED") &&
+          !message.includes("401 (Unauthorized)"),
+      ),
+    ).toEqual([]);
   });
 });

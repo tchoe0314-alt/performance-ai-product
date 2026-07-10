@@ -82,6 +82,24 @@ export default function AppHeader({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenChat}
+            aria-label="Open Civora chat history"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-900 bg-slate-950 text-white transition hover:bg-slate-800 md:hidden"
+            title="Chat"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenProjects}
+            aria-label="Open projects"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white/80 text-slate-700 transition hover:bg-slate-50 md:hidden"
+            title="Projects"
+          >
+            <FolderOpen className="h-4 w-4" />
+          </button>
           <button type="button" onClick={onOpenDocs} className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white/80 text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Help">
             <CircleHelp className="h-4 w-4" />
           </button>

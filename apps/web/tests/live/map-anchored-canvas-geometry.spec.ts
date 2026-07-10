@@ -88,10 +88,10 @@ test.describe("map anchored canvas geometry transforms", () => {
   });
 
   test("high quality panel copy stays visual-only and avoids restricted wording", () => {
-    const source = fs.readFileSync(
-      path.resolve(process.cwd(), "app/components/PreviewPanel.tsx"),
-      "utf8",
-    );
+    const sourcePath = fs.existsSync(path.resolve(process.cwd(), "app/components/PreviewPanel.tsx"))
+      ? path.resolve(process.cwd(), "app/components/PreviewPanel.tsx")
+      : path.resolve(process.cwd(), "apps/web/app/components/PreviewPanel.tsx");
+    const source = fs.readFileSync(sourcePath, "utf8");
     const highQualityStart = source.indexOf('data-testid="high-quality-preview-only-label"');
     const highQualityEnd = source.indexOf('data-testid="high-quality-lite-label"', highQualityStart);
     const highQualitySection = source.slice(highQualityStart, highQualityEnd + 2500);

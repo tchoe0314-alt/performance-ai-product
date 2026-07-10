@@ -279,13 +279,13 @@ function resolveActionLabel(configuredAction: string | null, issues: string[]) {
   return configuredAction;
 }
 
-async function openProject(page: Page, token: string, name: string) {
+async function openProject(page: Page, token: string, name: string, projectId?: string) {
   await seedBrowserToken(page, token);
   await ensureSignedIn(page, token);
   const projectsButton = page.getByRole("button", { name: "Open projects", exact: true });
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const projectButton = page
-      .getByRole("button", { name: new RegExp(`^${escapeRegExp(name)}\\b`, "i") })
+      .getByRole("button", { name: new RegExp(`^(Open project )?${escapeRegExp(name)}\\b`, "i") })
       .first();
     try {
       if (!(await projectButton.isVisible({ timeout: 1_000 }).catch(() => false))) {
@@ -299,9 +299,18 @@ async function openProject(page: Page, token: string, name: string) {
           page.waitForTimeout(3_000),
         ]);
       }
+      const resultResponsePromise = projectId
+        ? page.waitForResponse((response) => {
+            return response.url().includes(`/api/projects/${projectId}/result`) && response.request().method() === "GET";
+          }).catch(() => null)
+        : Promise.resolve(null);
       await expect(projectButton).toBeVisible({ timeout: 20_000 });
       await projectButton.click();
       await waitForAuthenticatedShell(page);
+      await Promise.race([
+        resultResponsePromise,
+        page.waitForTimeout(8_000),
+      ]);
       await page.getByText(new RegExp(escapeRegExp(name), "i")).first().waitFor({ timeout: 10_000 });
       return;
     } catch (err) {
@@ -315,29 +324,98 @@ async function openProject(page: Page, token: string, name: string) {
 }
 
 async function applyIssue(page: Page, actionLabel: string) {
-  const reviewButton = page.getByRole("button", { name: "Review", exact: true }).first();
-  await expect(reviewButton).toBeVisible({ timeout: 12_000 });
-  await reviewButton.click();
-  const modernPanel = page.getByTestId("bottom-review-panel");
-  let applyButton = modernPanel.getByRole("button", { name: new RegExp(`^${escapeRegExp(actionLabel)}$`, "i") }).first();
-  if (await modernPanel.isVisible().catch(() => false)) {
-    const openPanel = modernPanel.getByRole("button", { name: "Open", exact: true });
-    if (await openPanel.isVisible().catch(() => false)) {
-      await openPanel.click();
+  const applyButtonPattern = new RegExp(`^${escapeRegExp(actionLabel)}$`, "i");
+  const findVisibleApplyButton = async () => {
+    const buttons = page.getByRole("button", { name: applyButtonPattern });
+    const count = await buttons.count();
+    for (let index = 0; index < count; index += 1) {
+      const button = buttons.nth(index);
+      if (await button.isVisible().catch(() => false)) return button;
     }
-    const issuesTab = modernPanel.getByRole("button", { name: "Issues", exact: true });
-    if (await issuesTab.isVisible().catch(() => false)) {
-      await issuesTab.click();
+    return null;
+  };
+
+  const waitForVisibleApplyButton = async (timeoutMs = 8_000) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const button = await findVisibleApplyButton();
+      if (button) return button;
+      await page.waitForTimeout(250);
     }
-  } else {
-    const engineeringIssues = page.getByText("Engineering Issues", { exact: true }).first();
+    return null;
+  };
+
+  const clickFirstVisible = async (names: Array<string | RegExp>) => {
+    for (const name of names) {
+      const button = page.getByRole("button", { name, exact: typeof name === "string" }).first();
+      if (await button.isVisible().catch(() => false)) {
+        await button.click();
+        await page.waitForTimeout(250);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  let applyButton = await waitForVisibleApplyButton(2_000);
+  if (!applyButton) {
+    await clickFirstVisible(["Analyze", "Review & QA", "Issues", "Recent changes", "Review gates"]);
+
+    const modernPanel = page.getByTestId("bottom-review-panel");
+    if (await modernPanel.isVisible().catch(() => false)) {
+      const openPanel = modernPanel.getByRole("button", { name: "Open", exact: true });
+      if (await openPanel.isVisible().catch(() => false)) {
+        await openPanel.click();
+      }
+      await clickFirstVisible(["Issues", "Review gates", "Recent changes", /review/i]);
+    }
+
+    applyButton = await waitForVisibleApplyButton();
+  }
+
+  if (!applyButton) {
+    const deliverOpened = await clickFirstVisible(["Deliver"]);
+    if (deliverOpened) {
+      const reviewGates = page.getByRole("button", { name: /Review gates/i }).first();
+      if (await reviewGates.isVisible().catch(() => false)) {
+        await reviewGates.scrollIntoViewIfNeeded();
+        await reviewGates.click();
+        await page.waitForTimeout(500);
+      }
+    } else {
+      await clickFirstVisible(["Review gates", "Issues", "Recent changes"]);
+    }
+    applyButton = await waitForVisibleApplyButton();
+  }
+
+  if (!applyButton) {
+    const engineeringIssues = page.getByText(/Engineering Issues|Issue Tracker|Review gates/i).first();
     await engineeringIssues.scrollIntoViewIfNeeded();
     await expect(engineeringIssues).toBeVisible({ timeout: 12_000 });
-    applyButton = page.getByRole("button", { name: new RegExp(`^${escapeRegExp(actionLabel)}$`, "i") }).first();
+    applyButton = await waitForVisibleApplyButton();
   }
-  await expect(applyButton).toBeVisible({ timeout: 20_000 });
-  await expect(applyButton).toBeEnabled({ timeout: 5_000 });
-  await applyButton.evaluate((element: HTMLElement) => element.click());
+
+  if (!applyButton) {
+    const visibleButtons = await page.getByRole("button").evaluateAll((buttons) =>
+      buttons
+        .filter((button) => {
+          const element = button as HTMLElement;
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        })
+        .map((button) => (button.textContent || button.getAttribute("aria-label") || "").trim())
+        .filter(Boolean)
+        .slice(0, 80),
+    );
+    throw new Error(
+      `Could not find visible autofix button "${actionLabel}" in the current workspace UI. Visible buttons: ${visibleButtons.join(" | ")}`,
+    );
+  }
+  const finalApplyButton = applyButton;
+  await expect(finalApplyButton).toBeVisible({ timeout: 20_000 });
+  await expect(finalApplyButton).toBeEnabled({ timeout: 5_000 });
+  await finalApplyButton.evaluate((element: HTMLElement) => element.click());
   await page.waitForTimeout(5_000);
 }
 
@@ -507,7 +585,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
             applyError = "No issues produced; cannot apply autofix.";
           } else {
             console.info(`${entry.name} BEFORE`, before);
-            await withTimeout(openProject(page, token, entry.name), 90_000, `${entry.name} openProject`);
+            await withTimeout(openProject(page, token, entry.name, projectId), 90_000, `${entry.name} openProject`);
           const jobResponsePromise = page.waitForResponse((response) => {
             return response.url().includes("/api/jobs/drainage") && response.request().method() === "POST";
           });

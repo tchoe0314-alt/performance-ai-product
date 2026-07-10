@@ -18,16 +18,15 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
 
   await page.goto(`${baseURL}/?demo=1`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
-  await page.getByRole("banner").getByRole("button", { name: "Dashboard" }).click();
+  await page.getByRole("banner").getByRole("button", { name: "Recent changes" }).click();
   const rightPanel = page.getByTestId("workspace-right-panel");
   await expect(rightPanel.getByText("Onboarding checklist")).toBeVisible();
   await expect(rightPanel.getByText("What do statuses mean?")).toBeVisible();
   await expect(rightPanel.getByText("Report issue")).toBeVisible();
   await rightPanel.getByText("Report issue", { exact: true }).click();
   await expect(rightPanel.getByText("Diagnostic summary", { exact: true })).toBeVisible();
-  await expect(rightPanel.getByText("Pilot docs")).toBeVisible();
 
   await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Deliver\b/i }).click();
-  await expect(rightPanel.getByText("What is the review package?")).toBeVisible();
-  await expect(rightPanel.getByText("External licensed engineer review required")).toBeVisible();
+  await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/Make a review package/i);
+  await expect(page.getByTestId("deliver-review-package-flow")).toContainText("Review-only and engineer-review-required");
 });

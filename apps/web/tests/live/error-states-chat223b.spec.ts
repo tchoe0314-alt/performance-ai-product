@@ -142,7 +142,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await page.getByTestId("setup-address-truth").locator("summary").click();
     await page.getByLabel("Type project address").fill("1 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
-    await expect(page.getByTestId("auto-site-context-candidates")).toContainText("Provider lookup failed", { timeout: 30_000 });
+    await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/provider lookup failed/i, { timeout: 30_000 });
 
     await page.unroute("**/api/existing-conditions/fetch-online");
     await page.route("**/api/existing-conditions/fetch-online", async (route) => {
@@ -166,8 +166,8 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
       });
     });
     await page.getByRole("button", { name: "Apply address" }).click();
-    await expect(page.getByTestId("auto-site-context-candidates")).toContainText("0 review required candidates returned", { timeout: 30_000 });
-    await expect(page.getByTestId("auto-site-context-found")).toContainText("Providers returned no usable features");
+    await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/No review required source candidates/i, { timeout: 30_000 });
+    await expect(page.getByTestId("auto-site-context-found")).toContainText(/No usable features/i);
   });
 
   test("upload, PDF, and survey/topo failures stay inline", async ({ page }, testInfo) => {
@@ -194,6 +194,10 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await openDemoWorkspace(page);
     page.on("dialog", async (dialog) => dialog.accept());
     await openWorkspacePanel(page, "Generate", /Generate systems/i);
+    const systemDetails = page.getByTestId("generate-system-details");
+    if (!(await systemDetails.evaluate((element) => element.hasAttribute("open")))) {
+      await systemDetails.locator("summary").click();
+    }
     await page.getByTestId("generate-drainage").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText("Started, with skipped systems", { timeout: 10_000 });
   });

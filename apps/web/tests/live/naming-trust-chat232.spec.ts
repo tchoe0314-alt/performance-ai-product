@@ -72,7 +72,7 @@ test.describe("Chat 232 naming and trust copy", () => {
     await expect(canvas).toContainText("AI visualization");
 
     await page.getByRole("button", { name: /^Deliver$/ }).first().click();
-    await expect(page.getByTestId("deliver-review-package-flow")).toContainText("Review package");
+    await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/review package/i);
     await expect(page.getByTestId("deliver-review-package-flow")).toContainText("Review-only and engineer-review-required");
 
     const unsafeClaimPattern = /construction-ready|approved for construction|certified for construction|Civora (stamps|seals|certifies|approves|submits)|Civora acts as engineer of record/i;

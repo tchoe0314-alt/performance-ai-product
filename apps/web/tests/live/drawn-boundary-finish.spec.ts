@@ -86,8 +86,11 @@ async function openBlankWorkspace(page: Page) {
   await expect(page.getByText("Detention Basin A").filter({ visible: true }).first()).toBeVisible({ timeout: 30_000 });
 
   await openSetupControls(page);
-  await page.getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" }).click({ noWaitAfter: true });
-  await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
+  await page
+    .getByTestId("setup-address-truth")
+    .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
+    .click({ noWaitAfter: true });
+  await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
   await expect(page.getByText("Detention Basin A")).toHaveCount(0);
   await expect(page.getByText("Multifamily Building A")).toHaveCount(0);
   const close = page.getByRole("button", { name: "Close" });
@@ -195,7 +198,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(canvas.getByRole("button", { name: "Add Point" })).toBeEnabled();
 
     await page.getByTestId("change-site-boundary-toolbar").filter({ visible: true }).first().click();
-    await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
+    await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
     await openSetupControls(page);
     await lockCurrentSiteFromSetup(page);
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");

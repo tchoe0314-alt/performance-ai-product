@@ -25,8 +25,10 @@ async function startBlankSite(page: Page) {
   if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
     await addressDetails.locator("summary").click();
   }
-  await page.getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" }).click({ noWaitAfter: true });
-  await expect(page.getByTestId("site-status")).toContainText("Selecting Site");
+  await addressDetails
+    .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
+    .click({ noWaitAfter: true });
+  await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
 }
 
 async function expectTopmost(locator: Locator, label: string) {

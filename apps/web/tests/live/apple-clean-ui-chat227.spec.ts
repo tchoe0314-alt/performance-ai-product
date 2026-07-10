@@ -59,12 +59,12 @@ test.describe("Chat 227 Apple-clean UI", () => {
     if (await showSidebar.isVisible().catch(() => false)) {
       await showSidebar.click();
     }
-    await expect(page.getByRole("button", { name: "Open projects" })).toBeVisible();
-    await page.getByRole("button", { name: "Open projects" }).click();
+    await expect(page.getByTitle("Projects")).toBeVisible();
+    await page.getByTitle("Projects").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await page.getByRole("button", { name: "Minimize" }).click();
-    await expect(page.getByRole("button", { name: "Open Civora chat history" })).toBeVisible();
-    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    await expect(page.getByTitle("Chat")).toBeVisible();
+    await page.getByTitle("Chat").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

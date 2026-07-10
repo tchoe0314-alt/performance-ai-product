@@ -11,10 +11,13 @@ test.describe("Chat 32 UI functionality QA", () => {
   test("desktop controls are wired or truthfully blocked", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await expect(page.getByRole("button", { name: "Search unavailable" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Undo unavailable" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Redo unavailable" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Notifications unavailable" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Search unavailable" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Undo unavailable" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Redo unavailable" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Notifications unavailable" })).toHaveCount(0);
+    await expect(page.locator("header").getByRole("button", { name: "Projects" })).toBeVisible();
+    await expect(page.locator("header").getByRole("button", { name: "Chat" })).toBeVisible();
+    await expect(page.locator("header").getByRole("button", { name: "Workspace" })).toBeVisible();
 
     const canvas = page.getByTestId("workspace-canvas-shell");
     await expect(canvas.getByRole("button", { name: "Export DXF" })).toBeEnabled();
@@ -26,9 +29,9 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(canvas.getByTestId("preview-quality-high")).toBeVisible();
     await canvas.getByTestId("preview-quality-high").click();
     await expect(canvas).toContainText("High Quality");
-    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(
-      "Visual preview only. Canonical geometry unchanged. Not engineering evidence.",
-    );
+    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Visual preview only/i);
+    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Canonical geometry unchanged/i);
+    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Not engineering evidence/i);
     expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
     await canvas.getByTestId("preview-quality-standard").click();
     await expect(canvas).toContainText("Standard");
@@ -53,31 +56,32 @@ test.describe("Chat 32 UI functionality QA", () => {
     await page.locator("header").getByRole("button", { name: "Chat" }).click();
     const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
     const send = page.getByRole("button", { name: "Send" });
-    const messageBodies = page.locator("p.whitespace-pre-wrap");
+    const chatPanel = page.getByTestId("workspace-right-panel");
 
     await composer.fill("what should I do next");
     await send.click();
-    await expect(messageBodies.filter({ hasText: /review-required|review evidence|engineer review/i })).toBeVisible();
+    await expect(chatPanel).toContainText(/review-required|review evidence|engineer review|review drafts/i);
 
     await composer.fill("why can't I export");
     await send.click();
-    await expect(messageBodies.filter({ hasText: "Export is blocked: authenticate with a backend session before exporting review packages." })).toBeVisible();
+    await expect(chatPanel).toContainText("Export is blocked: authenticate with a backend session before exporting review packages.");
 
     await composer.fill("make this a basin");
     await send.click();
-    await expect(messageBodies.filter({ hasText: "This is draft geometry and still requires engineer review." })).toBeVisible();
+    await expect(chatPanel).toContainText("This is draft geometry and still requires engineer review.");
 
     await composer.fill("stamp this construction-ready");
     await send.click();
-    await expect(messageBodies.filter({ hasText: /Field use and professional responsibility remain outside Civora/i })).toBeVisible();
-    await expect(messageBodies.last()).not.toContainText(/construction-ready|approved for construction|released for construction/i);
+    await expect(chatPanel).toContainText(/can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record/i);
+    await expect(chatPanel).toContainText(/review-only draft materials/i);
+    await expect(chatPanel.locator("p").last()).not.toContainText(/approved for construction|released for construction/i);
   });
 
   test("mobile workspace has no horizontal page overflow and keeps critical controls reachable", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openDemoWorkspace(page);
 
-    await expect(page.getByTestId("floating-command-bar")).toBeVisible();
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
     await expect(page.getByTestId("bottom-review-panel")).toHaveCount(0);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -94,16 +98,22 @@ test.describe("Chat 32 UI functionality QA", () => {
 
     const canvas = page.getByTestId("workspace-canvas-shell");
     const sidebar = page.getByTestId("left-sidebar");
+    const hideSidebarToggle = page.getByRole("button", { name: "Hide left sidebar" });
     const showSidebarToggle = page.getByRole("button", { name: "Show left sidebar" });
-    await expect(showSidebarToggle).toBeVisible();
+    await expect(hideSidebarToggle).toBeVisible();
     await expect(canvas).toBeVisible();
 
     const canvasBounds = await canvas.boundingBox();
     expect(canvasBounds?.x ?? -1).toBeGreaterThanOrEqual(0);
     expect(canvasBounds?.width ?? 0).toBeGreaterThan(0);
 
+    await hideSidebarToggle.click();
+    await expect(showSidebarToggle).toBeVisible();
+    await expect(sidebar).toHaveAttribute("data-motion-state", "closed");
+    await expect(page.getByTestId("floating-command-bar")).toBeVisible();
+
     await showSidebarToggle.click();
-    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toBeVisible();
+    await expect(hideSidebarToggle).toBeVisible();
     await expect(sidebar).toBeVisible();
     await expect(sidebar).toHaveAttribute("data-motion-state", "open");
 

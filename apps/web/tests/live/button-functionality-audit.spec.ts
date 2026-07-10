@@ -106,9 +106,8 @@ test.describe("button functionality audit", () => {
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
     await page.getByRole("button", { name: "Open workspace controls" }).click();
-    await expect(page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" })).toBeVisible();
-    await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toBeHidden();
+    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+    await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Hide left sidebar" }).click();
     await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();

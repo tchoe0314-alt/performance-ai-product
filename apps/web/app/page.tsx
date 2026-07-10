@@ -2690,6 +2690,7 @@ function PerformanceAIDashboardView({
   const effectiveDemoWorkspaceEnabled =
     forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled || queryDemoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [mobileViewport, setMobileViewport] = useState(false);
   const [, setChatCollapsed] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("site_existing");
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
@@ -3032,9 +3033,13 @@ function PerformanceAIDashboardView({
   const sidePanelCloseTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+    const syncViewport = () => setMobileViewport(window.innerWidth < 1024);
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    if (window.innerWidth < 1024) {
       setRightRailCollapsed(true);
     }
+    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   useEffect(() => {
@@ -10856,6 +10861,7 @@ function PerformanceAIDashboardView({
       setSiteName(project.name ?? "");
       applyProjectInput(project.project_input ?? {});
       setBackendResult(null);
+      setIssues([]);
       setPlanPreviewUrl("");
       setPlanPreviewSummary(null);
       updateProjectStatus({
@@ -13676,7 +13682,11 @@ function PerformanceAIDashboardView({
         candidateCount === 0 &&
         (discoveryStatus.includes("failed") ||
           (!configuredLocalGisProviders.length && !providerSources.length));
-      const providerAbsent = candidateCount === 0 && !configuredLocalGisProviders.length && !providerSources.length;
+      const providerAbsent =
+        candidateCount === 0 &&
+        !discoveryStatus.includes("failed") &&
+        !configuredLocalGisProviders.length &&
+        !providerSources.length;
       updateProjectStatus({
         state: lookupUnavailable ? "blocked" : candidateCount > 0 ? "needs review" : "ready",
         area: "setup",
@@ -17800,7 +17810,7 @@ function PerformanceAIDashboardView({
 	      "system_landscape",
 	    ],
 	    analyze: ["analysis", "quantities", "jobs", "catalogs"],
-    deliver: ["deliverables", "settings", "chat"],
+    deliver: ["deliverables", "reports", "settings", "chat"],
 	  };
 	  const activePrimaryWorkflowKey =
 	    (Object.entries(primaryWorkflowGroups).find(([, panels]) =>
@@ -18972,7 +18982,10 @@ function PerformanceAIDashboardView({
           }}
           onOpenWorkspace={() => {
             setWorkspaceChromeMinimized(false);
-            handleOpenSidePanel("site_existing");
+            setActiveSidePanel(null);
+            setRenderedSidePanel(null);
+            setSidePanelVisible(false);
+            setRightRailCollapsed(true);
           }}
           onOpenDocs={() => handleOpenSidePanel("trust")}
           onOpenChat={() => handleOpenSidePanel("chat")}
@@ -18992,7 +19005,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[41] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 py-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-auto lg:left-4 lg:right-auto lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:w-[88px]"
+            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[41] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 pb-28 pt-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-auto lg:left-4 lg:right-auto lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:w-[88px] lg:pb-3"
           >
             <button
               type="button"
@@ -20286,7 +20299,9 @@ function PerformanceAIDashboardView({
 	                      </summary>
 	                      <div className="border-t border-slate-100 px-4 py-4" data-testid="auto-site-context-summary">
                           <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-testid="auto-site-context-candidates">
-                            {autoSiteContextFlowSummary.candidateCount
+                            {autoExistingConditionsStatus.status === "blocked"
+                              ? autoExistingConditionsStatus.message
+                              : autoSiteContextFlowSummary.candidateCount
                               ? `${autoSiteContextFlowSummary.candidateCount} review required source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
                               : `No review required source candidates yet. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}
                           </p>
@@ -21737,7 +21752,11 @@ function PerformanceAIDashboardView({
                       {generateFlowSummary ? (
                         <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${generateFlowSummary.blocked ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="generate-flow-summary">
                           <p className="font-semibold uppercase tracking-[0.12em]">
-                            {generateFlowSummary.blocked ? "Blocked" : "Started"}
+                            {generateFlowSummary.blocked
+                              ? "Blocked"
+                              : generateFlowSummary.skipped.length
+                                ? "Started, with skipped systems"
+                                : "Started"}
                           </p>
                           <p className="mt-1">Ran: {generateFlowSummary.ran.join(", ") || "none"}</p>
                           <p className="mt-1">Skipped: {generateFlowSummary.skipped.join(", ") || "none"}</p>
@@ -23059,12 +23078,40 @@ function PerformanceAIDashboardView({
                       <button type="button" onClick={handleAnalyzeSiteAccess} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Run access analysis</button>
                       <button type="button" onClick={() => handleOpenSidePanel("dashboard")} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Open dashboard</button>
                     </div>
-                    {[...issues.map((issue, index) => ({ id: `issue-${index}`, message: issue.message, severity: issue.severity })), ...analysisIssues.map((issue) => ({ id: issue.id, message: issue.message, severity: "warning" as const }))].map((issue) => (
-                      <div key={issue.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${issue.severity === "error" ? "text-red-600" : "text-amber-600"}`}>{issue.severity}</p>
-                        <p className="mt-2 text-sm text-slate-700">{issue.message}</p>
-                      </div>
-                    ))}
+                    {[
+                      ...issues.map((issue, index) => ({ ...issue, id: `issue-${index}` })),
+                      ...analysisIssues.map((issue) => ({ id: issue.id, message: issue.message, severity: "warning" as const })),
+                    ].map((issue) => {
+                      const applyLabel = "code" in issue ? drainageIssueApplyLabel(issue as Issue) : "";
+                      const canApply = applyLabel ? canApplyDrainageIssue(issue as Issue) : false;
+                      return (
+                        <div key={issue.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${issue.severity === "error" ? "text-red-600" : "text-amber-600"}`}>{issue.severity}</p>
+                              <p className="mt-2 text-sm text-slate-700">{issue.message}</p>
+                              {"code" in issue && issue.code ? (
+                                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{issue.code}</p>
+                              ) : null}
+                            </div>
+                            {applyLabel ? (
+                              <button
+                                type="button"
+                                onClick={() => handleApplyDrainageIssue(issue as Issue)}
+                                disabled={!canApply}
+                                className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  canApply
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                    : "cursor-not-allowed border-slate-200 bg-white text-slate-400"
+                                }`}
+                              >
+                                {applyLabel}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
                     {!issues.length && !analysisIssues.length ? <p className="text-sm text-slate-500">No active analysis issues.</p> : null}
                   </div>
                 ) : null}
@@ -24272,6 +24319,9 @@ function PerformanceAIDashboardView({
                           <p className="mt-1 text-xs leading-5 text-slate-500">
                             Missing items are listed instead of hidden. Exports remain review materials.
                           </p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                            Review-only and engineer-review-required.
+                          </p>
                         </div>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                           reviewPackageFlowSummary?.blocked ? "bg-red-50 text-red-600" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
@@ -24354,6 +24404,17 @@ function PerformanceAIDashboardView({
                         </p>
                       ) : null}
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSidePanel("reports")}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Review gates
+                      <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
+                        Open blockers, QA issues, smart fixes, quantities, and package audit details.
+                      </span>
+                    </button>
 
                     <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-sheet-details">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
@@ -25525,7 +25586,10 @@ function PerformanceAIDashboardView({
               </div>
             </div>
           ) : null}
-          {activeSidePanel !== "chat" && activePrimaryWorkflowKey !== "draw" && activePrimaryWorkflowKey !== "objects" ? (
+          {activeSidePanel !== "chat" &&
+          activePrimaryWorkflowKey !== "draw" &&
+          activePrimaryWorkflowKey !== "objects" &&
+          !(mobileViewport && leftSidebarOpen) ? (
             <PinnedCommandBar
               prompt={prompt}
               imageName={imageName}

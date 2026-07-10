@@ -296,6 +296,14 @@ class BoundingBox2D:
         return Point2D((self.min_x + self.max_x) / 2.0, (self.min_y + self.max_y) / 2.0)
 
     @property
+    def center_x(self) -> float:
+        return (self.min_x + self.max_x) / 2.0
+
+    @property
+    def center_y(self) -> float:
+        return (self.min_y + self.max_y) / 2.0
+
+    @property
     def area(self) -> float:
         return max(0.0, self.width) * max(0.0, self.height)
 

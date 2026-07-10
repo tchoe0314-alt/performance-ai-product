@@ -57,7 +57,11 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
 
   await page.goto("/?demo=workspace", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /^Generate$/ }).first().click();
-  await expect(page.getByTestId("reactive-rerun-status")).toBeVisible();
+  await expect(page.getByTestId("generate-reactive-details")).toBeVisible();
+  const systemDetails = page.getByTestId("generate-system-details");
+  if (!(await systemDetails.evaluate((element) => element.hasAttribute("open")))) {
+    await systemDetails.locator("summary").click();
+  }
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toContain("saved checkpoint");
     await dialog.accept();
@@ -81,5 +85,5 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
   expect(Array.isArray(meta.changed_targets)).toBe(true);
   expect((meta.changed_targets as string[])).toContain("grading");
   expect(runtimeResume.final_plan).toBeTruthy();
-  await expect(page.getByText("Last partial rerun")).toBeVisible();
+  await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran: grading|Started/i);
 });
