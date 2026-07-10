@@ -13,6 +13,7 @@
     "lint": "eslint",
     "release:regression": "../../scripts/release_regression.sh",
     "test:live": "npm run clean:next && playwright test --config=playwright.config.ts",
+    "test:hosted:auth": "playwright test --config=playwright.config.ts tests/live/hosted-auth-smoke.spec.ts --project=chromium --workers=1",
     "test:live:chat34": "node tests/live/chat34-controlled-pilot-readiness.js",
     "test:live:staged": "playwright test --config=playwright.config.ts tests/live/staged-regression.spec.ts",
     "test:live:headed": "playwright test --config=playwright.config.ts --headed"
