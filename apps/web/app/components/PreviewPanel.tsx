@@ -4024,6 +4024,14 @@ export default function PreviewPanel({
     },
     [resolveVisualKind],
   );
+  const rectIntersectsPreview = useCallback(
+    (rectPct: { left: number; top: number; width: number; height: number }) =>
+      rectPct.left < 100 &&
+      rectPct.top < 100 &&
+      rectPct.left + Math.max(rectPct.width, 0) > 0 &&
+      rectPct.top + Math.max(rectPct.height, 0) > 0,
+    [],
+  );
 
   useEffect(() => {
     if (!mapAvailable) return;
@@ -9440,6 +9448,7 @@ export default function PreviewPanel({
                         const isSite = item.type === "site";
                         const visualKind = resolveVisualKind(item);
                         const sourceState = resolveSourceState(item);
+                        if (!rectIntersectsPreview(rectPct)) return null;
                         const revealSourceBadge = !isSite && shouldRevealObjectLabel(item) && sourceState !== "verified";
                         const allowItemInteraction =
                           drawMode === "select" &&
@@ -9775,6 +9784,7 @@ export default function PreviewPanel({
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
                         const rectPct = mapAnchoredRectPercent(item, mapRef.current);
+                        if (!rectIntersectsPreview(rectPct)) return null;
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
                         return (
@@ -10261,6 +10271,7 @@ export default function PreviewPanel({
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                       .map((item) => {
                         const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
+                        if (!rectIntersectsPreview(rectPct)) return null;
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const isSite = item.type === "site";
                         const allowItemInteraction =
@@ -10339,6 +10350,7 @@ export default function PreviewPanel({
                         .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
                         .map((item) => {
                           const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
+                          if (!rectIntersectsPreview(rectPct)) return null;
                           const rotation = showMap ? 0 : (item.rotation ?? 0);
                           const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
                           const borderColorMap: Record<string, string> = {
