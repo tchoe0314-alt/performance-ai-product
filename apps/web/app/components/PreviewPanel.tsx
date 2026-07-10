@@ -4001,6 +4001,29 @@ export default function PreviewPanel({
     },
     [mapAnchor, showMap, siteRectPercent],
   );
+  const resolveObjectHitZIndex = useCallback(
+    (
+      item: BuildingPlacement,
+      rectPct: { left: number; top: number; width: number; height: number },
+      selected = false,
+    ) => {
+      if (selected) return 86;
+      if (item.type === "site") return 18;
+      const visualKind = resolveVisualKind(item);
+      const sourceState = resolveSourceState(item);
+      const area = Math.max(rectPct.width * rectPct.height, 0.01);
+      const compactShapeBoost = Math.max(0, Math.min(18, 18 - area * 0.9));
+      const pointLike =
+        item.geometryType === "point" ||
+        Boolean(item.meta?.cad_symbol) ||
+        ["hydrant", "inlet", "outfall", "manhole"].includes(String(item.type || ""));
+      const kindBoost =
+        pointLike ? 24 : visualKind === "utility" ? 16 : visualKind === "water" ? 10 : visualKind === "road" ? 8 : 0;
+      const stateBoost = sourceState === "fallback" ? -8 : sourceState === "blocked" ? 4 : 0;
+      return Math.max(22, Math.min(84, Math.round(42 + compactShapeBoost + kindBoost + stateBoost)));
+    },
+    [resolveVisualKind],
+  );
 
   useEffect(() => {
     if (!mapAvailable) return;
@@ -9421,6 +9444,7 @@ export default function PreviewPanel({
                         const allowItemInteraction =
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
+                        const hitZIndex = resolveObjectHitZIndex(item, rectPct, isSelected);
                         return (
                           <div
                             key={item.id}
@@ -9428,12 +9452,15 @@ export default function PreviewPanel({
                             aria-label={`Select ${item.label || item.type || "CAD object"}`}
                             data-preview-quality={previewQuality}
                             data-visual-kind={visualKind}
+                            data-source-state={sourceState}
+                            data-hit-priority={hitZIndex}
                             className={`${allowItemInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
                             style={{
                               left: `${rectPct.left}%`,
                               top: `${rectPct.top}%`,
                               width: `${rectPct.width}%`,
                               height: `${rectPct.height}%`,
+                              zIndex: hitZIndex,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: caps.movable ? (isPolyline ? "grab" : "move") : "default",
@@ -9748,6 +9775,7 @@ export default function PreviewPanel({
                       .map((item) => {
                         const rectPct = mapAnchoredRectPercent(item, mapRef.current);
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
+                        const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
                         return (
                           <div
                             key={item.id}
@@ -9757,6 +9785,7 @@ export default function PreviewPanel({
                               top: `${rectPct.top}%`,
                               width: `${rectPct.width}%`,
                               height: `${rectPct.height}%`,
+                              zIndex: hitZIndex,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: "move",
@@ -10234,6 +10263,7 @@ export default function PreviewPanel({
                         const isSite = item.type === "site";
                         const allowItemInteraction =
                           !isSite || (previewInteraction === "edit" && !siteLocked);
+                        const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
                         const borderColorMap: Record<string, string> = {
                           site: "border-slate-400",
                           setback_zone: "border-slate-300",
@@ -10262,6 +10292,7 @@ export default function PreviewPanel({
                               top: `${rectPct.top}%`,
                               width: `${rectPct.width}%`,
                               height: `${rectPct.height}%`,
+                              zIndex: hitZIndex,
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
                               cursor: placementMode ? "move" : "default",
@@ -10306,6 +10337,7 @@ export default function PreviewPanel({
                         .map((item) => {
                           const rectPct = mapAnchoredRectPercent(item, fullscreenMapRef.current);
                           const rotation = showMap ? 0 : (item.rotation ?? 0);
+                          const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
                           const borderColorMap: Record<string, string> = {
                             site: "border-slate-400",
                             setback_zone: "border-slate-300",
@@ -10330,6 +10362,7 @@ export default function PreviewPanel({
                                 top: `${rectPct.top}%`,
                                 width: `${rectPct.width}%`,
                                 height: `${rectPct.height}%`,
+                                zIndex: hitZIndex,
                                 transform: `rotate(${rotation}deg)`,
                                 transformOrigin: "center",
                                 cursor: "pointer",
