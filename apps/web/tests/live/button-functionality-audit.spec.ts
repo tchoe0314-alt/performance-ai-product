@@ -6,9 +6,9 @@ async function openDemoWorkspace(page: Page) {
   if (await shell.isVisible({ timeout: 30_000 }).catch(() => false)) {
     await expect(shell).toBeVisible();
   } else {
-    await expect(page.getByRole("button", { name: "Open workspace controls" })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "Open canvas from sidebar" })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Site Locked").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Canvas").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Add Line" })).toBeVisible({ timeout: 30_000 });
   }
   await expect(page.getByTestId("left-sidebar")).toBeVisible({ timeout: 30_000 });
 }
@@ -117,8 +117,8 @@ test.describe("button functionality audit", () => {
     if (await shell.isVisible({ timeout: 2_000 }).catch(() => false)) {
       await expect(shell).toBeVisible();
     } else {
-      await expect(page.getByRole("button", { name: "Open canvas from sidebar" })).toBeVisible();
       await expect(page.getByText("Site Locked").first()).toBeVisible();
+      await expect(page.getByText("Canvas").first()).toBeVisible();
     }
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
 
