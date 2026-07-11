@@ -83,8 +83,9 @@ export default function ChatPanel({
   const isCancelling = normalizedStatus === "cancelling";
   const isAwaitingApproval = normalizedStatus === "awaiting_approval";
   const isApprovalBusy = approvalState !== "idle";
+  const blocksChatInput = busy || (hasVisibleActiveJob && !isAwaitingApproval);
   const approvalLabel = approvalPhaseLabel ? `Starting ${approvalPhaseLabel}...` : "Starting next phase...";
-  const showContinuePending = Boolean(pendingClarification && onContinuePendingClarification && !busy && !hasVisibleActiveJob);
+  const showContinuePending = Boolean(pendingClarification && onContinuePendingClarification && !blocksChatInput);
 
   return (
     <div className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
@@ -314,12 +315,12 @@ export default function ChatPanel({
               <button
                 type="button"
                 onClick={onSendMessage}
-                disabled={busy || hasVisibleActiveJob || (!prompt.trim() && !imageName)}
+                disabled={blocksChatInput || (!prompt.trim() && !imageName)}
                 className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy && activePlanTool === "run"
                   ? "Working..."
-                  : hasVisibleActiveJob
+                  : hasVisibleActiveJob && !isAwaitingApproval
                     ? "Working..."
                     : "Send"}
               </button>

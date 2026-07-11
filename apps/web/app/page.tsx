@@ -3760,6 +3760,10 @@ function PerformanceAIDashboardView({
     () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
     [visibleActiveJob, jobClockMs],
   );
+  const visibleActiveJobStatus = String(visibleActiveJob?.status || "").toLowerCase();
+  const chatBlockingActiveJob = Boolean(
+    visibleActiveJob && ["queued", "running", "cancelling"].includes(visibleActiveJobStatus),
+  );
   const selectedJobStale = useMemo(
     () => isLikelyStaleJob(selectedJob, jobClockMs),
     [selectedJob, jobClockMs],
@@ -25684,7 +25688,7 @@ function PerformanceAIDashboardView({
               onSendMessage={handleSendMessage}
               onOpenHistory={() => handleOpenSidePanel("chat")}
               busy={busy}
-              hasVisibleActiveJob={Boolean(visibleActiveJob)}
+              hasVisibleActiveJob={chatBlockingActiveJob}
               activePlanTool={activePlanTool}
               thinkingState={thinkingState}
               statusText={chatSummary || formatProjectStatusText(projectStatusSummary) || statusMessage}
