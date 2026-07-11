@@ -19411,7 +19411,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-[46] order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:w-[380px] lg:rounded-xl"
+            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-[46] order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:inset-x-auto lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:w-[380px] lg:rounded-xl"
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
