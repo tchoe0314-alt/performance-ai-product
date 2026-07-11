@@ -5842,7 +5842,7 @@ export default function PreviewPanel({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
-          <div className="relative isolate z-40 mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
+          <div className="relative isolate z-[220] mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
             <div className="pointer-events-none flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
               <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
