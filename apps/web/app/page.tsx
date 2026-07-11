@@ -18139,6 +18139,7 @@ function PerformanceAIDashboardView({
     if (sidePanelCloseTimeoutRef.current !== null) {
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
     }
+    setRightRailCollapsed(false);
     panelCloseProbeRef.current = {
       label: activeSidePanel === "projects" ? "projects.drawer.close" : "panel.close",
       panel: activeSidePanel,
@@ -18146,6 +18147,7 @@ function PerformanceAIDashboardView({
     };
     setSidePanelVisible(false);
     sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
+      setRightRailCollapsed(true);
       setActiveSidePanel(null);
       setRenderedSidePanel(null);
       const probe = panelCloseProbeRef.current;
@@ -19850,14 +19852,7 @@ function PerformanceAIDashboardView({
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (sidePanelCloseTimeoutRef.current !== null) {
-                        window.clearTimeout(sidePanelCloseTimeoutRef.current);
-                        sidePanelCloseTimeoutRef.current = null;
-                      }
-                      setRightRailCollapsed(true);
-                      setSidePanelVisible(false);
-                    }}
+                    onClick={handleCloseSidePanel}
                     className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
                   >
                     Minimize
