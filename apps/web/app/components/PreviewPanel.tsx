@@ -1014,7 +1014,7 @@ export default function PreviewPanel({
 	      const dash =
 	        blocked ? "1.2 0.8" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
 	      const stateStroke = (fallback: string) => (selected ? "#fbbf24" : blocked ? "#dc2626" : customStroke ?? fallback);
-      const stateOpacity = blocked ? 0.92 : lowConfidence ? 0.76 : 1;
+      const stateOpacity = blocked ? 0.92 : lowConfidence ? 0.9 : 1;
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
           building: { fill: "rgba(226, 218, 202, 0.72)", stroke: "#8b7355" },
@@ -1024,13 +1024,13 @@ export default function PreviewPanel({
           landscape: { fill: "rgba(134, 239, 172, 0.2)", stroke: "#22c55e" },
           sidewalk: { fill: "rgba(241, 245, 249, 0.52)", stroke: "#94a3b8" },
           utility: { fill: "rgba(59, 130, 246, 0.08)", stroke: "#2563eb" },
-          fallback: { fill: "rgba(148, 163, 184, 0.14)", stroke: "#64748b" },
+          fallback: { fill: "rgba(37, 99, 235, 0.12)", stroke: "#2563eb" },
         };
         const style = standardPalette[kind] ?? standardPalette.fallback;
 	        return {
 	          fill: style.fill,
 	          stroke: selected ? "#f59e0b" : blocked ? "#dc2626" : customStroke ?? style.stroke,
-          strokeWidth: selected ? 0.82 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.58 : 0.42,
+          strokeWidth: selected ? 0.82 : kind === "fallback" ? 0.62 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.58 : 0.42,
           strokeDasharray: dash,
           opacity: stateOpacity,
         };
@@ -1056,7 +1056,7 @@ export default function PreviewPanel({
       if (kind === "building") {
         return { fill: "rgba(226, 218, 202, 0.76)", stroke: stateStroke("#8b7355"), strokeWidth: selected ? 0.82 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
       }
-      return { fill: "rgba(148, 163, 184, 0.14)", stroke: stateStroke("#64748b"), strokeWidth: selected ? 0.75 : 0.38, strokeDasharray: dash, opacity: stateOpacity };
+      return { fill: "rgba(37, 99, 235, 0.12)", stroke: stateStroke("#2563eb"), strokeWidth: selected ? 0.82 : 0.58, strokeDasharray: dash, opacity: stateOpacity };
     },
     [isHighQuality, resolveVisualKind],
   );
