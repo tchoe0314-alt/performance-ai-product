@@ -91,6 +91,8 @@ type CadHistoryEntry = {
   before: BuildingPlacement;
   after: BuildingPlacement;
 };
+
+const BALANCED_CANVAS_SCALE = 0.9;
 type CadCommandHistoryEntry = {
   id: string;
   command: string;
@@ -788,7 +790,9 @@ export default function PreviewPanel({
   const [drawAutoFinishPointCount, setDrawAutoFinishPointCount] = useState<number | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
   const suppressNextDrawClickRef = useRef(false);
-  const [canvasView, setCanvasView] = useState({ scale: 0.96, offsetX: 0, offsetY: 0 });
+  const [canvasView, setCanvasView] = useState({ scale: BALANCED_CANVAS_SCALE, offsetX: 0, offsetY: 0 });
+  const autoFitSignatureRef = useRef("");
+  const userAdjustedCanvasViewRef = useRef(false);
   const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
   const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
   const hasDrawableSiteSize = lotWidth > 0 && lotHeight > 0;
@@ -833,6 +837,16 @@ export default function PreviewPanel({
   const previewImageRef = useRef<HTMLImageElement | null>(null);
   const fullscreenImageRef = useRef<HTMLImageElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const buildBalancedCanvasView = useCallback(() => {
+    const rect = previewRef.current?.getBoundingClientRect();
+    const offsetX = rect ? Math.max(24, rect.width * (1 - BALANCED_CANVAS_SCALE) * 0.5) : 36;
+    const offsetY = rect ? Math.max(22, rect.height * (1 - BALANCED_CANVAS_SCALE) * 0.5) : 32;
+    return { scale: BALANCED_CANVAS_SCALE, offsetX, offsetY };
+  }, []);
+  const resetCanvasView = useCallback(() => {
+    userAdjustedCanvasViewRef.current = false;
+    setCanvasView(buildBalancedCanvasView());
+  }, [buildBalancedCanvasView]);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const fullscreenMapContainerRef = useRef<HTMLDivElement | null>(null);
   const fullscreenMapRef = useRef<mapboxgl.Map | null>(null);
@@ -1954,6 +1968,41 @@ export default function PreviewPanel({
       });
     return counts;
   }, [visibleCadObjects]);
+
+  const canvasCompositionSignature = useMemo(
+    () =>
+      visibleCadObjects
+        .filter((item) => item.type !== "site" && item.placed && !item.meta?.ui_hidden)
+        .map((item) => {
+          const geometryLength = Array.isArray(item.geometry) ? item.geometry.length : 0;
+          return `${item.id}:${item.type}:${Math.round(item.x ?? 0)},${Math.round(item.y ?? 0)},${Math.round(item.w ?? 0)},${Math.round(item.d ?? 0)}:${geometryLength}`;
+        })
+        .sort()
+        .join("|"),
+    [visibleCadObjects],
+  );
+
+  useEffect(() => {
+    if (showMap || previewMode !== "2d" || userAdjustedCanvasViewRef.current) return;
+    const signature = `${Math.round(currentSiteSize.width)}x${Math.round(currentSiteSize.height)}:${canvasCompositionSignature}`;
+    if (autoFitSignatureRef.current === signature) return;
+    autoFitSignatureRef.current = signature;
+    const nextView = buildBalancedCanvasView();
+    setCanvasView((current) =>
+      Math.abs(current.scale - nextView.scale) < 0.001 &&
+      Math.abs(current.offsetX - nextView.offsetX) < 0.5 &&
+      Math.abs(current.offsetY - nextView.offsetY) < 0.5
+        ? current
+        : nextView,
+    );
+  }, [
+    buildBalancedCanvasView,
+    canvasCompositionSignature,
+    currentSiteSize.height,
+    currentSiteSize.width,
+    previewMode,
+    showMap,
+  ]);
 
   const cadSegments = useMemo(() => {
     const segments: CadSegment2D[] = [];
@@ -3501,6 +3550,7 @@ export default function PreviewPanel({
       if (!bounds || !previewRef.current) return false;
       if (drawMode === "pan") {
         event.preventDefault();
+        userAdjustedCanvasViewRef.current = true;
         setCanvasPanStart({
           x: event.clientX,
           y: event.clientY,
@@ -6790,7 +6840,7 @@ export default function PreviewPanel({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setCanvasView({ scale: 0.96, offsetX: 0, offsetY: 0 })}
+                  onClick={resetCanvasView}
                   className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
@@ -7522,6 +7572,7 @@ export default function PreviewPanel({
               onWheel={(event) => {
                 if (!allowEdits || !overlayBoundsResolved || showMap) return;
                 event.preventDefault();
+                userAdjustedCanvasViewRef.current = true;
                 const nextScale = Math.min(
                   Math.max(canvasView.scale + (event.deltaY < 0 ? 0.12 : -0.12), 0.55),
                   4,
@@ -7889,7 +7940,7 @@ export default function PreviewPanel({
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => setCanvasView({ scale: 0.96, offsetX: 0, offsetY: 0 })}
+                      onClick={resetCanvasView}
                       className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
                     >
                       Reset
@@ -8064,7 +8115,10 @@ export default function PreviewPanel({
                         type="button"
                         aria-label="Zoom in canvas"
                         title="Zoom in canvas"
-                        onClick={() => setCanvasView((prev) => ({ ...prev, scale: Math.min(prev.scale + 0.15, 4) }))}
+                        onClick={() => {
+                          userAdjustedCanvasViewRef.current = true;
+                          setCanvasView((prev) => ({ ...prev, scale: Math.min(prev.scale + 0.15, 4) }));
+                        }}
                         className="inline-flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50"
                       >
                         <ZoomIn className="h-4 w-4" />
@@ -8073,7 +8127,10 @@ export default function PreviewPanel({
                         type="button"
                         aria-label="Zoom out canvas"
                         title="Zoom out canvas"
-                        onClick={() => setCanvasView((prev) => ({ ...prev, scale: Math.max(prev.scale - 0.15, 0.55) }))}
+                        onClick={() => {
+                          userAdjustedCanvasViewRef.current = true;
+                          setCanvasView((prev) => ({ ...prev, scale: Math.max(prev.scale - 0.15, 0.55) }));
+                        }}
                         className="inline-flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50"
                       >
                         <ZoomOut className="h-4 w-4" />
@@ -8082,7 +8139,7 @@ export default function PreviewPanel({
                         type="button"
                         aria-label="Reset canvas view"
                         title="Reset canvas view"
-                        onClick={() => setCanvasView({ scale: 0.96, offsetX: 0, offsetY: 0 })}
+                        onClick={resetCanvasView}
                         className="inline-flex h-9 w-9 items-center justify-center text-slate-700 transition hover:bg-slate-50"
                       >
                         <RotateCcw className="h-4 w-4" />
