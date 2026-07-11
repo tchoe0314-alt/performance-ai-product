@@ -18981,11 +18981,8 @@ function PerformanceAIDashboardView({
             handleOpenSidePanel("projects");
           }}
           onOpenWorkspace={() => {
-            setWorkspaceChromeMinimized(false);
-            setActiveSidePanel(null);
-            setRenderedSidePanel(null);
-            setSidePanelVisible(false);
-            setRightRailCollapsed(true);
+            setWorkspaceChromeMinimized(true);
+            handleOpenSidePanel("site_existing");
           }}
           onOpenDocs={() => handleOpenSidePanel("trust")}
           onOpenChat={() => handleOpenSidePanel("chat")}
@@ -20062,7 +20059,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-3" data-testid="clean-setup-panel">
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth">
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth" open={!hasAppliedAddress && !siteScaleLocked}>
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / Location</span>
