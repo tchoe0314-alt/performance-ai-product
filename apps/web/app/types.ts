@@ -2032,6 +2032,7 @@ export type ControlOverrides = Partial<{
   utilities: boolean;
   siteName: string;
   fileName: string;
+  siteAddress: string;
   lotWidth: string | number;
   lotHeight: string | number;
   buildingWidth: string | number;

@@ -2670,6 +2670,11 @@ def _extract_site_dimensions(message: str) -> Optional[Dict[str, float]]:
             r"\b(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:site|lot|boundary)\b",
             lowered,
         )
+    if not match and any(token in lowered for token in ["address", "site", "lot", "boundary", "center point", "centerpoint"]):
+        match = re.search(
+            r"\b(?:it(?:'s| is)?|site|lot|boundary)?\s*(?:is|to be|gonna be|going to be|will be|=)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\b",
+            lowered,
+        )
     if not match:
         return None
     width = float(match.group(1))
@@ -2682,7 +2687,7 @@ def _extract_site_dimensions(message: str) -> Optional[Dict[str, float]]:
 def _extract_address_text(message: str) -> str:
     normalized = " ".join(str(message or "").strip().split())
     match = re.search(
-        r"\b(?:the\s+)?address\s*(?:is|=|:)\s*(.+)$",
+        r"\b(?:the\s+)?address\s*(?:is|=|:|to\s+be|as)\s*(.+)$",
         normalized,
         re.IGNORECASE,
     )
@@ -2690,12 +2695,27 @@ def _extract_address_text(message: str) -> str:
         return ""
     address = match.group(1).strip(" .")
     address = re.split(
-        r"\s+\b(?:and\s+)?(?:make|set|site|lot|boundary|generate|design|run)\b",
+        r"\s+\b(?:and\s+)?(?:make|set|site|lot|boundary|generate|design|run|it(?:'s| is)?|its|it's|address)\b",
         address,
         maxsplit=1,
         flags=re.IGNORECASE,
     )[0].strip(" .")
     return _normalize_address_text(address)
+
+
+def _address_requested_as_center_point(message: str) -> bool:
+    lowered = _normalized_chat_text(message)
+    return "address" in lowered and any(
+        phrase in lowered
+        for phrase in [
+            "center point",
+            "centerpoint",
+            "centered on the address",
+            "address as the center",
+            "address to be the center",
+            "address is the center",
+        ]
+    )
 
 
 def _normalize_address_text(address: str) -> str:
@@ -2726,6 +2746,8 @@ def _extract_site_setup_payload(message: str) -> Dict[str, Any]:
     address = _extract_address_text(message)
     if address:
         payload["address"] = address
+        if _address_requested_as_center_point(message):
+            payload["address_anchor"] = "center_point"
     return payload
 
 
@@ -3928,6 +3950,8 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             overrides["lotWidth"] = str(int(command_payload["lot_width"]) if float(command_payload["lot_width"]).is_integer() else command_payload["lot_width"])
         if command_payload.get("lot_height"):
             overrides["lotHeight"] = str(int(command_payload["lot_height"]) if float(command_payload["lot_height"]).is_integer() else command_payload["lot_height"])
+        if command_payload.get("address"):
+            overrides["siteAddress"] = str(command_payload["address"])
         width = command_payload.get("lot_width")
         height = command_payload.get("lot_height")
         address = str(command_payload.get("address") or "").strip()
@@ -3956,11 +3980,12 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
                 ),
             )
         if width and height and address:
+            anchor_phrase = " centered on that address" if command_payload.get("address_anchor") == "center_point" else " at this address"
             message_text = (
                 f"I set the draft site size to {width:g} ft x {height:g} ft and recorded {address} as location evidence only. "
-                f"Do you want to lock this {width:g} ft x {height:g} ft site boundary at this address?"
+                f"Do you want to lock this {width:g} ft x {height:g} ft site boundary{anchor_phrase}?"
             )
-            next_best = f"Lock this {width:g} ft x {height:g} ft boundary at the address, or draw/confirm the site boundary."
+            next_best = f"Lock this {width:g} ft x {height:g} ft boundary centered on the address, or draw/confirm the site boundary." if command_payload.get("address_anchor") == "center_point" else f"Lock this {width:g} ft x {height:g} ft boundary at the address, or draw/confirm the site boundary."
         elif width and height:
             message_text = (
                 f"I set the draft site size to {width:g} ft x {height:g} ft. "

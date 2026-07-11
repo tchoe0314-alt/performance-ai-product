@@ -7505,6 +7505,7 @@ function PerformanceAIDashboardView({
     if (typeof overrides.utilities === "boolean") setUtilities(overrides.utilities);
     if (typeof overrides.siteName === "string") setSiteName(overrides.siteName);
     if (typeof overrides.fileName === "string") setFileName(overrides.fileName);
+    if (typeof overrides.siteAddress === "string") setSiteAddress(overrides.siteAddress);
     if (typeof overrides.lotWidth === "string" || typeof overrides.lotWidth === "number") {
       setLotWidth(String(overrides.lotWidth));
     }

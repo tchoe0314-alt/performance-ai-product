@@ -903,6 +903,23 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertNotIn("building", result["assistant_message"].lower())
         self.assertIn("Do you want to lock this 1000 ft x 1000 ft site boundary", result["assistant_message"])
 
+    def test_site_setup_address_to_be_center_point_uses_natural_language(self):
+        result = _decide(
+            "I want the address to be 20525 Margo St gretna ne and its gonna be 1000ft by 1000 ft with the address to be the center point"
+        )
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertFalse(result["needs_clarification"])
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["control_overrides"]["lotWidth"], "1000")
+        self.assertEqual(result["control_overrides"]["lotHeight"], "1000")
+        self.assertEqual(result["control_overrides"]["siteAddress"], "20525 Margo St, Gretna, NE")
+        self.assertEqual(result["response_metadata"]["command_payload"]["address"], "20525 Margo St, Gretna, NE")
+        self.assertEqual(result["response_metadata"]["command_payload"]["address_anchor"], "center_point")
+        self.assertNotIn("land use", result["assistant_message"])
+        self.assertNotIn("which systems", result["assistant_message"])
+        self.assertIn("centered on that address", result["assistant_message"])
+
     def test_site_setup_dimensions_only_does_not_trigger_generation(self):
         result = _decide("set site to 500 by 800")
         self.assertEqual(result["intent"], "conversation")

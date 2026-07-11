@@ -2520,6 +2520,7 @@ def _apply_chat_command_execution(
         height = command_payload.get("lot_height")
         area = command_payload.get("site_area_acres")
         address = str(command_payload.get("address") or "").strip()
+        address_anchor = str(command_payload.get("address_anchor") or "").strip()
         if not (width or height or address):
             ask = "I understood the site setup, but I need a site size, acreage, or address before changing canonical state."
             return _truthful_decision_update(
@@ -2564,6 +2565,7 @@ def _apply_chat_command_execution(
                 "matched_address": "",
                 "geocode": {"lat": None, "lng": None, "provider": "", "source": "", "confidence": None},
                 "evidence_source": "chat_address",
+                "requested_anchor": address_anchor or "location_evidence",
                 "truth_label": "Address text is location context only; it is not a site boundary, survey, control, parcel, or final reliance source.",
                 "status": "address_unverified_geocode_required",
             }
@@ -2581,6 +2583,7 @@ def _apply_chat_command_execution(
             "lot_width": width,
             "lot_height": height,
             "address": address,
+            "requested_address_anchor": address_anchor or "location_evidence",
             "boundary_status": "draft_unlocked",
             "source": "chat_site_setup",
             "location_context": location_context,
@@ -2600,9 +2603,10 @@ def _apply_chat_command_execution(
         latest_result["final_plan"] = final_plan
         _save_project_record(project_store, record, project_input=project_input, latest_result=latest_result)
         if width and height and address:
+            anchor_phrase = " centered on that address" if address_anchor == "center_point" else " at this address"
             assistant = (
                 f"I set the draft site size to {float(width):g} ft x {float(height):g} ft and recorded {address} as location evidence only. "
-                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary at this address?"
+                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary{anchor_phrase}?"
             )
         elif width and height:
             assistant = (

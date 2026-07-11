@@ -922,6 +922,36 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertIn("not a site boundary", saved_meta["location_context"]["truth_label"])
         self.assertNotIn("chat_command_workflows", saved_meta)
 
+    def test_site_setup_address_center_point_persists_without_design_clarification(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": "I want the address to be 20525 Margo St gretna ne and its gonna be 1000ft by 1000 ft with the address to be the center point",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["run_mode"], "none")
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertFalse(result["needs_clarification"])
+        self.assertNotIn("land use", result["assistant_message"])
+        self.assertNotIn("which systems", result["assistant_message"])
+        self.assertIn("centered on that address", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["command_payload"]["address_anchor"], "center_point")
+        saved_input = store.saved[-1]["project_input"]
+        saved_meta = store.saved[-1]["latest_result"]["final_plan"]["meta"]
+        self.assertEqual(saved_input["manual_fields"]["lot"]["w"], 1000.0)
+        self.assertEqual(saved_input["manual_fields"]["lot"]["h"], 1000.0)
+        self.assertEqual(saved_input["meta"]["site_inputs"]["address"], "20525 Margo St, Gretna, NE")
+        self.assertEqual(saved_meta["location_context"]["requested_anchor"], "center_point")
+        self.assertEqual(saved_meta["canonical_site_state"]["requested_address_anchor"], "center_point")
+        self.assertFalse(saved_meta["canonical_site_state"]["construction_release_allowed"])
+
     def test_site_setup_dimensions_only_changes_site_state(self):
         store = RecordingProjectStore()
 
