@@ -13462,24 +13462,70 @@ function PerformanceAIDashboardView({
   }, [activeSidePanel, buildingPlacements, previewHeightPx, siteScaleLocked]);
 
   const saveSiteAddress = async () => {
+    const trimmed = siteAddress.trim();
     if (!token) {
-      const message = "Sign in/connect backend to apply address.";
+      if (!trimmed) {
+        const message = "Type a project address before applying.";
+        setAutoExistingConditionsStatus({
+          status: "waiting",
+          message,
+          candidateCount: 0,
+          missing: ["address"],
+        });
+        updateProjectStatus({
+          state: "needs review",
+          area: "setup",
+          title: "Address needed",
+          detail: message,
+          nextAction: "Type an address in Setup, or lock a manually drawn site boundary.",
+        });
+        return;
+      }
+      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const nextSiteInputs = {
+        ...(currentInput?.meta?.site_inputs ?? {}),
+        address: trimmed,
+      };
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+        },
+      };
+      setCurrentProject((project) =>
+        project
+          ? {
+              ...project,
+              project_input: nextProjectInput,
+              updated_at: Date.now() / 1000,
+            }
+          : project,
+      );
+      setSelectedAddressSuggestion(null);
+      setAddressSuggestions([]);
+      autoExistingRunKeyRef.current = "";
+      setActiveWorkspaceMode("setup");
+      setActiveSidePanel("site_existing");
+      const message = "Address applied locally. Online geocode/source lookup needs sign-in/backend connection.";
       setAutoExistingConditionsStatus({
         status: "blocked",
         message,
         candidateCount: 0,
-        missing: ["backend session"],
+        missing: ["backend session", "geocode", "source providers"],
       });
       updateProjectStatus({
-        state: "blocked",
+        state: "needs review",
         area: "setup",
-        title: "Apply address blocked",
+        title: "Address applied locally",
         detail: message,
-        nextAction: "Sign in or reconnect backend, then press Apply Address again.",
+        nextAction: "Lock the site boundary for layout, or sign in/connect backend to geocode and fetch source context.",
       });
       return;
     }
-    const trimmed = siteAddress.trim();
     const currentInput = currentProject?.project_input ?? payloadPreview;
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),

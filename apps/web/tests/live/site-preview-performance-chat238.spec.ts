@@ -65,6 +65,9 @@ test.describe("Chat 238 site preview performance", () => {
     await page.getByRole("button", { name: /^Setup$/ }).first().click();
     await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
     await expect(page.getByLabel("Type project address")).toBeVisible();
+    await page.getByLabel("Type project address").fill("20525 Margo St, Gretna, NE");
+    await page.getByRole("button", { name: /apply address/i }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Address applied locally|Online geocode\/source lookup/i);
     expect(failures.pageErrors).toEqual([]);
     expect(failures.consoleErrors).toEqual([]);
   });
