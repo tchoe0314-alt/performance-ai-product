@@ -920,6 +920,25 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertNotIn("which systems", result["assistant_message"])
         self.assertIn("centered on that address", result["assistant_message"])
 
+    def test_site_setup_understands_address_as_center_without_address_keyword(self):
+        result = _decide("use 20525 Margo St Gretna NE as the center and make it 1000 ft by 1000 ft")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["control_overrides"]["lotWidth"], "1000")
+        self.assertEqual(result["control_overrides"]["lotHeight"], "1000")
+        self.assertEqual(result["control_overrides"]["siteAddress"], "20525 Margo St, Gretna, NE")
+        self.assertFalse(result["needs_clarification"])
+        self.assertNotIn("land use", result["assistant_message"])
+
+    def test_blank_site_setup_understands_casual_start_phrase(self):
+        result = _decide("just start a blank 1000 by 1000 site around 20525 margo st gretna ne")
+        self.assertEqual(result["intent"], "conversation")
+        self.assertEqual(result["response_metadata"]["intent"], "site_setup")
+        self.assertEqual(result["control_overrides"]["lotWidth"], "1000")
+        self.assertEqual(result["control_overrides"]["lotHeight"], "1000")
+        self.assertEqual(result["control_overrides"]["siteAddress"], "20525 Margo St, Gretna, NE")
+        self.assertNotIn("which systems", result["assistant_message"])
+
     def test_site_setup_dimensions_only_does_not_trigger_generation(self):
         result = _decide("set site to 500 by 800")
         self.assertEqual(result["intent"], "conversation")
@@ -978,6 +997,41 @@ class ChatIntentParserTest(unittest.TestCase):
         self.assertIn("layout", result["affected_systems"])
         self.assertEqual(result["action_taken"], "prepared_canonical_edit")
         self.assertIn("draft", " ".join(result["assumptions"]).lower())
+
+    def test_assisted_object_command_handles_casual_multiple_site_objects(self):
+        result = _decide(
+            "throw in a detention basin and some parking for now",
+            {"strategy_mode": "assisted", "has_plan": True, "lot_width": "1000", "lot_height": "1000"},
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["response_metadata"]["intent"], "object_or_layout_command")
+        self.assertEqual(result["action_taken"], "prepared_canonical_edit")
+        self.assertFalse(result["needs_clarification"])
+        self.assertIn("layout", result["affected_systems"])
+        self.assertIn("planner-selected feasible location", " ".join(result["assumptions"]))
+
+    def test_generate_understands_use_what_we_have_followup(self):
+        result = _decide(
+            "use what we have and generate the layout",
+            {"has_plan": False, "lot_width": "1000", "lot_height": "1000"},
+        )
+        self.assertEqual(result["intent"], "design")
+        self.assertEqual(result["run_mode"], "run")
+        self.assertEqual(result["response_metadata"]["intent"], "generate_command")
+        self.assertEqual(result["action_taken"], "prepared_engineering_run")
+        self.assertFalse(result["needs_clarification"])
+        self.assertTrue(result["control_overrides"]["grading"])
+        self.assertTrue(result["control_overrides"]["drainage"])
+        self.assertTrue(result["control_overrides"]["utilities"])
+
+    def test_generate_followup_asks_only_for_site_when_site_missing(self):
+        result = _decide("go ahead and generate it", {"has_plan": False})
+        self.assertEqual(result["intent"], "conversation")
+        self.assertTrue(result["needs_clarification"])
+        self.assertEqual(result["response_metadata"]["intent"], "generate_command")
+        self.assertIn("site size or boundary", result["required_missing_inputs"])
+        self.assertIn("site size or boundary", result["assistant_message"])
 
     def test_strict_object_creation_blocks_missing_location(self):
         result = _decide("add a 100 by 60 building", {"strategy_mode": "user", "has_plan": True, "lot_width": "500", "lot_height": "400"})

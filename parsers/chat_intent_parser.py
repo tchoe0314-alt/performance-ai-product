@@ -2670,7 +2670,7 @@ def _extract_site_dimensions(message: str) -> Optional[Dict[str, float]]:
             r"\b(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:site|lot|boundary)\b",
             lowered,
         )
-    if not match and any(token in lowered for token in ["address", "site", "lot", "boundary", "center point", "centerpoint"]):
+    if not match and any(token in lowered for token in ["address", "site", "lot", "boundary", "center", "center point", "centerpoint"]):
         match = re.search(
             r"\b(?:it(?:'s| is)?|site|lot|boundary)?\s*(?:is|to be|gonna be|going to be|will be|=)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?\b",
             lowered,
@@ -2691,21 +2691,30 @@ def _extract_address_text(message: str) -> str:
         normalized,
         re.IGNORECASE,
     )
-    if not match:
-        return ""
-    address = match.group(1).strip(" .")
-    address = re.split(
-        r"\s+\b(?:and\s+)?(?:make|set|site|lot|boundary|generate|design|run|it(?:'s| is)?|its|it's|address)\b",
-        address,
-        maxsplit=1,
-        flags=re.IGNORECASE,
-    )[0].strip(" .")
-    return _normalize_address_text(address)
+    if match:
+        address = match.group(1).strip(" .")
+        address = re.split(
+            r"\s+\b(?:and\s+)?(?:make|set|site|lot|boundary|generate|design|run|it(?:'s| is)?|its|it's|address)\b",
+            address,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip(" .")
+        if address:
+            return _normalize_address_text(address)
+    if any(token in _normalized_chat_text(message) for token in ["address", "center", "center point", "site", "around", "at"]):
+        street_match = re.search(
+            r"(?<!by )\b(\d{2,6}\s+(?:(?!\b(?:by|x|site|lot|boundary|around)\b)[A-Za-z0-9.'-]+\s+){1,5}(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|blvd|boulevard|ct|court|way|pkwy|parkway)\s+[A-Za-z.'-]+\s+[A-Za-z]{2})\b",
+            normalized,
+            re.IGNORECASE,
+        )
+        if street_match:
+            return _normalize_address_text(street_match.group(1).strip(" ."))
+    return ""
 
 
 def _address_requested_as_center_point(message: str) -> bool:
     lowered = _normalized_chat_text(message)
-    return "address" in lowered and any(
+    return bool(_extract_address_text(message)) and any(
         phrase in lowered
         for phrase in [
             "center point",
@@ -2714,6 +2723,8 @@ def _address_requested_as_center_point(message: str) -> bool:
             "address as the center",
             "address to be the center",
             "address is the center",
+            "as the center",
+            "centered on",
         ]
     )
 
@@ -2872,6 +2883,38 @@ def _ui_action_reply(selected_action_id: str, payload: Dict[str, Any]) -> str:
 
 def _looks_like_site_setup(message: str) -> bool:
     lowered = _normalized_chat_text(message)
+    design_program_signal = any(
+        phrase in lowered
+        for phrase in [
+            "design a",
+            "design an",
+            "site plan",
+            "building",
+            "parking",
+            "driveway",
+            "drainage",
+            "storm drainage",
+            "inlets",
+            "setbacks",
+        ]
+    )
+    setup_only_signal = any(
+        phrase in lowered
+        for phrase in [
+            "address",
+            "blank site",
+            "set site",
+            "set the site",
+            "site size",
+            "lot size",
+            "start a blank",
+            "around the address",
+            "with the address",
+            "as the center",
+        ]
+    )
+    if design_program_signal and not setup_only_signal:
+        return False
     if _extract_address_text(message):
         return True
     if _extract_site_dimensions(message) and any(
@@ -2886,12 +2929,48 @@ def _looks_like_site_setup(message: str) -> bool:
             "make site size",
             "set lot",
             "set the lot",
+            "start a blank",
+            "blank site",
+            "centered on",
+            "center it",
+            "around the address",
+            "around this address",
+            "with the address",
         ]
     ):
+        return True
+    if _extract_site_dimensions(message) and _extract_address_text(message):
         return True
     if _extract_site_area_acres(message) and "blank site" in lowered:
         return True
     return False
+
+
+def _looks_like_natural_generate_request(message: str) -> bool:
+    lowered = _normalized_chat_text(message)
+    return any(
+        phrase in lowered
+        for phrase in [
+            "generate it",
+            "generate this",
+            "generate the layout",
+            "generate the design",
+            "generate the site",
+            "generate the stuff",
+            "run it",
+            "run this",
+            "run what we have",
+            "use what we have",
+            "start with what we have",
+            "go ahead and generate",
+            "go ahead and run",
+            "do the layout",
+            "make the layout",
+            "create the layout",
+            "do the site plan",
+            "make the site plan",
+        ]
+    )
 
 
 def _command_family(message: str) -> str:
@@ -2921,10 +3000,35 @@ def _command_family(message: str) -> str:
         return "grading_command"
     if any(phrase in lowered for phrase in ["generate utilities", "run utilities", "design utilities", "water system", "sanitary system", "sewer system"]):
         return "utility_command"
-    if any(phrase in lowered for phrase in ["generate systems", "generate the systems", "generate everything", "run the engines", "run all systems"]):
+    if any(phrase in lowered for phrase in ["generate systems", "generate the systems", "generate everything", "run the engines", "run all systems"]) or _looks_like_natural_generate_request(message):
         return "generate_command"
-    if any(target in lowered for target in ["building", "basin", "detention", "parking", "road", "protected zone", "protected_zone", "wetland", "buffer"]) and any(
-        verb in lowered for verb in ["add", "put", "place", "make", "change", "move", "fit"]
+    object_targets = [
+        "building",
+        "office",
+        "basin",
+        "detention",
+        "parking",
+        "road",
+        "driveway",
+        "sidewalk",
+        "ada route",
+        "water line",
+        "sanitary",
+        "storm sewer",
+        "sewer",
+        "utility",
+        "utilities",
+        "hydrant",
+        "inlet",
+        "outfall",
+        "protected zone",
+        "protected_zone",
+        "wetland",
+        "buffer",
+    ]
+    object_verbs = ["add", "put", "place", "make", "create", "draw", "route", "connect", "move", "change", "fit", "throw in", "lay out"]
+    if any(target in lowered for target in object_targets) and any(
+        verb in lowered for verb in object_verbs
     ):
         if "site" in lowered and _extract_site_area_acres(message):
             return "site_update"
@@ -2995,10 +3099,10 @@ def _affected_systems_for_command(command_intent: str, message: str) -> List[str
     systems: List[str] = []
     mapping = [
         ("site", ["site", "lot", "acre"]),
-        ("layout", ["building", "parking", "road", "layout", "basin", "detention"]),
+        ("layout", ["building", "office", "parking", "road", "driveway", "sidewalk", "ada", "layout", "basin", "detention"]),
         ("grading", ["grading", "grade", "contour", "slope", "low corner"]),
         ("drainage", ["drainage", "storm", "detention", "basin", "outfall", "inlet", "pipe"]),
-        ("utilities", ["utility", "utilities", "water", "sanitary", "sewer"]),
+        ("utilities", ["utility", "utilities", "water", "sanitary", "sewer", "hydrant"]),
         ("export", ["export", "deliverable"]),
     ]
     for system, tokens in mapping:
@@ -3044,7 +3148,7 @@ def _missing_inputs_for_command(command_intent: str, message: str, context: Dict
             and not object_payload.get("location_hint")
         ):
             missing.append("object location")
-        if "basin" in lowered or "detention" in lowered:
+        if ("basin" in lowered or "detention" in lowered) and strict_policy:
             if not (
                 _ctx_has_low_point(context)
                 or _ctx_has_referenced_geometry(context)
@@ -3083,6 +3187,8 @@ def _specific_missing_question(command_intent: str, missing: List[str], context:
         return "I can create that object in strict mode, but I need its location first, for example north side, southeast corner, or x/y coordinates."
     if command_intent == "object_or_layout_command" and "what road change you want" in missing:
         return "I can change the road, but I need the target change: move it, widen it, reroute it, add an entrance, or reduce its footprint?"
+    if "site size or boundary" in missing:
+        return "I can do that, but I need a site size or boundary first. Give me dimensions, acreage, an address, or draw the site boundary."
     return "I can do that, but I need " + _format_missing_requirements(missing[:2]) + " first."
 
 
@@ -3364,14 +3470,30 @@ def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Di
     payload: Dict[str, Any] = {}
     if "protected zone" in lowered or "protected_zone" in lowered or "wetland" in lowered or "buffer" in lowered:
         payload["object_type"] = "protected_zone"
-    elif "building" in lowered:
+    elif "building" in lowered or "office" in lowered:
         payload["object_type"] = "building"
     elif "basin" in lowered or "detention" in lowered or "pond" in lowered:
         payload["object_type"] = "basin"
     elif "parking" in lowered:
         payload["object_type"] = "parking"
+    elif "driveway" in lowered:
+        payload["object_type"] = "driveway"
+    elif "sidewalk" in lowered or "ada route" in lowered or "ada routes" in lowered:
+        payload["object_type"] = "sidewalk"
     elif "road" in lowered:
         payload["object_type"] = "road"
+    elif "water" in lowered:
+        payload["object_type"] = "water_line"
+    elif "sanitary" in lowered or "sewer" in lowered:
+        payload["object_type"] = "sanitary_line"
+    elif "storm" in lowered:
+        payload["object_type"] = "storm_sewer"
+    elif "hydrant" in lowered:
+        payload["object_type"] = "hydrant"
+    elif "inlet" in lowered:
+        payload["object_type"] = "inlet"
+    elif "outfall" in lowered:
+        payload["object_type"] = "outfall"
 
     dims = re.search(
         r"\b(\d+(?:\.\d+)?)\s*(?:ft|feet|m|meters)?\s*(?:x|by)\s*(\d+(?:\.\d+)?)",
@@ -3397,7 +3519,7 @@ def _extract_object_command_payload(message: str, context: Dict[str, Any]) -> Di
 
     if payload.get("object_type") == "parking" and "fit" in lowered:
         payload["operation"] = "fit_to_buildings"
-    elif any(verb in lowered for verb in ["add", "put", "place", "create"]):
+    elif any(verb in lowered for verb in ["add", "put", "place", "create", "draw", "throw in", "lay out", "route", "connect"]):
         payload["operation"] = "create"
     elif any(verb in lowered for verb in ["change", "move", "reroute", "widen", "narrow", "turn"]):
         payload["operation"] = "update"
@@ -4062,7 +4184,7 @@ def _local_chat_decision(payload_data: Dict[str, Any]) -> Dict[str, Any]:
             if (
                 command_payload.get("assumption_policy") == "assisted"
                 and command_payload.get("operation") == "create"
-                and command_payload.get("object_type") in {"building", "detention_basin", "parking"}
+                and command_payload.get("object_type") in {"building", "basin", "parking", "driveway", "sidewalk", "water_line", "sanitary_line", "storm_sewer"}
                 and not command_payload.get("location_hint")
             ):
                 command_assumptions.append("Object will be added as draft geometry at a planner-selected feasible location.")
