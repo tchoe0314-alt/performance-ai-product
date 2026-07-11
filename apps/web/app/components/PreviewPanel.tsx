@@ -788,7 +788,7 @@ export default function PreviewPanel({
   const [drawAutoFinishPointCount, setDrawAutoFinishPointCount] = useState<number | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
   const suppressNextDrawClickRef = useRef(false);
-  const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
+  const [canvasView, setCanvasView] = useState({ scale: 0.96, offsetX: 0, offsetY: 0 });
   const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
   const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
   const hasDrawableSiteSize = lotWidth > 0 && lotHeight > 0;
@@ -1015,7 +1015,7 @@ export default function PreviewPanel({
 	          : null;
 	      const dash =
 	        blocked ? "1.2 0.8" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
-	      const stateStroke = (fallback: string) => (selected ? "#fbbf24" : blocked ? "#dc2626" : customStroke ?? fallback);
+	      const stateStroke = (fallback: string) => (selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? fallback);
       const stateOpacity = blocked ? 0.92 : lowConfidence ? 0.9 : 1;
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
@@ -1031,34 +1031,34 @@ export default function PreviewPanel({
         const style = standardPalette[kind] ?? standardPalette.fallback;
 	        return {
 	          fill: style.fill,
-	          stroke: selected ? "#f59e0b" : blocked ? "#dc2626" : customStroke ?? style.stroke,
-          strokeWidth: selected ? 0.96 : kind === "fallback" ? 0.82 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.62 : 0.48,
+	          stroke: selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? style.stroke,
+          strokeWidth: selected ? 0.68 : kind === "fallback" ? 0.68 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.5 : 0.38,
           strokeDasharray: dash,
           opacity: stateOpacity,
         };
       }
       if (kind === "road") {
-        return { fill: "rgba(71, 85, 105, 0.11)", stroke: stateStroke("#475569"), strokeWidth: selected ? 1.18 : 0.78, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(71, 85, 105, 0.1)", stroke: stateStroke("#475569"), strokeWidth: selected ? 0.86 : 0.62, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "parking") {
-        return { fill: "rgba(100, 116, 139, 0.16)", stroke: stateStroke("#64748b"), strokeWidth: selected ? 0.72 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(100, 116, 139, 0.14)", stroke: stateStroke("#64748b"), strokeWidth: selected ? 0.58 : 0.28, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "water") {
-        return { fill: "rgba(125, 211, 252, 0.26)", stroke: stateStroke("#0284c7"), strokeWidth: selected ? 0.82 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(125, 211, 252, 0.22)", stroke: stateStroke("#0284c7"), strokeWidth: selected ? 0.62 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "landscape") {
-        return { fill: "rgba(134, 239, 172, 0.18)", stroke: stateStroke("#16a34a"), strokeWidth: selected ? 0.72 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(134, 239, 172, 0.16)", stroke: stateStroke("#16a34a"), strokeWidth: selected ? 0.56 : 0.28, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "sidewalk") {
-        return { fill: "rgba(248, 250, 252, 0.46)", stroke: stateStroke("#94a3b8"), strokeWidth: selected ? 0.75 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(248, 250, 252, 0.42)", stroke: stateStroke("#94a3b8"), strokeWidth: selected ? 0.56 : 0.32, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "utility") {
-        return { fill: "rgba(37, 99, 235, 0.08)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: selected ? 0.78 : 0.46, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(37, 99, 235, 0.065)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: selected ? 0.58 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "building") {
-        return { fill: "rgba(226, 218, 202, 0.76)", stroke: stateStroke("#8b7355"), strokeWidth: selected ? 0.82 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(226, 218, 202, 0.72)", stroke: stateStroke("#8b7355"), strokeWidth: selected ? 0.62 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
       }
-      return { fill: "rgba(37, 99, 235, 0.18)", stroke: stateStroke("#1d4ed8"), strokeWidth: selected ? 0.96 : 0.78, strokeDasharray: dash, opacity: stateOpacity };
+      return { fill: "rgba(37, 99, 235, 0.13)", stroke: stateStroke("#1d4ed8"), strokeWidth: selected ? 0.68 : 0.58, strokeDasharray: dash, opacity: stateOpacity };
     },
     [isHighQuality, resolveVisualKind],
   );
@@ -1914,10 +1914,15 @@ export default function PreviewPanel({
       const maxY = minY + Math.max(item.d, 1);
       const centerX = (minX + maxX) / 2 / Math.max(lotWidth, 1);
       const centerY = (minY + maxY) / 2 / Math.max(lotHeight, 1);
+      const objectShare = Math.max(
+        Math.max(item.w, 1) / Math.max(lotWidth, 1),
+        Math.max(item.d, 1) / Math.max(lotHeight, 1),
+      );
+      const focusScale = Math.min(Math.max(1 / Math.max(objectShare, 0.42), 0.96), 1.85);
       setCanvasView({
-        scale: Math.min(Math.max(1 / Math.max(Math.max(item.w, 1) / Math.max(lotWidth, 1), Math.max(item.d, 1) / Math.max(lotHeight, 1), 0.34), 1), 3),
-        offsetX: (0.5 - centerX) * 160,
-        offsetY: (0.5 - centerY) * 160,
+        scale: focusScale,
+        offsetX: (0.5 - centerX) * 96,
+        offsetY: (0.5 - centerY) * 96,
       });
       setCadCommandStatus(`Focused ${item.label || item.id}.`);
     },
@@ -6784,7 +6789,7 @@ export default function PreviewPanel({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
+                  onClick={() => setCanvasView({ scale: 0.96, offsetX: 0, offsetY: 0 })}
                   className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-slate-600 hover:bg-slate-50"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
@@ -7883,7 +7888,7 @@ export default function PreviewPanel({
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
+                      onClick={() => setCanvasView({ scale: 0.96, offsetX: 0, offsetY: 0 })}
                       className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
                     >
                       Reset
@@ -8076,7 +8081,7 @@ export default function PreviewPanel({
                         type="button"
                         aria-label="Reset canvas view"
                         title="Reset canvas view"
-                        onClick={() => setCanvasView({ scale: 1, offsetX: 0, offsetY: 0 })}
+                        onClick={() => setCanvasView({ scale: 0.96, offsetX: 0, offsetY: 0 })}
                         className="inline-flex h-9 w-9 items-center justify-center text-slate-700 transition hover:bg-slate-50"
                       >
                         <RotateCcw className="h-4 w-4" />
@@ -8139,15 +8144,15 @@ export default function PreviewPanel({
                         preserveAspectRatio="none"
                         style={viewportTransformStyle}
                       >
-                        <g data-testid="cad-plan-grid" opacity={showMap ? 0 : isHighQuality ? 0.38 : 0.28}>
+                        <g data-testid="cad-plan-grid" opacity={showMap ? 0 : isHighQuality ? 0.2 : 0.13}>
                           <rect
                             x={0}
                             y={0}
                             width={100}
                             height={100}
                             fill="transparent"
-                            stroke={isHighQuality ? "rgba(15,23,42,0.38)" : "rgba(100,116,139,0.28)"}
-                            strokeWidth={0.26}
+                            stroke={isHighQuality ? "rgba(15,23,42,0.22)" : "rgba(100,116,139,0.16)"}
+                            strokeWidth={0.18}
                           />
                           {(!isHighQuality && !showGeneratedPlan ? cadPlanGrid.verticalMinor : []).map((x) => (
                             <line
@@ -8156,8 +8161,8 @@ export default function PreviewPanel({
                               y1={0}
                               x2={x}
                               y2={100}
-                              stroke="rgba(148,163,184,0.18)"
-                              strokeWidth={0.08}
+                              stroke="rgba(148,163,184,0.1)"
+                              strokeWidth={0.055}
                             />
                           ))}
                           {(!isHighQuality && !showGeneratedPlan ? cadPlanGrid.horizontalMinor : []).map((y) => (
@@ -8167,8 +8172,8 @@ export default function PreviewPanel({
                               y1={y}
                               x2={100}
                               y2={y}
-                              stroke="rgba(148,163,184,0.18)"
-                              strokeWidth={0.08}
+                              stroke="rgba(148,163,184,0.1)"
+                              strokeWidth={0.055}
                             />
                           ))}
                           {(!showGeneratedPlan ? cadPlanGrid.verticalMajor : []).map((x) => (
@@ -8178,8 +8183,8 @@ export default function PreviewPanel({
                               y1={0}
                               x2={x}
                               y2={100}
-                              stroke="rgba(100,116,139,0.28)"
-                              strokeWidth={0.13}
+                              stroke="rgba(100,116,139,0.16)"
+                              strokeWidth={0.085}
                             />
                           ))}
                           {(!showGeneratedPlan ? cadPlanGrid.horizontalMajor : []).map((y) => (
@@ -8189,8 +8194,8 @@ export default function PreviewPanel({
                               y1={y}
                               x2={100}
                               y2={y}
-                              stroke="rgba(100,116,139,0.28)"
-                              strokeWidth={0.13}
+                              stroke="rgba(100,116,139,0.16)"
+                              strokeWidth={0.085}
                             />
                           ))}
                           <rect
@@ -8198,17 +8203,17 @@ export default function PreviewPanel({
                             y={1.2}
                             width={97.6}
                             height={97.6}
-                            fill={siteLocked ? "rgba(16,185,129,0.035)" : "none"}
-                            stroke={siteLocked ? "rgba(5,150,105,0.82)" : isHighQuality ? "rgba(15,23,42,0.78)" : "rgba(51,65,85,0.58)"}
-                            strokeWidth={siteLocked ? 0.46 : 0.38}
+                            fill={siteLocked ? "rgba(16,185,129,0.024)" : "none"}
+                            stroke={siteLocked ? "rgba(5,150,105,0.62)" : isHighQuality ? "rgba(15,23,42,0.44)" : "rgba(51,65,85,0.36)"}
+                            strokeWidth={siteLocked ? 0.34 : 0.26}
                             strokeDasharray={siteLocked ? undefined : "2 1.2"}
                           />
                           {siteLocked ? (
                             <text
                               x={2.4}
                               y={4.2}
-                              fontSize={1.35}
-                              fill="#047857"
+                              fontSize={1.12}
+                              fill="rgba(4,120,87,0.58)"
                               fontWeight={800}
                               letterSpacing={0.16}
                             >
@@ -8522,10 +8527,11 @@ export default function PreviewPanel({
                                   <polyline
                                     points={points.join(" ")}
                                     fill="none"
-                                    stroke={previewQuality === "high" ? "#fbbf24" : "#f59e0b"}
-                                    strokeWidth={1.3}
+                                    stroke="rgba(15,118,110,0.42)"
+                                    strokeWidth={0.82}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
+                                    strokeDasharray="1.8 1.2"
                                   />
                                 ) : null}
                                 <polyline
@@ -8730,22 +8736,22 @@ export default function PreviewPanel({
                                     <polyline
                                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                                       fill="none"
-                                      stroke="#f59e0b"
-                                      strokeWidth={corridorAxis.width + 0.68}
+                                      stroke="rgba(15,118,110,0.34)"
+                                      strokeWidth={Math.max(0.9, corridorAxis.width + 0.32)}
                                       strokeLinecap="round"
-                                      opacity={0.5}
+                                      opacity={0.48}
                                     />
                                   ) : (
                                     <rect
-                                      x={rect.left - 0.42}
-                                      y={rect.top - 0.42}
-                                      width={rect.width + 0.84}
-                                      height={rect.height + 0.84}
+                                      x={rect.left - 0.28}
+                                      y={rect.top - 0.28}
+                                      width={rect.width + 0.56}
+                                      height={rect.height + 0.56}
                                       rx={0.7}
                                       fill="none"
-                                      stroke="#f59e0b"
-                                      strokeWidth={0.32}
-                                      strokeDasharray="1.3 0.9"
+                                      stroke="rgba(15,118,110,0.58)"
+                                      strokeWidth={0.22}
+                                      strokeDasharray="1.2 0.9"
                                     />
                                   )
                                 ) : null}
