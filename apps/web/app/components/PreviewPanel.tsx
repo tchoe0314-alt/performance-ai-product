@@ -783,6 +783,7 @@ export default function PreviewPanel({
   const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
+  const [drawAutoFinishPointCount, setDrawAutoFinishPointCount] = useState<number | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
   const suppressNextDrawClickRef = useRef(false);
   const [canvasView, setCanvasView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
@@ -3128,14 +3129,21 @@ export default function PreviewPanel({
     onSetPreviewMode("2d");
     onSetPreviewInteraction("edit");
 
-    const activateDrawMode = (mode: DrawMode, label: string) => {
+    const activateDrawMode = (mode: DrawMode, label: string, autoFinishPointCount: number | null = null) => {
       setDraftPoints([]);
       setDraftPreviewPoint(null);
+      setDrawAutoFinishPointCount(autoFinishPointCount);
       onSelectBuilding(null);
       setSelectedVertex(null);
       setCadSelectionSet([]);
       setDrawMode(mode);
-      pushCadCommandFeedback(label, "info", `${label} tool active. Pick points on the canvas, then Finish when shown.`);
+      pushCadCommandFeedback(
+        label,
+        "info",
+        autoFinishPointCount
+          ? `${label} tool active. Pick ${autoFinishPointCount} point${autoFinishPointCount === 1 ? "" : "s"} on the canvas to create the draft object.`
+          : `${label} tool active. Pick points on the canvas, then Finish when shown.`,
+      );
     };
 
     switch (cadToolRequest.tool) {
@@ -3143,16 +3151,17 @@ export default function PreviewPanel({
         setDrawMode("select");
         setDraftPoints([]);
         setDraftPreviewPoint(null);
+        setDrawAutoFinishPointCount(null);
         pushCadCommandFeedback("SELECT", "info", "SELECT tool active. Click an object on the canvas or choose one from the object list.");
         break;
       case "line":
-        activateDrawMode("polyline", "LINE");
+        activateDrawMode("polyline", "LINE", 2);
         break;
       case "polyline":
         activateDrawMode("polyline", "PLINE");
         break;
       case "area":
-        activateDrawMode("polygon", "AREA");
+        activateDrawMode("polygon", "AREA", 3);
         break;
       case "box":
         activateDrawMode("rect", "RECTANGLE");
@@ -3519,12 +3528,53 @@ export default function PreviewPanel({
           return true;
         }
         onCreateCustomGeometry({ mode: "rect", points: [draftPoints[0], point] });
+        pushCadCommandFeedback("BOX", "applied", "BOX created manual_drawn draft_review_required geometry.");
         setDrawMode("select");
         setDraftPreviewPoint(null);
         setDraftPoints([]);
         return true;
       }
-      setDraftPoints((prev) => [...prev, point]);
+      const nextPoints = [...draftPoints, point];
+      if (
+        drawAutoFinishPointCount &&
+        nextPoints.length >= drawAutoFinishPointCount &&
+        (drawMode === "polyline" || drawMode === "polygon")
+      ) {
+        if (drawMode === "polygon") {
+          const cleaned = cleanupPolygon(nextPoints, 0.5);
+          if (!cleaned.ok) {
+            setCadCommandStatus(`AREA blocked: ${cleaned.reason}`);
+            pushCadCommandFeedback("AREA", "blocked", `AREA blocked: ${cleaned.reason}`);
+            return true;
+          }
+          const validation = validatePolygon(cleaned.value);
+          if (!validation.ok) {
+            const reason = validation.issues.join(", ");
+            setCadCommandStatus(`AREA blocked: ${reason}`);
+            pushCadCommandFeedback("AREA", "blocked", `AREA blocked: ${reason}`);
+            return true;
+          }
+          onCreateCustomGeometry({
+            mode: "polygon",
+            points: cleaned.value,
+            meta: {
+              geometry_cleanup: "auto_finished_after_three_points",
+              polygon_holes_supported: false,
+              polygon_holes_blocked_reason: "Canvas polygon editor supports one exterior ring only.",
+            },
+          });
+          pushCadCommandFeedback("AREA", "applied", "AREA created manual_drawn draft_review_required geometry.");
+        } else {
+          onCreateCustomGeometry({ mode: "polyline", points: nextPoints });
+          pushCadCommandFeedback("LINE", "applied", "LINE created manual_drawn draft_review_required geometry.");
+        }
+        setDrawMode("select");
+        setDraftPreviewPoint(null);
+        setDraftPoints([]);
+        setDrawAutoFinishPointCount(null);
+        return true;
+      }
+      setDraftPoints(nextPoints);
       return true;
     },
     [
@@ -3532,9 +3582,11 @@ export default function PreviewPanel({
       canvasView.offsetY,
       canDrawObjects,
       clearDraftGeometry,
+      drawAutoFinishPointCount,
       draftPoints,
       drawMode,
       onCreateCustomGeometry,
+      pushCadCommandFeedback,
       resolveCadSnapPoint,
       screenToSitePoint,
     ],
@@ -3546,6 +3598,7 @@ export default function PreviewPanel({
         return;
       }
       setDrawMode(mode);
+      setDrawAutoFinishPointCount(mode === "polyline" ? 2 : mode === "polygon" ? 3 : null);
       clearDraftGeometry();
       if (mode !== "select") {
         onSelectBuilding(null);
@@ -3567,7 +3620,19 @@ export default function PreviewPanel({
                   : mode === "pan"
                     ? "Pan"
                     : "Select";
-      pushCadCommandFeedback("TOOL", "info", `${label} active. ${mode === "select" ? "Click an object or choose one from Object Manager." : "Use the canvas; Finish appears when needed."}`);
+      pushCadCommandFeedback(
+        "TOOL",
+        "info",
+        `${label} active. ${
+          mode === "select"
+            ? "Click an object or choose one from Object Manager."
+            : mode === "polyline"
+              ? "Pick two points on the canvas to create a draft line."
+              : mode === "polygon"
+                ? "Pick three points on the canvas to create a draft area."
+                : "Use the canvas; Finish appears when needed."
+        }`,
+      );
     },
     [clearDraftGeometry, onSelectBuilding, onSetPreviewInteraction, pushCadCommandFeedback],
   );
