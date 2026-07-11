@@ -8008,11 +8008,10 @@ export default function PreviewPanel({
                     ref={previewImageRef}
                     src={planPreviewUrl}
                     alt="Generated plan preview"
-                    className={`h-full w-full object-contain ${
+                    className={`pointer-events-none h-full w-full object-contain ${
                       placementMode || allowEdits ? "cursor-crosshair" : "cursor-default"
                     }`}
                     onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
-                    onClick={onOpenFullscreen}
                   />
                 ) : !showMap && !hasLiveObjects ? (
                   <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">
