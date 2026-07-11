@@ -2825,6 +2825,10 @@ function PerformanceAIDashboardView({
     if (!clientMounted || typeof window === "undefined") return false;
     return window.location.search.includes("debugPreview=1");
   }, [clientMounted]);
+  const mapDebugOverlay = useMemo(() => {
+    if (!clientMounted || typeof window === "undefined") return false;
+    return window.location.search.includes("mapDebug=1");
+  }, [clientMounted]);
   const debugNoTerrain = useMemo(() => {
     if (!clientMounted || typeof window === "undefined") return false;
     return process.env.NODE_ENV !== "production" && window.location.search.includes("debugNoTerrain=1");
@@ -25625,7 +25629,7 @@ function PerformanceAIDashboardView({
                   scheduleScaleSave(ftPerPx, source);
                 }}
                 debugStats={{
-                  enabled: debugPreview,
+                  enabled: mapDebugOverlay,
                   projectId: projectId || currentProject?.project_id || "",
                   canonicalCount: buildingPlacements.length,
                   placedCount: placedObjectCount,
