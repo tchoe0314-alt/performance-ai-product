@@ -6363,14 +6363,53 @@ function PerformanceAIDashboardView({
       };
       const defaultHeight = catalog.defaultH ?? 0;
       const autoPlaced = Boolean(options?.placed);
-      const autoX =
-        type === "basin" || type === "outfall"
-          ? Math.max(0, lot.w - defaults.w - 24)
-          : Math.min(Math.max(24, existingCount * 24), Math.max(24, lot.w - defaults.w - 24));
-      const autoY =
-        type === "basin" || type === "outfall"
-          ? Math.max(0, lot.h - defaults.d - (type === "outfall" ? 8 : 24))
-          : Math.min(Math.max(24, existingCount * 18), Math.max(24, lot.h - defaults.d - 24));
+      const clampPlacement = (value: number, size: number, total: number) =>
+        Math.min(Math.max(value, 24), Math.max(24, total - size - 24));
+      const smartPlacement = (() => {
+        const typeKey = type === "office_building" ? "building" : type;
+        if (typeKey === "building") {
+          return {
+            x: clampPlacement(lot.w * 0.18, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.16, defaults.d, lot.h),
+          };
+        }
+        if (typeKey === "parking") {
+          return {
+            x: clampPlacement(lot.w * 0.16, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.38, defaults.d, lot.h),
+          };
+        }
+        if (typeKey === "basin" || typeKey === "outfall") {
+          return {
+            x: clampPlacement(lot.w * 0.72, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.68, defaults.d, lot.h),
+          };
+        }
+        if (typeKey === "driveway" || typeKey === "road" || typeKey === "entrance") {
+          return {
+            x: clampPlacement(lot.w * 0.05, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.54, defaults.d, lot.h),
+          };
+        }
+        if (typeKey === "sidewalk") {
+          return {
+            x: clampPlacement(lot.w * 0.14, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.62, defaults.d, lot.h),
+          };
+        }
+        if (typeKey === "utility_corridor") {
+          return {
+            x: clampPlacement(lot.w * 0.08, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.74, defaults.d, lot.h),
+          };
+        }
+        return {
+          x: Math.min(Math.max(24, existingCount * 24), Math.max(24, lot.w - defaults.w - 24)),
+          y: Math.min(Math.max(24, existingCount * 18), Math.max(24, lot.h - defaults.d - 24)),
+        };
+      })();
+      const autoX = smartPlacement.x;
+      const autoY = smartPlacement.y;
       const parkingStalls =
         type === "parking" ? parsePositiveNumber(parkingCount) ?? 0 : undefined;
       const parkingParams =
@@ -6439,12 +6478,13 @@ function PerformanceAIDashboardView({
       }
       if (["road", "driveway", "sidewalk"].includes(type)) {
         nextPlacement.geometryType = "polyline";
-        nextPlacement.geometry = buildDefaultPolyline({
-          x: 0,
-          y: 0,
-          w: nextPlacement.w,
-          d: nextPlacement.d,
-        });
+        const yFactor = type === "sidewalk" ? 0.62 : 0.54;
+        const endXFactor = type === "sidewalk" ? 0.64 : 0.5;
+        nextPlacement.geometry = [
+          [lot.w * 0.04, lot.h * yFactor],
+          [lot.w * 0.24, lot.h * yFactor],
+          [lot.w * endXFactor, lot.h * (type === "sidewalk" ? 0.52 : 0.46)],
+        ];
         nextPlacement.capabilities = {
           movable: true,
           resizable: false,
@@ -6454,12 +6494,20 @@ function PerformanceAIDashboardView({
       }
       if (options?.geometryType === "polyline") {
         nextPlacement.geometryType = "polyline";
-        nextPlacement.geometry = buildDefaultPolyline({
-          x: 0,
-          y: 0,
-          w: nextPlacement.w,
-          d: nextPlacement.d,
-        });
+        const network = String(options?.meta?.network || "").toLowerCase();
+        const yFactor = network === "water" ? 0.7 : network === "sanitary" ? 0.77 : network === "storm" ? 0.84 : 0.74;
+        const verticalBend =
+          network === "storm"
+            ? [
+                [lot.w * 0.58, lot.h * 0.7],
+                [lot.w * 0.78, lot.h * 0.82],
+              ]
+            : [[lot.w * 0.52, lot.h * yFactor]];
+        nextPlacement.geometry = [
+          [lot.w * 0.08, lot.h * yFactor],
+          ...(verticalBend as Array<[number, number]>),
+          [lot.w * 0.92, lot.h * yFactor],
+        ];
         nextPlacement.capabilities = {
           movable: true,
           resizable: false,
