@@ -1024,13 +1024,13 @@ export default function PreviewPanel({
           landscape: { fill: "rgba(134, 239, 172, 0.2)", stroke: "#22c55e" },
           sidewalk: { fill: "rgba(241, 245, 249, 0.52)", stroke: "#94a3b8" },
           utility: { fill: "rgba(59, 130, 246, 0.08)", stroke: "#2563eb" },
-          fallback: { fill: "rgba(37, 99, 235, 0.12)", stroke: "#2563eb" },
+          fallback: { fill: "rgba(37, 99, 235, 0.18)", stroke: "#1d4ed8" },
         };
         const style = standardPalette[kind] ?? standardPalette.fallback;
 	        return {
 	          fill: style.fill,
 	          stroke: selected ? "#f59e0b" : blocked ? "#dc2626" : customStroke ?? style.stroke,
-          strokeWidth: selected ? 0.82 : kind === "fallback" ? 0.62 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.58 : 0.42,
+          strokeWidth: selected ? 0.96 : kind === "fallback" ? 0.82 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.62 : 0.48,
           strokeDasharray: dash,
           opacity: stateOpacity,
         };
@@ -1056,7 +1056,7 @@ export default function PreviewPanel({
       if (kind === "building") {
         return { fill: "rgba(226, 218, 202, 0.76)", stroke: stateStroke("#8b7355"), strokeWidth: selected ? 0.82 : 0.42, strokeDasharray: dash, opacity: stateOpacity };
       }
-      return { fill: "rgba(37, 99, 235, 0.12)", stroke: stateStroke("#2563eb"), strokeWidth: selected ? 0.82 : 0.58, strokeDasharray: dash, opacity: stateOpacity };
+      return { fill: "rgba(37, 99, 235, 0.18)", stroke: stateStroke("#1d4ed8"), strokeWidth: selected ? 0.96 : 0.78, strokeDasharray: dash, opacity: stateOpacity };
     },
     [isHighQuality, resolveVisualKind],
   );
@@ -6225,9 +6225,18 @@ export default function PreviewPanel({
                         }}
                         className="h-9 min-w-[128px] max-w-[190px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800"
                       />
-                      <span className="hidden h-9 max-w-[260px] items-center truncate rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 xl:inline-flex" data-testid="preview-object-manager-selected-status">
-                        {getPreviewObjectDimensionsLabel(selectedObject)} / {getPreviewObjectSourceLabel(selectedObject)} / {getPreviewObjectStatusLabel(selectedObject)}
+                      <span className="hidden h-9 max-w-[190px] items-center truncate rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 xl:inline-flex" data-testid="preview-object-manager-selected-status">
+                        {getPreviewObjectDimensionsLabel(selectedObject)}
                       </span>
+                      <details className="hidden h-9 max-w-[210px] items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 xl:inline-flex">
+                        <summary className="cursor-pointer list-none whitespace-nowrap">Details</summary>
+                        <div className="absolute right-4 top-24 z-[140] w-72 rounded-xl border border-slate-200 bg-white p-3 text-left normal-case tracking-normal text-slate-600 shadow-xl">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Selected object</p>
+                          <p className="mt-2 text-xs font-semibold text-slate-800">{getPreviewObjectSourceLabel(selectedObject)}</p>
+                          <p className="mt-1 text-xs text-slate-500">{getPreviewObjectStatusLabel(selectedObject)}</p>
+                          <p className="mt-1 text-xs text-slate-500">{getPreviewObjectDimensionsLabel(selectedObject)}</p>
+                        </div>
+                      </details>
                       <input
                         type="color"
                         aria-label="Change selected object color"

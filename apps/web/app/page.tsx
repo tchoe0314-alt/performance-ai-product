@@ -9854,11 +9854,90 @@ function PerformanceAIDashboardView({
     return true;
   };
 
+  const parseDirectSiteSetupCommand = (
+    message: string,
+  ): { address: string; width: number; height: number } | null => {
+    const compact = message.trim().replace(/\s+/g, " ");
+    if (!compact) return null;
+    const sizeMatch = compact.match(
+      /(\d{2,5}(?:,\d{3})?(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:by|x|×)\s*(\d{2,5}(?:,\d{3})?(?:\.\d+)?)\s*(?:ft|feet|foot|')?/i,
+    );
+    if (!sizeMatch || sizeMatch.index === undefined) return null;
+    const width = Number(sizeMatch[1].replace(/,/g, ""));
+    const height = Number(sizeMatch[2].replace(/,/g, ""));
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    const beforeSize = compact.slice(0, sizeMatch.index).trim();
+    const afterAddressLead = beforeSize
+      .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
+      .split(/\s+\b(?:and|with)\b\s+(?:it'?s|it is|site|lot|gonna|going|will|should)/i)[0]
+      .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
+      .trim();
+    const streetLikeFallback = beforeSize
+      .replace(/\b(?:i want|make|set|create|start|the|site|lot|address|center point|centered|with)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const address = (afterAddressLead || streetLikeFallback)
+      .replace(/[.,;:]+$/g, "")
+      .trim();
+    if (address.length < 6 || !/\d/.test(address)) return null;
+    return { address, width, height };
+  };
+
   const tryHandlePowerCommand = (message: string): boolean => {
     const normalized = message.trim().toLowerCase().replace(/\s+/g, " ");
     if (!normalized) return false;
     if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
       return refuseUnsafeConstructionCommand(message);
+    }
+    const directSiteSetup = parseDirectSiteSetupCommand(message);
+    if (directSiteSetup) {
+      appendChatMessage("user", message);
+      clearGeneratedPreview();
+      setSiteAddress(directSiteSetup.address);
+      setLotWidth(String(Math.round(directSiteSetup.width)));
+      setLotHeight(String(Math.round(directSiteSetup.height)));
+      autoFitSite(
+        directSiteSetup.width,
+        directSiteSetup.height,
+        "Site Boundary",
+        undefined,
+        true,
+        true,
+      );
+      setShowSiteBounds(false);
+      setSiteSelectionMode(false);
+      setPreviewMode("2d");
+      setPreviewInteraction("static");
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      setSidePanelVisible(false);
+      setRightRailCollapsed(true);
+      setFitToSiteRequest((value) => value + 1);
+      updateProjectStatus({
+        state: "working",
+        area: "setup",
+        title: "Site setup started",
+        detail: `${directSiteSetup.address} is being applied with a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked review site.`,
+        nextAction: "Civora is checking available roads, buildings, terrain, utilities, and source context. Draw or Generate after the context check finishes.",
+      });
+      setAutoExistingConditionsStatus({
+        status: "running",
+        message: `Applying ${directSiteSetup.address} and checking available source context inside a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked site.`,
+        candidateCount: 0,
+        missing: [],
+      });
+      appendChatMessage(
+        "assistant",
+        `Got it. I set up a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft review site centered on ${directSiteSetup.address}, locked the site frame, and started source context detection. Any roads, buildings, terrain, utilities, or constraints found from configured sources stay review-required.`,
+        "status",
+      );
+      void saveSiteAddress(directSiteSetup.address, {
+        preserveLockedSite: true,
+        siteWidth: directSiteSetup.width,
+        siteHeight: directSiteSetup.height,
+      });
+      return true;
     }
     if (/^(start site|start a site|new site)$/.test(normalized)) {
       appendChatMessage("user", message);
@@ -13469,8 +13548,14 @@ function PerformanceAIDashboardView({
     setFitToSiteRequest((value) => value + 1);
   }, [activeSidePanel, buildingPlacements, previewHeightPx, siteScaleLocked]);
 
-  const saveSiteAddress = async () => {
-    const trimmed = siteAddress.trim();
+  const saveSiteAddress = async (
+    addressOverride?: string,
+    options?: { preserveLockedSite?: boolean; siteWidth?: number; siteHeight?: number },
+  ) => {
+    const trimmed = (addressOverride ?? siteAddress).trim();
+    const preserveLockedSite = Boolean(options?.preserveLockedSite);
+    const overrideSiteWidth = options?.siteWidth;
+    const overrideSiteHeight = options?.siteHeight;
     if (!token) {
       if (!trimmed) {
         const message = "Type a project address before applying.";
@@ -13499,6 +13584,13 @@ function PerformanceAIDashboardView({
         input_mode: "user",
         strict_mode: false,
         allow_ai_fill_for_blanks: false,
+        manual_fields:
+          preserveLockedSite && overrideSiteWidth && overrideSiteHeight
+            ? {
+                ...(currentInput?.manual_fields ?? {}),
+                lot: { x: 0, y: 0, w: overrideSiteWidth, h: overrideSiteHeight },
+              }
+            : currentInput?.manual_fields,
         meta: {
           ...(currentInput?.meta ?? {}),
           site_inputs: nextSiteInputs,
@@ -13692,7 +13784,7 @@ function PerformanceAIDashboardView({
       if (onlineFetch?.existing_conditions_package) {
         nextSiteInputs.existing_conditions_package = onlineFetch.existing_conditions_package;
       }
-      nextSiteInputs.site_alignment_locked = false;
+      nextSiteInputs.site_alignment_locked = preserveLockedSite ? true : false;
       setAddressSuggestions([]);
       setActiveWorkspaceMode("setup");
       setActiveSidePanel("site_existing");
@@ -13722,7 +13814,13 @@ function PerformanceAIDashboardView({
           ...(currentInput?.meta ?? {}),
           site_inputs: nextSiteInputs,
         },
-        manual_fields: currentInput?.manual_fields,
+        manual_fields:
+          preserveLockedSite && overrideSiteWidth && overrideSiteHeight
+            ? {
+                ...(currentInput?.manual_fields ?? {}),
+                lot: { x: 0, y: 0, w: overrideSiteWidth, h: overrideSiteHeight },
+              }
+            : currentInput?.manual_fields,
       };
       setCurrentProject((project) =>
         project
@@ -13740,11 +13838,13 @@ function PerformanceAIDashboardView({
         projectInputOverride: nextProjectInput,
         latestResultOverride,
       });
-      setSiteScaleLocked(false);
+      if (!preserveLockedSite) {
+        setSiteScaleLocked(false);
+      }
       setSiteAddress(geocode.display_name);
-      setShowSiteBounds(true);
+      setShowSiteBounds(preserveLockedSite ? false : true);
       setPreviewQuality("high");
-      setSiteSelectionMode(true);
+      setSiteSelectionMode(preserveLockedSite ? false : true);
       setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
       autoExistingRunKeyRef.current = "";
       const candidateCount = Number(onlineFetch?.online_existing_conditions_discovery_v1?.candidate_count ?? 0);
@@ -13777,24 +13877,24 @@ function PerformanceAIDashboardView({
               : "Online source discovery found no usable candidates yet; missing providers are listed in setup.",
         nextAction: lookupUnavailable
           ? "Add GIS providers or upload survey/topo evidence before relying on source context."
-          : siteScaleLocked
+          : preserveLockedSite || siteScaleLocked
             ? "Review source candidates, then generate review drafts when ready."
             : "Lock the site boundary to check sources inside the site.",
       });
       setAutoExistingConditionsStatus({
-        status: lookupUnavailable ? "blocked" : siteScaleLocked ? "running" : "waiting",
+        status: lookupUnavailable ? "blocked" : preserveLockedSite || siteScaleLocked ? "running" : "waiting",
         message: lookupUnavailable
           ? providerAbsent
             ? "Address applied, but no source providers are configured. Add GIS providers or upload survey/topo evidence before relying on source context."
             : "Address applied, but provider lookup failed or was unavailable. Retry after the backend/providers respond."
-          : siteScaleLocked
+          : preserveLockedSite || siteScaleLocked
           ? "Address changed. Civora will recheck sources inside the locked site."
           : "Address applied. Lock the site boundary to auto-check roads, buildings, terrain, constraints, and utilities inside it.",
         candidateCount,
         missing: lookupUnavailable ? (providerAbsent ? ["source providers"] : ["provider lookup"]) : [],
       });
       setSelectedAddressSuggestion(geocode);
-      if (siteScaleLocked) {
+      if (preserveLockedSite || siteScaleLocked) {
         void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
       }
     } catch (error) {
@@ -17526,7 +17626,7 @@ function PerformanceAIDashboardView({
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     trust: { title: "What Civora does", desc: "Clear product boundaries for planning, drafting, source context, review packages, and AI visualization." },
-    dashboard: { title: "Recent changes", desc: "Review project readiness, health, and active work." },
+    dashboard: { title: "Recent changes", desc: "See what just happened. Details stay tucked away unless you open them." },
     model: { title: "Canvas", desc: "View, pan, zoom, inspect, and switch between 2D/3D preview modes." },
     site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
@@ -17541,7 +17641,7 @@ function PerformanceAIDashboardView({
     landscape: { title: "Landscape Controls", desc: "Place open space and landscape-related site objects." },
     details: { title: "Object Manager", desc: "Review profiles, cross sections, selected objects, locks, and object metadata." },
     layers: { title: "Layers", desc: "Choose visible model layers and labels." },
-    analysis: { title: "Recent changes", desc: "Track active issues, access findings, blockers, and QA signals." },
+    analysis: { title: "Project health", desc: "Open only when you want blockers, evidence, and QA detail." },
     reports: { title: "Review package status", desc: "Review package gates, assumptions, standards, conflicts, and system readiness." },
     quantities: { title: "Quantities", desc: "Review takeoff totals, stale labels, source confidence, and cost inputs." },
     deliverables: { title: "Deliver", desc: "Review sheets, reports, quantities, profiles, sections, exports, and package gates." },
