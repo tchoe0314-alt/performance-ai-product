@@ -87,8 +87,9 @@ test.describe("real website workflow clarity", () => {
     expect(generateOpenMs).toBeLessThan(1_500);
     expect(deliverOpenMs).toBeLessThan(1_500);
 
-    await expect(page.getByRole("button", { name: "Minimize Civora workspace controls" })).toBeVisible();
-    await page.getByRole("button", { name: "Minimize Civora workspace controls" }).click();
+    await expect(page.getByTestId("workspace-right-panel").getByRole("button", { name: /^Minimize$/ })).toBeVisible();
+    await page.getByTestId("workspace-right-panel").getByRole("button", { name: /^Minimize$/ }).click();
+    await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
     await expect(page.getByTestId("reopen-civora-workspace")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Sections$/ })).toHaveCount(0);
 

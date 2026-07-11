@@ -17648,8 +17648,9 @@ function PerformanceAIDashboardView({
   }, [handleOpenSidePanel]);
   const triggerCadTool = useCallback((tool: CadToolRequestForPreview["tool"], label: string) => {
     const startedAt = markCivoraInteraction();
+    setActiveWorkspaceMode("canvas");
     setPreviewInteraction("edit");
-    setWorkspaceChromeMinimized(false);
+    setWorkspaceChromeMinimized(true);
     setRightRailCollapsed(true);
     setCadToolRequest({ id: Date.now(), tool });
     setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
