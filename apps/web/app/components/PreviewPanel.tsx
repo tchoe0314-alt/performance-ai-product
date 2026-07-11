@@ -500,6 +500,7 @@ type PreviewPanelProps = {
     approximate?: boolean;
   } | null;
   stormHydrologyOverlay?: StormHydrologyOverlay;
+  sourceContextBadges?: Array<{ label: string; tone: "found" | "missing" | "review" }>;
   debugStats?: {
     enabled: boolean;
     projectId: string;
@@ -595,6 +596,7 @@ export default function PreviewPanel({
   siteLocked,
   gradingBlocker,
   stormHydrologyOverlay,
+  sourceContextBadges = [],
   debugStats,
   cadToolRequest,
 }: PreviewPanelProps) {
@@ -7974,6 +7976,21 @@ export default function PreviewPanel({
                           Fallback bounds {sourceStateSummary.fallback}
                         </span>
                       ) : null}
+                      {sourceContextBadges.slice(0, 4).map((badge) => (
+                        <span
+                          key={`${badge.tone}-${badge.label}`}
+                          data-testid={`preview-source-context-${badge.tone}`}
+                          className={`rounded-md border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] shadow-sm backdrop-blur ${
+                            badge.tone === "found"
+                              ? "border-emerald-200 bg-emerald-50/90 text-emerald-800"
+                              : badge.tone === "missing"
+                                ? "border-amber-200 bg-amber-50/90 text-amber-800"
+                                : "border-slate-200 bg-white/90 text-slate-700"
+                          }`}
+                        >
+                          {badge.tone === "found" ? "Found" : badge.tone === "missing" ? "Missing" : "Review"} {badge.label}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 ) : null}

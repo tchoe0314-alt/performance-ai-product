@@ -6526,6 +6526,216 @@ function PerformanceAIDashboardView({
     ],
   );
 
+  const createGenerateConceptObjects = useCallback(
+    (target: SystemGenerationTarget, notes: string[]) => {
+      const lot = resolveLotBounds();
+      if (!lot.w || !lot.h || !siteScaleLocked) return 0;
+      const now = Date.now();
+      const targetSystems =
+        target === "full"
+          ? (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[])
+          : ([target] as EngineeringSystemKey[]);
+      const wants = (system: EngineeringSystemKey) => targetSystems.includes(system);
+      const existingObjects = buildingPlacements.filter((item) => !Boolean(item.meta?.generated_review_concept));
+      const hasExistingType = (...types: SiteObjectType[]) =>
+        existingObjects.some((item) => item.placed && item.type && types.includes(item.type));
+      const hasExistingNetwork = (network: string) =>
+        existingObjects.some((item) => item.placed && String(item.meta?.network || "").toLowerCase() === network);
+      const baseMeta = {
+        generated_review_concept: true,
+        visual_concept_only: true,
+        engineering_status: "draft_review_required",
+        review_status: "engineer_review_required",
+        construction_release_allowed: false,
+        source: "generate_visual_review_layer",
+        source_note: "Generated as a visible review concept from the locked site and available source context.",
+        auto_site_context_notes: notes.slice(0, 5),
+      };
+      const concept: BuildingPlacement[] = [];
+      const addConcept = (item: BuildingPlacement) => {
+        concept.push({
+          ...item,
+          generated: true,
+          placed: true,
+          source: "generated",
+          locked: false,
+          capabilities: item.capabilities ?? {
+            movable: true,
+            resizable: true,
+            rotatable: false,
+            deletable: true,
+          },
+          meta: {
+            ...baseMeta,
+            ...(item.meta ?? {}),
+          },
+        });
+      };
+      if (wants("roads") && !hasExistingType("road", "driveway", "entrance")) {
+        addConcept({
+          id: `generate-road-${now}`,
+          label: "Review driveway / access concept",
+          type: "driveway",
+          x: lot.w * 0.05,
+          y: lot.h * 0.48,
+          w: lot.w * 0.58,
+          d: 24,
+          geometryType: "polyline",
+          geometry: [
+            [lot.w * 0.02, lot.h * 0.56],
+            [lot.w * 0.28, lot.h * 0.56],
+            [lot.w * 0.48, lot.h * 0.48],
+            [lot.w * 0.62, lot.h * 0.48],
+          ],
+          systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+          meta: { cad_layer: "C-ROAD", ui_color: "#334155" },
+        });
+      }
+      if (wants("parking") && !hasExistingType("parking")) {
+        const stalls = parsePositiveNumber(parkingCount) ?? 140;
+        addConcept({
+          id: `generate-parking-${now}`,
+          label: `Review parking concept - ${Math.round(stalls)} stalls`,
+          type: "parking",
+          x: lot.w * 0.16,
+          y: lot.h * 0.18,
+          w: Math.min(lot.w * 0.42, 360),
+          d: Math.min(lot.h * 0.28, 220),
+          stallCount: Math.round(stalls),
+          systemDependencies: ["roads", "parking", "grading", "drainage"],
+          meta: {
+            cad_layer: "C-PARK",
+            ui_color: "#475569",
+            parkingParams: {
+              stallWidth: parsePositiveNumber(parkingStallWidth) ?? 9,
+              stallDepth: parsePositiveNumber(parkingStallDepth) ?? 18,
+              aisleWidth: parsePositiveNumber(parkingAisleWidth) ?? 24,
+              adaAisleWidth: parsePositiveNumber(parkingAdaAisleWidth) ?? 8,
+              adaCount: parsePositiveNumber(parkingAdaCount) ?? 0,
+              compactCount: parsePositiveNumber(parkingCompactCount) ?? 0,
+              compactWidth: parsePositiveNumber(parkingCompactWidth) ?? 8,
+              angleDeg: parsePositiveNumber(parkingAngle) ?? 90,
+              loading: parkingLoading,
+            },
+          },
+        });
+      }
+      if (wants("drainage") && !hasExistingType("basin")) {
+        addConcept({
+          id: `generate-basin-${now}`,
+          label: "Review detention basin concept",
+          type: "basin",
+          x: lot.w * 0.72,
+          y: lot.h * 0.68,
+          w: Math.min(lot.w * 0.2, 220),
+          d: Math.min(lot.h * 0.16, 160),
+          systemDependencies: ["grading", "drainage"],
+          meta: { cad_layer: "C-DRAIN", ui_color: "#0284c7" },
+        });
+      }
+      if (wants("drainage") && !hasExistingNetwork("storm")) {
+        addConcept({
+          id: `generate-drainage-path-${now}`,
+          label: "Review storm flow path",
+          type: "utility_corridor",
+          x: 0,
+          y: 0,
+          w: lot.w,
+          d: lot.h,
+          geometryType: "polyline",
+          geometry: [
+            [lot.w * 0.36, lot.h * 0.32],
+            [lot.w * 0.58, lot.h * 0.48],
+            [lot.w * 0.76, lot.h * 0.7],
+            [lot.w * 0.9, lot.h * 0.8],
+          ],
+          systemDependencies: ["drainage", "utilities"],
+          meta: { cad_layer: "C-PIPE-STORM", network: "storm", ui_color: "#0ea5e9" },
+        });
+      }
+      if (wants("utilities")) {
+        ([
+          ["water", "Review water corridor concept", "#2563eb", 0.38],
+          ["sanitary", "Review sanitary corridor concept", "#7c3aed", 0.43],
+          ["storm", "Review storm sewer concept", "#0ea5e9", 0.5],
+        ] as Array<[string, string, string, number]>).forEach(([network, label, color, yFactor], index) => {
+          if (hasExistingNetwork(network)) return;
+          addConcept({
+            id: `generate-utility-${network}-${now}`,
+            label,
+            type: "utility_corridor",
+            x: 0,
+            y: 0,
+            w: lot.w,
+            d: lot.h,
+            geometryType: "polyline",
+            geometry: [
+              [lot.w * 0.08, lot.h * Number(yFactor)],
+              [lot.w * 0.48, lot.h * Number(yFactor) + index * 10],
+              [lot.w * 0.9, lot.h * Number(yFactor) + index * 14],
+            ],
+            systemDependencies: ["utilities"],
+            meta: { cad_layer: "C-UTIL", network, ui_color: color },
+          });
+        });
+      }
+      if (wants("grading")) {
+        addConcept({
+          id: `generate-grade-arrow-${now}`,
+          label: "Review grading fall concept",
+          type: "custom",
+          x: 0,
+          y: 0,
+          w: lot.w,
+          d: lot.h,
+          geometryType: "polyline",
+          geometry: [
+            [lot.w * 0.18, lot.h * 0.2],
+            [lot.w * 0.84, lot.h * 0.78],
+          ],
+          systemDependencies: ["grading", "drainage"],
+          meta: { cad_layer: "C-GRADE", ui_color: "#16a34a" },
+        });
+      }
+      if (!concept.length) return 0;
+      setBuildingPlacements((prev) => [
+        ...prev.filter((item) => !Boolean(item.meta?.generated_review_concept)),
+        ...concept,
+      ]);
+      setPreviewMode("2d");
+      setPreviewInteraction("static");
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      setSidePanelVisible(false);
+      setRightRailCollapsed(true);
+      recordRecentChange({
+        type: "generate_recorded",
+        label: "Review concept layer updated",
+        detail: `${concept.length} visible review concept object${concept.length === 1 ? "" : "s"} added to the canvas.`,
+        undoBlockedReason: "Use Object Manager to hide/delete generated review concepts, then rerun Generate.",
+      });
+      setStatusMessage(`${concept.length} review concept object${concept.length === 1 ? "" : "s"} added to the canvas. Review required.`);
+      return concept.length;
+    },
+    [
+      buildingPlacements,
+      parkingAisleWidth,
+      parkingAngle,
+      parkingCompactCount,
+      parkingCompactWidth,
+      parkingCount,
+      parkingLoading,
+      parkingStallDepth,
+      parkingStallWidth,
+      parkingAdaAisleWidth,
+      parkingAdaCount,
+      recordRecentChange,
+      resolveLotBounds,
+      siteScaleLocked,
+    ],
+  );
+
   const handleUpdateBuilding = useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     clearGeneratedPreview();
     const nextUpdates = { ...updates };
@@ -8964,6 +9174,27 @@ function PerformanceAIDashboardView({
     onlineDiscovery,
     siteInputs?.auto_existing_conditions_v1,
   ]);
+  const previewSourceContextBadges = useMemo(
+    () => [
+      ...autoSiteContextFlowSummary.candidateLabels.slice(0, 3).map((label) => ({
+        label: toReadableLabel(String(label)).slice(0, 26),
+        tone: "found" as const,
+      })),
+      ...autoSiteContextFlowSummary.missingLabels.slice(0, 3).map((label) => ({
+        label: toReadableLabel(String(label)).slice(0, 26),
+        tone: "missing" as const,
+      })),
+      ...(hasAssumedTerrainSlope
+        ? [{ label: `${assumedTerrainSlopePct || "8"}% slope`, tone: "review" as const }]
+        : []),
+    ].slice(0, 5),
+    [
+      assumedTerrainSlopePct,
+      autoSiteContextFlowSummary.candidateLabels,
+      autoSiteContextFlowSummary.missingLabels,
+      hasAssumedTerrainSlope,
+    ],
+  );
   const getGeneratePreflightBlockers = useCallback(
     (target: SystemGenerationTarget) => {
       const lot = resolveLotBounds();
@@ -9883,6 +10114,87 @@ function PerformanceAIDashboardView({
     return { address, width, height };
   };
 
+  const tryHandleSiteProgramCommand = (message: string): boolean => {
+    const lower = message.toLowerCase();
+    if (!/\b(add|create|place|make|include|put)\b/.test(lower)) return false;
+    const requested: Array<() => void> = [];
+    const labels: string[] = [];
+    const officeArea = lower.match(/(\d{3,8})\s*(?:sf|sq\s*ft|square\s*feet)\s+(?:office\s+)?building/);
+    if (officeArea || /\boffice building\b/.test(lower)) {
+      const area = officeArea ? Number(officeArea[1]) : null;
+      const depth = area ? Math.round(Math.sqrt(area / 1.8)) : undefined;
+      const width = area && depth ? Math.round(area / Math.max(depth, 1)) : undefined;
+      requested.push(() => handleAddObject("office_building", {
+        label: area ? `Office Building - ${Math.round(area).toLocaleString()} sf` : undefined,
+        placed: true,
+        width,
+        depth,
+        meta: area ? { requested_area_sf: Math.round(area), command_created: true } : { command_created: true },
+      }));
+      labels.push(area ? `${Math.round(area).toLocaleString()} sf office building` : "office building");
+    }
+    const parking = lower.match(/(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls)/);
+    if (parking || /\bparking\b/.test(lower)) {
+      const stalls = parking ? Number(parking[1]) : parsePositiveNumber(parkingCount) ?? 140;
+      requested.push(() => {
+        setParkingCount(String(Math.round(stalls)));
+        handleAddObject("parking", {
+          label: `Parking Field - ${Math.round(stalls)} stalls`,
+          placed: true,
+          meta: { command_created: true, requested_stalls: Math.round(stalls) },
+        });
+      });
+      labels.push(`${Math.round(stalls)} parking stalls`);
+    }
+    if (/\b(basin|detention|pond)\b/.test(lower)) {
+      requested.push(() => handleAddObject("basin", { placed: true, meta: { command_created: true } }));
+      labels.push("detention basin");
+    }
+    if (/\b(driveway|drive aisle|access)\b/.test(lower)) {
+      requested.push(() => handleAddObject("driveway", { placed: true, meta: { command_created: true } }));
+      labels.push("driveway/access");
+    }
+    if (/\b(sidewalk|ada route|ada routes|path|paths)\b/.test(lower)) {
+      requested.push(() => handleAddObject("sidewalk", { label: "Sidewalk / ADA Route", placed: true, meta: { command_created: true, routeKind: "ada_review_route" } }));
+      labels.push("sidewalk / ADA route");
+    }
+    if (/\b(public water|water line|water)\b/.test(lower)) {
+      requested.push(() => handleAddObject("utility_corridor", { label: "Public Water Line", geometryType: "polyline", placed: true, meta: { network: "water", command_created: true } }));
+      labels.push("public water line");
+    }
+    if (/\b(public sanitary|sanitary|sewer)\b/.test(lower)) {
+      requested.push(() => handleAddObject("utility_corridor", { label: "Public Sanitary Line", geometryType: "polyline", placed: true, meta: { network: "sanitary", command_created: true } }));
+      labels.push("public sanitary line");
+    }
+    if (/\bstorm\b/.test(lower)) {
+      requested.push(() => handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", placed: true, meta: { network: "storm", command_created: true } }));
+      labels.push("storm sewer");
+    }
+    if (requested.length < 2) return false;
+    appendChatMessage("user", message);
+    if (!hasSiteBoundary()) {
+      appendChatMessage(
+        "assistant",
+        "I understood the site program, but I need a site boundary before I can place those objects at project scale. Tell me the address and site size, or draw/lock the site first.",
+        "status",
+      );
+      handleOpenSidePanel("site_existing");
+      return true;
+    }
+    requested.forEach((action) => action());
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
+    appendChatMessage(
+      "assistant",
+      `Added and placed ${labels.join(", ")} as draft review objects. They are editable on the canvas and still require review before Generate/Deliver.`,
+      "status",
+    );
+    return true;
+  };
+
   const tryHandlePowerCommand = (message: string): boolean => {
     const normalized = message.trim().toLowerCase().replace(/\s+/g, " ");
     if (!normalized) return false;
@@ -9937,6 +10249,9 @@ function PerformanceAIDashboardView({
         siteWidth: directSiteSetup.width,
         siteHeight: directSiteSetup.height,
       });
+      return true;
+    }
+    if (tryHandleSiteProgramCommand(message)) {
       return true;
     }
     if (/^(start site|start a site|new site)$/.test(normalized)) {
@@ -10049,7 +10364,8 @@ function PerformanceAIDashboardView({
     if (/^generate$/.test(normalized)) {
       appendChatMessage("user", message);
       handleOpenSidePanel("generate");
-      appendChatMessage("assistant", "Opened Generate. Use the existing Generate controls or ask for a specific system like 'generate drainage'.", "status");
+      appendChatMessage("assistant", "Running Generate from the locked site. I will show visible review concepts on the canvas and exact blockers if a system cannot run.", "status");
+      void handleGenerateSystem("full");
       return true;
     }
     if (/^(make review package|create review package)$/.test(normalized)) {
@@ -14661,6 +14977,7 @@ function PerformanceAIDashboardView({
           return;
         }
       }
+      const conceptCount = createGenerateConceptObjects(target, reviewNotes);
       const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null);
       const omitField = { source: "omit", value: null } as const;
       const nextManualFields = {
@@ -14753,7 +15070,9 @@ function PerformanceAIDashboardView({
         });
         appendChatMessage(
           "assistant",
-          "Generate is blocked because this hosted demo is not signed in to a backend session. I did not send an engineering request; keep editing locally or sign in/connect backend to run Generate.",
+          conceptCount
+            ? `I added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"} to the canvas. Hosted Generate still needs a signed-in backend session before an engineering request can run.`
+            : "Generate is blocked because this hosted demo is not signed in to a backend session. I did not send an engineering request; keep editing locally or sign in/connect backend to run Generate.",
           "status",
         );
         return;
@@ -14786,9 +15105,10 @@ function PerformanceAIDashboardView({
         "assistant",
         [
           `${runSummary.skipped.length ? "Started, with skipped systems" : "Generate started"}. Ran: ${runSummary.ran.join(", ")}.`,
+          conceptCount ? `Canvas: added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"}.` : "",
           runSummary.skipped.length ? `Skipped: ${runSummary.skipped.join(", ")}.` : "Skipped: none.",
           runSummary.needs_review.length ? `Needs review: ${runSummary.needs_review.slice(0, 5).join("; ")}.` : "Needs review: standard engineer review.",
-        ].join(" "),
+        ].filter(Boolean).join(" "),
         "status",
       );
       await executePlanAction({
@@ -14823,6 +15143,7 @@ function PerformanceAIDashboardView({
       assumedTerrainSlopePct,
       buildPayloadFromOverrides,
       buildingPlacements,
+      createGenerateConceptObjects,
       executePlanAction,
       getGeneratePreflightBlockers,
       hasSiteBoundary,
@@ -25725,6 +26046,7 @@ function PerformanceAIDashboardView({
                   inletChecks: stormHydrologyReview.inletChecks,
                   overflowPaths: stormHydrologyReview.overflowPaths,
                 }}
+                sourceContextBadges={previewSourceContextBadges}
                 onSetSiteRotationDeg={(value) => {
                   setSiteRotationDeg(value);
                   setSiteRotationInput(String(value));
@@ -25790,8 +26112,6 @@ function PerformanceAIDashboardView({
             </div>
           ) : null}
           {activeSidePanel !== "chat" &&
-          activePrimaryWorkflowKey !== "draw" &&
-          activePrimaryWorkflowKey !== "objects" &&
           !(mobileViewport && leftSidebarOpen) ? (
             <PinnedCommandBar
               prompt={prompt}
