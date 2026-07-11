@@ -14630,6 +14630,26 @@ function PerformanceAIDashboardView({
         },
         target,
       );
+      if (!token) {
+        const summary = blockedSummary(
+          "backend/auth session is required to run Generate on the hosted website",
+          "Sign in/connect backend, or keep editing the local review layout before running Generate.",
+        );
+        recordGenerateSummary(summary);
+        updateProjectStatus({
+          state: "blocked",
+          area: "generate",
+          title: "Generate blocked",
+          detail: "Hosted Generate needs a signed-in backend session. No backend request was sent.",
+          nextAction: summary.next_action,
+        });
+        appendChatMessage(
+          "assistant",
+          "Generate is blocked because this hosted demo is not signed in to a backend session. I did not send an engineering request; keep editing locally or sign in/connect backend to run Generate.",
+          "status",
+        );
+        return;
+      }
       const runSummary: GenerateFlowSummary = {
         version: "generate_flow_summary_v1",
         generated_at: new Date().toISOString(),
@@ -14709,6 +14729,7 @@ function PerformanceAIDashboardView({
       siteInputs?.geocode?.lng,
       surveyFileName,
       surveySlopeEstimate?.slope_percent,
+      token,
       useSurveyForGrading,
       withReactiveRerunContext,
       reactiveValidation,
