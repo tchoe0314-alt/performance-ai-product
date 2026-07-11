@@ -1032,7 +1032,7 @@ export default function PreviewPanel({
 	        return {
 	          fill: style.fill,
 	          stroke: selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? style.stroke,
-          strokeWidth: selected ? 0.68 : kind === "fallback" ? 0.68 : kind === "road" || kind === "sidewalk" || kind === "utility" ? 0.5 : 0.38,
+          strokeWidth: selected ? (kind === "utility" ? 0.42 : 0.58) : kind === "fallback" ? 0.6 : kind === "road" || kind === "sidewalk" ? 0.44 : kind === "utility" ? 0.28 : 0.34,
           strokeDasharray: dash,
           opacity: stateOpacity,
         };

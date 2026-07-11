@@ -10182,6 +10182,8 @@ function PerformanceAIDashboardView({
       return true;
     }
     requested.forEach((action) => action());
+    setActivePlacementId(null);
+    setPreviewInteraction("static");
     setActiveWorkspaceMode("canvas");
     setActiveSidePanel(null);
     setRenderedSidePanel(null);
