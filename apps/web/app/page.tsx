@@ -1832,6 +1832,22 @@ function isDemoWorkspaceQuery() {
   return demoValue === "workspace" || demoValue === "1" || demoValue === "true";
 }
 
+function isSeededDemoWorkspaceQuery() {
+  if (typeof window === "undefined") return false;
+  const query = window.location.search || (window.location.href.includes("?") ? `?${window.location.href.split("?")[1]}` : "");
+  const params = new URLSearchParams(query);
+  const explicitSeed =
+    params.get("seedDemo") ||
+    params.get("seededDemo") ||
+    params.get("demoSeed") ||
+    params.get("demo_seed");
+  if (["1", "true", "yes", "pinecrest"].includes(String(explicitSeed || "").toLowerCase())) {
+    return true;
+  }
+  const demoValue = params.get("demo") || params.get("ui_demo");
+  return window.location.pathname !== "/demo/workspace" && (demoValue === "workspace" || demoValue === "1" || demoValue === "true");
+}
+
 const createDemoPlacements = (): BuildingPlacement[] => [
   {
     id: "demo-site",
@@ -2687,6 +2703,7 @@ function PerformanceAIDashboardView({
   const [demoWorkspaceEnabled, setDemoWorkspaceEnabled] = useState(false);
   const [clientMounted, setClientMounted] = useState(false);
   const queryDemoWorkspaceEnabled = clientMounted && isDemoWorkspaceQuery();
+  const seededDemoWorkspaceEnabled = clientMounted && isSeededDemoWorkspaceQuery();
   const effectiveDemoWorkspaceEnabled =
     forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled || queryDemoWorkspaceEnabled;
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
@@ -5395,7 +5412,7 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     if (demoWorkspaceSeededRef.current) return;
-    if (!forceDemoWorkspace && !routeDemoWorkspaceEnabled && !isDemoWorkspaceQuery()) return;
+    if (!forceDemoWorkspace && !seededDemoWorkspaceEnabled) return;
     const debugEmptyLayout =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("chat226EmptyLayout") === "1";
@@ -5534,7 +5551,7 @@ function PerformanceAIDashboardView({
     setChatMessages(demoThread);
     chatMessagesRef.current = demoThread;
     setStatusMessage("Demo workspace loaded for UI QA.");
-  }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled]);
+  }, [clientMounted, forceDemoWorkspace, seededDemoWorkspaceEnabled]);
 
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {

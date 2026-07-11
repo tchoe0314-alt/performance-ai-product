@@ -54,6 +54,21 @@ async function timed(label: string, action: () => Promise<void>, thresholdMs = 2
 }
 
 test.describe("Chat 238 site preview performance", () => {
+  test("demo workspace starts clean unless seeded data is explicitly requested", async ({ page }) => {
+    const failures = await collectFailures(page);
+    await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Pinecrest Mixed-Use Demo Site")).toHaveCount(0);
+    await expect(page.getByText("Pinecrest Mixed-Use")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
+    await page.getByRole("button", { name: "Open workspace controls" }).click();
+    await page.getByRole("button", { name: /^Setup$/ }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
+    await expect(page.getByLabel("Type project address")).toBeVisible();
+    expect(failures.pageErrors).toEqual([]);
+    expect(failures.consoleErrors).toEqual([]);
+  });
+
   test("new project preview switches modes without loading map unless requested", async ({ page }) => {
     const failures = await collectFailures(page);
     await openNewProject(page);

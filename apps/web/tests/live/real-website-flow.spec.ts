@@ -25,12 +25,16 @@ async function timedOpen(page: Page, buttonName: RegExp | string, expectedPanelT
 
 async function expectSectionToggles(page: Page, testId: string, headerName: RegExp | string, visibleBodyText: RegExp | string) {
   const section = page.getByTestId(testId);
-  await expect(section).not.toHaveAttribute("open", "", { timeout: 4_000 });
-  await section.getByText(headerName).first().click();
-  await expect(section).toHaveAttribute("open", "");
+  const startsOpen = await section.evaluate((node) => node.hasAttribute("open"));
+  if (!startsOpen) {
+    await section.getByText(headerName).first().click();
+    await expect(section).toHaveAttribute("open", "");
+  }
   await expect(section).toContainText(visibleBodyText);
   await section.getByText(headerName).first().click();
   await expect(section).not.toHaveAttribute("open", "");
+  await section.getByText(headerName).first().click();
+  await expect(section).toHaveAttribute("open", "");
 }
 
 test.describe("real website workflow clarity", () => {

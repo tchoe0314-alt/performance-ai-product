@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1", { waitUntil: "domcontentloaded" });
+  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   const shell = page.getByTestId("workspace-canvas-shell");
   if (await shell.isVisible({ timeout: 30_000 }).catch(() => false)) {
     await expect(shell).toBeVisible();
