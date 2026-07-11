@@ -6495,18 +6495,21 @@ function PerformanceAIDashboardView({
       if (options?.geometryType === "polyline") {
         nextPlacement.geometryType = "polyline";
         const network = String(options?.meta?.network || "").toLowerCase();
-        const yFactor = network === "water" ? 0.7 : network === "sanitary" ? 0.77 : network === "storm" ? 0.84 : 0.74;
-        const verticalBend =
+        const yFactor = network === "water" ? 0.9 : network === "sanitary" ? 0.86 : network === "storm" ? 0.82 : 0.86;
+        const startX = network === "water" ? 0.08 : network === "sanitary" ? 0.14 : 0.2;
+        const endX = network === "water" ? 0.92 : network === "sanitary" ? 0.88 : 0.84;
+        const rightSideRun =
           network === "storm"
-            ? [
-                [lot.w * 0.58, lot.h * 0.7],
-                [lot.w * 0.78, lot.h * 0.82],
-              ]
-            : [[lot.w * 0.52, lot.h * yFactor]];
+            ? ([
+                [lot.w * endX, lot.h * yFactor],
+                [lot.w * endX, lot.h * 0.68],
+              ] as Array<[number, number]>)
+            : [];
         nextPlacement.geometry = [
-          [lot.w * 0.08, lot.h * yFactor],
-          ...(verticalBend as Array<[number, number]>),
-          [lot.w * 0.92, lot.h * yFactor],
+          [lot.w * startX, lot.h * yFactor],
+          [lot.w * ((startX + endX) / 2), lot.h * yFactor],
+          [lot.w * endX, lot.h * yFactor],
+          ...rightSideRun,
         ];
         nextPlacement.capabilities = {
           movable: true,
