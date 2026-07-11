@@ -1028,10 +1028,11 @@ export default function PreviewPanel({
 	        typeof item.meta?.ui_color === "string" && /^#[0-9a-f]{6}$/i.test(item.meta.ui_color)
 	          ? item.meta.ui_color
 	          : null;
-	      const dash =
+      const dash =
 	        blocked ? "1.2 0.8" : reviewConcept ? "1.7 1.2" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
 	      const stateStroke = (fallback: string) => (selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? fallback);
       const stateOpacity = blocked ? 0.92 : reviewConcept ? 0.62 : lowConfidence ? 0.9 : 1;
+      const reviewWidth = (normal: number, selectedWidth: number) => (reviewConcept ? (selected ? 0.32 : 0.18) : selected ? selectedWidth : normal);
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
           building: { fill: "rgba(226, 218, 202, 0.72)", stroke: "#8b7355" },
@@ -1053,27 +1054,27 @@ export default function PreviewPanel({
         };
       }
       if (kind === "road") {
-        return { fill: "rgba(71, 85, 105, 0.1)", stroke: stateStroke("#475569"), strokeWidth: selected ? 0.86 : 0.62, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(71, 85, 105, 0.1)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.62, 0.86), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "parking") {
-        return { fill: "rgba(100, 116, 139, 0.14)", stroke: stateStroke("#64748b"), strokeWidth: selected ? 0.58 : 0.28, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(100, 116, 139, 0.14)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.28, 0.58), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "water") {
-        return { fill: "rgba(125, 211, 252, 0.22)", stroke: stateStroke("#0284c7"), strokeWidth: selected ? 0.62 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(125, 211, 252, 0.22)", stroke: stateStroke("#0284c7"), strokeWidth: reviewWidth(0.34, 0.62), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "landscape") {
-        return { fill: "rgba(134, 239, 172, 0.16)", stroke: stateStroke("#16a34a"), strokeWidth: selected ? 0.56 : 0.28, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(134, 239, 172, 0.16)", stroke: stateStroke("#16a34a"), strokeWidth: reviewWidth(0.28, 0.56), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "sidewalk") {
-        return { fill: "rgba(248, 250, 252, 0.42)", stroke: stateStroke("#94a3b8"), strokeWidth: selected ? 0.56 : 0.32, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(248, 250, 252, 0.42)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.32, 0.56), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "utility") {
-        return { fill: "rgba(37, 99, 235, 0.065)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: selected ? 0.58 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(37, 99, 235, 0.065)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.34, 0.58), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "building") {
-        return { fill: "rgba(226, 218, 202, 0.72)", stroke: stateStroke("#8b7355"), strokeWidth: selected ? 0.62 : 0.34, strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(226, 218, 202, 0.72)", stroke: stateStroke("#8b7355"), strokeWidth: reviewWidth(0.34, 0.62), strokeDasharray: dash, opacity: stateOpacity };
       }
-      return { fill: "rgba(37, 99, 235, 0.13)", stroke: stateStroke("#1d4ed8"), strokeWidth: selected ? 0.68 : 0.58, strokeDasharray: dash, opacity: stateOpacity };
+      return { fill: "rgba(37, 99, 235, 0.13)", stroke: stateStroke("#1d4ed8"), strokeWidth: reviewWidth(0.58, 0.68), strokeDasharray: dash, opacity: stateOpacity };
     },
     [isHighQuality, resolveVisualKind],
   );
