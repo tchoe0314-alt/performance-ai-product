@@ -107,6 +107,7 @@ export default function Preview3DCanvas({
 }: Preview3DCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const pickablesRef = useRef<THREE.Object3D[]>([]);
@@ -202,6 +203,12 @@ export default function Preview3DCanvas({
         });
       });
     });
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (renderer && scene && camera) {
+      renderer.render(scene, camera);
+    }
   }, [selectedItemId]);
 
   useEffect(() => {
@@ -212,6 +219,7 @@ export default function Preview3DCanvas({
     const width = Math.max(mount.clientWidth, 320);
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
+    sceneRef.current = scene;
     scene.background = new THREE.Color(previewQuality === "high" ? "#e2e8f0" : "#eef2f7");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
@@ -228,8 +236,7 @@ export default function Preview3DCanvas({
     cameraRef.current = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    controls.enableDamping = false;
     controls.enablePan = true;
     controls.enableZoom = true;
     controls.minDistance = Math.max(maxSpan * 0.18, 25);
@@ -535,12 +542,21 @@ export default function Preview3DCanvas({
     terrainLabel.position.set(0, 12, -modelBounds.spanY / 2 - 14);
     root.add(terrainLabel);
 
-    const animate = () => {
+    const renderScene = () => {
       controls.update();
       renderer.render(scene, camera);
-      frame = window.requestAnimationFrame(animate);
     };
-    let frame = window.requestAnimationFrame(animate);
+    let frame: number | null = null;
+    const scheduleRender = () => {
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        renderScene();
+      });
+    };
+    const handleControlsChange = () => scheduleRender();
+    controls.addEventListener("change", handleControlsChange);
+    scheduleRender();
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -577,15 +593,18 @@ export default function Preview3DCanvas({
       renderer.setSize(nextWidth, nextHeight);
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
+      scheduleRender();
     });
     resizeObserver.observe(mount);
 
     return () => {
-      window.cancelAnimationFrame(frame);
+      if (frame !== null) window.cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("click", pickAt);
+      controls.removeEventListener("change", handleControlsChange);
       controls.dispose();
       renderer.dispose();
+      if (sceneRef.current === scene) sceneRef.current = null;
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;
         if ("geometry" in mesh && mesh.geometry) mesh.geometry.dispose();

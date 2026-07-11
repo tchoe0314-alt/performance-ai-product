@@ -15146,8 +15146,10 @@ function PerformanceAIDashboardView({
     setGrading(true);
     setDrainage(true);
     setUtilities(true);
-    setActiveSidePanel("site_existing");
-    setRightRailCollapsed(false);
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
     setWorkspaceChromeMinimized(false);
     setLeftSidebarOpen(true);
     const nextThread = [createWelcomeMessage()];

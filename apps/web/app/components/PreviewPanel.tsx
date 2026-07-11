@@ -842,6 +842,7 @@ export default function PreviewPanel({
   const [mapContainerSize, setMapContainerSize] = useState<{ w: number; h: number } | null>(null);
   const [compactViewport, setCompactViewport] = useState(false);
   const lastMapResizeRef = useRef<number>(0);
+  const [mapOverlayEnabled, setMapOverlayEnabled] = useState(false);
   const [mapLocked, setMapLocked] = useState(false);
   const mapDragRef = useRef<{ x: number; y: number } | null>(null);
   const mapDragActiveRef = useRef(false);
@@ -859,7 +860,7 @@ export default function PreviewPanel({
   const highQualityObjectCount = buildingPlacements.length + suggestedPlacements.length + (surveyPoints?.length ?? 0);
   const useLightHighQuality =
     previewQuality === "high" && (compactViewport || highQualityObjectCount > 220);
-  const showMapBase = mapAvailable && previewQuality === "high";
+  const showMapBase = mapAvailable && mapOverlayEnabled;
   const showMap = showMapBase && previewMode === "2d";
   const showMap3D = showMapBase && previewMode === "3d";
   const mapPitch = showMap3D ? 58 : 0;
@@ -1117,9 +1118,10 @@ export default function PreviewPanel({
     const debugWindow = window as unknown as Record<string, unknown>;
     debugWindow.__civoraGeocode = geocode ?? null;
     debugWindow.__civoraShowMap = showMap;
+    debugWindow.__civoraMapOverlayEnabled = mapOverlayEnabled;
     debugWindow.__civoraPreviewQuality = previewQuality;
     debugWindow.__civoraMapLoaded = mapLoaded;
-  }, [geocode, mapLoaded, showMap, previewQuality]);
+  }, [geocode, mapLoaded, mapOverlayEnabled, showMap, previewQuality]);
   const selectedObject = useMemo(
     () =>
       [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
@@ -4041,7 +4043,7 @@ export default function PreviewPanel({
   );
 
   useEffect(() => {
-    if (!mapAvailable) return;
+    if (!mapAvailable || !mapOverlayEnabled) return;
     if (!mapContainerRef.current || mapRef.current) return;
     mapboxgl.accessToken = mapboxToken || "";
     const map = new mapboxgl.Map({
@@ -4093,7 +4095,7 @@ export default function PreviewPanel({
       mapRef.current = null;
       setMapLoaded(false);
     };
-  }, [mapAvailable, mapBearing, mapPitch, mapboxToken]);
+  }, [mapAvailable, mapBearing, mapOverlayEnabled, mapPitch, mapboxToken]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded) return;
@@ -5654,6 +5656,20 @@ export default function PreviewPanel({
               </button>
               <button
                 type="button"
+                data-testid="preview-panel-map-toggle"
+                onClick={() => setMapOverlayEnabled((value) => !value)}
+                disabled={!mapAvailable}
+                title={mapAvailable ? "Toggle satellite/map context" : "Map context needs an applied geocoded address"}
+                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                  mapOverlayEnabled
+                    ? "border-slate-900 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                } disabled:cursor-not-allowed disabled:opacity-45`}
+              >
+                Map {mapOverlayEnabled ? "On" : "Off"}
+              </button>
+              <button
+                type="button"
                 data-testid="preview-panel-interaction-edit"
                 aria-label="Use canvas edit tool"
                 onClick={() => onSetPreviewInteraction("edit")}
@@ -5900,13 +5916,27 @@ export default function PreviewPanel({
                     className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
                       previewMode === "3d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                     }`}
-                    disabled={!canUse3D}
-                  >
-                    3D
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="preview-inner-interaction-edit"
+                  disabled={!canUse3D}
+                >
+                  3D
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-inner-map-toggle"
+                  onClick={() => setMapOverlayEnabled((value) => !value)}
+                  disabled={!mapAvailable}
+                  title={mapAvailable ? "Toggle satellite/map context" : "Map context needs an applied geocoded address"}
+                  className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                    mapOverlayEnabled
+                      ? "border-slate-900 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  } disabled:cursor-not-allowed disabled:opacity-45`}
+                >
+                  Map {mapOverlayEnabled ? "On" : "Off"}
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-inner-interaction-edit"
                     aria-label="Use canvas edit tool"
                     onClick={() => onSetPreviewInteraction("edit")}
                     className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
@@ -6003,6 +6033,20 @@ export default function PreviewPanel({
                   disabled={!canUse3D}
                 >
                   3D
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-toolbar-map-toggle"
+                  onClick={() => setMapOverlayEnabled((value) => !value)}
+                  disabled={!mapAvailable}
+                  title={mapAvailable ? "Toggle satellite/map context" : "Map context needs an applied geocoded address"}
+                  className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                    mapOverlayEnabled
+                      ? "border-slate-900 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  } disabled:cursor-not-allowed disabled:opacity-45`}
+                >
+                  Map {mapOverlayEnabled ? "On" : "Off"}
                 </button>
                 <button
                   type="button"

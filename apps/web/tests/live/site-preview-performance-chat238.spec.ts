@@ -1,0 +1,87 @@
+import { expect, test, type Page } from "@playwright/test";
+
+async function collectFailures(page: Page) {
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("requestfailed", (request) => {
+    const url = request.url();
+    if (url.includes("mapbox")) failedRequests.push(`${request.method()} ${url}`);
+  });
+  return { pageErrors, consoleErrors, failedRequests };
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+}
+
+async function openNewProject(page: Page) {
+  await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Open projects from header" }).click();
+  await expect(page.getByTestId("projects-drawer")).toBeVisible();
+  await page.getByRole("button", { name: /new project/i }).first().click();
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+  await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0, { timeout: 5_000 });
+}
+
+async function createBlankSite(page: Page) {
+  await page.getByRole("button", { name: "Open workspace controls" }).click();
+  await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  const panel = page.getByTestId("workspace-right-panel");
+  await expect(panel).toBeVisible({ timeout: 5_000 });
+  const boundary = panel.getByTestId("setup-site-box-controls");
+  await boundary.locator("summary").click();
+  await boundary.getByLabel("Width (ft)").fill("1000");
+  await boundary.getByLabel("Depth (ft)").fill("1000");
+  await boundary.getByRole("button", { name: "Lock Boundary" }).click();
+  await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 5_000 });
+  await panel.getByRole("button", { name: "Minimize" }).click();
+  await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0, { timeout: 5_000 });
+}
+
+async function timed(label: string, action: () => Promise<void>, thresholdMs = 2_500) {
+  const startedAt = Date.now();
+  await action();
+  const duration = Date.now() - startedAt;
+  console.info(`[chat238-timing] ${label}: ${duration}ms`);
+  expect(duration).toBeLessThanOrEqual(thresholdMs);
+}
+
+test.describe("Chat 238 site preview performance", () => {
+  test("new project preview switches modes without loading map unless requested", async ({ page }) => {
+    const failures = await collectFailures(page);
+    await openNewProject(page);
+    await createBlankSite(page);
+    await expectNoHorizontalOverflow(page);
+
+    const canvas = page.getByTestId("workspace-canvas-shell");
+    await expect(canvas.getByTestId("preview-quality-standard").first()).toBeVisible();
+    await expect(canvas.getByTestId("preview-panel-map-toggle").first()).toContainText(/Map Off|Map/i);
+
+    await timed("high quality from new project", async () => {
+      await canvas.getByTestId("preview-quality-high").first().click();
+      await expect(canvas).toContainText("High Quality", { timeout: 2_500 });
+    });
+    await expect(page.evaluate(() => (window as unknown as { __civoraShowMap?: boolean }).__civoraShowMap)).resolves.toBeFalsy();
+
+    await timed("3d from new project", async () => {
+      await canvas.getByTestId("preview-mode-3d").first().click();
+      await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 6_000 });
+    }, 6_000);
+
+    await timed("back to 2d from new project", async () => {
+      await canvas.getByTestId("preview-mode-2d").first().click();
+      await expect(canvas.getByTestId("preview-mode-2d").first()).toBeVisible({ timeout: 2_500 });
+    });
+
+    expect(failures.pageErrors).toEqual([]);
+    expect(failures.consoleErrors).toEqual([]);
+    expect(failures.failedRequests).toEqual([]);
+  });
+});
