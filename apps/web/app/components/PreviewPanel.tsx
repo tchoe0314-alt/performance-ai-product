@@ -1320,7 +1320,7 @@ export default function PreviewPanel({
   const showEarthworkUx =
     previewMode === "2d" &&
     Boolean(gradingEarthworkUx) &&
-    (hasGradingSurface || systemStatuses.grading === "fresh" || previewQuality === "high");
+    (hasGradingSurface || systemStatuses.grading === "fresh");
   const surfaceModel = gradingEarthworkUx?.surfaceModel;
   const heatmapFill = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
     if (mode === "cut") return "rgba(239, 68, 68, 0.045)";
@@ -7872,11 +7872,9 @@ export default function PreviewPanel({
                 {!showMap && previewMode === "2d" ? (
                   <div
                     data-testid="preview-map-fallback-surface"
-                    className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#f8fafc_0%,#edf2ef_54%,#e8eef3_100%)]"
+                    className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f1_58%,#e8eef3_100%)]"
                   >
-                    <div className="absolute left-[-9%] top-[16%] h-12 w-[118%] rotate-[-8deg] rounded-full bg-slate-400/10" />
-                    <div className="absolute right-[-18%] top-[58%] h-9 w-[74%] rotate-[18deg] rounded-full bg-slate-400/10" />
-                    <div className="absolute left-[8%] top-[8%] h-[76%] w-[84%] rounded-[28px] border border-white/70 bg-white/18 shadow-inner" />
+                    <div className="absolute inset-4 rounded-[22px] border border-white/70 bg-white/10 shadow-inner" />
                     <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-center gap-2">
                       <span
                         data-testid="preview-source-confidence-chip"
