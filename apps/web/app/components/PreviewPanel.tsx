@@ -869,6 +869,8 @@ export default function PreviewPanel({
     showMap && previewInteraction === "static" && !placementMode && !rotateDragStart && !mapLocked;
   const showGeneratedPlan =
     !showMap &&
+    previewInteraction === "static" &&
+    drawMode === "select" &&
     hasGeneratedPlan &&
     !placementMode &&
     !selectedBuildingId &&
@@ -8105,11 +8107,23 @@ export default function PreviewPanel({
                             y={1.2}
                             width={97.6}
                             height={97.6}
-                            fill="none"
-                            stroke={isHighQuality ? "rgba(15,23,42,0.78)" : "rgba(51,65,85,0.58)"}
-                            strokeWidth={0.38}
+                            fill={siteLocked ? "rgba(16,185,129,0.035)" : "none"}
+                            stroke={siteLocked ? "rgba(5,150,105,0.82)" : isHighQuality ? "rgba(15,23,42,0.78)" : "rgba(51,65,85,0.58)"}
+                            strokeWidth={siteLocked ? 0.46 : 0.38}
                             strokeDasharray={siteLocked ? undefined : "2 1.2"}
                           />
+                          {siteLocked ? (
+                            <text
+                              x={2.4}
+                              y={4.2}
+                              fontSize={1.35}
+                              fill="#047857"
+                              fontWeight={800}
+                              letterSpacing={0.16}
+                            >
+                              SITE LOCKED · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
+                            </text>
+                          ) : null}
                           <title>Local review canvas site extent. Grid lines are hidden when plan or map context exists.</title>
                           <line
                             x1={4}
