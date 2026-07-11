@@ -17651,7 +17651,7 @@ function PerformanceAIDashboardView({
     setActiveWorkspaceMode("canvas");
     setPreviewInteraction("edit");
     setWorkspaceChromeMinimized(true);
-    setRightRailCollapsed(true);
+    setRightRailCollapsed(false);
     setCadToolRequest({ id: Date.now(), tool });
     setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
     measureCivoraInteractionAfterPaint("draw.canvas.tool.click", startedAt, { tool, label });
