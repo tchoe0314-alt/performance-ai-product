@@ -1007,6 +1007,7 @@ export default function PreviewPanel({
       const sourceState = resolveSourceState(item);
       const blocked = sourceState === "blocked";
       const lowConfidence = sourceState === "inferred" || sourceState === "fallback";
+      const reviewConcept = Boolean(item.meta?.generated_review_concept || item.meta?.visual_concept_only);
 	      const imported = sourceState === "imported";
 	      const stale = sourceState === "stale";
 	      const customStroke =
@@ -1014,9 +1015,9 @@ export default function PreviewPanel({
 	          ? item.meta.ui_color
 	          : null;
 	      const dash =
-	        blocked ? "1.2 0.8" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
+	        blocked ? "1.2 0.8" : reviewConcept ? "1.7 1.2" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
 	      const stateStroke = (fallback: string) => (selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? fallback);
-      const stateOpacity = blocked ? 0.92 : lowConfidence ? 0.9 : 1;
+      const stateOpacity = blocked ? 0.92 : reviewConcept ? 0.62 : lowConfidence ? 0.9 : 1;
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
           building: { fill: "rgba(226, 218, 202, 0.72)", stroke: "#8b7355" },
@@ -1032,7 +1033,7 @@ export default function PreviewPanel({
 	        return {
 	          fill: style.fill,
 	          stroke: selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? style.stroke,
-          strokeWidth: selected ? (kind === "utility" ? 0.42 : 0.58) : kind === "fallback" ? 0.6 : kind === "road" || kind === "sidewalk" ? 0.44 : kind === "utility" ? 0.28 : 0.34,
+          strokeWidth: selected ? (kind === "utility" ? 0.28 : 0.5) : reviewConcept ? 0.18 : kind === "fallback" ? 0.52 : kind === "road" || kind === "sidewalk" ? 0.38 : kind === "utility" ? 0.2 : 0.3,
           strokeDasharray: dash,
           opacity: stateOpacity,
         };
