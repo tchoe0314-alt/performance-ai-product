@@ -6695,10 +6695,9 @@ function PerformanceAIDashboardView({
           d: lot.h,
           geometryType: "polyline",
           geometry: [
-            [lot.w * 0.36, lot.h * 0.32],
-            [lot.w * 0.58, lot.h * 0.48],
-            [lot.w * 0.76, lot.h * 0.7],
-            [lot.w * 0.9, lot.h * 0.8],
+            [lot.w * 0.72, lot.h * 0.74],
+            [lot.w * 0.84, lot.h * 0.74],
+            [lot.w * 0.84, lot.h * 0.66],
           ],
           systemDependencies: ["drainage", "utilities"],
           meta: { cad_layer: "C-PIPE-STORM", network: "storm", ui_color: "#0ea5e9" },
@@ -6706,11 +6705,13 @@ function PerformanceAIDashboardView({
       }
       if (wants("utilities")) {
         ([
-          ["water", "Review water corridor concept", "#2563eb", 0.38],
-          ["sanitary", "Review sanitary corridor concept", "#7c3aed", 0.43],
-          ["storm", "Review storm sewer concept", "#0ea5e9", 0.5],
-        ] as Array<[string, string, string, number]>).forEach(([network, label, color, yFactor], index) => {
+          ["water", "Review water corridor concept", "#2563eb", 0.9],
+          ["sanitary", "Review sanitary corridor concept", "#7c3aed", 0.86],
+          ["storm", "Review storm sewer concept", "#0ea5e9", 0.82],
+        ] as Array<[string, string, string, number]>).forEach(([network, label, color, yFactor]) => {
           if (hasExistingNetwork(network)) return;
+          const startX = network === "water" ? 0.08 : network === "sanitary" ? 0.14 : 0.2;
+          const endX = network === "water" ? 0.92 : network === "sanitary" ? 0.88 : 0.84;
           addConcept({
             id: `generate-utility-${network}-${now}`,
             label,
@@ -6721,9 +6722,10 @@ function PerformanceAIDashboardView({
             d: lot.h,
             geometryType: "polyline",
             geometry: [
-              [lot.w * 0.08, lot.h * Number(yFactor)],
-              [lot.w * 0.48, lot.h * Number(yFactor) + index * 10],
-              [lot.w * 0.9, lot.h * Number(yFactor) + index * 14],
+              [lot.w * startX, lot.h * Number(yFactor)],
+              [lot.w * ((startX + endX) / 2), lot.h * Number(yFactor)],
+              [lot.w * endX, lot.h * Number(yFactor)],
+              ...(network === "storm" ? ([[lot.w * endX, lot.h * 0.68]] as Array<[number, number]>) : []),
             ],
             systemDependencies: ["utilities"],
             meta: { cad_layer: "C-UTIL", network, ui_color: color },
@@ -6741,11 +6743,12 @@ function PerformanceAIDashboardView({
           d: lot.h,
           geometryType: "polyline",
           geometry: [
-            [lot.w * 0.18, lot.h * 0.2],
-            [lot.w * 0.84, lot.h * 0.78],
+            [lot.w * 0.72, lot.h * 0.18],
+            [lot.w * 0.88, lot.h * 0.18],
+            [lot.w * 0.9, lot.h * 0.28],
           ],
           systemDependencies: ["grading", "drainage"],
-          meta: { cad_layer: "C-GRADE", ui_color: "#16a34a" },
+          meta: { cad_layer: "C-GRADE", ui_color: "#94a3b8" },
         });
       }
       if (!concept.length) return 0;
