@@ -6204,39 +6204,6 @@ export default function PreviewPanel({
                 </button>
               </section>
               {previewMode === "2d" ? (
-                <section className="pointer-events-auto hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
-                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Tools</span>
-                  {drawModeButtons.map((item) => {
-                    const Icon = item.icon;
-                    const active = drawMode === item.mode;
-                    const disabled = Boolean(item.disabled);
-                    return (
-                      <button
-                        key={`grouped-${item.mode}`}
-                        type="button"
-                        data-testid={`draw-tool-${item.mode}`}
-                        title={disabled ? item.disabledLabel ?? item.label : item.label}
-                        aria-label={item.mode === "site" ? "Site boundary drawing tool" : item.label}
-                        data-blocked={disabled ? "true" : undefined}
-                        onClick={() => {
-                          activateDrawTool(item.mode, disabled ? item.disabledLabel ?? `${item.label} blocked.` : undefined);
-                        }}
-                        className={`relative z-[90] inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 transition ${
-                          active
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : disabled
-                              ? "border-amber-200 bg-amber-50 text-amber-700"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span className="text-[10px] font-semibold leading-none">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </section>
-              ) : null}
-              {previewMode === "2d" ? (
                 <section className="pointer-events-auto flex min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="preview-object-manager">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
                   <select
