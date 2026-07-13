@@ -2325,6 +2325,7 @@ import {
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
+import CivilReviewSheet from "./components/CivilReviewSheet";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
@@ -19890,7 +19891,9 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-            className="civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-[90] order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:inset-x-auto lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:w-[380px] lg:rounded-xl"
+            className={`civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-[90] order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:inset-x-auto lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:rounded-xl ${
+              sidePanelForRender === "deliverables" ? "lg:w-[760px] xl:w-[860px]" : "lg:w-[380px]"
+            }`}
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
@@ -24943,6 +24946,17 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                     </div>
+
+                    <CivilReviewSheet
+                      projectName={siteName || currentProject?.name || "Untitled Project"}
+                      addressLabel={appliedAddressLabel || siteAddress.trim() || "No address applied"}
+                      lotWidth={parsePositiveNumber(lotWidth) ?? lotBounds.w ?? 0}
+                      lotHeight={parsePositiveNumber(lotHeight) ?? lotBounds.h ?? 0}
+                      placements={buildingPlacements}
+                      sourceCandidateCount={autoSiteContextFlowSummary.candidateCount}
+                      missingSources={autoSiteContextFlowSummary.missingLabels}
+                      generatedAt={planSheetSet.updatedAt}
+                    />
 
                     <div className="rounded-xl border border-slate-200 bg-white p-4" data-testid="deliver-export-actions">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Download / Export</p>
