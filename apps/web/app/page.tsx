@@ -6759,10 +6759,6 @@ function PerformanceAIDashboardView({
       setPreviewMode("2d");
       setPreviewInteraction("static");
       setActiveWorkspaceMode("canvas");
-      setActiveSidePanel(null);
-      setRenderedSidePanel(null);
-      setSidePanelVisible(false);
-      setRightRailCollapsed(true);
       recordRecentChange({
         type: "generate_recorded",
         label: "Review concept layer updated",
