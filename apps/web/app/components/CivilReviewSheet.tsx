@@ -17,27 +17,12 @@ type CivilReviewSheetProps = {
 
 const SHEET_WIDTH = 1200;
 const SHEET_HEIGHT = 760;
-const VIEW_X = 318;
-const VIEW_Y = 86;
-const VIEW_W = 812;
-const VIEW_H = 424;
-
-const objectTone: Record<string, { fill: string; stroke: string; dash?: string }> = {
-  site: { fill: "rgba(255,255,255,0)", stroke: "#111827" },
-  building: { fill: "#e5e7eb", stroke: "#475569" },
-  office_building: { fill: "#e5e7eb", stroke: "#475569" },
-  parking: { fill: "#f8fafc", stroke: "#64748b" },
-  basin: { fill: "#dbeafe", stroke: "#2563eb" },
-  driveway: { fill: "#e2e8f0", stroke: "#475569" },
-  road: { fill: "#e2e8f0", stroke: "#475569" },
-  sidewalk: { fill: "#fef3c7", stroke: "#d97706" },
-  utility_corridor: { fill: "rgba(255,255,255,0)", stroke: "#9333ea", dash: "8 6" },
-  hydrant: { fill: "#fee2e2", stroke: "#dc2626" },
-  inlet: { fill: "#dbeafe", stroke: "#2563eb" },
-  outfall: { fill: "#dcfce7", stroke: "#16a34a" },
-  manhole: { fill: "#f1f5f9", stroke: "#334155" },
-  custom: { fill: "rgba(226,232,240,.5)", stroke: "#64748b" },
-};
+const PLAN_X = 70;
+const PLAN_Y = 74;
+const PLAN_W = 850;
+const PLAN_H = 610;
+const TITLE_X = 938;
+const TITLE_W = 194;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -52,25 +37,12 @@ function displayType(type?: string): string {
   return String(type || "object").replaceAll("_", " ");
 }
 
-function toTitleCase(value: string): string {
-  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
 function isUtility(type?: string): boolean {
   return ["utility_corridor", "hydrant", "inlet", "outfall", "manhole"].includes(type || "");
 }
 
-function toSheetRect(item: BuildingPlacement, scaleX: number, scaleY: number) {
-  const x = VIEW_X + clamp((item.x ?? 0) * scaleX, 0, VIEW_W);
-  const y = VIEW_Y + clamp((item.y ?? 0) * scaleY, 0, VIEW_H);
-  const w = clamp(Math.max(4, item.w * scaleX), 4, VIEW_W);
-  const h = clamp(Math.max(4, item.d * scaleY), 4, VIEW_H);
-  return {
-    x: clamp(x, VIEW_X, VIEW_X + VIEW_W - w),
-    y: clamp(y, VIEW_Y, VIEW_Y + VIEW_H - h),
-    w,
-    h,
-  };
+function toTitleCase(value: string): string {
+  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function uniqueTypes(placements: BuildingPlacement[]): string[] {
@@ -80,6 +52,62 @@ function uniqueTypes(placements: BuildingPlacement[]): string[] {
       .map((item) => displayType(item.type)),
   );
   return Array.from(values).slice(0, 8);
+}
+
+function toPlanRect(item: BuildingPlacement, scaleX: number, scaleY: number) {
+  const w = clamp(Math.max(8, item.w * scaleX), 8, PLAN_W);
+  const h = clamp(Math.max(8, item.d * scaleY), 8, PLAN_H);
+  const x = PLAN_X + clamp((item.x ?? 0) * scaleX, 0, PLAN_W - w);
+  const y = PLAN_Y + clamp((item.y ?? 0) * scaleY, 0, PLAN_H - h);
+  return { x, y, w, h };
+}
+
+function ParkingStalls({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  const count = Math.min(24, Math.max(6, Math.floor(w / 18)));
+  const spacing = w / count;
+  return (
+    <g>
+      <line x1={x + 8} x2={x + w - 8} y1={y + h * 0.5} y2={y + h * 0.5} stroke="#111" strokeWidth="2" />
+      {Array.from({ length: count + 1 }).map((_, index) => (
+        <line
+          key={`stall-${x}-${y}-${index}`}
+          x1={x + index * spacing}
+          x2={x + index * spacing + 10}
+          y1={y + 4}
+          y2={y + h * 0.5 - 4}
+          stroke="#111"
+          strokeWidth="1.2"
+        />
+      ))}
+      {Array.from({ length: count + 1 }).map((_, index) => (
+        <line
+          key={`stall-lower-${x}-${y}-${index}`}
+          x1={x + index * spacing + 10}
+          x2={x + index * spacing}
+          y1={y + h * 0.5 + 4}
+          y2={y + h - 4}
+          stroke="#111"
+          strokeWidth="1.2"
+        />
+      ))}
+    </g>
+  );
+}
+
+function SheetTable({ x, y, rows }: { x: number; y: number; rows: string[] }) {
+  return (
+    <g>
+      <rect x={x} y={y} width="128" height={rows.length * 17 + 12} fill="#fff" stroke="#111" strokeWidth="1.2" />
+      {rows.map((row, index) => (
+        <g key={row}>
+          <line x1={x} x2={x + 128} y1={y + 12 + index * 17} y2={y + 12 + index * 17} stroke="#111" strokeWidth="0.6" />
+          <text x={x + 8} y={y + 24 + index * 17} fontSize="8" fontWeight="700" fill="#111">
+            {row}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
 }
 
 export default function CivilReviewSheet({
@@ -95,18 +123,18 @@ export default function CivilReviewSheet({
   const [expanded, setExpanded] = useState(false);
   const width = lotWidth > 0 ? lotWidth : placements.find((item) => item.type === "site")?.w || 1000;
   const height = lotHeight > 0 ? lotHeight : placements.find((item) => item.type === "site")?.d || 1000;
-  const scaleX = VIEW_W / Math.max(width, 1);
-  const scaleY = VIEW_H / Math.max(height, 1);
+  const scaleX = PLAN_W / Math.max(width, 1);
+  const scaleY = PLAN_H / Math.max(height, 1);
   const visiblePlacements = placements.filter((item) => !Boolean(item.meta?.ui_hidden));
   const sheetObjects = visiblePlacements.filter((item) => item.type !== "site" && item.placed !== false);
   const utilityObjects = sheetObjects.filter((item) => isUtility(item.type));
   const planObjects = sheetObjects.filter((item) => !isUtility(item.type));
   const legendTypes = uniqueTypes(visiblePlacements);
   const dateLabel = new Intl.DateTimeFormat("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "2-digit",
-    }).format(generatedAt ? new Date(generatedAt) : new Date());
+    month: "2-digit",
+    day: "2-digit",
+    year: "2-digit",
+  }).format(generatedAt ? new Date(generatedAt) : new Date());
 
   return (
     <section
@@ -121,10 +149,10 @@ export default function CivilReviewSheet({
             Civil Review Sheet
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-950">
-            Plan-sheet style review package preview
+            Blackline plan-sheet style review package preview
           </p>
           <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">
-            Formatted like a professional review sheet with a plan viewport, legend, notes, profile strip, and title block. It is still review-only.
+            Recreates the professional plan-sheet feel: border, dense site plan, right title block, legend, scale, north arrow, and review notes.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -146,194 +174,195 @@ export default function CivilReviewSheet({
         <div className="mx-auto max-w-full overflow-auto rounded-xl border border-slate-300 bg-slate-200 p-2">
           <svg
             role="img"
-            aria-label="Civil review sheet preview"
+            aria-label="Civil blackline review sheet preview"
             viewBox={`0 0 ${SHEET_WIDTH} ${SHEET_HEIGHT}`}
-            className={`${expanded ? "w-full min-w-[1100px]" : "min-w-[900px]"} bg-white`}
+            className={`${expanded ? "w-full min-w-[1120px]" : "min-w-[940px]"} bg-white`}
             data-testid="civil-review-sheet-svg"
           >
             <defs>
-              <pattern id="civil-sheet-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="1" />
+              <pattern id="civil-blackline-grid" width="34" height="34" patternUnits="userSpaceOnUse">
+                <path d="M 34 0 L 0 0 0 34" fill="none" stroke="#e8e8e8" strokeWidth="0.7" />
               </pattern>
-              <pattern id="civil-sheet-profile-grid" width="36" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 36 0 L 0 0 0 20" fill="none" stroke="#e5e7eb" strokeWidth="1" />
-              </pattern>
+              <marker id="civil-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#111" />
+              </marker>
             </defs>
 
-            <rect x="18" y="18" width="1164" height="724" fill="#fff" stroke="#111827" strokeWidth="3" />
-            <rect x="34" y="34" width="1132" height="692" fill="#fff" stroke="#475569" strokeWidth="1.5" />
+            <rect x="20" y="20" width="1160" height="720" fill="#fff" stroke="#111" strokeWidth="3" />
+            <rect x="36" y="36" width="1128" height="688" fill="#fff" stroke="#111" strokeWidth="1.4" />
+            <rect x={PLAN_X} y={PLAN_Y} width={PLAN_W} height={PLAN_H} fill="url(#civil-blackline-grid)" stroke="#111" strokeWidth="2" />
+            <path
+              d={`M ${PLAN_X + 24} ${PLAN_Y + 74} C ${PLAN_X + 260} ${PLAN_Y + 28}, ${PLAN_X + 528} ${PLAN_Y + 50}, ${PLAN_X + PLAN_W - 52} ${PLAN_Y + 16} L ${PLAN_X + PLAN_W - 4} ${PLAN_Y + PLAN_H - 48} C ${PLAN_X + 660} ${PLAN_Y + PLAN_H - 4}, ${PLAN_X + 392} ${PLAN_Y + PLAN_H - 36}, ${PLAN_X + 26} ${PLAN_Y + PLAN_H - 18} Z`}
+              fill="none"
+              stroke="#111"
+              strokeWidth="2.4"
+              strokeDasharray="8 7"
+            />
+            <text x={PLAN_X + 392} y={PLAN_Y + PLAN_H - 10} fontSize="12" fontWeight="700" fill="#111">
+              MATCH SHEET C-3.3
+            </text>
 
-            <g data-testid="civil-review-sheet-notes">
-              <rect x="54" y="64" width="228" height="190" fill="#f8fafc" stroke="#cbd5e1" />
-              <text x="70" y="92" fontSize="18" fontWeight="700" fill="#0f172a">GENERAL NOTES</text>
-              {[
-                "1. Review-only planning exhibit.",
-                "2. Source labels remain required.",
-                "3. Survey/control required before reliance.",
-                "4. Utility locations require owner/field proof.",
-                "5. Geometry is draft until reviewed.",
-              ].map((note, index) => (
-                <text key={note} x="70" y={124 + index * 24} fontSize="14" fill="#334155">
-                  {note}
-                </text>
-              ))}
-            </g>
-
-            <g data-testid="civil-review-sheet-legend">
-              <rect x="54" y="276" width="228" height="194" fill="#fff" stroke="#cbd5e1" />
-              <text x="70" y="304" fontSize="18" fontWeight="700" fill="#0f172a">LEGEND</text>
-              {(legendTypes.length ? legendTypes : ["site boundary", "draft object", "utility review"]).map((label, index) => {
-                const typeKey = label.replaceAll(" ", "_");
-                const tone = objectTone[typeKey] || objectTone.custom;
-                return (
-                  <g key={`${label}-${index}`}>
-                    <rect
-                      x="72"
-                      y={328 + index * 20}
-                      width="28"
-                      height="10"
-                      rx="2"
-                      fill={tone.fill}
-                      stroke={tone.stroke}
-                      strokeDasharray={tone.dash}
-                    />
-                    <text x="112" y={338 + index * 20} fontSize="13" fill="#334155">
-                      {toTitleCase(label)}
-                    </text>
-                  </g>
-                );
-              })}
-            </g>
-
-            <g data-testid="civil-review-sheet-vicinity">
-              <rect x="54" y="492" width="228" height="120" fill="#f8fafc" stroke="#cbd5e1" />
-              <text x="70" y="520" fontSize="18" fontWeight="700" fill="#0f172a">VICINITY</text>
-              <path d="M88 576 C126 540 162 604 214 552" fill="none" stroke="#94a3b8" strokeWidth="8" strokeLinecap="round" />
-              <path d="M80 590 L236 540" fill="none" stroke="#cbd5e1" strokeWidth="5" strokeLinecap="round" />
-              <circle cx="168" cy="570" r="12" fill="#111827" />
-              <text x="70" y="600" fontSize="12" fill="#64748b">Context map placeholder from project sources.</text>
-            </g>
-
-            <g data-testid="civil-review-sheet-plan">
-              <rect x={VIEW_X} y={VIEW_Y} width={VIEW_W} height={VIEW_H} fill="url(#civil-sheet-grid)" stroke="#111827" strokeWidth="2" />
-              <rect x={VIEW_X + 20} y={VIEW_Y + 20} width={VIEW_W - 40} height={VIEW_H - 40} fill="none" stroke="#111827" strokeWidth="2.5" strokeDasharray="12 8" />
-              <text x={VIEW_X} y={VIEW_Y - 22} fontSize="20" fontWeight="700" fill="#0f172a">SITE / UTILITY REVIEW PLAN</text>
-              <text x={VIEW_X} y={VIEW_Y - 4} fontSize="12" fontWeight="600" fill="#64748b">
-                Source-backed where available · draft geometry stays review-required
-              </text>
-
-              {planObjects.map((item) => {
-                const rect = toSheetRect(item, scaleX, scaleY);
-                const tone = objectTone[item.type || "custom"] || objectTone.custom;
-                const radius = item.type === "basin" ? 22 : item.type === "road" || item.type === "driveway" ? 18 : 6;
-                return (
-                  <g key={item.id}>
+            {planObjects.map((item) => {
+              const rect = toPlanRect(item, scaleX, scaleY);
+              const type = item.type || "custom";
+              const isBuilding = type.includes("building") || type === "pad";
+              const isParking = type === "parking";
+              const isRoad = type === "road" || type === "driveway";
+              const isBasin = type === "basin";
+              return (
+                <g key={item.id} data-testid="civil-review-sheet-plan-object">
+                  {isRoad ? (
+                    <>
+                      <path
+                        d={`M ${rect.x} ${rect.y + rect.h / 2} L ${rect.x + rect.w} ${rect.y + rect.h / 2}`}
+                        stroke="#111"
+                        strokeWidth={Math.max(12, rect.h * 0.38)}
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                      <path
+                        d={`M ${rect.x} ${rect.y + rect.h / 2} L ${rect.x + rect.w} ${rect.y + rect.h / 2}`}
+                        stroke="#fff"
+                        strokeWidth={Math.max(6, rect.h * 0.18)}
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                    </>
+                  ) : (
                     <rect
                       x={rect.x}
                       y={rect.y}
                       width={rect.w}
                       height={rect.h}
-                      rx={radius}
-                      fill={tone.fill}
-                      stroke={tone.stroke}
-                      strokeWidth={item.type === "road" || item.type === "driveway" ? 5 : 2.5}
-                      strokeDasharray={tone.dash}
-                      opacity={item.source === "generated" ? 0.9 : 1}
+                      rx={isBasin ? 18 : 1}
+                      fill="#fff"
+                      stroke="#111"
+                      strokeWidth={isBuilding ? 1.8 : 1.4}
                     />
-                    {item.type === "parking" && rect.w > 70 && rect.h > 36
-                      ? Array.from({ length: Math.min(10, Math.max(3, Math.floor(rect.w / 34))) }).map((_, index) => (
-                          <line
-                            key={`${item.id}-stall-${index}`}
-                            x1={rect.x + 12 + index * 32}
-                            x2={rect.x + 12 + index * 32}
-                            y1={rect.y + 8}
-                            y2={rect.y + rect.h - 8}
-                            stroke="#94a3b8"
-                            strokeWidth="1.5"
-                          />
-                        ))
-                      : null}
-                    {item.type === "basin" ? (
-                      <>
-                        <ellipse cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} rx={Math.max(12, rect.w * 0.32)} ry={Math.max(10, rect.h * 0.24)} fill="none" stroke="#60a5fa" strokeWidth="2" />
-                        <ellipse cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} rx={Math.max(8, rect.w * 0.18)} ry={Math.max(6, rect.h * 0.12)} fill="#bfdbfe" stroke="#3b82f6" strokeWidth="1.5" />
-                      </>
-                    ) : null}
-                  </g>
-                );
-              })}
+                  )}
+                  {isBuilding ? (
+                    <>
+                      <text x={rect.x + rect.w / 2} y={rect.y + rect.h / 2} textAnchor="middle" fontSize="9" fontWeight="700" fill="#111">
+                        MULTI-UNIT BUILDING
+                      </text>
+                      <path d={`M ${rect.x + 12} ${rect.y + rect.h - 10} L ${rect.x + rect.w - 12} ${rect.y + rect.h - 10}`} stroke="#111" strokeWidth="0.8" />
+                    </>
+                  ) : null}
+                  {isParking ? <ParkingStalls x={rect.x} y={rect.y} w={rect.w} h={rect.h} /> : null}
+                  {isBasin ? (
+                    <>
+                      <ellipse cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} rx={Math.max(12, rect.w * 0.34)} ry={Math.max(8, rect.h * 0.24)} fill="none" stroke="#111" strokeWidth="1" />
+                      <ellipse cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} rx={Math.max(8, rect.w * 0.18)} ry={Math.max(5, rect.h * 0.12)} fill="none" stroke="#111" strokeWidth="0.8" />
+                    </>
+                  ) : null}
+                </g>
+              );
+            })}
 
-              {utilityObjects.map((item, index) => {
-                const rect = toSheetRect(item, scaleX, scaleY);
-                const tone = objectTone[item.type || "utility_corridor"] || objectTone.utility_corridor;
-                const y = rect.y + rect.h / 2 + (index % 3) * 8;
-                return (
-                  <g key={item.id}>
-                    <path
-                      d={`M ${VIEW_X + 36} ${y} C ${rect.x} ${y - 32}, ${rect.x + rect.w} ${y + 20}, ${VIEW_X + VIEW_W - 42} ${y}`}
-                      fill="none"
-                      stroke={tone.stroke}
-                      strokeWidth="3"
-                      strokeDasharray={tone.dash || "10 7"}
-                      strokeLinecap="round"
-                    />
-                    <circle cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} r="7" fill={tone.fill === "rgba(255,255,255,0)" ? "#fff" : tone.fill} stroke={tone.stroke} strokeWidth="2" />
-                  </g>
-                );
-              })}
+            {utilityObjects.map((item, index) => {
+              const rect = toPlanRect(item, scaleX, scaleY);
+              const y = rect.y + rect.h / 2 + (index % 4) * 8;
+              return (
+                <g key={item.id}>
+                  <path
+                    d={`M ${PLAN_X + 28} ${y} C ${rect.x + 60} ${y - 34}, ${rect.x + rect.w + 80} ${y + 28}, ${PLAN_X + PLAN_W - 36} ${y - 8}`}
+                    fill="none"
+                    stroke="#111"
+                    strokeWidth="1.6"
+                    strokeDasharray={index % 2 ? "8 5" : "3 5"}
+                  />
+                  <circle cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} r="5" fill="#fff" stroke="#111" strokeWidth="1.6" />
+                </g>
+              );
+            })}
 
-              <g>
-                <path d={`M ${VIEW_X + VIEW_W - 70} ${VIEW_Y + 72} L ${VIEW_X + VIEW_W - 48} ${VIEW_Y + 28} L ${VIEW_X + VIEW_W - 26} ${VIEW_Y + 72} Z`} fill="#111827" />
-                <text x={VIEW_X + VIEW_W - 52} y={VIEW_Y + 90} textAnchor="middle" fontSize="13" fontWeight="700" fill="#111827">N</text>
-              </g>
-              <g>
-                <line x1={VIEW_X + 34} x2={VIEW_X + 174} y1={VIEW_Y + VIEW_H - 28} y2={VIEW_Y + VIEW_H - 28} stroke="#111827" strokeWidth="5" />
-                <line x1={VIEW_X + 34} x2={VIEW_X + 34} y1={VIEW_Y + VIEW_H - 38} y2={VIEW_Y + VIEW_H - 18} stroke="#111827" strokeWidth="2" />
-                <line x1={VIEW_X + 174} x2={VIEW_X + 174} y1={VIEW_Y + VIEW_H - 38} y2={VIEW_Y + VIEW_H - 18} stroke="#111827" strokeWidth="2" />
-                <text x={VIEW_X + 104} y={VIEW_Y + VIEW_H - 44} textAnchor="middle" fontSize="12" fontWeight="700" fill="#334155">
-                  {formatFt(Math.min(width, height) / 5)}
-                </text>
-              </g>
-            </g>
+            {Array.from({ length: 36 }).map((_, index) => {
+              const x = PLAN_X + 58 + (index % 9) * 88;
+              const y = PLAN_Y + 80 + Math.floor(index / 9) * 118;
+              return <circle key={`spot-${index}`} cx={x} cy={y} r="1.8" fill="#111" />;
+            })}
 
-            <g data-testid="civil-review-sheet-profile">
-              <rect x="318" y="544" width="812" height="112" fill="url(#civil-sheet-profile-grid)" stroke="#111827" strokeWidth="2" />
-              <text x="318" y="530" fontSize="18" fontWeight="700" fill="#0f172a">SCHEMATIC PROFILE / REVIEW STRIP</text>
-              <path d="M344 626 C462 590 570 620 690 584 C810 550 918 596 1104 558" fill="none" stroke="#64748b" strokeWidth="3" />
-              <path d="M344 616 C520 614 706 606 1104 594" fill="none" stroke="#9333ea" strokeWidth="3" strokeDasharray="12 8" />
-              <path d="M344 638 C508 638 672 630 1104 628" fill="none" stroke="#2563eb" strokeWidth="3" strokeDasharray="4 8" />
-              <text x="344" y="574" fontSize="12" fontWeight="700" fill="#64748b">EG/FG review profile</text>
-              <text x="344" y="608" fontSize="12" fontWeight="700" fill="#9333ea">Utility review alignment</text>
-              <text x="344" y="652" fontSize="12" fontWeight="700" fill="#2563eb">Storm/water schematic</text>
-            </g>
+            {Array.from({ length: 14 }).map((_, index) => {
+              const x = PLAN_X + 104 + index * 54;
+              const y = PLAN_Y + 42 + (index % 2) * 468;
+              return (
+                <g key={`grade-${index}`}>
+                  <line x1={x - 14} x2={x + 14} y1={y} y2={y} stroke="#111" strokeWidth="0.8" />
+                  <text x={x - 8} y={y - 4} fontSize="7" fill="#111">22.{index}</text>
+                </g>
+              );
+            })}
 
-            <g data-testid="civil-review-sheet-title-block">
-              <rect x="54" y="638" width="1076" height="70" fill="#fff" stroke="#111827" strokeWidth="2" />
-              <line x1="430" y1="638" x2="430" y2="708" stroke="#111827" />
-              <line x1="760" y1="638" x2="760" y2="708" stroke="#111827" />
-              <line x1="964" y1="638" x2="964" y2="708" stroke="#111827" />
-              <text x="72" y="662" fontSize="18" fontWeight="800" fill="#0f172a">CIVORA REVIEW PLAN</text>
-              <text x="72" y="686" fontSize="13" fill="#334155">{projectName || "Untitled Project"}</text>
-              <text x="448" y="662" fontSize="12" fontWeight="700" fill="#64748b">ADDRESS / CONTEXT</text>
-              <text x="448" y="686" fontSize="13" fill="#0f172a">{addressLabel || "No address applied"}</text>
-              <text x="778" y="662" fontSize="12" fontWeight="700" fill="#64748b">SITE SIZE</text>
-              <text x="778" y="686" fontSize="13" fill="#0f172a">{formatFt(width)} x {formatFt(height)}</text>
-              <text x="982" y="658" fontSize="12" fontWeight="700" fill="#64748b">SHEET</text>
-              <text x="982" y="684" fontSize="24" fontWeight="800" fill="#0f172a">C-0.1</text>
-              <text x="1050" y="684" fontSize="12" fill="#334155">{dateLabel}</text>
+            <g data-testid="civil-review-sheet-plan">
+              <text x={PLAN_X + 18} y={PLAN_Y + 20} fontSize="13" fontWeight="800" fill="#111">
+                CIVORA SITE / UTILITY REVIEW PLAN
+              </text>
+              <text x={PLAN_X + 18} y={PLAN_Y + 36} fontSize="8" fontWeight="700" fill="#111">
+                REVIEW REQUIRED · SOURCE-BACKED WHERE AVAILABLE · NOT A CONSTRUCTION DOCUMENT
+              </text>
             </g>
 
             <g>
-              <rect x="318" y="668" width="476" height="40" fill="#fff7ed" stroke="#fed7aa" />
-              <text x="334" y="692" fontSize="14" fontWeight="800" fill="#c2410c">
-                REVIEW ONLY - NOT FOR CONSTRUCTION
-              </text>
+              <path d="M 840 120 L 854 70 L 868 120 Z" fill="#111" />
+              <line x1="854" x2="854" y1="76" y2="150" stroke="#111" strokeWidth="2" />
+              <text x="854" y="166" textAnchor="middle" fontSize="12" fontWeight="800" fill="#111">N</text>
+              <line x1="794" x2="884" y1="206" y2="206" stroke="#111" strokeWidth="4" />
+              <line x1="794" x2="794" y1="196" y2="216" stroke="#111" strokeWidth="1.4" />
+              <line x1="884" x2="884" y1="196" y2="216" stroke="#111" strokeWidth="1.4" />
+              <text x="839" y="192" textAnchor="middle" fontSize="8" fontWeight="700" fill="#111">GRAPHIC SCALE</text>
+              <text x="839" y="228" textAnchor="middle" fontSize="8" fill="#111">{formatFt(Math.min(width, height) / 5)}</text>
             </g>
 
-            <g data-testid="civil-review-sheet-source-summary">
-              <text x="54" y="724" fontSize="12" fontWeight="700" fill="#475569">
-                Source candidates: {sourceCandidateCount} · Missing: {missingSources.slice(0, 3).join(", ") || "none reported"} · Output requires qualified review.
-              </text>
+            <g data-testid="civil-review-sheet-legend">
+              <SheetTable
+                x={TITLE_X - 144}
+                y={246}
+                rows={["LEGEND", ...(legendTypes.length ? legendTypes : ["site boundary", "draft object", "utility review"]).map(toTitleCase).slice(0, 7)]}
+              />
+            </g>
+
+            <g data-testid="civil-review-sheet-title-block">
+              <rect x={TITLE_X} y="36" width={TITLE_W} height="688" fill="#fff" stroke="#111" strokeWidth="2" />
+              <line x1={TITLE_X} x2={TITLE_X + TITLE_W} y1="88" y2="88" stroke="#111" strokeWidth="1.5" />
+              <line x1={TITLE_X} x2={TITLE_X + TITLE_W} y1="168" y2="168" stroke="#111" strokeWidth="1.5" />
+              <line x1={TITLE_X} x2={TITLE_X + TITLE_W} y1="260" y2="260" stroke="#111" strokeWidth="1.5" />
+              <line x1={TITLE_X} x2={TITLE_X + TITLE_W} y1="520" y2="520" stroke="#111" strokeWidth="1.5" />
+              <line x1={TITLE_X} x2={TITLE_X + TITLE_W} y1="620" y2="620" stroke="#111" strokeWidth="1.5" />
+              <text x={TITLE_X + 22} y="74" fontSize="39" fontWeight="800" fill="#111">CIV</text>
+              <text x={TITLE_X + 22} y="120" fontSize="11" fontWeight="800" fill="#111">CIVORA REVIEW PLAN</text>
+              <text x={TITLE_X + 22} y="140" fontSize="8" fill="#111">Planning support exhibit</text>
+              <text x={TITLE_X + 22} y="190" fontSize="8" fontWeight="700" fill="#111">PROJECT</text>
+              <text x={TITLE_X + 22} y="208" fontSize="9" fill="#111">{projectName || "Untitled Project"}</text>
+              <text x={TITLE_X + 22} y="228" fontSize="8" fontWeight="700" fill="#111">ADDRESS</text>
+              <text x={TITLE_X + 22} y="246" fontSize="8" fill="#111">{addressLabel || "No address applied"}</text>
+              <text x={TITLE_X + 22} y="288" fontSize="8" fontWeight="700" fill="#111">GENERAL REVIEW NOTES</text>
+              {[
+                "Review-only planning exhibit.",
+                "Survey/control required before reliance.",
+                "Utilities require owner/field proof.",
+                "Geometry remains draft until reviewed.",
+                "No stamp, seal, approval, or EOR role.",
+              ].map((note, index) => (
+                <text key={note} x={TITLE_X + 22} y={310 + index * 20} fontSize="7.4" fill="#111">
+                  {index + 1}. {note}
+                </text>
+              ))}
+              <text x={TITLE_X + 22} y="546" fontSize="8" fontWeight="700" fill="#111">REVIEW LOG</text>
+              <text x={TITLE_X + 22} y="568" fontSize="7.5" fill="#111">DATE: {dateLabel}</text>
+              <text x={TITLE_X + 22} y="588" fontSize="7.5" fill="#111">SITE: {formatFt(width)} x {formatFt(height)}</text>
+              <text x={TITLE_X + 22} y="608" fontSize="7.5" fill="#111">SRC CANDIDATES: {sourceCandidateCount}</text>
+              <text x={TITLE_X + 22} y="656" fontSize="10" fontWeight="800" fill="#111">SHEET NO.</text>
+              <text x={TITLE_X + 22} y="700" fontSize="38" fontWeight="900" fill="#111">C-3.2</text>
+            </g>
+
+            <g data-testid="civil-review-sheet-profile">
+              <rect x="70" y="696" width="850" height="28" fill="#fff" stroke="#111" strokeWidth="1.2" />
+              <text x="84" y="714" fontSize="8" fontWeight="800" fill="#111">REVIEW ONLY - NOT FOR CONSTRUCTION</text>
+              <g data-testid="civil-review-sheet-source-summary">
+                <text x="318" y="714" fontSize="8" fill="#111">Source candidates: {sourceCandidateCount}</text>
+                <text x="470" y="714" fontSize="8" fill="#111">Missing: {missingSources.slice(0, 2).join(", ") || "none reported"}</text>
+                <text x="736" y="714" fontSize="8" fill="#111">Output requires qualified review.</text>
+              </g>
             </g>
           </svg>
         </div>
