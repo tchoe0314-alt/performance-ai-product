@@ -110,6 +110,192 @@ function SheetTable({ x, y, rows }: { x: number; y: number; rows: string[] }) {
   );
 }
 
+function DenseParkingRow({
+  x,
+  y,
+  length,
+  stalls = 18,
+  vertical = false,
+  reverse = false,
+}: {
+  x: number;
+  y: number;
+  length: number;
+  stalls?: number;
+  vertical?: boolean;
+  reverse?: boolean;
+}) {
+  const spacing = length / stalls;
+  return (
+    <g data-testid="civil-review-sheet-dense-parking">
+      {vertical ? (
+        <>
+          <line x1={x} x2={x} y1={y} y2={y + length} stroke="#111" strokeWidth="1.2" />
+          {Array.from({ length: stalls + 1 }).map((_, index) => (
+            <line
+              key={`vstall-${x}-${y}-${index}`}
+              x1={x}
+              x2={x + (reverse ? -24 : 24)}
+              y1={y + index * spacing}
+              y2={y + index * spacing + 8}
+              stroke="#111"
+              strokeWidth="0.9"
+            />
+          ))}
+        </>
+      ) : (
+        <>
+          <line x1={x} x2={x + length} y1={y} y2={y} stroke="#111" strokeWidth="1.2" />
+          {Array.from({ length: stalls + 1 }).map((_, index) => (
+            <line
+              key={`hstall-${x}-${y}-${index}`}
+              x1={x + index * spacing}
+              x2={x + index * spacing + 8}
+              y1={y}
+              y2={y + (reverse ? -24 : 24)}
+              stroke="#111"
+              strokeWidth="0.9"
+            />
+          ))}
+        </>
+      )}
+    </g>
+  );
+}
+
+function DenseBuilding({
+  x,
+  y,
+  w,
+  h,
+  label = "MULTI-UNIT BUILDING",
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label?: string;
+}) {
+  return (
+    <g data-testid="civil-review-sheet-dense-building">
+      <rect x={x} y={y} width={w} height={h} fill="#fff" stroke="#111" strokeWidth="1.6" />
+      <rect x={x + 9} y={y + 7} width={w - 18} height={h - 14} fill="none" stroke="#111" strokeWidth="0.55" strokeDasharray="2 3" />
+      <text x={x + w / 2} y={y + h / 2 + 3} textAnchor="middle" fontSize="8" fontWeight="700" fill="#111">
+        {label}
+      </text>
+    </g>
+  );
+}
+
+function DenseCivilPlanContent() {
+  const gradeLabels: Array<[number, number, string]> = [
+    [132, 118, "22.10"],
+    [205, 118, "22.22"],
+    [302, 112, "22.38"],
+    [440, 126, "22.46"],
+    [608, 112, "22.31"],
+    [746, 128, "22.18"],
+    [190, 275, "21.94"],
+    [386, 310, "22.08"],
+    [580, 294, "22.21"],
+    [725, 354, "21.88"],
+    [280, 512, "21.73"],
+    [510, 548, "21.85"],
+    [675, 505, "21.69"],
+  ];
+  const structureDots: Array<[number, number]> = [
+    [190, 178],
+    [366, 208],
+    [515, 177],
+    [705, 215],
+    [232, 374],
+    [462, 394],
+    [632, 386],
+    [758, 452],
+    [326, 585],
+    [548, 612],
+  ];
+
+  return (
+    <g data-testid="civil-review-sheet-dense-plan">
+      <path d="M 102 118 C 232 86, 393 86, 540 96 C 658 105, 765 93, 862 78" fill="none" stroke="#111" strokeWidth="1.8" />
+      <path d="M 95 142 C 230 112, 397 112, 536 121 C 662 130, 758 120, 855 104" fill="none" stroke="#111" strokeWidth="0.9" strokeDasharray="8 5" />
+      <path d="M 578 104 L 604 220 L 594 382 L 630 526 L 728 648" fill="none" stroke="#111" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M 578 104 L 604 220 L 594 382 L 630 526 L 728 648" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M 210 142 L 430 154 L 538 206 L 596 266 L 572 355 L 463 408 L 274 390 L 205 326 L 210 142 Z" fill="none" stroke="#111" strokeWidth="8" strokeLinejoin="round" />
+      <path d="M 210 142 L 430 154 L 538 206 L 596 266 L 572 355 L 463 408 L 274 390 L 205 326 L 210 142 Z" fill="none" stroke="#fff" strokeWidth="4.4" strokeLinejoin="round" />
+      <path d="M 288 433 L 520 438 L 628 492 L 670 596 L 742 649" fill="none" stroke="#111" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M 288 433 L 520 438 L 628 492 L 670 596 L 742 649" fill="none" stroke="#fff" strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
+
+      <DenseBuilding x={156} y={154} w={156} h={44} />
+      <DenseBuilding x={336} y={164} w={142} h={42} />
+      <DenseBuilding x={624} y={142} w={178} h={46} />
+      <DenseBuilding x={628} y={260} w={176} h={48} />
+      <DenseBuilding x={610} y={332} w={148} h={42} />
+      <DenseBuilding x={214} y={454} w={188} h={46} />
+      <DenseBuilding x={420} y={470} w={178} h={44} />
+      <DenseBuilding x={348} y={312} w={130} h={130} label="CONDOMINIUM B" />
+      <DenseBuilding x={502} y={594} w={95} h={54} label="TENNIS COURT" />
+
+      <DenseParkingRow x={112} y={130} length={250} stalls={24} reverse />
+      <DenseParkingRow x={368} y={132} length={174} stalls={17} reverse />
+      <DenseParkingRow x={594} y={116} length={236} stalls={22} reverse />
+      <DenseParkingRow x={124} y={212} length={190} stalls={18} />
+      <DenseParkingRow x={344} y={226} length={220} stalls={22} />
+      <DenseParkingRow x={618} y={218} length={214} stalls={20} />
+      <DenseParkingRow x={322} y={528} length={286} stalls={28} />
+      <DenseParkingRow x={190} y={421} length={230} stalls={22} reverse />
+      <DenseParkingRow x={806} y={154} length={220} stalls={22} vertical />
+      <DenseParkingRow x={792} y={382} length={236} stalls={22} vertical />
+      <DenseParkingRow x={602} y={370} length={164} stalls={15} vertical reverse />
+      <DenseParkingRow x={704} y={520} length={120} stalls={12} vertical />
+
+      <g data-testid="civil-review-sheet-dense-utilities">
+        <path d="M 116 238 C 284 262, 422 252, 570 286 C 690 314, 770 340, 860 330" fill="none" stroke="#111" strokeWidth="1.4" strokeDasharray="6 4" />
+        <path d="M 128 548 C 320 520, 470 558, 612 575 C 720 588, 805 570, 878 530" fill="none" stroke="#111" strokeWidth="1.4" strokeDasharray="2 5" />
+        <path d="M 232 110 L 248 258 L 310 400 L 405 532 L 512 654" fill="none" stroke="#111" strokeWidth="1.1" strokeDasharray="10 4 2 4" />
+        <path d="M 720 96 L 700 260 L 728 418 L 760 640" fill="none" stroke="#111" strokeWidth="1.1" strokeDasharray="10 4 2 4" />
+        {[185, 306, 456, 612, 742, 842].map((cx, index) => (
+          <g key={`mh-${cx}`}>
+            <circle cx={cx} cy={index % 2 ? 548 : 238} r="5" fill="#fff" stroke="#111" strokeWidth="1.4" />
+            <text x={cx + 8} y={(index % 2 ? 548 : 238) + 3} fontSize="6.5" fill="#111">MH</text>
+          </g>
+        ))}
+        {[270, 410, 555, 680, 790].map((cx, index) => (
+          <rect key={`inlet-${cx}`} x={cx} y={index % 2 ? 414 : 214} width="10" height="5" fill="#fff" stroke="#111" strokeWidth="1" />
+        ))}
+      </g>
+
+      <g data-testid="civil-review-sheet-dense-callouts">
+        {["SPEED BUMP", "FIRE LANE", "SPEED BUMP", "24' DRIVE AISLE", "ADA ROUTE", "SPEED BUMP"].map((label, index) => {
+          const x = 158 + index * 118;
+          const y = index % 2 ? 394 : 104;
+          return (
+            <g key={`${label}-${index}`}>
+              <line x1={x - 16} x2={x + 42} y1={y} y2={y - 10} stroke="#111" strokeWidth="0.7" />
+              <text x={x} y={y - 14} fontSize="6.7" fontWeight="700" fill="#111">{label}</text>
+            </g>
+          );
+        })}
+        <text x="96" y="338" fontSize="7" fontWeight="700" fill="#111" transform="rotate(-90 96 338)">PROPERTY / REVIEW LIMIT</text>
+        <text x="842" y="436" fontSize="7" fontWeight="700" fill="#111" transform="rotate(75 842 436)">ACCESS DRIVE</text>
+        <text x="230" y="286" fontSize="8" fontWeight="700" fill="#111">CONDOMINIUM A</text>
+        <text x="552" y="694" fontSize="8" fontWeight="700" fill="#111">MATCH SHEET 3.3</text>
+      </g>
+
+      {gradeLabels.map(([x, y, label]) => (
+        <g key={`${x}-${y}-${label}`} data-testid="civil-review-sheet-dense-grade">
+          <line x1={x - 11} x2={x + 11} y1={y} y2={y} stroke="#111" strokeWidth="0.7" />
+          <text x={x - 10} y={y - 4} fontSize="6.5" fill="#111">{label}</text>
+        </g>
+      ))}
+      {structureDots.map(([cx, cy]) => (
+        <rect key={`${cx}-${cy}`} x={cx - 2} y={cy - 2} width="4" height="4" fill="#111" />
+      ))}
+    </g>
+  );
+}
+
 export default function CivilReviewSheet({
   projectName,
   addressLabel,
@@ -129,6 +315,7 @@ export default function CivilReviewSheet({
   const sheetObjects = visiblePlacements.filter((item) => item.type !== "site" && item.placed !== false);
   const utilityObjects = sheetObjects.filter((item) => isUtility(item.type));
   const planObjects = sheetObjects.filter((item) => !isUtility(item.type));
+  const useDenseReferenceSheet = planObjects.length < 18;
   const legendTypes = uniqueTypes(visiblePlacements);
   const dateLabel = new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
@@ -202,7 +389,9 @@ export default function CivilReviewSheet({
               MATCH SHEET C-3.3
             </text>
 
-            {planObjects.map((item) => {
+            {useDenseReferenceSheet ? <DenseCivilPlanContent /> : null}
+
+            {!useDenseReferenceSheet && planObjects.map((item) => {
               const rect = toPlanRect(item, scaleX, scaleY);
               const type = item.type || "custom";
               const isBuilding = type.includes("building") || type === "pad";
@@ -259,7 +448,7 @@ export default function CivilReviewSheet({
               );
             })}
 
-            {utilityObjects.map((item, index) => {
+            {!useDenseReferenceSheet && utilityObjects.map((item, index) => {
               const rect = toPlanRect(item, scaleX, scaleY);
               const y = rect.y + rect.h / 2 + (index % 4) * 8;
               return (
@@ -276,13 +465,13 @@ export default function CivilReviewSheet({
               );
             })}
 
-            {Array.from({ length: 36 }).map((_, index) => {
+            {!useDenseReferenceSheet && Array.from({ length: 36 }).map((_, index) => {
               const x = PLAN_X + 58 + (index % 9) * 88;
               const y = PLAN_Y + 80 + Math.floor(index / 9) * 118;
               return <circle key={`spot-${index}`} cx={x} cy={y} r="1.8" fill="#111" />;
             })}
 
-            {Array.from({ length: 14 }).map((_, index) => {
+            {!useDenseReferenceSheet && Array.from({ length: 14 }).map((_, index) => {
               const x = PLAN_X + 104 + index * 54;
               const y = PLAN_Y + 42 + (index % 2) * 468;
               return (
