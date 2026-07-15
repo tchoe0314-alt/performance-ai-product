@@ -3,13 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   const shell = page.getByTestId("workspace-canvas-shell");
-  if (await shell.isVisible({ timeout: 30_000 }).catch(() => false)) {
-    await expect(shell).toBeVisible();
-  } else {
-    await expect(page.getByText(/site locked/i).first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("Canvas").first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "Add Line" })).toBeVisible({ timeout: 30_000 });
-  }
+  await expect(shell).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("left-sidebar")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -30,7 +24,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
 }
 
 async function openDrawTools(page: Page) {
-  await openWorkspacePanel(page, "Object Manager", /Draw & Object Manager|CAD Tools/);
+  await openWorkspacePanel(page, "Object Manager", /Object Manager|CAD Tools/);
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 
@@ -98,8 +92,8 @@ test.describe("button functionality audit", () => {
 
     const panels: Array<[RegExp | string, RegExp | string]> = [
       [/^Setup$/, /Project Setup/],
-      ["Open canvas from sidebar", /Canvas/],
-      ["Object Manager", /Draw & Object Manager|CAD Tools/],
+      ["Open canvas from sidebar", /Draw Canvas|Canvas/],
+      ["Object Manager", /Object Manager|CAD Tools/],
       ["Generate", /Generate Systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
       ["Recent changes", /Recent changes|History/],

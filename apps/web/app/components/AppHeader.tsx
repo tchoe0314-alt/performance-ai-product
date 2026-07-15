@@ -77,7 +77,7 @@ export default function AppHeader({
             className="hidden items-center gap-2 rounded-lg border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100/70 hover:text-slate-950 md:inline-flex"
           >
             <PanelLeftOpen className="h-4 w-4" />
-            Setup
+            Workspace
           </button>
         </div>
 

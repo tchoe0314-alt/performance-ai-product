@@ -426,6 +426,7 @@ type PreviewPanelProps = {
     meta?: Record<string, unknown>;
   }) => void;
   onCreateSiteBoundary?: (payload: { points: Array<[number, number]> }) => void;
+  onLockSite?: () => void;
   onUnlockSite?: () => void;
   buildingPlacements: BuildingPlacement[];
   cadEntityPreviewObjects?: BuildingPlacement[];
@@ -547,6 +548,7 @@ export default function PreviewPanel({
   onPlaceObject,
   onCreateCustomGeometry,
   onCreateSiteBoundary,
+  onLockSite,
   onUnlockSite,
   buildingPlacements,
   cadEntityPreviewObjects = [],
@@ -6060,18 +6062,88 @@ export default function PreviewPanel({
                 >
                   Map {mapOverlayEnabled ? "On" : "Off"}
                 </button>
-                <button
-                  type="button"
-                  data-testid="preview-inner-interaction-edit"
-                    aria-label="Use canvas edit tool"
-                    onClick={() => onSetPreviewInteraction("edit")}
+	                <button
+	                  type="button"
+	                  data-testid="preview-inner-interaction-edit"
+	                    aria-label="Use canvas edit tool"
+	                    onClick={() => onSetPreviewInteraction("edit")}
                     className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
                       allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
                     }`}
-                  >
-                    Edit
-                  </button>
-                </div>
+	                  >
+	                    Edit
+	                  </button>
+	                  {previewMode === "2d" ? (
+	                    <button
+	                      type="button"
+	                      data-testid="draw-site-boundary-toolbar-hidden"
+	                      aria-pressed={drawMode === "site"}
+	                      title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
+	                      onClick={() => {
+	                        if (siteLocked) {
+	                          pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
+	                          return;
+	                        }
+	                        activateDrawTool("site");
+	                      }}
+	                      className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+	                        drawMode === "site"
+	                          ? "border-slate-900 bg-slate-950 text-white"
+	                          : siteLocked
+	                            ? "border-slate-200 bg-white text-slate-600"
+	                            : "border-amber-200 bg-amber-50 text-amber-800"
+	                      }`}
+	                    >
+	                      Draw Site Boundary
+	                    </button>
+	                  ) : null}
+	                  {previewMode === "2d" && siteLocked && onUnlockSite ? (
+	                    <button
+	                      type="button"
+	                      data-testid="change-site-boundary-toolbar-hidden"
+	                      aria-label="Change Site Boundary"
+	                      onClick={() => {
+	                        onUnlockSite();
+	                        clearDraftGeometry();
+	                        setDrawMode("select");
+	                        onSetPreviewInteraction("edit");
+	                      }}
+	                      className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600"
+	                    >
+	                      Change Site
+	                    </button>
+	                  ) : null}
+	                  {previewMode === "2d"
+	                    ? ([
+	                        { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
+	                        { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
+	                        { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
+	                        { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
+	                      ]).map((item) => {
+	                        const active = drawMode === item.mode;
+	                        const disabled = !canDrawObjects;
+	                        return (
+	                          <button
+	                            key={`canvas-primary-draw-${item.mode}`}
+	                            type="button"
+	                            aria-pressed={active}
+	                            title={disabled ? item.disabledLabel : item.label}
+	                            data-blocked={disabled ? "true" : undefined}
+	                            onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
+	                            className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+	                              active
+	                                ? "border-slate-900 bg-slate-950 text-white"
+	                                : disabled
+	                                  ? "border-amber-200 bg-amber-50 text-amber-800"
+	                                  : "border-slate-200 bg-white text-slate-600"
+	                            }`}
+	                          >
+	                            {item.label}
+	                          </button>
+	                        );
+	                      })
+	                    : null}
+	                </div>
                 {isHighQuality ? (
                   <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
                     Visual preview only. Canonical geometry unchanged. Not engineering evidence.
@@ -6133,7 +6205,7 @@ export default function PreviewPanel({
                 ) : null}
               </div>
             </div>
-            <div className="pointer-events-none relative z-[80] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
+            <div className="pointer-events-none relative z-[220] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
               <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
                 <button
@@ -6204,7 +6276,109 @@ export default function PreviewPanel({
                 </button>
               </section>
               {previewMode === "2d" ? (
-                <section className="pointer-events-auto flex min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="preview-object-manager">
+                <section className="pointer-events-auto relative z-[230] flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-1" data-testid="canvas-draw-controls">
+                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Draw</span>
+                  <button
+                    type="button"
+                    data-testid="draw-site-boundary-toolbar-secondary"
+                    aria-pressed={drawMode === "site"}
+                    title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
+                    onClick={() => {
+                      if (siteLocked) {
+                        pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
+                        return;
+                      }
+                      activateDrawTool("site");
+                    }}
+                    className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                      drawMode === "site"
+                        ? "border-slate-900 bg-slate-950 text-white"
+                        : siteLocked
+                          ? "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                          : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    }`}
+                  >
+                    Draw Site Boundary
+                  </button>
+                  {siteLocked && onUnlockSite ? (
+                    <button
+                      type="button"
+                      data-testid="change-site-boundary-toolbar-secondary"
+                      aria-label="Change Site Boundary"
+                      onClick={() => {
+                        onUnlockSite();
+                        clearDraftGeometry();
+                        setDrawMode("select");
+                        onSetPreviewInteraction("edit");
+                      }}
+                      className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Change Site
+                    </button>
+                  ) : null}
+                  {[
+                    { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
+                    { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
+                    { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
+                    { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
+                  ].map((item) => {
+                    const active = drawMode === item.mode;
+                    const disabled = !canDrawObjects;
+                    return (
+                      <button
+                        key={`canvas-draw-${item.mode}`}
+                        type="button"
+                        aria-pressed={active}
+                        title={disabled ? item.disabledLabel : item.label}
+                        data-blocked={disabled ? "true" : undefined}
+                        onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
+                        className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                          active
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : disabled
+                              ? "border-amber-200 bg-amber-50 text-amber-800"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                  {drawMode !== "select" ? (
+                    <>
+                      {drawMode !== "point" && drawMode !== "pan" ? (
+                        <button
+                          type="button"
+                          onClick={finishDraftGeometry}
+                          disabled={draftPointCount < finishDraftMinPoints}
+                          title={finishDraftBlockedReason ?? "Finish drawn geometry"}
+                          className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
+                            draftPointCount < finishDraftMinPoints
+                              ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
+                              : "border-slate-900 bg-slate-950 text-white"
+                          }`}
+                        >
+                          Finish
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearDraftGeometry();
+                          setDrawMode("select");
+                          setActiveSnapPoint(null);
+                          setCadCommandStatus("Cancelled active drawing tool.");
+                        }}
+                        className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : null}
+                </section>
+              ) : null}
+              {previewMode === "2d" ? (
+                <section className="pointer-events-auto relative z-[230] flex min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="preview-object-manager">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
                   <select
                     aria-label="Object Manager object list"
@@ -6372,11 +6546,61 @@ export default function PreviewPanel({
                 </section>
               ) : null}
               {previewMode === "2d" ? (
-                <section className="pointer-events-auto hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
-                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Modify</span>
-                  <button
-                    type="button"
-                    data-testid="preview-toolbar-interaction-edit"
+	                <section className="pointer-events-auto hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
+	                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Modify</span>
+	                  <button
+	                    type="button"
+	                    data-testid="draw-site-boundary-toolbar-modify"
+	                    aria-pressed={drawMode === "site"}
+	                    title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
+	                    onClick={() => {
+	                      if (siteLocked) {
+	                        pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
+	                        return;
+	                      }
+	                      activateDrawTool("site");
+	                    }}
+	                    className={`inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-xs font-semibold ${
+	                      drawMode === "site"
+	                        ? "border-slate-900 bg-slate-950 text-white"
+	                        : siteLocked
+	                          ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+	                          : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+	                    }`}
+	                  >
+	                    Draw Site Boundary
+	                  </button>
+	                  {[
+	                    { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
+	                    { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
+	                    { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
+	                    { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
+	                  ].map((item) => {
+	                    const active = drawMode === item.mode;
+	                    const disabled = !canDrawObjects;
+	                    return (
+	                      <button
+	                        key={`canvas-visible-draw-${item.mode}`}
+	                        type="button"
+	                        aria-pressed={active}
+	                        title={disabled ? item.disabledLabel : item.label}
+	                        data-blocked={disabled ? "true" : undefined}
+	                        onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
+	                        className={`inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-xs font-semibold ${
+	                          active
+	                            ? "border-slate-900 bg-slate-950 text-white"
+	                            : disabled
+	                              ? "border-amber-200 bg-amber-50 text-amber-800"
+	                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+	                        }`}
+	                      >
+	                        {item.label}
+	                      </button>
+	                    );
+	                  })}
+	                  <button
+	                    type="button"
+	                    data-testid="preview-toolbar-interaction-edit"
                     aria-label="Use canvas edit tool"
                     onClick={() => onSetPreviewInteraction("edit")}
                     className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold ${
@@ -6409,13 +6633,14 @@ export default function PreviewPanel({
                     }}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:cursor-not-allowed disabled:bg-white disabled:text-slate-300"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                  {siteLocked && onUnlockSite ? (
-                    <button
-                      type="button"
-                      title="Unlock the site boundary for editing"
-                      aria-label="Change Site Boundary"
+	                    <Trash2 className="h-4 w-4" />
+	                  </button>
+	                  {siteLocked && onUnlockSite ? (
+	                    <button
+	                      type="button"
+	                      data-testid="change-site-boundary-toolbar-modify"
+	                      title="Unlock the site boundary for editing"
+	                      aria-label="Change Site Boundary"
                       onClick={() => {
                         onUnlockSite();
                         clearDraftGeometry();
@@ -6526,16 +6751,17 @@ export default function PreviewPanel({
                   Fallback bounds {sourceStateSummary.fallback}
                 </span>
               ) : null}
-              {draftPoints.length ? (
+              {drawMode !== "select" ? (
                 <>
-                  {drawMode !== "rect" ? (
+                  {drawMode !== "point" && drawMode !== "pan" ? (
                     <button
                       type="button"
                       onClick={finishDraftGeometry}
+                      disabled={draftPointCount < finishDraftMinPoints}
                       title={finishDraftBlockedReason ?? "Finish drawn geometry"}
                       className={`relative z-[90] inline-flex h-8 items-center rounded-md border px-3 text-xs ${
                         draftPointCount < finishDraftMinPoints
-                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
                           : "border-slate-900 bg-slate-950 text-white"
                       }`}
                     >
@@ -6562,20 +6788,6 @@ export default function PreviewPanel({
                     <X className="h-4 w-4" />
                   </button>
                 </>
-              ) : null}
-              {!draftPoints.length && drawMode !== "select" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearDraftGeometry();
-                    setDrawMode("select");
-                    setActiveSnapPoint(null);
-                    setCadCommandStatus("Cancelled active drawing tool.");
-                  }}
-                  className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-600 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
               ) : null}
               {exportBlockReason ? (
                 <span className="ml-auto text-amber-700">
@@ -6864,9 +7076,9 @@ export default function PreviewPanel({
                   More
                 </button>
                 <span className="min-w-12 text-right">{Math.round(canvasView.scale * 100)}%</span>
-                {draftPoints.length ? (
+                {drawMode !== "select" ? (
                   <>
-                    {drawMode !== "rect" ? (
+                    {drawMode !== "point" && drawMode !== "pan" ? (
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
@@ -7411,10 +7623,10 @@ export default function PreviewPanel({
               onDragOver={(event) => {
                 event.preventDefault();
               }}
-              onDrop={(event) => {
-                event.preventDefault();
-                const payload = event.dataTransfer?.getData("civora-object-id");
-                if (!payload) return;
+	              onDrop={(event) => {
+	                event.preventDefault();
+	                const payload = event.dataTransfer?.getData("civora-object-id");
+	                if (!payload) return;
                 const rect = previewRef.current?.getBoundingClientRect();
                 const bounds = overlayBoundsResolved ?? {
                   left: 0,
@@ -7430,10 +7642,10 @@ export default function PreviewPanel({
                   y: Math.min(
                     Math.max((event.clientY - (rect?.top ?? 0) - bounds.top) / Math.max(bounds.height, 1), 0),
                     1,
-                  ),
-                });
-              }}
-              onMouseMove={(event) => {
+	                  ),
+	                });
+	              }}
+		              onMouseMove={(event) => {
                 if (allowMapInteraction) return;
                 if (rotateDragStart && previewContainerBounds && onSetSiteRotationDeg) {
                   const deltaX = event.clientX - rotateDragStart.x;
@@ -7537,10 +7749,10 @@ export default function PreviewPanel({
                 event.stopPropagation();
                 finishDraftGeometry();
               }}
-              onWheel={(event) => {
-                if (!allowEdits || !overlayBoundsResolved || showMap) return;
-                event.preventDefault();
-                userAdjustedCanvasViewRef.current = true;
+	              onWheel={(event) => {
+	                if (!allowEdits || !overlayBoundsResolved || showMap) return;
+	                event.preventDefault();
+	                userAdjustedCanvasViewRef.current = true;
                 const nextScale = Math.min(
                   Math.max(canvasView.scale + (event.deltaY < 0 ? 0.12 : -0.12), 0.55),
                   4,
@@ -7559,10 +7771,127 @@ export default function PreviewPanel({
                     offsetX: localX - (localX - prev.offsetX) * ratio,
                     offsetY: localY - (localY - prev.offsetY) * ratio,
                   };
-                });
-              }}
-            >
-              <div className="absolute left-1/2 top-3 z-[85] flex max-w-[calc(100%-8rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
+	                });
+	              }}
+	            >
+	              {previewMode === "2d" ? (
+	                <div
+	                  data-testid="canvas-quick-draw-palette"
+	                  className="pointer-events-auto absolute left-4 top-14 z-[260] flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
+	                >
+	                  <button
+	                    type="button"
+	                    data-testid="draw-site-boundary-toolbar"
+	                    aria-pressed={drawMode === "site"}
+	                    title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
+	                    onClick={() => {
+	                      if (siteLocked) {
+	                        pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
+	                        return;
+	                      }
+	                      activateDrawTool("site");
+	                    }}
+	                    className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
+	                      drawMode === "site"
+	                        ? "border-slate-900 bg-slate-950 text-white"
+	                        : siteLocked
+	                          ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+	                          : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+	                    }`}
+	                  >
+	                    Draw Site
+	                  </button>
+	                  {siteLocked && onUnlockSite ? (
+	                    <button
+	                      type="button"
+	                      data-testid="change-site-boundary-toolbar"
+	                      aria-label="Change Site Boundary"
+	                      onClick={() => {
+	                        onUnlockSite();
+	                        clearDraftGeometry();
+	                        setDrawMode("select");
+	                        onSetPreviewInteraction("edit");
+	                      }}
+	                      className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+	                    >
+	                      Change Site
+	                    </button>
+	                  ) : null}
+	                  {!siteLocked && hasDrawableSiteSize && onLockSite ? (
+	                    <button
+	                      type="button"
+	                      data-testid="lock-site-boundary-toolbar"
+	                      aria-label="Lock Site Boundary"
+	                      onClick={() => {
+	                        clearDraftGeometry();
+	                        setDrawMode("select");
+	                        onLockSite();
+	                      }}
+	                      className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-950 bg-slate-950 px-2.5 text-[11px] font-semibold text-white hover:bg-slate-800"
+	                    >
+	                      Lock Site
+	                    </button>
+	                  ) : null}
+	                  {[
+	                    { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
+	                    { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
+	                    { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
+	                    { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
+	                  ].map((item) => {
+	                    const active = drawMode === item.mode;
+	                    const disabled = !canDrawObjects;
+	                    return (
+	                      <button
+	                        key={`canvas-quick-draw-${item.mode}`}
+	                        type="button"
+	                        aria-pressed={active}
+	                        title={disabled ? item.disabledLabel : item.label}
+	                        data-blocked={disabled ? "true" : undefined}
+	                        onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
+	                        className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
+	                          active
+	                            ? "border-slate-900 bg-slate-950 text-white"
+	                            : disabled
+	                              ? "border-amber-200 bg-amber-50 text-amber-800"
+	                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+	                        }`}
+	                      >
+	                        {item.label}
+	                      </button>
+	                    );
+	                  })}
+	                  {drawMode !== "select" && drawMode !== "point" && drawMode !== "pan" ? (
+	                    <button
+	                      type="button"
+	                      onClick={finishDraftGeometry}
+	                      disabled={draftPointCount < finishDraftMinPoints}
+	                      title={finishDraftBlockedReason ?? "Finish drawn geometry"}
+	                      className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
+	                        draftPointCount < finishDraftMinPoints
+	                          ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
+	                          : "border-slate-900 bg-slate-950 text-white"
+	                      }`}
+	                    >
+	                      Finish
+	                    </button>
+	                  ) : null}
+	                  {drawMode !== "select" ? (
+	                    <button
+	                      type="button"
+	                      onClick={() => {
+	                        clearDraftGeometry();
+	                        setDrawMode("select");
+	                        setActiveSnapPoint(null);
+	                        setCadCommandStatus("Cancelled active drawing tool.");
+	                      }}
+	                      className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+	                    >
+	                      Cancel
+	                    </button>
+	                  ) : null}
+	                </div>
+	              ) : null}
+	              <div className="absolute left-1/2 top-3 z-[85] flex max-w-[calc(100%-8rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
                 <button
                   type="button"
                   data-testid="preview-mode-2d"
@@ -7831,7 +8160,7 @@ export default function PreviewPanel({
                         <button
                           key={`mobile-${item.mode}`}
                           type="button"
-                          data-testid={compactViewport && item.mode === "site" ? "draw-site-boundary-toolbar" : undefined}
+                          data-testid={compactViewport && item.mode === "site" ? "draw-site-boundary-toolbar-mobile" : undefined}
                           title={disabled ? item.disabledLabel ?? item.label : item.label}
                           aria-label={item.mode === "site" ? "Site boundary drawing tool" : item.label}
                           data-blocked={disabled ? "true" : undefined}
@@ -7862,14 +8191,15 @@ export default function PreviewPanel({
                     })}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {draftPoints.length && drawMode !== "rect" ? (
+                    {drawMode !== "select" && drawMode !== "point" && drawMode !== "pan" ? (
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
+                        disabled={draftPointCount < finishDraftMinPoints}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
                         className={`relative z-[90] min-h-10 flex-1 rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
                           draftPointCount < finishDraftMinPoints
-                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
                             : "border-slate-900 bg-slate-950 text-white"
                         }`}
                       >

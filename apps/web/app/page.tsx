@@ -2710,7 +2710,7 @@ function PerformanceAIDashboardView({
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [mobileViewport, setMobileViewport] = useState(false);
   const [, setChatCollapsed] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>("site_existing");
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
   const [rightRailCollapsed, setRightRailCollapsed] = useState(true);
@@ -18001,10 +18001,10 @@ function PerformanceAIDashboardView({
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     trust: { title: "What Civora does", desc: "Clear product boundaries for planning, drafting, source context, review packages, and AI visualization." },
     dashboard: { title: "Recent changes", desc: "See what just happened. Details stay tucked away unless you open them." },
-    model: { title: "Canvas", desc: "View, pan, zoom, inspect, and switch between 2D/3D preview modes." },
+    model: { title: "Draw Canvas", desc: "Use the canvas, map, 2D/3D view, and visible drawing controls." },
     site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
-    objects: { title: "Draw & Objects", desc: "Draw, manage objects, and open CAD tools from one place." },
+    objects: { title: "Object Manager", desc: "Select, rename, recolor, hide, delete, and organize objects. CAD tools stay here when you need them." },
     generate: { title: "Generate Systems", desc: "Run focused engines from one control panel." },
     grading: { title: "Grading Controls", desc: "Control grading rules, terrain inputs, and slope limits." },
     drainage: { title: "Drainage Controls", desc: "Control drainage rules, sources, and repair behavior." },
@@ -18223,6 +18223,7 @@ function PerformanceAIDashboardView({
     setPreviewInteraction("edit");
     setWorkspaceChromeMinimized(true);
     setRightRailCollapsed(false);
+    setActiveSidePanel("objects");
     setCadToolRequest({ id: Date.now(), tool });
     setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
     measureCivoraInteractionAfterPaint("draw.canvas.tool.click", startedAt, { tool, label });
@@ -18410,8 +18411,8 @@ function PerformanceAIDashboardView({
 	    {
 	      key: "draw",
 	      label: "Draw",
-	      caption: "Draw and manage objects",
-	      panel: "objects",
+	      caption: "Canvas and drafting",
+	      panel: "model",
 	      icon: Box,
 	      status: siteScaleLocked ? panelStatus("objects") : "review",
 	      metric: `${placedObjects.length} objects`,
@@ -18419,7 +18420,7 @@ function PerformanceAIDashboardView({
 	    {
 	      key: "objects",
 	      label: "Object Manager",
-	      caption: "Objects and CAD tools",
+	      caption: "Objects, layers, tools",
 	      panel: "objects",
 	      icon: Layers,
 	      status: panelStatus("objects"),
@@ -18461,12 +18462,13 @@ function PerformanceAIDashboardView({
 	      { label: "Standards", panel: "standards", detail: panelStatus("standards") === "ok" ? "Review accepted sources" : "Add or accept standards", status: panelStatus("standards") },
 	    ],
 	    draw: [
-	      { label: "Draw", panel: "model", detail: "CAD draw, 2D/3D, AI visualization", status: panelStatus("model") },
+	      { label: "Draw Canvas", panel: "model", detail: "Canvas, 2D/3D, drawing controls", status: panelStatus("model") },
+	      { label: "Object Manager", panel: "objects", detail: "Objects, CAD tools, rename, hide, delete", status: panelStatus("objects") },
 	      { label: "Layers", panel: "layers", detail: "Visibility, source badges, overlays", status: panelStatus("layers") },
 	    ],
 	    objects: [
-	      { label: "Draw & Object Manager", panel: "objects", detail: "Draw, rename, recolor, select, move, delete", status: panelStatus("objects") },
-	      { label: "CAD Canvas Tools", panel: "model", detail: "Lines, areas, boxes, points, snaps, dimensions", status: panelStatus("model") },
+	      { label: "Object Manager", panel: "objects", detail: "Rename, recolor, select, move, delete", status: panelStatus("objects") },
+	      { label: "Draw Canvas", panel: "model", detail: "Lines, areas, boxes, points, snaps, dimensions", status: panelStatus("model") },
 	      { label: "Object Details", panel: "details", detail: activePlacementId ? "Selected object details" : "Select or draw an object", status: panelStatus("details") },
 	    ],
 	    design: [
@@ -26101,9 +26103,10 @@ function PerformanceAIDashboardView({
                 fitToSiteRequest={fitToSiteRequest}
                 mapCenterRequest={mapCenterRequest}
                 alignToRoadRequest={alignToRoadRequest}
-                onMapCenter={handleMapCenter}
-                siteLocked={siteScaleLocked}
-                stormHydrologyOverlay={{
+	                onMapCenter={handleMapCenter}
+	                siteLocked={siteScaleLocked}
+	                onLockSite={() => void handleApplySite()}
+	                stormHydrologyOverlay={{
                   inletChecks: stormHydrologyReview.inletChecks,
                   overflowPaths: stormHydrologyReview.overflowPaths,
                 }}

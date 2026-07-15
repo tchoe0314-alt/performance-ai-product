@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1", { waitUntil: "domcontentloaded" });
+  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
 }
@@ -12,7 +12,8 @@ async function openDrawPanel(page: Page) {
     await workspaceButton.click();
   }
   await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Draw & Object Manager|CAD Tools/);
+  await page.getByRole("button", { name: /Object Manager/i }).filter({ visible: true }).first().click();
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 
