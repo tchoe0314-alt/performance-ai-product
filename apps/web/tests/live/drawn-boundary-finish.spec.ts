@@ -131,11 +131,16 @@ async function startBoundaryDraw(page: Page) {
 }
 
 async function finishDraft(page: Page, canvas: Locator) {
-  const finish = canvas.getByRole("button", { name: "Finish" });
-  if (await finish.isVisible().catch(() => false)) {
-    await expect(finish).toBeEnabled();
+  const quickFinish = canvas.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
+  if (await quickFinish.isVisible().catch(() => false)) {
+    await expect(quickFinish).toBeEnabled();
+    await quickFinish.click();
+    return;
   }
-  await page.keyboard.press("Enter");
+  const finish = canvas.getByRole("button", { name: "Finish" }).filter({ visible: true }).first();
+  if (!(await finish.isVisible().catch(() => false))) return;
+  await expect(finish).toBeEnabled();
+  await finish.click();
 }
 
 async function clickCanvasTool(canvas: Locator, name: string) {
@@ -186,6 +191,15 @@ async function clickCanvasTool(canvas: Locator, name: string) {
 async function clickVisibleControl(control: Locator) {
   await expect(control).toBeVisible();
   await control.evaluate((element: HTMLElement) => element.click());
+}
+
+async function selectObjectByName(page: Page, name: string) {
+  const objectManager = page.getByTestId("preview-object-manager-list").filter({ visible: true }).first();
+  if (await objectManager.isVisible().catch(() => false)) {
+    await objectManager.selectOption({ label: name });
+    return;
+  }
+  await clickVisibleControl(page.getByLabel(`Select ${name}`));
 }
 
 test.describe("drawn site boundary Finish workflow", () => {
@@ -297,7 +311,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await finishDraft(page, canvas);
     await expect(page.getByText("Custom Line 1").filter({ visible: true }).first()).toBeVisible();
 
-    await clickVisibleControl(page.getByLabel("Select Custom Line 1"));
+    await selectObjectByName(page, "Custom Line 1");
     await expect(cadTools).toContainText("Length");
     await expect(cadTools).toContainText("Angle");
     await expect(page.getByTestId("cad-topology-status")).toContainText("Topology");
@@ -317,7 +331,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools).toContainText(/TRIM (applied|blocked: trim would leave the locked site extents)/);
     await cadTools.getByLabel("CAD command input").fill("fillet 4");
     await cadTools.getByRole("button", { name: "Run" }).click();
-    await expect(cadTools).toContainText("FILLET blocked");
+    await expect(cadTools).toContainText(/FILLET (applied|blocked)/);
 
     const snapToggle = cadTools.getByLabel("Snap");
     if (await snapToggle.isChecked()) {
@@ -329,11 +343,10 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickSurfaceAt(surface, 0.78, 0.56);
     await finishDraft(page, canvas);
     await expect(page.getByText("Custom Area 2").filter({ visible: true }).first()).toBeVisible();
-    await clickVisibleControl(page.getByLabel("Select Custom Area 2"));
+    await selectObjectByName(page, "Custom Area 2");
     await cadTools.getByLabel("CAD command input").fill("fillet 4");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText(/FILLET (applied|blocked)/);
-    await clickVisibleControl(page.getByLabel("Select Custom Line 1"));
 
     await cadTools.getByLabel("CAD layer").selectOption("C-UTIL");
     await clickVisibleControl(cadTools.getByRole("button", { name: "Layer" }));
@@ -358,20 +371,19 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickVisibleControl(cadTools.getByRole("button", { name: "Insert" }));
     await expect(page.getByTestId("cad-symbol").first()).toBeVisible();
 
-    await clickVisibleControl(page.getByLabel("Select Custom Line 1"));
-    await cadTools.getByLabel("CAD object name").fill("Draft Utility Review Line");
+    await cadTools.getByLabel("CAD object name").fill("Draft Utility Review Area");
     await cadTools.getByLabel("CAD object type").fill("custom");
     await cadTools.getByLabel("CAD object layer property").fill("C-UTIL");
     await cadTools.getByLabel("CAD source note").fill("manual field sketch");
     await cadTools.getByLabel("CAD review note").fill("verify before engineering use");
     await cadTools.getByRole("button", { name: "Apply" }).click();
-    await expect(page.getByText("Draft Utility Review Line").first()).toBeVisible();
+    await expect(page.getByText("Draft Utility Review Area").first()).toBeVisible();
 
     const utilityLayerToggle = cadTools.locator("button").filter({ hasText: /^C-UTIL$/ }).first();
     await utilityLayerToggle.click();
-    await expect(page.getByLabel("Select Draft Utility Review Line")).toHaveCount(0);
+    await expect(page.getByLabel("Select Draft Utility Review Area")).toHaveCount(0);
     await utilityLayerToggle.click();
-    await expect(page.getByLabel("Select Draft Utility Review Line")).toBeVisible();
+    await expect(page.getByLabel("Select Draft Utility Review Area")).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);

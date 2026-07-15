@@ -3428,13 +3428,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("FINISH", "blocked", "FINISH blocked: start Add Line, Add Area, Add Box, Add Point, or Draw Site Boundary first.");
       return;
     }
-    const effectivePoints =
-      draftPreviewPoint &&
-      !draftPoints.some(
-        (pt) => Math.abs(pt[0] - draftPreviewPoint[0]) < 0.001 && Math.abs(pt[1] - draftPreviewPoint[1]) < 0.001,
-      )
-        ? [...draftPoints, draftPreviewPoint]
-        : draftPoints;
+    const effectivePoints = draftPoints;
     const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
     if (effectivePoints.length < minPoints) {
       const message =
@@ -3494,10 +3488,9 @@ export default function PreviewPanel({
     clearDraftGeometry();
     setDrawMode("select");
   }, [
-    clearDraftGeometry,
-    draftPoints,
-    draftPreviewPoint,
-    drawMode,
+	    clearDraftGeometry,
+	    draftPoints,
+	    drawMode,
     onCreateCustomGeometry,
     onCreateSiteBoundary,
     pushCadCommandFeedback,
@@ -7775,10 +7768,14 @@ export default function PreviewPanel({
 	              }}
 	            >
 	              {previewMode === "2d" ? (
-	                <div
-	                  data-testid="canvas-quick-draw-palette"
-	                  className="pointer-events-auto absolute left-4 top-20 z-[260] flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
-	                >
+		                <div
+		                  data-testid="canvas-quick-draw-palette"
+		                  className="pointer-events-auto absolute left-[7rem] top-20 z-[260] flex max-w-[calc(100%-8rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
+		                  onMouseDown={(event) => event.stopPropagation()}
+		                  onPointerDown={(event) => event.stopPropagation()}
+		                  onTouchStart={(event) => event.stopPropagation()}
+		                  onClick={(event) => event.stopPropagation()}
+		                >
 	                  <button
 	                    type="button"
 	                    data-testid="draw-site-boundary-toolbar"
@@ -7860,12 +7857,13 @@ export default function PreviewPanel({
 	                      </button>
 	                    );
 	                  })}
-	                  {drawMode !== "select" && drawMode !== "point" && drawMode !== "pan" ? (
-	                    <button
-	                      type="button"
-	                      onClick={finishDraftGeometry}
-	                      disabled={draftPointCount < finishDraftMinPoints}
-	                      title={finishDraftBlockedReason ?? "Finish drawn geometry"}
+		                  {drawMode !== "select" && drawMode !== "point" && drawMode !== "pan" ? (
+		                    <button
+		                      type="button"
+		                      data-testid="canvas-quick-finish"
+		                      onClick={finishDraftGeometry}
+		                      disabled={draftPointCount < finishDraftMinPoints}
+		                      title={finishDraftBlockedReason ?? "Finish drawn geometry"}
 	                      className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
 	                        draftPointCount < finishDraftMinPoints
 	                          ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
@@ -7875,12 +7873,13 @@ export default function PreviewPanel({
 	                      Finish
 	                    </button>
 	                  ) : null}
-	                  {drawMode !== "select" ? (
-	                    <button
-	                      type="button"
-	                      onClick={() => {
-	                        clearDraftGeometry();
-	                        setDrawMode("select");
+		                  {drawMode !== "select" ? (
+		                    <button
+		                      type="button"
+		                      data-testid="canvas-quick-cancel"
+		                      onClick={() => {
+		                        clearDraftGeometry();
+		                        setDrawMode("select");
 	                        setActiveSnapPoint(null);
 	                        setCadCommandStatus("Cancelled active drawing tool.");
 	                      }}

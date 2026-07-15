@@ -103,9 +103,9 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.25, 0.35);
     await clickExposedSurface(surface, 0.7, 0.38);
     await clickExposedSurface(surface, 0.58, 0.72);
-    const finish = canvas.getByRole("button", { name: "Finish" }).filter({ visible: true }).first();
+    const finish = canvas.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
     await expect(finish).toBeEnabled();
-    await page.keyboard.press("Enter");
+    await finish.click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   });
 
