@@ -7777,7 +7777,7 @@ export default function PreviewPanel({
 	              {previewMode === "2d" ? (
 	                <div
 	                  data-testid="canvas-quick-draw-palette"
-	                  className="pointer-events-auto absolute left-4 top-14 z-[260] flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
+	                  className="pointer-events-auto absolute left-4 top-20 z-[260] flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
 	                >
 	                  <button
 	                    type="button"
