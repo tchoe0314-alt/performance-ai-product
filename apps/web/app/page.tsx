@@ -6367,40 +6367,57 @@ function PerformanceAIDashboardView({
         Math.min(Math.max(value, 24), Math.max(24, total - size - 24));
       const smartPlacement = (() => {
         const typeKey = type === "office_building" ? "building" : type;
+        const offset = Math.max(0, existingCount - 1);
         if (typeKey === "building") {
           return {
-            x: clampPlacement(lot.w * 0.18, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.16, defaults.d, lot.h),
+            x: clampPlacement(lot.w * 0.36 + offset * 18, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.16 + offset * 14, defaults.d, lot.h),
           };
         }
         if (typeKey === "parking") {
           return {
-            x: clampPlacement(lot.w * 0.16, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.38, defaults.d, lot.h),
+            x: clampPlacement(lot.w * 0.18 + offset * 18, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.52 + offset * 10, defaults.d, lot.h),
           };
         }
-        if (typeKey === "basin" || typeKey === "outfall") {
+        if (typeKey === "basin") {
           return {
-            x: clampPlacement(lot.w * 0.72, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.68, defaults.d, lot.h),
+            x: clampPlacement(lot.w * 0.66, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.50, defaults.d, lot.h),
+          };
+        }
+        if (typeKey === "outfall") {
+          return {
+            x: clampPlacement(lot.w * 0.86, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.62, defaults.d, lot.h),
+          };
+        }
+        if (typeKey === "inlet" || typeKey === "manhole" || typeKey === "hydrant") {
+          const defaultX =
+            typeKey === "inlet" ? 0.58 : typeKey === "manhole" ? 0.72 : 0.30 + Math.min(offset, 3) * 0.10;
+          return {
+            x: clampPlacement(lot.w * defaultX, defaults.w, lot.w),
+            y: clampPlacement(lot.h * (typeKey === "hydrant" ? 0.30 : 0.46), defaults.d, lot.h),
           };
         }
         if (typeKey === "driveway" || typeKey === "road" || typeKey === "entrance") {
           return {
-            x: clampPlacement(lot.w * 0.05, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.54, defaults.d, lot.h),
+            x: clampPlacement(lot.w * 0.04, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.42, defaults.d, lot.h),
           };
         }
         if (typeKey === "sidewalk") {
           return {
-            x: clampPlacement(lot.w * 0.14, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.62, defaults.d, lot.h),
+            x: clampPlacement(lot.w * 0.18, defaults.w, lot.w),
+            y: clampPlacement(lot.h * 0.40, defaults.d, lot.h),
           };
         }
         if (typeKey === "utility_corridor") {
+          const network = String(options?.meta?.network || "").toLowerCase();
+          const yFactor = network === "water" ? 0.28 : network === "sanitary" ? 0.78 : network === "storm" ? 0.58 : 0.68;
           return {
             x: clampPlacement(lot.w * 0.08, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.74, defaults.d, lot.h),
+            y: clampPlacement(lot.h * yFactor, defaults.d, lot.h),
           };
         }
         return {
@@ -6478,12 +6495,12 @@ function PerformanceAIDashboardView({
       }
       if (["road", "driveway", "sidewalk"].includes(type)) {
         nextPlacement.geometryType = "polyline";
-        const yFactor = type === "sidewalk" ? 0.62 : 0.54;
-        const endXFactor = type === "sidewalk" ? 0.64 : 0.5;
+        const yFactor = type === "sidewalk" ? 0.42 : 0.72;
+        const endXFactor = type === "sidewalk" ? 0.64 : 0.54;
         nextPlacement.geometry = [
           [lot.w * 0.04, lot.h * yFactor],
           [lot.w * 0.24, lot.h * yFactor],
-          [lot.w * endXFactor, lot.h * (type === "sidewalk" ? 0.52 : 0.46)],
+          [lot.w * endXFactor, lot.h * (type === "sidewalk" ? 0.42 : 0.54)],
         ];
         nextPlacement.capabilities = {
           movable: true,
@@ -6495,14 +6512,14 @@ function PerformanceAIDashboardView({
       if (options?.geometryType === "polyline") {
         nextPlacement.geometryType = "polyline";
         const network = String(options?.meta?.network || "").toLowerCase();
-        const yFactor = network === "water" ? 0.9 : network === "sanitary" ? 0.86 : network === "storm" ? 0.82 : 0.86;
-        const startX = network === "water" ? 0.08 : network === "sanitary" ? 0.14 : 0.2;
-        const endX = network === "water" ? 0.92 : network === "sanitary" ? 0.88 : 0.84;
+        const yFactor = network === "water" ? 0.28 : network === "sanitary" ? 0.78 : network === "storm" ? 0.58 : 0.68;
+        const startX = network === "water" ? 0.08 : network === "sanitary" ? 0.10 : 0.52;
+        const endX = network === "water" ? 0.88 : network === "sanitary" ? 0.86 : 0.86;
         const rightSideRun =
           network === "storm"
             ? ([
                 [lot.w * endX, lot.h * yFactor],
-                [lot.w * endX, lot.h * 0.68],
+                [lot.w * endX, lot.h * 0.62],
               ] as Array<[number, number]>)
             : [];
         nextPlacement.geometry = [
@@ -6528,10 +6545,10 @@ function PerformanceAIDashboardView({
       }
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
       markSystemsStale(systemsImpactedByPlacement(nextPlacement));
-      setActivePlacementId(nextPlacement.id);
-      setPlacementModeEnabled(true);
+      setActivePlacementId(autoPlaced ? null : nextPlacement.id);
+      setPlacementModeEnabled(!autoPlaced);
       setPreviewMode("2d");
-      setPreviewInteraction("edit");
+      setPreviewInteraction(autoPlaced ? "static" : "edit");
       setLastDraftAction({ action: "add", object: nextPlacement });
       recordRecentChange({
         type: "object_added",
@@ -8694,51 +8711,17 @@ function PerformanceAIDashboardView({
       if (!Number.isFinite(stalls) || stalls <= 0) return false;
       appendChatMessage("user", message);
       setParkingCount(String(Math.round(stalls)));
-      const catalog = SITE_OBJECT_CATALOG.parking;
-      const nextPlacement: BuildingPlacement = {
-        id: `parking-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      handleAddObject("parking", {
         label: `Parking Field - ${Math.round(stalls)} stalls`,
-        type: "parking",
-        w: catalog.defaultW,
-        d: catalog.defaultD,
-        rotation: 0,
-        stallCount: Math.round(stalls),
-        locked: false,
-        placed: false,
-        source: "user",
-        generated: false,
-        capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
-        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-        meta: {
-          category: catalog.category,
-          parkingParams: {
-            stallWidth: parsePositiveNumber(parkingStallWidth) ?? 9,
-            stallDepth: parsePositiveNumber(parkingStallDepth) ?? 18,
-            aisleWidth: parsePositiveNumber(parkingAisleWidth) ?? 24,
-            adaAisleWidth: parsePositiveNumber(parkingAdaAisleWidth) ?? 8,
-            adaCount: parsePositiveNumber(parkingAdaCount) ?? 0,
-            compactCount: parsePositiveNumber(parkingCompactCount) ?? 0,
-            compactWidth: parsePositiveNumber(parkingCompactWidth) ?? 8,
-            angleDeg: parsePositiveNumber(parkingAngle) ?? 90,
-            loading: parkingLoading,
-            autoResizeToFitCount: false,
-            useMixedAngles: false,
-            compactZone: true,
-          },
-        },
-      };
-      setBuildingPlacements((prev) => [...prev, nextPlacement]);
-      setLastDraftAction({ action: "add", object: nextPlacement });
-      setActivePlacementId(nextPlacement.id);
-      setPlacementModeEnabled(true);
-      setPreviewMode("2d");
-      setPreviewInteraction("edit");
+        placed: true,
+        meta: { command_created: true, requested_stalls: Math.round(stalls) },
+      });
       appendChatMessage(
         "assistant",
-        `Added a ${Math.round(stalls)} stall parking field to the placement tray. It is draft layout geometry and still needs placement/review.`,
+        `Added and placed a ${Math.round(stalls)} stall parking field as draft layout geometry. It still needs review.`,
         "status",
       );
-      setStatusMessage(`Added ${Math.round(stalls)} parking stalls as a pending object.`);
+      setStatusMessage(`Added and placed ${Math.round(stalls)} parking stalls as draft review geometry.`);
       return true;
     }
 
@@ -8751,40 +8734,23 @@ function PerformanceAIDashboardView({
       appendChatMessage("user", message);
       const depth = Math.round(Math.sqrt(areaSf / 1.8));
       const width = Math.round(areaSf / Math.max(depth, 1));
-      const catalog = SITE_OBJECT_CATALOG.office_building;
-      const nextPlacement: BuildingPlacement = {
-        id: `office_building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      handleAddObject("office_building", {
         label: `Office Building - ${Math.round(areaSf).toLocaleString()} sf`,
-        type: "office_building",
-        use: catalog.use,
-        w: width,
-        d: depth,
-        h: catalog.defaultH ?? 36,
-        rotation: 0,
-        locked: false,
-        placed: false,
-        source: "user",
-        generated: false,
-        capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
-        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+        placed: true,
+        width,
+        depth,
         meta: {
-          category: catalog.category,
+          command_created: true,
           requested_area_sf: Math.round(areaSf),
           sizing_method: "command_area_to_review_footprint",
         },
-      };
-      setBuildingPlacements((prev) => [...prev, nextPlacement]);
-      setLastDraftAction({ action: "add", object: nextPlacement });
-      setActivePlacementId(nextPlacement.id);
-      setPlacementModeEnabled(true);
-      setPreviewMode("2d");
-      setPreviewInteraction("edit");
+      });
       appendChatMessage(
         "assistant",
-        `Added a ${Math.round(areaSf).toLocaleString()} sf office building to the placement tray as a draft ${width} ft by ${depth} ft footprint.`,
+        `Added and placed a ${Math.round(areaSf).toLocaleString()} sf office building as a draft ${width} ft by ${depth} ft footprint.`,
         "status",
       );
-      setStatusMessage("Office building added as a pending draft object.");
+      setStatusMessage("Office building added and placed as draft review geometry.");
       return true;
     }
 
@@ -8860,26 +8826,23 @@ function PerformanceAIDashboardView({
       const depth = addObjectMatch[8] ? Number(addObjectMatch[8]) : null;
       appendChatMessage("user", message);
       const catalog = SITE_OBJECT_CATALOG[typeKey];
-      const nextPlacement: BuildingPlacement = {
-        id: `${typeKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      const nextLabel = formatObjectLabel(
+        typeKey,
+        buildingPlacements.filter((item) => item.type === typeKey).length + 1,
+      );
+      handleAddObject(typeKey, {
         label: formatObjectLabel(
           typeKey,
           buildingPlacements.filter((item) => item.type === typeKey).length + 1,
         ),
-        type: typeKey,
-        use: catalog?.use,
-        w: width && Number.isFinite(width) ? width : catalog?.defaultW ?? 40,
-        d: depth && Number.isFinite(depth) ? depth : catalog?.defaultD ?? 40,
-        rotation: 0,
-        locked: false,
-        placed: false,
-        meta: { category: catalog?.category },
-      };
-      setBuildingPlacements((prev) => [...prev, nextPlacement]);
-      setLastDraftAction({ action: "add", object: nextPlacement });
+        placed: true,
+        width: width && Number.isFinite(width) ? width : catalog?.defaultW,
+        depth: depth && Number.isFinite(depth) ? depth : catalog?.defaultD,
+        meta: { command_created: true },
+      });
       appendChatMessage(
         "assistant",
-        `Added ${nextPlacement.label} to the placement tray. Place it on the canvas when you're ready.`,
+        `Added and placed ${nextLabel} as draft review geometry.`,
         "status",
       );
       return true;
@@ -8894,21 +8857,15 @@ function PerformanceAIDashboardView({
       const width = addBasinMatch[4] ? Number(addBasinMatch[4]) : 80;
       const depth = addBasinMatch[8] ? Number(addBasinMatch[8]) : 60;
       appendChatMessage("user", message);
-      const nextPlacement: BuildingPlacement = {
-        id: `basin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        label: `Basin ${buildingPlacements.length + 1}`,
-        type: "basin",
-        w: Number.isFinite(width) ? width : 80,
-        d: Number.isFinite(depth) ? depth : 60,
-        rotation: 0,
-        locked: false,
-        placed: false,
-      };
-      setBuildingPlacements((prev) => [...prev, nextPlacement]);
-      setLastDraftAction({ action: "add", object: nextPlacement });
+      handleAddObject("basin", {
+        width: Number.isFinite(width) ? width : 80,
+        depth: Number.isFinite(depth) ? depth : 60,
+        placed: true,
+        meta: { command_created: true },
+      });
       appendChatMessage(
         "assistant",
-        `Added a basin object to the placement tray. You can place it manually or auto-place it.`,
+        "Added and placed a basin object as draft review geometry.",
         "status",
       );
       return true;
@@ -10136,6 +10093,7 @@ function PerformanceAIDashboardView({
   const tryHandleSiteProgramCommand = (message: string): boolean => {
     const lower = message.toLowerCase();
     if (!/\b(add|create|place|make|include|put)\b/.test(lower)) return false;
+    const lot = resolveLotBounds();
     const requested: Array<() => void> = [];
     const labels: string[] = [];
     const officeArea = lower.match(/(\d{3,8})\s*(?:sf|sq\s*ft|square\s*feet)\s+(?:office\s+)?building/);
@@ -10155,11 +10113,15 @@ function PerformanceAIDashboardView({
     const parking = lower.match(/(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls)/);
     if (parking || /\bparking\b/.test(lower)) {
       const stalls = parking ? Number(parking[1]) : parsePositiveNumber(parkingCount) ?? 140;
+      const fieldWidth = Math.max(260, Math.min((lot.w || 1000) * 0.48, Math.ceil(stalls / 2) * 9 + 36));
+      const fieldDepth = Math.max(132, Math.min((lot.h || 1000) * 0.24, 18 * 2 + 24 + Math.ceil(stalls / 70) * 54));
       requested.push(() => {
         setParkingCount(String(Math.round(stalls)));
         handleAddObject("parking", {
           label: `Parking Field - ${Math.round(stalls)} stalls`,
           placed: true,
+          width: fieldWidth,
+          depth: fieldDepth,
           meta: { command_created: true, requested_stalls: Math.round(stalls) },
         });
       });
@@ -10173,7 +10135,7 @@ function PerformanceAIDashboardView({
       requested.push(() => handleAddObject("driveway", { placed: true, meta: { command_created: true } }));
       labels.push("driveway/access");
     }
-    if (/\b(sidewalk|ada route|ada routes|path|paths)\b/.test(lower)) {
+    if (/\b(sidewalk|sidewalks|ada route|ada routes|path|paths)\b/.test(lower)) {
       requested.push(() => handleAddObject("sidewalk", { label: "Sidewalk / ADA Route", placed: true, meta: { command_created: true, routeKind: "ada_review_route" } }));
       labels.push("sidewalk / ADA route");
     }
@@ -10188,6 +10150,14 @@ function PerformanceAIDashboardView({
     if (/\bstorm\b/.test(lower)) {
       requested.push(() => handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", placed: true, meta: { network: "storm", command_created: true } }));
       labels.push("storm sewer");
+    }
+    if (/\boutfall\b/.test(lower)) {
+      requested.push(() => handleAddObject("outfall", { placed: true, meta: { command_created: true, role: "storm_outfall_review_point" } }));
+      labels.push("outfall");
+    }
+    if (/\binlet\b/.test(lower)) {
+      requested.push(() => handleAddObject("inlet", { placed: true, meta: { command_created: true, role: "storm_inlet_review_point" } }));
+      labels.push("inlet");
     }
     if (requested.length < 2) return false;
     appendChatMessage("user", message);
@@ -10309,20 +10279,20 @@ function PerformanceAIDashboardView({
     }
     if (/^add water line$/.test(normalized)) {
       appendChatMessage("user", message);
-      handleAddObject("utility_corridor", { label: "Water Line", geometryType: "polyline", meta: { network: "water", command_created: true } });
-      appendChatMessage("assistant", "Added a pending water-line utility corridor. Place/review it in Object Manager before generating utilities.", "status");
+      handleAddObject("utility_corridor", { label: "Water Line", geometryType: "polyline", placed: true, meta: { network: "water", command_created: true } });
+      appendChatMessage("assistant", "Added and placed a water-line utility corridor as draft review geometry.", "status");
       return true;
     }
     if (/^add sanitary line$/.test(normalized)) {
       appendChatMessage("user", message);
-      handleAddObject("utility_corridor", { label: "Sanitary Line", geometryType: "polyline", meta: { network: "sanitary", command_created: true } });
-      appendChatMessage("assistant", "Added a pending sanitary-line utility corridor. Place/review it in Object Manager before generating utilities.", "status");
+      handleAddObject("utility_corridor", { label: "Sanitary Line", geometryType: "polyline", placed: true, meta: { network: "sanitary", command_created: true } });
+      appendChatMessage("assistant", "Added and placed a sanitary-line utility corridor as draft review geometry.", "status");
       return true;
     }
     if (/^add storm sewer$/.test(normalized)) {
       appendChatMessage("user", message);
-      handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", meta: { network: "storm", command_created: true } });
-      appendChatMessage("assistant", "Added a pending storm-sewer utility corridor. Place/review it in Object Manager before generating drainage/utilities.", "status");
+      handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", placed: true, meta: { network: "storm", command_created: true } });
+      appendChatMessage("assistant", "Added and placed a storm-sewer utility corridor as draft review geometry.", "status");
       return true;
     }
     if (/^hide utilities$/.test(normalized)) {
