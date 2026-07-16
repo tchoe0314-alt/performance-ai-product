@@ -762,7 +762,7 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadActiveCommand, setCadActiveCommand] = useState<
     | {
@@ -2733,6 +2733,46 @@ export default function PreviewPanel({
     },
     [createCadCommandGeometry, pushCadCommandFeedback, selectedCadObject],
   );
+  const arraySelectedCadObject = useCallback(
+    (rowCount: number, columnCount: number, spacing: [number, number]) => {
+      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
+        pushCadCommandFeedback("ARRAY", "blocked", "ARRAY blocked: select one editable draft CAD object with geometry first.");
+        return;
+      }
+      const rows = Math.max(1, Math.min(20, Math.floor(rowCount || 1)));
+      const columns = Math.max(1, Math.min(20, Math.floor(columnCount || 1)));
+      if (rows * columns <= 1) {
+        pushCadCommandFeedback("ARRAY", "blocked", "ARRAY blocked: use at least 2 total copies, like ARRAY 2 3 20,15.");
+        return;
+      }
+      const [dx, dy] = spacing;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001)) {
+        pushCadCommandFeedback("ARRAY", "blocked", "ARRAY blocked: provide a non-zero spacing vector like ARRAY 2 3 20,15.");
+        return;
+      }
+      const sourceGeometry = selectedCadObject.geometry as Array<[number, number]>;
+      let created = 0;
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          if (row === 0 && column === 0) continue;
+          const copiedGeometry = translateSiteGeometry(sourceGeometry, { x: dx * column, y: dy * row }) ?? sourceGeometry;
+          const ok = createCadCommandGeometry("ARRAY", selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? "polygon" : "polyline", copiedGeometry, {
+            label: `${selectedCadObject.label || "CAD object"} Array ${row + 1}-${column + 1}`,
+            meta: {
+              array_source_object_id: selectedCadObject.id,
+              array_rows: rows,
+              array_columns: columns,
+              array_spacing: [dx, dy],
+            },
+            minPoints: selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? 3 : 2,
+          });
+          if (ok) created += 1;
+        }
+      }
+      pushCadCommandFeedback("ARRAY", created ? "applied" : "blocked", created ? `ARRAY created ${created} draft review cop${created === 1 ? "y" : "ies"} from ${selectedCadObject.label || "selected object"}.` : "ARRAY blocked: no copies could be created.");
+    },
+    [createCadCommandGeometry, pushCadCommandFeedback, selectedCadObject],
+  );
   const applyCadCoordinate = useCallback(() => {
     const x = parseCadNumber(cadCoordinateDraft.x, NaN);
     const y = parseCadNumber(cadCoordinateDraft.y, NaN);
@@ -3106,6 +3146,7 @@ export default function PreviewPanel({
       B: "BOX",
       C: "CIRCLE",
       A: "ARC",
+      AR: "ARRAY",
       M: "MOVE",
       RO: "ROTATE",
       SC: "SCALE",
@@ -3130,6 +3171,7 @@ export default function PreviewPanel({
       "BOX",
       "CIRCLE",
       "ARC",
+      "ARRAY",
       "MOVE",
       "ROTATE",
       "SCALE",
@@ -3443,6 +3485,17 @@ export default function PreviewPanel({
       });
       return;
     }
+    if (commandKey === "ARRAY") {
+      const rows = parseCadNumber(args[0] ?? "", 0);
+      const columns = parseCadNumber(args[1] ?? "", 0);
+      const spacing = parseCadPointToken(args[2] ?? "") ?? [20, 20];
+      if (!Number.isFinite(rows) || !Number.isFinite(columns) || rows < 1 || columns < 1) {
+        pushCadCommandFeedback("ARRAY", "blocked", "ARRAY blocked: use ARRAY rows columns dx,dy, for example ARRAY 2 3 20,15.");
+        return;
+      }
+      arraySelectedCadObject(rows, columns, spacing);
+      return;
+    }
     if (commandKey === "MOVE") {
       const vector = pointArgs[0];
       if (!args.length) {
@@ -3574,9 +3627,10 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
     applySelectedCadDimension,
+    arraySelectedCadObject,
     buildingPlacements,
     cadActiveCommand,
     cadCommandDraft,
