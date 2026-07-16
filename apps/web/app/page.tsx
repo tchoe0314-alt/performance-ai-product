@@ -7326,6 +7326,61 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
 
+  const handleObjectManagerBulkDelete = useCallback(() => {
+    clearGeneratedPreview();
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Bulk delete blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "delete"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Bulk delete blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    const editableIds = new Set(editable.map((item) => item.id));
+    setBuildingPlacements((prev) => prev.filter((item) => !editableIds.has(item.id)));
+    setSelectedObjectIds((prev) => prev.filter((id) => !editableIds.has(id)));
+    setActivePlacementId((prev) => (prev && editableIds.has(prev) ? null : prev));
+    editable.forEach((item) => {
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const firstDeleted = editable[0];
+    if (firstDeleted) {
+      setLastDraftAction({ action: "delete", object: firstDeleted });
+    }
+    recordRecentChange({
+      type: "object_deleted",
+      label: "Objects deleted",
+      detail: `Deleted ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
+      undo: firstDeleted ? { action: "delete", object: firstDeleted } : undefined,
+    });
+    const message = `Deleted ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after bulk delete...",
+          track: true,
+        };
+      });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    clearGeneratedPreview,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    saveProjectRef,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
   const handleObjectManagerLayerVisibility = useCallback((layerType: SiteObjectType, hidden: boolean) => {
     const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
     if (!targets.length) {
@@ -25229,11 +25284,11 @@ function PerformanceAIDashboardView({
                           </div>
                         ) : null}
                       </div>
-                      {selectedObjectIds.length > 1 ? (
+                      {selectedObjectIds.length > 0 ? (
                         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="object-manager-multi-select">
                           <div className="flex items-center justify-between gap-3">
                             <p className="text-xs font-semibold text-slate-700">
-                              {selectedObjectRows.length} objects selected
+                              {selectedObjectRows.length} object{selectedObjectRows.length === 1 ? "" : "s"} selected
                             </p>
                             <button
                               type="button"
@@ -25289,6 +25344,14 @@ function PerformanceAIDashboardView({
                                   </option>
                                 ))}
                             </select>
+                            <button
+                              type="button"
+                              onClick={handleObjectManagerBulkDelete}
+                              data-testid="object-manager-bulk-delete"
+                              className="col-span-2 rounded-lg border border-rose-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50"
+                            >
+                              Delete selected
+                            </button>
                           </div>
                           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-combine-selected">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
