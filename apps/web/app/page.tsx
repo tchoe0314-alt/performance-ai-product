@@ -7326,6 +7326,60 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
 
+  const handleObjectManagerLayerVisibility = useCallback((layerType: SiteObjectType, hidden: boolean) => {
+    const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+    if (!targets.length) {
+      reportObjectActionBlocker("Layer visibility blocked: no objects exist on that layer.");
+      return;
+    }
+    targets.forEach((item) => {
+      handleUpdateBuilding(item.id, {
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: hidden,
+        },
+      });
+    });
+    const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+    const message = `${hidden ? "Hidden" : "Shown"} ${targets.length} ${label} layer object${targets.length === 1 ? "" : "s"}.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+    recordRecentChange({
+      type: "object_visibility_changed",
+      label: `${label} layer ${hidden ? "hidden" : "shown"}`,
+      detail: message,
+      undoBlockedReason: "Use Object Manager layer controls to change visibility again.",
+    });
+  }, [appendChatMessage, buildingPlacements, handleUpdateBuilding, recordRecentChange, reportObjectActionBlocker]);
+
+  const handleObjectManagerLayerLock = useCallback((layerType: SiteObjectType, locked: boolean) => {
+    const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+    if (!targets.length) {
+      reportObjectActionBlocker("Layer lock blocked: no editable objects exist on that layer.");
+      return;
+    }
+    const editable = targets.filter((item) => !item.meta?.ai_realism_artifact && item.capabilities?.deletable !== false);
+    if (!editable.length) {
+      reportObjectActionBlocker("Layer lock blocked: this layer only contains source-only or required evidence objects.");
+      return;
+    }
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, { locked });
+    });
+    const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+    const message = `${locked ? "Locked" : "Unlocked"} ${editable.length} ${label} layer object${editable.length === 1 ? "" : "s"}${editable.length === targets.length ? "." : `; ${targets.length - editable.length} source-only object${targets.length - editable.length === 1 ? "" : "s"} unchanged.`}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: `${label} layer ${locked ? "locked" : "unlocked"}`,
+      detail: message,
+      undoBlockedReason: "Use Object Manager layer controls to change lock state again.",
+    });
+  }, [appendChatMessage, buildingPlacements, handleUpdateBuilding, recordRecentChange, reportObjectActionBlocker]);
+
   const handleObjectManagerCombineSelected = useCallback(() => {
     clearGeneratedPreview();
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
@@ -18379,6 +18433,33 @@ function PerformanceAIDashboardView({
     () => Array.from(new Set(buildingPlacements.map((item) => getObjectDisplayType(item)))).sort(),
     [buildingPlacements],
   );
+  const objectManagerLayerRows = useMemo(
+    () =>
+      Object.entries(
+        buildingPlacements
+          .filter((item) => item.type && item.type !== "site")
+          .reduce<Record<string, BuildingPlacement[]>>((acc, item) => {
+            const key = item.type ?? "custom";
+            acc[key] = [...(acc[key] ?? []), item];
+            return acc;
+          }, {}),
+      )
+        .map(([type, objects]) => {
+          const hiddenCount = objects.filter((item) => Boolean(item.meta?.ui_hidden)).length;
+          const lockedCount = objects.filter((item) => Boolean(item.locked)).length;
+          return {
+            type: type as SiteObjectType,
+            label: SITE_OBJECT_CATALOG[type as SiteObjectType]?.label ?? toReadableLabel(type),
+            count: objects.length,
+            hiddenCount,
+            lockedCount,
+            allHidden: hiddenCount === objects.length,
+            allLocked: lockedCount === objects.length,
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [buildingPlacements],
+  );
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     trust: { title: "What Civora does", desc: "Clear product boundaries for planning, drafting, source context, review packages, and AI visualization." },
@@ -24970,6 +25051,59 @@ function PerformanceAIDashboardView({
                             </button>
                           ) : null}
                         </div>
+                      {objectManagerLayerRows.length ? (
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-layer-controls">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                Layers
+                              </p>
+                              <p className="mt-1 text-xs font-medium text-slate-500">
+                                Hide/show or lock entire object layers.
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              {objectManagerLayerRows.length}
+                            </span>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {objectManagerLayerRows.map((layer) => (
+                              <div
+                                key={`object-layer-${layer.type}`}
+                                data-testid="object-manager-layer-row"
+                                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs font-semibold text-slate-900">{layer.label}</p>
+                                    <p className="mt-1 text-[11px] font-medium text-slate-500">
+                                      {layer.count} object{layer.count === 1 ? "" : "s"} · {layer.hiddenCount} hidden · {layer.lockedCount} locked
+                                    </p>
+                                  </div>
+                                  <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerLayerVisibility(layer.type, !layer.allHidden)}
+                                      data-testid="object-manager-layer-visibility"
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                                    >
+                                      {layer.allHidden ? "Show" : "Hide"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerLayerLock(layer.type, !layer.allLocked)}
+                                      data-testid="object-manager-layer-lock"
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                                    >
+                                      {layer.allLocked ? "Unlock" : "Lock"}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       {objectManagerStatusMessage ? (
                         <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="object-manager-status">
                           {objectManagerStatusMessage}

@@ -241,6 +241,21 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
     const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    const officeLayerRow = page.getByTestId("object-manager-layer-row").filter({ hasText: "Office Building" }).first();
+    await expect(officeLayerRow).toContainText("1 object");
+    await officeLayerRow.getByTestId("object-manager-layer-visibility").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("1 hidden object");
+    await expect(officeLayerRow).toContainText("1 hidden");
+    await officeLayerRow.getByTestId("object-manager-layer-visibility").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await officeLayerRow.getByTestId("object-manager-layer-lock").click();
+    await expect(officeLayerRow).toContainText("1 locked");
+    await expect(officeRow).toContainText(/locked/i);
+    await officeRow.getByTestId("object-manager-color").fill("#111827");
+    await expect(page.getByTestId("object-manager-status")).toContainText("style blocked: unlock Office Building - 28,000 sf before editing metadata.");
+    await officeLayerRow.getByTestId("object-manager-layer-lock").click();
+    await expect(officeLayerRow).toContainText("0 locked");
+
     await officeRow.getByTestId("object-manager-bulk-select").check();
     await parkingRow.getByTestId("object-manager-bulk-select").check();
     await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
