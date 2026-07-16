@@ -356,4 +356,28 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Bulk delete blocked: selected objects are locked, source-only, or required project evidence.");
     await expect(siteRow).toBeVisible();
   });
+
+  test("bulk duplicate copies selected draft objects and blocks protected objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-bulk-duplicate").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Duplicated 2 selected draft objects.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Copy" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Copy" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
+    await siteRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-bulk-duplicate").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk duplicate blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Site Copy" })).toHaveCount(0);
+  });
 });

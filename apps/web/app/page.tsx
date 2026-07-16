@@ -7381,6 +7381,101 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
+  const handleObjectManagerBulkDuplicate = useCallback(() => {
+    clearGeneratedPreview();
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Bulk duplicate blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => {
+      if (getObjectEditBlocker(item, "copy")) return false;
+      if (item.capabilities?.deletable === false) return false;
+      if (item.generated) return false;
+      if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
+      return true;
+    });
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Bulk duplicate blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    const offset = 28;
+    const stamp = Date.now();
+    const duplicates = editable.map((item, index): BuildingPlacement => {
+      const nextType = item.type ?? "custom";
+      const nextId = `${nextType}-duplicate-${stamp}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        ...item,
+        id: nextId,
+        label: `${item.label} Copy`,
+        x: (item.x ?? 0) + offset,
+        y: (item.y ?? 0) + offset,
+        source: "manual_drawn",
+        generated: false,
+        locked: false,
+        placed: true,
+        geometry: item.geometry?.map(([x, y]) => [x + offset, y + offset]),
+        capabilities: {
+          movable: true,
+          resizable: item.capabilities?.resizable ?? true,
+          rotatable: item.capabilities?.rotatable ?? true,
+          deletable: true,
+        },
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: false,
+          source: "manual_drawn_copy",
+          copied_from_object_id: item.id,
+          copied_from_label: item.label,
+          review_status: "engineer_review_required",
+          engineering_status: "draft_review_required",
+          handoff_status: "draft_review_required",
+          construction_release_allowed: false,
+        },
+      };
+    });
+    setBuildingPlacements((prev) => [...prev, ...duplicates]);
+    setSelectedObjectIds(duplicates.map((item) => item.id));
+    setActivePlacementId(duplicates[0]?.id ?? null);
+    duplicates.forEach((item) => {
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const firstDuplicate = duplicates[0];
+    if (firstDuplicate) {
+      setLastDraftAction({ action: "add", object: firstDuplicate });
+    }
+    recordRecentChange({
+      type: "object_added",
+      label: "Objects duplicated",
+      detail: `Duplicated ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
+      undo: firstDuplicate ? { action: "add", object: firstDuplicate } : undefined,
+    });
+    const message = `Duplicated ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Duplicates remain draft review geometry, not construction-release evidence.`, "status");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after bulk duplicate...",
+          track: true,
+        };
+      });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    clearGeneratedPreview,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    saveProjectRef,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
   const handleObjectManagerLayerVisibility = useCallback((layerType: SiteObjectType, hidden: boolean) => {
     const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
     if (!targets.length) {
@@ -25344,6 +25439,14 @@ function PerformanceAIDashboardView({
                                   </option>
                                 ))}
                             </select>
+                            <button
+                              type="button"
+                              onClick={handleObjectManagerBulkDuplicate}
+                              data-testid="object-manager-bulk-duplicate"
+                              className="col-span-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Duplicate selected
+                            </button>
                             <button
                               type="button"
                               onClick={handleObjectManagerBulkDelete}
