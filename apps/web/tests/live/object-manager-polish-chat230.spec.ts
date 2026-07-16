@@ -273,6 +273,13 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.getByTestId("object-manager-bulk-show").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
 
+    await page.getByTestId("object-manager-isolate-selected").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Isolated 2 selected objects; 1 other object hidden.");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("1 hidden object");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Water Line" }).first()).toContainText("Hidden");
+    await page.getByTestId("object-manager-show-all").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+
     await page.getByTestId("object-manager-bulk-type").selectOption("driveway");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Driveway");
 

@@ -7303,6 +7303,48 @@ function PerformanceAIDashboardView({
     appendChatMessage("assistant", message, "status");
   }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
 
+  const handleObjectManagerIsolateSelected = useCallback(() => {
+    const selected = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    const editableSelected = selected.filter((item) => !getObjectEditBlocker(item, "hide"));
+    if (!editableSelected.length) {
+      reportObjectActionBlocker("Isolate selected blocked: select one or more visible editable objects first.");
+      return;
+    }
+    const selectedIdSet = new Set(editableSelected.map((item) => item.id));
+    let hiddenCount = 0;
+    let shownCount = 0;
+    buildingPlacements.forEach((item) => {
+      const blocker = getObjectEditBlocker(item, "hide");
+      if (blocker) return;
+      const shouldHide = !selectedIdSet.has(item.id);
+      if (shouldHide && !item.meta?.ui_hidden) hiddenCount += 1;
+      if (!shouldHide && item.meta?.ui_hidden) shownCount += 1;
+      handleUpdateBuilding(item.id, {
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: shouldHide,
+        },
+      });
+    });
+    const message = `Isolated ${editableSelected.length} selected object${editableSelected.length === 1 ? "" : "s"}; ${hiddenCount} other object${hiddenCount === 1 ? "" : "s"} hidden${shownCount ? `, ${shownCount} restored.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+    recordRecentChange({
+      type: "object_visibility_changed",
+      label: "Objects isolated",
+      detail: message,
+      undoBlockedReason: "Use Show all hidden to restore the rest of the draft objects.",
+    });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
+
   const handleObjectManagerBulkLock = useCallback((locked: boolean) => {
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
     if (!targets.length) {
@@ -26034,6 +26076,14 @@ function PerformanceAIDashboardView({
                               className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
                             >
                               Show selected
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleObjectManagerIsolateSelected}
+                              data-testid="object-manager-isolate-selected"
+                              className="col-span-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Isolate selected
                             </button>
                             <button
                               type="button"
