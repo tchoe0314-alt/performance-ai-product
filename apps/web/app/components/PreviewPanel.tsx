@@ -762,7 +762,7 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, DIST, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadActiveCommand, setCadActiveCommand] = useState<
     | {
@@ -3158,6 +3158,7 @@ export default function PreviewPanel({
       MI: "MIRROR",
       E: "ERASE",
       D: "DIM",
+      DI: "DIST",
       T: "TEXT",
       LA: "LAYER",
       SEL: "SELECT",
@@ -3172,6 +3173,8 @@ export default function PreviewPanel({
       "CIRCLE",
       "ARC",
       "ARRAY",
+      "DIST",
+      "MEASURE",
       "MOVE",
       "ROTATE",
       "SCALE",
@@ -3496,6 +3499,25 @@ export default function PreviewPanel({
       arraySelectedCadObject(rows, columns, spacing);
       return;
     }
+    if (commandKey === "DIST" || commandKey === "MEASURE") {
+      if (pointArgs.length >= 2) {
+        const [a, b] = pointArgs;
+        const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const angle = ((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI + 360) % 360;
+        pushCadCommandFeedback("DIST", "info", `DIST ${length.toFixed(2)} ft at ${angle.toFixed(1)} deg between typed points.`);
+        return;
+      }
+      if (!selectedCadMetrics || !selectedCadObject) {
+        pushCadCommandFeedback("DIST", "blocked", "DIST blocked: select a draft line/polyline/area or use DIST x1,y1 x2,y2.");
+        return;
+      }
+      pushCadCommandFeedback(
+        "DIST",
+        "info",
+        `DIST selected ${selectedCadObject.label || "object"}: ${selectedCadMetrics.totalLength.toFixed(2)} ft total, ${selectedCadMetrics.segmentCount} segment${selectedCadMetrics.segmentCount === 1 ? "" : "s"}, first angle ${selectedCadMetrics.firstAngle.toFixed(1)} deg.`,
+      );
+      return;
+    }
     if (commandKey === "MOVE") {
       const vector = pointArgs[0];
       if (!args.length) {
@@ -3627,7 +3649,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
     applySelectedCadDimension,
     arraySelectedCadObject,
@@ -3651,6 +3673,7 @@ export default function PreviewPanel({
     parseCadPointTokens,
     pushCadCommandFeedback,
     selectedCadIds,
+    selectedCadMetrics,
     selectedCadObject,
     selectedDeletableObject,
     transformSelectedCadObjects,

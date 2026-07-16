@@ -396,6 +396,12 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("CAD command input").fill("ARRAY 2 3 12,8");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText("ARRAY created 5 draft review copies");
+    await cadTools.getByLabel("CAD command input").fill("DIST 0,0 100,0");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("DIST 100.00 ft");
+    await cadTools.getByLabel("CAD command input").fill("MEASURE");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText(/DIST selected .* ft total/);
     await cadTools.getByLabel("CAD command input").fill("MI H");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText("MIRROR H applied");
