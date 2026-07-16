@@ -91,7 +91,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(renamedRow.getByTestId("object-manager-visibility")).toContainText("Show");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("hidden object");
     await page.getByTestId("object-manager-show-all").click();
-    await expect(page.getByTestId("object-manager-hidden-state")).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
 
     await renamedRow.getByTestId("object-manager-copy").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Copied HQ Office Test");
@@ -122,7 +122,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.getByTestId("object-manager-bulk-hide").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
     await page.getByTestId("object-manager-bulk-show").click();
-    await expect(page.getByTestId("object-manager-hidden-state")).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
 
     await page.getByTestId("object-manager-bulk-type").selectOption("driveway");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Driveway");
@@ -157,6 +157,13 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
       "Combined 2 drawn objects into Combined Site Program",
     );
     await expect(page.getByTestId("floating-object-inspector")).toContainText("Combined Site Program");
+    await combinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program back into 2 preserved source pieces",
+    );
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first()).toBeVisible();
   });
 
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {

@@ -7442,7 +7442,7 @@ function PerformanceAIDashboardView({
           reason: "Refreshing preview after combining drawn objects...",
           track: true,
         };
-      });
+    });
   }, [
     appendChatMessage,
     buildingPlacements,
@@ -7455,6 +7455,72 @@ function PerformanceAIDashboardView({
     reportObjectActionBlocker,
     saveProjectRef,
     selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerExplodeCombined = useCallback((item: BuildingPlacement) => {
+    clearGeneratedPreview();
+    const sourceIds = Array.isArray(item.meta?.combined_from_object_ids)
+      ? item.meta.combined_from_object_ids.map((id) => String(id)).filter(Boolean)
+      : [];
+    if (!sourceIds.length) {
+      reportObjectActionBlocker("Explode blocked: select a combined object with preserved source pieces first.");
+      return;
+    }
+    const restoredSources = buildingPlacements.filter((candidate) => sourceIds.includes(candidate.id));
+    if (!restoredSources.length) {
+      reportObjectActionBlocker("Explode blocked: the original source pieces are missing from this workspace.");
+      return;
+    }
+    setBuildingPlacements((prev) =>
+      prev
+        .filter((candidate) => candidate.id !== item.id)
+        .map((candidate) =>
+          sourceIds.includes(candidate.id)
+            ? {
+                ...candidate,
+                meta: {
+                  ...(candidate.meta ?? {}),
+                  ui_hidden: false,
+                  exploded_from_object_id: item.id,
+                  exploded_from_label: item.label,
+                },
+              }
+            : candidate,
+        ),
+    );
+    const restoredIds = restoredSources.map((source) => source.id);
+    setSelectedObjectIds(restoredIds);
+    setActivePlacementId(restoredIds[0] ?? null);
+    markSystemsStale(systemsImpactedByPlacement(item));
+    setLastDraftAction(null);
+    recordRecentChange({
+      type: "object_deleted",
+      label: "Combined object exploded",
+      detail: `${item.label} was exploded back into ${restoredIds.length} preserved source piece${restoredIds.length === 1 ? "" : "s"}.`,
+      undoBlockedReason: "Recombine the restored source pieces if you need one draft object again.",
+    });
+    const message = `Exploded ${item.label} back into ${restoredIds.length} preserved source piece${restoredIds.length === 1 ? "" : "s"}.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Restored pieces remain draft review geometry and still need qualified review.`, "status");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after exploding combined object...",
+          track: true,
+        };
+      });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    clearGeneratedPreview,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    saveProjectRef,
     systemsImpactedByPlacement,
   ]);
 
@@ -24729,39 +24795,39 @@ function PerformanceAIDashboardView({
                           Copy, paste, rotate, and flip work on editable draft objects.
                         </span>
                       </div>
-                      {hiddenObjectCount ? (
-                        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="object-manager-hidden-state">
+                      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="object-manager-hidden-state">
                           <p className="text-xs font-semibold text-slate-700">
-                            {hiddenObjectCount} hidden object{hiddenObjectCount === 1 ? "" : "s"} are excluded from the preview.
+                            {hiddenObjectCount} hidden object{hiddenObjectCount === 1 ? "" : "s"}{hiddenObjectCount ? " are excluded from the preview." : "."}
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              buildingPlacements
-                                .filter((item) => Boolean(item.meta?.ui_hidden))
-                                .forEach((item) => {
-                                  handleUpdateBuilding(item.id, {
-                                    meta: {
-                                      ...(item.meta ?? {}),
-                                      ui_hidden: false,
-                                    },
+                          {hiddenObjectCount ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                buildingPlacements
+                                  .filter((item) => Boolean(item.meta?.ui_hidden))
+                                  .forEach((item) => {
+                                    handleUpdateBuilding(item.id, {
+                                      meta: {
+                                        ...(item.meta ?? {}),
+                                        ui_hidden: false,
+                                      },
+                                    });
                                   });
+                                recordRecentChange({
+                                  type: "object_visibility_changed",
+                                  label: "Objects shown",
+                                  detail: "All hidden objects are visible again.",
+                                  undoBlockedReason: "Hide specific objects again from Object Manager if needed.",
                                 });
-                              recordRecentChange({
-                                type: "object_visibility_changed",
-                                label: "Objects shown",
-                                detail: "All hidden objects are visible again.",
-                                undoBlockedReason: "Hide specific objects again from Object Manager if needed.",
-                              });
-                              pushRecoveryMessage("All hidden objects are visible again.");
-                            }}
-                            data-testid="object-manager-show-all"
-                            className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                          >
-                            Show all
-                          </button>
+                                pushRecoveryMessage("All hidden objects are visible again.");
+                              }}
+                              data-testid="object-manager-show-all"
+                              className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Show all
+                            </button>
+                          ) : null}
                         </div>
-                      ) : null}
                       {objectManagerStatusMessage ? (
                         <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="object-manager-status">
                           {objectManagerStatusMessage}
@@ -25219,6 +25285,16 @@ function PerformanceAIDashboardView({
                                     >
                                       Flip V
                                     </button>
+                                    {Array.isArray(item.meta?.combined_from_object_ids) && item.meta.combined_from_object_ids.length ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleObjectManagerExplodeCombined(item)}
+                                        data-testid="object-manager-explode-combined"
+                                        className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
+                                      >
+                                        Explode combined
+                                      </button>
+                                    ) : null}
 	                                </div>
 	                              ) : (
                                   <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
