@@ -7903,6 +7903,98 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
+  const createDraftCopyWithTrace = useCallback((
+    item: BuildingPlacement,
+    options: {
+      idPrefix: string;
+      label: string;
+      dx: number;
+      dy: number;
+      source: string;
+      extraMeta?: Record<string, unknown>;
+    },
+  ): { visible: BuildingPlacement; created: BuildingPlacement[] } => {
+    const nextType = item.type ?? "custom";
+    const nextId = `${nextType}-${options.idPrefix}-${Math.random().toString(36).slice(2, 8)}`;
+    const sourceIds = Array.isArray(item.meta?.combined_from_object_ids)
+      ? item.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
+      : [];
+    const sourceItems = sourceIds
+      .map((sourceId) => buildingPlacements.find((candidate) => candidate.id === sourceId))
+      .filter((candidate): candidate is BuildingPlacement => Boolean(candidate));
+    const copiedSourceItems = sourceItems.map((source, sourceIndex): BuildingPlacement => {
+      const copiedSourceId = `${nextId}-source-${sourceIndex}-${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        ...source,
+        id: copiedSourceId,
+        label: `${source.label} ${options.label.includes("Array") ? "Array Source" : "Copy Source"}`,
+        x: (source.x ?? 0) + options.dx,
+        y: (source.y ?? 0) + options.dy,
+        source: "manual_drawn",
+        generated: false,
+        locked: false,
+        placed: true,
+        geometry: source.geometry?.map(([x, y]) => [x + options.dx, y + options.dy]),
+        capabilities: {
+          movable: true,
+          resizable: source.capabilities?.resizable ?? true,
+          rotatable: source.capabilities?.rotatable ?? true,
+          deletable: true,
+        },
+        meta: {
+          ...(source.meta ?? {}),
+          ui_hidden: true,
+          source: `${options.source}_source`,
+          copied_from_object_id: source.id,
+          copied_from_label: source.label,
+          combined_into_object_id: nextId,
+          combined_into_label: options.label,
+          review_status: "engineer_review_required",
+          engineering_status: "draft_review_required",
+          handoff_status: "draft_review_required",
+          construction_release_allowed: false,
+          ...(options.extraMeta ?? {}),
+        },
+      };
+    });
+    const visible: BuildingPlacement = {
+      ...item,
+      id: nextId,
+      label: options.label,
+      x: (item.x ?? 0) + options.dx,
+      y: (item.y ?? 0) + options.dy,
+      source: "manual_drawn",
+      generated: false,
+      locked: false,
+      placed: true,
+      geometry: item.geometry?.map(([x, y]) => [x + options.dx, y + options.dy]),
+      capabilities: {
+        movable: true,
+        resizable: item.capabilities?.resizable ?? true,
+        rotatable: item.capabilities?.rotatable ?? true,
+        deletable: true,
+      },
+      meta: {
+        ...(item.meta ?? {}),
+        ui_hidden: false,
+        source: options.source,
+        copied_from_object_id: item.id,
+        copied_from_label: item.label,
+        copied_combined_from_object_ids: sourceIds,
+        copied_combined_from_labels: sourceItems.map((source) => source.label),
+        combined_from_object_ids: copiedSourceItems.map((source) => source.id),
+        combined_from_labels: copiedSourceItems.map((source) => source.label),
+        combined_source_count: copiedSourceItems.length || undefined,
+        review_status: "engineer_review_required",
+        engineering_status: "draft_review_required",
+        handoff_status: "draft_review_required",
+        construction_release_allowed: false,
+        ...(options.extraMeta ?? {}),
+      },
+    };
+    return { visible, created: [...copiedSourceItems, visible] };
+  }, [buildingPlacements]);
+
   const handleObjectManagerBulkDuplicate = useCallback(() => {
     clearGeneratedPreview();
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
@@ -7924,54 +8016,31 @@ function PerformanceAIDashboardView({
     }
     const offset = 28;
     const stamp = Date.now();
-    const duplicates = editable.map((item, index): BuildingPlacement => {
-      const nextType = item.type ?? "custom";
-      const nextId = `${nextType}-duplicate-${stamp}-${index}-${Math.random().toString(36).slice(2, 8)}`;
-      return {
-        ...item,
-        id: nextId,
-        label: `${item.label} Copy`,
-        x: (item.x ?? 0) + offset,
-        y: (item.y ?? 0) + offset,
-        source: "manual_drawn",
-        generated: false,
-        locked: false,
-        placed: true,
-        geometry: item.geometry?.map(([x, y]) => [x + offset, y + offset]),
-        capabilities: {
-          movable: true,
-          resizable: item.capabilities?.resizable ?? true,
-          rotatable: item.capabilities?.rotatable ?? true,
-          deletable: true,
-        },
-        meta: {
-          ...(item.meta ?? {}),
-          ui_hidden: false,
-          source: "manual_drawn_copy",
-          copied_from_object_id: item.id,
-          copied_from_label: item.label,
-          review_status: "engineer_review_required",
-          engineering_status: "draft_review_required",
-          handoff_status: "draft_review_required",
-          construction_release_allowed: false,
-        },
-      };
-    });
-    setBuildingPlacements((prev) => [...prev, ...duplicates]);
-    setSelectedObjectIds(duplicates.map((item) => item.id));
-    setActivePlacementId(duplicates[0]?.id ?? null);
-    duplicates.forEach((item) => {
+    const copyResults = editable.map((item, index) => createDraftCopyWithTrace(item, {
+      idPrefix: `duplicate-${stamp}-${index}`,
+      label: `${item.label} Copy`,
+      dx: offset,
+      dy: offset,
+      source: "manual_drawn_copy",
+    }));
+    const visibleDuplicates = copyResults.map((result) => result.visible);
+    const createdObjects = copyResults.flatMap((result) => result.created);
+    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
+    setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
+    setActivePlacementId(visibleDuplicates[0]?.id ?? null);
+    createdObjects.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
-    const undo: DraftUndoAction = { action: "add_many", objects: duplicates, label: "bulk duplicate" };
+    const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "bulk duplicate" };
     recordDraftUndoAction(undo);
     recordRecentChange({
       type: "object_added",
       label: "Objects duplicated",
-      detail: `Duplicated ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
+      detail: `Duplicated ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
       undo,
     });
-    const message = `Duplicated ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    const hiddenTraceCount = createdObjects.length - visibleDuplicates.length;
+    const message = `Duplicated ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     appendChatMessage("assistant", `${message} Duplicates remain draft review geometry, not construction-release evidence.`, "status");
@@ -7987,6 +8056,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     clearGeneratedPreview,
+    createDraftCopyWithTrace,
     ensureProjectDraftRef,
     markSystemsStale,
     recordRecentChange,
@@ -8022,49 +8092,26 @@ function PerformanceAIDashboardView({
       return;
     }
     const stamp = Date.now();
-    const duplicates = editable.map((item, index): BuildingPlacement => {
-      const nextType = item.type ?? "custom";
-      const nextId = `${nextType}-copy-vector-${stamp}-${index}-${Math.random().toString(36).slice(2, 8)}`;
-      return {
-        ...item,
-        id: nextId,
-        label: `${item.label} Copy`,
-        x: (item.x ?? 0) + dx,
-        y: (item.y ?? 0) + dy,
-        source: "manual_drawn",
-        generated: false,
-        locked: false,
-        placed: true,
-        geometry: item.geometry?.map(([x, y]) => [x + dx, y + dy]),
-        capabilities: {
-          movable: true,
-          resizable: item.capabilities?.resizable ?? true,
-          rotatable: item.capabilities?.rotatable ?? true,
-          deletable: true,
-        },
-        meta: {
-          ...(item.meta ?? {}),
-          ui_hidden: false,
-          source: "manual_drawn_copy_by_offset",
-          copied_from_object_id: item.id,
-          copied_from_label: item.label,
-          copied_offset_ft: [dx, dy],
-          review_status: "engineer_review_required",
-          engineering_status: "draft_review_required",
-          handoff_status: "draft_review_required",
-          construction_release_allowed: false,
-        },
-      };
-    });
-    setBuildingPlacements((prev) => [...prev, ...duplicates]);
-    setSelectedObjectIds(duplicates.map((item) => item.id));
-    setActivePlacementId(duplicates[0]?.id ?? null);
-    duplicates.forEach((item) => {
+    const copyResults = editable.map((item, index) => createDraftCopyWithTrace(item, {
+      idPrefix: `copy-vector-${stamp}-${index}`,
+      label: `${item.label} Copy`,
+      dx,
+      dy,
+      source: "manual_drawn_copy_by_offset",
+      extraMeta: { copied_offset_ft: [dx, dy] },
+    }));
+    const visibleDuplicates = copyResults.map((result) => result.visible);
+    const createdObjects = copyResults.flatMap((result) => result.created);
+    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
+    setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
+    setActivePlacementId(visibleDuplicates[0]?.id ?? null);
+    createdObjects.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
-    const undo: DraftUndoAction = { action: "add_many", objects: duplicates, label: "copy by offset" };
+    const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "copy by offset" };
     recordDraftUndoAction(undo);
-    const message = `Copied ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"} by ${dx},${dy}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    const hiddenTraceCount = createdObjects.length - visibleDuplicates.length;
+    const message = `Copied ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"} by ${dx},${dy}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     appendChatMessage("assistant", `${message} Copies remain draft review geometry, not construction-release evidence.`, "status");
@@ -8088,6 +8135,7 @@ function PerformanceAIDashboardView({
     bulkMoveY,
     buildingPlacements,
     clearGeneratedPreview,
+    createDraftCopyWithTrace,
     ensureProjectDraftRef,
     markSystemsStale,
     recordRecentChange,
@@ -8134,59 +8182,43 @@ function PerformanceAIDashboardView({
       return;
     }
     const stamp = Date.now();
-    const duplicates: BuildingPlacement[] = [];
+    const visibleDuplicates: BuildingPlacement[] = [];
+    const createdObjects: BuildingPlacement[] = [];
     editable.forEach((item, sourceIndex) => {
       for (let row = 0; row < rows; row += 1) {
         for (let column = 0; column < columns; column += 1) {
           if (row === 0 && column === 0) continue;
           const dx = column * spacingX;
           const dy = row * spacingY;
-          const nextType = item.type ?? "custom";
-          const nextId = `${nextType}-array-${stamp}-${sourceIndex}-${row}-${column}-${Math.random().toString(36).slice(2, 8)}`;
-          duplicates.push({
-            ...item,
-            id: nextId,
+          const result = createDraftCopyWithTrace(item, {
+            idPrefix: `array-${stamp}-${sourceIndex}-${row}-${column}`,
             label: `${item.label} Array ${row + 1}-${column + 1}`,
-            x: (item.x ?? 0) + dx,
-            y: (item.y ?? 0) + dy,
-            source: "manual_drawn",
-            generated: false,
-            locked: false,
-            placed: true,
-            geometry: item.geometry?.map(([x, y]) => [x + dx, y + dy]),
-            capabilities: {
-              movable: true,
-              resizable: item.capabilities?.resizable ?? true,
-              rotatable: item.capabilities?.rotatable ?? true,
-              deletable: true,
-            },
-            meta: {
-              ...(item.meta ?? {}),
-              ui_hidden: false,
-              source: "manual_drawn_array",
+            dx,
+            dy,
+            source: "manual_drawn_array",
+            extraMeta: {
               array_source_object_id: item.id,
               array_source_label: item.label,
               array_rows: rows,
               array_columns: columns,
               array_spacing_ft: [spacingX, spacingY],
-              review_status: "engineer_review_required",
-              engineering_status: "draft_review_required",
-              handoff_status: "draft_review_required",
-              construction_release_allowed: false,
             },
           });
+          visibleDuplicates.push(result.visible);
+          createdObjects.push(...result.created);
         }
       }
     });
-    setBuildingPlacements((prev) => [...prev, ...duplicates]);
-    setSelectedObjectIds(duplicates.map((item) => item.id));
-    setActivePlacementId(duplicates[0]?.id ?? null);
-    duplicates.forEach((item) => {
+    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
+    setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
+    setActivePlacementId(visibleDuplicates[0]?.id ?? null);
+    createdObjects.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
-    const undo: DraftUndoAction = { action: "add_many", objects: duplicates, label: "array" };
+    const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "array" };
     recordDraftUndoAction(undo);
-    const message = `Array created ${duplicates.length} draft review cop${duplicates.length === 1 ? "y" : "ies"}${blockedCount ? `; ${blockedCount} selected object${blockedCount === 1 ? "" : "s"} blocked.` : "."}`;
+    const hiddenTraceCount = createdObjects.length - visibleDuplicates.length;
+    const message = `Array created ${visibleDuplicates.length} draft review cop${visibleDuplicates.length === 1 ? "y" : "ies"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} selected object${blockedCount === 1 ? "" : "s"} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     appendChatMessage("assistant", `${message} Array output remains draft review geometry, not construction-release evidence.`, "status");
@@ -8212,6 +8244,7 @@ function PerformanceAIDashboardView({
     arraySpacingY,
     buildingPlacements,
     clearGeneratedPreview,
+    createDraftCopyWithTrace,
     ensureProjectDraftRef,
     markSystemsStale,
     recordRecentChange,

@@ -576,6 +576,88 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
   });
 
+  test("bulk duplicate preserves combined source traces independently", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await combinedRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-bulk-duplicate").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Duplicated 1 selected draft object with 2 hidden source trace pieces.",
+    );
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("4 hidden objects");
+
+    const duplicatedCombinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Copy" }).first();
+    await expect(duplicatedCombinedRow).toBeVisible();
+    await duplicatedCombinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program Copy back into 2 preserved source pieces",
+    );
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Copy" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Copy Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Copy Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+  });
+
+  test("array preserves combined source traces for each group copy", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await combinedRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-array-rows").fill("1");
+    await page.getByTestId("object-manager-array-columns").fill("2");
+    await page.getByTestId("object-manager-array-spacing-x").fill("90");
+    await page.getByTestId("object-manager-array-spacing-y").fill("0");
+    await page.getByTestId("workspace-right-panel").hover();
+    await page.mouse.wheel(0, 360);
+    const arrayAction = page.getByTestId("object-manager-array-action");
+    await arrayAction.scrollIntoViewIfNeeded();
+    await expect(arrayAction).toBeEnabled();
+    await arrayAction.click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Array created 1 draft review copy with 2 hidden source trace pieces.",
+    );
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("4 hidden objects");
+
+    const arrayCombinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Array 1-2" }).first();
+    await expect(arrayCombinedRow).toBeVisible();
+    await arrayCombinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program Array 1-2 back into 2 preserved source pieces",
+    );
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Array 1-2" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Array Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Array Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+  });
+
   test("combined object edits keep hidden source traces undoable", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
