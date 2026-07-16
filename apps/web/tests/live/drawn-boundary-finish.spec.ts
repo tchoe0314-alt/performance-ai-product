@@ -302,6 +302,20 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools.getByText("Snap", { exact: true })).toBeVisible();
     await expect(cadTools.getByText("Ortho", { exact: true })).toBeVisible();
 
+    await cadTools.getByLabel("CAD command input").fill("LINE");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(page.getByTestId("cad-active-command")).toContainText("Active command: LINE");
+    await cadTools.getByLabel("CAD command input").fill("80,90");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(page.getByTestId("cad-active-command")).toContainText("1/2+");
+    await cadTools.getByLabel("CAD command input").fill("180,90");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("LINE accepted 2 points");
+    await cadTools.getByLabel("CAD command input").fill("");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("LINE created manual_drawn draft_review_required geometry");
+    await expect(page.getByText("Command Line").filter({ visible: true }).first()).toBeVisible();
+
     await cadTools.getByLabel("CAD X coordinate").fill("120");
     await cadTools.getByLabel("CAD Y coordinate").fill("120");
     await cadTools.getByRole("button", { name: "XY" }).click();
@@ -309,9 +323,9 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("CAD Y coordinate").fill("120");
     await cadTools.getByRole("button", { name: "XY" }).click();
     await finishDraft(page, canvas);
-    await expect(page.getByText("Custom Line 1").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText("Command Line").filter({ visible: true }).first()).toBeVisible();
 
-    await selectObjectByName(page, "Custom Line 1");
+    await selectObjectByName(page, "Command Line");
     await expect(cadTools).toContainText("Length");
     await expect(cadTools).toContainText("Angle");
     await expect(page.getByTestId("cad-topology-status")).toContainText("Topology");

@@ -764,6 +764,11 @@ export default function PreviewPanel({
   const [cadCommandDraft, setCadCommandDraft] = useState("");
   const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
+  const [cadActiveCommand, setCadActiveCommand] = useState<{
+    command: "LINE" | "PLINE" | "RECTANGLE";
+    mode: "polyline" | "rect";
+    minPoints: number;
+  } | null>(null);
   const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
   const [cadDimensionMode, setCadDimensionMode] = useState<CadDimensionMode>("linear");
   const [cadDimensionLabelDraft, setCadDimensionLabelDraft] = useState("");
@@ -2966,14 +2971,134 @@ export default function PreviewPanel({
 
   const runCadCommand = useCallback(() => {
     const raw = cadCommandDraft.trim();
-    if (!raw) return;
+    if (!raw) {
+      if (cadActiveCommand) {
+        if (draftPoints.length < cadActiveCommand.minPoints) {
+          pushCadCommandFeedback(
+            cadActiveCommand.command,
+            "blocked",
+            `${cadActiveCommand.command} finish blocked: needs at least ${cadActiveCommand.minPoints} point${cadActiveCommand.minPoints === 1 ? "" : "s"}; ${draftPoints.length} entered.`,
+          );
+          return;
+        }
+        createCadCommandGeometry(
+          cadActiveCommand.command,
+          cadActiveCommand.mode,
+          draftPoints,
+          {
+            label: cadActiveCommand.command === "RECTANGLE" ? "Command Rectangle" : cadActiveCommand.command === "PLINE" ? "Command Polyline" : "Command Line",
+            minPoints: cadActiveCommand.minPoints,
+          },
+        );
+        setDraftPoints([]);
+        setDraftPreviewPoint(null);
+        setCadActiveCommand(null);
+        setDrawMode("select");
+        setCadCommandDraft("");
+      }
+      return;
+    }
     const tokens = raw.split(/\s+/);
     const [commandRaw, ...args] = tokens;
     const command = commandRaw.toUpperCase();
     const commandKey = command === "RECT" ? "RECTANGLE" : command;
+    const knownCommands = new Set([
+      "LINE",
+      "PLINE",
+      "RECTANGLE",
+      "RECT",
+      "BOX",
+      "CIRCLE",
+      "ARC",
+      "MOVE",
+      "ROTATE",
+      "SCALE",
+      "COPY",
+      "DELETE",
+      "ERASE",
+      "OFFSET",
+      "TRIM",
+      "EXTEND",
+      "FILLET",
+      "DIM",
+      "TEXT",
+      "LAYER",
+      "SNAP",
+      "ORTHO",
+      "FINISH",
+      "DONE",
+      "CANCEL",
+      "ESC",
+    ]);
     const pointArgs = parseCadPointTokens(args.filter((arg) => arg.toLowerCase() !== "selected"));
     const firstValue = args.find((arg) => arg.toLowerCase() !== "selected") ?? cadTransformValue;
     const selectedRequested = args.some((arg) => arg.toLowerCase() === "selected");
+
+    if (cadActiveCommand && !knownCommands.has(command)) {
+      const activePoints = parseCadPointTokens(tokens);
+      if (!activePoints.length) {
+        pushCadCommandFeedback(
+          cadActiveCommand.command,
+          "blocked",
+          `${cadActiveCommand.command} expected a coordinate like 100,50, or press Enter to finish.`,
+        );
+        return;
+      }
+      const nextPoints = [...draftPoints, ...activePoints];
+      if (cadActiveCommand.mode === "rect" && nextPoints.length >= 2) {
+        createCadCommandGeometry("RECTANGLE", "rect", nextPoints.slice(0, 2), { label: "Command Rectangle", minPoints: 2 });
+        setDraftPoints([]);
+        setDraftPreviewPoint(null);
+        setCadActiveCommand(null);
+        setDrawMode("select");
+        setCadCommandDraft("");
+        return;
+      }
+      setDraftPoints(nextPoints);
+      setCadCommandDraft("");
+      pushCadCommandFeedback(
+        cadActiveCommand.command,
+        "info",
+        `${cadActiveCommand.command} accepted ${nextPoints.length} point${nextPoints.length === 1 ? "" : "s"}. Type next point or press Enter/Run with an empty command to finish.`,
+      );
+      return;
+    }
+
+    if (cadActiveCommand && (commandKey === "FINISH" || commandKey === "DONE")) {
+      if (draftPoints.length < cadActiveCommand.minPoints) {
+        pushCadCommandFeedback(
+          cadActiveCommand.command,
+          "blocked",
+          `${cadActiveCommand.command} finish blocked: needs at least ${cadActiveCommand.minPoints} point${cadActiveCommand.minPoints === 1 ? "" : "s"}; ${draftPoints.length} entered.`,
+        );
+        return;
+      }
+      createCadCommandGeometry(
+        cadActiveCommand.command,
+        cadActiveCommand.mode,
+        draftPoints,
+        {
+          label: cadActiveCommand.command === "RECTANGLE" ? "Command Rectangle" : cadActiveCommand.command === "PLINE" ? "Command Polyline" : "Command Line",
+          minPoints: cadActiveCommand.minPoints,
+        },
+      );
+      setDraftPoints([]);
+      setDraftPreviewPoint(null);
+      setCadActiveCommand(null);
+      setDrawMode("select");
+      setCadCommandDraft("");
+      return;
+    }
+
+    if (cadActiveCommand && (commandKey === "CANCEL" || commandKey === "ESC")) {
+      setDraftPoints([]);
+      setDraftPreviewPoint(null);
+      setCadActiveCommand(null);
+      setDrawMode("select");
+      pushCadCommandFeedback(cadActiveCommand.command, "info", `${cadActiveCommand.command} cancelled.`);
+      setCadCommandDraft("");
+      return;
+    }
 
     if (commandKey === "LINE") {
       if (pointArgs.length >= 2) {
@@ -2981,9 +3106,10 @@ export default function PreviewPanel({
       } else {
         setDraftPoints([]);
         setDraftPreviewPoint(null);
+        setCadActiveCommand({ command: "LINE", mode: "polyline", minPoints: 2 });
         setDrawMode("polyline");
         onSetPreviewInteraction("edit");
-        pushCadCommandFeedback("LINE", "info", "LINE active. Type LINE x,y x,y or pick two or more points, then Finish.");
+        pushCadCommandFeedback("LINE", "info", "LINE active. Type the first point like 0,0, then the next point like 100,0. Press Enter/Run empty to finish.");
       }
       return;
     }
@@ -2993,9 +3119,10 @@ export default function PreviewPanel({
       } else {
         setDraftPoints([]);
         setDraftPreviewPoint(null);
+        setCadActiveCommand({ command: "PLINE", mode: "polyline", minPoints: 2 });
         setDrawMode("polyline");
         onSetPreviewInteraction("edit");
-        pushCadCommandFeedback("PLINE", "info", "PLINE active. Type PLINE x,y x,y x,y or pick vertices, then Finish.");
+        pushCadCommandFeedback("PLINE", "info", "PLINE active. Type points one at a time, then press Enter/Run empty to finish.");
       }
       return;
     }
@@ -3005,9 +3132,10 @@ export default function PreviewPanel({
       } else {
         setDraftPoints([]);
         setDraftPreviewPoint(null);
+        setCadActiveCommand({ command: "RECTANGLE", mode: "rect", minPoints: 2 });
         setDrawMode("rect");
         onSetPreviewInteraction("edit");
-        pushCadCommandFeedback("RECTANGLE", "info", "RECTANGLE active. Type RECTANGLE x,y x,y or pick opposite corners, then Finish.");
+        pushCadCommandFeedback("RECTANGLE", "info", "RECTANGLE active. Type first corner like 0,0, then opposite corner like 100,60.");
       }
       return;
     }
@@ -3156,11 +3284,13 @@ export default function PreviewPanel({
   }, [
     applySelectedCadDimension,
     buildingPlacements,
+    cadActiveCommand,
     cadCommandDraft,
     cadOrthoEnabled,
     cadSnapEnabled,
     cadTransformValue,
     createCadCommandGeometry,
+    draftPoints,
     filletSelectedCadObject,
     moveSelectedCadObjectsByVector,
     offsetSelectedCadObjectBy,
@@ -3190,6 +3320,7 @@ export default function PreviewPanel({
       setDraftPoints([]);
       setDraftPreviewPoint(null);
       setDrawAutoFinishPointCount(autoFinishPointCount);
+      setCadActiveCommand(null);
       onSelectBuilding(null);
       setSelectedVertex(null);
       setCadSelectionSet([]);
@@ -3406,6 +3537,7 @@ export default function PreviewPanel({
   const clearDraftGeometry = useCallback(() => {
     setDraftPoints([]);
     setDraftPreviewPoint(null);
+    setCadActiveCommand(null);
   }, []);
 
   useEffect(() => {
@@ -3473,6 +3605,7 @@ export default function PreviewPanel({
       );
       setDraftPoints([]);
       setDraftPreviewPoint(null);
+      setCadActiveCommand(null);
       setDrawMode("select");
       return;
     }
@@ -3605,6 +3738,7 @@ export default function PreviewPanel({
         setDraftPreviewPoint(null);
         setDraftPoints([]);
         setDrawAutoFinishPointCount(null);
+        setCadActiveCommand(null);
         setCadCommandStatus("SITE boundary locked from drawn points.");
         pushCadCommandFeedback("SITE", "applied", "Site boundary locked from drawn points.");
         return true;
@@ -3646,6 +3780,7 @@ export default function PreviewPanel({
         setDraftPreviewPoint(null);
         setDraftPoints([]);
         setDrawAutoFinishPointCount(null);
+        setCadActiveCommand(null);
         return true;
       }
       setDraftPoints(nextPoints);
@@ -7205,11 +7340,19 @@ export default function PreviewPanel({
                         runCadCommand();
                       }
                     }}
-                    placeholder="LINE 0,0 100,0"
+                    placeholder={cadActiveCommand ? "Next point, FINISH, or CANCEL" : "LINE, then 0,0, then 100,0"}
                     className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
                   />
                   <button type="button" onClick={runCadCommand} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white">Run</button>
                 </div>
+                {cadActiveCommand ? (
+                  <div
+                    className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-semibold text-blue-800"
+                    data-testid="cad-active-command"
+                  >
+                    Active command: {cadActiveCommand.command} · {draftPoints.length}/{cadActiveCommand.minPoints}+ point{draftPoints.length === 1 ? "" : "s"} · type next coordinate or run empty to finish.
+                  </div>
+                ) : null}
                 <p className="mt-2 text-[11px] font-medium text-slate-500">{cadCommandStatus}</p>
                 <div className="mt-2 max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2" data-testid="cad-command-feedback-panel" aria-live="polite">
                   {cadCommandHistory.length ? (
