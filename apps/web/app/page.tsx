@@ -26502,6 +26502,7 @@ function PerformanceAIDashboardView({
               onRemoveBuilding={handleRemoveBuilding}
               onRestoreBuilding={handleRestoreBuilding}
               onSelectBuilding={setActivePlacementId}
+              onSelectObjects={setSelectedObjectIds}
                 onSetPreviewMode={handleSetPreviewMode}
                 onSetPreviewInteraction={setPreviewInteraction}
                 onSetPreviewQuality={handleSetPreviewQuality}

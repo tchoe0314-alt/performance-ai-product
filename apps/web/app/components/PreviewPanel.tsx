@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { AlertTriangle, CornerUpLeft, CornerUpRight, Download, Droplets, Eye, EyeOff, FileText, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Navigation, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -444,6 +444,7 @@ type PreviewPanelProps = {
   onRestoreBuilding?: (snapshot: BuildingPlacement) => void;
   externalRectUndo?: { id: string; snapshot: BuildingPlacement; action: "update" | "delete" | "add"; ts: number } | null;
   onSelectBuilding: (id: string | null) => void;
+  onSelectObjects?: (ids: string[]) => void;
   analysisPaths?: Array<{
     id: string;
     buildingId: string;
@@ -566,6 +567,7 @@ export default function PreviewPanel({
   onRestoreBuilding,
   externalRectUndo,
   onSelectBuilding,
+  onSelectObjects,
   analysisPaths,
   analysisHighlight,
   analysisFocusLocked,
@@ -816,6 +818,7 @@ export default function PreviewPanel({
   const [drawAutoFinishPointCount, setDrawAutoFinishPointCount] = useState<number | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
   const suppressNextDrawClickRef = useRef(false);
+  const suppressNextObjectClickRef = useRef(false);
   const [canvasView, setCanvasView] = useState({ scale: BALANCED_CANVAS_SCALE, offsetX: 0, offsetY: 0 });
   const autoFitSignatureRef = useRef("");
   const userAdjustedCanvasViewRef = useRef(false);
@@ -833,6 +836,14 @@ export default function PreviewPanel({
     y: number;
     offsetX: number;
     offsetY: number;
+  } | null>(null);
+  const [cadWindowSelect, setCadWindowSelect] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    containerLeft: number;
+    containerTop: number;
   } | null>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
   const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | "vertex" | null>(null);
@@ -936,6 +947,7 @@ export default function PreviewPanel({
     Boolean(draggingBuildingId && draggingMode) ||
     Boolean(rotateDragStart) ||
     Boolean(canvasPanStart) ||
+    (allowEdits && drawMode === "select") ||
     (showMap && previewInteraction === "edit" && !mapLocked);
   const overlayPointerEvents = drawingSurfaceInteractive ? "pointer-events-auto" : "pointer-events-none";
   const normalPalette = {
@@ -2523,6 +2535,71 @@ export default function PreviewPanel({
       },
     ]);
   }, []);
+  const finishCadWindowSelect = useCallback(
+    (windowRect: { startX: number; startY: number; currentX: number; currentY: number }) => {
+      if (!previewRef.current) return;
+      const left = Math.min(windowRect.startX, windowRect.currentX);
+      const right = Math.max(windowRect.startX, windowRect.currentX);
+      const top = Math.min(windowRect.startY, windowRect.currentY);
+      const bottom = Math.max(windowRect.startY, windowRect.currentY);
+      if (right - left < 8 || bottom - top < 8) return;
+      const candidates = Array.from(
+        previewRef.current.querySelectorAll<HTMLElement>("[data-cad-object-id]"),
+      );
+      const ids = candidates
+        .filter((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
+        })
+        .map((element) => element.dataset.cadObjectId)
+        .filter((id): id is string => Boolean(id));
+      const uniqueIds = Array.from(new Set(ids));
+      const selectableIds = uniqueIds.filter((id) => {
+        const item = visibleCadObjects.find((candidate) => candidate.id === id);
+        return item && item.type !== "site" && !item.locked;
+      });
+      setCadSelectionSet(selectableIds);
+      onSelectObjects?.(selectableIds);
+      onSelectBuilding(selectableIds[0] ?? null);
+      setSelectedVertex(null);
+      pushCadCommandFeedback(
+        "SELECT",
+        selectableIds.length ? "applied" : "blocked",
+        selectableIds.length
+          ? `Window selected ${selectableIds.length} editable draft object${selectableIds.length === 1 ? "" : "s"}.`
+          : "Window select found no editable draft objects.",
+      );
+    },
+    [onSelectBuilding, onSelectObjects, pushCadCommandFeedback, visibleCadObjects],
+  );
+  const beginCadWindowSelect = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!allowEdits || drawMode !== "select" || placementMode || event.button !== 0) return false;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("button,input,textarea,select,[role='button'],[data-no-window-select]")) {
+        return false;
+      }
+      const objectOverlay = target?.closest?.("[data-object-overlay]") as HTMLElement | null;
+      if (objectOverlay) {
+        const item = visibleCadObjects.find((candidate) => candidate.id === objectOverlay.dataset.cadObjectId);
+        if (item?.type !== "site") return false;
+      }
+      const rect = previewRef.current?.getBoundingClientRect();
+      event.preventDefault();
+      event.stopPropagation();
+      suppressNextObjectClickRef.current = true;
+      setCadWindowSelect({
+        startX: event.clientX,
+        startY: event.clientY,
+        currentX: event.clientX,
+        currentY: event.clientY,
+        containerLeft: rect?.left ?? 0,
+        containerTop: rect?.top ?? 0,
+      });
+      return true;
+    },
+    [allowEdits, drawMode, placementMode, visibleCadObjects],
+  );
   const parseCadPointToken = useCallback((token: string): [number, number] | null => {
     const match = token.trim().match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
     if (!match) return null;
@@ -4183,11 +4260,13 @@ export default function PreviewPanel({
       setDrawMode(mode);
       setDrawAutoFinishPointCount(mode === "polyline" ? 2 : mode === "polygon" ? 3 : null);
       clearDraftGeometry();
+      if (mode !== "pan") {
+        onSetPreviewInteraction("edit");
+      }
       if (mode !== "select") {
         onSelectBuilding(null);
         setSelectedVertex(null);
         setCadSelectionSet([]);
-        onSetPreviewInteraction("edit");
       }
       const label =
         mode === "polyline"
@@ -8161,6 +8240,9 @@ export default function PreviewPanel({
               onDragOver={(event) => {
                 event.preventDefault();
               }}
+              onMouseDownCapture={(event) => {
+                beginCadWindowSelect(event);
+              }}
 	              onDrop={(event) => {
 	                event.preventDefault();
 	                const payload = event.dataTransfer?.getData("civora-object-id");
@@ -8185,6 +8267,12 @@ export default function PreviewPanel({
 	              }}
 		              onMouseMove={(event) => {
                 if (allowMapInteraction) return;
+                if (cadWindowSelect) {
+                  setCadWindowSelect((current) =>
+                    current ? { ...current, currentX: event.clientX, currentY: event.clientY } : current,
+                  );
+                  return;
+                }
                 if (rotateDragStart && previewContainerBounds && onSetSiteRotationDeg) {
                   const deltaX = event.clientX - rotateDragStart.x;
                   const width = Math.max(previewContainerBounds.width, 1);
@@ -8256,14 +8344,24 @@ export default function PreviewPanel({
                 setCanvasPanStart(null);
                 setDraftPreviewPoint(null);
                 setActiveSnapPoint(null);
+                setCadWindowSelect(null);
               }}
               onMouseUp={() => {
+                if (cadWindowSelect) {
+                  finishCadWindowSelect(cadWindowSelect);
+                  setCadWindowSelect(null);
+                }
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
                 setRotateDragStart(null);
                 setCanvasPanStart(null);
               }}
               onClick={(event) => {
+                if (suppressNextObjectClickRef.current) {
+                  suppressNextObjectClickRef.current = false;
+                  event.stopPropagation();
+                  return;
+                }
                 if (allowMapInteraction) return;
                 if (drawMode !== "select") {
                   if (suppressNextDrawClickRef.current) {
@@ -10412,6 +10510,7 @@ export default function PreviewPanel({
                         }`,
                       }}
                       onMouseDown={(event) => {
+                        if (beginCadWindowSelect(event)) return;
                         if (!showMap || mapLocked) return;
                         if (previewInteraction !== "edit") return;
                         if (placementMode) return;
@@ -10517,6 +10616,7 @@ export default function PreviewPanel({
                           <div
                             key={item.id}
                             data-object-overlay
+                            data-cad-object-id={item.id}
                             aria-label={`Select ${item.label || item.type || "CAD object"}`}
                             data-preview-quality={previewQuality}
                             data-visual-kind={visualKind}
@@ -10549,6 +10649,11 @@ export default function PreviewPanel({
                             }}
                             onClick={(event) => {
                               if (!allowItemInteraction) return;
+                              if (suppressNextObjectClickRef.current) {
+                                suppressNextObjectClickRef.current = false;
+                                event.stopPropagation();
+                                return;
+                              }
                               event.stopPropagation();
                               setSelectedVertex(null);
                               onSelectBuilding(item.id);
@@ -10926,6 +11031,18 @@ export default function PreviewPanel({
                       ) : null}
                     </div>
                   </div>
+                ) : null}
+                {cadWindowSelect ? (
+                  <div
+                    data-testid="cad-window-select-marquee"
+                    className="pointer-events-none absolute z-[65] rounded-sm border border-sky-500 bg-sky-400/12 shadow-[0_0_0_1px_rgba(14,165,233,0.18)]"
+                    style={{
+                      left: Math.min(cadWindowSelect.startX, cadWindowSelect.currentX) - cadWindowSelect.containerLeft,
+                      top: Math.min(cadWindowSelect.startY, cadWindowSelect.currentY) - cadWindowSelect.containerTop,
+                      width: Math.abs(cadWindowSelect.currentX - cadWindowSelect.startX),
+                      height: Math.abs(cadWindowSelect.currentY - cadWindowSelect.startY),
+                    }}
+                  />
                 ) : null}
                 {showGeneratedPlan && planPreviewAnnotations?.labels?.length && previewImageBounds ? (
                   <div

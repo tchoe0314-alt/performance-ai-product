@@ -64,6 +64,45 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(panel).toContainText(/pending placement|draft/i);
   });
 
+  test("canvas window selection selects visible editable objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    const parkingOverlay = page.locator('[data-cad-object-id][aria-label*="Parking Field"]').first();
+    await expect(officeOverlay).toBeVisible();
+    await expect(parkingOverlay).toBeVisible();
+    await page.getByRole("button", { name: /Select Pick objects/i }).click();
+
+    const officeBox = await officeOverlay.boundingBox();
+    const parkingBox = await parkingOverlay.boundingBox();
+    const surfaceBox = await page.getByTestId("preview-drawing-surface").boundingBox();
+    expect(officeBox).not.toBeNull();
+    expect(parkingBox).not.toBeNull();
+    expect(surfaceBox).not.toBeNull();
+    const left = Math.max(surfaceBox!.x + 24, Math.min(officeBox!.x, parkingBox!.x) - 96);
+    const top = Math.max(surfaceBox!.y + 24, Math.min(officeBox!.y, parkingBox!.y) - 96);
+    const right = Math.min(
+      surfaceBox!.x + surfaceBox!.width - 16,
+      Math.max(officeBox!.x + officeBox!.width, parkingBox!.x + parkingBox!.width) + 24,
+    );
+    const bottom = Math.min(
+      surfaceBox!.y + surfaceBox!.height - 16,
+      Math.max(officeBox!.y + officeBox!.height, parkingBox!.y + parkingBox!.height) + 24,
+    );
+
+    await page.mouse.move(left, top);
+    await page.mouse.down();
+    await expect(page.getByTestId("cad-window-select-marquee")).toBeVisible();
+    await page.mouse.move(right, bottom, { steps: 8 });
+    await page.mouse.up();
+
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("Window selected 2 editable draft objects");
+  });
+
   test("select, inspect, rename, style, type, hide, show all, copy, paste, rotate, and flip work", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
