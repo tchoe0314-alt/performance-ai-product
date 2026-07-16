@@ -781,6 +781,11 @@ export default function PreviewPanel({
         command: "TRIM" | "EXTEND";
         amount?: number;
       }
+    | {
+        kind: "transform";
+        command: "MOVE" | "ROTATE" | "SCALE" | "COPY";
+        value?: string;
+      }
     | null
   >(null);
   const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
@@ -2691,6 +2696,23 @@ export default function PreviewPanel({
     },
     [buildingPlacements, pushCadCommandFeedback, selectedCadIds, updateCadObject],
   );
+  const copySelectedCadObjectByVector = useCallback(
+    (vectorOverride?: [number, number]) => {
+      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
+        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: select one editable draft CAD object with geometry first.");
+        return;
+      }
+      const vector = vectorOverride ?? [10, 10];
+      const selectedGeometry = selectedCadObject.geometry as Array<[number, number]>;
+      const copiedGeometry = translateSiteGeometry(selectedGeometry, { x: vector[0], y: vector[1] }) ?? selectedGeometry;
+      createCadCommandGeometry("COPY", selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? "polygon" : "polyline", copiedGeometry, {
+        label: `${selectedCadObject.label || "CAD object"} Copy`,
+        meta: { copied_from_object_id: selectedCadObject.id, copy_vector: vector },
+        minPoints: selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? 3 : 2,
+      });
+    },
+    [createCadCommandGeometry, pushCadCommandFeedback, selectedCadObject],
+  );
   const applyCadCoordinate = useCallback(() => {
     const x = parseCadNumber(cadCoordinateDraft.x, NaN);
     const y = parseCadNumber(cadCoordinateDraft.y, NaN);
@@ -3007,6 +3029,27 @@ export default function PreviewPanel({
           pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs an amount like 8 before it can run.`);
           return;
         }
+        if (cadActiveCommand.kind === "transform") {
+          if (!cadActiveCommand.value) {
+            pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs ${cadActiveCommand.command === "MOVE" || cadActiveCommand.command === "COPY" ? "a vector like 20,0" : cadActiveCommand.command === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
+            return;
+          }
+          if (cadActiveCommand.command === "MOVE") {
+            const vector = parseCadPointToken(cadActiveCommand.value);
+            if (vector) {
+              moveSelectedCadObjectsByVector(vector[0], vector[1]);
+            } else {
+              transformSelectedCadObjects("move", cadActiveCommand.value);
+            }
+          } else if (cadActiveCommand.command === "COPY") {
+            copySelectedCadObjectByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
+          } else {
+            transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", cadActiveCommand.value);
+          }
+          setCadActiveCommand(null);
+          setCadCommandDraft("");
+          return;
+        }
         if (draftPoints.length < cadActiveCommand.minPoints) {
           pushCadCommandFeedback(
             cadActiveCommand.command,
@@ -3105,6 +3148,32 @@ export default function PreviewPanel({
         setCadCommandDraft("");
         return;
       }
+      if (cadActiveCommand.kind === "transform") {
+        setCadActiveCommand({ command: cadActiveCommand.command, kind: "transform", value: raw });
+        setCadCommandDraft("");
+        if (!selectedCadObject && cadActiveCommand.command === "COPY") {
+          pushCadCommandFeedback("COPY", "info", `COPY vector set to ${raw}. Select one editable draft object, then run COPY or press Run empty.`);
+          return;
+        }
+        if (!selectedCadIds.length && cadActiveCommand.command !== "COPY") {
+          pushCadCommandFeedback(cadActiveCommand.command, "info", `${cadActiveCommand.command} value set to ${raw}. Select one or more editable draft objects, then run ${cadActiveCommand.command} or press Run empty.`);
+          return;
+        }
+        if (cadActiveCommand.command === "MOVE") {
+          const vector = parseCadPointToken(raw);
+          if (vector) {
+            moveSelectedCadObjectsByVector(vector[0], vector[1]);
+          } else {
+            transformSelectedCadObjects("move", raw);
+          }
+        } else if (cadActiveCommand.command === "COPY") {
+          copySelectedCadObjectByVector(parseCadPointToken(raw) ?? undefined);
+        } else {
+          transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", raw);
+        }
+        setCadActiveCommand(null);
+        return;
+      }
       const activePoints = parseCadPointTokens(tokens);
       if (!activePoints.length) {
         pushCadCommandFeedback(
@@ -3151,6 +3220,27 @@ export default function PreviewPanel({
           return;
         }
         trimExtendSelectedCadObject(cadActiveCommand.command.toLowerCase() as "trim" | "extend", String(cadActiveCommand.amount));
+        setCadActiveCommand(null);
+        setCadCommandDraft("");
+        return;
+      }
+      if (cadActiveCommand.kind === "transform") {
+        if (!cadActiveCommand.value) {
+          pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs ${cadActiveCommand.command === "MOVE" || cadActiveCommand.command === "COPY" ? "a vector like 20,0" : cadActiveCommand.command === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
+          return;
+        }
+        if (cadActiveCommand.command === "MOVE") {
+          const vector = parseCadPointToken(cadActiveCommand.value);
+          if (vector) {
+            moveSelectedCadObjectsByVector(vector[0], vector[1]);
+          } else {
+            transformSelectedCadObjects("move", cadActiveCommand.value);
+          }
+        } else if (cadActiveCommand.command === "COPY") {
+          copySelectedCadObjectByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
+        } else {
+          transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", cadActiveCommand.value);
+        }
         setCadActiveCommand(null);
         setCadCommandDraft("");
         return;
@@ -3271,7 +3361,11 @@ export default function PreviewPanel({
     }
     if (commandKey === "MOVE") {
       const vector = pointArgs[0];
-      if (selectedRequested && vector) {
+      if (!args.length) {
+        setCadActiveCommand({ command: "MOVE", kind: "transform" });
+        setCadCommandDraft("");
+        pushCadCommandFeedback("MOVE", "info", "MOVE active. Type a vector like 20,0, or a distance like 5 for a diagonal move.");
+      } else if (selectedRequested && vector) {
         moveSelectedCadObjectsByVector(vector[0], vector[1]);
       } else {
         setCadTransformValue(firstValue);
@@ -3280,23 +3374,24 @@ export default function PreviewPanel({
       return;
     }
     if (commandKey === "ROTATE" || commandKey === "SCALE") {
-      setCadTransformValue(firstValue);
-      transformSelectedCadObjects(commandKey.toLowerCase() as "rotate" | "scale", firstValue);
+      if (!args.length) {
+        setCadActiveCommand({ command: commandKey as "ROTATE" | "SCALE", kind: "transform" });
+        setCadCommandDraft("");
+        pushCadCommandFeedback(commandKey, "info", `${commandKey} active. Type ${commandKey === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
+      } else {
+        setCadTransformValue(firstValue);
+        transformSelectedCadObjects(commandKey.toLowerCase() as "rotate" | "scale", firstValue);
+      }
       return;
     }
     if (commandKey === "COPY") {
-      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
-        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: select one editable draft CAD object with geometry first.");
-        return;
+      if (!args.length) {
+        setCadActiveCommand({ command: "COPY", kind: "transform" });
+        setCadCommandDraft("");
+        pushCadCommandFeedback("COPY", "info", "COPY active. Type a vector like 10,10, or run empty to use the default offset.");
+      } else {
+        copySelectedCadObjectByVector(pointArgs[0] ?? [10, 10]);
       }
-      const vector = pointArgs[0] ?? [10, 10];
-      const selectedGeometry = selectedCadObject.geometry as Array<[number, number]>;
-      const copiedGeometry = translateSiteGeometry(selectedGeometry, { x: vector[0], y: vector[1] }) ?? selectedGeometry;
-      createCadCommandGeometry("COPY", selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? "polygon" : "polyline", copiedGeometry, {
-        label: `${selectedCadObject.label || "CAD object"} Copy`,
-        meta: { copied_from_object_id: selectedCadObject.id },
-        minPoints: selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? 3 : 2,
-      });
       return;
     }
     if (commandKey === "DELETE" || commandKey === "ERASE") {
@@ -3393,6 +3488,7 @@ export default function PreviewPanel({
     cadOrthoEnabled,
     cadSnapEnabled,
     cadTransformValue,
+    copySelectedCadObjectByVector,
     createCadCommandGeometry,
     draftPoints,
     filletSelectedCadObject,
@@ -7458,7 +7554,9 @@ export default function PreviewPanel({
                       ? `Active command: ${cadActiveCommand.command} · ${draftPoints.length}/${cadActiveCommand.minPoints}+ point${draftPoints.length === 1 ? "" : "s"} · type next coordinate or run empty to finish.`
                       : cadActiveCommand.kind === "offset"
                         ? `Active command: OFFSET · ${typeof cadActiveCommand.distance === "number" ? `${cadActiveCommand.distance} ft` : "distance needed"} · type distance or run empty after selecting an object.`
-                        : `Active command: ${cadActiveCommand.command} · ${typeof cadActiveCommand.amount === "number" ? `${cadActiveCommand.amount} ft` : "amount needed"} · type amount or run empty after selecting a line.`}
+                        : cadActiveCommand.kind === "modify"
+                          ? `Active command: ${cadActiveCommand.command} · ${typeof cadActiveCommand.amount === "number" ? `${cadActiveCommand.amount} ft` : "amount needed"} · type amount or run empty after selecting a line.`
+                          : `Active command: ${cadActiveCommand.command} · ${cadActiveCommand.value || (cadActiveCommand.command === "MOVE" || cadActiveCommand.command === "COPY" ? "vector needed" : cadActiveCommand.command === "ROTATE" ? "angle needed" : "factor needed")} · type the value, then press Run.`}
                   </div>
                 ) : null}
                 <p className="mt-2 text-[11px] font-medium text-slate-500">{cadCommandStatus}</p>
