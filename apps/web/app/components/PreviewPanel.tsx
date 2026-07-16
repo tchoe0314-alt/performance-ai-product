@@ -764,11 +764,20 @@ export default function PreviewPanel({
   const [cadCommandDraft, setCadCommandDraft] = useState("");
   const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
-  const [cadActiveCommand, setCadActiveCommand] = useState<{
-    command: "LINE" | "PLINE" | "RECTANGLE";
-    mode: "polyline" | "rect";
-    minPoints: number;
-  } | null>(null);
+  const [cadActiveCommand, setCadActiveCommand] = useState<
+    | {
+        kind: "draw";
+        command: "LINE" | "PLINE" | "RECTANGLE";
+        mode: "polyline" | "rect";
+        minPoints: number;
+      }
+    | {
+        kind: "offset";
+        command: "OFFSET";
+        distance?: number;
+      }
+    | null
+  >(null);
   const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
   const [cadDimensionMode, setCadDimensionMode] = useState<CadDimensionMode>("linear");
   const [cadDimensionLabelDraft, setCadDimensionLabelDraft] = useState("");
@@ -2973,6 +2982,16 @@ export default function PreviewPanel({
     const raw = cadCommandDraft.trim();
     if (!raw) {
       if (cadActiveCommand) {
+        if (cadActiveCommand.kind === "offset") {
+          if (typeof cadActiveCommand.distance === "number") {
+            offsetSelectedCadObjectBy(String(cadActiveCommand.distance));
+            setCadActiveCommand(null);
+            setCadCommandDraft("");
+            return;
+          }
+          pushCadCommandFeedback("OFFSET", "blocked", "OFFSET needs a distance like 10 before it can run.");
+          return;
+        }
         if (draftPoints.length < cadActiveCommand.minPoints) {
           pushCadCommandFeedback(
             cadActiveCommand.command,
@@ -3035,6 +3054,24 @@ export default function PreviewPanel({
     const selectedRequested = args.some((arg) => arg.toLowerCase() === "selected");
 
     if (cadActiveCommand && !knownCommands.has(command)) {
+      if (cadActiveCommand.kind === "offset") {
+        const distance = Number(raw);
+        if (!Number.isFinite(distance) || Math.abs(distance) < 0.001) {
+          pushCadCommandFeedback("OFFSET", "blocked", "OFFSET expected a non-zero distance like 10.");
+          return;
+        }
+        setCadOffsetDistance(String(distance));
+        if (!selectedCadObject) {
+          setCadActiveCommand({ command: "OFFSET", kind: "offset", distance });
+          setCadCommandDraft("");
+          pushCadCommandFeedback("OFFSET", "info", `OFFSET distance set to ${distance}. Select one draft object, then run OFFSET or press Run empty.`);
+          return;
+        }
+        offsetSelectedCadObjectBy(String(distance));
+        setCadActiveCommand(null);
+        setCadCommandDraft("");
+        return;
+      }
       const activePoints = parseCadPointTokens(tokens);
       if (!activePoints.length) {
         pushCadCommandFeedback(
@@ -3065,6 +3102,16 @@ export default function PreviewPanel({
     }
 
     if (cadActiveCommand && (commandKey === "FINISH" || commandKey === "DONE")) {
+      if (cadActiveCommand.kind === "offset") {
+        if (typeof cadActiveCommand.distance !== "number") {
+          pushCadCommandFeedback("OFFSET", "blocked", "OFFSET needs a distance like 10 before it can run.");
+          return;
+        }
+        offsetSelectedCadObjectBy(String(cadActiveCommand.distance));
+        setCadActiveCommand(null);
+        setCadCommandDraft("");
+        return;
+      }
       if (draftPoints.length < cadActiveCommand.minPoints) {
         pushCadCommandFeedback(
           cadActiveCommand.command,
@@ -3106,7 +3153,7 @@ export default function PreviewPanel({
       } else {
         setDraftPoints([]);
         setDraftPreviewPoint(null);
-        setCadActiveCommand({ command: "LINE", mode: "polyline", minPoints: 2 });
+        setCadActiveCommand({ command: "LINE", kind: "draw", mode: "polyline", minPoints: 2 });
         setDrawMode("polyline");
         onSetPreviewInteraction("edit");
         pushCadCommandFeedback("LINE", "info", "LINE active. Type the first point like 0,0, then the next point like 100,0. Press Enter/Run empty to finish.");
@@ -3119,7 +3166,7 @@ export default function PreviewPanel({
       } else {
         setDraftPoints([]);
         setDraftPreviewPoint(null);
-        setCadActiveCommand({ command: "PLINE", mode: "polyline", minPoints: 2 });
+        setCadActiveCommand({ command: "PLINE", kind: "draw", mode: "polyline", minPoints: 2 });
         setDrawMode("polyline");
         onSetPreviewInteraction("edit");
         pushCadCommandFeedback("PLINE", "info", "PLINE active. Type points one at a time, then press Enter/Run empty to finish.");
@@ -3132,7 +3179,7 @@ export default function PreviewPanel({
       } else {
         setDraftPoints([]);
         setDraftPreviewPoint(null);
-        setCadActiveCommand({ command: "RECTANGLE", mode: "rect", minPoints: 2 });
+        setCadActiveCommand({ command: "RECTANGLE", kind: "draw", mode: "rect", minPoints: 2 });
         setDrawMode("rect");
         onSetPreviewInteraction("edit");
         pushCadCommandFeedback("RECTANGLE", "info", "RECTANGLE active. Type first corner like 0,0, then opposite corner like 100,60.");
@@ -3219,8 +3266,15 @@ export default function PreviewPanel({
       return;
     }
     if (commandKey === "OFFSET") {
-      setCadOffsetDistance(firstValue);
-      offsetSelectedCadObjectBy(firstValue);
+      if (args.length) {
+        setCadOffsetDistance(firstValue);
+        offsetSelectedCadObjectBy(firstValue);
+        setCadActiveCommand(null);
+      } else {
+        setCadActiveCommand({ command: "OFFSET", kind: "offset" });
+        setCadCommandDraft("");
+        pushCadCommandFeedback("OFFSET", "info", "OFFSET active. Type a non-zero distance like 10. Select one draft object first for immediate offset.");
+      }
       return;
     }
     if (commandKey === "TRIM" || commandKey === "EXTEND") {
@@ -7350,7 +7404,9 @@ export default function PreviewPanel({
                     className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-semibold text-blue-800"
                     data-testid="cad-active-command"
                   >
-                    Active command: {cadActiveCommand.command} · {draftPoints.length}/{cadActiveCommand.minPoints}+ point{draftPoints.length === 1 ? "" : "s"} · type next coordinate or run empty to finish.
+                    {cadActiveCommand.kind === "draw"
+                      ? `Active command: ${cadActiveCommand.command} · ${draftPoints.length}/${cadActiveCommand.minPoints}+ point${draftPoints.length === 1 ? "" : "s"} · type next coordinate or run empty to finish.`
+                      : `Active command: OFFSET · ${typeof cadActiveCommand.distance === "number" ? `${cadActiveCommand.distance} ft` : "distance needed"} · type distance or run empty after selecting an object.`}
                   </div>
                 ) : null}
                 <p className="mt-2 text-[11px] font-medium text-slate-500">{cadCommandStatus}</p>

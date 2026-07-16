@@ -335,7 +335,10 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByRole("button", { name: "Undo CAD command" }).click();
     await cadTools.getByRole("button", { name: "Redo CAD command" }).click();
 
-    await cadTools.getByLabel("CAD command input").fill("offset 10");
+    await cadTools.getByLabel("CAD command input").fill("OFFSET");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(page.getByTestId("cad-active-command")).toContainText("Active command: OFFSET");
+    await cadTools.getByLabel("CAD command input").fill("10");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText("OFFSET applied 10 ft");
     await cadTools.getByLabel("CAD transform value").fill("8");
