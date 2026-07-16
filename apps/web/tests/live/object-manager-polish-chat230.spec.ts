@@ -526,6 +526,56 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
   });
 
+  test("copied combined objects preserve source traces and explode independently", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+
+    const originalCombinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await expect(originalCombinedRow).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await originalCombinedRow.getByTestId("object-manager-copy").click();
+    await page.getByTestId("object-manager-paste").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Pasted Combined Site Program Copy with 2 hidden source trace pieces",
+    );
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("4 hidden objects");
+
+    const copiedCombinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Copy" }).first();
+    await expect(copiedCombinedRow).toBeVisible();
+    await expect(originalCombinedRow).toBeVisible();
+
+    await copiedCombinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program Copy back into 2 preserved source pieces",
+    );
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Copy" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Copy Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Copy Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored Combined Site Program Copy after explode combined object.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Copy" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("4 hidden objects");
+
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: exploded Combined Site Program Copy into 2 source pieces.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program Copy" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+  });
+
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
