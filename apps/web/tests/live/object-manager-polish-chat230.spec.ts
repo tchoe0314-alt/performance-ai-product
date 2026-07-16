@@ -124,6 +124,32 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Water Line" }).first()).toContainText("Hidden");
   });
 
+  test("multi-select can combine editable objects into one named review object", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+
+    await expect(page.getByTestId("object-manager-combine-selected")).toBeVisible();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await expect(combinedRow).toBeVisible();
+    await expect(combinedRow).toContainText(/Office Building|Draft|Review/i);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Combined 2 drawn objects into Combined Site Program",
+    );
+    await expect(page.getByTestId("floating-object-inspector")).toContainText("Combined Site Program");
+  });
+
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

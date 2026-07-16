@@ -2771,6 +2771,8 @@ function PerformanceAIDashboardView({
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [objectManagerStatusMessage, setObjectManagerStatusMessage] = useState("");
+  const [combineObjectName, setCombineObjectName] = useState("");
+  const [combineObjectType, setCombineObjectType] = useState<SiteObjectType>("custom");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
 
@@ -7177,6 +7179,162 @@ function PerformanceAIDashboardView({
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
   }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
+
+  const handleObjectManagerCombineSelected = useCallback(() => {
+    clearGeneratedPreview();
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (targets.length < 2) {
+      reportObjectActionBlocker("Combine blocked: select two or more drawn/editable objects first.");
+      return;
+    }
+    const editable = targets.filter(
+      (item) =>
+        item.type !== "site" &&
+        !item.locked &&
+        !getObjectEditBlocker(item, "type") &&
+        !getObjectEditBlocker(item, "style"),
+    );
+    if (editable.length < 2) {
+      reportObjectActionBlocker("Combine blocked: selected objects are locked or source-only.");
+      return;
+    }
+    const geometryPoints = editable.flatMap((item) => {
+      if (Array.isArray(item.geometry) && item.geometry.length) return item.geometry;
+      const x = item.x ?? 0;
+      const y = item.y ?? 0;
+      return [
+        [x, y],
+        [x + item.w, y],
+        [x + item.w, y + item.d],
+        [x, y + item.d],
+      ] as Array<[number, number]>;
+    });
+    const validPoints = geometryPoints.filter(
+      ([x, y]) => Number.isFinite(x) && Number.isFinite(y),
+    );
+    if (validPoints.length < 2) {
+      reportObjectActionBlocker("Combine blocked: selected objects do not have enough drawn geometry.");
+      return;
+    }
+    const xs = validPoints.map(([x]) => x);
+    const ys = validPoints.map(([, y]) => y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const width = Math.max(8, maxX - minX);
+    const depth = Math.max(8, maxY - minY);
+    const linearTypes = new Set<SiteObjectType>(["driveway", "road", "sidewalk", "utility_corridor", "entrance"]);
+    const pointTypes = new Set<SiteObjectType>(["inlet", "outfall", "hydrant", "manhole"]);
+    const nextType = combineObjectType || "custom";
+    const existingCount = buildingPlacements.filter((item) => item.type === nextType).length + 1;
+    const nextLabel = combineObjectName.trim() || `${SITE_OBJECT_CATALOG[nextType]?.label ?? "Combined Object"} ${existingCount}`;
+    const nextGeometryType = pointTypes.has(nextType)
+      ? "point"
+      : linearTypes.has(nextType)
+        ? "polyline"
+        : "polygon";
+    const nextGeometry =
+      nextGeometryType === "point"
+        ? ([[minX + width / 2, minY + depth / 2]] as Array<[number, number]>)
+        : nextGeometryType === "polyline"
+          ? validPoints
+          : ([
+              [minX, minY],
+              [maxX, minY],
+              [maxX, maxY],
+              [minX, maxY],
+            ] as Array<[number, number]>);
+    const nextId = `${nextType}-combined-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const combinedObject: BuildingPlacement = {
+      id: nextId,
+      label: nextLabel,
+      type: nextType,
+      use: SITE_OBJECT_CATALOG[nextType]?.use,
+      x: nextGeometryType === "point" ? minX + width / 2 - 5 : minX,
+      y: nextGeometryType === "point" ? minY + depth / 2 - 5 : minY,
+      w: nextGeometryType === "point" ? 10 : width,
+      d: nextGeometryType === "point" ? 10 : depth,
+      rotation: 0,
+      locked: false,
+      placed: true,
+      source: "manual_drawn",
+      generated: false,
+      geometryType: nextGeometryType,
+      geometry: nextGeometry,
+      capabilities: {
+        movable: true,
+        resizable: nextGeometryType !== "polyline",
+        rotatable: nextGeometryType === "polygon",
+        deletable: true,
+      },
+      systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+      meta: {
+        category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
+        source: "manual_drawn_combined",
+        review_status: "engineer_review_required",
+        engineering_status: "draft_review_required",
+        handoff_status: "draft_review_required",
+        construction_release_allowed: false,
+        combined_from_object_ids: editable.map((item) => item.id),
+        combined_from_labels: editable.map((item) => item.label),
+        combined_source_count: editable.length,
+      },
+    };
+    setBuildingPlacements((prev) => [
+      ...prev.map((item) =>
+        editable.some((target) => target.id === item.id)
+          ? {
+              ...item,
+              meta: {
+                ...(item.meta ?? {}),
+                ui_hidden: true,
+                combined_into_object_id: nextId,
+                combined_into_label: nextLabel,
+              },
+            }
+          : item,
+      ),
+      combinedObject,
+    ]);
+    setSelectedObjectIds([nextId]);
+    setActivePlacementId(nextId);
+    setCombineObjectName("");
+    setCombineObjectType("custom");
+    markSystemsStale(systemsImpactedByPlacement(combinedObject));
+    setLastDraftAction({ action: "add", object: combinedObject });
+    recordRecentChange({
+      type: "object_added",
+      label: "Objects combined",
+      detail: `${editable.length} drawn objects were combined into ${nextLabel}. Source pieces were hidden, not deleted.`,
+      undo: { action: "add", object: combinedObject },
+    });
+    const message = `Combined ${editable.length} drawn objects into ${nextLabel}. Source pieces are hidden for a cleaner plan and preserved for review trace.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} This remains draft review geometry, not construction-release evidence.`, "status");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after combining drawn objects...",
+          track: true,
+        };
+      });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    clearGeneratedPreview,
+    combineObjectName,
+    combineObjectType,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    saveProjectRef,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
 
   const handleToggleBuildingLock = useCallback((id: string) => {
     setBuildingPlacements((prev) =>
@@ -24557,6 +24715,54 @@ function PerformanceAIDashboardView({
                                   </option>
                                 ))}
                             </select>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-combine-selected">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Combine into one object
+                            </p>
+                            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Name
+                                <input
+                                  type="text"
+                                  value={combineObjectName}
+                                  onChange={(event) => setCombineObjectName(event.target.value)}
+                                  placeholder="Example: Office Building A"
+                                  aria-label="Combined object name"
+                                  data-testid="object-manager-combine-name"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Type
+                                <select
+                                  value={combineObjectType}
+                                  onChange={(event) => setCombineObjectType(event.target.value as SiteObjectType)}
+                                  aria-label="Combined object type"
+                                  data-testid="object-manager-combine-type"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                >
+                                  {Object.entries(SITE_OBJECT_CATALOG)
+                                    .filter(([type]) => type !== "site")
+                                    .map(([type, catalog]) => (
+                                      <option key={`combine-${type}`} value={type}>
+                                        {catalog.label}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleObjectManagerCombineSelected}
+                              data-testid="object-manager-combine-action"
+                              className="mt-2 w-full rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
+                            >
+                              Combine selected
+                            </button>
+                            <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                              Source pieces are hidden, not deleted, so the combined object stays traceable and review-required.
+                            </p>
                           </div>
                         </div>
                       ) : null}
