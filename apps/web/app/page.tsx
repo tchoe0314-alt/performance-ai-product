@@ -498,6 +498,8 @@ type CadToolRequestForPreview = {
     | "trim"
     | "extend"
     | "fillet"
+    | "join"
+    | "split"
     | "delete"
     | "dimension"
     | "symbol"
@@ -20204,6 +20206,8 @@ function PerformanceAIDashboardView({
         { label: "Trim", tool: "trim", hint: "Selected line" },
         { label: "Extend", tool: "extend", hint: "Selected line" },
         { label: "Fillet", tool: "fillet", hint: "Selected vertex" },
+        { label: "Join", tool: "join", hint: "Selected linework" },
+        { label: "Split", tool: "split", hint: "Joined object" },
         { label: "Delete", tool: "delete", hint: "Selected object" },
       ],
     },
@@ -28988,6 +28992,7 @@ function PerformanceAIDashboardView({
               cadEntityPreviewObjects={cadEntityPreview.objects}
               suggestedPlacements={filteredDetectedPlacements}
               selectedBuildingId={activePlacementId}
+              selectedObjectIds={selectedObjectIds}
               focusDetectedId={focusDetectedId}
               onClearFocusDetected={() => setFocusDetectedId(null)}
               focusObjectId={focusObjectId}

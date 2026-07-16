@@ -121,4 +121,39 @@ test.describe("Chat 221B draw drafting usability", () => {
     await addLine.click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/i);
   });
+
+  test("visible JOIN and SPLIT combine and restore selected draft linework", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const addLine = cadTools.getByTestId("cad-tool-line");
+    const surface = page.getByTestId("preview-drawing-surface");
+
+    await addLine.click();
+    await clickExposedSurface(surface, 0.2, 0.24);
+    await clickExposedSurface(surface, 0.34, 0.24);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
+
+    await addLine.click();
+    await clickExposedSurface(surface, 0.34, 0.24);
+    await clickExposedSurface(surface, 0.48, 0.24);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ })).toHaveCount(2);
+
+    const lineRows = page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ });
+    await lineRows.nth(0).getByTestId("object-manager-bulk-select").check();
+    await lineRows.nth(1).getByTestId("object-manager-bulk-select").check();
+    await cadTools.getByTestId("cad-tool-join").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/JOIN created .* from 2 draft source objects/);
+
+    const joinedRow = page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined CAD Object/ }).first();
+    await expect(joinedRow).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await cadTools.getByTestId("cad-tool-split").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SPLIT restored 2 source trace objects/);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined CAD Object/ })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ })).toHaveCount(2);
+  });
 });

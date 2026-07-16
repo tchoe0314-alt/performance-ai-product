@@ -74,6 +74,8 @@ type CadToolRequest = {
     | "trim"
     | "extend"
     | "fillet"
+    | "join"
+    | "split"
     | "delete"
     | "dimension"
     | "symbol"
@@ -433,6 +435,7 @@ type PreviewPanelProps = {
   cadEntityPreviewObjects?: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
   selectedBuildingId: string | null;
+  selectedObjectIds?: string[];
   focusDetectedId?: string | null;
   focusObjectId?: string | null;
   onClearFocusDetected?: () => void;
@@ -556,6 +559,7 @@ export default function PreviewPanel({
   cadEntityPreviewObjects = [],
   suggestedPlacements,
   selectedBuildingId,
+  selectedObjectIds = [],
   focusDetectedId,
   focusObjectId,
   onClearFocusDetected,
@@ -2455,8 +2459,8 @@ export default function PreviewPanel({
     });
   }, [getCadLayer, selectedCadObject]);
   const selectedCadIds = useMemo(
-    () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...cadSelectionSet])),
-    [cadSelectionSet, selectedBuildingId],
+    () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...selectedObjectIds, ...cadSelectionSet])),
+    [cadSelectionSet, selectedBuildingId, selectedObjectIds],
   );
   const applyCadHistorySnapshot = useCallback(
     (snapshot: BuildingPlacement) => {
@@ -2996,6 +3000,150 @@ export default function PreviewPanel({
     },
     [createCadCommandGeometry, pushCadCommandFeedback, selectedCadObject],
   );
+  const joinSelectedCadObjects = useCallback(() => {
+    const selectedTargets = selectedCadIds
+      .map((id) => buildingPlacements.find((item) => item.id === id))
+      .filter((item): item is BuildingPlacement => Boolean(
+        item &&
+          item.type !== "site" &&
+          !item.locked &&
+          !item.meta?.ui_hidden &&
+          Array.isArray(item.geometry) &&
+          item.geometry.length >= 2,
+      ));
+    if (selectedTargets.length < 2) {
+      pushCadCommandFeedback("JOIN", "blocked", "JOIN blocked: select two or more editable draft line/area objects first.");
+      return;
+    }
+    const remaining = selectedTargets.map((item) => ({
+      item,
+      geometry: (item.geometry as Array<[number, number]>).map(([x, y]) => [x, y] as [number, number]),
+    }));
+    const first = remaining.shift();
+    if (!first) {
+      pushCadCommandFeedback("JOIN", "blocked", "JOIN blocked: selected geometry could not be read.");
+      return;
+    }
+    const joinedGeometry = [...first.geometry];
+    const distance = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    while (remaining.length) {
+      const tail = joinedGeometry[joinedGeometry.length - 1];
+      let bestIndex = 0;
+      let bestReverse = false;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      remaining.forEach((candidate, index) => {
+        const start = candidate.geometry[0];
+        const end = candidate.geometry[candidate.geometry.length - 1];
+        const startDistance = distance(tail, start);
+        const endDistance = distance(tail, end);
+        if (startDistance < bestDistance) {
+          bestDistance = startDistance;
+          bestIndex = index;
+          bestReverse = false;
+        }
+        if (endDistance < bestDistance) {
+          bestDistance = endDistance;
+          bestIndex = index;
+          bestReverse = true;
+        }
+      });
+      const [next] = remaining.splice(bestIndex, 1);
+      const nextGeometry = bestReverse ? [...next.geometry].reverse() : next.geometry;
+      const nextStart = nextGeometry[0];
+      joinedGeometry.push(
+        ...(distance(tail, nextStart) < 0.001 ? nextGeometry.slice(1) : nextGeometry),
+      );
+    }
+    if (joinedGeometry.length < 2) {
+      pushCadCommandFeedback("JOIN", "blocked", "JOIN blocked: selected geometry did not produce a joined line.");
+      return;
+    }
+    const joinedLabel =
+      selectedTargets.length === 2
+        ? `${selectedTargets[0].label || "CAD"} + ${selectedTargets[1].label || "CAD"} Join`
+        : `Joined CAD Object ${selectedTargets.length}`;
+    selectedTargets.forEach((item) => {
+      onUpdateBuilding(item.id, {
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: true,
+          joined_source_trace: true,
+          joined_into_label: joinedLabel,
+          review_status: "engineer_review_required",
+          engineering_status: "draft_review_required",
+          construction_release_allowed: false,
+        },
+      });
+    });
+    onCreateCustomGeometry({
+      mode: "polyline",
+      points: joinedGeometry,
+      label: joinedLabel,
+      meta: reviewRequiredCommandMeta("JOIN", {
+        joined_from_object_ids: selectedTargets.map((item) => item.id),
+        joined_from_labels: selectedTargets.map((item) => item.label),
+        joined_source_count: selectedTargets.length,
+        cad_layer: getCadLayer(selectedTargets[0]),
+        source_type: "manual_drawn_join",
+      }),
+    });
+    setCadSelectionSet([]);
+    onSelectObjects?.([]);
+    pushCadCommandFeedback("JOIN", "applied", `JOIN created ${joinedLabel} from ${selectedTargets.length} draft source objects; sources are hidden as review trace pieces.`);
+  }, [
+    buildingPlacements,
+    getCadLayer,
+    onCreateCustomGeometry,
+    onSelectObjects,
+    onUpdateBuilding,
+    pushCadCommandFeedback,
+    reviewRequiredCommandMeta,
+    selectedCadIds,
+  ]);
+  const splitSelectedJoinedObject = useCallback(() => {
+    if (!selectedCadObject) {
+      pushCadCommandFeedback("SPLIT", "blocked", "SPLIT blocked: select one joined draft object first.");
+      return;
+    }
+    const sourceIds = Array.isArray(selectedCadObject.meta?.joined_from_object_ids)
+      ? selectedCadObject.meta.joined_from_object_ids.map((id) => String(id)).filter(Boolean)
+      : [];
+    if (!sourceIds.length) {
+      pushCadCommandFeedback("SPLIT", "blocked", "SPLIT blocked: selected object has no joined source trace to restore.");
+      return;
+    }
+    const sourceObjects = buildingPlacements.filter((item) => sourceIds.includes(item.id));
+    if (!sourceObjects.length) {
+      pushCadCommandFeedback("SPLIT", "blocked", "SPLIT blocked: joined source trace objects are missing.");
+      return;
+    }
+    sourceObjects.forEach((item) => {
+      onUpdateBuilding(item.id, {
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: false,
+          split_from_joined_object_id: selectedCadObject.id,
+          split_from_joined_label: selectedCadObject.label,
+          review_status: "engineer_review_required",
+          engineering_status: "draft_review_required",
+          construction_release_allowed: false,
+        },
+      });
+    });
+    onRemoveBuilding(selectedCadObject.id);
+    setCadSelectionSet(sourceObjects.map((item) => item.id));
+    onSelectObjects?.(sourceObjects.map((item) => item.id));
+    onSelectBuilding(sourceObjects[0]?.id ?? null);
+    pushCadCommandFeedback("SPLIT", "applied", `SPLIT restored ${sourceObjects.length} source trace object${sourceObjects.length === 1 ? "" : "s"} from ${selectedCadObject.label || "joined object"}.`);
+  }, [
+    buildingPlacements,
+    onRemoveBuilding,
+    onSelectBuilding,
+    onSelectObjects,
+    onUpdateBuilding,
+    pushCadCommandFeedback,
+    selectedCadObject,
+  ]);
   const applyCadCoordinate = useCallback(() => {
     const x = parseCadNumber(cadCoordinateDraft.x, NaN);
     const y = parseCadNumber(cadCoordinateDraft.y, NaN);
@@ -3381,6 +3529,9 @@ export default function PreviewPanel({
       TR: "TRIM",
       EX: "EXTEND",
       F: "FILLET",
+      J: "JOIN",
+      BR: "SPLIT",
+      BREAK: "SPLIT",
       MI: "MIRROR",
       E: "ERASE",
       D: "DIM",
@@ -3413,6 +3564,9 @@ export default function PreviewPanel({
       "TRIM",
       "EXTEND",
       "FILLET",
+      "JOIN",
+      "SPLIT",
+      "BREAK",
       "MIRROR",
       "FLIP",
       "DIM",
@@ -3867,6 +4021,14 @@ export default function PreviewPanel({
       filletSelectedCadObject();
       return;
     }
+    if (commandKey === "JOIN") {
+      joinSelectedCadObjects();
+      return;
+    }
+    if (commandKey === "SPLIT" || commandKey === "BREAK") {
+      splitSelectedJoinedObject();
+      return;
+    }
     if (commandKey === "DIM") {
       applySelectedCadDimension();
       return;
@@ -3914,7 +4076,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, JOIN/J, SPLIT/BR, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
     alignOrDistributeSelectedCadObjects,
     applySelectedCadDimension,
@@ -3929,6 +4091,7 @@ export default function PreviewPanel({
     createCadCommandGeometry,
     draftPoints,
     filletSelectedCadObject,
+    joinSelectedCadObjects,
     moveSelectedCadObjectsByVector,
     offsetSelectedCadObjectBy,
     onSelectBuilding,
@@ -3943,6 +4106,7 @@ export default function PreviewPanel({
     selectedCadMetrics,
     selectedCadObject,
     selectedDeletableObject,
+    splitSelectedJoinedObject,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     updateCadObject,
@@ -4034,6 +4198,12 @@ export default function PreviewPanel({
       case "fillet":
         filletSelectedCadObject();
         break;
+      case "join":
+        joinSelectedCadObjects();
+        break;
+      case "split":
+        splitSelectedJoinedObject();
+        break;
       case "delete":
         if (selectedDeletableObject) {
           onRemoveBuilding(selectedDeletableObject.id);
@@ -4092,6 +4262,7 @@ export default function PreviewPanel({
     cadToolRequest,
     filletSelectedCadObject,
     insertCadSymbol,
+    joinSelectedCadObjects,
     lotHeight,
     lotWidth,
     offsetSelectedCadObjectBy,
@@ -4103,6 +4274,7 @@ export default function PreviewPanel({
     redoCadCommand,
     runCadCommand,
     selectedDeletableObject,
+    splitSelectedJoinedObject,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     undoCadCommand,
