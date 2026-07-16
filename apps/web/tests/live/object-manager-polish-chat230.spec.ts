@@ -267,6 +267,9 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.keyboard.press(platformShortcut("Z"));
     await expect(page.getByTestId("object-manager-status")).toContainText("Undo: removed HQ Office Test Copy Copy.");
     await expect(keyboardPastedRow).toHaveCount(0);
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: restored HQ Office Test Copy Copy.");
+    await expect(keyboardPastedRow).toBeVisible();
   });
 
   test("multi-select supports safe bulk updates and utility hide command updates manager state", async ({ page }) => {
@@ -580,7 +583,12 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.getByTestId("object-manager-array-columns").fill("3");
     await page.getByTestId("object-manager-array-spacing-x").fill("90");
     await page.getByTestId("object-manager-array-spacing-y").fill("70");
-    await page.getByTestId("object-manager-array-action").click();
+    await page.getByTestId("workspace-right-panel").hover();
+    await page.mouse.wheel(0, 360);
+    const arrayAction = page.getByTestId("object-manager-array-action");
+    await arrayAction.scrollIntoViewIfNeeded();
+    await expect(arrayAction).toBeEnabled();
+    await arrayAction.click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Array created 5 draft review copies.");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Array" })).toHaveCount(5);
     await expect(page.getByTestId("object-manager-multi-select")).toContainText("5 objects selected");
