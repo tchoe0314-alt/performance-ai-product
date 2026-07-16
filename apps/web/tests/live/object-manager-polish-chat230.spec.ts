@@ -282,6 +282,34 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Water Line" }).first()).toContainText("Hidden");
   });
 
+  test("multi-select layout buttons align and distribute draft objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+
+    await page.getByTestId("object-manager-bulk-align-left").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Aligned left 2 selected draft objects.");
+    await page.getByTestId("object-manager-bulk-align-top").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Aligned top 2 selected draft objects.");
+    await page.getByTestId("object-manager-bulk-distribute-x").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Distributed X 2 selected draft objects.");
+    await page.getByTestId("object-manager-bulk-distribute-y").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Distributed Y 2 selected draft objects.");
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
+    await siteRow.getByTestId("object-manager-bulk-select").check();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-bulk-align-left").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Layout blocked: selected objects are locked, source-only, or required project evidence.");
+  });
+
   test("multi-select can combine editable objects into one named review object", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

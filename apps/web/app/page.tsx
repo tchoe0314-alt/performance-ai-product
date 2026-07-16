@@ -7476,6 +7476,95 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
+  const handleObjectManagerBulkLayout = useCallback((layout: "align_left" | "align_top" | "distribute_x" | "distribute_y") => {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (targets.length < 2) {
+      reportObjectActionBlocker("Layout blocked: select at least two editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
+    const blockedCount = targets.length - editable.length;
+    if (editable.length < 2) {
+      reportObjectActionBlocker("Layout blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    const objectBounds = editable.map((item) => {
+      const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
+      const bounds = geometry?.length
+        ? getGeometryBounds(geometry)
+        : {
+            minX: item.x ?? 0,
+            maxX: (item.x ?? 0) + item.w,
+            minY: item.y ?? 0,
+            maxY: (item.y ?? 0) + item.d,
+            width: item.w,
+            depth: item.d,
+          };
+      return { item, bounds };
+    });
+    if (layout === "align_left") {
+      const targetX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
+      objectBounds.forEach(({ item, bounds }) => {
+        handleUpdateBuilding(item.id, { x: (item.x ?? 0) + (targetX - bounds.minX) });
+      });
+    } else if (layout === "align_top") {
+      const targetY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
+      objectBounds.forEach(({ item, bounds }) => {
+        handleUpdateBuilding(item.id, { y: (item.y ?? 0) + (targetY - bounds.minY) });
+      });
+    } else {
+      const axis = layout === "distribute_x" ? "x" : "y";
+      const sorted = [...objectBounds].sort((a, b) => {
+        const aCenter = axis === "x"
+          ? a.bounds.minX + a.bounds.width / 2
+          : a.bounds.minY + a.bounds.depth / 2;
+        const bCenter = axis === "x"
+          ? b.bounds.minX + b.bounds.width / 2
+          : b.bounds.minY + b.bounds.depth / 2;
+        return aCenter - bCenter;
+      });
+      const centers = sorted.map(({ bounds }) =>
+        axis === "x" ? bounds.minX + bounds.width / 2 : bounds.minY + bounds.depth / 2,
+      );
+      const first = centers[0];
+      const last = centers[centers.length - 1];
+      const step = sorted.length > 1 ? (last - first) / (sorted.length - 1) : 0;
+      sorted.forEach(({ item, bounds }, index) => {
+        const targetCenter = first + step * index;
+        if (axis === "x") {
+          const currentCenter = bounds.minX + bounds.width / 2;
+          handleUpdateBuilding(item.id, { x: (item.x ?? 0) + (targetCenter - currentCenter) });
+        } else {
+          const currentCenter = bounds.minY + bounds.depth / 2;
+          handleUpdateBuilding(item.id, { y: (item.y ?? 0) + (targetCenter - currentCenter) });
+        }
+      });
+    }
+    const labelMap: Record<typeof layout, string> = {
+      align_left: "Aligned left",
+      align_top: "Aligned top",
+      distribute_x: "Distributed X",
+      distribute_y: "Distributed Y",
+    };
+    const message = `${labelMap[layout]} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Layout changes remain draft review geometry.`, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Objects laid out",
+      detail: message,
+      undoBlockedReason: "Use manual move, align, or distribute again to revise the draft layout.",
+    });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
+
   const handleObjectManagerLayerVisibility = useCallback((layerType: SiteObjectType, hidden: boolean) => {
     const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
     if (!targets.length) {
@@ -25446,6 +25535,38 @@ function PerformanceAIDashboardView({
                               className="col-span-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
                             >
                               Duplicate selected
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkLayout("align_left")}
+                              data-testid="object-manager-bulk-align-left"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Align left
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkLayout("align_top")}
+                              data-testid="object-manager-bulk-align-top"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Align top
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkLayout("distribute_x")}
+                              data-testid="object-manager-bulk-distribute-x"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Distribute X
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkLayout("distribute_y")}
+                              data-testid="object-manager-bulk-distribute-y"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Distribute Y
                             </button>
                             <button
                               type="button"
