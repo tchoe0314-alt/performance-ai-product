@@ -247,6 +247,11 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await copiedRow.getByTestId("object-manager-select").click();
     await page.keyboard.press("ArrowRight");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("MOVE applied 5,0 to 1 selected draft object");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored previous state for HQ Office Test Copy.");
+    await copiedRow.getByTestId("object-manager-select").click();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("MOVE applied 5,0 to 1 selected draft object");
     await page.keyboard.press("Shift+ArrowDown");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("MOVE applied 0,25 to 1 selected draft object");
 
