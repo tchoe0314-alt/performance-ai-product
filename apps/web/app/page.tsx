@@ -7337,6 +7337,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker(blocked[0] ?? "Bulk visibility blocked: selected objects cannot be hidden from the preview.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: hidden ? "bulk hide" : "bulk show",
+    };
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, {
         meta: {
@@ -7349,7 +7354,22 @@ function PerformanceAIDashboardView({
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     appendChatMessage("assistant", message, "status");
-  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
+    recordRecentChange({
+      type: "object_visibility_changed",
+      label: hidden ? "Objects hidden" : "Objects shown",
+      detail: message,
+      undo,
+    });
+    setLastDraftAction(undo);
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
 
   const handleObjectManagerIsolateSelected = useCallback(() => {
     const selected = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
@@ -7359,9 +7379,15 @@ function PerformanceAIDashboardView({
       return;
     }
     const selectedIdSet = new Set(editableSelected.map((item) => item.id));
+    const editableAffected = buildingPlacements.filter((item) => !getObjectEditBlocker(item, "hide"));
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editableAffected.map(cloneBuildingPlacementForUndo),
+      label: "isolate selected",
+    };
     let hiddenCount = 0;
     let shownCount = 0;
-    buildingPlacements.forEach((item) => {
+    editableAffected.forEach((item) => {
       const blocker = getObjectEditBlocker(item, "hide");
       if (blocker) return;
       const shouldHide = !selectedIdSet.has(item.id);
@@ -7382,11 +7408,13 @@ function PerformanceAIDashboardView({
       type: "object_visibility_changed",
       label: "Objects isolated",
       detail: message,
-      undoBlockedReason: "Use Show all hidden to restore the rest of the draft objects.",
+      undo,
     });
+    setLastDraftAction(undo);
   }, [
     appendChatMessage,
     buildingPlacements,
+    cloneBuildingPlacementForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -7410,6 +7438,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Bulk lock blocked: selected objects are source-only or required project evidence.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: locked ? "bulk lock" : "bulk unlock",
+    };
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, { locked });
     });
@@ -7421,11 +7454,13 @@ function PerformanceAIDashboardView({
       type: "object_style_changed",
       label: `Objects ${locked ? "locked" : "unlocked"}`,
       detail: message,
-      undoBlockedReason: "Use Object Manager bulk controls to change lock state again.",
+      undo,
     });
+    setLastDraftAction(undo);
   }, [
     appendChatMessage,
     buildingPlacements,
+    cloneBuildingPlacementForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -7444,6 +7479,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Bulk color blocked: selected objects are locked, source-only, or not editable.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: "bulk color",
+    };
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, {
         meta: {
@@ -7455,7 +7495,21 @@ function PerformanceAIDashboardView({
     const message = `Updated color for ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
-  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Objects recolored",
+      detail: message,
+      undo,
+    });
+    setLastDraftAction(undo);
+  }, [
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
 
   const handleObjectManagerBulkType = useCallback((nextType: SiteObjectType) => {
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
@@ -7469,6 +7523,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Bulk layer/type blocked: selected objects are locked, source-only, or not editable.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: "bulk layer/type",
+    };
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, {
         type: nextType,
@@ -7482,7 +7541,21 @@ function PerformanceAIDashboardView({
     const message = `Updated layer/type for ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
-  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Objects layer/type changed",
+      detail: message,
+      undo,
+    });
+    setLastDraftAction(undo);
+  }, [
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
 
   const handleObjectManagerBulkDelete = useCallback(() => {
     clearGeneratedPreview();
@@ -7869,6 +7942,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Layout blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: `layout ${layout.replace("_", " ")}`,
+    };
     const objectBounds = editable.map((item) => {
       const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
       const bounds = geometry?.length
@@ -7935,11 +8013,13 @@ function PerformanceAIDashboardView({
       type: "object_style_changed",
       label: "Objects laid out",
       detail: message,
-      undoBlockedReason: "Use manual move, align, or distribute again to revise the draft layout.",
+      undo,
     });
+    setLastDraftAction(undo);
   }, [
     appendChatMessage,
     buildingPlacements,
+    cloneBuildingPlacementForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -8211,6 +8291,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Layer visibility blocked: no objects exist on that layer.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: targets.map(cloneBuildingPlacementForUndo),
+      label: `${toReadableLabel(layerType)} layer visibility`,
+    };
     targets.forEach((item) => {
       handleUpdateBuilding(item.id, {
         meta: {
@@ -8228,9 +8313,17 @@ function PerformanceAIDashboardView({
       type: "object_visibility_changed",
       label: `${label} layer ${hidden ? "hidden" : "shown"}`,
       detail: message,
-      undoBlockedReason: "Use Object Manager layer controls to change visibility again.",
+      undo,
     });
-  }, [appendChatMessage, buildingPlacements, handleUpdateBuilding, recordRecentChange, reportObjectActionBlocker]);
+    setLastDraftAction(undo);
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+  ]);
 
   const handleObjectManagerLayerLock = useCallback((layerType: SiteObjectType, locked: boolean) => {
     const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
@@ -8243,6 +8336,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Layer lock blocked: this layer only contains source-only or required evidence objects.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: `${toReadableLabel(layerType)} layer lock`,
+    };
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, { locked });
     });
@@ -8255,9 +8353,17 @@ function PerformanceAIDashboardView({
       type: "object_style_changed",
       label: `${label} layer ${locked ? "locked" : "unlocked"}`,
       detail: message,
-      undoBlockedReason: "Use Object Manager layer controls to change lock state again.",
+      undo,
     });
-  }, [appendChatMessage, buildingPlacements, handleUpdateBuilding, recordRecentChange, reportObjectActionBlocker]);
+    setLastDraftAction(undo);
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+  ]);
 
   const handleObjectManagerLayerSelect = useCallback((layerType: SiteObjectType) => {
     const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
@@ -8282,8 +8388,13 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Layer isolate blocked: no objects exist on that layer.");
       return;
     }
-    buildingPlacements
-      .filter((item) => item.type !== "site")
+    const editableAffected = buildingPlacements.filter((item) => item.type !== "site" && !getObjectEditBlocker(item, "hide"));
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editableAffected.map(cloneBuildingPlacementForUndo),
+      label: `${toReadableLabel(layerType)} layer isolate`,
+    };
+    editableAffected
       .forEach((item) => {
         handleUpdateBuilding(item.id, {
           meta: {
@@ -8302,9 +8413,17 @@ function PerformanceAIDashboardView({
       type: "object_visibility_changed",
       label: `${label} layer isolated`,
       detail: message,
-      undoBlockedReason: "Use Show all or layer controls to restore visibility.",
+      undo,
     });
-  }, [appendChatMessage, buildingPlacements, handleUpdateBuilding, recordRecentChange, reportObjectActionBlocker]);
+    setLastDraftAction(undo);
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+  ]);
 
   const handleObjectManagerCombineSelected = useCallback(() => {
     clearGeneratedPreview();

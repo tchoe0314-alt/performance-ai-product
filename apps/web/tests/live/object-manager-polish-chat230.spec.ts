@@ -249,16 +249,21 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await utilityLayerRow.getByTestId("object-manager-layer-isolate").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Showing only 1 Utility Corridor layer object; 2 other objects hidden.");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
-    await page.getByTestId("object-manager-show-all").click();
+    await page.getByTestId("recent-changes-undo").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from utility corridor layer isolate.");
     await officeLayerRow.getByTestId("object-manager-layer-visibility").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("1 hidden object");
     await expect(officeLayerRow).toContainText("1 hidden");
-    await officeLayerRow.getByTestId("object-manager-layer-visibility").click();
+    await page.getByTestId("recent-changes-undo").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await officeLayerRow.getByTestId("object-manager-layer-lock").click();
     await expect(officeLayerRow).toContainText("1 locked");
     await expect(officeRow).toContainText(/locked/i);
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 1 draft objects from office building layer lock.");
+    await expect(officeLayerRow).toContainText("0 locked");
+    await officeLayerRow.getByTestId("object-manager-layer-lock").click();
     await officeRow.getByTestId("object-manager-color").fill("#111827");
     await expect(page.getByTestId("object-manager-status")).toContainText("style blocked: unlock Office Building - 28,000 sf before editing metadata.");
     await officeLayerRow.getByTestId("object-manager-layer-lock").click();
@@ -270,6 +275,11 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     await page.getByTestId("object-manager-bulk-hide").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 2 draft objects from bulk hide.");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await page.getByTestId("object-manager-bulk-hide").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
     await page.getByTestId("object-manager-bulk-show").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
 
@@ -277,11 +287,15 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Isolated 2 selected objects; 1 other object hidden.");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("1 hidden object");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Water Line" }).first()).toContainText("Hidden");
-    await page.getByTestId("object-manager-show-all").click();
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from isolate selected.");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
 
     await page.getByTestId("object-manager-bulk-type").selectOption("driveway");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Driveway");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from bulk layer/type.");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building");
 
     await runCommand(page, "hide utilities");
     await openDrawPanel(page);
@@ -302,6 +316,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     await page.getByTestId("object-manager-bulk-align-left").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Aligned left 2 selected draft objects.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 2 draft objects from layout align left.");
     await page.getByTestId("object-manager-bulk-align-top").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Aligned top 2 selected draft objects.");
     await page.getByTestId("object-manager-bulk-distribute-x").click();
