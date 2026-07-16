@@ -516,6 +516,14 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first()).toBeVisible();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first()).toBeVisible();
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored Combined Site Program after explode combined object.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: exploded Combined Site Program into 2 source pieces.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
   });
 
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {
