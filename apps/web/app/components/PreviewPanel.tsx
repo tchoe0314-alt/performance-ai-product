@@ -939,6 +939,7 @@ export default function PreviewPanel({
   const canUse3D = showMap || hasLiveObjects || preview3DEffectiveItems.length > 0 || Boolean(planPreviewUrl);
   const showHover = previewInteraction === "static";
   const allowEdits = previewInteraction === "edit";
+  const showQuickDrawPalette = allowEdits || (!siteLocked && previewMode === "2d");
   const activeDrawMode =
     (drawMode === "site" && !siteLocked) ||
     ((drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect" || drawMode === "point") && canDrawObjects);
@@ -8616,7 +8617,7 @@ export default function PreviewPanel({
 	                });
 	              }}
 	            >
-	              {previewMode === "2d" && allowEdits ? (
+	              {previewMode === "2d" && showQuickDrawPalette ? (
 		                <div
 		                  data-testid="canvas-quick-draw-palette"
 		                  className="pointer-events-auto absolute left-[7rem] top-20 z-[35] flex max-w-[calc(100%-8rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"

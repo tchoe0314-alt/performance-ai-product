@@ -454,10 +454,16 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Scaled 2 selected draft objects by 1.2.");
     await expect(officeRow).toContainText(/Draft|Review/i);
 
+    await page.getByTestId("object-manager-bulk-rotate-angle").fill("22");
+    await page.getByTestId("object-manager-bulk-rotate-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Rotated 2 selected draft objects by 22 degrees.");
+
     await page.getByRole("button", { name: "Clear" }).click();
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-move-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Move blocked: selected objects are locked, source-only, or required project evidence.");
+    await page.getByTestId("object-manager-bulk-rotate-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
   });
 });

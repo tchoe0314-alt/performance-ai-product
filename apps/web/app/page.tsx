@@ -2782,6 +2782,7 @@ function PerformanceAIDashboardView({
   const [bulkMoveX, setBulkMoveX] = useState("25");
   const [bulkMoveY, setBulkMoveY] = useState("0");
   const [bulkScaleFactor, setBulkScaleFactor] = useState("1.1");
+  const [bulkRotateAngle, setBulkRotateAngle] = useState("15");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
 
@@ -7784,6 +7785,63 @@ function PerformanceAIDashboardView({
   }, [
     appendChatMessage,
     bulkScaleFactor,
+    buildingPlacements,
+    handleUpdateBuilding,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerBulkRotate = useCallback(() => {
+    const angle = Number(bulkRotateAngle);
+    if (!Number.isFinite(angle) || angle === 0) {
+      reportObjectActionBlocker("Rotate blocked: enter a non-zero angle.");
+      return;
+    }
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Rotate blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    const radians = (angle * Math.PI) / 180;
+    editable.forEach((item) => {
+      const centerX = (item.x ?? 0) + item.w / 2;
+      const centerY = (item.y ?? 0) + item.d / 2;
+      const nextGeometry = item.geometry?.map(([x, y]) => {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        return [
+          centerX + dx * Math.cos(radians) - dy * Math.sin(radians),
+          centerY + dx * Math.sin(radians) + dy * Math.cos(radians),
+        ] as [number, number];
+      });
+      handleUpdateBuilding(item.id, {
+        rotation: ((item.rotation ?? 0) + angle) % 360,
+        geometry: nextGeometry,
+      });
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const message = `Rotated ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${angle} degrees${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Rotation remains draft review geometry.`, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Objects rotated",
+      detail: message,
+      undoBlockedReason: "Use Rotate again with the opposite angle to revise the draft orientation.",
+    });
+  }, [
+    appendChatMessage,
+    bulkRotateAngle,
     buildingPlacements,
     handleUpdateBuilding,
     markSystemsStale,
@@ -25922,6 +25980,27 @@ function PerformanceAIDashboardView({
                                 className="self-end rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
                               >
                                 Scale
+                              </button>
+                            </div>
+                            <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Rotate degrees
+                                <input
+                                  type="number"
+                                  step="1"
+                                  value={bulkRotateAngle}
+                                  onChange={(event) => setBulkRotateAngle(event.target.value)}
+                                  data-testid="object-manager-bulk-rotate-angle"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleObjectManagerBulkRotate}
+                                data-testid="object-manager-bulk-rotate-action"
+                                className="self-end rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                              >
+                                Rotate
                               </button>
                             </div>
                           </div>
