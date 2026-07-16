@@ -669,6 +669,39 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
   });
 
+  test("show all keeps combined source trace pieces hidden until explode", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByTestId("object-manager-show-all").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "0 hidden objects shown. 2 combined source trace pieces stayed hidden until you explode the combined object.",
+    );
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await expect(officeRow).toContainText("Hidden");
+    await expect(parkingRow).toContainText("Hidden");
+
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await combinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program back into 2 preserved source pieces",
+    );
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await expect(officeRow).toContainText("Visible");
+    await expect(parkingRow).toContainText("Visible");
+  });
+
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

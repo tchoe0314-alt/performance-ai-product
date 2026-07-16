@@ -26805,8 +26805,10 @@ function PerformanceAIDashboardView({
                             <button
                               type="button"
                               onClick={() => {
-                                buildingPlacements
-                                  .filter((item) => Boolean(item.meta?.ui_hidden))
+                                const hiddenObjects = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden));
+                                const restorableHiddenObjects = hiddenObjects.filter((item) => !item.meta?.combined_into_object_id);
+                                const preservedTraceCount = hiddenObjects.length - restorableHiddenObjects.length;
+                                restorableHiddenObjects
                                   .forEach((item) => {
                                     handleUpdateBuilding(item.id, {
                                       meta: {
@@ -26818,10 +26820,14 @@ function PerformanceAIDashboardView({
                                 recordRecentChange({
                                   type: "object_visibility_changed",
                                   label: "Objects shown",
-                                  detail: "All hidden objects are visible again.",
+                                  detail: preservedTraceCount
+                                    ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown; ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden.`
+                                    : "All hidden objects are visible again.",
                                   undoBlockedReason: "Hide specific objects again from Object Manager if needed.",
                                 });
-                                pushRecoveryMessage("All hidden objects are visible again.");
+                                pushRecoveryMessage(preservedTraceCount
+                                  ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown. ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden until you explode the combined object.`
+                                  : "All hidden objects are visible again.");
                               }}
                               data-testid="object-manager-show-all"
                               className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
