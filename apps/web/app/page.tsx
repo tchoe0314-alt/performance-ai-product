@@ -7014,6 +7014,7 @@ function PerformanceAIDashboardView({
         typeof updates.y === "number" ||
         typeof updates.w === "number" ||
         typeof updates.d === "number" ||
+        typeof updates.rotation === "number" ||
         Array.isArray(updates.geometry);
       const shouldSyncCombinedSources =
         combinedSourceIds.length > 0 &&
@@ -7035,32 +7036,52 @@ function PerformanceAIDashboardView({
           const nextGroupOriginY = nextObject.y ?? groupOriginY;
           const groupScaleX = target.w > 0 && nextObject.w > 0 ? nextObject.w / target.w : 1;
           const groupScaleY = target.d > 0 && nextObject.d > 0 ? nextObject.d / target.d : 1;
+          const groupCenterX = groupOriginX + target.w / 2;
+          const groupCenterY = groupOriginY + target.d / 2;
+          const nextGroupCenterX = nextGroupOriginX + nextObject.w / 2;
+          const nextGroupCenterY = nextGroupOriginY + nextObject.d / 2;
+          const rotationDeltaRadians = ((((nextObject.rotation ?? 0) - (target.rotation ?? 0)) % 360) * Math.PI) / 180;
+          const cosDelta = Math.cos(rotationDeltaRadians);
+          const sinDelta = Math.sin(rotationDeltaRadians);
           const transformPoint = ([px, py]: [number, number]): [number, number] => [
-            nextGroupOriginX + (px - groupOriginX) * groupScaleX,
-            nextGroupOriginY + (py - groupOriginY) * groupScaleY,
+            nextGroupCenterX + ((px - groupCenterX) * groupScaleX) * cosDelta - ((py - groupCenterY) * groupScaleY) * sinDelta,
+            nextGroupCenterY + ((px - groupCenterX) * groupScaleX) * sinDelta + ((py - groupCenterY) * groupScaleY) * cosDelta,
           ];
-          const afterSources = sourceObjects.map((source) => ({
-            ...source,
-            x: groupGeometryChanged
-              ? nextGroupOriginX + ((source.x ?? groupOriginX) - groupOriginX) * groupScaleX
-              : source.x,
-            y: groupGeometryChanged
-              ? nextGroupOriginY + ((source.y ?? groupOriginY) - groupOriginY) * groupScaleY
-              : source.y,
-            w: groupGeometryChanged ? Math.max(1, source.w * groupScaleX) : source.w,
-            d: groupGeometryChanged ? Math.max(1, source.d * groupScaleY) : source.d,
-            geometry: source.geometry?.map((point) => groupGeometryChanged ? transformPoint(point) : ([point[0], point[1]] as [number, number])),
-            capabilities: source.capabilities ? { ...source.capabilities } : source.capabilities,
-            meta: {
-              ...(source.meta ?? {}),
-              combined_into_object_id: target.id,
-              combined_into_label: nextGroupLabel,
-              combined_into_type: nextGroupType,
-              combined_trace_synced_at: new Date().toISOString(),
-              ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
-              ...(typeof nextGroupColor === "string" ? { combined_into_color: nextGroupColor } : {}),
-            },
-          }));
+          const afterSources = sourceObjects.map((source) => {
+            const sourceCorners: Array<[number, number]> = [
+              [source.x ?? 0, source.y ?? 0],
+              [(source.x ?? 0) + source.w, source.y ?? 0],
+              [(source.x ?? 0) + source.w, (source.y ?? 0) + source.d],
+              [source.x ?? 0, (source.y ?? 0) + source.d],
+            ];
+            const transformedGeometry = source.geometry?.map((point) => groupGeometryChanged ? transformPoint(point) : ([point[0], point[1]] as [number, number]));
+            const boundsPoints = groupGeometryChanged ? (transformedGeometry?.length ? transformedGeometry : sourceCorners.map(transformPoint)) : sourceCorners;
+            const boundsXs = boundsPoints.map(([x]) => x);
+            const boundsYs = boundsPoints.map(([, y]) => y);
+            const minSourceX = Math.min(...boundsXs);
+            const maxSourceX = Math.max(...boundsXs);
+            const minSourceY = Math.min(...boundsYs);
+            const maxSourceY = Math.max(...boundsYs);
+            return {
+              ...source,
+              x: groupGeometryChanged ? minSourceX : source.x,
+              y: groupGeometryChanged ? minSourceY : source.y,
+              w: groupGeometryChanged ? Math.max(1, maxSourceX - minSourceX) : source.w,
+              d: groupGeometryChanged ? Math.max(1, maxSourceY - minSourceY) : source.d,
+              rotation: groupGeometryChanged ? ((source.rotation ?? 0) + ((nextObject.rotation ?? 0) - (target.rotation ?? 0))) % 360 : source.rotation,
+              geometry: transformedGeometry,
+              capabilities: source.capabilities ? { ...source.capabilities } : source.capabilities,
+              meta: {
+                ...(source.meta ?? {}),
+                combined_into_object_id: target.id,
+                combined_into_label: nextGroupLabel,
+                combined_into_type: nextGroupType,
+                combined_trace_synced_at: new Date().toISOString(),
+                ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
+                ...(typeof nextGroupColor === "string" ? { combined_into_color: nextGroupColor } : {}),
+              },
+            };
+          });
           bulkUpdateUndo = {
             action: "bulk_update",
             before: [target, ...sourceObjects].map((item) => ({
@@ -7525,6 +7546,8 @@ function PerformanceAIDashboardView({
     const nextGeometry = item.geometry?.map(transformPoint);
     const nextUpdates: Partial<BuildingPlacement> = transform === "rotate"
       ? {
+          x: centerX - item.d / 2,
+          y: centerY - item.w / 2,
           rotation: ((item.rotation ?? 0) + 90) % 360,
           w: item.d,
           d: item.w,
