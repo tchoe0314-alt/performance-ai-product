@@ -2794,7 +2794,7 @@ function PerformanceAIDashboardView({
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [objectManagerStatusMessage, setObjectManagerStatusMessage] = useState("");
-  const [objectClipboard, setObjectClipboard] = useState<BuildingPlacement | null>(null);
+  const [objectClipboard, setObjectClipboard] = useState<BuildingPlacement[]>([]);
   const [combineObjectName, setCombineObjectName] = useState("");
   const [combineObjectType, setCombineObjectType] = useState<SiteObjectType>("custom");
   const [arrayRows, setArrayRows] = useState("2");
@@ -7272,68 +7272,82 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker(blocker);
       return;
     }
-    setObjectClipboard({ ...item, geometry: item.geometry ? item.geometry.map(([x, y]) => [x, y]) : undefined });
+    setObjectClipboard([cloneBuildingPlacementForUndo(item)]);
     const message = `Copied ${item.label}. Use Paste to place an editable draft duplicate.`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
-  }, [reportObjectActionBlocker]);
+  }, [cloneBuildingPlacementForUndo, reportObjectActionBlocker]);
 
   const handleObjectManagerPaste = useCallback(() => {
     clearGeneratedPreview();
-    if (!objectClipboard) {
+    if (!objectClipboard.length) {
       reportObjectActionBlocker("Paste blocked: copy an editable object first.");
       return;
     }
-    const blocker = getObjectEditBlocker(objectClipboard, "copy");
-    if (blocker) {
+    const blocked = objectClipboard
+      .map((item) => getObjectEditBlocker(item, "copy"))
+      .filter(Boolean) as string[];
+    const editable = objectClipboard.filter((item) => !getObjectEditBlocker(item, "copy"));
+    if (!editable.length) {
+      const blocker = blocked[0] ?? "Paste blocked: copied objects are source-only or cannot be copied.";
       reportObjectActionBlocker(blocker);
       return;
     }
     const offset = 24;
-    const nextType = objectClipboard.type ?? "custom";
-    const nextId = `${nextType}-copy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const nextObject: BuildingPlacement = {
-      ...objectClipboard,
-      id: nextId,
-      label: `${objectClipboard.label} Copy`,
-      x: (objectClipboard.x ?? 0) + offset,
-      y: (objectClipboard.y ?? 0) + offset,
-      source: "manual_drawn",
-      generated: false,
-      locked: false,
-      placed: true,
-      geometry: objectClipboard.geometry?.map(([x, y]) => [x + offset, y + offset]),
-      capabilities: {
-        movable: true,
-        resizable: objectClipboard.capabilities?.resizable ?? true,
-        rotatable: objectClipboard.capabilities?.rotatable ?? true,
-        deletable: true,
-      },
-      meta: {
-        ...(objectClipboard.meta ?? {}),
-        ui_hidden: false,
-        source: "manual_drawn_copy",
-        copied_from_object_id: objectClipboard.id,
-        copied_from_label: objectClipboard.label,
-        review_status: "engineer_review_required",
-        engineering_status: "draft_review_required",
-        handoff_status: "draft_review_required",
-        construction_release_allowed: false,
-      },
-    };
-    setBuildingPlacements((prev) => [...prev, nextObject]);
-    setActivePlacementId(nextId);
-    setSelectedObjectIds([nextId]);
-    markSystemsStale(systemsImpactedByPlacement(nextObject));
-    const undoAction: DraftUndoAction = { action: "add", object: nextObject };
+    const stamp = Date.now();
+    const nextObjects = editable.map((item, index): BuildingPlacement => {
+      const nextType = item.type ?? "custom";
+      const nextId = `${nextType}-copy-${stamp}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        ...item,
+        id: nextId,
+        label: `${item.label} Copy`,
+        x: (item.x ?? 0) + offset,
+        y: (item.y ?? 0) + offset,
+        source: "manual_drawn",
+        generated: false,
+        locked: false,
+        placed: true,
+        geometry: item.geometry?.map(([x, y]) => [x + offset, y + offset]),
+        capabilities: {
+          movable: true,
+          resizable: item.capabilities?.resizable ?? true,
+          rotatable: item.capabilities?.rotatable ?? true,
+          deletable: true,
+        },
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: false,
+          source: "manual_drawn_copy",
+          copied_from_object_id: item.id,
+          copied_from_label: item.label,
+          copied_set_size: editable.length,
+          review_status: "engineer_review_required",
+          engineering_status: "draft_review_required",
+          handoff_status: "draft_review_required",
+          construction_release_allowed: false,
+        },
+      };
+    });
+    setBuildingPlacements((prev) => [...prev, ...nextObjects]);
+    setActivePlacementId(nextObjects[0]?.id ?? null);
+    setSelectedObjectIds(nextObjects.map((item) => item.id));
+    nextObjects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+    const undoAction: DraftUndoAction = nextObjects.length === 1
+      ? { action: "add", object: nextObjects[0] }
+      : { action: "add_many", objects: nextObjects, label: "multi-object paste" };
     recordDraftUndoAction(undoAction);
     recordRecentChange({
       type: "object_added",
-      label: "Object pasted",
-      detail: `${nextObject.label} was pasted as an editable draft duplicate.`,
-      undo: { action: "add", object: nextObject },
+      label: nextObjects.length === 1 ? "Object pasted" : "Objects pasted",
+      detail: nextObjects.length === 1
+        ? `${nextObjects[0].label} was pasted as an editable draft duplicate.`
+        : `${nextObjects.length} copied draft objects were pasted as editable draft duplicates.`,
+      undo: undoAction,
     });
-    const message = `Pasted ${nextObject.label}. It remains draft review geometry, not construction-release evidence.`;
+    const message = nextObjects.length === 1
+      ? `Pasted ${nextObjects[0].label}. It remains draft review geometry, not construction-release evidence.`
+      : `Pasted ${nextObjects.length} copied draft objects${blocked.length ? `; ${blocked.length} blocked.` : "."} They remain draft review geometry, not construction-release evidence.`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     appendChatMessage("assistant", message, "status");
@@ -7352,6 +7366,7 @@ function PerformanceAIDashboardView({
     markSystemsStale,
     objectClipboard,
     recordRecentChange,
+    recordDraftUndoAction,
     reportObjectActionBlocker,
     saveProjectRef,
     systemsImpactedByPlacement,
@@ -20212,9 +20227,39 @@ function PerformanceAIDashboardView({
   ]);
 
   const handleCopySelectedObject = useCallback(() => {
+    if (selectedObjectIds.length > 1) {
+      const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+      const editable = targets.filter((item) => !getObjectEditBlocker(item, "copy"));
+      const blockedCount = targets.length - editable.length;
+      if (!editable.length) {
+        reportObjectActionBlocker("Copy blocked: selected objects are locked, source-only, or required project evidence.");
+        updateProjectStatus({
+          state: "blocked",
+          area: "chat",
+          title: "Copy blocked",
+          detail: "Selected objects are locked, source-only, or required project evidence.",
+          nextAction: "Select editable draft objects, then press Cmd/Ctrl+C again.",
+        });
+        return;
+      }
+      setObjectClipboard(editable.map(cloneBuildingPlacementForUndo));
+      const message = `Copied ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+      setObjectManagerStatusMessage(message);
+      setStatusMessage(message);
+      updateProjectStatus({
+        state: "ready",
+        area: "chat",
+        title: "Objects copied",
+        detail: message,
+        nextAction: "Press Cmd/Ctrl+V or use Paste to place draft duplicates.",
+      });
+      return;
+    }
     const target = activePlacementId
       ? buildingPlacements.find((item) => item.id === activePlacementId)
-      : null;
+      : selectedObjectIds[0]
+        ? buildingPlacements.find((item) => item.id === selectedObjectIds[0])
+        : null;
     if (!target) {
       reportObjectActionBlocker("Copy blocked: select an editable draft object first.");
       updateProjectStatus({
@@ -20234,18 +20279,29 @@ function PerformanceAIDashboardView({
       detail: `Copied ${target.label}.`,
       nextAction: "Press Cmd/Ctrl+V or use Paste to place a draft duplicate.",
     });
-  }, [activePlacementId, buildingPlacements, handleObjectManagerCopy, reportObjectActionBlocker, updateProjectStatus]);
+  }, [
+    activePlacementId,
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    handleObjectManagerCopy,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+    updateProjectStatus,
+  ]);
 
   const handlePasteSelectedObject = useCallback(() => {
     handleObjectManagerPaste();
+    const clipboardCount = objectClipboard.length;
     updateProjectStatus({
-      state: objectClipboard ? "stale" : "blocked",
+      state: clipboardCount ? "stale" : "blocked",
       area: "chat",
-      title: objectClipboard ? "Object pasted" : "Paste blocked",
-      detail: objectClipboard
-        ? `Pasted ${objectClipboard.label} as an editable draft duplicate.`
+      title: clipboardCount ? (clipboardCount === 1 ? "Object pasted" : "Objects pasted") : "Paste blocked",
+      detail: clipboardCount
+        ? clipboardCount === 1
+          ? `Pasted ${objectClipboard[0].label} as an editable draft duplicate.`
+          : `Pasted ${clipboardCount} copied draft objects as editable draft duplicates.`
         : "Copy an editable object before pasting.",
-      nextAction: objectClipboard
+      nextAction: clipboardCount
         ? "Move, rename, or regenerate affected systems after review."
         : "Select an editable draft object, then press Cmd/Ctrl+C.",
     });
@@ -20690,9 +20746,13 @@ function PerformanceAIDashboardView({
         event.stopImmediatePropagation();
       };
       const target = event.target as HTMLElement | null;
+      const inputTarget = target instanceof HTMLInputElement ? target : null;
+      const isTextInput =
+        inputTarget &&
+        !["button", "checkbox", "color", "file", "radio", "range", "reset", "submit"].includes(inputTarget.type);
       const isTyping =
         target &&
-        (target.tagName === "INPUT" ||
+        (isTextInput ||
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
       const meta = event.metaKey || event.ctrlKey;
@@ -25592,7 +25652,7 @@ function PerformanceAIDashboardView({
                             <button
                               type="button"
                               onClick={handleObjectManagerPaste}
-                              disabled={!objectClipboard}
+                              disabled={!objectClipboard.length}
                               data-testid="selected-object-paste"
                               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                             >
@@ -26525,11 +26585,11 @@ function PerformanceAIDashboardView({
                         <button
                           type="button"
                           onClick={handleObjectManagerPaste}
-                          disabled={!objectClipboard}
+                          disabled={!objectClipboard.length}
                           data-testid="object-manager-paste"
                           className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Paste{objectClipboard ? ` ${objectClipboard.label}` : ""}
+                          Paste{objectClipboard.length === 1 ? ` ${objectClipboard[0].label}` : objectClipboard.length > 1 ? ` ${objectClipboard.length} objects` : ""}
                         </button>
                         <span className="text-[11px] font-medium text-slate-500">
                           Copy, paste, rotate, and flip work on editable draft objects.

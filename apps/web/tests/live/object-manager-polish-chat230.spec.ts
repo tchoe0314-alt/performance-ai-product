@@ -568,6 +568,40 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" })).toHaveCount(0);
   });
 
+  test("keyboard copy and paste duplicates multi-selected draft objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
+
+    await page.keyboard.press(platformShortcut("C"));
+    await expect(page.getByTestId("object-manager-status")).toContainText("Copied 2 selected draft objects.");
+    await expect(page.getByTestId("object-manager-paste")).toContainText("Paste 2 objects");
+    await page.keyboard.press(platformShortcut("V"));
+    await expect(page.getByTestId("object-manager-status")).toContainText("Pasted 2 copied draft objects.");
+    const officeCopy = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Copy" }).first();
+    const parkingCopy = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Copy" }).first();
+    await expect(officeCopy).toBeVisible();
+    await expect(parkingCopy).toBeVisible();
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
+
+    await page.keyboard.press(platformShortcut("Z"));
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: removed 2 draft objects from multi-object paste.");
+    await expect(officeCopy).toHaveCount(0);
+    await expect(parkingCopy).toHaveCount(0);
+
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: restored 2 draft objects from multi-object paste.");
+    await expect(officeCopy).toBeVisible();
+    await expect(parkingCopy).toBeVisible();
+  });
+
   test("bulk delete removes selected draft objects and blocks protected objects", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
