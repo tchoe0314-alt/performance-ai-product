@@ -2779,6 +2779,9 @@ function PerformanceAIDashboardView({
   const [arrayColumns, setArrayColumns] = useState("3");
   const [arraySpacingX, setArraySpacingX] = useState("60");
   const [arraySpacingY, setArraySpacingY] = useState("40");
+  const [bulkMoveX, setBulkMoveX] = useState("25");
+  const [bulkMoveY, setBulkMoveY] = useState("0");
+  const [bulkScaleFactor, setBulkScaleFactor] = useState("1.1");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
 
@@ -7693,6 +7696,101 @@ function PerformanceAIDashboardView({
     recordRecentChange,
     reportObjectActionBlocker,
     selectedObjectIds,
+  ]);
+
+  const handleObjectManagerBulkMove = useCallback(() => {
+    const dx = Number(bulkMoveX);
+    const dy = Number(bulkMoveY);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
+      reportObjectActionBlocker("Move blocked: enter a non-zero X or Y offset.");
+      return;
+    }
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Move blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Move blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, {
+        x: (item.x ?? 0) + dx,
+        y: (item.y ?? 0) + dy,
+      });
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const message = `Moved ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${dx},${dy}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Move remains draft review geometry.`, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Objects moved",
+      detail: message,
+      undoBlockedReason: "Use Move again with the opposite vector to revise the draft position.",
+    });
+  }, [
+    appendChatMessage,
+    bulkMoveX,
+    bulkMoveY,
+    buildingPlacements,
+    handleUpdateBuilding,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerBulkScale = useCallback(() => {
+    const factor = Number(bulkScaleFactor);
+    if (!Number.isFinite(factor) || factor <= 0 || factor > 10) {
+      reportObjectActionBlocker("Scale blocked: enter a scale factor greater than 0 and no more than 10.");
+      return;
+    }
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Scale blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "resize"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Scale blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, {
+        w: Math.max(1, item.w * factor),
+        d: Math.max(1, item.d * factor),
+        h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
+      });
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const message = `Scaled ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${factor}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Scale remains draft review geometry.`, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Objects scaled",
+      detail: message,
+      undoBlockedReason: "Use Scale again with the inverse factor to revise the draft size.",
+    });
+  }, [
+    appendChatMessage,
+    bulkScaleFactor,
+    buildingPlacements,
+    handleUpdateBuilding,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
   ]);
 
   const handleObjectManagerLayerVisibility = useCallback((layerType: SiteObjectType, hidden: boolean) => {
@@ -25768,6 +25866,64 @@ function PerformanceAIDashboardView({
                             <p className="mt-2 text-[11px] font-medium text-slate-500">
                               Draft copies stay review-required and trace back to the selected source object.
                             </p>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-transform-selected">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Transform selected
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Move X
+                                <input
+                                  type="number"
+                                  value={bulkMoveX}
+                                  onChange={(event) => setBulkMoveX(event.target.value)}
+                                  data-testid="object-manager-bulk-move-x"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Move Y
+                                <input
+                                  type="number"
+                                  value={bulkMoveY}
+                                  onChange={(event) => setBulkMoveY(event.target.value)}
+                                  data-testid="object-manager-bulk-move-y"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleObjectManagerBulkMove}
+                              data-testid="object-manager-bulk-move-action"
+                              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                            >
+                              Move selected
+                            </button>
+                            <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Scale factor
+                                <input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.05"
+                                  max="10"
+                                  value={bulkScaleFactor}
+                                  onChange={(event) => setBulkScaleFactor(event.target.value)}
+                                  data-testid="object-manager-bulk-scale-factor"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleObjectManagerBulkScale}
+                                data-testid="object-manager-bulk-scale-action"
+                                className="self-end rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                              >
+                                Scale
+                              </button>
+                            </div>
                           </div>
                           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-combine-selected">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
