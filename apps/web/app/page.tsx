@@ -2775,6 +2775,10 @@ function PerformanceAIDashboardView({
   const [objectClipboard, setObjectClipboard] = useState<BuildingPlacement | null>(null);
   const [combineObjectName, setCombineObjectName] = useState("");
   const [combineObjectType, setCombineObjectType] = useState<SiteObjectType>("custom");
+  const [arrayRows, setArrayRows] = useState("2");
+  const [arrayColumns, setArrayColumns] = useState("3");
+  const [arraySpacingX, setArraySpacingX] = useState("60");
+  const [arraySpacingY, setArraySpacingY] = useState("40");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
 
@@ -7465,6 +7469,132 @@ function PerformanceAIDashboardView({
       });
   }, [
     appendChatMessage,
+    buildingPlacements,
+    clearGeneratedPreview,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    saveProjectRef,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerArraySelected = useCallback(() => {
+    clearGeneratedPreview();
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Array blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const rows = Math.floor(Number(arrayRows));
+    const columns = Math.floor(Number(arrayColumns));
+    const spacingX = Number(arraySpacingX);
+    const spacingY = Number(arraySpacingY);
+    if (!Number.isFinite(rows) || !Number.isFinite(columns) || rows < 1 || columns < 1 || rows * columns < 2) {
+      reportObjectActionBlocker("Array blocked: use at least 2 total positions, like 2 rows by 3 columns.");
+      return;
+    }
+    if (!Number.isFinite(spacingX) || !Number.isFinite(spacingY) || (spacingX === 0 && spacingY === 0)) {
+      reportObjectActionBlocker("Array blocked: provide a non-zero X or Y spacing.");
+      return;
+    }
+    const editable = targets.filter((item) => {
+      if (getObjectEditBlocker(item, "copy")) return false;
+      if (item.capabilities?.deletable === false) return false;
+      if (item.generated) return false;
+      if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
+      return true;
+    });
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Array blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    const totalCopies = editable.length * (rows * columns - 1);
+    if (totalCopies > 80) {
+      reportObjectActionBlocker("Array blocked: limit this draft array to 80 new objects or fewer.");
+      return;
+    }
+    const stamp = Date.now();
+    const duplicates: BuildingPlacement[] = [];
+    editable.forEach((item, sourceIndex) => {
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          if (row === 0 && column === 0) continue;
+          const dx = column * spacingX;
+          const dy = row * spacingY;
+          const nextType = item.type ?? "custom";
+          const nextId = `${nextType}-array-${stamp}-${sourceIndex}-${row}-${column}-${Math.random().toString(36).slice(2, 8)}`;
+          duplicates.push({
+            ...item,
+            id: nextId,
+            label: `${item.label} Array ${row + 1}-${column + 1}`,
+            x: (item.x ?? 0) + dx,
+            y: (item.y ?? 0) + dy,
+            source: "manual_drawn",
+            generated: false,
+            locked: false,
+            placed: true,
+            geometry: item.geometry?.map(([x, y]) => [x + dx, y + dy]),
+            capabilities: {
+              movable: true,
+              resizable: item.capabilities?.resizable ?? true,
+              rotatable: item.capabilities?.rotatable ?? true,
+              deletable: true,
+            },
+            meta: {
+              ...(item.meta ?? {}),
+              ui_hidden: false,
+              source: "manual_drawn_array",
+              array_source_object_id: item.id,
+              array_source_label: item.label,
+              array_rows: rows,
+              array_columns: columns,
+              array_spacing_ft: [spacingX, spacingY],
+              review_status: "engineer_review_required",
+              engineering_status: "draft_review_required",
+              handoff_status: "draft_review_required",
+              construction_release_allowed: false,
+            },
+          });
+        }
+      }
+    });
+    setBuildingPlacements((prev) => [...prev, ...duplicates]);
+    setSelectedObjectIds(duplicates.map((item) => item.id));
+    setActivePlacementId(duplicates[0]?.id ?? null);
+    duplicates.forEach((item) => {
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const firstDuplicate = duplicates[0];
+    if (firstDuplicate) {
+      setLastDraftAction({ action: "add", object: firstDuplicate });
+    }
+    const message = `Array created ${duplicates.length} draft review cop${duplicates.length === 1 ? "y" : "ies"}${blockedCount ? `; ${blockedCount} selected object${blockedCount === 1 ? "" : "s"} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Array output remains draft review geometry, not construction-release evidence.`, "status");
+    recordRecentChange({
+      type: "object_added",
+      label: "Objects arrayed",
+      detail: message,
+      undo: firstDuplicate ? { action: "add", object: firstDuplicate } : undefined,
+    });
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after array...",
+          track: true,
+        };
+      });
+  }, [
+    appendChatMessage,
+    arrayColumns,
+    arrayRows,
+    arraySpacingX,
+    arraySpacingY,
     buildingPlacements,
     clearGeneratedPreview,
     ensureProjectDraftRef,
@@ -25576,6 +25706,68 @@ function PerformanceAIDashboardView({
                             >
                               Delete selected
                             </button>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-array-selected">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Rectangular array
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Rows
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="10"
+                                  value={arrayRows}
+                                  onChange={(event) => setArrayRows(event.target.value)}
+                                  data-testid="object-manager-array-rows"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Columns
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="10"
+                                  value={arrayColumns}
+                                  onChange={(event) => setArrayColumns(event.target.value)}
+                                  data-testid="object-manager-array-columns"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                X spacing
+                                <input
+                                  type="number"
+                                  value={arraySpacingX}
+                                  onChange={(event) => setArraySpacingX(event.target.value)}
+                                  data-testid="object-manager-array-spacing-x"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Y spacing
+                                <input
+                                  type="number"
+                                  value={arraySpacingY}
+                                  onChange={(event) => setArraySpacingY(event.target.value)}
+                                  data-testid="object-manager-array-spacing-y"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleObjectManagerArraySelected}
+                              data-testid="object-manager-array-action"
+                              className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-900 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
+                            >
+                              Create array
+                            </button>
+                            <p className="mt-2 text-[11px] font-medium text-slate-500">
+                              Draft copies stay review-required and trace back to the selected source object.
+                            </p>
                           </div>
                           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-combine-selected">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">

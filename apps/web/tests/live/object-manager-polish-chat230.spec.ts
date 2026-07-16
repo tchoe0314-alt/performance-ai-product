@@ -408,4 +408,28 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Bulk duplicate blocked: selected objects are locked, source-only, or required project evidence.");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Site Copy" })).toHaveCount(0);
   });
+
+  test("rectangular array creates traced draft copies and blocks protected objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-array-rows").fill("2");
+    await page.getByTestId("object-manager-array-columns").fill("3");
+    await page.getByTestId("object-manager-array-spacing-x").fill("90");
+    await page.getByTestId("object-manager-array-spacing-y").fill("70");
+    await page.getByTestId("object-manager-array-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Array created 5 draft review copies.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Array" })).toHaveCount(5);
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("5 objects selected");
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
+    await siteRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-array-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Array blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Site Array" })).toHaveCount(0);
+  });
 });
