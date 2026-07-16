@@ -737,6 +737,76 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(parkingRow).toContainText("Visible");
   });
 
+  test("locking a combined object locks hidden source traces with undo and redo", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await combinedRow.getByTestId("object-manager-lock").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Combined Site Program was locked.");
+    await expect(combinedRow).toContainText(/locked/i);
+    await expect(officeRow).toContainText(/locked/i);
+    await expect(parkingRow).toContainText(/locked/i);
+
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from combined object trace update.");
+    await expect(combinedRow.getByTestId("object-manager-lock")).toHaveText("Lock");
+    await expect(officeRow).not.toContainText(/locked/i);
+    await expect(parkingRow).not.toContainText(/locked/i);
+
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: reapplied 3 draft objects from combined object trace update.");
+    await expect(combinedRow).toContainText(/locked/i);
+    await expect(officeRow).toContainText(/locked/i);
+    await expect(parkingRow).toContainText(/locked/i);
+  });
+
+  test("deleting a combined object removes and restores its hidden traces", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await combinedRow.getByTestId("object-manager-delete").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Deleted Combined Site Program and 2 hidden source trace pieces.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from combined object delete.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first()).toContainText("Hidden");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first()).toContainText("Hidden");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: deleted 3 draft objects from combined object delete.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+  });
+
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

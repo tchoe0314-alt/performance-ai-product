@@ -7021,6 +7021,7 @@ function PerformanceAIDashboardView({
         (
           typeof updates.label === "string" ||
           updates.type !== undefined ||
+          typeof updates.locked === "boolean" ||
           groupGeometryChanged ||
           Boolean(updates.meta && ("ui_color" in updates.meta || "color" in updates.meta || "style" in updates.meta))
         );
@@ -7071,17 +7072,19 @@ function PerformanceAIDashboardView({
               rotation: groupGeometryChanged ? ((source.rotation ?? 0) + ((nextObject.rotation ?? 0) - (target.rotation ?? 0))) % 360 : source.rotation,
               geometry: transformedGeometry,
               capabilities: source.capabilities ? { ...source.capabilities } : source.capabilities,
-              meta: {
-                ...(source.meta ?? {}),
-                combined_into_object_id: target.id,
-                combined_into_label: nextGroupLabel,
-                combined_into_type: nextGroupType,
-                combined_trace_synced_at: new Date().toISOString(),
-                ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
-                ...(typeof nextGroupColor === "string" ? { combined_into_color: nextGroupColor } : {}),
-              },
-            };
-          });
+            meta: {
+              ...(source.meta ?? {}),
+              combined_into_object_id: target.id,
+              combined_into_label: nextGroupLabel,
+              combined_into_type: nextGroupType,
+              combined_trace_synced_at: new Date().toISOString(),
+              ...(typeof updates.locked === "boolean" ? { combined_into_locked: updates.locked } : {}),
+              ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
+              ...(typeof nextGroupColor === "string" ? { combined_into_color: nextGroupColor } : {}),
+            },
+            locked: typeof updates.locked === "boolean" ? updates.locked : source.locked,
+          };
+        });
           bulkUpdateUndo = {
             action: "bulk_update",
             before: [target, ...sourceObjects].map((item) => ({
@@ -7222,30 +7225,49 @@ function PerformanceAIDashboardView({
   const handleRemoveBuilding = useCallback((id: string) => {
     clearGeneratedPreview();
     const target = buildingPlacements.find((item) => item.id === id);
+    const combinedSourceIds = target && Array.isArray(target.meta?.combined_from_object_ids)
+      ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
+      : [];
+    const relatedSourceObjects = combinedSourceIds.length
+      ? buildingPlacements.filter((item) => combinedSourceIds.includes(item.id))
+      : [];
     debugLog("remove-object", { id });
-    setBuildingPlacements((prev) => prev.filter((item) => item.id !== id));
-    setActivePlacementId((prev) => (prev === id ? null : prev));
-    setSelectedObjectIds((prev) => prev.filter((itemId) => itemId !== id));
+    const removedIds = new Set([id, ...relatedSourceObjects.map((item) => item.id)]);
+    setBuildingPlacements((prev) => prev.filter((item) => !removedIds.has(item.id)));
+    setActivePlacementId((prev) => (prev && removedIds.has(prev) ? null : prev));
+    setSelectedObjectIds((prev) => prev.filter((itemId) => !removedIds.has(itemId)));
     setPlacementModeEnabled((prev) => (activePlacementId === id ? false : prev));
-    setFocusObjectId((prev) => (prev === id ? null : prev));
+    setFocusObjectId((prev) => (prev && removedIds.has(prev) ? null : prev));
     markSystemsStale(systemsImpactedByPlacement(target));
     if (target) {
-      const undo: DraftUndoAction = { action: "delete", object: target };
+      const removedObjects = [target, ...relatedSourceObjects].map((item) => ({
+        ...item,
+        geometry: item.geometry?.map(([x, y]) => [x, y] as [number, number]),
+        meta: item.meta ? { ...item.meta } : item.meta,
+        capabilities: item.capabilities ? { ...item.capabilities } : item.capabilities,
+      }));
+      const undo: DraftUndoAction = removedObjects.length === 1
+        ? { action: "delete", object: target }
+        : { action: "delete_many", objects: removedObjects, label: "combined object delete" };
       recordDraftUndoAction(undo);
       recordRecentChange({
         type: "object_deleted",
         label: "Object deleted",
-        detail: `${target.label} was removed from the draft layout.`,
+        detail: relatedSourceObjects.length
+          ? `${target.label} and ${relatedSourceObjects.length} hidden source trace piece${relatedSourceObjects.length === 1 ? "" : "s"} were removed from the draft layout.`
+          : `${target.label} was removed from the draft layout.`,
         undo,
       });
-      pushRecoveryMessage(`Deleted ${target.label}. Undo can restore this draft object.`);
+      pushRecoveryMessage(relatedSourceObjects.length
+        ? `Deleted ${target.label} and ${relatedSourceObjects.length} hidden source trace piece${relatedSourceObjects.length === 1 ? "" : "s"}. Undo can restore the combined draft group.`
+        : `Deleted ${target.label}. Undo can restore this draft object.`);
     } else {
       setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
     }
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
-  }, [activePlacementId, buildingPlacements, clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordRecentChange, systemsImpactedByPlacement]);
+  }, [activePlacementId, buildingPlacements, clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordDraftUndoAction, recordRecentChange, systemsImpactedByPlacement]);
 
   const handleRestoreBuilding = useCallback((snapshot: BuildingPlacement) => {
     clearGeneratedPreview();
@@ -7364,7 +7386,6 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker(blocker);
       return;
     }
-    recordDraftUndoAction({ action: "delete", object: item });
     handleRemoveBuilding(item.id);
     appendChatMessage("assistant", `Deleted ${item.label}.`, "status");
   }, [handleRemoveBuilding, reportObjectActionBlocker]);
@@ -8980,10 +9001,10 @@ function PerformanceAIDashboardView({
   ]);
 
   const handleToggleBuildingLock = useCallback((id: string) => {
-    setBuildingPlacements((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, locked: !item.locked } : item)),
-    );
-  }, []);
+    const target = buildingPlacements.find((item) => item.id === id);
+    if (!target) return;
+    handleUpdateBuilding(id, { locked: !target.locked });
+  }, [buildingPlacements, handleUpdateBuilding]);
 
   const handlePlaceBuilding = useCallback(
     (position: { x: number; y: number }) => {
@@ -20375,7 +20396,6 @@ function PerformanceAIDashboardView({
       appendChatMessage("assistant", message, "status");
       return;
     }
-    recordDraftUndoAction({ action: "delete", object: target });
     handleRemoveBuilding(target.id);
     appendChatMessage("assistant", `Deleted ${target.label}.`, "status");
     updateProjectStatus({
@@ -20391,7 +20411,6 @@ function PerformanceAIDashboardView({
     buildingPlacements,
     handleObjectManagerBulkDelete,
     handleRemoveBuilding,
-    recordDraftUndoAction,
     selectedObjectIds,
     updateProjectStatus,
   ]);
