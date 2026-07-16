@@ -345,6 +345,32 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Select visible blocked: no visible editable draft objects are available.");
   });
 
+  test("invert selection swaps to the other visible editable draft objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await runCommand(page, "add detention basin");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-invert-selection").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Inverted selection to 2 visible draft objects.");
+    await expect(officeRow.getByTestId("object-manager-bulk-select")).not.toBeChecked();
+    await expect(parkingRow.getByTestId("object-manager-bulk-select")).toBeChecked();
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
+
+    await page.getByTestId("object-manager-bulk-hide").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await page.getByRole("button", { name: "Clear" }).click();
+    await officeRow.getByTestId("object-manager-visibility").click();
+    await expect(officeRow.getByTestId("object-manager-visibility")).toContainText("Show");
+    await page.getByTestId("object-manager-invert-selection").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Invert selection blocked: no visible editable draft objects are available.");
+  });
+
   test("bulk lock and unlock protects selected draft objects", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

@@ -7139,6 +7139,31 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [buildingPlacements, reportObjectActionBlocker]);
 
+  const handleObjectManagerInvertSelection = useCallback(() => {
+    const visibleDraftIds = buildingPlacements
+      .filter((item) => {
+        if (item.type === "site") return false;
+        if (item.meta?.ui_hidden) return false;
+        if (item.meta?.ai_realism_artifact) return false;
+        if (item.capabilities?.deletable === false) return false;
+        return true;
+      })
+      .map((item) => item.id);
+    if (!visibleDraftIds.length) {
+      reportObjectActionBlocker("Invert selection blocked: no visible editable draft objects are available.");
+      return;
+    }
+    const selectedIdSet = new Set(selectedObjectIds);
+    const nextSelection = visibleDraftIds.filter((id) => !selectedIdSet.has(id));
+    setSelectedObjectIds(nextSelection);
+    setActivePlacementId(nextSelection[0] ?? null);
+    const message = nextSelection.length
+      ? `Inverted selection to ${nextSelection.length} visible draft object${nextSelection.length === 1 ? "" : "s"}.`
+      : "Inverted selection: no visible draft objects remain selected.";
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+  }, [buildingPlacements, reportObjectActionBlocker, selectedObjectIds]);
+
   const handleObjectManagerDelete = useCallback((item: BuildingPlacement) => {
     const blocker = getObjectEditBlocker(item, "delete");
     if (blocker) {
@@ -25868,6 +25893,14 @@ function PerformanceAIDashboardView({
                           className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
                         >
                           Select visible draft
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleObjectManagerInvertSelection}
+                          data-testid="object-manager-invert-selection"
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Invert selection
                         </button>
                         <button
                           type="button"
