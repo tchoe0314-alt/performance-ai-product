@@ -92,7 +92,7 @@ type CadHistoryEntry = {
   after: BuildingPlacement;
 };
 
-const BALANCED_CANVAS_SCALE = 0.9;
+const BALANCED_CANVAS_SCALE = 0.62;
 type CadCommandHistoryEntry = {
   id: string;
   command: string;
