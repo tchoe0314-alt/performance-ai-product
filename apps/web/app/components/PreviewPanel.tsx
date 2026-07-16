@@ -3078,7 +3078,29 @@ export default function PreviewPanel({
     const tokens = raw.split(/\s+/);
     const [commandRaw, ...args] = tokens;
     const command = commandRaw.toUpperCase();
-    const commandKey = command === "RECT" ? "RECTANGLE" : command;
+    const commandAliases: Record<string, string> = {
+      L: "LINE",
+      PL: "PLINE",
+      REC: "RECTANGLE",
+      RECT: "RECTANGLE",
+      B: "BOX",
+      C: "CIRCLE",
+      A: "ARC",
+      M: "MOVE",
+      RO: "ROTATE",
+      SC: "SCALE",
+      CO: "COPY",
+      O: "OFFSET",
+      TR: "TRIM",
+      EX: "EXTEND",
+      F: "FILLET",
+      E: "ERASE",
+      D: "DIM",
+      T: "TEXT",
+      LA: "LAYER",
+      SEL: "SELECT",
+    };
+    const commandKey = commandAliases[command] ?? command;
     const knownCommands = new Set([
       "LINE",
       "PLINE",
@@ -3100,6 +3122,8 @@ export default function PreviewPanel({
       "DIM",
       "TEXT",
       "LAYER",
+      "SELECT",
+      "SEL",
       "SNAP",
       "ORTHO",
       "FINISH",
@@ -3110,6 +3134,43 @@ export default function PreviewPanel({
     const pointArgs = parseCadPointTokens(args.filter((arg) => arg.toLowerCase() !== "selected"));
     const firstValue = args.find((arg) => arg.toLowerCase() !== "selected") ?? cadTransformValue;
     const selectedRequested = args.some((arg) => arg.toLowerCase() === "selected");
+
+    if (commandKey === "SELECT") {
+      const mode = (args[0] || "").trim().toUpperCase();
+      if (mode === "NONE" || mode === "CLEAR") {
+        setCadSelectionSet([]);
+        onSelectBuilding(null);
+        setSelectedVertex(null);
+        pushCadCommandFeedback("SELECT", "info", "SELECT NONE cleared the draft object selection.");
+        return;
+      }
+      const selectableObjects = buildingPlacements.filter((item) => item.type !== "site" && !item.locked);
+      if (mode === "ALL") {
+        const ids = selectableObjects.map((item) => item.id);
+        setCadSelectionSet(ids);
+        onSelectBuilding(ids[0] ?? null);
+        setSelectedVertex(null);
+        pushCadCommandFeedback("SELECT", ids.length ? "applied" : "blocked", ids.length ? `SELECT ALL selected ${ids.length} editable draft object${ids.length === 1 ? "" : "s"}.` : "SELECT ALL found no editable draft objects.");
+        return;
+      }
+      if (mode === "LAYER") {
+        const layer = (args[1] || "").trim().toUpperCase();
+        if (!layer) {
+          pushCadCommandFeedback("SELECT", "blocked", "SELECT LAYER blocked: provide a layer like SELECT LAYER C-UTIL.");
+          return;
+        }
+        const ids = selectableObjects
+          .filter((item) => String(item.meta?.cad_layer || item.type || "").toUpperCase() === layer)
+          .map((item) => item.id);
+        setCadSelectionSet(ids);
+        onSelectBuilding(ids[0] ?? null);
+        setSelectedVertex(null);
+        pushCadCommandFeedback("SELECT", ids.length ? "applied" : "blocked", ids.length ? `SELECT LAYER ${layer} selected ${ids.length} editable draft object${ids.length === 1 ? "" : "s"}.` : `SELECT LAYER ${layer} found no editable draft objects.`);
+        return;
+      }
+      pushCadCommandFeedback("SELECT", "info", `SELECT supports ALL, NONE, CLEAR, or LAYER. Current selection: ${selectedCadIds.length}.`);
+      return;
+    }
 
     if (cadActiveCommand && !knownCommands.has(command)) {
       if (cadActiveCommand.kind === "offset") {
@@ -3479,7 +3540,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
     applySelectedCadDimension,
     buildingPlacements,
@@ -3494,6 +3555,7 @@ export default function PreviewPanel({
     filletSelectedCadObject,
     moveSelectedCadObjectsByVector,
     offsetSelectedCadObjectBy,
+    onSelectBuilding,
     onSetPreviewInteraction,
     onRemoveBuilding,
     parseCadNumber,
