@@ -3017,6 +3017,7 @@ function PerformanceAIDashboardView({
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [shortcutsOverlayOpen, setShortcutsOverlayOpen] = useState(false);
   const [lastDraftAction, setLastDraftAction] = useState<DraftUndoAction | null>(null);
+  const lastDraftActionRef = useRef<DraftUndoAction | null>(null);
   const [recentChanges, setRecentChanges] = useState<RecentChange[]>([]);
   const [recentChangesOpen, setRecentChangesOpen] = useState(false);
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
@@ -3080,6 +3081,10 @@ function PerformanceAIDashboardView({
   }, []);
   const applyingSiteRef = useRef(false);
   const sidePanelCloseTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    lastDraftActionRef.current = lastDraftAction;
+  }, [lastDraftAction]);
 
   useEffect(() => {
     const syncViewport = () => setMobileViewport(window.innerWidth < 1024);
@@ -7279,7 +7284,9 @@ function PerformanceAIDashboardView({
     setActivePlacementId(nextId);
     setSelectedObjectIds([nextId]);
     markSystemsStale(systemsImpactedByPlacement(nextObject));
-    setLastDraftAction({ action: "add", object: nextObject });
+    const undoAction: DraftUndoAction = { action: "add", object: nextObject };
+    lastDraftActionRef.current = undoAction;
+    setLastDraftAction(undoAction);
     recordRecentChange({
       type: "object_added",
       label: "Object pasted",
@@ -20119,7 +20126,12 @@ function PerformanceAIDashboardView({
   }, [handleObjectManagerPaste, objectClipboard, updateProjectStatus]);
 
   const handleUndoDraftAction = useCallback(() => {
-    if (!lastDraftAction) {
+    const draftAction = lastDraftActionRef.current ?? lastDraftAction;
+    const clearDraftAction = () => {
+      lastDraftActionRef.current = null;
+      setLastDraftAction(null);
+    };
+    if (!draftAction) {
       const message = "Undo blocked: no supported draft action is available to undo.";
       updateProjectStatus({
         state: "blocked",
@@ -20131,112 +20143,115 @@ function PerformanceAIDashboardView({
       appendChatMessage("assistant", message, "status");
       return;
     }
-    if (lastDraftAction.action === "add") {
-      setBuildingPlacements((prev) => prev.filter((item) => item.id !== lastDraftAction.object.id));
-      setActivePlacementId((prev) => (prev === lastDraftAction.object.id ? null : prev));
+    if (draftAction.action === "add") {
+      setBuildingPlacements((prev) => prev.filter((item) => item.id !== draftAction.object.id));
+      setActivePlacementId((prev) => (prev === draftAction.object.id ? null : prev));
       setPlacementModeEnabled(false);
+      const message = `Undo: removed ${draftAction.object.label}.`;
+      setObjectManagerStatusMessage(message);
+      pushRecoveryMessage(message);
       updateProjectStatus({
         state: "stale",
         area: "chat",
         title: "Undo complete",
-        detail: `Undo removed ${lastDraftAction.object.label}.`,
+        detail: `Undo removed ${draftAction.object.label}.`,
         nextAction: "Review objects, then rerun affected generated systems if needed.",
       });
-      appendChatMessage("assistant", `Undo: removed ${lastDraftAction.object.label}.`, "status");
+      appendChatMessage("assistant", message, "status");
       recordRecentChange({
         type: "object_deleted",
         label: "Undo removed object",
-        detail: `${lastDraftAction.object.label} was removed by undo.`,
+        detail: `${draftAction.object.label} was removed by undo.`,
         undoBlockedReason: "This is already an undo result.",
       });
-      setLastDraftAction(null);
+      clearDraftAction();
       return;
     }
-    if (lastDraftAction.action === "add_many") {
-      const createdIds = new Set(lastDraftAction.objects.map((item) => item.id));
+    if (draftAction.action === "add_many") {
+      const createdIds = new Set(draftAction.objects.map((item) => item.id));
       setBuildingPlacements((prev) => prev.filter((item) => !createdIds.has(item.id)));
       setSelectedObjectIds((prev) => prev.filter((id) => !createdIds.has(id)));
       setActivePlacementId((prev) => (prev && createdIds.has(prev) ? null : prev));
       setPlacementModeEnabled(false);
-      lastDraftAction.objects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
-      pushRecoveryMessage(`Undo: removed ${lastDraftAction.objects.length} draft objects from ${lastDraftAction.label}.`);
-      appendChatMessage("assistant", `Undo: removed ${lastDraftAction.objects.length} draft objects from ${lastDraftAction.label}.`, "status");
+      draftAction.objects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: removed ${draftAction.objects.length} draft objects from ${draftAction.label}.`);
+      appendChatMessage("assistant", `Undo: removed ${draftAction.objects.length} draft objects from ${draftAction.label}.`, "status");
       recordRecentChange({
         type: "object_deleted",
         label: "Undo removed objects",
-        detail: `${lastDraftAction.objects.length} draft objects were removed by undo.`,
+        detail: `${draftAction.objects.length} draft objects were removed by undo.`,
         undoBlockedReason: "This is already an undo result.",
       });
-      setLastDraftAction(null);
+      clearDraftAction();
       return;
     }
-    if (lastDraftAction.action === "update") {
+    if (draftAction.action === "update") {
       setBuildingPlacements((prev) =>
-        prev.map((item) => (item.id === lastDraftAction.objectId ? { ...lastDraftAction.before } : item)),
+        prev.map((item) => (item.id === draftAction.objectId ? { ...draftAction.before } : item)),
       );
-      setActivePlacementId(lastDraftAction.objectId);
-      markSystemsStale(systemsImpactedByPlacement(lastDraftAction.before));
-      pushRecoveryMessage(`Undo: restored previous state for ${lastDraftAction.before.label}.`);
-      appendChatMessage("assistant", `Undo: restored previous state for ${lastDraftAction.before.label}.`, "status");
+      setActivePlacementId(draftAction.objectId);
+      markSystemsStale(systemsImpactedByPlacement(draftAction.before));
+      pushRecoveryMessage(`Undo: restored previous state for ${draftAction.before.label}.`);
+      appendChatMessage("assistant", `Undo: restored previous state for ${draftAction.before.label}.`, "status");
       recordRecentChange({
         type: "object_style_changed",
         label: "Undo restored object",
-        detail: `${lastDraftAction.before.label} was restored to its previous draft state.`,
+        detail: `${draftAction.before.label} was restored to its previous draft state.`,
         undoBlockedReason: "This is already an undo result.",
       });
-      setLastDraftAction(null);
+      clearDraftAction();
       return;
     }
-    if (lastDraftAction.action === "combine") {
-      const sourceById = new Map(lastDraftAction.hiddenSources.map((item) => [item.id, item]));
+    if (draftAction.action === "combine") {
+      const sourceById = new Map(draftAction.hiddenSources.map((item) => [item.id, item]));
       setBuildingPlacements((prev) =>
         prev
-          .filter((item) => item.id !== lastDraftAction.object.id)
+          .filter((item) => item.id !== draftAction.object.id)
           .map((item) => (sourceById.has(item.id) ? { ...sourceById.get(item.id)! } : item)),
       );
-      setSelectedObjectIds(lastDraftAction.hiddenSources.map((item) => item.id));
-      setActivePlacementId(lastDraftAction.hiddenSources[0]?.id ?? null);
-      lastDraftAction.hiddenSources.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
-      pushRecoveryMessage(`Undo: restored ${lastDraftAction.hiddenSources.length} source objects from ${lastDraftAction.label}.`);
-      appendChatMessage("assistant", `Undo: restored ${lastDraftAction.hiddenSources.length} source objects from ${lastDraftAction.label}.`, "status");
+      setSelectedObjectIds(draftAction.hiddenSources.map((item) => item.id));
+      setActivePlacementId(draftAction.hiddenSources[0]?.id ?? null);
+      draftAction.hiddenSources.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${draftAction.hiddenSources.length} source objects from ${draftAction.label}.`);
+      appendChatMessage("assistant", `Undo: restored ${draftAction.hiddenSources.length} source objects from ${draftAction.label}.`, "status");
       recordRecentChange({
         type: "object_style_changed",
         label: "Undo restored combined sources",
-        detail: `${lastDraftAction.hiddenSources.length} source objects were restored and ${lastDraftAction.object.label} was removed.`,
+        detail: `${draftAction.hiddenSources.length} source objects were restored and ${draftAction.object.label} was removed.`,
         undoBlockedReason: "This is already an undo result.",
       });
-      setLastDraftAction(null);
+      clearDraftAction();
       return;
     }
-    if (lastDraftAction.action === "bulk_update") {
-      const beforeById = new Map(lastDraftAction.before.map((item) => [item.id, item]));
+    if (draftAction.action === "bulk_update") {
+      const beforeById = new Map(draftAction.before.map((item) => [item.id, item]));
       setBuildingPlacements((prev) =>
         prev.map((item) => (beforeById.has(item.id) ? { ...beforeById.get(item.id)! } : item)),
       );
-      setSelectedObjectIds(lastDraftAction.before.map((item) => item.id));
-      setActivePlacementId(lastDraftAction.before[0]?.id ?? null);
-      lastDraftAction.before.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
-      pushRecoveryMessage(`Undo: restored ${lastDraftAction.before.length} draft objects from ${lastDraftAction.label}.`);
-      appendChatMessage("assistant", `Undo: restored ${lastDraftAction.before.length} draft objects from ${lastDraftAction.label}.`, "status");
+      setSelectedObjectIds(draftAction.before.map((item) => item.id));
+      setActivePlacementId(draftAction.before[0]?.id ?? null);
+      draftAction.before.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${draftAction.before.length} draft objects from ${draftAction.label}.`);
+      appendChatMessage("assistant", `Undo: restored ${draftAction.before.length} draft objects from ${draftAction.label}.`, "status");
       recordRecentChange({
         type: "object_style_changed",
         label: "Undo restored objects",
-        detail: `${lastDraftAction.before.length} draft objects were restored to their previous state.`,
+        detail: `${draftAction.before.length} draft objects were restored to their previous state.`,
         undoBlockedReason: "This is already an undo result.",
       });
-      setLastDraftAction(null);
+      clearDraftAction();
       return;
     }
-    handleRestoreBuilding(lastDraftAction.object);
-    appendChatMessage("assistant", `Undo: restored ${lastDraftAction.object.label}.`, "status");
+    handleRestoreBuilding(draftAction.object);
+    appendChatMessage("assistant", `Undo: restored ${draftAction.object.label}.`, "status");
     updateProjectStatus({
       state: "stale",
       area: "chat",
       title: "Undo complete",
-      detail: `Undo restored ${lastDraftAction.object.label}.`,
+      detail: `Undo restored ${draftAction.object.label}.`,
       nextAction: "Review objects, then rerun affected generated systems if needed.",
     });
-    setLastDraftAction(null);
+    clearDraftAction();
   }, [
     handleRestoreBuilding,
     lastDraftAction,
@@ -20382,6 +20397,12 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const consumeShortcut = () => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      };
       const target = event.target as HTMLElement | null;
       const isTyping =
         target &&
@@ -20392,53 +20413,53 @@ function PerformanceAIDashboardView({
       const key = event.key.toLowerCase();
 
       if (event.key === "Escape") {
-        event.preventDefault();
+        consumeShortcut();
         handleCancelActiveTool();
         return;
       }
       if (meta && key === "k") {
-        event.preventDefault();
+        consumeShortcut();
         focusCommandInput();
         return;
       }
       if (!meta && event.key === "/" && !isTyping) {
-        event.preventDefault();
+        consumeShortcut();
         focusCommandInput();
         return;
       }
       if ((event.key === "?" || (event.shiftKey && event.key === "?")) && !isTyping) {
-        event.preventDefault();
+        consumeShortcut();
         setShortcutsOverlayOpen(true);
         return;
       }
       if (meta && key === "s") {
-        event.preventDefault();
+        consumeShortcut();
         handleShortcutSaveProject();
         return;
       }
       if (meta && key === "c" && !isTyping) {
-        event.preventDefault();
+        consumeShortcut();
         handleCopySelectedObject();
         return;
       }
       if (meta && key === "v" && !isTyping) {
-        event.preventDefault();
+        consumeShortcut();
         handlePasteSelectedObject();
         return;
       }
       if (meta && key === "z") {
-        event.preventDefault();
+        consumeShortcut();
         handleUndoDraftAction();
         return;
       }
       if (isTyping || meta || event.altKey) return;
       if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
+        consumeShortcut();
         handleDeleteSelectedObject();
         return;
       }
       if (key === "g") {
-        event.preventDefault();
+        consumeShortcut();
         handleOpenSidePanel("generate");
         updateProjectStatus({
           state: "ready",
@@ -20450,7 +20471,7 @@ function PerformanceAIDashboardView({
         return;
       }
       if (key === "d") {
-        event.preventDefault();
+        consumeShortcut();
         handleOpenWorkspaceMode("canvas");
         handleOpenSidePanel("objects");
         updateProjectStatus({
@@ -20463,7 +20484,7 @@ function PerformanceAIDashboardView({
         return;
       }
       if (key === "p") {
-        event.preventDefault();
+        consumeShortcut();
         handleOpenSidePanel("projects");
         updateProjectStatus({
           state: "ready",
@@ -20476,8 +20497,11 @@ function PerformanceAIDashboardView({
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key !== "Escape") return;
       event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       handleCancelActiveTool();
     };
     window.addEventListener("keydown", onKeyDown, { capture: true });

@@ -19,6 +19,10 @@ async function focusCommand(page: Page) {
   await expect(page.getByTestId("civora-command-input")).toBeFocused({ timeout: 5_000 });
 }
 
+function platformShortcut(key: string) {
+  return `${process.platform === "darwin" ? "Meta" : "Control"}+${key}`;
+}
+
 async function runCommand(page: Page, command: string) {
   await focusCommand(page);
   await page.getByTestId("civora-command-input").fill(command);
@@ -255,10 +259,14 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.keyboard.press("Shift+ArrowDown");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("MOVE applied 0,25 to 1 selected draft object");
 
-    await page.keyboard.press("Control+C");
+    await page.keyboard.press(platformShortcut("C"));
     await expect(page.getByTestId("object-manager-status")).toContainText("Copied HQ Office Test Copy");
-    await page.keyboard.press("Control+V");
-    await expect(page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test Copy Copy" }).first()).toBeVisible();
+    await page.keyboard.press(platformShortcut("V"));
+    const keyboardPastedRow = page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test Copy Copy" }).first();
+    await expect(keyboardPastedRow).toBeVisible();
+    await page.keyboard.press(platformShortcut("Z"));
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: removed HQ Office Test Copy Copy.");
+    await expect(keyboardPastedRow).toHaveCount(0);
   });
 
   test("multi-select supports safe bulk updates and utility hide command updates manager state", async ({ page }) => {
