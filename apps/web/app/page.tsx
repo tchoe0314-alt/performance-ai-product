@@ -479,6 +479,7 @@ type SidebarNavItem = {
 type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "deliver";
 type CadToolRequestForPreview = {
   id: number;
+  commandText?: string;
   tool:
     | "select"
     | "line"
@@ -10595,6 +10596,28 @@ function PerformanceAIDashboardView({
       return true;
     }
     if (tryHandleSiteProgramCommand(message)) {
+      return true;
+    }
+    if (
+      /^(select\s+(?:all|none|clear|layer\b.*)|align\b.*|distribute\b.*|move\b.*|copy\b.*|rotate\b.*|scale\b.*|mirror\b.*|flip\b.*|array\b.*|layer\b.*|delete\b.*|erase\b.*|offset\b.*|trim\b.*|extend\b.*|fillet\b.*|dist\b.*|measure\b.*)$/i.test(
+        message.trim(),
+      )
+    ) {
+      appendChatMessage("user", message);
+      setPreviewMode("2d");
+      setPreviewInteraction("edit");
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel("objects");
+      setRenderedSidePanel("objects");
+      setSidePanelVisible(true);
+      setRightRailCollapsed(false);
+      setCadToolRequest({ id: Date.now() + Math.random(), tool: "command", commandText: message.trim() });
+      setCommandBarExpanded(false);
+      appendChatMessage(
+        "assistant",
+        `Running CAD command: ${message.trim()}. Results are shown in Draw / Object Manager command feedback. Draft objects remain review-required.`,
+        "status",
+      );
       return true;
     }
     if (/^(start site|start a site|new site)$/.test(normalized)) {

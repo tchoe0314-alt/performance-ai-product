@@ -55,6 +55,7 @@ type CadSymbolKind = "hydrant" | "inlet" | "manhole" | "valve" | "tree" | "light
 type CadDimensionMode = "linear" | "aligned";
 type CadToolRequest = {
   id: number;
+  commandText?: string;
   tool:
     | "select"
     | "line"
@@ -764,7 +765,7 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, DIST, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, ALIGN, DISTRIBUTE, DIST, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadActiveCommand, setCadActiveCommand] = useState<
     | {
@@ -2852,6 +2853,108 @@ export default function PreviewPanel({
     },
     [buildingPlacements, getCadLayer, getObjectGeometryPoints, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta, selectedCadIds],
   );
+  const alignOrDistributeSelectedCadObjects = useCallback(
+    (
+      command: "ALIGN" | "DISTRIBUTE",
+      mode: "LEFT" | "RIGHT" | "CENTER" | "TOP" | "BOTTOM" | "MIDDLE" | "X" | "Y",
+    ) => {
+      const selectedTargets = selectedCadIds
+        .map((id) => buildingPlacements.find((item) => item.id === id))
+        .filter((item): item is BuildingPlacement => Boolean(item && !item.locked && item.type !== "site"));
+      const minimum = command === "DISTRIBUTE" ? 3 : 2;
+      if (selectedTargets.length < minimum) {
+        pushCadCommandFeedback(
+          command,
+          "blocked",
+          `${command} blocked: select at least ${minimum} editable draft CAD objects first.`,
+        );
+        return;
+      }
+      const frameForObject = (item: BuildingPlacement) => {
+        const points = getObjectGeometryPoints(item);
+        const bounds = points.length ? boundsForSiteGeometry(points) : null;
+        const left = bounds ? bounds.minX : item.x ?? 0;
+        const top = bounds ? bounds.minY : item.y ?? 0;
+        const width = Math.max(1, bounds ? bounds.width : item.w ?? 1);
+        const height = Math.max(1, bounds ? bounds.height : item.d ?? 1);
+        return {
+          left,
+          top,
+          right: left + width,
+          bottom: top + height,
+          centerX: left + width / 2,
+          centerY: top + height / 2,
+          width,
+          height,
+        };
+      };
+      const moveTargetBy = (target: BuildingPlacement, dx: number, dy: number, label: string) => {
+        if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return false;
+        const updates: Partial<BuildingPlacement> = {
+          x: (target.x ?? 0) + dx,
+          y: (target.y ?? 0) + dy,
+        };
+        if (Array.isArray(target.geometry)) {
+          updates.geometry = translateSiteGeometry(target.geometry as Array<[number, number]>, { x: dx, y: dy });
+        }
+        updateCadObject(target, updates, label);
+        return true;
+      };
+
+      let moved = 0;
+      if (command === "ALIGN") {
+        const anchor = selectedTargets[0];
+        const anchorFrame = frameForObject(anchor);
+        selectedTargets.forEach((target) => {
+          const frame = frameForObject(target);
+          let dx = 0;
+          let dy = 0;
+          if (mode === "LEFT") dx = anchorFrame.left - frame.left;
+          if (mode === "RIGHT") dx = anchorFrame.right - frame.right;
+          if (mode === "CENTER" || mode === "X") dx = anchorFrame.centerX - frame.centerX;
+          if (mode === "TOP") dy = anchorFrame.top - frame.top;
+          if (mode === "BOTTOM") dy = anchorFrame.bottom - frame.bottom;
+          if (mode === "MIDDLE" || mode === "Y") dy = anchorFrame.centerY - frame.centerY;
+          if (moveTargetBy(target, dx, dy, `Align ${mode.toLowerCase()}`)) moved += 1;
+        });
+        pushCadCommandFeedback(
+          "ALIGN",
+          "applied",
+          `ALIGN ${mode} aligned ${selectedTargets.length} selected draft object${selectedTargets.length === 1 ? "" : "s"} to ${anchor.label || "the first selected object"}${moved ? "" : " (already aligned)"}.`,
+        );
+        return;
+      }
+
+      const axis = mode === "Y" || mode === "MIDDLE" ? "Y" : "X";
+      const sorted = [...selectedTargets].sort((a, b) => {
+        const frameA = frameForObject(a);
+        const frameB = frameForObject(b);
+        return axis === "X" ? frameA.centerX - frameB.centerX : frameA.centerY - frameB.centerY;
+      });
+      const firstFrame = frameForObject(sorted[0]);
+      const lastFrame = frameForObject(sorted[sorted.length - 1]);
+      const start = axis === "X" ? firstFrame.centerX : firstFrame.centerY;
+      const end = axis === "X" ? lastFrame.centerX : lastFrame.centerY;
+      if (Math.abs(end - start) < 0.001) {
+        pushCadCommandFeedback("DISTRIBUTE", "blocked", `DISTRIBUTE ${axis} blocked: selected objects need different ${axis.toLowerCase()} positions.`);
+        return;
+      }
+      const step = (end - start) / (sorted.length - 1);
+      sorted.slice(1, -1).forEach((target, index) => {
+        const frame = frameForObject(target);
+        const desired = start + step * (index + 1);
+        const dx = axis === "X" ? desired - frame.centerX : 0;
+        const dy = axis === "Y" ? desired - frame.centerY : 0;
+        if (moveTargetBy(target, dx, dy, `Distribute ${axis}`)) moved += 1;
+      });
+      pushCadCommandFeedback(
+        "DISTRIBUTE",
+        "applied",
+        `DISTRIBUTE ${axis} spaced ${selectedTargets.length} selected draft objects evenly${moved ? "" : " (already spaced)"}.`,
+      );
+    },
+    [buildingPlacements, getObjectGeometryPoints, pushCadCommandFeedback, selectedCadIds, updateCadObject],
+  );
   const arraySelectedCadObject = useCallback(
     (rowCount: number, columnCount: number, spacing: [number, number]) => {
       if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
@@ -3184,8 +3287,8 @@ export default function PreviewPanel({
     setHiddenCadLayers((prev) => prev.includes(layer) ? prev.filter((item) => item !== layer) : [...prev, layer]);
   }, []);
 
-  const runCadCommand = useCallback(() => {
-    const raw = cadCommandDraft.trim();
+  const runCadCommand = useCallback((commandOverride?: string) => {
+    const raw = (commandOverride ?? cadCommandDraft).trim();
     if (!raw) {
       if (cadActiveCommand) {
         if (cadActiveCommand.kind === "offset") {
@@ -3266,6 +3369,9 @@ export default function PreviewPanel({
       C: "CIRCLE",
       A: "ARC",
       AR: "ARRAY",
+      AL: "ALIGN",
+      DALIGN: "DISTRIBUTE",
+      DISTRIB: "DISTRIBUTE",
       M: "MOVE",
       RO: "ROTATE",
       SC: "SCALE",
@@ -3292,6 +3398,8 @@ export default function PreviewPanel({
       "CIRCLE",
       "ARC",
       "ARRAY",
+      "ALIGN",
+      "DISTRIBUTE",
       "DIST",
       "MEASURE",
       "MOVE",
@@ -3326,6 +3434,7 @@ export default function PreviewPanel({
       const mode = (args[0] || "").trim().toUpperCase();
       if (mode === "NONE" || mode === "CLEAR") {
         setCadSelectionSet([]);
+        onSelectObjects?.([]);
         onSelectBuilding(null);
         setSelectedVertex(null);
         pushCadCommandFeedback("SELECT", "info", "SELECT NONE cleared the draft object selection.");
@@ -3335,6 +3444,7 @@ export default function PreviewPanel({
       if (mode === "ALL") {
         const ids = selectableObjects.map((item) => item.id);
         setCadSelectionSet(ids);
+        onSelectObjects?.(ids);
         onSelectBuilding(ids[0] ?? null);
         setSelectedVertex(null);
         pushCadCommandFeedback("SELECT", ids.length ? "applied" : "blocked", ids.length ? `SELECT ALL selected ${ids.length} editable draft object${ids.length === 1 ? "" : "s"}.` : "SELECT ALL found no editable draft objects.");
@@ -3350,6 +3460,7 @@ export default function PreviewPanel({
           .filter((item) => String(item.meta?.cad_layer || item.type || "").toUpperCase() === layer)
           .map((item) => item.id);
         setCadSelectionSet(ids);
+        onSelectObjects?.(ids);
         onSelectBuilding(ids[0] ?? null);
         setSelectedVertex(null);
         pushCadCommandFeedback("SELECT", ids.length ? "applied" : "blocked", ids.length ? `SELECT LAYER ${layer} selected ${ids.length} editable draft object${ids.length === 1 ? "" : "s"}.` : `SELECT LAYER ${layer} found no editable draft objects.`);
@@ -3618,6 +3729,40 @@ export default function PreviewPanel({
       arraySelectedCadObject(rows, columns, spacing);
       return;
     }
+    if (commandKey === "ALIGN") {
+      const modeArg = (args[0] || "LEFT").trim().toUpperCase();
+      const modeAliases: Record<string, "LEFT" | "RIGHT" | "CENTER" | "TOP" | "BOTTOM" | "MIDDLE" | "X" | "Y"> = {
+        L: "LEFT",
+        LEFT: "LEFT",
+        R: "RIGHT",
+        RIGHT: "RIGHT",
+        C: "CENTER",
+        CENTER: "CENTER",
+        CENTRE: "CENTER",
+        X: "X",
+        T: "TOP",
+        TOP: "TOP",
+        B: "BOTTOM",
+        BOTTOM: "BOTTOM",
+        M: "MIDDLE",
+        MID: "MIDDLE",
+        MIDDLE: "MIDDLE",
+        Y: "Y",
+      };
+      const mode = modeAliases[modeArg];
+      if (!mode) {
+        pushCadCommandFeedback("ALIGN", "blocked", "ALIGN blocked: use ALIGN LEFT, RIGHT, CENTER, TOP, BOTTOM, or MIDDLE.");
+        return;
+      }
+      alignOrDistributeSelectedCadObjects("ALIGN", mode);
+      return;
+    }
+    if (commandKey === "DISTRIBUTE") {
+      const modeArg = (args[0] || "X").trim().toUpperCase();
+      const axis = ["Y", "V", "VERTICAL"].includes(modeArg) ? "Y" : "X";
+      alignOrDistributeSelectedCadObjects("DISTRIBUTE", axis);
+      return;
+    }
     if (commandKey === "DIST" || commandKey === "MEASURE") {
       if (pointArgs.length >= 2) {
         const [a, b] = pointArgs;
@@ -3768,8 +3913,9 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
+    alignOrDistributeSelectedCadObjects,
     applySelectedCadDimension,
     arraySelectedCadObject,
     buildingPlacements,
@@ -3785,6 +3931,7 @@ export default function PreviewPanel({
     moveSelectedCadObjectsByVector,
     offsetSelectedCadObjectBy,
     onSelectBuilding,
+    onSelectObjects,
     onSetPreviewInteraction,
     onRemoveBuilding,
     parseCadNumber,
@@ -3925,8 +4072,13 @@ export default function PreviewPanel({
         redoCadCommand();
         break;
       case "command":
-        setCadCommandDraft((value) => value || "LINE 0,0 100,0");
-        pushCadCommandFeedback("COMMAND", "info", "Command line focused. Type a command or run the loaded example.");
+        if (cadToolRequest.commandText?.trim()) {
+          setCadCommandDraft(cadToolRequest.commandText);
+          window.requestAnimationFrame(() => runCadCommand(cadToolRequest.commandText));
+        } else {
+          setCadCommandDraft((value) => value || "LINE 0,0 100,0");
+          pushCadCommandFeedback("COMMAND", "info", "Command line focused. Type a command or run the loaded example.");
+        }
         break;
       default:
         break;
@@ -3948,6 +4100,7 @@ export default function PreviewPanel({
     onSetPreviewMode,
     pushCadCommandFeedback,
     redoCadCommand,
+    runCadCommand,
     selectedDeletableObject,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
@@ -7837,7 +7990,7 @@ export default function PreviewPanel({
                     placeholder={cadActiveCommand ? "Next point, FINISH, or CANCEL" : "LINE, then 0,0, then 100,0"}
                     className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
                   />
-                  <button type="button" onClick={runCadCommand} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white">Run</button>
+                  <button type="button" onClick={() => runCadCommand()} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white">Run</button>
                 </div>
                 {cadActiveCommand ? (
                   <div

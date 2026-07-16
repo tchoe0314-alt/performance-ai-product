@@ -140,6 +140,26 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("preview-object-manager-list")).toHaveValue(/.+/);
   });
 
+  test("command selection sets align and distribute editable draft objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await runCommand(page, "add detention basin");
+    await openDrawPanel(page);
+
+    await runCommand(page, "SELECT ALL");
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText(/3 objects selected|4 objects selected/);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SELECT ALL selected [34] editable draft objects/);
+
+    await runCommand(page, "DISTRIBUTE X");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DISTRIBUTE X spaced [34] selected draft objects evenly/);
+
+    await runCommand(page, "ALIGN LEFT");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/ALIGN LEFT aligned [34] selected draft objects/);
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls");
+  });
+
   test("select, inspect, rename, style, type, hide, show all, copy, paste, rotate, and flip work", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
