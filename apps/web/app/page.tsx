@@ -7006,6 +7006,28 @@ function PerformanceAIDashboardView({
           detail: `${target.label} style changed.`,
           undo,
         };
+      } else if (typeof updates.locked === "boolean" && updates.locked !== Boolean(target.locked)) {
+        recentChange = {
+          type: "object_style_changed",
+          label: updates.locked ? "Object locked" : "Object unlocked",
+          detail: `${target.label} was ${updates.locked ? "locked" : "unlocked"}.`,
+          undo,
+        };
+      } else if (
+        typeof updates.x === "number" ||
+        typeof updates.y === "number" ||
+        typeof updates.w === "number" ||
+        typeof updates.d === "number" ||
+        typeof updates.h === "number" ||
+        typeof updates.rotation === "number" ||
+        Array.isArray(updates.geometry)
+      ) {
+        recentChange = {
+          type: "object_style_changed",
+          label: "Object geometry changed",
+          detail: `${target.label} geometry changed.`,
+          undo,
+        };
       }
     }
     setBuildingPlacements((prev) =>
