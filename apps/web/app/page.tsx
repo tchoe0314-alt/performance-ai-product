@@ -2709,6 +2709,7 @@ function PerformanceAIDashboardView({
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [mobileViewport, setMobileViewport] = useState(false);
   const [, setChatCollapsed] = useState(false);
+  const [commandBarExpanded, setCommandBarExpanded] = useState(false);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
   const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
   const [sidePanelVisible, setSidePanelVisible] = useState(false);
@@ -10056,6 +10057,7 @@ function PerformanceAIDashboardView({
 
   const focusCommandInput = useCallback(() => {
     setShortcutsOverlayOpen(false);
+    setCommandBarExpanded(true);
     setRightRailCollapsed(true);
     setWorkspaceChromeMinimized(true);
     setPlacementModeEnabled(false);
@@ -19420,6 +19422,7 @@ function PerformanceAIDashboardView({
     sidePanelForRender === "model" ||
     previewInteraction === "edit";
   const commandBarVisible =
+    Boolean(commandBarExpanded || prompt.trim() || imageName || busy || chatBlockingActiveJob) &&
     activeSidePanel !== "chat" &&
     !(mobileViewport && leftSidebarOpen);
   const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
@@ -25711,7 +25714,7 @@ function PerformanceAIDashboardView({
                 </div>
 	              <div className="contents">
 	                <div
-	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${workspaceChromeHidden ? "hidden" : "opacity-100"}`}
+	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${sidebarVisible || workspaceChromeHidden ? "hidden" : "opacity-100"}`}
 	                  aria-hidden={workspaceChromeHidden}
 	                >
 	                  <div className="flex flex-col gap-3">

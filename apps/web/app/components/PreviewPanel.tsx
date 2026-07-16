@@ -5713,7 +5713,7 @@ export default function PreviewPanel({
   const activePreviewMode: "2d" | "3d" = previewMode;
   return (
     <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
-      <div className="mb-3 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+      <div className="hidden">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
@@ -5977,7 +5977,7 @@ export default function PreviewPanel({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
           <div className="relative isolate z-[220] mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
-            <div className="pointer-events-none flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
+            <div className="hidden">
               <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
                   Canvas
@@ -5985,11 +5985,6 @@ export default function PreviewPanel({
                 <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                   {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} / {coordinateModeLabel(coordinateMode)}
                 </span>
-                {selectedCadObject?.label ? (
-                  <span className="inline-flex max-w-[18rem] items-center truncate rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
-                    {selectedCadObject.label}
-                  </span>
-                ) : null}
                 <div className="hidden">
                   <button
                     type="button"
@@ -6373,8 +6368,13 @@ export default function PreviewPanel({
                 </section>
               ) : null}
               {previewMode === "2d" ? (
-                <section className="pointer-events-auto relative z-[230] flex min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1" data-testid="preview-object-manager">
+                <section className={`${allowEdits ? "pointer-events-auto relative z-[230] flex" : "hidden"} min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1`} data-testid="preview-object-manager">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
+                  {selectedObject?.label ? (
+                    <span className="max-w-[180px] truncate rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700">
+                      {selectedObject.label}
+                    </span>
+                  ) : null}
                   <select
                     aria-label="Object Manager object list"
                     data-testid="preview-object-manager-list"
@@ -6710,7 +6710,7 @@ export default function PreviewPanel({
                 </button>
               </section>
             </div>
-            <div className="pointer-events-auto relative z-[80] flex min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            <div className={`${allowEdits || drawMode !== "select" ? "pointer-events-auto relative z-[80] flex" : "hidden"} min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500`}>
               <span className="rounded-md border border-slate-900 bg-white px-2 py-1 text-slate-900" data-testid="draw-active-tool">
                 {activeDrawToolLabel}
               </span>
@@ -7766,7 +7766,7 @@ export default function PreviewPanel({
 	                });
 	              }}
 	            >
-	              {previewMode === "2d" ? (
+	              {previewMode === "2d" && allowEdits ? (
 		                <div
 		                  data-testid="canvas-quick-draw-palette"
 		                  className="pointer-events-auto absolute left-[7rem] top-20 z-[35] flex max-w-[calc(100%-8rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
