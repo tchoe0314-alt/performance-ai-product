@@ -7282,6 +7282,45 @@ function PerformanceAIDashboardView({
     appendChatMessage("assistant", message, "status");
   }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker, selectedObjectIds]);
 
+  const handleObjectManagerBulkLock = useCallback((locked: boolean) => {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Bulk lock blocked: select one or more draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => {
+      if (item.type === "site") return false;
+      if (item.meta?.ai_realism_artifact) return false;
+      if (item.capabilities?.deletable === false) return false;
+      return true;
+    });
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Bulk lock blocked: selected objects are source-only or required project evidence.");
+      return;
+    }
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, { locked });
+    });
+    const message = `${locked ? "Locked" : "Unlocked"} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Locked objects stay visible but cannot be edited until unlocked.`, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: `Objects ${locked ? "locked" : "unlocked"}`,
+      detail: message,
+      undoBlockedReason: "Use Object Manager bulk controls to change lock state again.",
+    });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    handleUpdateBuilding,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
+
   const handleObjectManagerBulkColor = useCallback((color: string) => {
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
     if (!targets.length) {
@@ -25784,6 +25823,22 @@ function PerformanceAIDashboardView({
                               className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
                             >
                               Show selected
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkLock(true)}
+                              data-testid="object-manager-bulk-lock"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Lock selected
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerBulkLock(false)}
+                              data-testid="object-manager-bulk-unlock"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                            >
+                              Unlock selected
                             </button>
                             <label className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-500">
                               Color

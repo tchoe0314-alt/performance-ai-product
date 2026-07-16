@@ -310,6 +310,37 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Layout blocked: selected objects are locked, source-only, or required project evidence.");
   });
 
+  test("bulk lock and unlock protects selected draft objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+
+    await page.getByTestId("object-manager-bulk-lock").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Locked 2 selected draft objects.");
+    await expect(officeRow).toContainText(/locked/i);
+    await expect(parkingRow).toContainText(/locked/i);
+
+    await officeRow.getByTestId("object-manager-color").fill("#111827");
+    await expect(page.getByTestId("object-manager-status")).toContainText("style blocked: unlock Office Building - 28,000 sf before editing metadata.");
+
+    await page.getByTestId("object-manager-bulk-unlock").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Unlocked 2 selected draft objects.");
+    await expect(officeRow.getByTestId("object-manager-lock")).toHaveText("Lock");
+    await expect(parkingRow.getByTestId("object-manager-lock")).toHaveText("Lock");
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
+    await siteRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-bulk-lock").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk lock blocked: selected objects are source-only or required project evidence.");
+  });
+
   test("multi-select can combine editable objects into one named review object", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
