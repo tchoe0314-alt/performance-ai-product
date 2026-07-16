@@ -6867,6 +6867,29 @@ function PerformanceAIDashboardView({
         nextUpdates.geometry = target.geometry.map(([px, py]) => [px + deltaX, py + deltaY]);
       }
     }
+    if (
+      target?.geometryType &&
+      Array.isArray(target.geometry) &&
+      (typeof updates.w === "number" || typeof updates.d === "number")
+    ) {
+      const sourceGeometry = Array.isArray(nextUpdates.geometry) ? nextUpdates.geometry : target.geometry;
+      const xs = sourceGeometry.map(([px]) => px);
+      const ys = sourceGeometry.map(([, py]) => py);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const width = Math.max(0.001, Math.max(...xs) - minX);
+      const depth = Math.max(0.001, Math.max(...ys) - minY);
+      const nextW = typeof updates.w === "number" && updates.w > 0 ? updates.w : target.w;
+      const nextD = typeof updates.d === "number" && updates.d > 0 ? updates.d : target.d;
+      const scaleX = nextW / width;
+      const scaleY = nextD / depth;
+      if (Number.isFinite(scaleX) && Number.isFinite(scaleY)) {
+        nextUpdates.geometry = sourceGeometry.map(([px, py]) => [
+          minX + (px - minX) * scaleX,
+          minY + (py - minY) * scaleY,
+        ]);
+      }
+    }
     if (target?.type === "custom") {
       const geometryType = isCustomGeometryMode(updates.geometryType ?? target.geometryType)
         ? (updates.geometryType ?? target.geometryType) as CustomGeometryMode
@@ -23816,12 +23839,14 @@ function PerformanceAIDashboardView({
                               {selectedBuilding.meta?.ui_hidden ? "Show object" : "Hide object"}
                             </button>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="grid grid-cols-2 gap-2 text-[11px]" data-testid="selected-object-exact-geometry">
                             <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
                               X
                               <input
                                 type="number"
                                 value={Math.round(selectedBuilding.x ?? 0)}
+                                aria-label="Selected object X position"
+                                data-testid="selected-object-x-input"
                                 onChange={(event) =>
                                   handleUpdateBuilding(selectedBuilding.id, {
                                     x: Number(event.target.value) || 0,
@@ -23835,9 +23860,41 @@ function PerformanceAIDashboardView({
                               <input
                                 type="number"
                                 value={Math.round(selectedBuilding.y ?? 0)}
+                                aria-label="Selected object Y position"
+                                data-testid="selected-object-y-input"
                                 onChange={(event) =>
                                   handleUpdateBuilding(selectedBuilding.id, {
                                     y: Number(event.target.value) || 0,
+                                  })
+                                }
+                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              W
+                              <input
+                                type="number"
+                                value={Math.round(selectedBuilding.w ?? 0)}
+                                aria-label="Selected object width"
+                                data-testid="selected-object-width-input"
+                                onChange={(event) =>
+                                  handleUpdateBuilding(selectedBuilding.id, {
+                                    w: parsePositiveNumber(event.target.value) ?? selectedBuilding.w,
+                                  })
+                                }
+                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              D
+                              <input
+                                type="number"
+                                value={Math.round(selectedBuilding.d ?? 0)}
+                                aria-label="Selected object depth"
+                                data-testid="selected-object-depth-input"
+                                onChange={(event) =>
+                                  handleUpdateBuilding(selectedBuilding.id, {
+                                    d: parsePositiveNumber(event.target.value) ?? selectedBuilding.d,
                                   })
                                 }
                                 className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
@@ -23848,6 +23905,8 @@ function PerformanceAIDashboardView({
                               <input
                                 type="number"
                                 value={Math.round(selectedBuilding.rotation ?? 0)}
+                                aria-label="Selected object rotation"
+                                data-testid="selected-object-rotation-input"
                                 onChange={(event) =>
                                   handleUpdateBuilding(selectedBuilding.id, {
                                     rotation: Number(event.target.value) || 0,

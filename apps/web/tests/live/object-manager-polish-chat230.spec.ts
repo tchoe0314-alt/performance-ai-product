@@ -175,8 +175,17 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     await page.getByTestId("selected-object-name-input").fill("HQ Office Test");
     await expect(page.getByTestId("selected-object-inspector")).toContainText("HQ Office Test");
+
+    await page.getByTestId("selected-object-x-input").fill("180");
+    await page.getByTestId("selected-object-y-input").fill("240");
+    await page.getByTestId("selected-object-width-input").fill("260");
+    await page.getByTestId("selected-object-depth-input").fill("140");
+    await page.getByTestId("selected-object-rotation-input").fill("15");
+    await expect(page.getByTestId("selected-object-inspector-facts")).toContainText(/260|140|15/);
+
     await openDrawPanel(page);
     await expect(page.getByTestId("object-manager-panel")).toContainText("HQ Office Test");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test" }).first()).toContainText(/260|140/);
 
     const renamedRow = page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test" }).first();
     await renamedRow.getByTestId("object-manager-color").fill("#0f766e");
