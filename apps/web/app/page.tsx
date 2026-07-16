@@ -20142,9 +20142,15 @@ function PerformanceAIDashboardView({
   }, [activeSidePanel, handleCloseSidePanel, previewFullscreenOpen, shortcutsOverlayOpen, updateProjectStatus]);
 
   const handleDeleteSelectedObject = useCallback(() => {
+    if (selectedObjectIds.length > 1) {
+      handleObjectManagerBulkDelete();
+      return;
+    }
     const target = activePlacementId
       ? buildingPlacements.find((item) => item.id === activePlacementId)
-      : null;
+      : selectedObjectIds[0]
+        ? buildingPlacements.find((item) => item.id === selectedObjectIds[0])
+        : null;
     if (!target) {
       const message = "Delete blocked: no object is selected.";
       setObjectManagerStatusMessage(message);
@@ -20194,7 +20200,16 @@ function PerformanceAIDashboardView({
       detail: `Deleted ${target.label}. Generated systems may be stale.`,
       nextAction: "Undo if needed, or rerun affected generated systems.",
     });
-  }, [activePlacementId, buildingPlacements, handleRemoveBuilding, updateProjectStatus]);
+  }, [
+    activePlacementId,
+    appendChatMessage,
+    buildingPlacements,
+    handleObjectManagerBulkDelete,
+    handleRemoveBuilding,
+    recordDraftUndoAction,
+    selectedObjectIds,
+    updateProjectStatus,
+  ]);
 
   const handleCopySelectedObject = useCallback(() => {
     const target = activePlacementId
