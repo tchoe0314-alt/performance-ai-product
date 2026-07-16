@@ -110,10 +110,6 @@ body,
   box-shadow: var(--civora-shadow-canvas);
 }
 
-.civora-preview-panel > div:first-child {
-  display: none;
-}
-
 .civora-preview-panel > div:nth-child(2) {
   position: relative;
   min-height: calc(100svh - 4rem);
@@ -123,58 +119,14 @@ body,
     linear-gradient(180deg, #fbfcfd 0%, #f2f5f7 100%);
 }
 
-.civora-preview-panel > div:nth-child(2) > div:first-child {
-  position: absolute;
-  z-index: -1;
-  width: 1px;
-  height: 1px;
-  max-height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.civora-preview-panel > div:nth-child(2) > div:first-child > div {
-  padding: 8px 10px;
-}
-
-.civora-preview-panel > div:nth-child(2) > div:first-child > div:first-child {
-  border-bottom-color: rgba(226, 232, 240, 0.7);
-}
-
-.civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 0;
-}
-
-.civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) > section:not(:nth-child(2)):not(:last-child) {
-  display: none;
-}
-
-.civora-preview-panel > div:nth-child(2) > div:first-child > div:nth-child(2) > section:last-child {
-  margin-left: auto;
-  border-color: transparent;
-  background: transparent;
-  padding: 0;
-}
-
-.civora-preview-panel > div:nth-child(2) > div:first-child button {
-  min-height: 30px;
-}
-
-.civora-preview-panel > div:nth-child(2) > div:first-child span {
-  white-space: nowrap;
-}
-
 .civora-preview-panel > div:nth-child(2) > div:not(:first-child):not(.civora-cad-dock):not(.civora-coordination-dock) {
   min-height: inherit;
 }
 
 .civora-cad-dock,
 .civora-coordination-dock {
-  position: absolute;
-  z-index: 64;
+  position: relative;
+  z-index: 12;
   overflow: auto;
   border-color: rgba(203, 213, 225, 0.82);
   background: rgba(255, 255, 255, 0.9);
@@ -184,13 +136,13 @@ body,
 }
 
 .civora-cad-dock {
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
-  max-height: 1px;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  max-height: min(38svh, 300px);
   margin-bottom: 0;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .civora-preview-zoom-controls,
@@ -202,16 +154,8 @@ body,
   display: none !important;
 }
 
-.civora-cad-dock:hover,
-.civora-cad-dock:focus-within {
-  max-height: 230px;
-  opacity: 1;
-  pointer-events: auto;
-  box-shadow: 0 24px 58px -34px rgba(15, 23, 42, 0.62);
-}
-
 .civora-cad-dock > section {
-  min-width: 174px;
+  min-width: min(100%, 190px);
 }
 
 .civora-cad-dock section > p:first-child {
@@ -225,8 +169,8 @@ body,
 }
 
 .civora-coordination-dock {
-  right: 16px;
-  bottom: 238px;
+  right: auto;
+  bottom: auto;
   width: min(320px, calc(100% - 32px));
   max-height: 50px;
   margin-bottom: 0;
@@ -261,21 +205,12 @@ body,
     min-height: 720px;
   }
 
-  .civora-preview-panel > div:nth-child(2) > div:first-child {
-    max-height: 168px;
-  }
-
   .civora-cad-dock {
-    left: 10px;
-    right: 10px;
-    bottom: 10px;
-    max-height: 58px;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    max-height: min(48svh, 340px);
     grid-template-columns: 1fr !important;
-  }
-
-  .civora-cad-dock:hover,
-  .civora-cad-dock:focus-within {
-    max-height: 238px;
   }
 
   .civora-coordination-dock {

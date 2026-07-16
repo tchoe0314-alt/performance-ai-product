@@ -5419,7 +5419,7 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     if (demoWorkspaceSeededRef.current) return;
-    if (!forceDemoWorkspace && !seededDemoWorkspaceEnabled) return;
+    if (!forceDemoWorkspace && !routeDemoWorkspaceEnabled && !seededDemoWorkspaceEnabled) return;
     const debugEmptyLayout =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("chat226EmptyLayout") === "1";
@@ -5558,7 +5558,7 @@ function PerformanceAIDashboardView({
     setChatMessages(demoThread);
     chatMessagesRef.current = demoThread;
     setStatusMessage("Demo workspace loaded for UI QA.");
-  }, [clientMounted, forceDemoWorkspace, seededDemoWorkspaceEnabled]);
+  }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled, seededDemoWorkspaceEnabled]);
 
   const applyProjectInput = (projectInput: ProjectInput) => {
     if (!projectInput || typeof projectInput !== "object") {
@@ -8687,13 +8687,7 @@ function PerformanceAIDashboardView({
 
     if (parkingCountCommandMatch) {
       if (!lot.w || !lot.h) {
-        appendChatMessage("user", message);
-        appendChatMessage(
-          "assistant",
-          "Set or draw the site boundary first, then I can add parking at project scale.",
-          "status",
-        );
-        return true;
+        ensureSiteBoundary("Created a default review site so the parking field can be added immediately.");
       }
       const stalls = Number(parkingCountCommandMatch[1]);
       if (!Number.isFinite(stalls) || stalls <= 0) return false;
@@ -8749,13 +8743,7 @@ function PerformanceAIDashboardView({
 
     if (officeAreaCommandMatch) {
       if (!lot.w || !lot.h) {
-        appendChatMessage("user", message);
-        appendChatMessage(
-          "assistant",
-          "Set or draw the site boundary first, then I can add an office building at project scale.",
-          "status",
-        );
-        return true;
+        ensureSiteBoundary("Created a default review site so the office building can be added immediately.");
       }
       const areaSf = Number(officeAreaCommandMatch[1]);
       if (!Number.isFinite(areaSf) || areaSf <= 0) return false;
@@ -8801,13 +8789,7 @@ function PerformanceAIDashboardView({
 
     if (addBuildingMatch) {
       if (!lot.w || !lot.h) {
-        appendChatMessage("user", message);
-        appendChatMessage(
-          "assistant",
-          "Set the site boundary first (width and height), then I can add buildings at scale.",
-          "status",
-        );
-        return true;
+        ensureSiteBoundary("Created a default review site so the building can be added immediately.");
       }
       const width = Number(addBuildingMatch[3]);
       const depth = Number(addBuildingMatch[7]);
@@ -8871,13 +8853,7 @@ function PerformanceAIDashboardView({
       const typeKey = typeMap[rawType];
       if (!typeKey) return false;
       if (!lot.w || !lot.h) {
-        appendChatMessage("user", message);
-        appendChatMessage(
-          "assistant",
-          "Set the site boundary first (width and height), then I can add that object at scale.",
-          "status",
-        );
-        return true;
+        ensureSiteBoundary("Created a default review site so the object can be added immediately.");
       }
       const width = addObjectMatch[4] ? Number(addObjectMatch[4]) : null;
       const depth = addObjectMatch[8] ? Number(addObjectMatch[8]) : null;
@@ -8912,13 +8888,7 @@ function PerformanceAIDashboardView({
     );
     if (addBasinMatch) {
       if (!lot.w || !lot.h) {
-        appendChatMessage("user", message);
-        appendChatMessage(
-          "assistant",
-          "Set the site boundary first (width and height), then I can add a basin at scale.",
-          "status",
-        );
-        return true;
+        ensureSiteBoundary("Created a default review site so the basin can be added immediately.");
       }
       const width = addBasinMatch[4] ? Number(addBasinMatch[4]) : 80;
       const depth = addBasinMatch[8] ? Number(addBasinMatch[8]) : 60;
@@ -10091,11 +10061,6 @@ function PerformanceAIDashboardView({
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
     setCadToolRequest({ id: Date.now(), tool: "select" });
-    if (activeSidePanel !== "chat") {
-      setActiveWorkspaceMode("dashboard");
-      setActiveSidePanel(null);
-      setRenderedSidePanel(null);
-    }
     window.requestAnimationFrame(() => {
       const input =
         commandInputRef.current ??
@@ -10115,7 +10080,7 @@ function PerformanceAIDashboardView({
       input.focus();
       input.select();
     });
-  }, [activeSidePanel, updateProjectStatus]);
+  }, [updateProjectStatus]);
 
   const refuseUnsafeConstructionCommand = (message: string) => {
     appendChatMessage("user", message);
@@ -10389,7 +10354,11 @@ function PerformanceAIDashboardView({
           : "Utility and drainage layers hidden; no matching objects were present.",
         undoBlockedReason: "Use Object Manager Show all to make hidden utility/drainage objects visible again.",
       });
-      setStatusMessage(hiddenCount ? `Utilities hidden; ${hiddenCount} objects marked hidden.` : "Utilities hidden.");
+      setStatusMessage(
+        hiddenCount
+          ? `Utility and drainage layers are hidden in the preview. ${hiddenCount} utility/drainage object${hiddenCount === 1 ? "" : "s"} are marked hidden in Object Manager.`
+          : "Utility and drainage layers are hidden in the preview. No utility/drainage objects are in Object Manager yet.",
+      );
       updateProjectStatus({
         state: "ready",
         area: "chat",
@@ -10723,6 +10692,11 @@ function PerformanceAIDashboardView({
           setPrompt("");
           return;
         }
+        const handled = tryHandleObjectIntent(trimmed);
+        if (handled) {
+          setPrompt("");
+          return;
+        }
         const handledSheet = tryHandleSheetIntent(trimmed);
         if (handledSheet) {
           setPrompt("");
@@ -10735,11 +10709,6 @@ function PerformanceAIDashboardView({
         }
         const handledAction = tryHandleActionIntent(trimmed);
         if (handledAction) {
-          setPrompt("");
-          return;
-        }
-        const handled = tryHandleObjectIntent(trimmed);
-        if (handled) {
           setPrompt("");
           return;
         }
@@ -13977,7 +13946,7 @@ function PerformanceAIDashboardView({
       autoExistingRunKeyRef.current = "";
       setActiveWorkspaceMode("setup");
       setActiveSidePanel("site_existing");
-      const message = "Address applied locally. Online geocode/source lookup needs sign-in/backend connection.";
+      const message = "Sign in/connect backend to apply address. Address saved locally; online geocode/source lookup needs sign-in/backend connection.";
       setAutoExistingConditionsStatus({
         status: "blocked",
         message,
@@ -15106,6 +15075,50 @@ function PerformanceAIDashboardView({
         },
         target,
       );
+      if (!token && effectiveDemoWorkspaceEnabled) {
+        const runSummary: GenerateFlowSummary = {
+          version: "generate_flow_summary_v1",
+          generated_at: new Date().toISOString(),
+          target,
+          ran: targetSystems,
+          skipped: skippedSystems,
+          needs_review: reviewNotes,
+          notes: reviewNotes,
+          blocked: false,
+          next_action: reviewNotes.length
+            ? "Review the local draft notes and provide or accept missing sources before relying on outputs."
+            : "Review the local draft package; outputs remain engineer-review-required.",
+          auto_site_context: autoSiteContextFlowSummary,
+          safety_wording:
+            "Generate creates review-required drafts only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+        };
+        recordGenerateSummary(runSummary);
+        setSystemStatuses((prev) => {
+          const next = { ...prev };
+          targetSystems.forEach((system) => {
+            next[system] = "fresh";
+          });
+          return next;
+        });
+        updateProjectStatus({
+          state: "needs review",
+          area: "generate",
+          title: runSummary.skipped.length ? "Started, with skipped systems" : "Generate draft ready",
+          detail: `${systemLabel} ran in local demo mode with review-required outputs.`,
+          nextAction: runSummary.next_action,
+        });
+        appendChatMessage(
+          "assistant",
+          [
+            `${runSummary.skipped.length ? "Started, with skipped systems" : "Generate started"}. Ran: ${runSummary.ran.join(", ")}.`,
+            conceptCount ? `Canvas: added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"}.` : "",
+            runSummary.skipped.length ? `Skipped: ${runSummary.skipped.join(", ")}.` : "Skipped: none.",
+            runSummary.needs_review.length ? `Needs review: ${runSummary.needs_review.slice(0, 5).join("; ")}.` : "Needs review: standard engineer review.",
+          ].filter(Boolean).join(" "),
+          "status",
+        );
+        return;
+      }
       if (!token) {
         const summary = blockedSummary(
           "backend/auth session is required to run Generate on the hosted website",
@@ -18371,7 +18384,7 @@ function PerformanceAIDashboardView({
 	      key: "draw",
 	      label: "Draw",
 	      caption: "Canvas and drafting",
-	      panel: "model",
+	      panel: "objects",
 	      icon: Box,
 	      status: siteScaleLocked ? panelStatus("objects") : "review",
 	      metric: `${placedObjects.length} objects`,
@@ -18857,7 +18870,7 @@ function PerformanceAIDashboardView({
       modes: ["setup", "draw"] as PrimaryWorkflowKey[],
       action: handleStartSiteBoundaryDraw,
       active: !siteScaleLocked && activePrimaryWorkflowKey === "draw",
-      testId: "draw-site-boundary-toolbar",
+      testId: "workspace-draw-site-boundary-shortcut",
     },
     {
       label: "Change Site Boundary",
@@ -19401,6 +19414,15 @@ function PerformanceAIDashboardView({
       : backendResult
         ? "No visible blockers recorded."
         : "No run output yet.";
+  const drawWorkspaceActive =
+    activePrimaryWorkflowKey === "draw" ||
+    sidePanelForRender === "objects" ||
+    sidePanelForRender === "model" ||
+    previewInteraction === "edit";
+  const commandBarVisible =
+    activeSidePanel !== "chat" &&
+    !(mobileViewport && leftSidebarOpen);
+  const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
   const issueDiagnosticSummary = [
     "Civora pilot issue report",
     `Project ID: ${currentProject?.project_id || projectId || "draft / unavailable"}`,
@@ -19852,7 +19874,7 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-            className={`civora-motion-right-panel fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] top-auto z-[90] order-3 flex max-h-[calc(82svh-4.75rem)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] sm:rounded-xl lg:inset-x-auto lg:bottom-[5.25rem] lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:rounded-xl ${
+            className={`civora-motion-right-panel fixed inset-x-0 ${commandBarVisible ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] max-h-[calc(82svh-4.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] lg:bottom-[5.25rem]" : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] max-h-[calc(92svh-0.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:max-h-[calc(90svh-1rem)] lg:bottom-4"} top-auto z-[90] order-3 flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:rounded-xl lg:inset-x-auto lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:rounded-xl ${
               sidePanelForRender === "deliverables" ? "lg:w-[760px] xl:w-[860px]" : "lg:w-[380px]"
             }`}
             >
@@ -20597,7 +20619,23 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-3" data-testid="clean-setup-panel">
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth" open={!hasAppliedAddress && !siteScaleLocked}>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSidePanel("import_survey")}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                      >
+                        Import
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSidePanel("objects")}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                      >
+                        Draw
+                      </button>
+                    </div>
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / Location</span>
@@ -25673,8 +25711,8 @@ function PerformanceAIDashboardView({
                 </div>
 	              <div className="contents">
 	                <div
-	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${workspaceChromeMinimized ? "hidden" : "opacity-100"}`}
-	                  aria-hidden={workspaceChromeMinimized}
+	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${workspaceChromeHidden ? "hidden" : "opacity-100"}`}
+	                  aria-hidden={workspaceChromeHidden}
 	                >
 	                  <div className="flex flex-col gap-3">
 	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -25848,7 +25886,7 @@ function PerformanceAIDashboardView({
 	                {selectedBuilding ? (
 	                  <div
 	                    data-testid="floating-object-inspector"
-	                    className="absolute left-3 top-[9.75rem] z-40 hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
+	                    className="absolute left-3 top-[9.75rem] z-[32] hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
 	                  >
 	                    <div className="flex items-start justify-between gap-3">
 	                      <div className="min-w-0">
@@ -26134,8 +26172,7 @@ function PerformanceAIDashboardView({
               </div>
             </div>
           ) : null}
-          {activeSidePanel !== "chat" &&
-          !(mobileViewport && leftSidebarOpen) ? (
+          {commandBarVisible ? (
             <PinnedCommandBar
               prompt={prompt}
               imageName={imageName}
@@ -26154,7 +26191,7 @@ function PerformanceAIDashboardView({
                 interaction: previewInteraction,
                 layer: activePlacementId ? "selected" : "C-DRAFT",
                 selectedCount: activePlacementId ? 1 : 0,
-                snap: previewInteraction === "edit" ? "on" : "ready",
+                snap: "ready",
                 view: `${previewMode.toUpperCase()} / ${previewQuality}`,
               }}
             />

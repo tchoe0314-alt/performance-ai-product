@@ -1857,9 +1857,6 @@ export default function PreviewPanel({
     }),
     [getCadLayer, hiddenCadLayers, objectManagerRows],
   );
-  const getPreviewObjectTypeLabel = useCallback((item: BuildingPlacement) => {
-    return String(item.type || item.geometryType || "object").replace(/_/g, " ");
-  }, []);
   const getPreviewObjectDimensionsLabel = useCallback((item: BuildingPlacement) => {
     if (item.geometryType === "point") return "Point object";
     const width = Number.isFinite(item.w) ? item.w.toFixed(1) : "--";
@@ -6392,10 +6389,7 @@ export default function PreviewPanel({
                     </option>
                     {objectManagerRows.map((item) => (
                       <option key={`manager-option-${item.id}`} value={item.id}>
-                        {item.label || item.id} - {getPreviewObjectTypeLabel(item)}
-                        {item.meta?.ui_hidden ? " - hidden" : ""}
-                        {item.generated || item.source === "generated" ? " - generated" : ""}
-                        {item.source === "manual_drawn" || item.type === "custom" ? " - draft" : ""}
+                        {item.label || item.id}
                       </option>
                     ))}
                   </select>
@@ -7770,7 +7764,7 @@ export default function PreviewPanel({
 	              {previewMode === "2d" ? (
 		                <div
 		                  data-testid="canvas-quick-draw-palette"
-		                  className="pointer-events-auto absolute left-[7rem] top-20 z-[260] flex max-w-[calc(100%-8rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
+		                  className="pointer-events-auto absolute left-[7rem] top-20 z-[35] flex max-w-[calc(100%-8rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
 		                  onMouseDown={(event) => event.stopPropagation()}
 		                  onPointerDown={(event) => event.stopPropagation()}
 		                  onTouchStart={(event) => event.stopPropagation()}

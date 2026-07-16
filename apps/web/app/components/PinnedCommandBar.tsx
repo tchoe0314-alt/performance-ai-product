@@ -50,12 +50,16 @@ export default function PinnedCommandBar({
 }: PinnedCommandBarProps) {
   const isWorking = busy || hasVisibleActiveJob;
   const canSend = Boolean(prompt.trim() || imageName) && !isWorking;
+  const quietStatus = statusText.trim();
+  const showQuietStatus =
+    Boolean(quietStatus) &&
+    !/^Civora:\s*(Duplicate blocked|Delete blocked)/i.test(quietStatus);
 
   return (
     <div
       data-testid="floating-command-bar"
       data-command-bar-id="pinned-civora-command-bar"
-      className="civora-motion-command-bar fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto w-auto max-w-3xl rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:inset-x-4 sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:w-[calc(100vw-2rem)]"
+      className="civora-motion-command-bar fixed right-2 top-[4.75rem] z-[45] w-[min(30rem,calc(100vw-1rem))] rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:right-4 sm:top-20"
     >
       {isWorking ? (
         <div className="mb-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -70,10 +74,6 @@ export default function PinnedCommandBar({
             {thinkingState.progress}%
           </span>
         </div>
-      ) : statusText ? (
-        <p className="mb-2 truncate px-2 text-xs font-medium text-slate-500">
-          {statusText}
-        </p>
       ) : null}
       {commandContext ? (
         <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -91,6 +91,14 @@ export default function PinnedCommandBar({
             </span>
           ))}
         </div>
+      ) : null}
+      {!isWorking && showQuietStatus ? (
+        <p
+          aria-live="polite"
+          className="mb-2 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600"
+        >
+          {quietStatus}
+        </p>
       ) : null}
       <div className="flex min-w-0 items-end gap-2">
         <button
