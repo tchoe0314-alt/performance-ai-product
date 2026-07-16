@@ -2481,6 +2481,11 @@ type DraftUndoAction =
       before: BuildingPlacement;
       after: BuildingPlacement;
       label: string;
+    }
+  | {
+      action: "bulk_update";
+      before: BuildingPlacement[];
+      label: string;
     };
 
 type RecentChange = {
@@ -7108,6 +7113,13 @@ function PerformanceAIDashboardView({
     setPreviewInteraction("edit");
   }, []);
 
+  const cloneBuildingPlacementForUndo = useCallback((item: BuildingPlacement): BuildingPlacement => ({
+    ...item,
+    geometry: item.geometry?.map(([x, y]) => [x, y] as [number, number]),
+    meta: item.meta ? { ...item.meta } : item.meta,
+    capabilities: item.capabilities ? { ...item.capabilities } : item.capabilities,
+  }), []);
+
   const handleObjectManagerToggleMultiSelect = useCallback((id: string, checked: boolean) => {
     setSelectedObjectIds((prev) => {
       const next = checked
@@ -7947,6 +7959,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Move blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: "bulk move",
+    };
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, {
         x: (item.x ?? 0) + dx,
@@ -7962,13 +7979,15 @@ function PerformanceAIDashboardView({
       type: "object_style_changed",
       label: "Objects moved",
       detail: message,
-      undoBlockedReason: "Use Move again with the opposite vector to revise the draft position.",
+      undo,
     });
+    setLastDraftAction(undo);
   }, [
     appendChatMessage,
     bulkMoveX,
     bulkMoveY,
     buildingPlacements,
+    cloneBuildingPlacementForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -7994,6 +8013,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Scale blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: "bulk scale",
+    };
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, {
         w: Math.max(1, item.w * factor),
@@ -8010,12 +8034,14 @@ function PerformanceAIDashboardView({
       type: "object_style_changed",
       label: "Objects scaled",
       detail: message,
-      undoBlockedReason: "Use Scale again with the inverse factor to revise the draft size.",
+      undo,
     });
+    setLastDraftAction(undo);
   }, [
     appendChatMessage,
     bulkScaleFactor,
     buildingPlacements,
+    cloneBuildingPlacementForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -8041,6 +8067,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: "bulk rotate",
+    };
     const radians = (angle * Math.PI) / 180;
     editable.forEach((item) => {
       const centerX = (item.x ?? 0) + item.w / 2;
@@ -8067,12 +8098,14 @@ function PerformanceAIDashboardView({
       type: "object_style_changed",
       label: "Objects rotated",
       detail: message,
-      undoBlockedReason: "Use Rotate again with the opposite angle to revise the draft orientation.",
+      undo,
     });
+    setLastDraftAction(undo);
   }, [
     appendChatMessage,
     bulkRotateAngle,
     buildingPlacements,
+    cloneBuildingPlacementForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -8093,6 +8126,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Mirror blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      label: `bulk mirror ${axis.toUpperCase()}`,
+    };
     const objectBounds = editable.map((item) => {
       const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
       const bounds = geometry?.length
@@ -8147,11 +8185,13 @@ function PerformanceAIDashboardView({
       type: "object_style_changed",
       label: `Objects mirrored ${axis.toUpperCase()}`,
       detail: message,
-      undoBlockedReason: "Use Mirror again on the same axis to revise the draft orientation.",
+      undo,
     });
+    setLastDraftAction(undo);
   }, [
     appendChatMessage,
     buildingPlacements,
+    cloneBuildingPlacementForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -19976,6 +20016,25 @@ function PerformanceAIDashboardView({
       setLastDraftAction(null);
       return;
     }
+    if (lastDraftAction.action === "bulk_update") {
+      const beforeById = new Map(lastDraftAction.before.map((item) => [item.id, item]));
+      setBuildingPlacements((prev) =>
+        prev.map((item) => (beforeById.has(item.id) ? { ...beforeById.get(item.id)! } : item)),
+      );
+      setSelectedObjectIds(lastDraftAction.before.map((item) => item.id));
+      setActivePlacementId(lastDraftAction.before[0]?.id ?? null);
+      lastDraftAction.before.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${lastDraftAction.before.length} draft objects from ${lastDraftAction.label}.`);
+      appendChatMessage("assistant", `Undo: restored ${lastDraftAction.before.length} draft objects from ${lastDraftAction.label}.`, "status");
+      recordRecentChange({
+        type: "object_style_changed",
+        label: "Undo restored objects",
+        detail: `${lastDraftAction.before.length} draft objects were restored to their previous state.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      setLastDraftAction(null);
+      return;
+    }
     handleRestoreBuilding(lastDraftAction.object);
     appendChatMessage("assistant", `Undo: restored ${lastDraftAction.object.label}.`, "status");
     updateProjectStatus({
@@ -20020,6 +20079,23 @@ function PerformanceAIDashboardView({
     }
     if (undo.action === "delete") {
       handleRestoreBuilding(undo.object);
+      return;
+    }
+    if (undo.action === "bulk_update") {
+      const beforeById = new Map(undo.before.map((item) => [item.id, item]));
+      setBuildingPlacements((prev) =>
+        prev.map((item) => (beforeById.has(item.id) ? { ...beforeById.get(item.id)! } : item)),
+      );
+      setSelectedObjectIds(undo.before.map((item) => item.id));
+      setActivePlacementId(undo.before[0]?.id ?? null);
+      undo.before.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${undo.before.length} draft objects from ${undo.label}.`);
+      recordRecentChange({
+        type: "object_style_changed",
+        label: "Undo restored objects",
+        detail: `${undo.before.length} draft objects were restored to their previous state.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
       return;
     }
     setBuildingPlacements((prev) =>

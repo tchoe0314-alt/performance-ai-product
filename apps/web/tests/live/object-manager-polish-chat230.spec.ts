@@ -540,6 +540,10 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.getByTestId("object-manager-bulk-move-y").fill("-15");
     await page.getByTestId("object-manager-bulk-move-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Moved 2 selected draft objects by 35,-15.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 2 draft objects from bulk move.");
+    await expect(officeRow.getByTestId("object-manager-bulk-select")).toBeChecked();
+    await expect(parkingRow.getByTestId("object-manager-bulk-select")).toBeChecked();
 
     await page.getByTestId("object-manager-bulk-copy-offset-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Copied 2 selected draft objects by 35,-15.");
@@ -559,6 +563,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Mirrored X 2 selected draft objects.");
     await page.getByTestId("object-manager-bulk-mirror-y").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Mirrored Y 2 selected draft objects.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 2 draft objects from bulk mirror Y.");
 
     await page.getByRole("button", { name: "Clear" }).click();
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
