@@ -242,7 +242,15 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
     const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
     const officeLayerRow = page.getByTestId("object-manager-layer-row").filter({ hasText: "Office Building" }).first();
+    const utilityLayerRow = page.getByTestId("object-manager-layer-row").filter({ hasText: "Utility Corridor" }).first();
     await expect(officeLayerRow).toContainText("1 object");
+    await officeLayerRow.getByTestId("object-manager-layer-select").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Selected 1 Office Building layer object.");
+    await utilityLayerRow.getByTestId("object-manager-layer-isolate").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Showing only 1 Utility Corridor layer object; 2 other objects hidden.");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await page.getByTestId("object-manager-show-all").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await officeLayerRow.getByTestId("object-manager-layer-visibility").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("1 hidden object");
     await expect(officeLayerRow).toContainText("1 hidden");

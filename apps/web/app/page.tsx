@@ -7380,6 +7380,53 @@ function PerformanceAIDashboardView({
     });
   }, [appendChatMessage, buildingPlacements, handleUpdateBuilding, recordRecentChange, reportObjectActionBlocker]);
 
+  const handleObjectManagerLayerSelect = useCallback((layerType: SiteObjectType) => {
+    const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+    if (!targets.length) {
+      reportObjectActionBlocker("Layer select blocked: no objects exist on that layer.");
+      return;
+    }
+    const ids = targets.map((item) => item.id);
+    setSelectedObjectIds(ids);
+    setActivePlacementId(ids[0] ?? null);
+    setPreviewInteraction("edit");
+    const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+    const message = `Selected ${targets.length} ${label} layer object${targets.length === 1 ? "" : "s"}.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+  }, [appendChatMessage, buildingPlacements, reportObjectActionBlocker]);
+
+  const handleObjectManagerLayerIsolate = useCallback((layerType: SiteObjectType) => {
+    const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+    if (!targets.length) {
+      reportObjectActionBlocker("Layer isolate blocked: no objects exist on that layer.");
+      return;
+    }
+    buildingPlacements
+      .filter((item) => item.type !== "site")
+      .forEach((item) => {
+        handleUpdateBuilding(item.id, {
+          meta: {
+            ...(item.meta ?? {}),
+            ui_hidden: item.type !== layerType,
+          },
+        });
+      });
+    const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+    const hiddenCount = buildingPlacements.filter((item) => item.type !== "site" && item.type !== layerType).length;
+    const message = `Showing only ${targets.length} ${label} layer object${targets.length === 1 ? "" : "s"}; ${hiddenCount} other object${hiddenCount === 1 ? "" : "s"} hidden.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+    recordRecentChange({
+      type: "object_visibility_changed",
+      label: `${label} layer isolated`,
+      detail: message,
+      undoBlockedReason: "Use Show all or layer controls to restore visibility.",
+    });
+  }, [appendChatMessage, buildingPlacements, handleUpdateBuilding, recordRecentChange, reportObjectActionBlocker]);
+
   const handleObjectManagerCombineSelected = useCallback(() => {
     clearGeneratedPreview();
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
@@ -25081,6 +25128,22 @@ function PerformanceAIDashboardView({
                                     </p>
                                   </div>
                                   <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerLayerSelect(layer.type)}
+                                      data-testid="object-manager-layer-select"
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                                    >
+                                      Select
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerLayerIsolate(layer.type)}
+                                      data-testid="object-manager-layer-isolate"
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
+                                    >
+                                      Only
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={() => handleObjectManagerLayerVisibility(layer.type, !layer.allHidden)}
