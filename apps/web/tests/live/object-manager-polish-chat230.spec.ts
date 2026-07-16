@@ -552,6 +552,14 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Deleted 2 selected draft objects.");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" })).toHaveCount(0);
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" })).toHaveCount(0);
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 2 draft objects from bulk delete.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first()).toBeVisible();
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: deleted 2 draft objects from bulk delete.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" })).toHaveCount(0);
 
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();

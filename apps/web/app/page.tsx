@@ -2481,6 +2481,11 @@ type DraftUndoAction =
     }
   | { action: "delete"; object: BuildingPlacement }
   | {
+      action: "delete_many";
+      objects: BuildingPlacement[];
+      label: string;
+    }
+  | {
       action: "update";
       objectId: string;
       before: BuildingPlacement;
@@ -7663,15 +7668,17 @@ function PerformanceAIDashboardView({
     editable.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
-    const firstDeleted = editable[0];
-    if (firstDeleted) {
-      recordDraftUndoAction({ action: "delete", object: firstDeleted });
-    }
+    const undo: DraftUndoAction = {
+      action: "delete_many",
+      objects: editable.map(cloneBuildingPlacementForUndo),
+      label: "bulk delete",
+    };
+    recordDraftUndoAction(undo);
     recordRecentChange({
       type: "object_deleted",
       label: "Objects deleted",
       detail: `Deleted ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
-      undo: firstDeleted ? { action: "delete", object: firstDeleted } : undefined,
+      undo,
     });
     const message = `Deleted ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
@@ -7689,8 +7696,10 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     clearGeneratedPreview,
+    cloneBuildingPlacementForUndo,
     ensureProjectDraftRef,
     markSystemsStale,
+    recordDraftUndoAction,
     recordRecentChange,
     reportObjectActionBlocker,
     saveProjectRef,
@@ -20288,6 +20297,26 @@ function PerformanceAIDashboardView({
       clearDraftAction();
       return;
     }
+    if (draftAction.action === "delete_many") {
+      const restoredIds = new Set(draftAction.objects.map((item) => item.id));
+      setBuildingPlacements((prev) => [
+        ...prev.filter((item) => !restoredIds.has(item.id)),
+        ...draftAction.objects.map((item) => ({ ...item })),
+      ]);
+      setSelectedObjectIds(draftAction.objects.map((item) => item.id));
+      setActivePlacementId(draftAction.objects[0]?.id ?? null);
+      draftAction.objects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${draftAction.objects.length} draft objects from ${draftAction.label}.`);
+      appendChatMessage("assistant", `Undo: restored ${draftAction.objects.length} draft objects from ${draftAction.label}.`, "status");
+      recordRecentChange({
+        type: "object_added",
+        label: "Undo restored deleted objects",
+        detail: `${draftAction.objects.length} draft objects were restored by undo.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      clearDraftAction();
+      return;
+    }
     if (draftAction.action === "update") {
       setBuildingPlacements((prev) =>
         prev.map((item) => (item.id === draftAction.objectId ? { ...draftAction.before } : item)),
@@ -20414,6 +20443,15 @@ function PerformanceAIDashboardView({
       finishRedo(`Redo: deleted ${redoAction.object.label}.`);
       return;
     }
+    if (redoAction.action === "delete_many") {
+      const deletedIds = new Set(redoAction.objects.map((item) => item.id));
+      setBuildingPlacements((prev) => prev.filter((item) => !deletedIds.has(item.id)));
+      setSelectedObjectIds((prev) => prev.filter((id) => !deletedIds.has(id)));
+      setActivePlacementId((prev) => (prev && deletedIds.has(prev) ? null : prev));
+      redoAction.objects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      finishRedo(`Redo: deleted ${redoAction.objects.length} draft objects from ${redoAction.label}.`);
+      return;
+    }
     if (redoAction.action === "update") {
       setBuildingPlacements((prev) =>
         prev.map((item) => (item.id === redoAction.objectId ? { ...redoAction.after } : item)),
@@ -20509,6 +20547,24 @@ function PerformanceAIDashboardView({
         type: "object_deleted",
         label: "Undo removed objects",
         detail: `${undo.objects.length} draft objects were removed by undo.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      return;
+    }
+    if (undo.action === "delete_many") {
+      const restoredIds = new Set(undo.objects.map((item) => item.id));
+      setBuildingPlacements((prev) => [
+        ...prev.filter((item) => !restoredIds.has(item.id)),
+        ...undo.objects.map((item) => ({ ...item })),
+      ]);
+      setSelectedObjectIds(undo.objects.map((item) => item.id));
+      setActivePlacementId(undo.objects[0]?.id ?? null);
+      undo.objects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${undo.objects.length} draft objects from ${undo.label}.`);
+      recordRecentChange({
+        type: "object_added",
+        label: "Undo restored deleted objects",
+        detail: `${undo.objects.length} draft objects were restored by undo.`,
         undoBlockedReason: "This is already an undo result.",
       });
       return;
