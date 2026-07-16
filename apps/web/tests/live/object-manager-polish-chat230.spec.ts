@@ -103,6 +103,38 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("Window selected 2 editable draft objects");
   });
 
+  test("canvas crossing selection selects touched objects while window selection requires containment", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await openDrawPanel(page);
+
+    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    await expect(officeOverlay).toBeVisible();
+    await page.getByRole("button", { name: /Select Pick objects/i }).click();
+
+    const officeBox = await officeOverlay.boundingBox();
+    expect(officeBox).not.toBeNull();
+    const left = officeBox!.x - 24;
+    const top = officeBox!.y - 24;
+    const right = officeBox!.x + officeBox!.width * 0.56;
+    const bottom = officeBox!.y + officeBox!.height * 0.42;
+
+    await page.mouse.move(left, top);
+    await page.mouse.down();
+    await expect(page.getByTestId("cad-window-select-marquee")).toHaveAttribute("data-selection-mode", "window");
+    await page.mouse.move(right, bottom, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("Window select found no editable draft objects.");
+
+    await page.mouse.move(right, top);
+    await page.mouse.down();
+    await page.mouse.move(left, bottom, { steps: 6 });
+    await expect(page.getByTestId("cad-window-select-marquee")).toHaveAttribute("data-selection-mode", "crossing");
+    await page.mouse.up();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("Crossing selected 1 editable draft object.");
+    await expect(page.getByTestId("preview-object-manager-list")).toHaveValue(/.+/);
+  });
+
   test("select, inspect, rename, style, type, hide, show all, copy, paste, rotate, and flip work", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

@@ -2542,6 +2542,7 @@ export default function PreviewPanel({
       const right = Math.max(windowRect.startX, windowRect.currentX);
       const top = Math.min(windowRect.startY, windowRect.currentY);
       const bottom = Math.max(windowRect.startY, windowRect.currentY);
+      const crossingSelect = windowRect.currentX < windowRect.startX;
       if (right - left < 8 || bottom - top < 8) return;
       const candidates = Array.from(
         previewRef.current.querySelectorAll<HTMLElement>("[data-cad-object-id]"),
@@ -2549,7 +2550,9 @@ export default function PreviewPanel({
       const ids = candidates
         .filter((element) => {
           const rect = element.getBoundingClientRect();
-          return rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
+          const intersects = rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
+          if (crossingSelect) return intersects;
+          return intersects && rect.left >= left && rect.right <= right && rect.top >= top && rect.bottom <= bottom;
         })
         .map((element) => element.dataset.cadObjectId)
         .filter((id): id is string => Boolean(id));
@@ -2566,8 +2569,8 @@ export default function PreviewPanel({
         "SELECT",
         selectableIds.length ? "applied" : "blocked",
         selectableIds.length
-          ? `Window selected ${selectableIds.length} editable draft object${selectableIds.length === 1 ? "" : "s"}.`
-          : "Window select found no editable draft objects.",
+          ? `${crossingSelect ? "Crossing" : "Window"} selected ${selectableIds.length} editable draft object${selectableIds.length === 1 ? "" : "s"}.`
+          : `${crossingSelect ? "Crossing" : "Window"} select found no editable draft objects.`,
       );
     },
     [onSelectBuilding, onSelectObjects, pushCadCommandFeedback, visibleCadObjects],
@@ -11035,7 +11038,12 @@ export default function PreviewPanel({
                 {cadWindowSelect ? (
                   <div
                     data-testid="cad-window-select-marquee"
-                    className="pointer-events-none absolute z-[65] rounded-sm border border-sky-500 bg-sky-400/12 shadow-[0_0_0_1px_rgba(14,165,233,0.18)]"
+                    data-selection-mode={cadWindowSelect.currentX < cadWindowSelect.startX ? "crossing" : "window"}
+                    className={`pointer-events-none absolute z-[65] rounded-sm border shadow-[0_0_0_1px_rgba(14,165,233,0.18)] ${
+                      cadWindowSelect.currentX < cadWindowSelect.startX
+                        ? "border-emerald-500 bg-emerald-400/12"
+                        : "border-sky-500 bg-sky-400/12"
+                    }`}
                     style={{
                       left: Math.min(cadWindowSelect.startX, cadWindowSelect.currentX) - cadWindowSelect.containerLeft,
                       top: Math.min(cadWindowSelect.startY, cadWindowSelect.currentY) - cadWindowSelect.containerTop,
