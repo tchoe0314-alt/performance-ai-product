@@ -2796,22 +2796,61 @@ export default function PreviewPanel({
     },
     [buildingPlacements, pushCadCommandFeedback, selectedCadIds, updateCadObject],
   );
-  const copySelectedCadObjectByVector = useCallback(
+  const copySelectedCadObjectsByVector = useCallback(
     (vectorOverride?: [number, number]) => {
-      if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
-        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: select one editable draft CAD object with geometry first.");
+      if (!selectedCadIds.length) {
+        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: select one or more editable draft CAD objects first.");
         return;
       }
       const vector = vectorOverride ?? [10, 10];
-      const selectedGeometry = selectedCadObject.geometry as Array<[number, number]>;
-      const copiedGeometry = translateSiteGeometry(selectedGeometry, { x: vector[0], y: vector[1] }) ?? selectedGeometry;
-      createCadCommandGeometry("COPY", selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? "polygon" : "polyline", copiedGeometry, {
-        label: `${selectedCadObject.label || "CAD object"} Copy`,
-        meta: { copied_from_object_id: selectedCadObject.id, copy_vector: vector },
-        minPoints: selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? 3 : 2,
+      if (!Number.isFinite(vector[0]) || !Number.isFinite(vector[1]) || (Math.abs(vector[0]) < 0.001 && Math.abs(vector[1]) < 0.001)) {
+        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: provide a non-zero vector like COPY 20,0.");
+        return;
+      }
+      let created = 0;
+      let blocked = 0;
+      selectedCadIds.forEach((id) => {
+        const target = buildingPlacements.find((item) => item.id === id);
+        if (!target || target.locked || target.type === "site") {
+          blocked += 1;
+          return;
+        }
+        const selectedGeometry = getObjectGeometryPoints(target);
+        if (!selectedGeometry.length) {
+          blocked += 1;
+          return;
+        }
+        const copiedGeometry = translateSiteGeometry(selectedGeometry, { x: vector[0], y: vector[1] }) ?? selectedGeometry;
+        const mode =
+          target.geometryType === "point"
+            ? "point"
+            : target.geometryType === "polyline"
+              ? "polyline"
+              : "polygon";
+        onCreateCustomGeometry({
+          mode,
+          points: copiedGeometry,
+          label: `${target.label || "CAD object"} Copy`,
+          meta: reviewRequiredCommandMeta("COPY", {
+            copied_from_object_id: target.id,
+            copied_object_type: target.type,
+            copy_vector: vector,
+            source_type: "manual_drawn_copy",
+            source_confidence: "draft_review_required",
+            cad_layer: getCadLayer(target),
+          }),
+        });
+        created += 1;
       });
+      pushCadCommandFeedback(
+        "COPY",
+        created ? "applied" : "blocked",
+        created
+          ? `COPY created ${created} draft review cop${created === 1 ? "y" : "ies"} from selected object${selectedCadIds.length === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked` : ""}.`
+          : "COPY blocked: selected objects are locked or have no editable draft geometry.",
+      );
     },
-    [createCadCommandGeometry, pushCadCommandFeedback, selectedCadObject],
+    [buildingPlacements, getCadLayer, getObjectGeometryPoints, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta, selectedCadIds],
   );
   const arraySelectedCadObject = useCallback(
     (rowCount: number, columnCount: number, spacing: [number, number]) => {
@@ -3182,7 +3221,7 @@ export default function PreviewPanel({
               transformSelectedCadObjects("move", cadActiveCommand.value);
             }
           } else if (cadActiveCommand.command === "COPY") {
-            copySelectedCadObjectByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
+            copySelectedCadObjectsByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
           } else {
             transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", cadActiveCommand.value);
           }
@@ -3376,7 +3415,7 @@ export default function PreviewPanel({
             transformSelectedCadObjects("move", raw);
           }
         } else if (cadActiveCommand.command === "COPY") {
-          copySelectedCadObjectByVector(parseCadPointToken(raw) ?? undefined);
+          copySelectedCadObjectsByVector(parseCadPointToken(raw) ?? undefined);
         } else {
           transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", raw);
         }
@@ -3446,7 +3485,7 @@ export default function PreviewPanel({
             transformSelectedCadObjects("move", cadActiveCommand.value);
           }
         } else if (cadActiveCommand.command === "COPY") {
-          copySelectedCadObjectByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
+          copySelectedCadObjectsByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
         } else {
           transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", cadActiveCommand.value);
         }
@@ -3629,7 +3668,7 @@ export default function PreviewPanel({
         setCadCommandDraft("");
         pushCadCommandFeedback("COPY", "info", "COPY active. Type a vector like 10,10, or run empty to use the default offset.");
       } else {
-        copySelectedCadObjectByVector(pointArgs[0] ?? [10, 10]);
+        copySelectedCadObjectsByVector(pointArgs[0] ?? [10, 10]);
       }
       return;
     }
@@ -3739,7 +3778,7 @@ export default function PreviewPanel({
     cadOrthoEnabled,
     cadSnapEnabled,
     cadTransformValue,
-    copySelectedCadObjectByVector,
+    copySelectedCadObjectsByVector,
     createCadCommandGeometry,
     draftPoints,
     filletSelectedCadObject,

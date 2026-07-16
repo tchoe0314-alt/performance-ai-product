@@ -7913,7 +7913,10 @@ function PerformanceAIDashboardView({
       meta?: Record<string, unknown>;
     }) => {
       clearGeneratedPreview();
-      if (!siteScaleLocked) {
+      const isDraftCopyCommand =
+        String(payload.meta?.cad_command || "").toUpperCase() === "COPY" &&
+        typeof payload.meta?.copied_from_object_id === "string";
+      if (!siteScaleLocked && !isDraftCopyCommand) {
         setStatusMessage("Lock the site boundary before drawing objects.");
         return;
       }
@@ -7969,7 +7972,10 @@ function PerformanceAIDashboardView({
       const nextPlacement: BuildingPlacement = {
         id: nextId,
         label: nextLabel,
-        type: "custom",
+        type:
+          typeof payload.meta?.copied_object_type === "string" && payload.meta.copied_object_type !== "site"
+            ? (payload.meta.copied_object_type as SiteObjectType)
+            : ("custom" as SiteObjectType),
         x: isPoint ? geometry[0][0] - 5 : minX,
         y: isPoint ? geometry[0][1] - 5 : minY,
         w: isPoint ? 10 : Math.max(5, maxX - minX),

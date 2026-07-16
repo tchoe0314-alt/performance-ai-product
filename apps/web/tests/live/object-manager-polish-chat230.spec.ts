@@ -101,6 +101,11 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("Window selected 2 editable draft objects");
+    await page.getByLabel("CAD command input").fill("COPY 20,0");
+    await page.getByLabel("CAD command input").press("Enter");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("COPY created 2 draft review copies");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf Copy");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls Copy");
   });
 
   test("canvas crossing selection selects touched objects while window selection requires containment", async ({ page }) => {
