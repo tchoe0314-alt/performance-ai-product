@@ -2591,7 +2591,7 @@ def _place_label(clearances: List[Tuple[float, float]], x: float, y: float, min_
     return x, ny
 
 
-def _draw_grid(space, x0: float, y0: float, x1: float, y1: float, x_values: Sequence[float], y_values: Sequence[float], map_x, map_y) -> None:
+def _draw_grid(space, x0: float, y0: float, x1: float, y1: float, y_values: Sequence[float], map_y) -> None:
     for value in y_values:
         y = map_y(value)
         space.add_line((x0, y), (x1, y), dxfattribs={"layer": "GRID"})
@@ -2998,7 +2998,7 @@ def _draw_profile_layout(doc, plan: Dict[str, Any], profile: Dict[str, Any], she
         issue_date=safe_text(sheet_meta.get("issue_date"), ""),
     )
     _draw_box(layout, graph_x0, graph_y0, graph_x1, graph_y1, layer="AXIS")
-    _draw_grid(layout, graph_x0, graph_y0, graph_x1, graph_y1, station_ticks, elev_ticks, map_x, map_y)
+    _draw_grid(layout, graph_x0, graph_y0, graph_x1, graph_y1, elev_ticks, map_y)
 
     layout.add_line((graph_x0, graph_y0), (graph_x1, graph_y0), dxfattribs={"layer": "AXIS"})
     layout.add_line((graph_x0, graph_y0), (graph_x0, graph_y1), dxfattribs={"layer": "AXIS"})
@@ -3167,7 +3167,7 @@ def _draw_cross_section_panel(space, section: Dict[str, Any], panel: Tuple[float
         y_ticks.append(round(tick, 6))
         tick += elev_interval
 
-    _draw_grid(space, graph_x0, graph_y0, graph_x1, graph_y1, x_ticks, y_ticks, map_x, map_y)
+    _draw_grid(space, graph_x0, graph_y0, graph_x1, graph_y1, y_ticks, map_y)
     space.add_line((graph_x0, graph_y0), (graph_x1, graph_y0), dxfattribs={"layer": "AXIS"})
     space.add_line((graph_x0, graph_y0), (graph_x0, graph_y1), dxfattribs={"layer": "AXIS"})
 

@@ -2551,7 +2551,7 @@ def _append_parking_actions(actions: List[Dict[str, Any]], parking_areas: List[D
             actions.append(_polyline_action(line, layer=layer, closed=False))
 
 
-def _append_line_network_actions(actions: List[Dict[str, Any]], items: List[Dict[str, Any]], width_prefix: Optional[str] = None) -> None:
+def _append_line_network_actions(actions: List[Dict[str, Any]], items: List[Dict[str, Any]]) -> None:
     for item in items:
         pts = item.get("points")
         if not isinstance(pts, list) or len(pts) < 2:
@@ -2823,20 +2823,20 @@ def _build_expanded_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
         if surface:
             actions.append(surface)
         else:
-            _append_line_network_actions(actions, [item], width_prefix="W")
+            _append_line_network_actions(actions, [item])
     for item in roads_network:
         surface = _surface_rect_from_line_item(item, layer=_preferred_surface_layer_for_line_item(item, "ROAD"))
         if surface:
             actions.append(surface)
         else:
-            _append_line_network_actions(actions, [item], width_prefix="RW")
-    _append_line_network_actions(actions, sidewalks, width_prefix="SW")
+            _append_line_network_actions(actions, [item])
+    _append_line_network_actions(actions, sidewalks)
     for item in fire_lanes:
         surface = _surface_rect_from_line_item(item, layer=_preferred_surface_layer_for_line_item(item, "FIRE"))
         if surface:
             actions.append(surface)
         else:
-            _append_line_network_actions(actions, [item], width_prefix="FIRE")
+            _append_line_network_actions(actions, [item])
     _append_drainage_structure_actions(actions, drainage_structures)
     _append_pipe_actions(actions, pipe_network)
     _append_pond_actions(actions, ponds)

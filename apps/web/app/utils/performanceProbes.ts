@@ -31,7 +31,7 @@ export function markCivoraInteraction() {
   return performance.now();
 }
 
-export function measureCivoraInteraction(
+function measureCivoraInteraction(
   label: string,
   startedAt: number,
   metadata?: CivoraPerfEntry["metadata"],

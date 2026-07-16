@@ -53,7 +53,7 @@ export type PlanSheetAnnotation = {
   y: number;
 };
 
-export type PlanSheetTable = {
+type PlanSheetTable = {
   id: string;
   title: string;
   rows: Array<[string, string]>;
@@ -78,13 +78,13 @@ export type PlanSheet = {
   references: PlanSheetReference[];
 };
 
-export type PlanSheetPlotStyles = {
+type PlanSheetPlotStyles = {
   mappings: Array<{ layer: string; color: string; lineweight: string; linetype: string }>;
   grayscale: boolean;
   reviewWatermark: string;
 };
 
-export type PlanSheetRevision = {
+type PlanSheetRevision = {
   id: string;
   revision: string;
   note: string;

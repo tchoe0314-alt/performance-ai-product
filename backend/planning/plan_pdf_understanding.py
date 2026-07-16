@@ -175,7 +175,7 @@ def _extract_with_pypdf(path: Path) -> Tuple[List[Dict[str, Any]], List[_TextEvi
         }
         fragments: List[str] = []
 
-        def visitor(text: str, cm: Any, tm: Any, font_dict: Any, font_size: Any) -> None:
+        def visitor(text: str, _cm: Any, tm: Any, _font_dict: Any, font_size: Any) -> None:
             cleaned = _clean_text(text)
             if not cleaned:
                 return

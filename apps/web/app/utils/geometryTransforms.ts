@@ -43,14 +43,7 @@ export function coordinateModeLabel(mode: CoordinateMode) {
   return mode === "map_anchored" ? "Map anchored" : "Local site coordinates";
 }
 
-export function clampPointToSite(point: Point2D, site: SiteSize): Point2D {
-  return {
-    x: Math.min(Math.max(point.x, 0), Math.max(site.width, 0)),
-    y: Math.min(Math.max(point.y, 0), Math.max(site.height, 0)),
-  };
-}
-
-export function screenToViewportPoint(
+function screenToViewportPoint(
   client: Point2D,
   containerBounds: Pick<Rect2D, "left" | "top">,
   viewportBounds: Rect2D,
@@ -65,21 +58,21 @@ export function screenToViewportPoint(
   };
 }
 
-export function viewportToSitePoint(point: Point2D, viewportBounds: Pick<Rect2D, "width" | "height">, site: SiteSize): Point2D {
+function viewportToSitePoint(point: Point2D, viewportBounds: Pick<Rect2D, "width" | "height">, site: SiteSize): Point2D {
   return {
     x: (point.x / Math.max(viewportBounds.width, 1)) * site.width,
     y: (point.y / Math.max(viewportBounds.height, 1)) * site.height,
   };
 }
 
-export function siteToViewportPoint(point: Point2D, viewportBounds: Pick<Rect2D, "width" | "height">, site: SiteSize): Point2D {
+function siteToViewportPoint(point: Point2D, viewportBounds: Pick<Rect2D, "width" | "height">, site: SiteSize): Point2D {
   return {
     x: (point.x / Math.max(site.width, 1)) * viewportBounds.width,
     y: (point.y / Math.max(site.height, 1)) * viewportBounds.height,
   };
 }
 
-export function viewportToScreenPoint(
+function viewportToScreenPoint(
   point: Point2D,
   containerBounds: Pick<Rect2D, "left" | "top">,
   viewportBounds: Rect2D,

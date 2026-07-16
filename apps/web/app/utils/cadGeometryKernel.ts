@@ -2,7 +2,7 @@ export type CadPoint2D = { x: number; y: number };
 export type CadTuple2D = [number, number];
 export type CadSnapKind = "endpoint" | "midpoint" | "intersection" | "perpendicular" | "nearest" | "grid" | "orthogonal";
 export type CadSegment2D = { a: CadPoint2D; b: CadPoint2D; objectId?: string; segmentIndex?: number; closed?: boolean };
-export type CadBlockedResult = { ok: false; reason: string };
+type CadBlockedResult = { ok: false; reason: string };
 export type CadOperationResult<T> = { ok: true; value: T; warnings?: string[] } | CadBlockedResult;
 
 const EPSILON = 1e-6;
@@ -38,7 +38,7 @@ const signedPolygonArea = (points: CadTuple2D[]) => {
   }, 0) / 2;
 };
 
-export function segmentIntersection(
+function segmentIntersection(
   a: CadPoint2D,
   b: CadPoint2D,
   c: CadPoint2D,
@@ -54,7 +54,7 @@ export function segmentIntersection(
   return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
 }
 
-export function closestPointOnSegment(point: CadPoint2D, segment: CadSegment2D, allowExtension = false): CadPoint2D {
+function closestPointOnSegment(point: CadPoint2D, segment: CadSegment2D, allowExtension = false): CadPoint2D {
   const dx = segment.b.x - segment.a.x;
   const dy = segment.b.y - segment.a.y;
   const lenSq = dx * dx + dy * dy;

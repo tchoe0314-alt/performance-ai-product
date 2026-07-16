@@ -1,5 +1,4 @@
 import type {
-  ChatMessage,
   MetricValue,
   BackendAssumption,
   PlanResponse,
@@ -17,13 +16,6 @@ export const defaultAssumptions = [
     field: "lot",
     value: "estimated from sketch extents",
     reason: "No exact lot dimensions were provided in the form.",
-  },
-];
-
-export const defaultIssues = [
-  {
-    severity: "warning" as const,
-    message: "No confirmed scale reference is set for the uploaded image.",
   },
 ];
 
@@ -74,50 +66,11 @@ export function toArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
-export function toMetricValue(value: number | null | undefined): number | null {
-  return value ?? null;
-}
-
-export function readPositiveNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
 export function parsePositiveNumber(
   value: string | number | null | undefined,
 ): number | null {
   const numeric = Number(value ?? 0);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-}
-
-export function computeLearningScore(thread: ChatMessage[]): {
-  score: number;
-  total: number;
-} {
-  let up = 0;
-  let down = 0;
-  for (const message of thread) {
-    if (message.role !== "assistant") continue;
-    if (message.feedback === "up") up += 1;
-    if (message.feedback === "down") down += 1;
-  }
-  const total = up + down;
-  if (total === 0) {
-    return { score: 0, total: 0 };
-  }
-  return { score: Math.round((up / total) * 100), total };
 }
 
 export function readMetricValue(value: MetricValue | undefined): number | null {

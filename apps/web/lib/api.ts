@@ -27,7 +27,7 @@ function resolveApiBaseUrl(): string {
   return "https://api.civoraai.com";
 }
 
-export const API_BASE_URL = resolveApiBaseUrl();
+const API_BASE_URL = resolveApiBaseUrl();
 
 type RequestOptions = {
   token?: string | null;
@@ -43,7 +43,7 @@ export type ApiErrorKind =
   | "unsupported_file"
   | "request_failed";
 
-export class CivoraApiError extends Error {
+class CivoraApiError extends Error {
   kind: ApiErrorKind;
   status?: number;
 
@@ -88,16 +88,6 @@ function buildHeaders(token?: string | null, json = true): HeadersInit {
   return headers;
 }
 
-function contentDispositionFilename(value: string | null): string | null {
-  if (!value) return null;
-  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) {
-    return decodeURIComponent(utf8Match[1]);
-  }
-  const simpleMatch = value.match(/filename="?([^"]+)"?/i);
-  return simpleMatch?.[1] ?? null;
-}
-
 export function toApiUrl(path: string): string {
   if (path.startsWith("http")) return path;
   if (!API_BASE_URL) {
@@ -128,7 +118,7 @@ function formatNetworkError(error: unknown): Error {
   return new CivoraApiError("Backend unreachable. Check the backend URL and retry.", "backend_unreachable");
 }
 
-export async function readJsonResponse<T>(response: Response): Promise<T> {
+async function readJsonResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -258,48 +248,4 @@ export async function deleteJson<T>(
     throw formatNetworkError(error);
   }
   return readJsonResponse<T>(response);
-}
-
-export async function postBinary(
-  path: string,
-  body: unknown,
-  options: RequestOptions = {},
-): Promise<{ blob: Blob; filename: string | null }> {
-  let response: Response;
-  try {
-    response = await fetch(toApiUrl(path), {
-      method: "POST",
-      headers: buildHeaders(options.token, true),
-      body: JSON.stringify(body),
-      signal: options.signal,
-    });
-  } catch (error) {
-    throw formatNetworkError(error);
-  }
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    const rawDetail =
-      typeof payload?.detail === "string"
-        ? payload.detail
-        : typeof payload?.message === "string"
-          ? payload.message
-          : `Request failed with status ${response.status}`;
-    const detail =
-      response.status === 401
-        ? "Session expired. Sign in again."
-        : response.status === 429
-          ? "Rate limited. Wait about a minute, then try again."
-          : rawDetail;
-    throw new CivoraApiError(
-      detail,
-      response.status === 401 ? "auth_expired" : response.status === 429 ? "rate_limited" : "request_failed",
-      response.status,
-    );
-  }
-
-  return {
-    blob: await response.blob(),
-    filename: contentDispositionFilename(response.headers.get("content-disposition")),
-  };
 }

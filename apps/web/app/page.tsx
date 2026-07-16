@@ -100,7 +100,6 @@ import type {
   PlanPdfElement,
   CadEntityModelEntityV1,
 } from "./types";
-import type { CivoraWorkflowStep } from "./design-system";
 
 type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
 type EngineeringSystemKey = Exclude<SystemGenerationTarget, "full">;
@@ -2972,7 +2971,6 @@ function PerformanceAIDashboardView({
   });
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
-  const [, setActiveWorkflowStep] = useState<CivoraWorkflowStep>("Concept");
   const [projectId, setProjectId] = useState("");
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -18146,45 +18144,6 @@ function PerformanceAIDashboardView({
     setActiveSidePanel(panel);
     if (!panel) return;
     setActiveWorkspaceMode(workspaceModeByPanel[panel]);
-    const workflowByPanel: Partial<Record<SidePanelKey, CivoraWorkflowStep>> = {
-      trust: "Review",
-      dashboard: "Review",
-      model: "Concept",
-      site_existing: "Concept",
-      import_survey: "Concept",
-      objects: "Concept",
-      generate: "Concept",
-      grading: "Grading",
-      drainage: "Drainage",
-      sanitary: "Utilities",
-      water: "Utilities",
-      utilities: "Utilities",
-      roadway: "Concept",
-      landscape: "Concept",
-      details: "Review",
-      analysis: "Review",
-      reports: "Deliverables",
-      quantities: "Deliverables",
-      deliverables: "Deliverables",
-      files: "Deliverables",
-      jobs: "Review",
-      standards: "Review",
-      templates: "Review",
-      catalogs: "Review",
-      libraries: "Concept",
-      data: "Concept",
-      settings: "Concept",
-      chat: "Concept",
-      system_grading: "Review",
-      system_storm: "Review",
-      system_sanitary: "Review",
-      system_water: "Review",
-      system_roadway: "Review",
-      system_utilities: "Review",
-      system_landscape: "Review",
-    };
-    const nextStep = workflowByPanel[panel];
-    if (nextStep) setActiveWorkflowStep(nextStep);
   }, []);
   const handleCloseSidePanel = useCallback(() => {
     if (sidePanelCloseTimeoutRef.current !== null) {

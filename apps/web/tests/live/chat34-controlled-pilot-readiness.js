@@ -3,7 +3,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { chromium, request } = require("playwright");
+const { chromium, request } = require("@playwright/test");
 
 const baseUrl = (process.env.CHAT34_BASE_URL || process.env.PLAYWRIGHT_BASE_URL || "https://www.civoraai.com").replace(/\/+$/, "");
 const apiBase = (process.env.CHAT34_API_BASE_URL || process.env.PLAYWRIGHT_API_BASE_URL || "https://api.civoraai.com").replace(/\/+$/, "");

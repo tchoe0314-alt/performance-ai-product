@@ -3640,10 +3640,6 @@ def _design_readiness_check(message: str, context: Dict[str, Any]) -> Optional[D
         "reason": "Missing core design inputs",
     }
 
-    # Unreachable fallback for clarity.
-    return None
-
-
 def assess_design_readiness(message: str, context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     return _design_readiness_check(message, _chat_context_summary(dict(context or {})))
 

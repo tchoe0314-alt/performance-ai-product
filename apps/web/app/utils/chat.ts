@@ -1,6 +1,6 @@
 import type { ChatMessage } from "../types";
 
-export const CHAT_THREAD_KEY_PREFIX = "civora-chat-thread:";
+const CHAT_THREAD_KEY_PREFIX = "civora-chat-thread:";
 
 export function getChatThreadStorageKey(projectId: string) {
   return `${CHAT_THREAD_KEY_PREFIX}${projectId || "draft"}`;
