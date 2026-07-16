@@ -7118,6 +7118,27 @@ function PerformanceAIDashboardView({
     });
   }, []);
 
+  const handleObjectManagerSelectVisibleDraft = useCallback(() => {
+    const visibleDraftIds = buildingPlacements
+      .filter((item) => {
+        if (item.type === "site") return false;
+        if (item.meta?.ui_hidden) return false;
+        if (item.meta?.ai_realism_artifact) return false;
+        if (item.capabilities?.deletable === false) return false;
+        return true;
+      })
+      .map((item) => item.id);
+    if (!visibleDraftIds.length) {
+      reportObjectActionBlocker("Select visible blocked: no visible editable draft objects are available.");
+      return;
+    }
+    setSelectedObjectIds(visibleDraftIds);
+    setActivePlacementId(visibleDraftIds[0] ?? null);
+    const message = `Selected ${visibleDraftIds.length} visible draft object${visibleDraftIds.length === 1 ? "" : "s"}.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+  }, [buildingPlacements, reportObjectActionBlocker]);
+
   const handleObjectManagerDelete = useCallback((item: BuildingPlacement) => {
     const blocker = getObjectEditBlocker(item, "delete");
     if (blocker) {
@@ -25695,6 +25716,14 @@ function PerformanceAIDashboardView({
                         </span>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="object-manager-clipboard-actions">
+                        <button
+                          type="button"
+                          onClick={handleObjectManagerSelectVisibleDraft}
+                          data-testid="object-manager-select-visible"
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Select visible draft
+                        </button>
                         <button
                           type="button"
                           onClick={handleObjectManagerPaste}

@@ -310,6 +310,34 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Layout blocked: selected objects are locked, source-only, or required project evidence.");
   });
 
+  test("select visible draft gathers editable visible objects for bulk work", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await runCommand(page, "add detention basin");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    const basinRow = page.getByTestId("object-manager-row").filter({ hasText: /Basin|Detention/i }).first();
+
+    await parkingRow.getByTestId("object-manager-visibility").click();
+    await expect(parkingRow.getByTestId("object-manager-visibility")).toContainText("Show");
+
+    await page.getByTestId("object-manager-select-visible").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Selected 2 visible draft objects.");
+    await expect(officeRow.getByTestId("object-manager-bulk-select")).toBeChecked();
+    await expect(basinRow.getByTestId("object-manager-bulk-select")).toBeChecked();
+    await expect(parkingRow.getByTestId("object-manager-bulk-select")).not.toBeChecked();
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
+
+    await page.getByTestId("object-manager-bulk-hide").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("3 hidden objects");
+    await page.getByRole("button", { name: "Clear" }).click();
+    await page.getByTestId("object-manager-select-visible").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Select visible blocked: no visible editable draft objects are available.");
+  });
+
   test("bulk lock and unlock protects selected draft objects", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
