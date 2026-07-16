@@ -786,6 +786,63 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
   });
 
+  test("bulk transforms keep combined source traces undoable before explode", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await combinedRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-bulk-move-x").fill("35");
+    await page.getByTestId("object-manager-bulk-move-y").fill("-15");
+    await page.getByTestId("object-manager-bulk-move-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Moved 1 selected draft object by 35,-15.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from bulk move.");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("1 object selected");
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: reapplied 3 draft objects from bulk move.");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("1 object selected");
+
+    await page.getByTestId("object-manager-bulk-scale-factor").fill("1.2");
+    await page.getByTestId("object-manager-bulk-scale-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Scaled 1 selected draft object by 1.2.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from bulk scale.");
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: reapplied 3 draft objects from bulk scale.");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByTestId("object-manager-bulk-mirror-x").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Mirrored X 1 selected draft object.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from bulk mirror X.");
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: reapplied 3 draft objects from bulk mirror X.");
+
+    const transformedCombinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await transformedCombinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program back into 2 preserved source pieces",
+    );
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+  });
+
   test("show all keeps combined source trace pieces hidden until explode", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

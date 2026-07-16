@@ -7995,6 +7995,126 @@ function PerformanceAIDashboardView({
     return { visible, created: [...copiedSourceItems, visible] };
   }, [buildingPlacements]);
 
+  const buildSyncedCombinedSourceTraces = useCallback((
+    target: BuildingPlacement,
+    nextObject: BuildingPlacement,
+    updates: Partial<BuildingPlacement>,
+  ): BuildingPlacement[] => {
+    const combinedSourceIds = Array.isArray(target.meta?.combined_from_object_ids)
+      ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
+      : [];
+    if (!combinedSourceIds.length) return [];
+    const sourceObjects = buildingPlacements.filter((item) => combinedSourceIds.includes(item.id));
+    if (!sourceObjects.length) return [];
+    const groupGeometryChanged =
+      typeof updates.x === "number" ||
+      typeof updates.y === "number" ||
+      typeof updates.w === "number" ||
+      typeof updates.d === "number" ||
+      typeof updates.rotation === "number" ||
+      Array.isArray(updates.geometry);
+    const nextGroupLabel = nextObject.label || target.label;
+    const nextGroupType = nextObject.type ?? target.type ?? "custom";
+    const nextGroupColor = nextObject.meta?.ui_color ?? nextObject.meta?.color ?? target.meta?.ui_color ?? target.meta?.color;
+    const groupOriginX = target.x ?? 0;
+    const groupOriginY = target.y ?? 0;
+    const nextGroupOriginX = nextObject.x ?? groupOriginX;
+    const nextGroupOriginY = nextObject.y ?? groupOriginY;
+    const groupScaleX = target.w > 0 && nextObject.w > 0 ? nextObject.w / target.w : 1;
+    const groupScaleY = target.d > 0 && nextObject.d > 0 ? nextObject.d / target.d : 1;
+    const groupCenterX = groupOriginX + target.w / 2;
+    const groupCenterY = groupOriginY + target.d / 2;
+    const nextGroupCenterX = nextGroupOriginX + nextObject.w / 2;
+    const nextGroupCenterY = nextGroupOriginY + nextObject.d / 2;
+    const rotationDeltaRadians = ((((nextObject.rotation ?? 0) - (target.rotation ?? 0)) % 360) * Math.PI) / 180;
+    const cosDelta = Math.cos(rotationDeltaRadians);
+    const sinDelta = Math.sin(rotationDeltaRadians);
+    const transformPoint = ([px, py]: [number, number]): [number, number] => [
+      nextGroupCenterX + ((px - groupCenterX) * groupScaleX) * cosDelta - ((py - groupCenterY) * groupScaleY) * sinDelta,
+      nextGroupCenterY + ((px - groupCenterX) * groupScaleX) * sinDelta + ((py - groupCenterY) * groupScaleY) * cosDelta,
+    ];
+    return sourceObjects.map((source) => {
+      const sourceCorners: Array<[number, number]> = [
+        [source.x ?? 0, source.y ?? 0],
+        [(source.x ?? 0) + source.w, source.y ?? 0],
+        [(source.x ?? 0) + source.w, (source.y ?? 0) + source.d],
+        [source.x ?? 0, (source.y ?? 0) + source.d],
+      ];
+      const transformedGeometry = source.geometry?.map((point) =>
+        groupGeometryChanged ? transformPoint(point) : ([point[0], point[1]] as [number, number]),
+      );
+      const boundsPoints = groupGeometryChanged
+        ? (transformedGeometry?.length ? transformedGeometry : sourceCorners.map(transformPoint))
+        : sourceCorners;
+      const boundsXs = boundsPoints.map(([x]) => x);
+      const boundsYs = boundsPoints.map(([, y]) => y);
+      const minSourceX = Math.min(...boundsXs);
+      const maxSourceX = Math.max(...boundsXs);
+      const minSourceY = Math.min(...boundsYs);
+      const maxSourceY = Math.max(...boundsYs);
+      return cloneBuildingPlacementForUndo({
+        ...source,
+        x: groupGeometryChanged ? minSourceX : source.x,
+        y: groupGeometryChanged ? minSourceY : source.y,
+        w: groupGeometryChanged ? Math.max(1, maxSourceX - minSourceX) : source.w,
+        d: groupGeometryChanged ? Math.max(1, maxSourceY - minSourceY) : source.d,
+        rotation: groupGeometryChanged
+          ? ((source.rotation ?? 0) + ((nextObject.rotation ?? 0) - (target.rotation ?? 0))) % 360
+          : source.rotation,
+        geometry: transformedGeometry,
+        capabilities: source.capabilities ? { ...source.capabilities } : source.capabilities,
+        locked: typeof updates.locked === "boolean" ? updates.locked : source.locked,
+        meta: {
+          ...(source.meta ?? {}),
+          combined_into_object_id: target.id,
+          combined_into_label: nextGroupLabel,
+          combined_into_type: nextGroupType,
+          combined_trace_synced_at: new Date().toISOString(),
+          ...(typeof updates.locked === "boolean" ? { combined_into_locked: updates.locked } : {}),
+          ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
+          ...(typeof nextGroupColor === "string" ? { combined_into_color: nextGroupColor } : {}),
+        },
+      });
+    });
+  }, [buildingPlacements, cloneBuildingPlacementForUndo]);
+
+  const createTraceAwareBulkUpdate = useCallback((
+    entries: Array<{ item: BuildingPlacement; updates: Partial<BuildingPlacement> }>,
+    label: string,
+  ): { undo: DraftUndoAction; afterById: Map<string, BuildingPlacement> } => {
+    const beforeById = new Map<string, BuildingPlacement>();
+    const afterById = new Map<string, BuildingPlacement>();
+    entries.forEach(({ item, updates }) => {
+      const nextObject = cloneBuildingPlacementWithUpdatesForUndo(item, updates);
+      beforeById.set(item.id, cloneBuildingPlacementForUndo(item));
+      afterById.set(item.id, nextObject);
+      const sourceIds = Array.isArray(item.meta?.combined_from_object_ids)
+        ? item.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
+        : [];
+      sourceIds.forEach((sourceId) => {
+        const source = buildingPlacements.find((candidate) => candidate.id === sourceId);
+        if (source) beforeById.set(source.id, cloneBuildingPlacementForUndo(source));
+      });
+      buildSyncedCombinedSourceTraces(item, nextObject, updates).forEach((source) => {
+        afterById.set(source.id, source);
+      });
+    });
+    return {
+      undo: {
+        action: "bulk_update",
+        before: Array.from(beforeById.values()),
+        after: Array.from(afterById.values()),
+        label,
+      },
+      afterById,
+    };
+  }, [
+    buildSyncedCombinedSourceTraces,
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
+  ]);
+
   const handleObjectManagerBulkDuplicate = useCallback(() => {
     clearGeneratedPreview();
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
@@ -8319,14 +8439,13 @@ function PerformanceAIDashboardView({
         }
       });
     }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, layoutUpdates.get(item.id) ?? {})),
-      label: `layout ${layout.replace("_", " ")}`,
-    };
+    const { undo, afterById } = createTraceAwareBulkUpdate(
+      editable.map((item) => ({ item, updates: layoutUpdates.get(item.id) ?? {} })),
+      `layout ${layout.replace("_", " ")}`,
+    );
+    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
-      handleUpdateBuilding(item.id, layoutUpdates.get(item.id) ?? {});
+      markSystemsStale(systemsImpactedByPlacement(item));
     });
     const labelMap: Record<typeof layout, string> = {
       align_left: "Aligned left",
@@ -8348,12 +8467,12 @@ function PerformanceAIDashboardView({
   }, [
     appendChatMessage,
     buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
+    createTraceAwareBulkUpdate,
+    markSystemsStale,
     recordRecentChange,
     reportObjectActionBlocker,
     selectedObjectIds,
+    systemsImpactedByPlacement,
   ]);
 
   const handleObjectManagerBulkMove = useCallback(() => {
@@ -8374,20 +8493,16 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Move blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+    const updateEntries = editable.map((item) => ({
+      item,
+      updates: {
         x: (item.x ?? 0) + dx,
         y: (item.y ?? 0) + dy,
-      })),
-      label: "bulk move",
-    };
+      },
+    }));
+    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk move");
+    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
-      handleUpdateBuilding(item.id, {
-        x: (item.x ?? 0) + dx,
-        y: (item.y ?? 0) + dy,
-      });
       markSystemsStale(systemsImpactedByPlacement(item));
     });
     const message = `Moved ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${dx},${dy}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
@@ -8406,9 +8521,7 @@ function PerformanceAIDashboardView({
     bulkMoveX,
     bulkMoveY,
     buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
+    createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -8433,22 +8546,17 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Scale blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+    const updateEntries = editable.map((item) => ({
+      item,
+      updates: {
         w: Math.max(1, item.w * factor),
         d: Math.max(1, item.d * factor),
         h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
-      })),
-      label: "bulk scale",
-    };
+      },
+    }));
+    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk scale");
+    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
-      handleUpdateBuilding(item.id, {
-        w: Math.max(1, item.w * factor),
-        d: Math.max(1, item.d * factor),
-        h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
-      });
       markSystemsStale(systemsImpactedByPlacement(item));
     });
     const message = `Scaled ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${factor}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
@@ -8466,9 +8574,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     bulkScaleFactor,
     buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
+    createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -8510,14 +8616,10 @@ function PerformanceAIDashboardView({
         geometry: nextGeometry,
       };
     };
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, getRotateUpdates(item))),
-      label: "bulk rotate",
-    };
+    const updateEntries = editable.map((item) => ({ item, updates: getRotateUpdates(item) }));
+    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk rotate");
+    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
-      handleUpdateBuilding(item.id, getRotateUpdates(item));
       markSystemsStale(systemsImpactedByPlacement(item));
     });
     const message = `Rotated ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${angle} degrees${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
@@ -8535,9 +8637,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     bulkRotateAngle,
     buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
+    createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -8608,16 +8708,10 @@ function PerformanceAIDashboardView({
         },
       };
     };
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: objectBounds.map(({ item, bounds }) =>
-        cloneBuildingPlacementWithUpdatesForUndo(item, getMirrorUpdates(item, bounds)),
-      ),
-      label: `bulk mirror ${axis.toUpperCase()}`,
-    };
-    objectBounds.forEach(({ item, bounds }) => {
-      handleUpdateBuilding(item.id, getMirrorUpdates(item, bounds));
+    const updateEntries = objectBounds.map(({ item, bounds }) => ({ item, updates: getMirrorUpdates(item, bounds) }));
+    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, `bulk mirror ${axis.toUpperCase()}`);
+    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
+    objectBounds.forEach(({ item }) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
     const message = `Mirrored ${axis.toUpperCase()} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
@@ -8634,9 +8728,7 @@ function PerformanceAIDashboardView({
   }, [
     appendChatMessage,
     buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
+    createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -20675,8 +20767,9 @@ function PerformanceAIDashboardView({
       setBuildingPlacements((prev) =>
         prev.map((item) => (beforeById.has(item.id) ? { ...beforeById.get(item.id)! } : item)),
       );
-      setSelectedObjectIds(draftAction.before.map((item) => item.id));
-      setActivePlacementId(draftAction.before[0]?.id ?? null);
+      const visibleBefore = draftAction.before.filter((item) => !item.meta?.ui_hidden);
+      setSelectedObjectIds(visibleBefore.map((item) => item.id));
+      setActivePlacementId(visibleBefore[0]?.id ?? null);
       draftAction.before.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
       pushRecoveryMessage(`Undo: restored ${draftAction.before.length} draft objects from ${draftAction.label}.`);
       appendChatMessage("assistant", `Undo: restored ${draftAction.before.length} draft objects from ${draftAction.label}.`, "status");
@@ -20821,8 +20914,9 @@ function PerformanceAIDashboardView({
       setBuildingPlacements((prev) =>
         prev.map((item) => (afterById.has(item.id) ? { ...afterById.get(item.id)! } : item)),
       );
-      setSelectedObjectIds(redoAction.after.map((item) => item.id));
-      setActivePlacementId(redoAction.after[0]?.id ?? null);
+      const visibleAfter = redoAction.after.filter((item) => !item.meta?.ui_hidden);
+      setSelectedObjectIds(visibleAfter.map((item) => item.id));
+      setActivePlacementId(visibleAfter[0]?.id ?? null);
       redoAction.after.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
       finishRedo(`Redo: reapplied ${redoAction.after.length} draft objects from ${redoAction.label}.`);
       return;
@@ -20945,8 +21039,9 @@ function PerformanceAIDashboardView({
       setBuildingPlacements((prev) =>
         prev.map((item) => (beforeById.has(item.id) ? { ...beforeById.get(item.id)! } : item)),
       );
-      setSelectedObjectIds(undo.before.map((item) => item.id));
-      setActivePlacementId(undo.before[0]?.id ?? null);
+      const visibleBefore = undo.before.filter((item) => !item.meta?.ui_hidden);
+      setSelectedObjectIds(visibleBefore.map((item) => item.id));
+      setActivePlacementId(visibleBefore[0]?.id ?? null);
       undo.before.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
       pushRecoveryMessage(`Undo: restored ${undo.before.length} draft objects from ${undo.label}.`);
       recordRecentChange({
