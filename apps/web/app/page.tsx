@@ -10059,6 +10059,9 @@ function PerformanceAIDashboardView({
     setShortcutsOverlayOpen(false);
     setCommandBarExpanded(true);
     setRightRailCollapsed(true);
+    setSidePanelVisible(false);
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
     setWorkspaceChromeMinimized(true);
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
@@ -10275,8 +10278,8 @@ function PerformanceAIDashboardView({
     if (/^(start site|start a site|new site)$/.test(normalized)) {
       appendChatMessage("user", message);
       handleStartBlankSite();
-      handleOpenSidePanel("site_existing");
-      appendChatMessage("assistant", "Started a blank review site and opened Setup. Set or draw the boundary before relying on generated systems.", "status");
+      setCommandBarExpanded(false);
+      appendChatMessage("assistant", "Started a blank review site. Draw the boundary on the clear canvas; it remains review-required until locked.", "status");
       return true;
     }
     if (/^apply address$/.test(normalized)) {
@@ -10299,10 +10302,8 @@ function PerformanceAIDashboardView({
     }
     if (/^draw site boundary$/.test(normalized)) {
       appendChatMessage("user", message);
-      handleOpenSidePanel("objects");
-      setActiveWorkspaceMode("canvas");
-      setWorkspaceChromeMinimized(false);
-      triggerCadTool("area", "Site boundary");
+      handleStartSiteBoundaryDraw();
+      setCommandBarExpanded(false);
       appendChatMessage("assistant", "Site boundary drawing is active. Draw the boundary on the canvas; it remains review-required until locked.", "status");
       return true;
     }
@@ -19424,6 +19425,7 @@ function PerformanceAIDashboardView({
   const commandBarVisible =
     Boolean(commandBarExpanded || prompt.trim() || imageName || busy || chatBlockingActiveJob) &&
     activeSidePanel !== "chat" &&
+    !sidePanelVisible &&
     !(mobileViewport && leftSidebarOpen);
   const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
   const issueDiagnosticSummary = [

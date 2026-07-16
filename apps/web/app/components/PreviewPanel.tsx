@@ -3586,6 +3586,29 @@ export default function PreviewPanel({
         return true;
       }
       const nextPoints = [...draftPoints, point];
+      if (drawMode === "site" && nextPoints.length >= 4) {
+        const cleaned = cleanupPolygon(nextPoints, 0.5);
+        if (!cleaned.ok) {
+          setCadCommandStatus(`SITE blocked: ${cleaned.reason}`);
+          pushCadCommandFeedback("SITE", "blocked", `SITE blocked: ${cleaned.reason}`);
+          return true;
+        }
+        const validation = validatePolygon(cleaned.value);
+        if (!validation.ok) {
+          const reason = validation.issues.join(", ");
+          setCadCommandStatus(`SITE blocked: ${reason}`);
+          pushCadCommandFeedback("SITE", "blocked", `SITE blocked: ${reason}`);
+          return true;
+        }
+        onCreateSiteBoundary?.({ points: cleaned.value });
+        setDrawMode("select");
+        setDraftPreviewPoint(null);
+        setDraftPoints([]);
+        setDrawAutoFinishPointCount(null);
+        setCadCommandStatus("SITE boundary locked from drawn points.");
+        pushCadCommandFeedback("SITE", "applied", "Site boundary locked from drawn points.");
+        return true;
+      }
       if (
         drawAutoFinishPointCount &&
         nextPoints.length >= drawAutoFinishPointCount &&
@@ -3637,6 +3660,7 @@ export default function PreviewPanel({
       draftPoints,
       drawMode,
       onCreateCustomGeometry,
+      onCreateSiteBoundary,
       pushCadCommandFeedback,
       resolveCadSnapPoint,
       screenToSitePoint,
