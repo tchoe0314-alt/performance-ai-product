@@ -7182,6 +7182,18 @@ function PerformanceAIDashboardView({
     capabilities: item.capabilities ? { ...item.capabilities } : item.capabilities,
   }), []);
 
+  const cloneBuildingPlacementWithUpdatesForUndo = useCallback((
+    item: BuildingPlacement,
+    updates: Partial<BuildingPlacement>,
+  ): BuildingPlacement => cloneBuildingPlacementForUndo({
+    ...item,
+    ...updates,
+    meta: updates.meta ? { ...(item.meta ?? {}), ...updates.meta } : item.meta,
+    capabilities: updates.capabilities
+      ? { ...(item.capabilities ?? {}), ...updates.capabilities }
+      : item.capabilities,
+  }), [cloneBuildingPlacementForUndo]);
+
   const handleObjectManagerToggleMultiSelect = useCallback((id: string, checked: boolean) => {
     setSelectedObjectIds((prev) => {
       const next = checked
@@ -7392,6 +7404,9 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        meta: { ui_hidden: hidden },
+      })),
       label: hidden ? "bulk hide" : "bulk show",
     };
     editable.forEach((item) => {
@@ -7417,6 +7432,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -7435,6 +7451,9 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editableAffected.map(cloneBuildingPlacementForUndo),
+      after: editableAffected.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        meta: { ui_hidden: !selectedIdSet.has(item.id) },
+      })),
       label: "isolate selected",
     };
     let hiddenCount = 0;
@@ -7467,6 +7486,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -7493,6 +7513,7 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, { locked })),
       label: locked ? "bulk lock" : "bulk unlock",
     };
     editable.forEach((item) => {
@@ -7513,6 +7534,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -7534,6 +7556,9 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        meta: { ui_color: color },
+      })),
       label: "bulk color",
     };
     editable.forEach((item) => {
@@ -7557,6 +7582,7 @@ function PerformanceAIDashboardView({
   }, [
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -7578,6 +7604,13 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        type: nextType,
+        use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
+        meta: {
+          category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
+        },
+      })),
       label: "bulk layer/type",
     };
     editable.forEach((item) => {
@@ -7603,6 +7636,7 @@ function PerformanceAIDashboardView({
   }, [
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -7994,11 +8028,6 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Layout blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      label: `layout ${layout.replace("_", " ")}`,
-    };
     const objectBounds = editable.map((item) => {
       const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
       const bounds = geometry?.length
@@ -8013,15 +8042,16 @@ function PerformanceAIDashboardView({
           };
       return { item, bounds };
     });
+    const layoutUpdates = new Map<string, Partial<BuildingPlacement>>();
     if (layout === "align_left") {
       const targetX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
       objectBounds.forEach(({ item, bounds }) => {
-        handleUpdateBuilding(item.id, { x: (item.x ?? 0) + (targetX - bounds.minX) });
+        layoutUpdates.set(item.id, { x: (item.x ?? 0) + (targetX - bounds.minX) });
       });
     } else if (layout === "align_top") {
       const targetY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
       objectBounds.forEach(({ item, bounds }) => {
-        handleUpdateBuilding(item.id, { y: (item.y ?? 0) + (targetY - bounds.minY) });
+        layoutUpdates.set(item.id, { y: (item.y ?? 0) + (targetY - bounds.minY) });
       });
     } else {
       const axis = layout === "distribute_x" ? "x" : "y";
@@ -8044,13 +8074,22 @@ function PerformanceAIDashboardView({
         const targetCenter = first + step * index;
         if (axis === "x") {
           const currentCenter = bounds.minX + bounds.width / 2;
-          handleUpdateBuilding(item.id, { x: (item.x ?? 0) + (targetCenter - currentCenter) });
+          layoutUpdates.set(item.id, { x: (item.x ?? 0) + (targetCenter - currentCenter) });
         } else {
           const currentCenter = bounds.minY + bounds.depth / 2;
-          handleUpdateBuilding(item.id, { y: (item.y ?? 0) + (targetCenter - currentCenter) });
+          layoutUpdates.set(item.id, { y: (item.y ?? 0) + (targetCenter - currentCenter) });
         }
       });
     }
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, layoutUpdates.get(item.id) ?? {})),
+      label: `layout ${layout.replace("_", " ")}`,
+    };
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, layoutUpdates.get(item.id) ?? {});
+    });
     const labelMap: Record<typeof layout, string> = {
       align_left: "Aligned left",
       align_top: "Aligned top",
@@ -8072,6 +8111,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -8099,6 +8139,10 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        x: (item.x ?? 0) + dx,
+        y: (item.y ?? 0) + dy,
+      })),
       label: "bulk move",
     };
     editable.forEach((item) => {
@@ -8125,6 +8169,7 @@ function PerformanceAIDashboardView({
     bulkMoveY,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -8153,6 +8198,11 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        w: Math.max(1, item.w * factor),
+        d: Math.max(1, item.d * factor),
+        h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
+      })),
       label: "bulk scale",
     };
     editable.forEach((item) => {
@@ -8179,6 +8229,7 @@ function PerformanceAIDashboardView({
     bulkScaleFactor,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -8204,13 +8255,8 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      label: "bulk rotate",
-    };
     const radians = (angle * Math.PI) / 180;
-    editable.forEach((item) => {
+    const getRotateUpdates = (item: BuildingPlacement): Partial<BuildingPlacement> => {
       const centerX = (item.x ?? 0) + item.w / 2;
       const centerY = (item.y ?? 0) + item.d / 2;
       const nextGeometry = item.geometry?.map(([x, y]) => {
@@ -8221,10 +8267,19 @@ function PerformanceAIDashboardView({
           centerY + dx * Math.sin(radians) + dy * Math.cos(radians),
         ] as [number, number];
       });
-      handleUpdateBuilding(item.id, {
+      return {
         rotation: ((item.rotation ?? 0) + angle) % 360,
         geometry: nextGeometry,
-      });
+      };
+    };
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, getRotateUpdates(item))),
+      label: "bulk rotate",
+    };
+    editable.forEach((item) => {
+      handleUpdateBuilding(item.id, getRotateUpdates(item));
       markSystemsStale(systemsImpactedByPlacement(item));
     });
     const message = `Rotated ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${angle} degrees${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
@@ -8243,6 +8298,7 @@ function PerformanceAIDashboardView({
     bulkRotateAngle,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -8263,11 +8319,6 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Mirror blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      label: `bulk mirror ${axis.toUpperCase()}`,
-    };
     const objectBounds = editable.map((item) => {
       const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
       const bounds = geometry?.length
@@ -8289,7 +8340,14 @@ function PerformanceAIDashboardView({
     const mirrorX = selectionMinX + (selectionMaxX - selectionMinX) / 2;
     const mirrorY = selectionMinY + (selectionMaxY - selectionMinY) / 2;
 
-    objectBounds.forEach(({ item, bounds }) => {
+    const getMirrorUpdates = (item: BuildingPlacement, bounds: {
+      minX: number;
+      maxX: number;
+      minY: number;
+      maxY: number;
+      width: number;
+      depth: number;
+    }): Partial<BuildingPlacement> => {
       const nextGeometry = item.geometry?.map(([x, y]) =>
         axis === "x"
           ? ([mirrorX - (x - mirrorX), y] as [number, number])
@@ -8303,15 +8361,25 @@ function PerformanceAIDashboardView({
       const nextY = axis === "y"
         ? mirrorY - (bounds.maxY - mirrorY) + yOffsetFromBounds
         : item.y;
-      handleUpdateBuilding(item.id, {
+      return {
         x: nextX,
         y: nextY,
         geometry: nextGeometry,
         meta: {
-          ...(item.meta ?? {}),
           [axis === "x" ? "mirrored_x" : "mirrored_y"]: true,
         },
-      });
+      };
+    };
+    const undo: DraftUndoAction = {
+      action: "bulk_update",
+      before: editable.map(cloneBuildingPlacementForUndo),
+      after: objectBounds.map(({ item, bounds }) =>
+        cloneBuildingPlacementWithUpdatesForUndo(item, getMirrorUpdates(item, bounds)),
+      ),
+      label: `bulk mirror ${axis.toUpperCase()}`,
+    };
+    objectBounds.forEach(({ item, bounds }) => {
+      handleUpdateBuilding(item.id, getMirrorUpdates(item, bounds));
       markSystemsStale(systemsImpactedByPlacement(item));
     });
     const message = `Mirrored ${axis.toUpperCase()} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
@@ -8329,6 +8397,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     markSystemsStale,
     recordRecentChange,
@@ -8346,6 +8415,9 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: targets.map(cloneBuildingPlacementForUndo),
+      after: targets.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        meta: { ui_hidden: hidden },
+      })),
       label: `${toReadableLabel(layerType)} layer visibility`,
     };
     targets.forEach((item) => {
@@ -8372,6 +8444,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -8391,6 +8464,7 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editable.map(cloneBuildingPlacementForUndo),
+      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, { locked })),
       label: `${toReadableLabel(layerType)} layer lock`,
     };
     editable.forEach((item) => {
@@ -8412,6 +8486,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -8444,6 +8519,9 @@ function PerformanceAIDashboardView({
     const undo: DraftUndoAction = {
       action: "bulk_update",
       before: editableAffected.map(cloneBuildingPlacementForUndo),
+      after: editableAffected.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+        meta: { ui_hidden: item.type !== layerType },
+      })),
       label: `${toReadableLabel(layerType)} layer isolate`,
     };
     editableAffected
@@ -8472,6 +8550,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     cloneBuildingPlacementForUndo,
+    cloneBuildingPlacementWithUpdatesForUndo,
     handleUpdateBuilding,
     recordRecentChange,
     reportObjectActionBlocker,
@@ -20403,6 +20482,7 @@ function PerformanceAIDashboardView({
       return;
     }
     const undo = change.undo;
+    recordDraftRedoAction(undo);
     if (undo.action === "add") {
       setBuildingPlacements((prev) => prev.filter((item) => item.id !== undo.object.id));
       setActivePlacementId((prev) => (prev === undo.object.id ? null : prev));
@@ -20486,9 +20566,11 @@ function PerformanceAIDashboardView({
       undoBlockedReason: "This is already an undo result.",
     });
   }, [
+    appendChatMessage,
     handleRestoreBuilding,
     markSystemsStale,
     pushRecoveryMessage,
+    recordDraftRedoAction,
     recordRecentChange,
     systemsImpactedByPlacement,
   ]);
