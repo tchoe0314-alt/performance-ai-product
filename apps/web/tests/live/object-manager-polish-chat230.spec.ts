@@ -508,6 +508,11 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.getByTestId("object-manager-bulk-move-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Moved 2 selected draft objects by 35,-15.");
 
+    await page.getByTestId("object-manager-bulk-copy-offset-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Copied 2 selected draft objects by 35,-15.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Copy" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Copy" }).first()).toBeVisible();
+
     await page.getByTestId("object-manager-bulk-scale-factor").fill("1.2");
     await page.getByTestId("object-manager-bulk-scale-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Scaled 2 selected draft objects by 1.2.");
@@ -527,6 +532,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-move-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Move blocked: selected objects are locked, source-only, or required project evidence.");
+    await page.getByTestId("object-manager-bulk-copy-offset-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Copy by offset blocked: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-rotate-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-mirror-x").click();
