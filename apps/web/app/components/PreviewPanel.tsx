@@ -776,6 +776,11 @@ export default function PreviewPanel({
         command: "OFFSET";
         distance?: number;
       }
+    | {
+        kind: "modify";
+        command: "TRIM" | "EXTEND";
+        amount?: number;
+      }
     | null
   >(null);
   const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
@@ -2794,13 +2799,13 @@ export default function PreviewPanel({
     pushCadCommandFeedback("OFFSET", "applied", `OFFSET applied ${distance} ft as draft review geometry.`);
   }, [cadOffsetDistance, parseCadNumber, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
   const trimExtendSelectedCadObject = useCallback(
-    (kind: "trim" | "extend") => {
+    (kind: "trim" | "extend", amountOverride?: string) => {
       if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
         pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: select one editable line/polyline draft object first.`);
         return;
       }
       const geometry = selectedCadObject.geometry as Array<[number, number]>;
-      const amount = Math.max(1, parseCadNumber(cadTransformValue, 10));
+      const amount = Math.max(1, parseCadNumber(amountOverride ?? cadTransformValue, 10));
       if (selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect") {
         pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: polygon trim/extend needs an explicit cutting edge and is not applied automatically.`);
         return;
@@ -2992,6 +2997,16 @@ export default function PreviewPanel({
           pushCadCommandFeedback("OFFSET", "blocked", "OFFSET needs a distance like 10 before it can run.");
           return;
         }
+        if (cadActiveCommand.kind === "modify") {
+          if (typeof cadActiveCommand.amount === "number") {
+            trimExtendSelectedCadObject(cadActiveCommand.command.toLowerCase() as "trim" | "extend", String(cadActiveCommand.amount));
+            setCadActiveCommand(null);
+            setCadCommandDraft("");
+            return;
+          }
+          pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs an amount like 8 before it can run.`);
+          return;
+        }
         if (draftPoints.length < cadActiveCommand.minPoints) {
           pushCadCommandFeedback(
             cadActiveCommand.command,
@@ -3072,6 +3087,24 @@ export default function PreviewPanel({
         setCadCommandDraft("");
         return;
       }
+      if (cadActiveCommand.kind === "modify") {
+        const amount = Number(raw);
+        if (!Number.isFinite(amount) || Math.abs(amount) < 0.001) {
+          pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} expected a non-zero amount like 8.`);
+          return;
+        }
+        setCadTransformValue(String(amount));
+        if (!selectedCadObject) {
+          setCadActiveCommand({ command: cadActiveCommand.command, kind: "modify", amount });
+          setCadCommandDraft("");
+          pushCadCommandFeedback(cadActiveCommand.command, "info", `${cadActiveCommand.command} amount set to ${amount}. Select one line/polyline draft object, then run ${cadActiveCommand.command} or press Run empty.`);
+          return;
+        }
+        trimExtendSelectedCadObject(cadActiveCommand.command.toLowerCase() as "trim" | "extend", String(amount));
+        setCadActiveCommand(null);
+        setCadCommandDraft("");
+        return;
+      }
       const activePoints = parseCadPointTokens(tokens);
       if (!activePoints.length) {
         pushCadCommandFeedback(
@@ -3108,6 +3141,16 @@ export default function PreviewPanel({
           return;
         }
         offsetSelectedCadObjectBy(String(cadActiveCommand.distance));
+        setCadActiveCommand(null);
+        setCadCommandDraft("");
+        return;
+      }
+      if (cadActiveCommand.kind === "modify") {
+        if (typeof cadActiveCommand.amount !== "number") {
+          pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs an amount like 8 before it can run.`);
+          return;
+        }
+        trimExtendSelectedCadObject(cadActiveCommand.command.toLowerCase() as "trim" | "extend", String(cadActiveCommand.amount));
         setCadActiveCommand(null);
         setCadCommandDraft("");
         return;
@@ -3278,8 +3321,15 @@ export default function PreviewPanel({
       return;
     }
     if (commandKey === "TRIM" || commandKey === "EXTEND") {
-      setCadTransformValue(firstValue);
-      trimExtendSelectedCadObject(commandKey.toLowerCase() as "trim" | "extend");
+      if (args.length) {
+        setCadTransformValue(firstValue);
+        trimExtendSelectedCadObject(commandKey.toLowerCase() as "trim" | "extend", firstValue);
+        setCadActiveCommand(null);
+      } else {
+        setCadActiveCommand({ command: commandKey as "TRIM" | "EXTEND", kind: "modify" });
+        setCadCommandDraft("");
+        pushCadCommandFeedback(commandKey, "info", `${commandKey} active. Type an amount like 8. Select one line/polyline draft object first for immediate ${commandKey.toLowerCase()}.`);
+      }
       return;
     }
     if (commandKey === "FILLET") {
@@ -7406,7 +7456,9 @@ export default function PreviewPanel({
                   >
                     {cadActiveCommand.kind === "draw"
                       ? `Active command: ${cadActiveCommand.command} · ${draftPoints.length}/${cadActiveCommand.minPoints}+ point${draftPoints.length === 1 ? "" : "s"} · type next coordinate or run empty to finish.`
-                      : `Active command: OFFSET · ${typeof cadActiveCommand.distance === "number" ? `${cadActiveCommand.distance} ft` : "distance needed"} · type distance or run empty after selecting an object.`}
+                      : cadActiveCommand.kind === "offset"
+                        ? `Active command: OFFSET · ${typeof cadActiveCommand.distance === "number" ? `${cadActiveCommand.distance} ft` : "distance needed"} · type distance or run empty after selecting an object.`
+                        : `Active command: ${cadActiveCommand.command} · ${typeof cadActiveCommand.amount === "number" ? `${cadActiveCommand.amount} ft` : "amount needed"} · type amount or run empty after selecting a line.`}
                   </div>
                 ) : null}
                 <p className="mt-2 text-[11px] font-medium text-slate-500">{cadCommandStatus}</p>
