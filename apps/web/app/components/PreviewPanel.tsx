@@ -5985,7 +5985,12 @@ export default function PreviewPanel({
                 <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                   {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} / {coordinateModeLabel(coordinateMode)}
                 </span>
-                <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                {selectedCadObject?.label ? (
+                  <span className="inline-flex max-w-[18rem] items-center truncate rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    {selectedCadObject.label}
+                  </span>
+                ) : null}
+                <div className="hidden">
                   <button
                     type="button"
                     data-testid="preview-inner-quality-standard"
@@ -6196,7 +6201,7 @@ export default function PreviewPanel({
               </div>
             </div>
             <div className="pointer-events-none relative z-[220] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
-              <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <section className="hidden">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View</span>
                 <button
                   type="button"
@@ -6266,7 +6271,7 @@ export default function PreviewPanel({
                 </button>
               </section>
               {previewMode === "2d" ? (
-                <section className="pointer-events-auto relative z-[230] flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-1" data-testid="canvas-draw-controls">
+                <section className="hidden" data-testid="canvas-draw-controls">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Draw</span>
                   <button
                     type="button"
@@ -6533,7 +6538,7 @@ export default function PreviewPanel({
                 </section>
               ) : null}
               {previewMode === "2d" ? (
-	                <section className="pointer-events-auto hidden min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex">
+	                <section className="hidden">
 	                  <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Modify</span>
 	                  <button
 	                    type="button"
@@ -6642,7 +6647,7 @@ export default function PreviewPanel({
                   ) : null}
                 </section>
               ) : null}
-              <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <section className="hidden">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Snaps</span>
                 <label className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700">
                   <input type="checkbox" checked={cadSnapEnabled} onChange={(event) => setCadSnapEnabled(event.target.checked)} className="h-4 w-4 accent-slate-950" />
@@ -6656,7 +6661,7 @@ export default function PreviewPanel({
                   {activeSnapPoint ? activeSnapPoint.kind : "No snap"}
                 </span>
               </section>
-              <section className="pointer-events-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <section className="hidden">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Layers</span>
                 <select
                   aria-label="CAD layer"
@@ -6687,7 +6692,7 @@ export default function PreviewPanel({
                   </button>
                 ))}
               </section>
-              <section className="pointer-events-auto ml-auto flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <section className="hidden">
                 <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Export</span>
                 {planPreviewUrl || showMap ? (
                   <button type="button" onClick={onOpenFullscreen} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
@@ -6775,11 +6780,6 @@ export default function PreviewPanel({
                     <X className="h-4 w-4" />
                   </button>
                 </>
-              ) : null}
-              {exportBlockReason ? (
-                <span className="ml-auto text-amber-700">
-                  Export note: {exportBlockReason}
-                </span>
               ) : null}
             </div>
           </div>
@@ -7095,11 +7095,16 @@ export default function PreviewPanel({
               </div>
             </div>
           ) : null}
-          {previewMode === "2d" ? (
+          {previewMode === "2d" && allowEdits ? (
             <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
               <section className="min-w-0">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                      {selectedCadObject?.label || "No CAD object selected"}
+                    </p>
+                  </div>
                   <div className="flex gap-1">
                     <button
                       type="button"

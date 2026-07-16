@@ -110,6 +110,10 @@ body,
   box-shadow: var(--civora-shadow-canvas);
 }
 
+.civora-preview-panel > div:first-child {
+  display: none;
+}
+
 .civora-preview-panel > div:nth-child(2) {
   position: relative;
   min-height: calc(100svh - 4rem);
@@ -139,7 +143,7 @@ body,
   left: auto;
   right: auto;
   bottom: auto;
-  max-height: min(38svh, 300px);
+  max-height: min(24svh, 190px);
   margin-bottom: 0;
   opacity: 1;
   pointer-events: auto;
@@ -209,7 +213,7 @@ body,
     left: auto;
     right: auto;
     bottom: auto;
-    max-height: min(48svh, 340px);
+    max-height: min(34svh, 230px);
     grid-template-columns: 1fr !important;
   }
 

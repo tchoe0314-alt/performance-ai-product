@@ -19566,10 +19566,10 @@ function PerformanceAIDashboardView({
                 handleOpenSidePanel("projects");
               }}
               aria-label="Open projects"
-              className="mb-2 rounded-lg border border-transparent bg-transparent px-2 py-2 text-center transition hover:bg-slate-50"
+              className="mb-2 flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-lg border border-transparent bg-transparent px-2 py-2 text-center transition hover:bg-slate-50"
             >
               <FolderOpen className="mx-auto h-4 w-4 text-slate-500" />
-              <p className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Projects</p>
+              <span className="sr-only">Projects</span>
               <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>
             </button>
             <button
@@ -19608,14 +19608,14 @@ function PerformanceAIDashboardView({
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
 	                      title={`${item.label}: ${item.metric}`}
-	                      className={`flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
+	                      className={`flex min-h-[52px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
 	                        isActive
 	                          ? "border-slate-950 bg-slate-950 text-white"
 	                          : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
 	                      }`}
 	                    >
 	                      <Icon className="h-4 w-4 shrink-0" />
-	                      <span className="block max-w-full truncate text-[10px] font-semibold uppercase tracking-[0.08em]">{item.label}</span>
+	                      <span className="sr-only">{item.label}</span>
 	                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
 	                        item.status === "ok"
 	                          ? "bg-emerald-500"
@@ -19633,14 +19633,14 @@ function PerformanceAIDashboardView({
 	                  aria-label="Open canvas from sidebar"
 	                  onClick={() => handleOpenPanelFromDrawer("model")}
 	                  title="Canvas: view, pan, zoom, and inspect"
-	                  className={`flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
+	                  className={`flex min-h-[52px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
 	                    sidePanelForRender === "model"
 	                      ? "border-slate-950 bg-slate-950 text-white"
 	                      : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
 	                  }`}
 	                >
 	                  <Box className="h-4 w-4 shrink-0" />
-	                  <span className="block max-w-full truncate text-[10px] font-semibold uppercase tracking-[0.08em]">Canvas</span>
+	                  <span className="sr-only">Canvas</span>
 	                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300" />
 	                </button>
 	              </div>
@@ -25701,7 +25701,7 @@ function PerformanceAIDashboardView({
 	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
                 <div
                   data-testid="site-status"
-                  className={`pointer-events-none absolute left-4 top-4 z-30 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] shadow-sm backdrop-blur-xl ${
+                  className={`pointer-events-none absolute left-[112px] top-4 z-30 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] shadow-sm backdrop-blur-xl max-lg:left-4 max-lg:top-4 ${
                     siteScaleLocked
                       ? "border-emerald-200 bg-emerald-50/90 text-emerald-700"
                       : "border-amber-200 bg-amber-50/90 text-amber-700"
@@ -25883,7 +25883,7 @@ function PerformanceAIDashboardView({
 	                    </button>
 	                  </div>
 	                ) : null}
-	                {selectedBuilding ? (
+	                {selectedBuilding && !(previewInteraction === "edit" && activePrimaryWorkflowKey === "draw") ? (
 	                  <div
 	                    data-testid="floating-object-inspector"
 	                    className="absolute left-3 top-[9.75rem] z-[32] hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
