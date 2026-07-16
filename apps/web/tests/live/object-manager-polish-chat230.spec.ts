@@ -617,6 +617,58 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
   });
 
+  test("moving a combined object moves preserved source pieces before explode", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await combinedRow.getByTestId("object-manager-inspect").click();
+    const combinedOverlay = page.locator('[data-cad-object-id][aria-label*="Combined Site Program"]').first();
+    await expect(combinedOverlay).toBeVisible();
+    const beforeGroupBox = await combinedOverlay.boundingBox();
+    expect(beforeGroupBox).not.toBeNull();
+
+    await page.getByTestId("selected-object-x-input").fill("220");
+    await openDrawPanel(page);
+    await expect(page.getByTestId("object-manager-status")).toContainText("Combined Site Program geometry changed.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from combined object trace update.");
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: reapplied 3 draft objects from combined object trace update.");
+
+    const movedGroupBox = await combinedOverlay.boundingBox();
+    expect(movedGroupBox).not.toBeNull();
+    expect(movedGroupBox!.x).toBeGreaterThan(beforeGroupBox!.x + 10);
+
+    await openDrawPanel(page);
+    const movedCombinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await movedCombinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program back into 2 preserved source pieces",
+    );
+
+    const restoredOfficeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first();
+    const restoredParkingOverlay = page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first();
+    await expect(restoredOfficeOverlay).toBeVisible();
+    await expect(restoredParkingOverlay).toBeVisible();
+    const officeBox = await restoredOfficeOverlay.boundingBox();
+    const parkingBox = await restoredParkingOverlay.boundingBox();
+    expect(officeBox).not.toBeNull();
+    expect(parkingBox).not.toBeNull();
+    expect(Math.min(officeBox!.x, parkingBox!.x)).toBeGreaterThan(beforeGroupBox!.x + 10);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+  });
+
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

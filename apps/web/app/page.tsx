@@ -7009,11 +7009,18 @@ function PerformanceAIDashboardView({
       const combinedSourceIds = Array.isArray(target.meta?.combined_from_object_ids)
         ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
         : [];
+      const groupGeometryChanged =
+        typeof updates.x === "number" ||
+        typeof updates.y === "number" ||
+        typeof updates.w === "number" ||
+        typeof updates.d === "number" ||
+        Array.isArray(updates.geometry);
       const shouldSyncCombinedSources =
         combinedSourceIds.length > 0 &&
         (
           typeof updates.label === "string" ||
           updates.type !== undefined ||
+          groupGeometryChanged ||
           Boolean(updates.meta && ("ui_color" in updates.meta || "color" in updates.meta || "style" in updates.meta))
         );
       if (shouldSyncCombinedSources) {
@@ -7022,9 +7029,27 @@ function PerformanceAIDashboardView({
           const nextGroupLabel = nextObject.label || target.label;
           const nextGroupType = nextObject.type ?? target.type ?? "custom";
           const nextGroupColor = nextObject.meta?.ui_color ?? nextObject.meta?.color ?? target.meta?.ui_color ?? target.meta?.color;
+          const groupOriginX = target.x ?? 0;
+          const groupOriginY = target.y ?? 0;
+          const nextGroupOriginX = nextObject.x ?? groupOriginX;
+          const nextGroupOriginY = nextObject.y ?? groupOriginY;
+          const groupScaleX = target.w > 0 && nextObject.w > 0 ? nextObject.w / target.w : 1;
+          const groupScaleY = target.d > 0 && nextObject.d > 0 ? nextObject.d / target.d : 1;
+          const transformPoint = ([px, py]: [number, number]): [number, number] => [
+            nextGroupOriginX + (px - groupOriginX) * groupScaleX,
+            nextGroupOriginY + (py - groupOriginY) * groupScaleY,
+          ];
           const afterSources = sourceObjects.map((source) => ({
             ...source,
-            geometry: source.geometry?.map(([x, y]) => [x, y] as [number, number]),
+            x: groupGeometryChanged
+              ? nextGroupOriginX + ((source.x ?? groupOriginX) - groupOriginX) * groupScaleX
+              : source.x,
+            y: groupGeometryChanged
+              ? nextGroupOriginY + ((source.y ?? groupOriginY) - groupOriginY) * groupScaleY
+              : source.y,
+            w: groupGeometryChanged ? Math.max(1, source.w * groupScaleX) : source.w,
+            d: groupGeometryChanged ? Math.max(1, source.d * groupScaleY) : source.d,
+            geometry: source.geometry?.map((point) => groupGeometryChanged ? transformPoint(point) : ([point[0], point[1]] as [number, number])),
             capabilities: source.capabilities ? { ...source.capabilities } : source.capabilities,
             meta: {
               ...(source.meta ?? {}),
@@ -7032,6 +7057,7 @@ function PerformanceAIDashboardView({
               combined_into_label: nextGroupLabel,
               combined_into_type: nextGroupType,
               combined_trace_synced_at: new Date().toISOString(),
+              ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
               ...(typeof nextGroupColor === "string" ? { combined_into_color: nextGroupColor } : {}),
             },
           }));
