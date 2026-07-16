@@ -6377,7 +6377,7 @@ function PerformanceAIDashboardView({
         if (typeKey === "parking") {
           return {
             x: clampPlacement(lot.w * 0.18 + offset * 18, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.52 + offset * 10, defaults.d, lot.h),
+            y: clampPlacement(lot.h * 0.40 + offset * 10, defaults.d, lot.h),
           };
         }
         if (typeKey === "basin") {
@@ -10114,7 +10114,7 @@ function PerformanceAIDashboardView({
     if (parking || /\bparking\b/.test(lower)) {
       const stalls = parking ? Number(parking[1]) : parsePositiveNumber(parkingCount) ?? 140;
       const fieldWidth = Math.max(260, Math.min((lot.w || 1000) * 0.48, Math.ceil(stalls / 2) * 9 + 36));
-      const fieldDepth = Math.max(132, Math.min((lot.h || 1000) * 0.24, 18 * 2 + 24 + Math.ceil(stalls / 70) * 54));
+      const fieldDepth = Math.max(120, Math.min((lot.h || 1000) * 0.20, 18 * 2 + 24 + Math.ceil(stalls / 70) * 42));
       requested.push(() => {
         setParkingCount(String(Math.round(stalls)));
         handleAddObject("parking", {
