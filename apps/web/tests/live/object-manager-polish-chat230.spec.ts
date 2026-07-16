@@ -225,6 +225,11 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("MOVE applied 5,0 to 1 selected draft object");
     await page.keyboard.press("Shift+ArrowDown");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("MOVE applied 0,25 to 1 selected draft object");
+
+    await page.keyboard.press("Control+C");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Copied HQ Office Test Copy");
+    await page.keyboard.press("Control+V");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test Copy Copy" }).first()).toBeVisible();
   });
 
   test("multi-select supports safe bulk updates and utility hide command updates manager state", async ({ page }) => {

@@ -18923,6 +18923,46 @@ function PerformanceAIDashboardView({
     });
   }, [activePlacementId, buildingPlacements, handleRemoveBuilding, updateProjectStatus]);
 
+  const handleCopySelectedObject = useCallback(() => {
+    const target = activePlacementId
+      ? buildingPlacements.find((item) => item.id === activePlacementId)
+      : null;
+    if (!target) {
+      reportObjectActionBlocker("Copy blocked: select an editable draft object first.");
+      updateProjectStatus({
+        state: "blocked",
+        area: "chat",
+        title: "Copy blocked",
+        detail: "No object is selected.",
+        nextAction: "Select an editable draft object, then press Cmd/Ctrl+C again.",
+      });
+      return;
+    }
+    handleObjectManagerCopy(target);
+    updateProjectStatus({
+      state: "ready",
+      area: "chat",
+      title: "Object copied",
+      detail: `Copied ${target.label}.`,
+      nextAction: "Press Cmd/Ctrl+V or use Paste to place a draft duplicate.",
+    });
+  }, [activePlacementId, buildingPlacements, handleObjectManagerCopy, reportObjectActionBlocker, updateProjectStatus]);
+
+  const handlePasteSelectedObject = useCallback(() => {
+    handleObjectManagerPaste();
+    updateProjectStatus({
+      state: objectClipboard ? "stale" : "blocked",
+      area: "chat",
+      title: objectClipboard ? "Object pasted" : "Paste blocked",
+      detail: objectClipboard
+        ? `Pasted ${objectClipboard.label} as an editable draft duplicate.`
+        : "Copy an editable object before pasting.",
+      nextAction: objectClipboard
+        ? "Move, rename, or regenerate affected systems after review."
+        : "Select an editable draft object, then press Cmd/Ctrl+C.",
+    });
+  }, [handleObjectManagerPaste, objectClipboard, updateProjectStatus]);
+
   const handleUndoDraftAction = useCallback(() => {
     if (!lastDraftAction) {
       const message = "Undo blocked: no supported draft action is available to undo.";
@@ -19111,6 +19151,16 @@ function PerformanceAIDashboardView({
         handleShortcutSaveProject();
         return;
       }
+      if (meta && key === "c" && !isTyping) {
+        event.preventDefault();
+        handleCopySelectedObject();
+        return;
+      }
+      if (meta && key === "v" && !isTyping) {
+        event.preventDefault();
+        handlePasteSelectedObject();
+        return;
+      }
       if (meta && key === "z") {
         event.preventDefault();
         handleUndoDraftAction();
@@ -19178,9 +19228,11 @@ function PerformanceAIDashboardView({
   }, [
     focusCommandInput,
     handleCancelActiveTool,
+    handleCopySelectedObject,
     handleDeleteSelectedObject,
     handleOpenSidePanel,
     handleOpenWorkspaceMode,
+    handlePasteSelectedObject,
     handleShortcutSaveProject,
     handleUndoDraftAction,
     updateProjectStatus,
@@ -19189,6 +19241,8 @@ function PerformanceAIDashboardView({
   const supportedShortcuts = [
     ["Esc", "Cancel active tool or close help"],
     ["Delete", "Delete selected draft object"],
+    ["Cmd/Ctrl C", "Copy selected draft object"],
+    ["Cmd/Ctrl V", "Paste copied draft object"],
     ["Cmd/Ctrl Z", "Undo supported draft action"],
     ["Cmd/Ctrl S", "Save project"],
     ["/ or Cmd/Ctrl K", "Focus command"],
