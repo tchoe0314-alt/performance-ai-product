@@ -762,7 +762,7 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadActiveCommand, setCadActiveCommand] = useState<
     | {
@@ -2572,7 +2572,7 @@ export default function PreviewPanel({
     [canDrawObjects, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta],
   );
   const transformSelectedCadObjects = useCallback(
-    (kind: "move" | "rotate" | "scale", valueOverride?: string) => {
+    (kind: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", valueOverride?: string) => {
       if (!selectedCadIds.length) {
         pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: select one or more editable draft CAD objects first.`);
         return;
@@ -2624,6 +2624,26 @@ export default function PreviewPanel({
           applied += 1;
           return;
         }
+        if (kind === "flip_horizontal" || kind === "flip_vertical") {
+          const updates: Partial<BuildingPlacement> = {
+            meta: {
+              ...(target.meta ?? {}),
+              [kind === "flip_horizontal" ? "flipped_horizontal" : "flipped_vertical"]: true,
+            },
+          };
+          if (Array.isArray(target.geometry)) {
+            const flipped = transformGeometry(target.geometry as Array<[number, number]>, kind, 0);
+            if (!flipped.ok) {
+              blocked += 1;
+              pushCadCommandFeedback("MIRROR", "blocked", `MIRROR blocked: ${flipped.reason}`);
+              return;
+            }
+            updates.geometry = flipped.value;
+          }
+          updateCadObject(target, updates, kind === "flip_horizontal" ? "Flip horizontal" : "Flip vertical");
+          applied += 1;
+          return;
+        }
         const factor = amount;
         if (factor <= 0) {
           blocked += 1;
@@ -2654,7 +2674,7 @@ export default function PreviewPanel({
         pushCadCommandFeedback(
           kind,
           applied ? "applied" : "blocked",
-          `${kind.toUpperCase()} ${applied ? `applied to ${applied}` : "blocked for all"} selected object${applied === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked` : ""}.`,
+          `${kind === "flip_horizontal" ? "MIRROR H" : kind === "flip_vertical" ? "MIRROR V" : kind.toUpperCase()} ${applied ? `applied to ${applied}` : "blocked for all"} selected object${applied === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked` : ""}.`,
         );
       }
     },
@@ -3094,6 +3114,7 @@ export default function PreviewPanel({
       TR: "TRIM",
       EX: "EXTEND",
       F: "FILLET",
+      MI: "MIRROR",
       E: "ERASE",
       D: "DIM",
       T: "TEXT",
@@ -3119,6 +3140,8 @@ export default function PreviewPanel({
       "TRIM",
       "EXTEND",
       "FILLET",
+      "MIRROR",
+      "FLIP",
       "DIM",
       "TEXT",
       "LAYER",
@@ -3455,6 +3478,17 @@ export default function PreviewPanel({
       }
       return;
     }
+    if (commandKey === "MIRROR" || commandKey === "FLIP") {
+      const axisArg = (args[0] || "").trim().toLowerCase();
+      const horizontal = ["h", "x", "horizontal"].includes(axisArg);
+      const vertical = ["v", "y", "vertical"].includes(axisArg);
+      if (!horizontal && !vertical) {
+        pushCadCommandFeedback(commandKey, "blocked", `${commandKey} blocked: use ${commandKey} H or ${commandKey} V after selecting editable draft objects.`);
+        return;
+      }
+      transformSelectedCadObjects(horizontal ? "flip_horizontal" : "flip_vertical", "0");
+      return;
+    }
     if (commandKey === "DELETE" || commandKey === "ERASE") {
       if (!selectedDeletableObject) {
         pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft CAD object first.");
@@ -3540,7 +3574,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
     applySelectedCadDimension,
     buildingPlacements,

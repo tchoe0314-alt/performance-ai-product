@@ -119,7 +119,7 @@ export function resolveCadSnap(
 
 export function transformGeometry(
   geometry: CadTuple2D[],
-  kind: "move" | "rotate" | "scale",
+  kind: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical",
   value: number,
   origin?: CadPoint2D,
 ): CadOperationResult<CadTuple2D[]> {
@@ -142,6 +142,12 @@ export function transformGeometry(
         return [roundCoord(center.x + dx * cos - dy * sin), roundCoord(center.y + dx * sin + dy * cos)] as CadTuple2D;
       }),
     };
+  }
+  if (kind === "flip_horizontal") {
+    return { ok: true, value: geometry.map(([x, y]) => [roundCoord(center.x - (x - center.x)), roundCoord(y)] as CadTuple2D) };
+  }
+  if (kind === "flip_vertical") {
+    return { ok: true, value: geometry.map(([x, y]) => [roundCoord(x), roundCoord(center.y - (y - center.y))] as CadTuple2D) };
   }
   if (value <= 0 || !Number.isFinite(value)) return { ok: false, reason: "Scale requires a positive factor." };
   return {

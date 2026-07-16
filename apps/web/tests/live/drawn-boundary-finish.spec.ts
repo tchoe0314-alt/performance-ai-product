@@ -393,6 +393,12 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("CAD command input").fill("CO 2,2");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText("COPY created manual_drawn");
+    await cadTools.getByLabel("CAD command input").fill("MI H");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("MIRROR H applied");
+    await cadTools.getByLabel("CAD command input").fill("FLIP V");
+    await cadTools.getByRole("button", { name: "Run" }).click();
+    await expect(cadTools).toContainText("MIRROR V applied");
     await cadTools.getByLabel("CAD dimension mode").selectOption("aligned");
     await cadTools.getByLabel("CAD dimension label").fill("130.0 ft review");
     await clickVisibleControl(cadTools.getByRole("button", { name: "Dim" }));
