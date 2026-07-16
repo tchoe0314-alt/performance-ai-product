@@ -76,6 +76,9 @@ type CadToolRequest = {
     | "fillet"
     | "join"
     | "split"
+    | "close"
+    | "open"
+    | "reverse"
     | "delete"
     | "dimension"
     | "symbol"
@@ -769,7 +772,7 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, ALIGN, DISTRIBUTE, DIST, OFFSET, TRIM, EXTEND, FILLET, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, ALIGN, DISTRIBUTE, DIST, OFFSET, TRIM, EXTEND, FILLET, JOIN, SPLIT, CLOSE, OPEN, REVERSE, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadActiveCommand, setCadActiveCommand] = useState<
     | {
@@ -3144,6 +3147,116 @@ export default function PreviewPanel({
     pushCadCommandFeedback,
     selectedCadObject,
   ]);
+  const changeSelectedPolylineState = useCallback((mode: "close" | "open" | "reverse") => {
+    const command = mode === "close" ? "CLOSE" : mode === "open" ? "OPEN" : "REVERSE";
+    if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry) || selectedCadObject.geometry.length < 2) {
+      pushCadCommandFeedback(command, "blocked", `${command} blocked: select one editable draft line or area object first.`);
+      return;
+    }
+    if (selectedCadObject.type === "site" || selectedCadObject.locked || !previewObjectEditableSource(selectedCadObject)) {
+      pushCadCommandFeedback(command, "blocked", `${command} blocked: selected object is locked, source-only, or required project evidence.`);
+      return;
+    }
+    const geometry = (selectedCadObject.geometry as Array<[number, number]>).map(([x, y]) => [x, y] as [number, number]);
+    if (geometry.length < 2) {
+      pushCadCommandFeedback(command, "blocked", `${command} blocked: selected object has no editable vertices.`);
+      return;
+    }
+    const first = geometry[0];
+    const last = geometry[geometry.length - 1];
+    const explicitlyClosed = Boolean(last && Math.hypot(first[0] - last[0], first[1] - last[1]) < 0.001);
+    const stripDuplicateClosure = () => (explicitlyClosed ? geometry.slice(0, -1) : geometry);
+    if (mode === "close") {
+      const base = stripDuplicateClosure();
+      if (base.length < 3) {
+        pushCadCommandFeedback("CLOSE", "blocked", "CLOSE blocked: draft linework needs at least three vertices to become a closed area.");
+        return;
+      }
+      if (selectedCadObject.geometryType !== "polyline" && !explicitlyClosed) {
+        pushCadCommandFeedback("CLOSE", "info", "CLOSE skipped: selected object is already treated as closed area geometry.");
+        return;
+      }
+      const nextGeometry = [...base, base[0]];
+      const nextBounds = boundsForSiteGeometry(nextGeometry);
+      updateCadObject(
+        selectedCadObject,
+        {
+          geometry: nextGeometry,
+          geometryType: "polygon",
+          x: nextBounds.minX,
+          y: nextBounds.minY,
+          w: Math.max(5, nextBounds.width),
+          d: Math.max(5, nextBounds.height),
+          meta: {
+            ...(selectedCadObject.meta ?? {}),
+            cad_polyline_closed: true,
+            cad_polyline_state_command: "CLOSE",
+            engineering_status: "draft_review_required",
+            review_status: "engineer_review_required",
+            construction_release_allowed: false,
+          },
+        },
+        "Close polyline",
+      );
+      pushCadCommandFeedback("CLOSE", "applied", "CLOSE converted selected draft linework into closed review area geometry.");
+      return;
+    }
+    if (mode === "open") {
+      if (selectedCadObject.geometryType === "polyline" && !explicitlyClosed) {
+        pushCadCommandFeedback("OPEN", "info", "OPEN skipped: selected linework is already open.");
+        return;
+      }
+      const nextGeometry = stripDuplicateClosure();
+      if (nextGeometry.length < 2) {
+        pushCadCommandFeedback("OPEN", "blocked", "OPEN blocked: opening this object would leave too few vertices.");
+        return;
+      }
+      const nextBounds = boundsForSiteGeometry(nextGeometry);
+      updateCadObject(
+        selectedCadObject,
+        {
+          geometry: nextGeometry,
+          geometryType: "polyline",
+          x: nextBounds.minX,
+          y: nextBounds.minY,
+          w: Math.max(5, nextBounds.width),
+          d: Math.max(5, nextBounds.height),
+          meta: {
+            ...(selectedCadObject.meta ?? {}),
+            cad_polyline_closed: false,
+            cad_polyline_state_command: "OPEN",
+            engineering_status: "draft_review_required",
+            review_status: "engineer_review_required",
+            construction_release_allowed: false,
+          },
+        },
+        "Open polyline",
+      );
+      pushCadCommandFeedback("OPEN", "applied", "OPEN converted selected draft area into open review linework.");
+      return;
+    }
+    const nextGeometry = [...geometry].reverse();
+    const nextBounds = boundsForSiteGeometry(nextGeometry);
+    updateCadObject(
+      selectedCadObject,
+      {
+        geometry: nextGeometry,
+        x: nextBounds.minX,
+        y: nextBounds.minY,
+        w: Math.max(5, nextBounds.width),
+        d: Math.max(5, nextBounds.height),
+        meta: {
+          ...(selectedCadObject.meta ?? {}),
+          cad_polyline_state_command: "REVERSE",
+          engineering_status: "draft_review_required",
+          review_status: "engineer_review_required",
+          construction_release_allowed: false,
+        },
+      },
+      "Reverse polyline",
+    );
+    pushCadCommandFeedback("REVERSE", "applied", "REVERSE flipped the selected draft linework vertex order.");
+  }, [previewObjectEditableSource, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
   const applyCadCoordinate = useCallback(() => {
     const x = parseCadNumber(cadCoordinateDraft.x, NaN);
     const y = parseCadNumber(cadCoordinateDraft.y, NaN);
@@ -3532,6 +3645,8 @@ export default function PreviewPanel({
       J: "JOIN",
       BR: "SPLIT",
       BREAK: "SPLIT",
+      CL: "CLOSE",
+      REV: "REVERSE",
       MI: "MIRROR",
       E: "ERASE",
       D: "DIM",
@@ -3567,6 +3682,9 @@ export default function PreviewPanel({
       "JOIN",
       "SPLIT",
       "BREAK",
+      "CLOSE",
+      "OPEN",
+      "REVERSE",
       "MIRROR",
       "FLIP",
       "DIM",
@@ -4029,6 +4147,18 @@ export default function PreviewPanel({
       splitSelectedJoinedObject();
       return;
     }
+    if (commandKey === "CLOSE") {
+      changeSelectedPolylineState("close");
+      return;
+    }
+    if (commandKey === "OPEN") {
+      changeSelectedPolylineState("open");
+      return;
+    }
+    if (commandKey === "REVERSE") {
+      changeSelectedPolylineState("reverse");
+      return;
+    }
     if (commandKey === "DIM") {
       applySelectedCadDimension();
       return;
@@ -4076,7 +4206,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, JOIN/J, SPLIT/BR, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, JOIN/J, SPLIT/BR, CLOSE/CL, OPEN, REVERSE/REV, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
     alignOrDistributeSelectedCadObjects,
     applySelectedCadDimension,
@@ -4084,6 +4214,7 @@ export default function PreviewPanel({
     buildingPlacements,
     cadActiveCommand,
     cadCommandDraft,
+    changeSelectedPolylineState,
     cadOrthoEnabled,
     cadSnapEnabled,
     cadTransformValue,
@@ -4204,6 +4335,15 @@ export default function PreviewPanel({
       case "split":
         splitSelectedJoinedObject();
         break;
+      case "close":
+        changeSelectedPolylineState("close");
+        break;
+      case "open":
+        changeSelectedPolylineState("open");
+        break;
+      case "reverse":
+        changeSelectedPolylineState("reverse");
+        break;
       case "delete":
         if (selectedDeletableObject) {
           onRemoveBuilding(selectedDeletableObject.id);
@@ -4260,6 +4400,7 @@ export default function PreviewPanel({
     applySelectedCadLayer,
     cadOffsetDistance,
     cadToolRequest,
+    changeSelectedPolylineState,
     filletSelectedCadObject,
     insertCadSymbol,
     joinSelectedCadObjects,

@@ -500,6 +500,9 @@ type CadToolRequestForPreview = {
     | "fillet"
     | "join"
     | "split"
+    | "close"
+    | "open"
+    | "reverse"
     | "delete"
     | "dimension"
     | "symbol"
@@ -12201,7 +12204,7 @@ function PerformanceAIDashboardView({
       return true;
     }
     if (
-      /^(select\s+(?:all|none|clear|layer\b.*)|align\b.*|distribute\b.*|move\b.*|copy\b.*|rotate\b.*|scale\b.*|mirror\b.*|flip\b.*|array\b.*|layer\b.*|delete\b.*|erase\b.*|offset\b.*|trim\b.*|extend\b.*|fillet\b.*|dist\b.*|measure\b.*)$/i.test(
+      /^(select\s+(?:all|none|clear|layer\b.*)|align\b.*|distribute\b.*|move\b.*|copy\b.*|rotate\b.*|scale\b.*|mirror\b.*|flip\b.*|array\b.*|layer\b.*|delete\b.*|erase\b.*|offset\b.*|trim\b.*|extend\b.*|fillet\b.*|join\b.*|split\b.*|break\b.*|close\b.*|open\b.*|reverse\b.*|dist\b.*|measure\b.*)$/i.test(
         message.trim(),
       )
     ) {
@@ -20208,6 +20211,9 @@ function PerformanceAIDashboardView({
         { label: "Fillet", tool: "fillet", hint: "Selected vertex" },
         { label: "Join", tool: "join", hint: "Selected linework" },
         { label: "Split", tool: "split", hint: "Joined object" },
+        { label: "Close", tool: "close", hint: "Polyline area" },
+        { label: "Open", tool: "open", hint: "Closed linework" },
+        { label: "Reverse", tool: "reverse", hint: "Vertex order" },
         { label: "Delete", tool: "delete", hint: "Selected object" },
       ],
     },

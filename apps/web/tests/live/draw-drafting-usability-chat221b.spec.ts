@@ -17,6 +17,13 @@ async function openDrawPanel(page: Page) {
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 
+async function showCadTools(page: Page) {
+  await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+  const cadTools = page.getByTestId("draw-cad-tools-section");
+  await expect(cadTools).toBeVisible();
+  return cadTools;
+}
+
 async function startBlankSite(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundary=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
@@ -155,5 +162,35 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined CAD Object/ })).toHaveCount(0);
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ })).toHaveCount(2);
+  });
+
+  test("visible OPEN CLOSE and REVERSE edit selected draft area linework", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const surface = page.getByTestId("preview-drawing-surface");
+
+    await cadTools.getByTestId("cad-tool-area").click();
+    await clickExposedSurface(surface, 0.22, 0.34);
+    await clickExposedSurface(surface, 0.38, 0.26);
+    await clickExposedSurface(surface, 0.52, 0.38);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
+
+    const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
+    await expect(areaRow).toBeVisible();
+    await areaRow.getByTestId("object-manager-inspect").click();
+
+    await showCadTools(page);
+    await cadTools.getByTestId("cad-tool-open").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/OPEN converted selected draft area into open review linework/);
+
+    await showCadTools(page);
+    await cadTools.getByTestId("cad-tool-close").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/CLOSE converted selected draft linework into closed review area geometry/);
+
+    await showCadTools(page);
+    await cadTools.getByTestId("cad-tool-reverse").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/REVERSE flipped the selected draft linework vertex order/);
   });
 });
