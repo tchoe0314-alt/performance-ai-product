@@ -5420,7 +5420,7 @@ function PerformanceAIDashboardView({
 
   useEffect(() => {
     if (demoWorkspaceSeededRef.current) return;
-    if (!forceDemoWorkspace && !routeDemoWorkspaceEnabled && !seededDemoWorkspaceEnabled) return;
+    if (!forceDemoWorkspace && !seededDemoWorkspaceEnabled) return;
     const debugEmptyLayout =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("chat226EmptyLayout") === "1";
@@ -20638,7 +20638,7 @@ function PerformanceAIDashboardView({
                         Draw
                       </button>
                     </div>
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth">
+                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / Location</span>

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function openDemoWorkspace(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1", { waitUntil: "domcontentloaded" });
+async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
+  await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("left-sidebar")).toBeVisible({ timeout: 30_000 });
 }
@@ -75,10 +75,9 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await openDemoWorkspace(page);
 
     await openPanel(page, /^Setup$/, /Project Setup/);
-    await expect(page.getByTestId("setup-address-truth")).not.toHaveAttribute("open", "");
-    await page.getByTestId("setup-address-truth").getByText("Address / Location", { exact: true }).first().click();
     await expect(page.getByTestId("setup-address-truth")).toHaveAttribute("open", "");
-    expect(await visibleButtonCount(page, /Apply Address/i)).toBe(1);
+    await expect(page.getByLabel(/Type project address/i)).toBeVisible();
+    expect(await visibleButtonCount(page, /Enter Address First|Apply Address/i)).toBe(1);
 
     await openPanel(page, "Generate", /Generate Systems/);
     expect(await visibleButtonCount(page, /^Generate$/)).toBe(1);
@@ -88,7 +87,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
   });
 
   test("Object Manager can select, rename, color, layer, hide, focus, and delete", async ({ page }) => {
-    await openDemoWorkspace(page);
+    await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
     await openPanel(page, "Object Manager", /Draw & Object Manager|CAD Tools/);
 
     const rows = page.getByTestId("object-manager-row");
