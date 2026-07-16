@@ -576,6 +576,47 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
   });
 
+  test("combined object edits keep hidden source traces undoable", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+
+    const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await expect(combinedRow).toContainText("Office Building");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await combinedRow.getByTestId("object-manager-type").selectOption("parking");
+    await expect(combinedRow).toContainText("Parking Field");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Combined Site Program changed from Office Building to Parking Field.");
+
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from combined object trace update.");
+    await expect(combinedRow).toContainText("Office Building");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await page.getByTestId("recent-changes-redo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Redo: reapplied 3 draft objects from combined object trace update.");
+    await expect(combinedRow).toContainText("Parking Field");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await combinedRow.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Exploded Combined Site Program back into 2 preserved source pieces",
+    );
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+  });
+
   test("keyboard Delete removes selected draft object or shows blocker", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

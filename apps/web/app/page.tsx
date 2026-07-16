@@ -7004,7 +7004,50 @@ function PerformanceAIDashboardView({
     }
     const nextObject = target ? { ...target, ...nextUpdates } : null;
     let recentChange: Omit<RecentChange, "id" | "createdAt"> | null = null;
+    let bulkUpdateUndo: DraftUndoAction | null = null;
     if (target && nextObject) {
+      const combinedSourceIds = Array.isArray(target.meta?.combined_from_object_ids)
+        ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
+        : [];
+      const shouldSyncCombinedSources =
+        combinedSourceIds.length > 0 &&
+        (
+          typeof updates.label === "string" ||
+          updates.type !== undefined ||
+          Boolean(updates.meta && ("ui_color" in updates.meta || "color" in updates.meta || "style" in updates.meta))
+        );
+      if (shouldSyncCombinedSources) {
+        const sourceObjects = buildingPlacements.filter((item) => combinedSourceIds.includes(item.id));
+        if (sourceObjects.length) {
+          const nextGroupLabel = nextObject.label || target.label;
+          const nextGroupType = nextObject.type ?? target.type ?? "custom";
+          const nextGroupColor = nextObject.meta?.ui_color ?? nextObject.meta?.color ?? target.meta?.ui_color ?? target.meta?.color;
+          const afterSources = sourceObjects.map((source) => ({
+            ...source,
+            geometry: source.geometry?.map(([x, y]) => [x, y] as [number, number]),
+            capabilities: source.capabilities ? { ...source.capabilities } : source.capabilities,
+            meta: {
+              ...(source.meta ?? {}),
+              combined_into_object_id: target.id,
+              combined_into_label: nextGroupLabel,
+              combined_into_type: nextGroupType,
+              combined_trace_synced_at: new Date().toISOString(),
+              ...(typeof nextGroupColor === "string" ? { combined_into_color: nextGroupColor } : {}),
+            },
+          }));
+          bulkUpdateUndo = {
+            action: "bulk_update",
+            before: [target, ...sourceObjects].map((item) => ({
+              ...item,
+              geometry: item.geometry?.map(([x, y]) => [x, y] as [number, number]),
+              meta: item.meta ? { ...item.meta } : item.meta,
+              capabilities: item.capabilities ? { ...item.capabilities } : item.capabilities,
+            })),
+            after: [nextObject, ...afterSources],
+            label: "combined object trace update",
+          };
+        }
+      }
       const undo: DraftUndoAction = {
         action: "update",
         objectId: target.id,
@@ -7012,19 +7055,20 @@ function PerformanceAIDashboardView({
         after: nextObject,
         label: target.label,
       };
+      const changeUndo = bulkUpdateUndo ?? undo;
       if (typeof updates.label === "string" && updates.label !== target.label) {
         recentChange = {
           type: "object_renamed",
           label: "Object renamed",
           detail: `${target.label} renamed to ${updates.label || "Unnamed object"}.`,
-          undo,
+          undo: changeUndo,
         };
       } else if (updates.type && updates.type !== target.type) {
         recentChange = {
           type: "object_type_changed",
           label: "Object type changed",
           detail: `${target.label} changed from ${getObjectDisplayType(target)} to ${SITE_OBJECT_CATALOG[updates.type]?.label ?? updates.type}.`,
-          undo,
+          undo: changeUndo,
         };
       } else if (
         updates.meta &&
@@ -7035,7 +7079,7 @@ function PerformanceAIDashboardView({
           type: "object_visibility_changed",
           label: Boolean(updates.meta.ui_hidden) ? "Object hidden" : "Object shown",
           detail: `${target.label} is now ${Boolean(updates.meta.ui_hidden) ? "hidden from" : "visible in"} the preview.`,
-          undo,
+          undo: changeUndo,
         };
       } else if (
         updates.meta &&
@@ -7045,14 +7089,14 @@ function PerformanceAIDashboardView({
           type: "object_style_changed",
           label: "Object style changed",
           detail: `${target.label} style changed.`,
-          undo,
+          undo: changeUndo,
         };
       } else if (typeof updates.locked === "boolean" && updates.locked !== Boolean(target.locked)) {
         recentChange = {
           type: "object_style_changed",
           label: updates.locked ? "Object locked" : "Object unlocked",
           detail: `${target.label} was ${updates.locked ? "locked" : "unlocked"}.`,
-          undo,
+          undo: changeUndo,
         };
       } else if (
         typeof updates.x === "number" ||
@@ -7067,12 +7111,17 @@ function PerformanceAIDashboardView({
           type: "object_style_changed",
           label: "Object geometry changed",
           detail: `${target.label} geometry changed.`,
-          undo,
+          undo: changeUndo,
         };
       }
     }
     setBuildingPlacements((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
+      bulkUpdateUndo?.after
+        ? (() => {
+            const afterById = new Map(bulkUpdateUndo.after.map((item) => [item.id, item]));
+            return prev.map((item) => (afterById.has(item.id) ? { ...afterById.get(item.id)! } : item));
+          })()
+        : prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
     );
     markSystemsStale(systemsImpactedByPlacement(target));
     if (recentChange?.undo) {
