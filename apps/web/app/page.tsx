@@ -1649,7 +1649,7 @@ const getObjectDimensionsLabel = (item: BuildingPlacement) => {
   return pieces.join(" · ");
 };
 
-const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy") => {
+const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy" | "transform") => {
   if (item.type === "site") {
     return `${action} blocked: locked site boundary is controlled from Setup.`;
   }
@@ -1665,8 +1665,8 @@ const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style
   if (action === "delete" && item.locked) {
     return `Delete blocked: unlock ${item.label} before deleting it.`;
   }
-  if (action === "copy") {
-    return `Duplicate blocked: object copy is not supported yet for ${item.label}; select it and add a new object instead.`;
+  if ((action === "copy" || action === "transform") && item.locked) {
+    return `${action} blocked: unlock ${item.label} before changing draft geometry.`;
   }
   return null;
 };
@@ -2771,6 +2771,7 @@ function PerformanceAIDashboardView({
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [objectManagerStatusMessage, setObjectManagerStatusMessage] = useState("");
+  const [objectClipboard, setObjectClipboard] = useState<BuildingPlacement | null>(null);
   const [combineObjectName, setCombineObjectName] = useState("");
   const [combineObjectType, setCombineObjectType] = useState<SiteObjectType>("custom");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
@@ -7097,8 +7098,129 @@ function PerformanceAIDashboardView({
   }, [handleRemoveBuilding, reportObjectActionBlocker]);
 
   const handleObjectManagerCopy = useCallback((item: BuildingPlacement) => {
-    reportObjectActionBlocker(getObjectEditBlocker(item, "copy") ?? `Duplicate blocked: object copy is not supported yet for ${item.label}.`);
+    const blocker = getObjectEditBlocker(item, "copy");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    setObjectClipboard({ ...item, geometry: item.geometry ? item.geometry.map(([x, y]) => [x, y]) : undefined });
+    const message = `Copied ${item.label}. Use Paste to place an editable draft duplicate.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
   }, [reportObjectActionBlocker]);
+
+  const handleObjectManagerPaste = useCallback(() => {
+    clearGeneratedPreview();
+    if (!objectClipboard) {
+      reportObjectActionBlocker("Paste blocked: copy an editable object first.");
+      return;
+    }
+    const blocker = getObjectEditBlocker(objectClipboard, "copy");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    const offset = 24;
+    const nextType = objectClipboard.type ?? "custom";
+    const nextId = `${nextType}-copy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const nextObject: BuildingPlacement = {
+      ...objectClipboard,
+      id: nextId,
+      label: `${objectClipboard.label} Copy`,
+      x: (objectClipboard.x ?? 0) + offset,
+      y: (objectClipboard.y ?? 0) + offset,
+      source: "manual_drawn",
+      generated: false,
+      locked: false,
+      placed: true,
+      geometry: objectClipboard.geometry?.map(([x, y]) => [x + offset, y + offset]),
+      capabilities: {
+        movable: true,
+        resizable: objectClipboard.capabilities?.resizable ?? true,
+        rotatable: objectClipboard.capabilities?.rotatable ?? true,
+        deletable: true,
+      },
+      meta: {
+        ...(objectClipboard.meta ?? {}),
+        ui_hidden: false,
+        source: "manual_drawn_copy",
+        copied_from_object_id: objectClipboard.id,
+        copied_from_label: objectClipboard.label,
+        review_status: "engineer_review_required",
+        engineering_status: "draft_review_required",
+        handoff_status: "draft_review_required",
+        construction_release_allowed: false,
+      },
+    };
+    setBuildingPlacements((prev) => [...prev, nextObject]);
+    setActivePlacementId(nextId);
+    setSelectedObjectIds([nextId]);
+    markSystemsStale(systemsImpactedByPlacement(nextObject));
+    setLastDraftAction({ action: "add", object: nextObject });
+    recordRecentChange({
+      type: "object_added",
+      label: "Object pasted",
+      detail: `${nextObject.label} was pasted as an editable draft duplicate.`,
+      undo: { action: "add", object: nextObject },
+    });
+    const message = `Pasted ${nextObject.label}. It remains draft review geometry, not construction-release evidence.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", message, "status");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after paste...",
+          track: true,
+        };
+      });
+  }, [
+    appendChatMessage,
+    clearGeneratedPreview,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    objectClipboard,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    saveProjectRef,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerTransform = useCallback((item: BuildingPlacement, transform: "rotate" | "flip_horizontal" | "flip_vertical") => {
+    const blocker = getObjectEditBlocker(item, "transform");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    const centerX = (item.x ?? 0) + item.w / 2;
+    const centerY = (item.y ?? 0) + item.d / 2;
+    const transformPoint = ([x, y]: [number, number]): [number, number] => {
+      if (transform === "flip_horizontal") return [centerX - (x - centerX), y];
+      if (transform === "flip_vertical") return [x, centerY - (y - centerY)];
+      return [centerX - (y - centerY), centerY + (x - centerX)];
+    };
+    const nextGeometry = item.geometry?.map(transformPoint);
+    const nextUpdates: Partial<BuildingPlacement> = transform === "rotate"
+      ? {
+          rotation: ((item.rotation ?? 0) + 90) % 360,
+          w: item.d,
+          d: item.w,
+          geometry: nextGeometry,
+        }
+      : {
+          geometry: nextGeometry,
+          meta: {
+            ...(item.meta ?? {}),
+            [transform === "flip_horizontal" ? "flipped_horizontal" : "flipped_vertical"]: true,
+          },
+        };
+    handleUpdateBuilding(item.id, nextUpdates);
+    const label = transform === "rotate" ? "Rotated" : transform === "flip_horizontal" ? "Flipped horizontal" : "Flipped vertical";
+    const message = `${label} ${item.label}. Generated systems may be stale until rerun.`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+  }, [handleUpdateBuilding, reportObjectActionBlocker]);
 
   const handleObjectManagerBulkVisibility = useCallback((hidden: boolean) => {
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
@@ -23679,6 +23801,39 @@ function PerformanceAIDashboardView({
                             </button>
                             <button
                               type="button"
+                              onClick={handleObjectManagerPaste}
+                              disabled={!objectClipboard}
+                              data-testid="selected-object-paste"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Paste
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerTransform(selectedBuilding, "rotate")}
+                              data-testid="selected-object-rotate"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                            >
+                              Rotate 90
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerTransform(selectedBuilding, "flip_horizontal")}
+                              data-testid="selected-object-flip-horizontal"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                            >
+                              Flip H
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleObjectManagerTransform(selectedBuilding, "flip_vertical")}
+                              data-testid="selected-object-flip-vertical"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                            >
+                              Flip V
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleObjectManagerDelete(selectedBuilding)}
                               disabled={selectedBuilding.type === "site"}
                               data-testid="selected-object-delete"
@@ -24560,6 +24715,20 @@ function PerformanceAIDashboardView({
                           Selected {selectedObjectIds.length}
                         </span>
                       </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="object-manager-clipboard-actions">
+                        <button
+                          type="button"
+                          onClick={handleObjectManagerPaste}
+                          disabled={!objectClipboard}
+                          data-testid="object-manager-paste"
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Paste{objectClipboard ? ` ${objectClipboard.label}` : ""}
+                        </button>
+                        <span className="text-[11px] font-medium text-slate-500">
+                          Copy, paste, rotate, and flip work on editable draft objects.
+                        </span>
+                      </div>
                       {hiddenObjectCount ? (
                         <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="object-manager-hidden-state">
                           <p className="text-xs font-semibold text-slate-700">
@@ -25025,6 +25194,30 @@ function PerformanceAIDashboardView({
                                       className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
                                     >
                                       Copy
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerTransform(item, "rotate")}
+                                      data-testid="object-manager-rotate"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Rotate 90
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerTransform(item, "flip_horizontal")}
+                                      data-testid="object-manager-flip-horizontal"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Flip H
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerTransform(item, "flip_vertical")}
+                                      data-testid="object-manager-flip-vertical"
+                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Flip V
                                     </button>
 	                                </div>
 	                              ) : (

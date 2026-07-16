@@ -64,7 +64,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(panel).toContainText(/pending placement|draft/i);
   });
 
-  test("select, inspect, rename, style, type, hide, show all, and copy blocker stay truthful", async ({ page }) => {
+  test("select, inspect, rename, style, type, hide, show all, copy, paste, rotate, and flip work", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
     await openDrawPanel(page);
@@ -94,7 +94,16 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toHaveCount(0);
 
     await renamedRow.getByTestId("object-manager-copy").click();
-    await expect(page.getByText(/Duplicate blocked: object copy is not supported yet/i)).toBeVisible();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Copied HQ Office Test");
+    await page.getByTestId("object-manager-paste").click();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test Copy" }).first()).toBeVisible();
+    const copiedRow = page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test Copy" }).first();
+    await copiedRow.getByTestId("object-manager-rotate").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Rotated HQ Office Test Copy");
+    await copiedRow.getByTestId("object-manager-flip-horizontal").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Flipped horizontal HQ Office Test Copy");
+    await copiedRow.getByTestId("object-manager-flip-vertical").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Flipped vertical HQ Office Test Copy");
   });
 
   test("multi-select supports safe bulk updates and utility hide command updates manager state", async ({ page }) => {
