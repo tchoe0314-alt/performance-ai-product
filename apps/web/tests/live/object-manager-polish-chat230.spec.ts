@@ -312,9 +312,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.getByRole("button", { name: "Clear" }).click();
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
-    await officeRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-align-left").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Layout blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Layout blocked: select at least two editable draft objects first.");
   });
 
   test("select visible draft gathers editable visible objects for bulk work", async ({ page }) => {
@@ -426,7 +425,24 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
       "Combined 2 drawn objects into Combined Site Program",
     );
     await expect(page.getByTestId("floating-object-inspector")).toContainText("Combined Site Program");
-    await combinedRow.getByTestId("object-manager-explode-combined").click();
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Undo: restored 2 source objects from combine objects.",
+    );
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await expect(officeRow.getByTestId("object-manager-bulk-select")).toBeChecked();
+    await expect(parkingRow.getByTestId("object-manager-bulk-select")).toBeChecked();
+
+    await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Combined 2 drawn objects into Combined Site Program",
+    );
+    const recombinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
+    await expect(recombinedRow).toBeVisible();
+    await recombinedRow.getByTestId("object-manager-explode-combined").click();
     await expect(page.getByTestId("object-manager-status")).toContainText(
       "Exploded Combined Site Program back into 2 preserved source pieces",
     );
@@ -516,8 +532,10 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Array created 5 draft review copies.");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Array" })).toHaveCount(5);
     await expect(page.getByTestId("object-manager-multi-select")).toContainText("5 objects selected");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: removed 5 draft objects from array.");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Array" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Clear" }).click();
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-array-action").click();

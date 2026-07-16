@@ -2474,12 +2474,23 @@ type RecentChangeType =
 
 type DraftUndoAction =
   | { action: "add"; object: BuildingPlacement }
+  | {
+      action: "add_many";
+      objects: BuildingPlacement[];
+      label: string;
+    }
   | { action: "delete"; object: BuildingPlacement }
   | {
       action: "update";
       objectId: string;
       before: BuildingPlacement;
       after: BuildingPlacement;
+      label: string;
+    }
+  | {
+      action: "combine";
+      object: BuildingPlacement;
+      hiddenSources: BuildingPlacement[];
       label: string;
     }
   | {
@@ -7588,15 +7599,13 @@ function PerformanceAIDashboardView({
     duplicates.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
-    const firstDuplicate = duplicates[0];
-    if (firstDuplicate) {
-      setLastDraftAction({ action: "add", object: firstDuplicate });
-    }
+    const undo: DraftUndoAction = { action: "add_many", objects: duplicates, label: "bulk duplicate" };
+    setLastDraftAction(undo);
     recordRecentChange({
       type: "object_added",
       label: "Objects duplicated",
       detail: `Duplicated ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
-      undo: firstDuplicate ? { action: "add", object: firstDuplicate } : undefined,
+      undo,
     });
     const message = `Duplicated ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
@@ -7689,10 +7698,8 @@ function PerformanceAIDashboardView({
     duplicates.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
-    const firstDuplicate = duplicates[0];
-    if (firstDuplicate) {
-      setLastDraftAction({ action: "add", object: firstDuplicate });
-    }
+    const undo: DraftUndoAction = { action: "add_many", objects: duplicates, label: "copy by offset" };
+    setLastDraftAction(undo);
     const message = `Copied ${duplicates.length} selected draft object${duplicates.length === 1 ? "" : "s"} by ${dx},${dy}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
@@ -7701,7 +7708,7 @@ function PerformanceAIDashboardView({
       type: "object_added",
       label: "Objects copied by offset",
       detail: message,
-      undo: firstDuplicate ? { action: "add", object: firstDuplicate } : undefined,
+      undo,
     });
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
@@ -7813,10 +7820,8 @@ function PerformanceAIDashboardView({
     duplicates.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
-    const firstDuplicate = duplicates[0];
-    if (firstDuplicate) {
-      setLastDraftAction({ action: "add", object: firstDuplicate });
-    }
+    const undo: DraftUndoAction = { action: "add_many", objects: duplicates, label: "array" };
+    setLastDraftAction(undo);
     const message = `Array created ${duplicates.length} draft review cop${duplicates.length === 1 ? "y" : "ies"}${blockedCount ? `; ${blockedCount} selected object${blockedCount === 1 ? "" : "s"} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
@@ -7825,7 +7830,7 @@ function PerformanceAIDashboardView({
       type: "object_added",
       label: "Objects arrayed",
       detail: message,
-      undo: firstDuplicate ? { action: "add", object: firstDuplicate } : undefined,
+      undo,
     });
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
@@ -8402,6 +8407,12 @@ function PerformanceAIDashboardView({
         combined_source_count: editable.length,
       },
     };
+    const undo: DraftUndoAction = {
+      action: "combine",
+      object: combinedObject,
+      hiddenSources: editable.map(cloneBuildingPlacementForUndo),
+      label: "combine objects",
+    };
     setBuildingPlacements((prev) => [
       ...prev.map((item) =>
         editable.some((target) => target.id === item.id)
@@ -8423,12 +8434,12 @@ function PerformanceAIDashboardView({
     setCombineObjectName("");
     setCombineObjectType("custom");
     markSystemsStale(systemsImpactedByPlacement(combinedObject));
-    setLastDraftAction({ action: "add", object: combinedObject });
+    setLastDraftAction(undo);
     recordRecentChange({
       type: "object_added",
       label: "Objects combined",
       detail: `${editable.length} drawn objects were combined into ${nextLabel}. Source pieces were hidden, not deleted.`,
-      undo: { action: "add", object: combinedObject },
+      undo,
     });
     const message = `Combined ${editable.length} drawn objects into ${nextLabel}. Source pieces are hidden for a cleaner plan and preserved for review trace.`;
     setObjectManagerStatusMessage(message);
@@ -8446,6 +8457,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingPlacements,
     clearGeneratedPreview,
+    cloneBuildingPlacementForUndo,
     combineObjectName,
     combineObjectType,
     ensureProjectDraftRef,
@@ -19999,6 +20011,24 @@ function PerformanceAIDashboardView({
       setLastDraftAction(null);
       return;
     }
+    if (lastDraftAction.action === "add_many") {
+      const createdIds = new Set(lastDraftAction.objects.map((item) => item.id));
+      setBuildingPlacements((prev) => prev.filter((item) => !createdIds.has(item.id)));
+      setSelectedObjectIds((prev) => prev.filter((id) => !createdIds.has(id)));
+      setActivePlacementId((prev) => (prev && createdIds.has(prev) ? null : prev));
+      setPlacementModeEnabled(false);
+      lastDraftAction.objects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: removed ${lastDraftAction.objects.length} draft objects from ${lastDraftAction.label}.`);
+      appendChatMessage("assistant", `Undo: removed ${lastDraftAction.objects.length} draft objects from ${lastDraftAction.label}.`, "status");
+      recordRecentChange({
+        type: "object_deleted",
+        label: "Undo removed objects",
+        detail: `${lastDraftAction.objects.length} draft objects were removed by undo.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      setLastDraftAction(null);
+      return;
+    }
     if (lastDraftAction.action === "update") {
       setBuildingPlacements((prev) =>
         prev.map((item) => (item.id === lastDraftAction.objectId ? { ...lastDraftAction.before } : item)),
@@ -20011,6 +20041,27 @@ function PerformanceAIDashboardView({
         type: "object_style_changed",
         label: "Undo restored object",
         detail: `${lastDraftAction.before.label} was restored to its previous draft state.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      setLastDraftAction(null);
+      return;
+    }
+    if (lastDraftAction.action === "combine") {
+      const sourceById = new Map(lastDraftAction.hiddenSources.map((item) => [item.id, item]));
+      setBuildingPlacements((prev) =>
+        prev
+          .filter((item) => item.id !== lastDraftAction.object.id)
+          .map((item) => (sourceById.has(item.id) ? { ...sourceById.get(item.id)! } : item)),
+      );
+      setSelectedObjectIds(lastDraftAction.hiddenSources.map((item) => item.id));
+      setActivePlacementId(lastDraftAction.hiddenSources[0]?.id ?? null);
+      lastDraftAction.hiddenSources.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${lastDraftAction.hiddenSources.length} source objects from ${lastDraftAction.label}.`);
+      appendChatMessage("assistant", `Undo: restored ${lastDraftAction.hiddenSources.length} source objects from ${lastDraftAction.label}.`, "status");
+      recordRecentChange({
+        type: "object_style_changed",
+        label: "Undo restored combined sources",
+        detail: `${lastDraftAction.hiddenSources.length} source objects were restored and ${lastDraftAction.object.label} was removed.`,
         undoBlockedReason: "This is already an undo result.",
       });
       setLastDraftAction(null);
@@ -20077,8 +20128,43 @@ function PerformanceAIDashboardView({
       });
       return;
     }
+    if (undo.action === "add_many") {
+      const createdIds = new Set(undo.objects.map((item) => item.id));
+      setBuildingPlacements((prev) => prev.filter((item) => !createdIds.has(item.id)));
+      setSelectedObjectIds((prev) => prev.filter((id) => !createdIds.has(id)));
+      setActivePlacementId((prev) => (prev && createdIds.has(prev) ? null : prev));
+      setPlacementModeEnabled(false);
+      undo.objects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: removed ${undo.objects.length} draft objects from ${undo.label}.`);
+      recordRecentChange({
+        type: "object_deleted",
+        label: "Undo removed objects",
+        detail: `${undo.objects.length} draft objects were removed by undo.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
+      return;
+    }
     if (undo.action === "delete") {
       handleRestoreBuilding(undo.object);
+      return;
+    }
+    if (undo.action === "combine") {
+      const sourceById = new Map(undo.hiddenSources.map((item) => [item.id, item]));
+      setBuildingPlacements((prev) =>
+        prev
+          .filter((item) => item.id !== undo.object.id)
+          .map((item) => (sourceById.has(item.id) ? { ...sourceById.get(item.id)! } : item)),
+      );
+      setSelectedObjectIds(undo.hiddenSources.map((item) => item.id));
+      setActivePlacementId(undo.hiddenSources[0]?.id ?? null);
+      undo.hiddenSources.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+      pushRecoveryMessage(`Undo: restored ${undo.hiddenSources.length} source objects from ${undo.label}.`);
+      recordRecentChange({
+        type: "object_style_changed",
+        label: "Undo restored combined sources",
+        detail: `${undo.hiddenSources.length} source objects were restored and ${undo.object.label} was removed.`,
+        undoBlockedReason: "This is already an undo result.",
+      });
       return;
     }
     if (undo.action === "bulk_update") {
