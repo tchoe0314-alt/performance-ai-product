@@ -7890,6 +7890,85 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
+  const handleObjectManagerBulkMirror = useCallback((axis: "x" | "y") => {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Mirror blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Mirror blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    const objectBounds = editable.map((item) => {
+      const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
+      const bounds = geometry?.length
+        ? getGeometryBounds(geometry)
+        : {
+            minX: item.x ?? 0,
+            maxX: (item.x ?? 0) + item.w,
+            minY: item.y ?? 0,
+            maxY: (item.y ?? 0) + item.d,
+            width: item.w,
+            depth: item.d,
+          };
+      return { item, bounds };
+    });
+    const selectionMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
+    const selectionMaxX = Math.max(...objectBounds.map(({ bounds }) => bounds.maxX));
+    const selectionMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
+    const selectionMaxY = Math.max(...objectBounds.map(({ bounds }) => bounds.maxY));
+    const mirrorX = selectionMinX + (selectionMaxX - selectionMinX) / 2;
+    const mirrorY = selectionMinY + (selectionMaxY - selectionMinY) / 2;
+
+    objectBounds.forEach(({ item, bounds }) => {
+      const nextGeometry = item.geometry?.map(([x, y]) =>
+        axis === "x"
+          ? ([mirrorX - (x - mirrorX), y] as [number, number])
+          : ([x, mirrorY - (y - mirrorY)] as [number, number]),
+      );
+      const xOffsetFromBounds = (item.x ?? 0) - bounds.minX;
+      const yOffsetFromBounds = (item.y ?? 0) - bounds.minY;
+      const nextX = axis === "x"
+        ? mirrorX - (bounds.maxX - mirrorX) + xOffsetFromBounds
+        : item.x;
+      const nextY = axis === "y"
+        ? mirrorY - (bounds.maxY - mirrorY) + yOffsetFromBounds
+        : item.y;
+      handleUpdateBuilding(item.id, {
+        x: nextX,
+        y: nextY,
+        geometry: nextGeometry,
+        meta: {
+          ...(item.meta ?? {}),
+          [axis === "x" ? "mirrored_x" : "mirrored_y"]: true,
+        },
+      });
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const message = `Mirrored ${axis.toUpperCase()} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Mirror remains draft review geometry.`, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: `Objects mirrored ${axis.toUpperCase()}`,
+      detail: message,
+      undoBlockedReason: "Use Mirror again on the same axis to revise the draft orientation.",
+    });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    handleUpdateBuilding,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
   const handleObjectManagerLayerVisibility = useCallback((layerType: SiteObjectType, hidden: boolean) => {
     const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
     if (!targets.length) {
@@ -26056,6 +26135,24 @@ function PerformanceAIDashboardView({
                                 className="self-end rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
                               >
                                 Rotate
+                              </button>
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleObjectManagerBulkMirror("x")}
+                                data-testid="object-manager-bulk-mirror-x"
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                              >
+                                Mirror X
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleObjectManagerBulkMirror("y")}
+                                data-testid="object-manager-bulk-mirror-y"
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                              >
+                                Mirror Y
                               </button>
                             </div>
                           </div>
