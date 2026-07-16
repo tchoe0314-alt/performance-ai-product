@@ -4124,6 +4124,15 @@ export default function PreviewPanel({
         redoCadCommand();
         return;
       }
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+        if (!selectedCadIds.length) return;
+        event.preventDefault();
+        const step = event.altKey ? 1 : event.shiftKey ? 25 : 5;
+        const dx = key === "arrowleft" ? -step : key === "arrowright" ? step : 0;
+        const dy = key === "arrowup" ? -step : key === "arrowdown" ? step : 0;
+        moveSelectedCadObjectsByVector(dx, dy);
+        return;
+      }
       if (key === "v") {
         event.preventDefault();
         setDrawMode("select");
@@ -4173,8 +4182,10 @@ export default function PreviewPanel({
     return () => window.removeEventListener("keydown", handleCadShortcuts);
   }, [
     canDrawObjects,
+    moveSelectedCadObjectsByVector,
     onSetPreviewInteraction,
     redoCadCommand,
+    selectedCadIds.length,
     transformSelectedCadObjects,
     undoCadCommand,
   ]);
