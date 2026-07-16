@@ -1650,7 +1650,7 @@ const getObjectDimensionsLabel = (item: BuildingPlacement) => {
   return pieces.join(" · ");
 };
 
-const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy" | "transform") => {
+const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy" | "transform" | "resize") => {
   if (item.type === "site") {
     return `${action} blocked: locked site boundary is controlled from Setup.`;
   }
@@ -1666,7 +1666,7 @@ const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style
   if (action === "delete" && item.locked) {
     return `Delete blocked: unlock ${item.label} before deleting it.`;
   }
-  if ((action === "copy" || action === "transform") && item.locked) {
+  if ((action === "copy" || action === "transform" || action === "resize") && item.locked) {
     return `${action} blocked: unlock ${item.label} before changing draft geometry.`;
   }
   return null;
@@ -25242,11 +25242,18 @@ function PerformanceAIDashboardView({
 	                                    <input
                                       type="number"
                                       value={item.w}
-                                      onChange={(event) =>
+                                      aria-label={`Length ${item.label}`}
+                                      data-testid="object-manager-length"
+                                      onChange={(event) => {
+                                        const blocker = getObjectEditBlocker(item, "resize");
+                                        if (blocker) {
+                                          reportObjectActionBlocker(blocker);
+                                          return;
+                                        }
                                         handleUpdateBuilding(item.id, {
                                           w: parsePositiveNumber(event.target.value) ?? item.w,
-                                        })
-                                      }
+                                        });
+                                      }}
                                       className="rounded-md border border-slate-200 px-2 py-1"
                                     />
                                   </label>
@@ -25255,11 +25262,18 @@ function PerformanceAIDashboardView({
                                     <input
                                       type="number"
                                       value={item.d}
-                                      onChange={(event) =>
+                                      aria-label={`Width ${item.label}`}
+                                      data-testid="object-manager-width"
+                                      onChange={(event) => {
+                                        const blocker = getObjectEditBlocker(item, "resize");
+                                        if (blocker) {
+                                          reportObjectActionBlocker(blocker);
+                                          return;
+                                        }
                                         handleUpdateBuilding(item.id, {
                                           d: parsePositiveNumber(event.target.value) ?? item.d,
-                                        })
-                                      }
+                                        });
+                                      }}
                                       className="rounded-md border border-slate-200 px-2 py-1"
                                     />
                                   </label>
@@ -25269,15 +25283,30 @@ function PerformanceAIDashboardView({
                                       <input
                                         type="number"
                                         value={item.h ?? ""}
-                                        onChange={(event) =>
+                                        aria-label={`Height ${item.label}`}
+                                        data-testid="object-manager-height"
+                                        onChange={(event) => {
+                                          const blocker = getObjectEditBlocker(item, "resize");
+                                          if (blocker) {
+                                            reportObjectActionBlocker(blocker);
+                                            return;
+                                          }
                                           handleUpdateBuilding(item.id, {
                                             h: parsePositiveNumber(event.target.value) ?? item.h,
-                                          })
-                                        }
+                                          });
+                                        }}
                                         className="rounded-md border border-slate-200 px-2 py-1"
                                       />
                                     </label>
                                   ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleBuildingLock(item.id)}
+                                    data-testid="object-manager-lock"
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+                                  >
+                                    {item.locked ? "Unlock" : "Lock"}
+                                  </button>
 	                                  <button
 	                                    type="button"
 	                                    onClick={() => {

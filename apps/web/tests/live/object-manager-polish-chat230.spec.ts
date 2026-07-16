@@ -188,6 +188,16 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test" }).first()).toContainText(/260|140/);
 
     const renamedRow = page.getByTestId("object-manager-row").filter({ hasText: "HQ Office Test" }).first();
+    await renamedRow.getByTestId("object-manager-lock").click();
+    await expect(renamedRow).toContainText(/locked/i);
+    await renamedRow.getByTestId("object-manager-length").fill("310");
+    await expect(page.getByTestId("object-manager-status")).toContainText("resize blocked: unlock HQ Office Test before changing draft geometry.");
+    await renamedRow.getByTestId("object-manager-lock").click();
+    await expect(renamedRow).toContainText(/draft placed/i);
+    await expect(renamedRow.getByTestId("object-manager-lock")).toHaveText("Lock");
+    await renamedRow.getByTestId("object-manager-length").fill("310");
+    await expect(renamedRow).toContainText(/310/);
+
     await renamedRow.getByTestId("object-manager-color").fill("#0f766e");
     await renamedRow.getByTestId("object-manager-type").selectOption("parking");
     await expect(renamedRow).toContainText("Parking Field");
