@@ -82,6 +82,7 @@ type CadToolRequest = {
     | "hatch"
     | "delete"
     | "dimension"
+    | "measure"
     | "symbol"
     | "layer"
     | "properties"
@@ -4116,14 +4117,35 @@ export default function PreviewPanel({
         pushCadCommandFeedback("DIST", "info", `DIST ${length.toFixed(2)} ft at ${angle.toFixed(1)} deg between typed points.`);
         return;
       }
-      if (!selectedCadMetrics || !selectedCadObject) {
+      const fallbackCadObject = selectedCadObject ?? [...visibleCadObjects]
+        .reverse()
+        .find((item) => item.type !== "site" && getObjectGeometryPoints(item).length >= 2) ?? null;
+      const fallbackPoints = fallbackCadObject ? getObjectGeometryPoints(fallbackCadObject) : [];
+      const fallbackSegments = fallbackCadObject && fallbackPoints.length >= 2
+        ? fallbackPoints.map((point, index) => {
+            if (index === fallbackPoints.length - 1 && fallbackCadObject.geometryType === "polyline") return null;
+            const next = index === fallbackPoints.length - 1 ? fallbackPoints[0] : fallbackPoints[index + 1];
+            return {
+              length: Math.hypot(next[0] - point[0], next[1] - point[1]),
+              angle: ((Math.atan2(next[1] - point[1], next[0] - point[0]) * 180) / Math.PI + 360) % 360,
+            };
+          }).filter(Boolean) as Array<{ length: number; angle: number }>
+        : [];
+      const metrics = selectedCadMetrics ?? (fallbackSegments.length
+        ? {
+            segmentCount: fallbackSegments.length,
+            totalLength: fallbackSegments.reduce((sum, segment) => sum + segment.length, 0),
+            firstAngle: fallbackSegments[0]?.angle ?? 0,
+          }
+        : null);
+      if (!metrics || !fallbackCadObject) {
         pushCadCommandFeedback("DIST", "blocked", "DIST blocked: select a draft line/polyline/area or use DIST x1,y1 x2,y2.");
         return;
       }
       pushCadCommandFeedback(
         "DIST",
         "info",
-        `DIST selected ${selectedCadObject.label || "object"}: ${selectedCadMetrics.totalLength.toFixed(2)} ft total, ${selectedCadMetrics.segmentCount} segment${selectedCadMetrics.segmentCount === 1 ? "" : "s"}, first angle ${selectedCadMetrics.firstAngle.toFixed(1)} deg.`,
+        `DIST selected ${fallbackCadObject.label || "object"}: ${metrics.totalLength.toFixed(2)} ft total, ${metrics.segmentCount} segment${metrics.segmentCount === 1 ? "" : "s"}, first angle ${metrics.firstAngle.toFixed(1)} deg.`,
       );
       return;
     }
@@ -4298,6 +4320,7 @@ export default function PreviewPanel({
     createCadCommandGeometry,
     draftPoints,
     filletSelectedCadObject,
+    getObjectGeometryPoints,
     joinSelectedCadObjects,
     moveSelectedCadObjectsByVector,
     offsetSelectedCadObjectBy,
@@ -4318,6 +4341,7 @@ export default function PreviewPanel({
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     updateCadObject,
+    visibleCadObjects,
   ]);
 
   const lastCadToolRequestIdRef = useRef(0);
@@ -4434,6 +4458,9 @@ export default function PreviewPanel({
         break;
       case "dimension":
         applySelectedCadDimension();
+        break;
+      case "measure":
+        runCadCommand("DIST");
         break;
       case "symbol":
         insertCadSymbol();

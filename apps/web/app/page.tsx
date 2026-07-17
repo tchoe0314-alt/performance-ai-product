@@ -506,6 +506,7 @@ type CadToolRequestForPreview = {
     | "hatch"
     | "delete"
     | "dimension"
+    | "measure"
     | "symbol"
     | "layer"
     | "properties"
@@ -20967,6 +20968,7 @@ function PerformanceAIDashboardView({
       title: "Annotate / Organize",
       tools: [
         { label: "Dimension", tool: "dimension", hint: "Selected geometry" },
+        { label: "Measure", tool: "measure", hint: "Selected distance" },
         { label: "Hatch", tool: "hatch", hint: "Closed fill" },
         { label: "Symbol", tool: "symbol", hint: "Insert current symbol" },
         { label: "Layer", tool: "layer", hint: "Apply layer" },

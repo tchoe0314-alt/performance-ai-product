@@ -121,12 +121,19 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
+    const surface = page.getByTestId("preview-drawing-surface");
     const addLine = cadTools.getByTestId("cad-tool-line");
 
     await expect(cadTools).toBeVisible();
     await expectTopmost(addLine, "Add Line");
     await addLine.click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/i);
+    await clickExposedSurface(surface, 0.22, 0.34);
+    await clickExposedSurface(surface, 0.42, 0.34);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
+
+    await cadTools.getByTestId("cad-tool-measure").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIST selected .*Custom Line.*ft total.*first angle/i);
   });
 
   test("visible JOIN and SPLIT combine and restore selected draft linework", async ({ page }) => {
