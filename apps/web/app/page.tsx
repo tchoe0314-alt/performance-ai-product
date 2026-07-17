@@ -2887,6 +2887,8 @@ function PerformanceAIDashboardView({
   const [arraySpacingY, setArraySpacingY] = useState("40");
   const [bulkMoveX, setBulkMoveX] = useState("25");
   const [bulkMoveY, setBulkMoveY] = useState("0");
+  const [bulkMoveToX, setBulkMoveToX] = useState("0");
+  const [bulkMoveToY, setBulkMoveToY] = useState("0");
   const [bulkScaleFactor, setBulkScaleFactor] = useState("1.1");
   const [bulkRotateAngle, setBulkRotateAngle] = useState("15");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
@@ -8597,6 +8599,82 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     bulkMoveX,
     bulkMoveY,
+    buildingPlacements,
+    createTraceAwareBulkUpdate,
+    markSystemsStale,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerBulkMoveTo = useCallback(() => {
+    const targetX = Number(bulkMoveToX);
+    const targetY = Number(bulkMoveToY);
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+      reportObjectActionBlocker("Move to coordinate blocked: enter finite target X and Y coordinates.");
+      return;
+    }
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    if (!targets.length) {
+      reportObjectActionBlocker("Move to coordinate blocked: select one or more editable draft objects first.");
+      return;
+    }
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Move to coordinate blocked: selected objects are locked, source-only, or required project evidence.");
+      return;
+    }
+    const objectBounds = editable.map((item) => {
+      const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
+      const bounds = geometry?.length
+        ? getGeometryBounds(geometry)
+        : {
+            minX: item.x ?? 0,
+            maxX: (item.x ?? 0) + item.w,
+            minY: item.y ?? 0,
+            maxY: (item.y ?? 0) + item.d,
+            width: item.w,
+            depth: item.d,
+          };
+      return { item, bounds };
+    });
+    const sourceMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
+    const sourceMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
+    const dx = targetX - sourceMinX;
+    const dy = targetY - sourceMinY;
+    if (dx === 0 && dy === 0) {
+      reportObjectActionBlocker("Move to coordinate blocked: selected objects are already at that target coordinate.");
+      return;
+    }
+    const updateEntries = editable.map((item) => ({
+      item,
+      updates: {
+        x: (item.x ?? 0) + dx,
+        y: (item.y ?? 0) + dy,
+      },
+    }));
+    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk move to coordinate");
+    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
+    editable.forEach((item) => {
+      markSystemsStale(systemsImpactedByPlacement(item));
+    });
+    const message = `Moved ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} to ${targetX},${targetY}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Absolute move remains draft review geometry.`, "status");
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Objects moved to coordinate",
+      detail: message,
+      undo,
+    });
+    recordDraftUndoAction(undo);
+  }, [
+    appendChatMessage,
+    bulkMoveToX,
+    bulkMoveToY,
     buildingPlacements,
     createTraceAwareBulkUpdate,
     markSystemsStale,
@@ -27907,6 +27985,41 @@ function PerformanceAIDashboardView({
                             >
                               Copy by offset
                             </button>
+                            <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-2" data-testid="object-manager-move-to-coordinate">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                Move selection top-left to coordinate
+                              </p>
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                  Target X
+                                  <input
+                                    type="number"
+                                    value={bulkMoveToX}
+                                    onChange={(event) => setBulkMoveToX(event.target.value)}
+                                    data-testid="object-manager-bulk-move-to-x"
+                                    className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                  Target Y
+                                  <input
+                                    type="number"
+                                    value={bulkMoveToY}
+                                    onChange={(event) => setBulkMoveToY(event.target.value)}
+                                    data-testid="object-manager-bulk-move-to-y"
+                                    className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                  />
+                                </label>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleObjectManagerBulkMoveTo}
+                                data-testid="object-manager-bulk-move-to-action"
+                                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
+                              >
+                                Move to coordinate
+                              </button>
+                            </div>
                             <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
                               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
                                 Scale factor

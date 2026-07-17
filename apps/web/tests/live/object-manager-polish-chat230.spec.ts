@@ -1218,6 +1218,13 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(officeRow.getByTestId("object-manager-bulk-select")).toBeChecked();
     await expect(parkingRow.getByTestId("object-manager-bulk-select")).toBeChecked();
 
+    await page.getByTestId("object-manager-bulk-move-to-x").fill("25");
+    await page.getByTestId("object-manager-bulk-move-to-y").fill("35");
+    await page.getByTestId("object-manager-bulk-move-to-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Moved 2 selected draft objects to 25,35.");
+    await page.getByTestId("recent-changes-undo").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 2 draft objects from bulk move to coordinate.");
+
     await page.getByTestId("object-manager-bulk-copy-offset-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Copied 2 selected draft objects by 35,-15.");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Copy" }).first()).toBeVisible();
@@ -1246,6 +1253,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Move blocked: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-copy-offset-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Copy by offset blocked: selected objects are locked, source-only, or required project evidence.");
+    await page.getByTestId("object-manager-bulk-move-to-action").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Move to coordinate blocked: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-rotate-action").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-mirror-x").click();
