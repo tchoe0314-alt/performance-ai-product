@@ -191,6 +191,30 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/first angle (0\.0|90\.0|180\.0|270\.0) deg/i);
   });
 
+  test("active draw tool accepts typed coordinate and distance input", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const commandInput = page.getByLabel("CAD command input");
+    await cadTools.getByTestId("cad-tool-line").click();
+
+    await commandInput.fill("120,120");
+    await commandInput.press("Enter");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("DRAW accepted point 1 at 120.0,120.0.");
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/PTS 1/);
+
+    await commandInput.fill("80");
+    await commandInput.press("Enter");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("DRAW accepted point 2 at 200.0,120.0. Press Enter/Finish to complete.");
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/SEG 80\.0 ft @ 0\.0 deg/);
+
+    await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created manual_drawn draft_review_required geometry/);
+    await cadTools.getByTestId("cad-tool-measure").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/80\.00 ft total.*first angle 0\.0 deg/i);
+  });
+
   test("visible JOIN and SPLIT combine and restore selected draft linework", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
