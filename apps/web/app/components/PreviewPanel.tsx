@@ -4744,6 +4744,47 @@ export default function PreviewPanel({
               : drawMode === "pan"
                 ? "Drag the canvas."
                 : "Click an object or use Object Manager.";
+  const draftPrecisionReadout = useMemo(() => {
+    if (drawMode === "select" || drawMode === "pan") return null;
+    const points =
+      draftPreviewPoint && drawMode !== "point"
+        ? [...draftPoints, draftPreviewPoint]
+        : draftPoints;
+    const currentPoint =
+      draftPreviewPoint ??
+      (draftPoints.length ? draftPoints[draftPoints.length - 1] : cursorSitePoint ? [cursorSitePoint.x, cursorSitePoint.y] as [number, number] : null);
+    const segments = points.slice(1).map((point, index) => {
+      const previous = points[index];
+      const dx = point[0] - previous[0];
+      const dy = point[1] - previous[1];
+      return {
+        length: Math.hypot(dx, dy),
+        angle: ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360,
+      };
+    });
+    const lastSegment = segments.at(-1) ?? null;
+    const totalLength = segments.reduce((sum, segment) => sum + segment.length, 0);
+    const polygonArea =
+      (drawMode === "polygon" || drawMode === "site") && points.length >= 3
+        ? Math.abs(
+            points.reduce((sum, point, index) => {
+              const next = points[(index + 1) % points.length];
+              return sum + point[0] * next[1] - next[0] * point[1];
+            }, 0) / 2,
+          )
+        : null;
+    return {
+      currentPoint,
+      lastSegment,
+      totalLength,
+      polygonArea,
+      pointCount: draftPoints.length,
+      finishReady:
+        drawMode === "point" ||
+        drawMode === "rect" ||
+        draftPoints.length >= finishDraftMinPoints,
+    };
+  }, [cursorSitePoint, draftPoints, draftPreviewPoint, drawMode, finishDraftMinPoints]);
 
   const handleDrawPointer = useCallback(
     (
@@ -9724,6 +9765,39 @@ export default function PreviewPanel({
                         {cursorSitePoint ? cursorSitePoint.y.toFixed(1) : "--"} ft
                       </div>
                     </div>
+                    {draftPrecisionReadout ? (
+                      <div
+                        aria-label="Draft precision readout"
+                        data-testid="draft-precision-readout"
+                        className="pointer-events-none absolute bottom-4 left-[13.5rem] z-[45] max-w-[min(360px,calc(100%-15rem))] rounded-lg border border-slate-300 bg-slate-950/86 px-3 py-2 font-mono text-[11px] text-white shadow-sm backdrop-blur max-md:left-4 max-md:bottom-24 max-md:max-w-[calc(100%-2rem)]"
+                      >
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          <span>{activeDrawToolLabel}</span>
+                          <span>PTS {draftPrecisionReadout.pointCount}</span>
+                          <span>
+                            X {draftPrecisionReadout.currentPoint ? draftPrecisionReadout.currentPoint[0].toFixed(1) : "--"} / Y{" "}
+                            {draftPrecisionReadout.currentPoint ? draftPrecisionReadout.currentPoint[1].toFixed(1) : "--"}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-slate-200">
+                          <span>
+                            SEG{" "}
+                            {draftPrecisionReadout.lastSegment
+                              ? `${draftPrecisionReadout.lastSegment.length.toFixed(1)} ft @ ${draftPrecisionReadout.lastSegment.angle.toFixed(1)} deg`
+                              : "--"}
+                          </span>
+                          {draftPrecisionReadout.polygonArea !== null ? (
+                            <span>AREA {draftPrecisionReadout.polygonArea.toFixed(0)} sf</span>
+                          ) : (
+                            <span>TOTAL {draftPrecisionReadout.totalLength.toFixed(1)} ft</span>
+                          )}
+                          <span>SNAP {activeSnapPoint ? activeSnapPoint.kind : "none"}</span>
+                        </div>
+                        <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-300">
+                          Enter {draftPrecisionReadout.finishReady ? "finish" : "when ready"} · Esc cancel
+                        </div>
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
                 {showGeneratedPlan && planPreviewUrl && !showMap ? (

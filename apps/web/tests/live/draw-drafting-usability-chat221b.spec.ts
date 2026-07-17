@@ -12,6 +12,10 @@ async function openDrawPanel(page: Page) {
     await workspaceButton.click();
   }
   await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+  if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) {
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
+    return;
+  }
   await page.getByRole("button", { name: /Object Manager/i }).filter({ visible: true }).first().click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
@@ -134,6 +138,41 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     await cadTools.getByTestId("cad-tool-measure").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIST selected .*Custom Line.*ft total.*first angle/i);
+  });
+
+  test("draft precision HUD supports keyboard finish and cancel", async ({ page }) => {
+    await startBlankSite(page);
+    const surface = page.getByTestId("preview-drawing-surface");
+    const drawSite = page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first();
+    if (await drawSite.isVisible().catch(() => false)) {
+      const alreadyActive = await drawSite.evaluate((element) =>
+        element.className.includes("bg-slate-950") || element.getAttribute("aria-pressed") === "true",
+      );
+      if (!alreadyActive) await drawSite.click();
+    }
+
+    await clickExposedSurface(surface, 0.24, 0.34);
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/Draw Site Boundary|PTS 1/);
+    await clickExposedSurface(surface, 0.66, 0.36);
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/SEG .* ft @ .* deg/);
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/Enter when ready/i);
+    await clickExposedSurface(surface, 0.54, 0.7);
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/AREA .* sf/);
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/Enter finish/i);
+
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+    await expect(page.getByTestId("draft-precision-readout")).toHaveCount(0);
+
+    await openDrawPanel(page);
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    await cadTools.getByTestId("cad-tool-area").click();
+    await clickExposedSurface(surface, 0.3, 0.56);
+    await clickExposedSurface(surface, 0.42, 0.54);
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/Add Area|PTS 2/);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("draft-precision-readout")).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ })).toHaveCount(0);
   });
 
   test("visible JOIN and SPLIT combine and restore selected draft linework", async ({ page }) => {
