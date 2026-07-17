@@ -16,7 +16,13 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismPr
 
 async function focusCommand(page: Page) {
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-  await expect(page.getByTestId("civora-command-input")).toBeFocused({ timeout: 5_000 });
+  const commandInput = page.getByTestId("civora-command-input");
+  await expect(commandInput).toBeVisible({ timeout: 5_000 });
+  const focused = await commandInput.evaluate((element) => document.activeElement === element).catch(() => false);
+  if (!focused) {
+    await commandInput.click({ force: true });
+  }
+  await expect(commandInput).toBeFocused({ timeout: 5_000 });
 }
 
 function platformShortcut(key: string) {

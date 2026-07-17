@@ -172,9 +172,9 @@ test.describe("Chat 221B draw drafting usability", () => {
     const surface = page.getByTestId("preview-drawing-surface");
 
     await cadTools.getByTestId("cad-tool-area").click();
-    await clickExposedSurface(surface, 0.22, 0.34);
-    await clickExposedSurface(surface, 0.38, 0.26);
-    await clickExposedSurface(surface, 0.52, 0.38);
+    await clickExposedSurface(surface, 0.24, 0.52);
+    await clickExposedSurface(surface, 0.42, 0.46);
+    await clickExposedSurface(surface, 0.5, 0.62);
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
 
     const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
@@ -192,5 +192,33 @@ test.describe("Chat 221B draw drafting usability", () => {
     await showCadTools(page);
     await cadTools.getByTestId("cad-tool-reverse").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/REVERSE flipped the selected draft linework vertex order/);
+  });
+
+  test("visible HATCH applies and removes draft fill on closed areas", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const surface = page.getByTestId("preview-drawing-surface");
+
+    await cadTools.getByTestId("cad-tool-area").click();
+    await clickExposedSurface(surface, 0.24, 0.52);
+    await clickExposedSurface(surface, 0.42, 0.46);
+    await clickExposedSurface(surface, 0.5, 0.62);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
+
+    const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
+    await expect(areaRow).toBeVisible();
+    await areaRow.getByTestId("object-manager-inspect").click();
+
+    await showCadTools(page);
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-hatch").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/HATCH applied as draft review fill/);
+    await expect(page.getByTestId("cad-hatch-fill").first()).toBeVisible();
+
+    await showCadTools(page);
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-hatch").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/HATCH removed from selected draft area/);
+    await expect(page.getByTestId("cad-hatch-fill")).toHaveCount(0);
   });
 });

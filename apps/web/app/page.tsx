@@ -503,6 +503,7 @@ type CadToolRequestForPreview = {
     | "close"
     | "open"
     | "reverse"
+    | "hatch"
     | "delete"
     | "dimension"
     | "symbol"
@@ -20221,6 +20222,7 @@ function PerformanceAIDashboardView({
       title: "Annotate / Organize",
       tools: [
         { label: "Dimension", tool: "dimension", hint: "Selected geometry" },
+        { label: "Hatch", tool: "hatch", hint: "Closed fill" },
         { label: "Symbol", tool: "symbol", hint: "Insert current symbol" },
         { label: "Layer", tool: "layer", hint: "Apply layer" },
         { label: "Properties", tool: "properties", hint: "Apply object props" },

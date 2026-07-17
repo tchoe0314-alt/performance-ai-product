@@ -63,6 +63,7 @@ test.describe("button functionality audit", () => {
       ["reverse", /REVERSE (flipped|blocked)/i],
       ["delete", /DELETE (removed|blocked)/i],
       ["dimension", /DIM (added|blocked)/i],
+      ["hatch", /HATCH (applied|blocked)/i],
       ["symbol", /SYMBOL inserted/i],
       ["layer", /LAYER (applied|blocked)/i],
       ["properties", /PROPERTIES (applied|blocked)/i],

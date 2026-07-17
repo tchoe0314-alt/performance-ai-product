@@ -79,6 +79,7 @@ type CadToolRequest = {
     | "close"
     | "open"
     | "reverse"
+    | "hatch"
     | "delete"
     | "dimension"
     | "symbol"
@@ -772,7 +773,7 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, ALIGN, DISTRIBUTE, DIST, OFFSET, TRIM, EXTEND, FILLET, JOIN, SPLIT, CLOSE, OPEN, REVERSE, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
+  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, ALIGN, DISTRIBUTE, DIST, OFFSET, TRIM, EXTEND, FILLET, JOIN, SPLIT, CLOSE, OPEN, REVERSE, HATCH, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadActiveCommand, setCadActiveCommand] = useState<
     | {
@@ -1125,6 +1126,13 @@ export default function PreviewPanel({
     },
     [isHighQuality, resolveVisualKind],
   );
+  const cadHatchPatternForItem = useCallback((item: BuildingPlacement) => {
+    if (!item.meta?.cad_hatch_enabled) return null;
+    const pattern = String(item.meta?.cad_hatch_pattern || "").toLowerCase();
+    if (pattern === "water") return "url(#cad-hatch-water)";
+    if (pattern === "landscape") return "url(#cad-hatch-landscape)";
+    return "url(#cad-hatch-diagonal)";
+  }, []);
   const roundedSiteShapePath = useCallback(
     (
       rect: { left: number; top: number; width: number; height: number },
@@ -3257,6 +3265,67 @@ export default function PreviewPanel({
     );
     pushCadCommandFeedback("REVERSE", "applied", "REVERSE flipped the selected draft linework vertex order.");
   }, [previewObjectEditableSource, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
+  const toggleSelectedCadHatch = useCallback(() => {
+    if (!selectedCadObject) {
+      pushCadCommandFeedback("HATCH", "blocked", "HATCH blocked: select a closed draft area, box, building, basin, parking field, or closed polyline first.");
+      return;
+    }
+    if (selectedCadObject.type === "site" || selectedCadObject.locked || !previewObjectEditableSource(selectedCadObject)) {
+      pushCadCommandFeedback("HATCH", "blocked", "HATCH blocked: selected object is locked, source-only, or required project evidence.");
+      return;
+    }
+    const geometry = Array.isArray(selectedCadObject.geometry)
+      ? (selectedCadObject.geometry as Array<[number, number]>)
+      : [];
+    const first = geometry[0];
+    const last = geometry[geometry.length - 1];
+    const closedLinework = Boolean(
+      geometry.length >= 4 &&
+        first &&
+        last &&
+        Math.hypot(first[0] - last[0], first[1] - last[1]) < 0.001,
+    );
+    const closedArea =
+      selectedCadObject.geometryType === "polygon" ||
+      selectedCadObject.geometryType === "rect" ||
+      (!selectedCadObject.geometryType && selectedCadObject.type !== "utility_corridor") ||
+      Boolean(selectedCadObject.meta?.cad_polyline_closed) ||
+      closedLinework;
+    if (!closedArea) {
+      pushCadCommandFeedback("HATCH", "blocked", "HATCH blocked: select a closed draft area, or use CLOSE first to turn linework into an area.");
+      return;
+    }
+    const enabled = Boolean(selectedCadObject.meta?.cad_hatch_enabled);
+    const visualKind = resolveVisualKind(selectedCadObject);
+    const pattern =
+      visualKind === "water"
+        ? "water"
+        : visualKind === "landscape"
+          ? "landscape"
+          : "diagonal";
+    updateCadObject(
+      selectedCadObject,
+      {
+        meta: {
+          ...(selectedCadObject.meta ?? {}),
+          cad_hatch_enabled: !enabled,
+          cad_hatch_pattern: pattern,
+          cad_hatch_source: "manual_drawn_review",
+          engineering_status: "draft_review_required",
+          review_status: "engineer_review_required",
+          construction_release_allowed: false,
+        },
+      },
+      enabled ? "Remove hatch" : "Apply hatch",
+    );
+    pushCadCommandFeedback(
+      "HATCH",
+      "applied",
+      enabled
+        ? "HATCH removed from selected draft area."
+        : "HATCH applied as draft review fill; it is visual drafting context only and not engineering evidence.",
+    );
+  }, [previewObjectEditableSource, pushCadCommandFeedback, resolveVisualKind, selectedCadObject, updateCadObject]);
   const applyCadCoordinate = useCallback(() => {
     const x = parseCadNumber(cadCoordinateDraft.x, NaN);
     const y = parseCadNumber(cadCoordinateDraft.y, NaN);
@@ -3646,6 +3715,8 @@ export default function PreviewPanel({
       BR: "SPLIT",
       BREAK: "SPLIT",
       CL: "CLOSE",
+      H: "HATCH",
+      BH: "HATCH",
       REV: "REVERSE",
       MI: "MIRROR",
       E: "ERASE",
@@ -3685,6 +3756,7 @@ export default function PreviewPanel({
       "CLOSE",
       "OPEN",
       "REVERSE",
+      "HATCH",
       "MIRROR",
       "FLIP",
       "DIM",
@@ -4159,6 +4231,10 @@ export default function PreviewPanel({
       changeSelectedPolylineState("reverse");
       return;
     }
+    if (commandKey === "HATCH") {
+      toggleSelectedCadHatch();
+      return;
+    }
     if (commandKey === "DIM") {
       applySelectedCadDimension();
       return;
@@ -4206,7 +4282,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
       return;
     }
-    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, JOIN/J, SPLIT/BR, CLOSE/CL, OPEN, REVERSE/REV, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
+    pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, JOIN/J, SPLIT/BR, CLOSE/CL, OPEN, REVERSE/REV, HATCH/H, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
   }, [
     alignOrDistributeSelectedCadObjects,
     applySelectedCadDimension,
@@ -4238,6 +4314,7 @@ export default function PreviewPanel({
     selectedCadObject,
     selectedDeletableObject,
     splitSelectedJoinedObject,
+    toggleSelectedCadHatch,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     updateCadObject,
@@ -4344,6 +4421,9 @@ export default function PreviewPanel({
       case "reverse":
         changeSelectedPolylineState("reverse");
         break;
+      case "hatch":
+        toggleSelectedCadHatch();
+        break;
       case "delete":
         if (selectedDeletableObject) {
           onRemoveBuilding(selectedDeletableObject.id);
@@ -4416,6 +4496,7 @@ export default function PreviewPanel({
     runCadCommand,
     selectedDeletableObject,
     splitSelectedJoinedObject,
+    toggleSelectedCadHatch,
     transformSelectedCadObjects,
     trimExtendSelectedCadObject,
     undoCadCommand,
@@ -9662,6 +9743,18 @@ export default function PreviewPanel({
                         preserveAspectRatio="none"
                         style={viewportTransformStyle}
                       >
+                        <defs>
+                          <pattern id="cad-hatch-diagonal" patternUnits="userSpaceOnUse" width="2.4" height="2.4" patternTransform="rotate(45)">
+                            <line x1="0" y1="0" x2="0" y2="2.4" stroke="rgba(15,23,42,0.34)" strokeWidth="0.16" />
+                          </pattern>
+                          <pattern id="cad-hatch-water" patternUnits="userSpaceOnUse" width="4.4" height="2.6">
+                            <path d="M 0 1.3 C 1.1 0.3 2.2 2.3 3.3 1.3 S 5.5 1.3 6.6 1.3" fill="none" stroke="rgba(2,132,199,0.42)" strokeWidth="0.18" />
+                          </pattern>
+                          <pattern id="cad-hatch-landscape" patternUnits="userSpaceOnUse" width="3.6" height="3.6">
+                            <path d="M 0 3.2 L 3.2 0" stroke="rgba(22,101,52,0.34)" strokeWidth="0.14" />
+                            <circle cx="2.8" cy="2.8" r="0.22" fill="rgba(22,101,52,0.34)" />
+                          </pattern>
+                        </defs>
                         <g data-testid="cad-plan-grid" opacity={showMap ? 0 : isHighQuality ? 0.2 : 0.13}>
                           <rect
                             x={0}
@@ -10105,6 +10198,7 @@ export default function PreviewPanel({
                             const selected = selectedBuildingId === item.id;
                             const visualKind = resolveVisualKind(item);
                             const visualStyle = resolveSvgVisualStyle(item, selected);
+                            const hatchFill = cadHatchPatternForItem(item);
                             const sourceState = resolveSourceState(item);
                             const useShapePath = ["water", "landscape", "sidewalk"].includes(visualKind);
                             const shapePath = useShapePath
@@ -10153,29 +10247,59 @@ export default function PreviewPanel({
                                     ) : null}
                                   </>
                                 ) : shapePath ? (
-                                  <path
-                                    d={shapePath}
-                                    fill={visualStyle.fill}
-                                    stroke={visualStyle.stroke}
-                                    strokeWidth={visualStyle.strokeWidth}
-                                    strokeLinejoin="round"
-                                  >
-                                    <title>{sourceStateLabel(sourceState)}</title>
-                                  </path>
+                                  <>
+                                    <path
+                                      d={shapePath}
+                                      fill={visualStyle.fill}
+                                      stroke={visualStyle.stroke}
+                                      strokeWidth={visualStyle.strokeWidth}
+                                      strokeLinejoin="round"
+                                    >
+                                      <title>{sourceStateLabel(sourceState)}</title>
+                                    </path>
+                                    {hatchFill ? (
+                                      <path
+                                        data-testid="cad-hatch-fill"
+                                        d={shapePath}
+                                        fill={hatchFill}
+                                        stroke="none"
+                                        opacity={0.72}
+                                      >
+                                        <title>Draft hatch fill, review required.</title>
+                                      </path>
+                                    ) : null}
+                                  </>
                                 ) : (
-                                  <rect
-                                    x={rect.left}
-                                    y={rect.top}
-                                    width={rect.width}
-                                    height={rect.height}
-                                    rx={cornerRadius}
-                                    fill={visualStyle.fill}
-                                    stroke={visualStyle.stroke}
-                                    strokeWidth={visualStyle.strokeWidth}
-                                    strokeLinejoin="round"
-                                  >
-                                    <title>{sourceStateLabel(sourceState)}</title>
-                                  </rect>
+                                  <>
+                                    <rect
+                                      x={rect.left}
+                                      y={rect.top}
+                                      width={rect.width}
+                                      height={rect.height}
+                                      rx={cornerRadius}
+                                      fill={visualStyle.fill}
+                                      stroke={visualStyle.stroke}
+                                      strokeWidth={visualStyle.strokeWidth}
+                                      strokeLinejoin="round"
+                                    >
+                                      <title>{sourceStateLabel(sourceState)}</title>
+                                    </rect>
+                                    {hatchFill ? (
+                                      <rect
+                                        data-testid="cad-hatch-fill"
+                                        x={rect.left}
+                                        y={rect.top}
+                                        width={rect.width}
+                                        height={rect.height}
+                                        rx={cornerRadius}
+                                        fill={hatchFill}
+                                        stroke="none"
+                                        opacity={0.72}
+                                      >
+                                        <title>Draft hatch fill, review required.</title>
+                                      </rect>
+                                    ) : null}
+                                  </>
                                 )}
                                 {isHighQuality && visualKind === "water" ? (
                                   <g data-testid="plan-basin-shelf-cues">
@@ -10285,6 +10409,7 @@ export default function PreviewPanel({
                             const visualKind = resolveVisualKind(item);
                             const sourceState = resolveSourceState(item);
                             const visualStyle = resolveSvgVisualStyle(item, isSelectedPolygon);
+                            const hatchFill = cadHatchPatternForItem(item);
                             const geometry = (item.geometry || []) as Array<[number, number]>;
                             const bounds = points.reduce(
                               (acc, point) => {
@@ -10343,6 +10468,17 @@ export default function PreviewPanel({
                                 >
                                   <title>{sourceStateLabel(sourceState)}</title>
                                 </polygon>
+                                {hatchFill ? (
+                                  <polygon
+                                    data-testid="cad-hatch-fill"
+                                    points={points.join(" ")}
+                                    fill={hatchFill}
+                                    stroke="none"
+                                    opacity={0.72}
+                                  >
+                                    <title>Draft hatch fill, review required.</title>
+                                  </polygon>
+                                ) : null}
                                 {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
                                   <g data-testid="plan-parking-stall-cues" opacity={0.72}>
                                     <line
