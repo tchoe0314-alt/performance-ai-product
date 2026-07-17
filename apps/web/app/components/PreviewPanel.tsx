@@ -2652,6 +2652,10 @@ export default function PreviewPanel({
     }
     return null;
   }, []);
+  const parseCadVectorToken = useCallback(
+    (token: string): [number, number] | null => parseCadPointToken(token) ?? parseCadRelativePointToken(token, [0, 0]),
+    [parseCadPointToken, parseCadRelativePointToken],
+  );
   const parseCadPointTokens = useCallback(
     (tokens: string[]) => tokens.map((token) => parseCadPointToken(token)).filter((point): point is [number, number] => Boolean(point)),
     [parseCadPointToken],
@@ -3669,18 +3673,18 @@ export default function PreviewPanel({
         }
         if (cadActiveCommand.kind === "transform") {
           if (!cadActiveCommand.value) {
-            pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs ${cadActiveCommand.command === "MOVE" || cadActiveCommand.command === "COPY" ? "a vector like 20,0" : cadActiveCommand.command === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
+            pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs ${cadActiveCommand.command === "MOVE" || cadActiveCommand.command === "COPY" ? "a vector like 20,0 or @75<45" : cadActiveCommand.command === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
             return;
           }
           if (cadActiveCommand.command === "MOVE") {
-            const vector = parseCadPointToken(cadActiveCommand.value);
+            const vector = parseCadVectorToken(cadActiveCommand.value);
             if (vector) {
               moveSelectedCadObjectsByVector(vector[0], vector[1]);
             } else {
               transformSelectedCadObjects("move", cadActiveCommand.value);
             }
           } else if (cadActiveCommand.command === "COPY") {
-            copySelectedCadObjectsByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
+            copySelectedCadObjectsByVector(parseCadVectorToken(cadActiveCommand.value) ?? undefined);
           } else {
             transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", cadActiveCommand.value);
           }
@@ -3931,14 +3935,14 @@ export default function PreviewPanel({
           return;
         }
         if (cadActiveCommand.command === "MOVE") {
-          const vector = parseCadPointToken(raw);
+          const vector = parseCadVectorToken(raw);
           if (vector) {
             moveSelectedCadObjectsByVector(vector[0], vector[1]);
           } else {
             transformSelectedCadObjects("move", raw);
           }
         } else if (cadActiveCommand.command === "COPY") {
-          copySelectedCadObjectsByVector(parseCadPointToken(raw) ?? undefined);
+          copySelectedCadObjectsByVector(parseCadVectorToken(raw) ?? undefined);
         } else {
           transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", raw);
         }
@@ -3997,18 +4001,18 @@ export default function PreviewPanel({
       }
       if (cadActiveCommand.kind === "transform") {
         if (!cadActiveCommand.value) {
-          pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs ${cadActiveCommand.command === "MOVE" || cadActiveCommand.command === "COPY" ? "a vector like 20,0" : cadActiveCommand.command === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
+          pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} needs ${cadActiveCommand.command === "MOVE" || cadActiveCommand.command === "COPY" ? "a vector like 20,0 or @75<45" : cadActiveCommand.command === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
           return;
         }
         if (cadActiveCommand.command === "MOVE") {
-          const vector = parseCadPointToken(cadActiveCommand.value);
+          const vector = parseCadVectorToken(cadActiveCommand.value);
           if (vector) {
             moveSelectedCadObjectsByVector(vector[0], vector[1]);
           } else {
             transformSelectedCadObjects("move", cadActiveCommand.value);
           }
         } else if (cadActiveCommand.command === "COPY") {
-          copySelectedCadObjectsByVector(parseCadPointToken(cadActiveCommand.value) ?? undefined);
+          copySelectedCadObjectsByVector(parseCadVectorToken(cadActiveCommand.value) ?? undefined);
         } else {
           transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", cadActiveCommand.value);
         }
@@ -4216,11 +4220,12 @@ export default function PreviewPanel({
       return;
     }
     if (commandKey === "MOVE") {
-      const vector = pointArgs[0];
+      const vectorArg = args.find((arg) => arg.toLowerCase() !== "selected");
+      const vector = vectorArg ? parseCadVectorToken(vectorArg) : null;
       if (!args.length) {
         setCadActiveCommand({ command: "MOVE", kind: "transform" });
         setCadCommandDraft("");
-        pushCadCommandFeedback("MOVE", "info", "MOVE active. Type a vector like 20,0, or a distance like 5 for a diagonal move.");
+        pushCadCommandFeedback("MOVE", "info", "MOVE active. Type a vector like 20,0, @20,0, @75<45, or a distance like 5 for a diagonal move.");
       } else if (selectedRequested && vector) {
         moveSelectedCadObjectsByVector(vector[0], vector[1]);
       } else {
@@ -4244,9 +4249,10 @@ export default function PreviewPanel({
       if (!args.length) {
         setCadActiveCommand({ command: "COPY", kind: "transform" });
         setCadCommandDraft("");
-        pushCadCommandFeedback("COPY", "info", "COPY active. Type a vector like 10,10, or run empty to use the default offset.");
+        pushCadCommandFeedback("COPY", "info", "COPY active. Type a vector like 10,10, @20,0, @75<45, or run empty to use the default offset.");
       } else {
-        copySelectedCadObjectsByVector(pointArgs[0] ?? [10, 10]);
+        const vectorArg = args.find((arg) => arg.toLowerCase() !== "selected");
+        copySelectedCadObjectsByVector((vectorArg ? parseCadVectorToken(vectorArg) : null) ?? [10, 10]);
       }
       return;
     }
@@ -4400,6 +4406,7 @@ export default function PreviewPanel({
     parseCadPointToken,
     parseCadPointTokens,
     parseCadRelativePointToken,
+    parseCadVectorToken,
     pushCadCommandFeedback,
     selectedCadIds,
     selectedCadMetrics,

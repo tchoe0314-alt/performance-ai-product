@@ -272,6 +272,24 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls");
   });
 
+  test("command move and copy accept relative and polar vectors", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    await runCommand(page, "SELECT ALL");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SELECT ALL selected [23] editable draft object/);
+
+    await runCommand(page, "MOVE selected @40,0");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/MOVE applied 40,0 to [23] selected draft object/);
+
+    await runCommand(page, "COPY selected @40<90");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/COPY created [23] draft review cop/);
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf Copy");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls Copy");
+  });
+
   test("selected draft objects show measurement readouts", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
