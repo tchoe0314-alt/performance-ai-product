@@ -230,6 +230,10 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(firstVertex.getByTestId("selected-object-vertex-y")).toHaveValue("275");
     await expect(page.getByTestId("selected-object-inspector-facts")).toContainText(/Dimensions|metrics/i);
 
+    await firstVertex.getByTestId("selected-object-vertex-align-y").click();
+    await expect(page.getByTestId("selected-object-status")).toContainText(/Aligned Custom Area .*vertex 1 Y to previous vertex/);
+    await expect(firstVertex.getByTestId("selected-object-vertex-y")).not.toHaveValue("275");
+
     await firstVertex.getByTestId("selected-object-vertex-insert").click();
     await expect(page.getByTestId("selected-object-status")).toContainText(/Inserted vertex 2 on Custom Area/);
     await expect(vertexEditor).toContainText("4 points");

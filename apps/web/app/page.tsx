@@ -7549,6 +7549,55 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker]);
 
+  const handleAlignObjectVertexToPrevious = useCallback((
+    item: BuildingPlacement,
+    vertexIndex: number,
+    axis: "x" | "y",
+  ) => {
+    const blocker = getObjectEditBlocker(item, "resize");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    const geometry = normalizeGeometryPoints(item.geometry);
+    if (!geometry?.length || vertexIndex < 0 || vertexIndex >= geometry.length) {
+      reportObjectActionBlocker("Align vertex blocked: select a draft object with editable vertices.");
+      return;
+    }
+    if (geometry.length < 2) {
+      reportObjectActionBlocker("Align vertex blocked: at least two draft points are required.");
+      return;
+    }
+    const canWrap = item.geometryType === "polygon" || item.geometryType === "rect";
+    const previousIndex = vertexIndex > 0 ? vertexIndex - 1 : canWrap ? geometry.length - 1 : -1;
+    if (previousIndex < 0 || previousIndex >= geometry.length) {
+      reportObjectActionBlocker("Align vertex blocked: this open line vertex has no previous point.");
+      return;
+    }
+    const targetValue = geometry[previousIndex][axis === "x" ? 0 : 1];
+    const currentValue = geometry[vertexIndex][axis === "x" ? 0 : 1];
+    if (Math.abs(currentValue - targetValue) < 0.001) {
+      reportObjectActionBlocker(`Align vertex blocked: vertex ${vertexIndex + 1} already shares ${axis.toUpperCase()} with the previous vertex.`);
+      return;
+    }
+    const nextGeometry = geometry.map(([x, y], index) =>
+      index === vertexIndex
+        ? ([axis === "x" ? targetValue : x, axis === "y" ? targetValue : y] as [number, number])
+        : ([x, y] as [number, number]),
+    );
+    const bounds = getGeometryBounds(nextGeometry);
+    handleUpdateBuilding(item.id, {
+      x: bounds.minX,
+      y: bounds.minY,
+      w: Math.max(1, bounds.width),
+      d: Math.max(1, bounds.depth),
+      geometry: nextGeometry,
+    });
+    const message = `Aligned ${item.label} vertex ${vertexIndex + 1} ${axis.toUpperCase()} to previous vertex.`;
+    setObjectManagerStatusMessage(`${message} Vertex alignment remains draft review geometry.`);
+    setStatusMessage(message);
+  }, [handleUpdateBuilding, reportObjectActionBlocker]);
+
   const handleObjectManagerSelect = useCallback((id: string) => {
     setActivePlacementId(id);
     setSelectedObjectIds([id]);
@@ -26781,6 +26830,24 @@ function PerformanceAIDashboardView({
                                           className="rounded-md border border-blue-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
                                         >
                                           Snap
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={editBlocked}
+                                          onClick={() => handleAlignObjectVertexToPrevious(selectedBuilding, index, "x")}
+                                          data-testid="selected-object-vertex-align-x"
+                                          className="rounded-md border border-emerald-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                          Align X
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={editBlocked}
+                                          onClick={() => handleAlignObjectVertexToPrevious(selectedBuilding, index, "y")}
+                                          data-testid="selected-object-vertex-align-y"
+                                          className="rounded-md border border-emerald-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                          Align Y
                                         </button>
                                       </div>
                                     </div>
