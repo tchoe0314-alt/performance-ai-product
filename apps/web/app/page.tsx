@@ -9272,6 +9272,91 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
+  const handleObjectManagerUpdateBlock = useCallback((definition: DraftBlockDefinition) => {
+    const selectedRegularObjects = buildingPlacements.filter(
+      (item) =>
+        selectedObjectIds.includes(item.id) &&
+        item.type !== "site" &&
+        !item.locked &&
+        !getObjectEditBlocker(item, "copy") &&
+        !item.meta?.ui_hidden,
+    );
+    const activeObject = activePlacementId
+      ? buildingPlacements.find((item) => item.id === activePlacementId)
+      : null;
+    const selectedBlockSourceIds =
+      activeObject?.meta?.draft_block_definition_id === definition.id &&
+      Array.isArray(activeObject.meta?.combined_from_object_ids)
+        ? activeObject.meta.combined_from_object_ids.map((id) => String(id)).filter(Boolean)
+        : [];
+    const selectedBlockSources = selectedBlockSourceIds.length
+      ? buildingPlacements
+          .filter((item) => selectedBlockSourceIds.includes(item.id))
+          .map((item) => ({
+            ...item,
+            meta: {
+              ...(item.meta ?? {}),
+              ui_hidden: false,
+              combined_into_object_id: undefined,
+              combined_into_label: undefined,
+            },
+          }))
+      : [];
+    const sourceObjects = selectedRegularObjects.length ? selectedRegularObjects : selectedBlockSources;
+    if (!sourceObjects.length) {
+      reportObjectActionBlocker(`Update block blocked: select editable draft objects or a placed ${definition.name} block insert first.`);
+      return;
+    }
+    const nextType = selectedRegularObjects.length
+      ? combineObjectType || selectedRegularObjects[0].type || definition.type
+      : activeObject?.type || definition.type;
+    const nextDefinition: DraftBlockDefinition = {
+      ...definition,
+      type: nextType,
+      objects: sourceObjects.map((item) => ({
+        ...cloneBuildingPlacementForUndo(item),
+        locked: false,
+        source: "manual_drawn",
+        generated: false,
+        placed: true,
+        meta: {
+          ...(item.meta ?? {}),
+          ui_hidden: false,
+          source: "manual_drawn_block_definition",
+          draft_block_definition_id: definition.id,
+          draft_block_definition_name: definition.name,
+          review_status: "engineer_review_required",
+          engineering_status: "draft_review_required",
+          handoff_status: "draft_review_required",
+          construction_release_allowed: false,
+          combined_into_object_id: undefined,
+          combined_into_label: undefined,
+        },
+      })),
+      createdAt: Date.now(),
+    };
+    setDraftBlockLibrary((prev) =>
+      prev.map((block) => (block.id === definition.id ? nextDefinition : block)),
+    );
+    const message = `Updated ${definition.name} block definition from ${sourceObjects.length} draft source object${sourceObjects.length === 1 ? "" : "s"}.`;
+    setObjectManagerStatusMessage(`${message} Future inserts use the updated review geometry.`);
+    setStatusMessage(message);
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Draft block updated",
+      detail: `${definition.name} block definition updated from ${sourceObjects.length} source object${sourceObjects.length === 1 ? "" : "s"}.`,
+      undoBlockedReason: "Saved block library updates are local drafting setup; save a replacement block if you need a previous version.",
+    });
+  }, [
+    activePlacementId,
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    combineObjectType,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
+
   const handleObjectManagerExplodeCombined = useCallback((item: BuildingPlacement) => {
     clearGeneratedPreview();
     const sourceIds = Array.isArray(item.meta?.combined_from_object_ids)
@@ -27775,14 +27860,24 @@ function PerformanceAIDashboardView({
                                         {SITE_OBJECT_CATALOG[block.type]?.label ?? block.type} · {block.objects.length} source object{block.objects.length === 1 ? "" : "s"}
                                       </p>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleObjectManagerInsertBlock(block)}
-                                      data-testid="object-manager-insert-block"
-                                      className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Insert
-                                    </button>
+                                    <div className="flex shrink-0 items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleObjectManagerUpdateBlock(block)}
+                                        data-testid="object-manager-update-block"
+                                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Update
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleObjectManagerInsertBlock(block)}
+                                        data-testid="object-manager-insert-block"
+                                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Insert
+                                      </button>
+                                    </div>
                                   </div>
                                 ))
                               ) : (

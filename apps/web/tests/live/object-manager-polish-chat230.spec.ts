@@ -681,17 +681,26 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const blockRow = page.getByTestId("object-manager-block-row").filter({ hasText: "Office Parking Module" }).first();
     await expect(blockRow).toContainText("2 source objects");
 
+    await runCommand(page, "add water line");
+    await openDrawPanel(page);
+    await page.getByTestId("object-manager-select-visible").click();
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("3 objects selected");
+    await blockRow.getByTestId("object-manager-update-block").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Updated Office Parking Module block definition from 3 draft source objects");
+    await expect(blockRow).toContainText("3 source objects");
+
     await blockRow.getByTestId("object-manager-insert-block").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Inserted Office Parking Module");
     const insertedBlock = page.getByTestId("object-manager-row").filter({ hasText: /Office Parking Module Insert/ }).first();
     await expect(insertedBlock).toBeVisible();
-    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("3 hidden objects");
 
     await insertedBlock.getByTestId("object-manager-explode-combined").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Exploded Office Parking Module Insert");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Block Source" }).first()).toBeVisible();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Block Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Water Line Block Source" }).first()).toBeVisible();
   });
 
   test("combined object edits keep hidden source traces undoable", async ({ page }) => {
