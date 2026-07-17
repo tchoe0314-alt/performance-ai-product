@@ -1395,6 +1395,65 @@ const getCustomGeometryMetrics = (item: Pick<BuildingPlacement, "geometry" | "ge
   };
 };
 
+const formatDraftMeasure = (value: number, unit: "ft" | "sf" | "deg") => {
+  if (!Number.isFinite(value)) return `0 ${unit}`;
+  const rounded = Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded.toLocaleString()} ${unit}`;
+};
+
+const isAreaLikeDraftObject = (item: Pick<BuildingPlacement, "geometryType" | "type">) =>
+  item.geometryType === "polygon" ||
+  item.geometryType === "rect" ||
+  item.type === "site" ||
+  item.type === "office_building" ||
+  item.type === "retail_building" ||
+  item.type === "multifamily_building" ||
+  item.type === "industrial_building" ||
+  item.type === "parking" ||
+  item.type === "basin" ||
+  item.type === "amenity" ||
+  item.type === "open_space" ||
+  item.type === "lot_block";
+
+const getDraftObjectMeasurement = (item: BuildingPlacement) => {
+  const geometry = normalizeGeometryPoints(item.geometry);
+  const bounds = geometry?.length
+    ? getGeometryBounds(geometry)
+    : {
+        minX: item.x ?? 0,
+        maxX: (item.x ?? 0) + item.w,
+        minY: item.y ?? 0,
+        maxY: (item.y ?? 0) + item.d,
+        width: item.w,
+        depth: item.d,
+      };
+  const hasClosedGeometry = item.geometryType === "polygon" || item.geometryType === "rect";
+  const areaSf = geometry?.length && hasClosedGeometry
+    ? getPolygonArea(geometry)
+    : isAreaLikeDraftObject(item)
+      ? Math.max(0, item.w * item.d)
+      : 0;
+  const lengthFt = geometry?.length
+    ? getGeometryLength(geometry, hasClosedGeometry)
+    : item.geometryType === "polyline" || item.type === "driveway" || item.type === "road" || item.type === "sidewalk" || item.type === "utility_corridor"
+      ? Math.max(item.w, item.d)
+      : 0;
+  return {
+    id: item.id,
+    label: item.label,
+    typeLabel: SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? toReadableLabel(item.type ?? "custom"),
+    lengthFt,
+    areaSf,
+    widthFt: Math.max(0, bounds.width || item.w),
+    depthFt: Math.max(0, bounds.depth || item.d),
+    minX: bounds.minX,
+    minY: bounds.minY,
+    maxX: bounds.maxX,
+    maxY: bounds.maxY,
+    rotationDeg: item.rotation ?? 0,
+  };
+};
+
 const buildCustomGeometryMeta = (
   id: string,
   label: string,
@@ -20323,6 +20382,28 @@ function PerformanceAIDashboardView({
     () => buildingPlacements.filter((item) => selectedObjectSet.has(item.id)),
     [buildingPlacements, selectedObjectSet],
   );
+  const selectedObjectMeasurements = useMemo(
+    () => selectedObjectRows.map(getDraftObjectMeasurement),
+    [selectedObjectRows],
+  );
+  const selectedObjectMeasurementSummary = useMemo(() => {
+    if (!selectedObjectMeasurements.length) return null;
+    const minX = Math.min(...selectedObjectMeasurements.map((item) => item.minX));
+    const minY = Math.min(...selectedObjectMeasurements.map((item) => item.minY));
+    const maxX = Math.max(...selectedObjectMeasurements.map((item) => item.maxX));
+    const maxY = Math.max(...selectedObjectMeasurements.map((item) => item.maxY));
+    return {
+      count: selectedObjectMeasurements.length,
+      totalLengthFt: selectedObjectMeasurements.reduce((sum, item) => sum + item.lengthFt, 0),
+      totalAreaSf: selectedObjectMeasurements.reduce((sum, item) => sum + item.areaSf, 0),
+      widthFt: Math.max(0, maxX - minX),
+      depthFt: Math.max(0, maxY - minY),
+      minX,
+      minY,
+      maxX,
+      maxY,
+    };
+  }, [selectedObjectMeasurements]);
   const hiddenObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden)).length;
   const objectManagerTypes = useMemo(
     () => Array.from(new Set(buildingPlacements.map((item) => getObjectDisplayType(item)))).sort(),
@@ -27540,6 +27621,69 @@ function PerformanceAIDashboardView({
                               Clear
                             </button>
                           </div>
+                          {selectedObjectMeasurementSummary ? (
+                            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-measurements">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    Measurements
+                                  </p>
+                                  <p className="mt-1 text-xs font-medium text-slate-500">
+                                    Draft readout only. Review dimensions before using them outside Civora.
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                  {selectedObjectMeasurementSummary.count} selected
+                                </span>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                                <div className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                                  <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Total length</span>
+                                  <span className="mt-1 block font-semibold text-slate-800" data-testid="object-manager-measure-total-length">
+                                    {formatDraftMeasure(selectedObjectMeasurementSummary.totalLengthFt, "ft")}
+                                  </span>
+                                </div>
+                                <div className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                                  <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Total area</span>
+                                  <span className="mt-1 block font-semibold text-slate-800" data-testid="object-manager-measure-total-area">
+                                    {formatDraftMeasure(selectedObjectMeasurementSummary.totalAreaSf, "sf")}
+                                  </span>
+                                </div>
+                                <div className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                                  <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Overall width</span>
+                                  <span className="mt-1 block font-semibold text-slate-800" data-testid="object-manager-measure-width">
+                                    {formatDraftMeasure(selectedObjectMeasurementSummary.widthFt, "ft")}
+                                  </span>
+                                </div>
+                                <div className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                                  <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Overall depth</span>
+                                  <span className="mt-1 block font-semibold text-slate-800" data-testid="object-manager-measure-depth">
+                                    {formatDraftMeasure(selectedObjectMeasurementSummary.depthFt, "ft")}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="mt-2 max-h-32 space-y-1 overflow-y-auto pr-1" data-testid="object-manager-measurement-list">
+                                {selectedObjectMeasurements.slice(0, 8).map((item) => (
+                                  <div key={`measurement-${item.id}`} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-[11px]">
+                                    <div className="min-w-0">
+                                      <p className="truncate font-semibold text-slate-800">{item.label}</p>
+                                      <p className="mt-0.5 text-slate-500">
+                                        {item.typeLabel} · {formatDraftMeasure(item.widthFt, "ft")} x {formatDraftMeasure(item.depthFt, "ft")}
+                                      </p>
+                                    </div>
+                                    <div className="shrink-0 text-right font-semibold text-slate-600">
+                                      {item.areaSf > 0 ? formatDraftMeasure(item.areaSf, "sf") : formatDraftMeasure(item.lengthFt, "ft")}
+                                    </div>
+                                  </div>
+                                ))}
+                                {selectedObjectMeasurements.length > 8 ? (
+                                  <p className="px-2 text-[11px] font-medium text-slate-500">
+                                    {selectedObjectMeasurements.length - 8} more selected object{selectedObjectMeasurements.length - 8 === 1 ? "" : "s"} included in totals.
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
                           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                             <button
                               type="button"

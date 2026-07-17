@@ -170,6 +170,28 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls");
   });
 
+  test("selected draft objects show measurement readouts", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+
+    const measurements = page.getByTestId("object-manager-measurements");
+    await expect(measurements).toBeVisible();
+    await expect(measurements).toContainText("Measurements");
+    await expect(measurements).toContainText("2 selected");
+    await expect(measurements).toContainText("Total area");
+    await expect(page.getByTestId("object-manager-measure-total-area")).toContainText("sf");
+    await expect(page.getByTestId("object-manager-measure-width")).toContainText("ft");
+    await expect(page.getByTestId("object-manager-measurement-list")).toContainText("Office Building - 28,000 sf");
+    await expect(page.getByTestId("object-manager-measurement-list")).toContainText("Parking Field - 140 stalls");
+  });
+
   test("select, inspect, rename, style, type, hide, show all, copy, paste, rotate, and flip work", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
