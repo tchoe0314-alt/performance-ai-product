@@ -175,6 +175,22 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ })).toHaveCount(0);
   });
 
+  test("ortho constrains click-drawn linework before grid snap", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const surface = page.getByTestId("preview-drawing-surface");
+    await page.keyboard.press("o");
+    await cadTools.getByTestId("cad-tool-line").click();
+    await clickExposedSurface(surface, 0.2, 0.32);
+    await clickExposedSurface(surface, 0.48, 0.43);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
+
+    await cadTools.getByTestId("cad-tool-measure").click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/first angle (0\.0|90\.0|180\.0|270\.0) deg/i);
+  });
+
   test("visible JOIN and SPLIT combine and restore selected draft linework", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);

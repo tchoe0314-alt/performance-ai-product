@@ -101,10 +101,11 @@ export function resolveCadSnap(
     }
   }
 
-  const inRange = candidates
+  const inRangeCandidates = candidates
     .filter((candidate) => candidate.distance <= options.threshold)
-    .sort((a, b) => snapPriority[a.kind] - snapPriority[b.kind] || a.distance - b.distance)[0];
-  if (inRange) return { x: inRange.x, y: inRange.y, kind: inRange.kind };
+    .sort((a, b) => snapPriority[a.kind] - snapPriority[b.kind] || a.distance - b.distance);
+  const preciseSnap = inRangeCandidates.find((candidate) => candidate.kind !== "nearest" && candidate.kind !== "grid");
+  if (preciseSnap) return { x: preciseSnap.x, y: preciseSnap.y, kind: preciseSnap.kind };
 
   if (options.ortho && options.basePoint) {
     const dx = Math.abs(point.x - options.basePoint.x);
@@ -113,6 +114,9 @@ export function resolveCadSnap(
       ? { x: point.x, y: options.basePoint.y, kind: "orthogonal" }
       : { x: options.basePoint.x, y: point.y, kind: "orthogonal" };
   }
+
+  const inRange = inRangeCandidates[0];
+  if (inRange) return { x: inRange.x, y: inRange.y, kind: inRange.kind };
 
   return { ...point, kind: options.enabled && options.gridSize ? "grid" : "nearest" };
 }
