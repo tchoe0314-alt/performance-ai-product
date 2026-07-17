@@ -171,6 +171,11 @@ test.describe("Chat 221B draw drafting usability", () => {
     const cadTools = page.getByTestId("draw-cad-tools-section");
     const surface = page.getByTestId("preview-drawing-surface");
 
+    await cadTools.getByTestId("cad-tool-line").click();
+    await clickExposedSurface(surface, 0.62, 0.5);
+    await clickExposedSurface(surface, 0.72, 0.5);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
+
     await cadTools.getByTestId("cad-tool-area").click();
     await clickExposedSurface(surface, 0.24, 0.52);
     await clickExposedSurface(surface, 0.42, 0.46);
@@ -237,6 +242,10 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     await firstVertex.getByTestId("selected-object-vertex-delete").click();
     await expect(page.getByTestId("selected-object-status")).toContainText("Delete vertex blocked: polygon geometry needs at least 3 points.");
+
+    await firstVertex.getByTestId("selected-object-vertex-snap").click();
+    await expect(page.getByTestId("selected-object-status")).toContainText(/Snapped Custom Area .*vertex 1 to .*/);
+    await expect(firstVertex.getByTestId("selected-object-vertex-x")).not.toHaveValue("125");
   });
 
   test("visible HATCH applies and removes draft fill on closed areas", async ({ page }) => {

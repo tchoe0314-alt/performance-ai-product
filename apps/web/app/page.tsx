@@ -7490,6 +7490,65 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [handleUpdateBuilding, reportObjectActionBlocker]);
 
+  const handleSnapObjectVertexToNearestEndpoint = useCallback((item: BuildingPlacement, vertexIndex: number) => {
+    const blocker = getObjectEditBlocker(item, "resize");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    const geometry = normalizeGeometryPoints(item.geometry);
+    if (!geometry?.length || vertexIndex < 0 || vertexIndex >= geometry.length) {
+      reportObjectActionBlocker("Snap vertex blocked: select a draft object with editable vertices.");
+      return;
+    }
+    const sourcePoint = geometry[vertexIndex];
+    const candidates = buildingPlacements.flatMap((candidate) => {
+      if (candidate.id === item.id || candidate.meta?.ui_hidden || candidate.type === "site") return [];
+      const candidateGeometry = normalizeGeometryPoints(candidate.geometry);
+      if (candidateGeometry?.length) {
+        return candidateGeometry.map((point, index) => ({
+          point,
+          label: `${candidate.label} V${index + 1}`,
+        }));
+      }
+      if (candidate.source === "manual_drawn" || candidate.type === "custom") {
+        return [
+          { point: [candidate.x ?? 0, candidate.y ?? 0] as [number, number], label: `${candidate.label} corner` },
+          { point: [(candidate.x ?? 0) + candidate.w, (candidate.y ?? 0) + candidate.d] as [number, number], label: `${candidate.label} opposite corner` },
+        ];
+      }
+      return [];
+    });
+    if (!candidates.length) {
+      reportObjectActionBlocker("Snap vertex blocked: no other visible draft endpoints are available.");
+      return;
+    }
+    const nearest = candidates
+      .map((candidate) => ({
+        ...candidate,
+        distance: Math.hypot(candidate.point[0] - sourcePoint[0], candidate.point[1] - sourcePoint[1]),
+      }))
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (!nearest || !Number.isFinite(nearest.distance)) {
+      reportObjectActionBlocker("Snap vertex blocked: no finite draft endpoint was found.");
+      return;
+    }
+    const nextGeometry = geometry.map(([x, y], index) =>
+      index === vertexIndex ? ([nearest.point[0], nearest.point[1]] as [number, number]) : ([x, y] as [number, number]),
+    );
+    const bounds = getGeometryBounds(nextGeometry);
+    handleUpdateBuilding(item.id, {
+      x: bounds.minX,
+      y: bounds.minY,
+      w: Math.max(1, bounds.width),
+      d: Math.max(1, bounds.depth),
+      geometry: nextGeometry,
+    });
+    const message = `Snapped ${item.label} vertex ${vertexIndex + 1} to ${nearest.label}.`;
+    setObjectManagerStatusMessage(`${message} Snap is draft geometry cleanup only.`);
+    setStatusMessage(message);
+  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker]);
+
   const handleObjectManagerSelect = useCallback((id: string) => {
     setActivePlacementId(id);
     setSelectedObjectIds([id]);
@@ -26713,6 +26772,15 @@ function PerformanceAIDashboardView({
                                           className="rounded-md border border-rose-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
                                         >
                                           Del
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={editBlocked}
+                                          onClick={() => handleSnapObjectVertexToNearestEndpoint(selectedBuilding, index)}
+                                          data-testid="selected-object-vertex-snap"
+                                          className="rounded-md border border-blue-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                          Snap
                                         </button>
                                       </div>
                                     </div>
