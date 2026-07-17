@@ -7418,6 +7418,78 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [handleUpdateBuilding, reportObjectActionBlocker]);
 
+  const handleInsertObjectVertex = useCallback((item: BuildingPlacement, vertexIndex: number) => {
+    const blocker = getObjectEditBlocker(item, "resize");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    const geometry = normalizeGeometryPoints(item.geometry);
+    if (!geometry?.length || vertexIndex < 0 || vertexIndex >= geometry.length) {
+      reportObjectActionBlocker("Insert vertex blocked: select a draft object with editable vertices.");
+      return;
+    }
+    if (item.geometryType === "point") {
+      reportObjectActionBlocker("Insert vertex blocked: point objects can only have one editable coordinate.");
+      return;
+    }
+    const current = geometry[vertexIndex];
+    const next = geometry[vertexIndex + 1] ?? (item.geometryType === "polygon" || item.geometryType === "rect" ? geometry[0] : null);
+    const inserted: [number, number] = next
+      ? [(current[0] + next[0]) / 2, (current[1] + next[1]) / 2]
+      : [current[0] + 20, current[1]];
+    const nextGeometry = [
+      ...geometry.slice(0, vertexIndex + 1),
+      inserted,
+      ...geometry.slice(vertexIndex + 1),
+    ];
+    const bounds = getGeometryBounds(nextGeometry);
+    handleUpdateBuilding(item.id, {
+      x: bounds.minX,
+      y: bounds.minY,
+      w: Math.max(1, bounds.width),
+      d: Math.max(1, bounds.depth),
+      geometry: nextGeometry,
+    });
+    const message = `Inserted vertex ${vertexIndex + 2} on ${item.label}.`;
+    setObjectManagerStatusMessage(`${message} Vertex coordinates remain draft review geometry.`);
+    setStatusMessage(message);
+  }, [handleUpdateBuilding, reportObjectActionBlocker]);
+
+  const handleDeleteObjectVertex = useCallback((item: BuildingPlacement, vertexIndex: number) => {
+    const blocker = getObjectEditBlocker(item, "resize");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    const geometry = normalizeGeometryPoints(item.geometry);
+    if (!geometry?.length || vertexIndex < 0 || vertexIndex >= geometry.length) {
+      reportObjectActionBlocker("Delete vertex blocked: select a draft object with editable vertices.");
+      return;
+    }
+    const minimumVertices = item.geometryType === "polygon" || item.geometryType === "rect"
+      ? 3
+      : item.geometryType === "polyline"
+        ? 2
+        : 1;
+    if (geometry.length <= minimumVertices) {
+      reportObjectActionBlocker(`Delete vertex blocked: ${item.geometryType ?? "draft object"} geometry needs at least ${minimumVertices} point${minimumVertices === 1 ? "" : "s"}.`);
+      return;
+    }
+    const nextGeometry = geometry.filter((_, index) => index !== vertexIndex);
+    const bounds = getGeometryBounds(nextGeometry);
+    handleUpdateBuilding(item.id, {
+      x: bounds.minX,
+      y: bounds.minY,
+      w: Math.max(1, bounds.width),
+      d: Math.max(1, bounds.depth),
+      geometry: nextGeometry,
+    });
+    const message = `Deleted vertex ${vertexIndex + 1} from ${item.label}.`;
+    setObjectManagerStatusMessage(`${message} Vertex coordinates remain draft review geometry.`);
+    setStatusMessage(message);
+  }, [handleUpdateBuilding, reportObjectActionBlocker]);
+
   const handleObjectManagerSelect = useCallback((id: string) => {
     setActivePlacementId(id);
     setSelectedObjectIds([id]);
@@ -26595,7 +26667,7 @@ function PerformanceAIDashboardView({
                                 </div>
                                 <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
                                   {editableGeometry.map(([x, y], index) => (
-                                    <div key={`${selectedBuilding.id}-vertex-${index}`} className="grid grid-cols-[auto_1fr_1fr] items-end gap-2 rounded-lg border border-slate-100 bg-white px-2 py-2" data-testid="selected-object-vertex-row">
+                                    <div key={`${selectedBuilding.id}-vertex-${index}`} className="grid grid-cols-[auto_1fr_1fr_auto] items-end gap-2 rounded-lg border border-slate-100 bg-white px-2 py-2" data-testid="selected-object-vertex-row">
                                       <span className="pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                                         V{index + 1}
                                       </span>
@@ -26623,6 +26695,26 @@ function PerformanceAIDashboardView({
                                           className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold normal-case tracking-normal text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                         />
                                       </label>
+                                      <div className="flex flex-col gap-1">
+                                        <button
+                                          type="button"
+                                          disabled={editBlocked || selectedBuilding.geometryType === "point"}
+                                          onClick={() => handleInsertObjectVertex(selectedBuilding, index)}
+                                          data-testid="selected-object-vertex-insert"
+                                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                          Add
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={editBlocked}
+                                          onClick={() => handleDeleteObjectVertex(selectedBuilding, index)}
+                                          data-testid="selected-object-vertex-delete"
+                                          className="rounded-md border border-rose-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                          Del
+                                        </button>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>

@@ -224,6 +224,19 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(firstVertex.getByTestId("selected-object-vertex-x")).toHaveValue("125");
     await expect(firstVertex.getByTestId("selected-object-vertex-y")).toHaveValue("275");
     await expect(page.getByTestId("selected-object-inspector-facts")).toContainText(/Dimensions|metrics/i);
+
+    await firstVertex.getByTestId("selected-object-vertex-insert").click();
+    await expect(page.getByTestId("selected-object-status")).toContainText(/Inserted vertex 2 on Custom Area/);
+    await expect(vertexEditor).toContainText("4 points");
+    await expect(page.getByTestId("selected-object-vertex-row")).toHaveCount(4);
+
+    await page.getByTestId("selected-object-vertex-row").nth(1).getByTestId("selected-object-vertex-delete").click();
+    await expect(page.getByTestId("selected-object-status")).toContainText(/Deleted vertex 2 from Custom Area/);
+    await expect(vertexEditor).toContainText("3 points");
+    await expect(page.getByTestId("selected-object-vertex-row")).toHaveCount(3);
+
+    await firstVertex.getByTestId("selected-object-vertex-delete").click();
+    await expect(page.getByTestId("selected-object-status")).toContainText("Delete vertex blocked: polygon geometry needs at least 3 points.");
   });
 
   test("visible HATCH applies and removes draft fill on closed areas", async ({ page }) => {
