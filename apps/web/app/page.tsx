@@ -2524,6 +2524,8 @@ type DraftBlockDefinition = {
   type: SiteObjectType;
   objects: BuildingPlacement[];
   createdAt: number;
+  updatedAt?: number;
+  revision?: number;
 };
 
 type RecentChange = {
@@ -9086,6 +9088,8 @@ function PerformanceAIDashboardView({
       type,
       objects: editable.map(cloneBuildingPlacementForUndo),
       createdAt: Date.now(),
+      updatedAt: Date.now(),
+      revision: 1,
     };
     setDraftBlockLibrary((prev) => [nextBlock, ...prev.filter((block) => block.name !== name)].slice(0, 12));
     setDraftBlockName("");
@@ -9333,7 +9337,9 @@ function PerformanceAIDashboardView({
           combined_into_label: undefined,
         },
       })),
-      createdAt: Date.now(),
+      createdAt: definition.createdAt,
+      updatedAt: Date.now(),
+      revision: (definition.revision ?? 1) + 1,
     };
     setDraftBlockLibrary((prev) =>
       prev.map((block) => (block.id === definition.id ? nextDefinition : block)),
@@ -9356,6 +9362,64 @@ function PerformanceAIDashboardView({
     reportObjectActionBlocker,
     selectedObjectIds,
   ]);
+
+  const handleObjectManagerRenameBlock = useCallback((definition: DraftBlockDefinition, rawName: string) => {
+    const nextName = rawName.trim();
+    if (!nextName) {
+      reportObjectActionBlocker("Rename block blocked: provide a block name.");
+      return;
+    }
+    if (nextName === definition.name) {
+      return;
+    }
+    const duplicate = draftBlockLibrary.some(
+      (block) => block.id !== definition.id && block.name.toLowerCase() === nextName.toLowerCase(),
+    );
+    if (duplicate) {
+      reportObjectActionBlocker(`Rename block blocked: a saved block named ${nextName} already exists.`);
+      return;
+    }
+    const previousName = definition.name;
+    setDraftBlockLibrary((prev) =>
+      prev.map((block) =>
+        block.id === definition.id
+          ? {
+              ...block,
+              name: nextName,
+              updatedAt: Date.now(),
+              revision: (block.revision ?? 1) + 1,
+            }
+          : block,
+      ),
+    );
+    const message = `Renamed saved block ${previousName} to ${nextName}.`;
+    setObjectManagerStatusMessage(`${message} Existing placed inserts keep their current labels; future inserts use the new block name.`);
+    setStatusMessage(message);
+    recordRecentChange({
+      type: "object_renamed",
+      label: "Draft block renamed",
+      detail: `${previousName} saved block renamed to ${nextName}. Existing placed inserts were not changed.`,
+      undoBlockedReason: "Saved block library names can be changed again from Object Manager.",
+    });
+  }, [draftBlockLibrary, recordRecentChange, reportObjectActionBlocker]);
+
+  const handleObjectManagerDeleteBlock = useCallback((definition: DraftBlockDefinition) => {
+    const exists = draftBlockLibrary.some((block) => block.id === definition.id);
+    if (!exists) {
+      reportObjectActionBlocker(`Delete block blocked: ${definition.name} is no longer saved in the block library.`);
+      return;
+    }
+    setDraftBlockLibrary((prev) => prev.filter((block) => block.id !== definition.id));
+    const message = `Deleted saved block ${definition.name}.`;
+    setObjectManagerStatusMessage(`${message} Existing placed inserts remain on the canvas as draft review geometry.`);
+    setStatusMessage(message);
+    recordRecentChange({
+      type: "object_deleted",
+      label: "Draft block deleted",
+      detail: `${definition.name} was removed from the reusable block library; placed inserts were preserved.`,
+      undoBlockedReason: "Re-save selected draft objects if you need this block definition again.",
+    });
+  }, [draftBlockLibrary, recordRecentChange, reportObjectActionBlocker]);
 
   const handleObjectManagerExplodeCombined = useCallback((item: BuildingPlacement) => {
     clearGeneratedPreview();
@@ -27852,15 +27916,37 @@ function PerformanceAIDashboardView({
                                   <div
                                     key={block.id}
                                     data-testid="object-manager-block-row"
-                                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                                    className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:grid-cols-[1fr_auto]"
                                   >
                                     <div className="min-w-0">
-                                      <p className="truncate text-xs font-semibold text-slate-900">{block.name}</p>
+                                      <span className="sr-only" data-testid="object-manager-block-display-name">
+                                        {block.name}
+                                      </span>
+                                      <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                        Saved block
+                                        <input
+                                          key={`block-name-${block.id}-${block.name}`}
+                                          type="text"
+                                          defaultValue={block.name}
+                                          aria-label={`Rename block ${block.name}`}
+                                          data-testid="object-manager-block-rename"
+                                          onBlur={(event) => handleObjectManagerRenameBlock(block, event.currentTarget.value)}
+                                          onKeyDown={(event) => {
+                                            if (event.key === "Enter") {
+                                              event.currentTarget.blur();
+                                            }
+                                          }}
+                                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                        />
+                                      </label>
                                       <p className="mt-1 text-[11px] font-medium text-slate-500">
-                                        {SITE_OBJECT_CATALOG[block.type]?.label ?? block.type} · {block.objects.length} source object{block.objects.length === 1 ? "" : "s"}
+                                        {SITE_OBJECT_CATALOG[block.type]?.label ?? block.type} · {block.objects.length} source object{block.objects.length === 1 ? "" : "s"} · rev {block.revision ?? 1}
+                                      </p>
+                                      <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+                                        Updated {new Date(block.updatedAt ?? block.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                                       </p>
                                     </div>
-                                    <div className="flex shrink-0 items-center gap-1.5">
+                                    <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
                                       <button
                                         type="button"
                                         onClick={() => handleObjectManagerUpdateBlock(block)}
@@ -27876,6 +27962,14 @@ function PerformanceAIDashboardView({
                                         className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
                                       >
                                         Insert
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleObjectManagerDeleteBlock(block)}
+                                        data-testid="object-manager-delete-block"
+                                        className="rounded-md border border-red-100 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-600 hover:bg-red-50"
+                                      >
+                                        Delete
                                       </button>
                                     </div>
                                   </div>

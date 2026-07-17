@@ -680,27 +680,43 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("Saved Office Parking Module as a reusable draft block");
     const blockRow = page.getByTestId("object-manager-block-row").filter({ hasText: "Office Parking Module" }).first();
     await expect(blockRow).toContainText("2 source objects");
+    await expect(blockRow).toContainText("rev 1");
+
+    await blockRow.getByTestId("object-manager-block-rename").fill("Office Parking Prototype");
+    await blockRow.getByTestId("object-manager-block-rename").press("Enter");
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Renamed saved block Office Parking Module to Office Parking Prototype",
+    );
+    const renamedBlockRow = page.getByTestId("object-manager-block-row").filter({ hasText: "Office Parking Prototype" }).first();
+    await expect(renamedBlockRow).toContainText("2 source objects");
+    await expect(renamedBlockRow).toContainText("rev 2");
 
     await runCommand(page, "add water line");
     await openDrawPanel(page);
     await page.getByTestId("object-manager-select-visible").click();
     await expect(page.getByTestId("object-manager-multi-select")).toContainText("3 objects selected");
-    await blockRow.getByTestId("object-manager-update-block").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Updated Office Parking Module block definition from 3 draft source objects");
-    await expect(blockRow).toContainText("3 source objects");
+    await renamedBlockRow.getByTestId("object-manager-update-block").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Updated Office Parking Prototype block definition from 3 draft source objects");
+    await expect(renamedBlockRow).toContainText("3 source objects");
+    await expect(renamedBlockRow).toContainText("rev 3");
 
-    await blockRow.getByTestId("object-manager-insert-block").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Inserted Office Parking Module");
-    const insertedBlock = page.getByTestId("object-manager-row").filter({ hasText: /Office Parking Module Insert/ }).first();
+    await renamedBlockRow.getByTestId("object-manager-insert-block").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Inserted Office Parking Prototype");
+    const insertedBlock = page.getByTestId("object-manager-row").filter({ hasText: /Office Parking Prototype Insert/ }).first();
     await expect(insertedBlock).toBeVisible();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("3 hidden objects");
 
     await insertedBlock.getByTestId("object-manager-explode-combined").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Exploded Office Parking Module Insert");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Exploded Office Parking Prototype Insert");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Block Source" }).first()).toBeVisible();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Block Source" }).first()).toBeVisible();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Water Line Block Source" }).first()).toBeVisible();
+
+    await renamedBlockRow.getByTestId("object-manager-delete-block").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Deleted saved block Office Parking Prototype");
+    await expect(page.getByTestId("object-manager-block-row").filter({ hasText: "Office Parking Prototype" })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Block Source" }).first()).toBeVisible();
   });
 
   test("combined object edits keep hidden source traces undoable", async ({ page }) => {
