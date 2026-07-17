@@ -118,6 +118,35 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls Copy");
   });
 
+  test("selected canvas object exposes quick actions without opening another panel", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await openDrawPanel(page);
+
+    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    await expect(officeOverlay).toBeVisible();
+    await officeOverlay.click();
+
+    const quickToolbar = page.getByTestId("selected-object-quick-toolbar");
+    await expect(quickToolbar).toBeVisible();
+
+    await quickToolbar.getByTestId("selected-object-quick-measure").click();
+    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/DIST selected .*Office Building.*ft total.*first angle/i);
+
+    await quickToolbar.getByTestId("selected-object-quick-copy").click();
+    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/COPY created 1 draft review copy/);
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf Copy");
+
+    await quickToolbar.getByTestId("selected-object-quick-rotate").click();
+    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/ROTATE applied/);
+
+    await quickToolbar.getByTestId("selected-object-quick-inspect").click();
+    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/INSPECT selected Office Building/);
+
+    await quickToolbar.getByTestId("selected-object-quick-delete").click();
+    await expect(page.getByTestId("selected-object-quick-toolbar")).toHaveCount(0);
+  });
+
   test("canvas crossing selection selects touched objects while window selection requires containment", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
