@@ -7003,6 +7003,7 @@ function PerformanceAIDashboardView({
     if (
       target?.geometryType &&
       Array.isArray(target.geometry) &&
+      !Array.isArray(updates.geometry) &&
       (typeof updates.x === "number" || typeof updates.y === "number")
     ) {
       const deltaX = (typeof updates.x === "number" ? updates.x : target.x ?? 0) - (target.x ?? 0);
@@ -7377,6 +7378,45 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
     appendChatMessage("assistant", message, "status");
   }, []);
+
+  const handleUpdateObjectVertex = useCallback((
+    item: BuildingPlacement,
+    vertexIndex: number,
+    axis: "x" | "y",
+    rawValue: string,
+  ) => {
+    const blocker = getObjectEditBlocker(item, "resize");
+    if (blocker) {
+      reportObjectActionBlocker(blocker);
+      return;
+    }
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) {
+      reportObjectActionBlocker("Vertex edit blocked: enter a finite coordinate.");
+      return;
+    }
+    const geometry = normalizeGeometryPoints(item.geometry);
+    if (!geometry?.length || vertexIndex < 0 || vertexIndex >= geometry.length) {
+      reportObjectActionBlocker("Vertex edit blocked: select a draft object with editable vertices.");
+      return;
+    }
+    const nextGeometry = geometry.map(([x, y], index) =>
+      index === vertexIndex
+        ? ([axis === "x" ? value : x, axis === "y" ? value : y] as [number, number])
+        : ([x, y] as [number, number]),
+    );
+    const bounds = getGeometryBounds(nextGeometry);
+    handleUpdateBuilding(item.id, {
+      x: bounds.minX,
+      y: bounds.minY,
+      w: Math.max(1, bounds.width),
+      d: Math.max(1, bounds.depth),
+      geometry: nextGeometry,
+    });
+    const message = `Updated ${item.label} vertex ${vertexIndex + 1} ${axis.toUpperCase()} to ${value}.`;
+    setObjectManagerStatusMessage(`${message} Vertex coordinates remain draft review geometry.`);
+    setStatusMessage(message);
+  }, [handleUpdateBuilding, reportObjectActionBlocker]);
 
   const handleObjectManagerSelect = useCallback((id: string) => {
     setActivePlacementId(id);
@@ -26423,6 +26463,11 @@ function PerformanceAIDashboardView({
                           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                             Review-only: this object is draft/site evidence for qualified review, not construction-ready output.
                           </p>
+                          {objectManagerStatusMessage ? (
+                            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="selected-object-status">
+                              {objectManagerStatusMessage}
+                            </p>
+                          ) : null}
                           <div className="grid grid-cols-2 gap-2">
                             <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
                               {selectedBuilding.locked ? "Unlock object" : "Lock object"}
@@ -26529,6 +26574,66 @@ function PerformanceAIDashboardView({
                               />
                             </label>
                           </div>
+                          {(() => {
+                            const editableGeometry = normalizeGeometryPoints(selectedBuilding.geometry);
+                            if (!editableGeometry?.length) return null;
+                            const editBlocked = Boolean(getObjectEditBlocker(selectedBuilding, "resize"));
+                            return (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="selected-object-vertex-editor">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                      Vertex editor
+                                    </p>
+                                    <p className="mt-1 text-xs font-medium text-slate-500">
+                                      Exact draft coordinates. Editing vertices does not create engineering approval.
+                                    </p>
+                                  </div>
+                                  <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                    {editableGeometry.length} point{editableGeometry.length === 1 ? "" : "s"}
+                                  </span>
+                                </div>
+                                <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+                                  {editableGeometry.map(([x, y], index) => (
+                                    <div key={`${selectedBuilding.id}-vertex-${index}`} className="grid grid-cols-[auto_1fr_1fr] items-end gap-2 rounded-lg border border-slate-100 bg-white px-2 py-2" data-testid="selected-object-vertex-row">
+                                      <span className="pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                        V{index + 1}
+                                      </span>
+                                      <label className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                        X
+                                        <input
+                                          type="number"
+                                          value={Math.round(x * 10) / 10}
+                                          disabled={editBlocked}
+                                          aria-label={`Vertex ${index + 1} X`}
+                                          data-testid="selected-object-vertex-x"
+                                          onChange={(event) => handleUpdateObjectVertex(selectedBuilding, index, "x", event.target.value)}
+                                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold normal-case tracking-normal text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                        />
+                                      </label>
+                                      <label className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                        Y
+                                        <input
+                                          type="number"
+                                          value={Math.round(y * 10) / 10}
+                                          disabled={editBlocked}
+                                          aria-label={`Vertex ${index + 1} Y`}
+                                          data-testid="selected-object-vertex-y"
+                                          onChange={(event) => handleUpdateObjectVertex(selectedBuilding, index, "y", event.target.value)}
+                                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold normal-case tracking-normal text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                        />
+                                      </label>
+                                    </div>
+                                  ))}
+                                </div>
+                                {editBlocked ? (
+                                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-[11px] font-semibold text-amber-800">
+                                    Unlock this draft object before editing vertices.
+                                  </p>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
                           <div className="grid grid-cols-2 gap-2" data-testid="selected-object-actions">
                             <button
                               type="button"

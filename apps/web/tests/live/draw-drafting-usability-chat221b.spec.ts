@@ -194,6 +194,38 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/REVERSE flipped the selected draft linework vertex order/);
   });
 
+  test("selected draft geometry exposes exact vertex coordinate editing", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const surface = page.getByTestId("preview-drawing-surface");
+
+    await cadTools.getByTestId("cad-tool-area").click();
+    await clickExposedSurface(surface, 0.24, 0.52);
+    await clickExposedSurface(surface, 0.42, 0.46);
+    await clickExposedSurface(surface, 0.5, 0.62);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
+
+    const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
+    await expect(areaRow).toBeVisible();
+    await areaRow.getByTestId("object-manager-inspect").click();
+
+    const vertexEditor = page.getByTestId("selected-object-vertex-editor");
+    await expect(vertexEditor).toBeVisible();
+    await expect(vertexEditor).toContainText("Vertex editor");
+    await expect(vertexEditor).toContainText("3 points");
+
+    const firstVertex = page.getByTestId("selected-object-vertex-row").first();
+    await firstVertex.getByTestId("selected-object-vertex-x").fill("125");
+    await expect(page.getByTestId("selected-object-status")).toContainText(/Updated Custom Area .*vertex 1 X to 125/);
+    await firstVertex.getByTestId("selected-object-vertex-y").fill("275");
+    await expect(page.getByTestId("selected-object-status")).toContainText(/Updated Custom Area .*vertex 1 Y to 275/);
+    await expect(firstVertex.getByTestId("selected-object-vertex-x")).toHaveValue("125");
+    await expect(firstVertex.getByTestId("selected-object-vertex-y")).toHaveValue("275");
+    await expect(page.getByTestId("selected-object-inspector-facts")).toContainText(/Dimensions|metrics/i);
+  });
+
   test("visible HATCH applies and removes draft fill on closed areas", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
