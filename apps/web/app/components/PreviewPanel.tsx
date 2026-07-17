@@ -2628,6 +2628,30 @@ export default function PreviewPanel({
     const y = Number(match[2]);
     return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
   }, []);
+  const parseCadRelativePointToken = useCallback((token: string, basePoint: [number, number] | null): [number, number] | null => {
+    if (!basePoint) return null;
+    const trimmed = token.trim();
+    const relativeMatch = trimmed.match(/^@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
+    if (relativeMatch) {
+      const dx = Number(relativeMatch[1]);
+      const dy = Number(relativeMatch[2]);
+      return Number.isFinite(dx) && Number.isFinite(dy)
+        ? [Math.round((basePoint[0] + dx) * 1000) / 1000, Math.round((basePoint[1] + dy) * 1000) / 1000]
+        : null;
+    }
+    const polarMatch = trimmed.match(/^@(-?\d+(?:\.\d+)?)<(-?\d+(?:\.\d+)?)$/);
+    if (polarMatch) {
+      const distance = Number(polarMatch[1]);
+      const angleDeg = Number(polarMatch[2]);
+      if (!Number.isFinite(distance) || !Number.isFinite(angleDeg)) return null;
+      const radians = (angleDeg * Math.PI) / 180;
+      return [
+        Math.round((basePoint[0] + Math.cos(radians) * distance) * 1000) / 1000,
+        Math.round((basePoint[1] + Math.sin(radians) * distance) * 1000) / 1000,
+      ];
+    }
+    return null;
+  }, []);
   const parseCadPointTokens = useCallback(
     (tokens: string[]) => tokens.map((token) => parseCadPointToken(token)).filter((point): point is [number, number] => Boolean(point)),
     [parseCadPointToken],
@@ -3781,13 +3805,13 @@ export default function PreviewPanel({
       drawMode === "polygon" ||
       drawMode === "rect";
     if (activeCanvasDrawMode && !cadActiveCommand && !knownCommands.has(commandKey)) {
-      const typedPoint = parseCadPointToken(raw);
-      const typedDistance = Number(raw);
       const basePoint = draftPoints.length ? draftPoints[draftPoints.length - 1] : null;
+      const typedPoint = parseCadPointToken(raw) ?? parseCadRelativePointToken(raw, basePoint);
+      const typedDistance = Number(raw);
       let nextPoint: [number, number] | null = typedPoint;
       if (!nextPoint && Number.isFinite(typedDistance) && Math.abs(typedDistance) > 0.001) {
         if (!basePoint) {
-          pushCadCommandFeedback("DRAW", "blocked", "DRAW distance input needs a first point. Pick a start point or type x,y first.");
+        pushCadCommandFeedback("DRAW", "blocked", "DRAW distance input needs a first point. Pick a start point or type x,y first.");
           return;
         }
         const guidePoint = draftPreviewPoint ?? [basePoint[0] + 1, basePoint[1]] as [number, number];
@@ -3801,7 +3825,7 @@ export default function PreviewPanel({
         ];
       }
       if (!nextPoint) {
-        pushCadCommandFeedback("DRAW", "blocked", "DRAW expected a coordinate like 100,50 or a distance like 75 while a draw tool is active.");
+        pushCadCommandFeedback("DRAW", "blocked", "DRAW expected 100,50, @20,0, @75<45, or a distance like 75 while a draw tool is active.");
         return;
       }
       const nextPoints = [...draftPoints, nextPoint];
@@ -4375,6 +4399,7 @@ export default function PreviewPanel({
     parseCadNumber,
     parseCadPointToken,
     parseCadPointTokens,
+    parseCadRelativePointToken,
     pushCadCommandFeedback,
     selectedCadIds,
     selectedCadMetrics,

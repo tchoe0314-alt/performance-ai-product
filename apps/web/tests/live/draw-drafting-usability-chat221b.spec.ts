@@ -213,6 +213,18 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created manual_drawn draft_review_required geometry/);
     await cadTools.getByTestId("cad-tool-measure").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/80\.00 ft total.*first angle 0\.0 deg/i);
+
+    await cadTools.getByTestId("cad-tool-line").click();
+    await commandInput.fill("300,300");
+    await commandInput.press("Enter");
+    await commandInput.fill("@40,0");
+    await commandInput.press("Enter");
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/SEG 40\.0 ft @ 0\.0 deg/);
+    await commandInput.fill("@40<90");
+    await commandInput.press("Enter");
+    await expect(page.getByTestId("draft-precision-readout")).toContainText(/SEG 40\.0 ft @ 90\.0 deg/);
+    await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created manual_drawn draft_review_required geometry/);
   });
 
   test("visible JOIN and SPLIT combine and restore selected draft linework", async ({ page }) => {
