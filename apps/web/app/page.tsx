@@ -2518,6 +2518,14 @@ type DraftUndoAction =
       label: string;
     };
 
+type DraftBlockDefinition = {
+  id: string;
+  name: string;
+  type: SiteObjectType;
+  objects: BuildingPlacement[];
+  createdAt: number;
+};
+
 type RecentChange = {
   id: string;
   type: RecentChangeType;
@@ -2810,6 +2818,8 @@ function PerformanceAIDashboardView({
   const [objectClipboard, setObjectClipboard] = useState<BuildingPlacement[]>([]);
   const [combineObjectName, setCombineObjectName] = useState("");
   const [combineObjectType, setCombineObjectType] = useState<SiteObjectType>("custom");
+  const [draftBlockName, setDraftBlockName] = useState("");
+  const [draftBlockLibrary, setDraftBlockLibrary] = useState<DraftBlockDefinition[]>([]);
   const [arrayRows, setArrayRows] = useState("2");
   const [arrayColumns, setArrayColumns] = useState("3");
   const [arraySpacingX, setArraySpacingX] = useState("60");
@@ -9052,6 +9062,213 @@ function PerformanceAIDashboardView({
     reportObjectActionBlocker,
     saveProjectRef,
     selectedObjectIds,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerSaveBlock = useCallback(() => {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    const editable = targets.filter(
+      (item) =>
+        item.type !== "site" &&
+        !item.locked &&
+        !getObjectEditBlocker(item, "copy") &&
+        !item.meta?.ui_hidden,
+    );
+    if (!editable.length) {
+      reportObjectActionBlocker("Save block blocked: select one or more visible editable draft objects first.");
+      return;
+    }
+    const name = draftBlockName.trim() || `${editable[0].label || "Draft"} Block`;
+    const type = combineObjectType || editable[0].type || "custom";
+    const nextBlock: DraftBlockDefinition = {
+      id: `draft-block-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      type,
+      objects: editable.map(cloneBuildingPlacementForUndo),
+      createdAt: Date.now(),
+    };
+    setDraftBlockLibrary((prev) => [nextBlock, ...prev.filter((block) => block.name !== name)].slice(0, 12));
+    setDraftBlockName("");
+    const message = `Saved ${name} as a reusable draft block with ${editable.length} source object${editable.length === 1 ? "" : "s"}.`;
+    setObjectManagerStatusMessage(`${message} Inserts remain review-required and are not construction-release evidence.`);
+    setStatusMessage(message);
+    recordRecentChange({
+      type: "object_added",
+      label: "Draft block saved",
+      detail: `${name} saved from ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}.`,
+      undoBlockedReason: "Remove or replace saved draft blocks from the block library if needed.",
+    });
+  }, [
+    buildingPlacements,
+    cloneBuildingPlacementForUndo,
+    combineObjectType,
+    draftBlockName,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    selectedObjectIds,
+  ]);
+
+  const handleObjectManagerInsertBlock = useCallback((definition: DraftBlockDefinition) => {
+    clearGeneratedPreview();
+    if (!definition.objects.length) {
+      reportObjectActionBlocker(`Insert block blocked: ${definition.name} has no saved source objects.`);
+      return;
+    }
+    const stamp = Date.now();
+    const insertIndex = buildingPlacements.filter((item) => item.meta?.draft_block_definition_id === definition.id).length + 1;
+    const dx = 32 + insertIndex * 18;
+    const dy = 32 + insertIndex * 18;
+    const copiedSources = definition.objects.map((source, sourceIndex): BuildingPlacement => ({
+      ...source,
+      id: `${definition.id}-source-${stamp}-${sourceIndex}-${Math.random().toString(36).slice(2, 8)}`,
+      label: `${source.label} Block Source`,
+      x: (source.x ?? 0) + dx,
+      y: (source.y ?? 0) + dy,
+      source: "manual_drawn",
+      generated: false,
+      locked: false,
+      placed: true,
+      geometry: source.geometry?.map(([x, y]) => [x + dx, y + dy]),
+      capabilities: {
+        movable: true,
+        resizable: source.capabilities?.resizable ?? true,
+        rotatable: source.capabilities?.rotatable ?? true,
+        deletable: true,
+      },
+      meta: {
+        ...(source.meta ?? {}),
+        ui_hidden: true,
+        source: "manual_drawn_block_source",
+        draft_block_definition_id: definition.id,
+        draft_block_definition_name: definition.name,
+        review_status: "engineer_review_required",
+        engineering_status: "draft_review_required",
+        handoff_status: "draft_review_required",
+        construction_release_allowed: false,
+      },
+    }));
+    const sourcePoints = copiedSources.flatMap((item) => {
+      if (Array.isArray(item.geometry) && item.geometry.length) return item.geometry;
+      const x = item.x ?? 0;
+      const y = item.y ?? 0;
+      return [
+        [x, y],
+        [x + item.w, y],
+        [x + item.w, y + item.d],
+        [x, y + item.d],
+      ] as Array<[number, number]>;
+    });
+    const xs = sourcePoints.map(([x]) => x).filter(Number.isFinite);
+    const ys = sourcePoints.map(([, y]) => y).filter(Number.isFinite);
+    if (!xs.length || !ys.length) {
+      reportObjectActionBlocker(`Insert block blocked: ${definition.name} source geometry is invalid.`);
+      return;
+    }
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const width = Math.max(8, maxX - minX);
+    const depth = Math.max(8, maxY - minY);
+    const linearTypes = new Set<SiteObjectType>(["driveway", "road", "sidewalk", "utility_corridor", "entrance"]);
+    const pointTypes = new Set<SiteObjectType>(["inlet", "outfall", "hydrant", "manhole"]);
+    const geometryType = pointTypes.has(definition.type)
+      ? "point"
+      : linearTypes.has(definition.type)
+        ? "polyline"
+        : "polygon";
+    const blockId = `${definition.type}-block-${stamp}-${Math.random().toString(36).slice(2, 8)}`;
+    const blockLabel = `${definition.name} Insert ${insertIndex}`;
+    const blockObject: BuildingPlacement = {
+      id: blockId,
+      label: blockLabel,
+      type: definition.type,
+      use: SITE_OBJECT_CATALOG[definition.type]?.use,
+      x: geometryType === "point" ? minX + width / 2 - 5 : minX,
+      y: geometryType === "point" ? minY + depth / 2 - 5 : minY,
+      w: geometryType === "point" ? 10 : width,
+      d: geometryType === "point" ? 10 : depth,
+      rotation: 0,
+      locked: false,
+      placed: true,
+      source: "manual_drawn",
+      generated: false,
+      geometryType,
+      geometry:
+        geometryType === "point"
+          ? ([[minX + width / 2, minY + depth / 2]] as Array<[number, number]>)
+          : geometryType === "polyline"
+            ? sourcePoints
+            : ([
+                [minX, minY],
+                [maxX, minY],
+                [maxX, maxY],
+                [minX, maxY],
+              ] as Array<[number, number]>),
+      capabilities: {
+        movable: true,
+        resizable: geometryType !== "polyline",
+        rotatable: geometryType === "polygon",
+        deletable: true,
+      },
+      systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+      meta: {
+        category: SITE_OBJECT_CATALOG[definition.type]?.category ?? "advanced",
+        source: "manual_drawn_block_insert",
+        draft_block_definition_id: definition.id,
+        draft_block_definition_name: definition.name,
+        review_status: "engineer_review_required",
+        engineering_status: "draft_review_required",
+        handoff_status: "draft_review_required",
+        construction_release_allowed: false,
+        combined_from_object_ids: copiedSources.map((item) => item.id),
+        combined_from_labels: copiedSources.map((item) => item.label),
+        combined_source_count: copiedSources.length,
+      },
+    };
+    const linkedSources = copiedSources.map((source) => ({
+      ...source,
+      meta: {
+        ...(source.meta ?? {}),
+        combined_into_object_id: blockId,
+        combined_into_label: blockLabel,
+      },
+    }));
+    const createdObjects = [...linkedSources, blockObject];
+    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
+    setSelectedObjectIds([blockId]);
+    setActivePlacementId(blockId);
+    createdObjects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
+    const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "block insert" };
+    recordDraftUndoAction(undo);
+    recordRecentChange({
+      type: "object_added",
+      label: "Draft block inserted",
+      detail: `${definition.name} inserted as ${blockLabel} with ${linkedSources.length} hidden source trace piece${linkedSources.length === 1 ? "" : "s"}.`,
+      undo,
+    });
+    const message = `Inserted ${definition.name} as ${blockLabel} with ${linkedSources.length} hidden source trace piece${linkedSources.length === 1 ? "" : "s"}.`;
+    setObjectManagerStatusMessage(`${message} It remains draft review geometry, not construction-release evidence.`);
+    setStatusMessage(message);
+    appendChatMessage("assistant", `${message} Use Explode combined if you need to edit the source pieces.`, "status");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason: "Refreshing preview after block insert...",
+          track: true,
+        };
+      });
+  }, [
+    appendChatMessage,
+    buildingPlacements,
+    clearGeneratedPreview,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    recordDraftUndoAction,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    saveProjectRef,
     systemsImpactedByPlacement,
   ]);
 
@@ -27507,6 +27724,73 @@ function PerformanceAIDashboardView({
                             <p className="mt-2 text-[11px] leading-5 text-slate-500">
                               Source pieces are hidden, not deleted, so the combined object stays traceable and review-required.
                             </p>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-block-library">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  Reusable blocks
+                                </p>
+                                <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                                  Save selected draft objects, then insert traceable review copies.
+                                </p>
+                              </div>
+                              <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                {draftBlockLibrary.length}
+                              </span>
+                            </div>
+                            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
+                                Block name
+                                <input
+                                  type="text"
+                                  value={draftBlockName}
+                                  onChange={(event) => setDraftBlockName(event.target.value)}
+                                  placeholder="Example: Utility crossing detail"
+                                  aria-label="Draft block name"
+                                  data-testid="object-manager-block-name"
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleObjectManagerSaveBlock}
+                                data-testid="object-manager-save-block"
+                                className="self-end rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
+                              >
+                                Save block
+                              </button>
+                            </div>
+                            <div className="mt-3 space-y-2" data-testid="object-manager-block-list">
+                              {draftBlockLibrary.length ? (
+                                draftBlockLibrary.map((block) => (
+                                  <div
+                                    key={block.id}
+                                    data-testid="object-manager-block-row"
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="truncate text-xs font-semibold text-slate-900">{block.name}</p>
+                                      <p className="mt-1 text-[11px] font-medium text-slate-500">
+                                        {SITE_OBJECT_CATALOG[block.type]?.label ?? block.type} · {block.objects.length} source object{block.objects.length === 1 ? "" : "s"}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleObjectManagerInsertBlock(block)}
+                                      data-testid="object-manager-insert-block"
+                                      className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Insert
+                                    </button>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-[11px] font-medium text-slate-500">
+                                  No saved blocks yet. Select draft objects, name the block, then save it.
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ) : null}

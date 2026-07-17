@@ -664,6 +664,36 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
   });
 
+  test("saved draft blocks insert as traceable review groups", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-bulk-select").check();
+    await parkingRow.getByTestId("object-manager-bulk-select").check();
+
+    await page.getByTestId("object-manager-block-name").fill("Office Parking Module");
+    await page.getByTestId("object-manager-save-block").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Saved Office Parking Module as a reusable draft block");
+    const blockRow = page.getByTestId("object-manager-block-row").filter({ hasText: "Office Parking Module" }).first();
+    await expect(blockRow).toContainText("2 source objects");
+
+    await blockRow.getByTestId("object-manager-insert-block").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Inserted Office Parking Module");
+    const insertedBlock = page.getByTestId("object-manager-row").filter({ hasText: /Office Parking Module Insert/ }).first();
+    await expect(insertedBlock).toBeVisible();
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
+
+    await insertedBlock.getByTestId("object-manager-explode-combined").click();
+    await expect(page.getByTestId("object-manager-status")).toContainText("Exploded Office Parking Module Insert");
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf Block Source" }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls Block Source" }).first()).toBeVisible();
+  });
+
   test("combined object edits keep hidden source traces undoable", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");
