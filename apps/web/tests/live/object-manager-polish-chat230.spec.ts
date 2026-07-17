@@ -192,6 +192,34 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("selected-object-resize-handle")).toBeVisible();
   });
 
+  test("selected canvas object can be rotated and deleted with visible handles", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await openDrawPanel(page);
+
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-select").click();
+    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    await expect(officeOverlay).toBeVisible();
+    await officeOverlay.click();
+
+    const rotateHandle = page.getByTestId("selected-object-rotate-handle");
+    await expect(rotateHandle).toBeVisible();
+    const beforeTransform = await officeOverlay.evaluate((element) => getComputedStyle(element).transform);
+
+    await rotateHandle.click();
+
+    await expect
+      .poll(async () => officeOverlay.evaluate((element) => getComputedStyle(element).transform), {
+        message: "selected object should rotate from the visible handle",
+      })
+      .not.toBe(beforeTransform);
+    await expect(page.getByTestId("selected-object-rotate-handle")).toBeVisible();
+
+    await page.getByTestId("selected-object-delete-handle").click();
+    await expect(officeOverlay).toHaveCount(0);
+    await expect(page.getByTestId("selected-object-quick-toolbar")).toHaveCount(0);
+  });
+
   test("canvas crossing selection selects touched objects while window selection requires containment", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

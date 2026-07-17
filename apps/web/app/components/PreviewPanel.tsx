@@ -11643,6 +11643,21 @@ export default function PreviewPanel({
                                 data-testid="selected-object-rotate-handle"
                                 className="absolute -right-3 -top-3 h-7 w-7 rounded-full border border-slate-300 bg-white text-[10px] font-semibold text-slate-700 shadow-lg hover:bg-slate-50"
                                 onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setLastRectEdit({
+                                    id: item.id,
+                                    snapshot: { ...item },
+                                    action: "update",
+                                    ts: Date.now(),
+                                  });
+                                  const nextRotation = (((item.rotation ?? 0) + 15) % 360 + 360) % 360;
+                                  if (item.source === "detected_from_image") {
+                                    onUpdateSuggested(item.id, { rotation: nextRotation });
+                                  } else {
+                                    onUpdateBuilding(item.id, { rotation: nextRotation });
+                                  }
+                                }}
                               >
                                 R
                               </button>
@@ -12275,6 +12290,21 @@ export default function PreviewPanel({
                               type="button"
                               className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
                               onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setLastRectEdit({
+                                  id: item.id,
+                                  snapshot: { ...item },
+                                  action: "update",
+                                  ts: Date.now(),
+                                });
+                                const nextRotation = (((item.rotation ?? 0) + 15) % 360 + 360) % 360;
+                                if (item.source === "detected_from_image") {
+                                  onUpdateSuggested(item.id, { rotation: nextRotation });
+                                } else {
+                                  onUpdateBuilding(item.id, { rotation: nextRotation });
+                                }
+                              }}
                             >
                               R
                             </button>
