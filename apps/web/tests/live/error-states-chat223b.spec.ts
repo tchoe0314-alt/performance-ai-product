@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
 
-async function openDemoWorkspace(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1", { waitUntil: "domcontentloaded" });
+async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
+  await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -12,7 +12,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
   if (await workspaceButton.isVisible()) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).first().click();
+  await page.getByRole("button", { name }).filter({ visible: true }).first().click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 10_000 });
 }
 
@@ -104,10 +104,14 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
   });
 
   test("Apply Address shows signed-out blocker inline", async ({ page }) => {
-    await openDemoWorkspace(page);
+    await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
     await openWorkspacePanel(page, /^Setup$/, /Project Setup/i);
-    await page.getByTestId("setup-address-truth").locator("summary").click();
-    await page.getByLabel("Type project address").fill("1 Main St, Test City, TX");
+    const addressDetails = page.getByTestId("setup-address-truth");
+    await expect(addressDetails).toBeVisible();
+    if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
+      await addressDetails.locator("summary").click();
+    }
+    await addressDetails.getByLabel("Type project address").fill("1 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
 
     await expect(page.getByTestId("apply-address-status")).toContainText("Sign in/connect backend to apply address.");
@@ -139,8 +143,12 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "Setup" }).first().click();
-    await page.getByTestId("setup-address-truth").locator("summary").click();
-    await page.getByLabel("Type project address").fill("1 Main St, Test City, TX");
+    const addressDetails = page.getByTestId("setup-address-truth");
+    await expect(addressDetails).toBeVisible();
+    if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
+      await addressDetails.locator("summary").click();
+    }
+    await addressDetails.getByLabel("Type project address").fill("1 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
     await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/provider lookup failed/i, { timeout: 30_000 });
 
@@ -191,7 +199,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
   });
 
   test("Generate partial runs say started with skipped systems", async ({ page }) => {
-    await openDemoWorkspace(page);
+    await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
     page.on("dialog", async (dialog) => dialog.accept());
     await openWorkspacePanel(page, "Generate", /Generate systems/i);
     const systemDetails = page.getByTestId("generate-system-details");

@@ -392,7 +392,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools).toContainText("SCALE applied");
     await cadTools.getByLabel("CAD command input").fill("CO 2,2");
     await cadTools.getByRole("button", { name: "Run" }).click();
-    await expect(cadTools).toContainText("COPY created manual_drawn");
+    await expect(cadTools).toContainText(/COPY created .*draft review copy/);
     await cadTools.getByLabel("CAD command input").fill("ARRAY 2 3 12,8");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText("ARRAY created 5 draft review copies");
@@ -444,7 +444,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(page.getByTestId("cad-active-command")).toContainText("Active command: COPY");
     await cadTools.getByLabel("CAD command input").fill("8,8");
     await cadTools.getByRole("button", { name: "Run" }).click();
-    await expect(cadTools).toContainText("COPY created manual_drawn");
+    await expect(cadTools).toContainText(/COPY created .*draft review cop/);
 
     await cadTools.getByLabel("CAD X coordinate").fill("300");
     await cadTools.getByLabel("CAD Y coordinate").fill("140");

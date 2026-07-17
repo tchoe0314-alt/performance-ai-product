@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock") {
+  const params = new URLSearchParams(query);
+  if (!params.has("seedDemo")) {
+    params.set("seedDemo", "1");
+  }
   const errors: string[] = [];
   await page.route("**/api/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
@@ -9,7 +13,7 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismPr
     if (message.type() === "error") errors.push(message.text());
   });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`/demo/workspace?${params.toString()}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   return errors;

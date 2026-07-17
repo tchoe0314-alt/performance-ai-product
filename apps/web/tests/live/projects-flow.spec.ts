@@ -237,8 +237,12 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
 
     await openSetup(page);
-    await page.getByTestId("setup-address-truth").locator("summary").click();
-    await page.getByLabel("Type project address").fill("123 Main St, Test City, TX");
+    const addressDetails = page.getByTestId("setup-address-truth");
+    await expect(addressDetails).toBeVisible();
+    if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
+      await addressDetails.locator("summary").click();
+    }
+    await addressDetails.getByLabel("Type project address").fill("123 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
     await expect(page.getByTestId("auto-site-context-summary")).toContainText(/parcel\/site boundary|candidates/i, { timeout: 30_000 });
     await page.getByRole("button", { name: "Open chat from header" }).click();

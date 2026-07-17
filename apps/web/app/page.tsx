@@ -29938,7 +29938,7 @@ function PerformanceAIDashboardView({
 	                {selectedBuilding && !(previewInteraction === "edit" && activePrimaryWorkflowKey === "draw") ? (
 	                  <div
 	                    data-testid="floating-object-inspector"
-	                    className="absolute left-3 top-[9.75rem] z-[32] hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
+	                    className="pointer-events-none absolute left-3 top-[9.75rem] z-[32] hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
 	                  >
 	                    <div className="flex items-start justify-between gap-3">
 	                      <div className="min-w-0">
@@ -29957,7 +29957,7 @@ function PerformanceAIDashboardView({
 	                        {selectedObjectConfidence?.visible_badge || selectedBuilding.source || "draft"}
 	                      </span>
 	                    </div>
-	                    <div className="mt-3 grid grid-cols-3 gap-2">
+	                    <div className="pointer-events-auto mt-3 grid grid-cols-3 gap-2">
 	                      {[
 	                        ["W", `${Math.round(selectedBuilding.w)} ft`],
 	                        ["D", `${Math.round(selectedBuilding.d)} ft`],

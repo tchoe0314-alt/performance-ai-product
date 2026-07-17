@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock") {
+  const params = new URLSearchParams(query);
+  if (!params.has("seedDemo")) {
+    params.set("seedDemo", "1");
+  }
   const consoleErrors: string[] = [];
   await page.route("**/api/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
@@ -9,7 +13,7 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismPr
     if (message.type() === "error") consoleErrors.push(message.text());
   });
   page.on("pageerror", (error) => consoleErrors.push(error.message));
-  await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`/demo/workspace?${params.toString()}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   return consoleErrors;
@@ -35,10 +39,12 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
   test("keeps one command surface and focuses it with shortcuts", async ({ page }) => {
     const consoleErrors = await openDemoWorkspace(page);
 
-    await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
-    await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
+    await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
 
     await page.keyboard.press("/");
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
+    await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
     await expect(page.getByTestId("civora-command-input")).toBeFocused();
 
     await page.locator("body").click({ position: { x: 20, y: 20 } });
@@ -57,10 +63,10 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await openDemoWorkspace(page);
 
     await runCommand(page, "add 28000 sf office building");
-    await expect(page.getByText(/Office Building - 28,000 sf/i).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 5_000 });
 
     await runCommand(page, "add 140 parking spaces");
-    await expect(page.getByText(/Parking Field - 140 stalls/i).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first()).toBeVisible({ timeout: 5_000 });
 
     await openDrawPanel(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Office Building - 28,000 sf");
@@ -107,10 +113,13 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("draw-site-boundary-toolbar")).toBeVisible();
 
     await runCommand(page, "add 28000 sf office building");
+    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first();
+    await expect(officeOverlay).toBeVisible({ timeout: 5_000 });
+    await officeOverlay.click();
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
     });
-    await expect(page.getByText(/Deleted Office Building - 28,000 sf/)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Deleted Office Building - 28,000 sf|DELETE removed Office Building - 28,000 sf/i)).toBeVisible({ timeout: 5_000 });
 
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, ctrlKey: true, bubbles: true }));

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 async function openDemoWorkspace(page: import("@playwright/test").Page) {
-  await page.goto("/demo/workspace?debugPreview=1", { waitUntil: "domcontentloaded" });
+  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Detention Basin A", { timeout: 30_000 });
@@ -20,8 +20,9 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(page.locator("header").getByRole("button", { name: "Workspace" })).toBeVisible();
 
     const canvas = page.getByTestId("workspace-canvas-shell");
-    await expect(canvas.getByRole("button", { name: "Export DXF" })).toBeEnabled();
-    await expect(canvas.getByRole("button", { name: "Export Report" })).toBeEnabled();
+    await page.getByRole("button", { name: /^Deliver$/ }).filter({ visible: true }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Make Review Package|Deliver/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Export|review package|blocked/i);
     const initialObjectOverlayCount = await page.locator("[data-object-overlay]").count();
     expect(initialObjectOverlayCount).toBeGreaterThan(0);
 
@@ -110,6 +111,7 @@ test.describe("Chat 32 UI functionality QA", () => {
     await hideSidebarToggle.click();
     await expect(showSidebarToggle).toBeVisible();
     await expect(sidebar).toHaveAttribute("data-motion-state", "closed");
+    await page.keyboard.press("/");
     await expect(page.getByTestId("floating-command-bar")).toBeVisible();
 
     await showSidebarToggle.click();

@@ -1,9 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
-  await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
+  const params = new URLSearchParams(query);
+  if (!params.has("seedDemo") && !params.has("chat226EmptyLayout")) {
+    params.set("seedDemo", "1");
+  }
+  await page.goto(`/demo/workspace?${params.toString()}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
+  if (!params.has("chat226EmptyLayout")) {
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
+  }
 }
 
 async function enableHighQuality(page: Page) {
@@ -24,7 +30,7 @@ test.describe("Chat 226 AI realism preview", () => {
 
     await canvas.getByTestId("preview-quality-standard").click();
     await expect(page.getByTestId("preview-map-fallback-surface")).toBeVisible();
-    await expect(page.getByTestId("preview-source-confidence-summary")).toBeVisible();
+    await expect(page.getByTestId("preview-source-confidence-summary")).toContainText(/Source-backed|review/i);
 
     await enableHighQuality(page);
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Presentation/realism mode");
@@ -93,6 +99,8 @@ test.describe("Chat 226 AI realism preview", () => {
 
     await page.getByRole("button", { name: "Object Manager" }).click();
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-command").click();
+    await expect(page.getByLabel("CAD command input")).toBeVisible();
     await page.getByLabel("CAD command input").fill("LINE 20,20 90,20");
     await page.getByLabel("CAD command input").press("Enter");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("LINE created");

@@ -22,14 +22,14 @@ test.describe("Chat 220 preview fidelity", () => {
     await canvas.getByTestId("preview-quality-standard").click();
     await expect(canvas).toContainText("Standard");
     await expect(page.getByTestId("preview-map-fallback-surface")).toBeVisible();
-    await expect(page.getByTestId("preview-source-confidence-summary")).toBeVisible();
+    await expect(page.getByTestId("preview-source-confidence-summary")).toContainText(/Source-backed|review/i);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
 
     await canvas.getByTestId("preview-quality-high").click();
     await expect(canvas).toContainText("High Quality");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText("Canonical geometry unchanged");
-    await expect(page.getByTestId("preview-source-confidence-summary")).toBeVisible();
+    await expect(page.getByTestId("preview-source-confidence-summary")).toContainText(/Source-backed|review/i);
 
     const bodyText = await canvas.innerText();
     expect(bodyText).not.toMatch(/construction-ready|stamp|seal|certify|approved for construction/i);

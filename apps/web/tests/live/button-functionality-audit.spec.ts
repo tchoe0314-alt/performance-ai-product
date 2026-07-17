@@ -30,7 +30,10 @@ async function openDrawTools(page: Page) {
 
 async function clickCadTool(page: Page, tool: string, expected: RegExp) {
   await openDrawTools(page);
-  await page.getByTestId(`cad-tool-${tool}`).click();
+  const toolButton = page.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+  await toolButton.scrollIntoViewIfNeeded();
+  await expect(toolButton).toBeEnabled();
+  await toolButton.click();
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(expected, { timeout: 5_000 });
 }
 

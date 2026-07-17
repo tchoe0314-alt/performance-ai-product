@@ -127,24 +127,69 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(officeOverlay).toBeVisible();
     await officeOverlay.click();
 
-    const quickToolbar = page.getByTestId("selected-object-quick-toolbar");
-    await expect(quickToolbar).toBeVisible();
+    const quickToolbar = () => page.getByTestId("selected-object-quick-toolbar").first();
+    await expect(quickToolbar()).toBeVisible();
 
-    await quickToolbar.getByTestId("selected-object-quick-measure").click();
-    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/DIST selected .*Office Building.*ft total.*first angle/i);
+    await quickToolbar().getByTestId("selected-object-quick-measure").click();
+    await expect(quickToolbar().getByTestId("selected-object-quick-status")).toContainText(/DIST selected .*Office Building.*ft total.*first angle/i);
 
-    await quickToolbar.getByTestId("selected-object-quick-copy").click();
-    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/COPY created 1 draft review copy/);
+    await quickToolbar().getByTestId("selected-object-quick-copy").click();
+    await expect(quickToolbar().getByTestId("selected-object-quick-status")).toContainText(/COPY created 1 draft review copy/);
     await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf Copy");
 
-    await quickToolbar.getByTestId("selected-object-quick-rotate").click();
-    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/ROTATE applied/);
+    await quickToolbar().getByTestId("selected-object-quick-rotate").click();
+    await expect(quickToolbar().getByTestId("selected-object-quick-status")).toContainText(/ROTATE applied/);
 
-    await quickToolbar.getByTestId("selected-object-quick-inspect").click();
-    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(/INSPECT selected Office Building/);
+    await quickToolbar().getByTestId("selected-object-quick-inspect").click();
+    await expect(quickToolbar().getByTestId("selected-object-quick-status")).toContainText(/INSPECT selected Office Building/);
 
-    await quickToolbar.getByTestId("selected-object-quick-delete").click();
-    await expect(page.getByTestId("selected-object-quick-toolbar")).toHaveCount(0);
+    const copiedOfficeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf Copy"]').first();
+    await expect(copiedOfficeOverlay).toBeVisible();
+    await copiedOfficeOverlay.click();
+    await expect(quickToolbar()).toBeVisible();
+    await quickToolbar().getByTestId("selected-object-quick-delete").click();
+    await expect(copiedOfficeOverlay).toHaveCount(0);
+  });
+
+  test("selected canvas object can be moved and resized with visible handles", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await openDrawPanel(page);
+
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-select").click();
+    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    await expect(officeOverlay).toBeVisible();
+
+    const beforeMove = await officeOverlay.boundingBox();
+    expect(beforeMove).not.toBeNull();
+    await page.mouse.move(beforeMove!.x + beforeMove!.width * 0.78, beforeMove!.y + beforeMove!.height * 0.52);
+    await page.mouse.down();
+    await page.mouse.move(beforeMove!.x + beforeMove!.width * 0.78 + 48, beforeMove!.y + beforeMove!.height * 0.52 + 24, { steps: 8 });
+    await page.mouse.up();
+
+    const afterMove = await officeOverlay.boundingBox();
+    expect(afterMove).not.toBeNull();
+    expect(afterMove!.x).toBeGreaterThan(beforeMove!.x + 12);
+    expect(afterMove!.y).toBeGreaterThan(beforeMove!.y + 6);
+
+    await officeOverlay.click();
+    const resizeHandle = page.getByTestId("selected-object-resize-handle");
+    await expect(resizeHandle).toBeVisible();
+    const beforeResize = await officeOverlay.boundingBox();
+    const handleBox = await resizeHandle.boundingBox();
+    expect(beforeResize).not.toBeNull();
+    expect(handleBox).not.toBeNull();
+
+    await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 44, handleBox!.y + handleBox!.height / 2 + 28, { steps: 8 });
+    await page.mouse.up();
+
+    const afterResize = await officeOverlay.boundingBox();
+    expect(afterResize).not.toBeNull();
+    expect(afterResize!.width).toBeGreaterThan(beforeResize!.width + 10);
+    expect(afterResize!.height).toBeGreaterThan(beforeResize!.height + 6);
+    await expect(page.getByTestId("selected-object-resize-handle")).toBeVisible();
   });
 
   test("canvas crossing selection selects touched objects while window selection requires containment", async ({ page }) => {

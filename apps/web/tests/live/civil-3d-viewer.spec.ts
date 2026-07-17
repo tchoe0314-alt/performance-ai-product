@@ -2,9 +2,13 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
+  const params = new URLSearchParams(query);
+  if (!params.has("seedDemo")) {
+    params.set("seedDemo", "1");
+  }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
+      await page.goto(`/demo/workspace?${params.toString()}`, { waitUntil: "domcontentloaded" });
       break;
     } catch (error) {
       if (attempt === 2) throw error;

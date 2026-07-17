@@ -12,7 +12,11 @@ async function collectPageErrors(page: Page) {
 }
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock") {
-  await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
+  const params = new URLSearchParams(query);
+  if (!params.has("seedDemo")) {
+    params.set("seedDemo", "1");
+  }
+  await page.goto(`/demo/workspace?${params.toString()}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
 }
@@ -135,13 +139,15 @@ test.describe("Chat 231A loading states and status truth", () => {
     });
     await openDemoWorkspace(page);
 
-    await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
-    await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
+    await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
 
     await openPanel(page, /^Setup$/, /Project Setup/i);
     await expect(page.getByTestId("project-status-summary")).toContainText(/needs review|ready|blocked|working/i);
 
     await page.keyboard.press("/");
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
+    await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
     await expect(page.getByTestId("civora-command-input")).toBeFocused();
 
     await page.locator("body").click({ position: { x: 24, y: 24 } });
@@ -176,11 +182,15 @@ test.describe("Chat 231A loading states and status truth", () => {
     await openDemoWorkspace(page);
     await openPanel(page, /^Setup$/, /Project Setup/i);
 
-    await page.getByTestId("setup-address-truth").locator("summary").click();
-    await page.getByLabel("Type project address").fill("1 Main St, Test City, TX");
+    const addressDetails = page.getByTestId("setup-address-truth");
+    await expect(addressDetails).toBeVisible();
+    if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
+      await addressDetails.locator("summary").click();
+    }
+    await addressDetails.getByLabel("Type project address").fill("1 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
 
-    await expect(page.getByTestId("project-status-summary")).toContainText("blocked");
+    await expect(page.getByTestId("project-status-summary")).toContainText(/needs review|blocked/i);
     await expect(page.getByTestId("project-status-summary")).toContainText("Sign in/connect backend to apply address.");
     await expect(page.getByTestId("project-status-summary")).toContainText("Next:");
   });

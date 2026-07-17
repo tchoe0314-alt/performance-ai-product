@@ -11640,7 +11640,8 @@ export default function PreviewPanel({
                                 type="button"
                                 title="Rotate selected object"
                                 aria-label="Rotate selected object"
-                                className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                                data-testid="selected-object-rotate-handle"
+                                className="absolute -right-3 -top-3 h-7 w-7 rounded-full border border-slate-300 bg-white text-[10px] font-semibold text-slate-700 shadow-lg hover:bg-slate-50"
                                 onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
                               >
                                 R
@@ -11651,7 +11652,8 @@ export default function PreviewPanel({
                                 type="button"
                                 title="Resize selected object"
                                 aria-label="Resize selected object"
-                                className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
+                                data-testid="selected-object-resize-handle"
+                                className="absolute -right-3 -bottom-3 h-7 w-7 rounded-full border border-slate-300 bg-white text-[10px] font-semibold text-slate-700 shadow-lg hover:bg-slate-50"
                                 onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
                               >
                                 Z
@@ -11662,7 +11664,8 @@ export default function PreviewPanel({
                                 type="button"
                                 title="Delete selected object"
                                 aria-label="Delete selected object"
-                                className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600 shadow"
+                                data-testid="selected-object-delete-handle"
+                                className="absolute -left-3 -top-3 h-7 w-7 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600 shadow-lg hover:bg-rose-50"
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   setLastRectEdit({
