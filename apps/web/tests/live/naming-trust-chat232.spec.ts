@@ -48,15 +48,15 @@ test.describe("Chat 232 naming and trust copy", () => {
 
     await expect(page.getByRole("button", { name: "Open projects from header" })).toContainText("Projects");
     await expect(page.getByRole("button", { name: "Open chat from header" })).toContainText("Chat");
-    await expect(page.getByRole("button", { name: "Open workspace controls" })).toContainText("Setup");
+    await expect(page.getByRole("button", { name: "Help" })).toBeVisible();
 
     const sidebar = page.getByTestId("primary-workflow-sidebar");
     await expect(sidebar).toContainText(/setup/i);
     await expect(sidebar).toContainText(/draw/i);
     await expect(sidebar).toContainText(/generate/i);
     await expect(sidebar).toContainText(/deliver/i);
-    await expect(sidebar).toContainText(/object manager/i);
-    await expect(sidebar).toContainText(/recent changes/i);
+    await expect(sidebar).not.toContainText(/object manager/i);
+    await expect(sidebar).not.toContainText(/project health/i);
     await expect(sidebar).not.toContainText(/analyze/i);
     await expectNoOverflow(page);
   });

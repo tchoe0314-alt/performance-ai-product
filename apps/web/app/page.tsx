@@ -20970,7 +20970,7 @@ function PerformanceAIDashboardView({
   const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, create, and manage project records." },
     trust: { title: "What Civora does", desc: "Clear product boundaries for planning, drafting, source context, review packages, and AI visualization." },
-    dashboard: { title: "Recent changes", desc: "See what just happened. Details stay tucked away unless you open them." },
+    dashboard: { title: "Project Health", desc: "See what needs attention, what changed, and what is ready to review." },
     model: { title: "Draw Canvas", desc: "Use the canvas, map, 2D/3D view, and visible drawing controls." },
     site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
@@ -21283,13 +21283,13 @@ function PerformanceAIDashboardView({
     if (mode === "setup") return siteScaleLocked ? "ok" : "review";
     if (mode === "canvas") return panelStatus("model");
     if (mode === "layers") return panelStatus("layers");
-    if (mode === "deliver") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "block" : panelStatus("deliverables");
+    if (mode === "deliver") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "review" : panelStatus("deliverables");
     if (mode === "data") return panelStatus("data");
     if (mode === "settings") return panelStatus("settings");
     return "idle";
   };
 	  const sidebarModes: SidebarNavItem[] = [
-	    { label: "Recent changes", caption: "Project status", target: "dashboard", icon: Gauge, status: sidebarModeStatus("dashboard") },
+	    { label: "Project Health", caption: "Status and changes", target: "dashboard", icon: Gauge, status: sidebarModeStatus("dashboard") },
 	    { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
 	    { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
     { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
@@ -21373,7 +21373,7 @@ function PerformanceAIDashboardView({
 	    },
 	    {
 	      key: "analyze",
-	      label: "Recent changes",
+	      label: "Project Health",
 	      caption: "Issues, quantities, jobs",
 	      panel: "analysis",
 	      icon: Gauge,
@@ -22404,14 +22404,14 @@ function PerformanceAIDashboardView({
         : sidebarReleaseStatus === "ready"
           ? "ready_for_engineer_review"
           : sidebarReleaseStatus === "blocked"
-            ? "blocked"
+            ? "needs input"
             : "review required",
-      status: !sidebarHasTruthEvidence ? "idle" : sidebarReleaseStatus === "blocked" ? "block" : "review",
+      status: !sidebarHasTruthEvidence ? "idle" : "review",
     },
     {
-      label: "Field-use blocks",
+      label: "Professional review",
       value: sidebarHasTruthEvidence ? "independent review required" : "not evaluated",
-      status: sidebarHasTruthEvidence ? "block" : "idle",
+      status: sidebarHasTruthEvidence ? "review" : "idle",
     },
     {
       label: "Low confidence",
@@ -22457,7 +22457,7 @@ function PerformanceAIDashboardView({
   const sidebarTruthCounts = {
     ready: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "ok").length : 0,
     review: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "review").length : 0,
-    blocked: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "block").length : 0,
+    blocked: 0,
     notRun: backendResult ? 0 : 1,
   };
   const sidebarTruthTotal = Math.max(
@@ -22967,14 +22967,9 @@ function PerformanceAIDashboardView({
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={effectiveUser.email}
-          onOpenDashboard={() => handleOpenSidePanel("dashboard")}
           onOpenProjects={() => {
             if (token) void refreshProjects(token);
             handleOpenSidePanel("projects");
-          }}
-          onOpenWorkspace={() => {
-            setWorkspaceChromeMinimized(true);
-            handleOpenSidePanel("site_existing");
           }}
           onOpenDocs={() => handleOpenSidePanel("trust")}
           onOpenChat={() => handleOpenSidePanel("chat")}
@@ -23235,8 +23230,8 @@ function PerformanceAIDashboardView({
               </div>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {sidebarHasTruthEvidence
-                  ? "Engineer review required | Field use outside Civora"
-                  : "No project evidence yet | Engineer review required before release"}
+                  ? "Professional review needed before reliance"
+                  : "No project evidence yet | Review needed before reliance"}
               </p>
             </div>
 	            <div className="hidden shrink-0 flex-col gap-1 pr-1">
@@ -28422,7 +28417,7 @@ function PerformanceAIDashboardView({
                                       data-testid="recent-change-row-undo"
                                       className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
                                     >
-                                      {change.undo ? "Undo" : "Why blocked"}
+                                      {change.undo ? "Undo" : "Details"}
                                     </button>
                                   </div>
                                 </div>

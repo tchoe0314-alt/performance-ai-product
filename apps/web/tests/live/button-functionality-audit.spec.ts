@@ -8,10 +8,6 @@ async function openDemoWorkspace(page: Page) {
 }
 
 async function openWorkspacePanel(page: Page, name: RegExp | string, expected: RegExp | string) {
-  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
-  if (await workspaceButton.isVisible()) {
-    await workspaceButton.click();
-  }
   const navName = name === "Object Manager" || name === "Open canvas from sidebar" ? /^Draw$/ : name;
   const directButton = page.getByRole("button", { name: navName }).first();
   await directButton.click();
@@ -99,7 +95,6 @@ test.describe("button functionality audit", () => {
       [/^Draw$/, /Draw & Object Manager|CAD Tools/],
       ["Generate", /Generate Systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
-      ["Recent changes", /Recent changes|History/],
     ];
 
     for (const [button, expected] of panels) {
@@ -109,7 +104,7 @@ test.describe("button functionality audit", () => {
     await page.getByRole("button", { name: "Open chat from header" }).click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
-    await page.getByRole("button", { name: "Open workspace controls" }).click();
+    await page.getByRole("button", { name: /^Setup$/ }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Project Setup");
     await expect(page.getByTestId("setup-address-truth")).toBeVisible();
 

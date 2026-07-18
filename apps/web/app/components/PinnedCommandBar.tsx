@@ -46,7 +46,6 @@ export default function PinnedCommandBar({
   activePlanTool,
   thinkingState,
   statusText,
-  commandContext,
 }: PinnedCommandBarProps) {
   const isWorking = busy || hasVisibleActiveJob;
   const canSend = Boolean(prompt.trim() || imageName) && !isWorking;
@@ -73,23 +72,6 @@ export default function PinnedCommandBar({
           <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
             {thinkingState.progress}%
           </span>
-        </div>
-      ) : null}
-      {commandContext ? (
-        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-          {[
-            ["Mode", commandContext.mode],
-            ["Tool", commandContext.interaction],
-            ["Layer", commandContext.layer],
-            ["Sel", String(commandContext.selectedCount)],
-            ["Snap", commandContext.snap],
-            ["View", commandContext.view],
-          ].map(([label, value]) => (
-            <span key={label} className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2">
-              <span className="text-slate-400">{label}</span>
-              <span className="text-slate-700">{value}</span>
-            </span>
-          ))}
         </div>
       ) : null}
       {!isWorking && showQuietStatus ? (

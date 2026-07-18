@@ -4,8 +4,6 @@ import { CircleHelp, FolderOpen, MessageSquare, PanelLeftClose, PanelLeftOpen } 
 
 type AppHeaderProps = {
   userEmail: string;
-  onOpenDashboard: () => void;
-  onOpenWorkspace: () => void;
   onOpenProjects: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
@@ -16,8 +14,6 @@ type AppHeaderProps = {
 
 export default function AppHeader({
   userEmail,
-  onOpenDashboard,
-  onOpenWorkspace,
   onOpenProjects,
   onOpenDocs,
   onOpenChat,
@@ -47,13 +43,6 @@ export default function AppHeader({
           </div>
           <button
             type="button"
-            onClick={onOpenDashboard}
-            className="hidden rounded-lg border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100/70 hover:text-slate-950 md:inline-flex"
-          >
-            Recent changes
-          </button>
-          <button
-            type="button"
             onClick={onOpenChat}
             aria-label="Open chat from header"
             className="hidden items-center gap-2 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 md:inline-flex"
@@ -69,15 +58,6 @@ export default function AppHeader({
           >
             <FolderOpen className="h-4 w-4" />
             Projects
-          </button>
-          <button
-            type="button"
-            onClick={onOpenWorkspace}
-            aria-label="Open workspace controls"
-            className="hidden items-center gap-2 rounded-lg border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100/70 hover:text-slate-950 md:inline-flex"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-            Setup
           </button>
         </div>
 
