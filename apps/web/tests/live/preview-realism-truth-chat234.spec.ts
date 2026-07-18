@@ -20,13 +20,8 @@ test.describe("Chat 234 preview realism truth pass", () => {
     const canvas = page.getByTestId("workspace-canvas-shell");
 
     await canvas.getByTestId("preview-quality-high").click();
-    const fallbackSurface = page.getByTestId("preview-map-fallback-surface");
-    if (await fallbackSurface.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await expect(page.getByTestId("preview-source-confidence-chip")).toContainText(/Local review canvas|Map loading or unavailable/);
-    } else {
-      await expect(canvas).toContainText(/Map anchored|2D MAP/i);
-      await expect(page.getByRole("button", { name: /Lock Map/i })).toBeVisible();
-    }
+    await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
+    await expect(page.getByTestId("preview-source-confidence-chip")).toHaveCount(0);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-review-object-badge")).toHaveCount(0);
 

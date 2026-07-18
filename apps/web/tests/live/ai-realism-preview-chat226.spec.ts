@@ -29,7 +29,7 @@ test.describe("Chat 226 AI realism preview", () => {
     const canvas = page.getByTestId("workspace-canvas-shell");
 
     await canvas.getByTestId("preview-quality-standard").click();
-    await expect(page.getByTestId("preview-map-fallback-surface")).toBeVisible();
+    await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-confidence-summary")).toContainText(/Source-backed|review/i);
 
     await enableHighQuality(page);
@@ -97,7 +97,7 @@ test.describe("Chat 226 AI realism preview", () => {
     await page.getByTestId("ai-realism-on").click();
     await expect(page.getByTestId("ai-realism-image")).toBeVisible();
 
-    await page.getByRole("button", { name: "Object Manager" }).click();
+    await page.getByRole("button", { name: /^Draw$/ }).click();
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
     await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-command").click();
     await expect(page.getByLabel("CAD command input")).toBeVisible();

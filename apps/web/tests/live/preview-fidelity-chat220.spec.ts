@@ -21,7 +21,7 @@ test.describe("Chat 220 preview fidelity", () => {
 
     await canvas.getByTestId("preview-quality-standard").click();
     await expect(canvas).toContainText("Standard");
-    await expect(page.getByTestId("preview-map-fallback-surface")).toBeVisible();
+    await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-confidence-summary")).toContainText(/Source-backed|review/i);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
 

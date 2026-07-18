@@ -610,9 +610,6 @@ export default function PreviewPanel({
   onViewportCenter,
   onViewportFootprint,
   siteLocked,
-  gradingBlocker,
-  stormHydrologyOverlay,
-  sourceContextBadges = [],
   debugStats,
   cadToolRequest,
 }: PreviewPanelProps) {
@@ -1020,25 +1017,6 @@ export default function PreviewPanel({
     }
     return Boolean(process.env.NEXT_PUBLIC_CIVORA_AI_REALISM_PROVIDER?.trim());
   }, []);
-  const cadPlanGrid = useMemo(() => {
-    const major = 20;
-    const minor = 10;
-    const verticalMinor: number[] = [];
-    const verticalMajor: number[] = [];
-    const horizontalMinor: number[] = [];
-    const horizontalMajor: number[] = [];
-    for (let x = minor; x < currentSiteSize.width; x += minor) {
-      const pct = (x / currentSiteSize.width) * 100;
-      if (Math.abs(x % major) < 0.001) verticalMajor.push(pct);
-      else verticalMinor.push(pct);
-    }
-    for (let y = minor; y < currentSiteSize.height; y += minor) {
-      const pct = (y / currentSiteSize.height) * 100;
-      if (Math.abs(y % major) < 0.001) horizontalMajor.push(pct);
-      else horizontalMinor.push(pct);
-    }
-    return { verticalMinor, verticalMajor, horizontalMinor, horizontalMajor };
-  }, [currentSiteSize.height, currentSiteSize.width]);
   const planScaleBar = useMemo(() => {
     const span = Math.max(currentSiteSize.width, currentSiteSize.height, 1);
     const target = span / 5;
@@ -1403,16 +1381,6 @@ export default function PreviewPanel({
     Boolean(gradingEarthworkUx) &&
     (hasGradingSurface || systemStatuses.grading === "fresh");
   const surfaceModel = gradingEarthworkUx?.surfaceModel;
-  const heatmapFill = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
-    if (mode === "cut") return "rgba(239, 68, 68, 0.045)";
-    if (mode === "fill") return "rgba(14, 165, 233, 0.05)";
-    return "rgba(34, 197, 94, 0.035)";
-  };
-  const heatmapStroke = (mode: GradingEarthworkUx["heatmapCells"][number]["mode"]) => {
-    if (mode === "cut") return "rgba(220, 38, 38, 0.2)";
-    if (mode === "fill") return "rgba(2, 132, 199, 0.2)";
-    return "rgba(22, 163, 74, 0.16)";
-  };
   const accessPointsForParking = useMemo(
     () =>
       buildingPlacements
@@ -9720,53 +9688,6 @@ export default function PreviewPanel({
                   }`}
                   style={{ width: "100%", height: "100%" }}
                 />
-                {!showMap && previewMode === "2d" ? (
-                  <div
-                    data-testid="preview-map-fallback-surface"
-                    className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f1_58%,#e8eef3_100%)]"
-                  >
-                    <div className="absolute inset-4 rounded-[22px] border border-white/70 bg-white/10 shadow-inner" />
-                    <div className="absolute inset-x-6 bottom-5 flex flex-wrap items-center gap-1.5 opacity-75 transition-opacity hover:opacity-100">
-                      <span
-                        data-testid="preview-source-confidence-chip"
-                        className="rounded-md border border-slate-200/70 bg-white/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm backdrop-blur"
-                      >
-                        {mapAvailable ? "Map loading or unavailable" : "Local review canvas"}
-                      </span>
-                      <span className="rounded-md border border-slate-200/70 bg-white/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm backdrop-blur">
-                        Source-backed {sourceStateSummary.verified}
-                      </span>
-                      {sourceStateSummary.review ? (
-                        <span className="rounded-md border border-amber-200/70 bg-amber-50/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow-sm backdrop-blur">
-                          Review {sourceStateSummary.review}
-                        </span>
-                      ) : null}
-                      {sourceStateSummary.fallback ? (
-                        <span
-                          data-testid="preview-fallback-geometry-chip"
-                          className="rounded-md border border-slate-300/70 bg-white/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm backdrop-blur"
-                        >
-                          Fallback bounds {sourceStateSummary.fallback}
-                        </span>
-                      ) : null}
-                      {sourceContextBadges.slice(0, 4).map((badge) => (
-                        <span
-                          key={`${badge.tone}-${badge.label}`}
-                          data-testid={`preview-source-context-${badge.tone}`}
-                          className={`rounded-md border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] shadow-sm backdrop-blur ${
-                            badge.tone === "found"
-                              ? "border-emerald-200/70 bg-emerald-50/72 text-emerald-700"
-                              : badge.tone === "missing"
-                                ? "border-amber-200/70 bg-amber-50/72 text-amber-700"
-                                : "border-slate-200/70 bg-white/72 text-slate-500"
-                          }`}
-                        >
-                          {badge.tone === "found" ? "Found" : badge.tone === "missing" ? "Missing" : "Review"} {badge.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
                 {debugStats?.enabled ? (
                   <div className="pointer-events-none absolute left-5 top-5 z-30 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
                     <div className="font-semibold">Map Debug</div>
@@ -9963,60 +9884,16 @@ export default function PreviewPanel({
                             <circle cx="2.8" cy="2.8" r="0.22" fill="rgba(22,101,52,0.34)" />
                           </pattern>
                         </defs>
-                        <g data-testid="cad-plan-grid" opacity={showMap ? 0 : isHighQuality ? 0.2 : 0.13}>
+                        <g data-testid="cad-plan-grid" opacity={showMap ? 0 : 1}>
                           <rect
                             x={0}
                             y={0}
                             width={100}
                             height={100}
                             fill="transparent"
-                            stroke={isHighQuality ? "rgba(15,23,42,0.22)" : "rgba(100,116,139,0.16)"}
-                            strokeWidth={0.18}
+                            stroke="transparent"
+                            strokeWidth={0}
                           />
-                          {(!isHighQuality && !showGeneratedPlan ? cadPlanGrid.verticalMinor : []).map((x) => (
-                            <line
-                              key={`grid-v-minor-${x.toFixed(2)}`}
-                              x1={x}
-                              y1={0}
-                              x2={x}
-                              y2={100}
-                              stroke="rgba(148,163,184,0.1)"
-                              strokeWidth={0.055}
-                            />
-                          ))}
-                          {(!isHighQuality && !showGeneratedPlan ? cadPlanGrid.horizontalMinor : []).map((y) => (
-                            <line
-                              key={`grid-h-minor-${y.toFixed(2)}`}
-                              x1={0}
-                              y1={y}
-                              x2={100}
-                              y2={y}
-                              stroke="rgba(148,163,184,0.1)"
-                              strokeWidth={0.055}
-                            />
-                          ))}
-                          {(!showGeneratedPlan ? cadPlanGrid.verticalMajor : []).map((x) => (
-                            <line
-                              key={`grid-v-major-${x.toFixed(2)}`}
-                              x1={x}
-                              y1={0}
-                              x2={x}
-                              y2={100}
-                              stroke="rgba(100,116,139,0.16)"
-                              strokeWidth={0.085}
-                            />
-                          ))}
-                          {(!showGeneratedPlan ? cadPlanGrid.horizontalMajor : []).map((y) => (
-                            <line
-                              key={`grid-h-major-${y.toFixed(2)}`}
-                              x1={0}
-                              y1={y}
-                              x2={100}
-                              y2={y}
-                              stroke="rgba(100,116,139,0.16)"
-                              strokeWidth={0.085}
-                            />
-                          ))}
                           <rect
                             x={1.2}
                             y={1.2}
@@ -10039,7 +9916,7 @@ export default function PreviewPanel({
                               SITE LOCKED · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
                             </text>
                           ) : null}
-                          <title>Local review canvas site extent. Grid lines are hidden when plan or map context exists.</title>
+                          <title>Local review canvas site extent.</title>
                           <line
                             x1={4}
                             y1={95}
@@ -10071,245 +9948,6 @@ export default function PreviewPanel({
                             {planScaleBar.lengthFt} FT
                           </text>
                         </g>
-                        {showEarthworkUx && gradingEarthworkUx ? (
-                          <g data-testid="earthwork-ux-overlay" opacity={isHighQuality ? 0.62 : 0.48}>
-                            {[18, 34, 50, 66, 82].map((y, idx) => (
-                              <path
-                                key={`grading-contour-${idx}`}
-                                d={`M 3 ${y} C 18 ${y - 3.5} 28 ${y + 3.2} 42 ${y - 1.4} S 70 ${y + 4.2} 97 ${y - 2.2}`}
-                                fill="none"
-                                stroke="rgba(71, 85, 105, 0.22)"
-                                strokeWidth={0.18}
-                                strokeDasharray={idx % 2 ? "1.2 1.2" : undefined}
-                              />
-                            ))}
-                            {gradingEarthworkUx.heatmapCells.map((cell) => (
-                              <ellipse
-                                key={cell.id}
-                                cx={cell.xPct + cell.wPct / 2}
-                                cy={cell.yPct + cell.hPct / 2}
-                                rx={Math.max(1.1, cell.wPct * 0.26)}
-                                ry={Math.max(0.9, cell.hPct * 0.22)}
-                                fill={heatmapFill(cell.mode)}
-                                stroke={heatmapStroke(cell.mode)}
-                                strokeWidth={0.08}
-                              />
-                            ))}
-                            {gradingEarthworkUx.padTieIns.map((pad) => {
-                              const stroke =
-                                pad.status === "blocked"
-                                  ? "#ef4444"
-                                  : pad.status === "review"
-                                    ? "#f59e0b"
-                                    : "#10b981";
-                              return (
-                                <g key={pad.id}>
-                                  <rect
-                                    x={pad.xPct}
-                                    y={pad.yPct}
-                                    width={pad.wPct}
-                                    height={pad.hPct}
-                                    fill="none"
-                                    stroke={stroke}
-                                    strokeWidth={0.52}
-                                    strokeDasharray={pad.status === "ok" ? undefined : "1.4 1"}
-                                  />
-                                  <line
-                                    x1={pad.xPct}
-                                    y1={pad.yPct + pad.hPct}
-                                    x2={pad.xPct + pad.wPct}
-                                    y2={pad.yPct}
-                                    stroke={stroke}
-                                    strokeWidth={0.26}
-                                    opacity={0.72}
-                                  />
-                                </g>
-                              );
-                            })}
-                            {gradingEarthworkUx.retainingWall.triggered ? (
-                              <line
-                                x1={8}
-                                y1={88}
-                                x2={92}
-                                y2={76}
-                                stroke={
-                                  gradingEarthworkUx.retainingWall.risk === "high"
-                                    ? "#ef4444"
-                                    : gradingEarthworkUx.retainingWall.risk === "medium"
-                                      ? "#f97316"
-                                      : "#64748b"
-                                }
-                                strokeWidth={0.62}
-                                strokeDasharray="2 1.4"
-                              />
-                            ) : null}
-                          </g>
-                        ) : null}
-                        {gradingBlocker ? (
-                          (() => {
-                            const toPct = (pt: { x: number; y: number }) => ({
-                              x: sitePointToPreviewPercent([pt.x, pt.y])[0],
-                              y: sitePointToPreviewPercent([pt.x, pt.y])[1],
-                            });
-                            const source = gradingBlocker.sourcePoint ? toPct(gradingBlocker.sourcePoint) : null;
-                            const target = gradingBlocker.blockedTarget ? toPct(gradingBlocker.blockedTarget) : null;
-                            const blocker = gradingBlocker.blockerLocation ? toPct(gradingBlocker.blockerLocation) : null;
-                            const zone = gradingBlocker.suggestedFixZone
-                              ? mapAnchoredRectPercent(
-                                  {
-                                    id: "grading-fix-zone",
-                                    type: "setback_zone",
-                                    label: "Grading fix zone",
-                                    x: gradingBlocker.suggestedFixZone.x,
-                                    y: gradingBlocker.suggestedFixZone.y,
-                                    w: gradingBlocker.suggestedFixZone.w,
-                                    d: gradingBlocker.suggestedFixZone.h,
-                                    placed: true,
-                                    locked: true,
-                                  } as BuildingPlacement,
-                                  mapRef.current,
-                                )
-                              : null;
-                            return (
-                              <g>
-                                {zone ? (
-                                  <rect
-                                    x={zone.left}
-                                    y={zone.top}
-                                    width={zone.width}
-                                    height={zone.height}
-                                    fill="rgba(248,113,113,0.12)"
-                                    stroke="rgba(248,113,113,0.8)"
-                                    strokeDasharray="2 2"
-                                    strokeWidth={0.45}
-                                  />
-                                ) : null}
-                                {source && target ? (
-                                  <line
-                                    x1={source.x}
-                                    y1={source.y}
-                                    x2={target.x}
-                                    y2={target.y}
-                                    stroke="rgba(14,116,144,0.75)"
-                                    strokeWidth={0.45}
-                                    strokeDasharray="3 3"
-                                  />
-                                ) : null}
-                                {source ? (
-                                  <circle cx={source.x} cy={source.y} r={1.2} fill="#10b981" />
-                                ) : null}
-                                {target ? (
-                                  <circle cx={target.x} cy={target.y} r={1.2} fill="#3b82f6" />
-                                ) : null}
-                                {blocker ? (
-                                  <circle cx={blocker.x} cy={blocker.y} r={1.1} fill="#f97316" />
-                                ) : null}
-                              </g>
-                            );
-                          })()
-                        ) : null}
-                        {stormHydrologyOverlay?.overflowPaths?.length ? (
-                          <g>
-                            {stormHydrologyOverlay.overflowPaths.map((path) => {
-                              const points = path.path
-                                .map((pt) => {
-                                  const [x, y] = sitePointToPreviewPercent([pt.x, pt.y]);
-                                  return `${x},${y}`;
-                                })
-                                .join(" ");
-                              if (!points) return null;
-                              const labelPoint = path.path[Math.floor(path.path.length / 2)] ?? path.path[0];
-                              const [labelX, labelY] = sitePointToPreviewPercent([labelPoint.x, labelPoint.y]);
-                              return (
-                                <g key={`overflow-${path.id}`}>
-                                  <polyline
-                                    points={points}
-                                    fill="none"
-                                    stroke={path.capacityValid ? "#0f766e" : "#dc2626"}
-                                    strokeWidth={0.7}
-                                    strokeDasharray="2.5 1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <title>{path.name}</title>
-                                  </polyline>
-                                  <circle cx={labelX} cy={labelY} r={0.42} fill={path.capacityValid ? "#0f766e" : "#dc2626"} />
-                                </g>
-                              );
-                            })}
-                          </g>
-                        ) : null}
-                        {stormHydrologyOverlay?.inletChecks?.length ? (
-                          <g>
-                            {stormHydrologyOverlay.inletChecks.map((inlet) => {
-                              if (inlet.x === null || inlet.y === null) return null;
-                              const [x, y] = sitePointToPreviewPercent([inlet.x, inlet.y]);
-                              const spreadRadius = Math.max(
-                                1.1,
-                                Math.min(
-                                  5.5,
-                                  ((inlet.spreadFt ?? inlet.allowableSpreadFt ?? 6) /
-                                    Math.max(currentSiteSize.width, currentSiteSize.height, 1)) *
-                                    100,
-                                ),
-                              );
-                              const overTarget =
-                                inlet.spreadFt !== null &&
-                                inlet.allowableSpreadFt !== null &&
-                                inlet.spreadFt > inlet.allowableSpreadFt;
-                              return (
-                                <g key={`inlet-spread-${inlet.id}`}>
-                                  <circle
-                                    cx={x}
-                                    cy={y}
-                                    r={spreadRadius}
-                                    fill={overTarget ? "rgba(248,113,113,0.2)" : "rgba(14,165,233,0.2)"}
-                                    stroke={overTarget ? "#dc2626" : "#0284c7"}
-                                    strokeWidth={0.42}
-                                  >
-                                    <title>{inlet.id}</title>
-                                  </circle>
-                                  <circle cx={x} cy={y} r={0.7} fill={overTarget ? "#dc2626" : "#0284c7"} />
-                                </g>
-                              );
-                            })}
-                          </g>
-                        ) : null}
-                        {utilityCoordinationRows.length ? (
-                          <g>
-                            {utilityCoordinationRows.map((row, index) => {
-                              const fill =
-                                row.status === "conflict"
-                                  ? "#dc2626"
-                                  : row.status === "watch"
-                                    ? "#d97706"
-                                    : "#059669";
-                              const ring =
-                                row.status === "conflict"
-                                  ? "rgba(220,38,38,0.18)"
-                                  : row.status === "watch"
-                                    ? "rgba(217,119,6,0.18)"
-                                    : "rgba(5,150,105,0.14)";
-                              const x = row.x * 100;
-                              const y = row.y * 100;
-                              return (
-                                <g key={`utility-coordination-${row.id}`}>
-                                  <circle cx={x} cy={y} r={2.6} fill={ring} stroke={fill} strokeWidth={0.42} />
-                                  <circle cx={x} cy={y} r={0.9} fill={fill} />
-                                  <text
-                                    x={Math.min(x + 2.4, 96)}
-                                    y={Math.max(y - 2.2, 3)}
-                                    fontSize="2.45"
-                                    fill={fill}
-                                    fontWeight={700}
-                                  >
-                                    C{index + 1}
-                                  </text>
-                                </g>
-                              );
-                            })}
-                          </g>
-                        ) : null}
                         {visibleCadObjects
                           .filter((item) => !item.meta?.unsupported_entity_placeholder && item.geometryType === "polyline" && Array.isArray(item.geometry))
                           .map((item) => {
