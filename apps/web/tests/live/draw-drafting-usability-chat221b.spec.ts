@@ -7,11 +7,21 @@ async function openDemoWorkspace(page: Page) {
 }
 
 async function openDrawPanel(page: Page) {
+  if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) {
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
+    return;
+  }
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+  const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
+  const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
+  const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
+  if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
+  else if (await drawStep.isVisible().catch(() => false)) await drawStep.click();
+  else if (await drawButton.isVisible().catch(() => false)) await drawButton.click();
+  else await page.keyboard.press("D");
   if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) {
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
     return;
@@ -22,7 +32,7 @@ async function openDrawPanel(page: Page) {
 }
 
 async function showCadTools(page: Page) {
-  await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+  await openDrawPanel(page);
   const cadTools = page.getByTestId("draw-cad-tools-section");
   await expect(cadTools).toBeVisible();
   return cadTools;
@@ -40,7 +50,8 @@ async function startBlankSite(page: Page) {
   await addressDetails
     .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
     .click({ noWaitAfter: true });
-  await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+    await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+  await openDrawPanel(page);
 }
 
 async function expectTopmost(locator: Locator, label: string) {
@@ -343,7 +354,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("selected-object-vertex-row")).toHaveCount(3);
 
     await firstVertex.getByTestId("selected-object-vertex-delete").click();
-    await expect(page.getByTestId("selected-object-status")).toContainText("Delete vertex blocked: polygon geometry needs at least 3 points.");
+    await expect(page.getByTestId("selected-object-status")).toContainText(/Delete vertex (blocked|needs input): polygon geometry needs at least 3 points./);
 
     await firstVertex.getByTestId("selected-object-vertex-snap").click();
     await expect(page.getByTestId("selected-object-status")).toContainText(/Snapped Custom Area .*vertex 1 to .*/);

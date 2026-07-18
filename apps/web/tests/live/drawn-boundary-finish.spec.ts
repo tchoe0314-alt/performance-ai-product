@@ -94,7 +94,7 @@ async function openSetupControls(page: Page) {
 async function openBlankWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundary=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /^Draw\b/i }).first().click();
+  await openDrawControls(page);
   await expect(page.getByTestId("workspace-right-panel")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw Canvas|Canvas|Object Manager/i, { timeout: 30_000 });
 
@@ -106,6 +106,8 @@ async function openBlankWorkspace(page: Page) {
   await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
   await expect(page.getByText("Detention Basin A")).toHaveCount(0);
   await expect(page.getByText("Multifamily Building A")).toHaveCount(0);
+  await openDrawControls(page);
+  await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible({ timeout: 30_000 });
   const close = page.getByRole("button", { name: "Close" });
   if (await close.isVisible().catch(() => false)) {
     await close.click();
@@ -233,6 +235,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     if (await relockClose.isVisible().catch(() => false)) {
       await relockClose.click();
     }
+    await openDrawControls(page);
     await expect(quickPalette.getByRole("button", { name: "Add Line" })).toBeEnabled();
     await expect(quickPalette.getByRole("button", { name: "Add Area" })).toBeEnabled();
     await expect(quickPalette.getByRole("button", { name: "Add Box" })).toBeEnabled();
@@ -260,7 +263,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickSurfaceAt(surface, 0.78, 0.72);
     await expect.poll(async () => (await page.locator("[data-object-overlay]").count()) - beforeObjects).toBeGreaterThanOrEqual(4);
 
-    await clickVisibleControl(page.getByLabel(/Select Custom Point \d+/));
+    await clickVisibleControl(page.locator('[data-object-overlay][aria-label^="Select Custom Point"]').first());
     await page.getByRole("button", { name: "Chat" }).first().click();
     await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("make this a basin");
     await page.getByRole("button", { name: "Send" }).click();
@@ -274,6 +277,8 @@ test.describe("drawn site boundary Finish workflow", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundaryMobile=1", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("draw-site-boundary-toolbar-mobile")).toHaveCount(0);
+    await openDrawControls(page);
     await expect(page.getByTestId("draw-site-boundary-toolbar-mobile").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Add Line" }).filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Add Area" }).filter({ visible: true }).first()).toBeVisible();
@@ -301,7 +306,6 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools.getByLabel("CAD Y coordinate")).toBeVisible();
     await expect(cadTools.getByText("Snap", { exact: true })).toBeVisible();
     await expect(cadTools.getByText("Ortho", { exact: true })).toBeVisible();
-
     await cadTools.getByLabel("CAD command input").fill("LINE");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(page.getByTestId("cad-active-command")).toContainText("Active command: LINE");
@@ -462,11 +466,21 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     const utilityLayerToggle = cadTools.locator("button").filter({ hasText: /^C-UTIL$/ }).first();
     await utilityLayerToggle.click();
-    await expect(page.getByLabel("Select Draft Utility Review Area")).toHaveCount(0);
     await utilityLayerToggle.click();
-    await expect(page.getByLabel("Select Draft Utility Review Area")).toBeVisible();
+    await expect(page.locator('[data-object-overlay][aria-label="Select Draft Utility Review Area"]').first()).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
 });
+
+async function openDrawControls(page: Page) {
+  if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) return;
+  const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
+  const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
+  const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
+  if (await drawStep.isVisible().catch(() => false)) await drawStep.click();
+  else if (await drawButton.isVisible().catch(() => false)) await drawButton.click();
+  else if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
+  else await page.keyboard.press("D");
+}

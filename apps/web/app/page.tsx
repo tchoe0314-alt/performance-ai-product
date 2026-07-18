@@ -22650,9 +22650,17 @@ function PerformanceAIDashboardView({
         : "No run output yet.";
   const drawWorkspaceActive =
     activePrimaryWorkflowKey === "draw" ||
+    activePrimaryWorkflowKey === "objects" ||
     sidePanelForRender === "objects" ||
     sidePanelForRender === "model" ||
     previewInteraction === "edit";
+  const canvasDrawControlsActive =
+    sidePanelForRender === "objects" ||
+    sidePanelForRender === "model" ||
+    sidePanelForRender === "layers" ||
+    sidePanelForRender === "details";
+  const canvasPreviewInteraction =
+    canvasDrawControlsActive ? "edit" : "static";
   const commandBarVisible =
     Boolean(commandBarExpanded || prompt.trim() || imageName || busy || chatBlockingActiveJob) &&
     activeSidePanel !== "chat" &&
@@ -22793,7 +22801,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[41] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 pb-28 pt-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-auto lg:left-4 lg:right-auto lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:w-[88px] lg:pb-3"
+            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[260] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 pb-28 pt-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-auto lg:left-4 lg:right-auto lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:w-[88px] lg:pb-3"
           >
             <button
               type="button"
@@ -30065,7 +30073,7 @@ function PerformanceAIDashboardView({
                 planPreviewProjectId={planPreviewProjectId}
                 currentProjectId={projectId || currentProject?.project_id || null}
                 previewMode={previewMode}
-                previewInteraction={previewInteraction}
+                previewInteraction={canvasPreviewInteraction}
                 previewQuality={previewQuality}
                 previewLabelDensity={previewLabelDensity}
                 systemStatuses={systemStatuses}

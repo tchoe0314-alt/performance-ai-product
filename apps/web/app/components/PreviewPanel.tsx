@@ -948,7 +948,9 @@ export default function PreviewPanel({
   const canUse3D = showMap || hasLiveObjects || preview3DEffectiveItems.length > 0 || Boolean(planPreviewUrl);
   const showHover = previewInteraction === "static";
   const allowEdits = previewInteraction === "edit";
-  const showQuickDrawPalette = allowEdits || (!siteLocked && previewMode === "2d");
+  const showQuickDrawPalette =
+    previewMode === "2d" && (allowEdits || (drawMode !== "select" && drawMode !== "pan"));
+  const showMobileDrawToolbar = showQuickDrawPalette;
   const activeDrawMode =
     (drawMode === "site" && !siteLocked) ||
     ((drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect" || drawMode === "point") && canDrawObjects);
@@ -8479,7 +8481,7 @@ export default function PreviewPanel({
             </div>
           ) : null}
           {previewMode === "2d" && allowEdits ? (
-            <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
+            <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:max-w-[calc(100%-30rem)] lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
               <section className="min-w-0">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -9551,7 +9553,7 @@ export default function PreviewPanel({
                   )}
                 </div>
               ) : null}
-              {previewMode === "2d" ? (
+              {showMobileDrawToolbar ? (
                 <div className="absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 sm:bottom-2 md:hidden">
                   <div className="grid grid-cols-4 gap-1.5 pb-1 min-[420px]:grid-cols-7">
                     {drawModeButtons.map((item) => {
