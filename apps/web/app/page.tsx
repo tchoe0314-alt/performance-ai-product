@@ -21218,6 +21218,22 @@ function PerformanceAIDashboardView({
 	      { label: "Settings", panel: "settings", detail: "Workspace defaults", status: panelStatus("settings") },
 	    ],
 	  };
+	  const northStarPanelSteps: Array<{ key: "setup" | "draw" | "generate" | "deliver"; label: string; panel: SidePanelKey }> = [
+	    { key: "setup", label: "Setup", panel: "site_existing" },
+	    { key: "draw", label: "Draw", panel: "objects" },
+	    { key: "generate", label: "Generate", panel: "generate" },
+	    { key: "deliver", label: "Deliver", panel: "deliverables" },
+	  ];
+	  const activeNorthStarStep =
+	    sidePanelForRender === "site_existing" || sidePanelForRender === "import_survey" || sidePanelForRender === "data" || sidePanelForRender === "standards"
+	      ? "setup"
+	      : sidePanelForRender === "objects" || sidePanelForRender === "model" || sidePanelForRender === "layers" || sidePanelForRender === "details"
+	        ? "draw"
+	        : sidePanelForRender === "generate" || sidePanelForRender === "grading" || sidePanelForRender === "drainage" || sidePanelForRender === "utilities" || sidePanelForRender === "sanitary" || sidePanelForRender === "water" || sidePanelForRender === "roadway" || sidePanelForRender === "landscape"
+	          ? "generate"
+	          : sidePanelForRender === "deliverables" || sidePanelForRender === "files" || sidePanelForRender === "reports" || sidePanelForRender === "quantities"
+	            ? "deliver"
+	            : null;
 
   const handleCancelActiveTool = useCallback(() => {
     if (shortcutsOverlayOpen) {
@@ -23095,16 +23111,39 @@ function PerformanceAIDashboardView({
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
             className={`civora-motion-right-panel fixed inset-x-0 ${commandBarVisible ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] max-h-[calc(82svh-4.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] lg:bottom-[5.25rem]" : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] max-h-[calc(92svh-0.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:max-h-[calc(90svh-1rem)] lg:bottom-4"} top-auto z-[90] order-3 flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:rounded-xl lg:inset-x-auto lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:rounded-xl ${
-              sidePanelForRender === "deliverables" ? "lg:w-[760px] xl:w-[860px]" : "lg:w-[380px]"
+              sidePanelForRender === "deliverables" ? "lg:w-[760px] xl:w-[860px]" : "lg:w-[420px] xl:w-[460px]"
             }`}
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
                 <div className="min-w-0">
                   <p className="civora-muted-label">{activePanelTitle}</p>
-                  <p className="mt-1 line-clamp-2 text-sm text-[var(--civora-text-muted)]">
-                    {activePanelDescription}
-                  </p>
-                </div>
+	                  <p className="mt-1 line-clamp-2 text-sm text-[var(--civora-text-muted)]">
+	                    {activePanelDescription}
+	                  </p>
+	                  {activeNorthStarStep ? (
+	                    <div className="mt-3 flex flex-wrap gap-1.5" data-testid="north-star-step-strip">
+	                      {northStarPanelSteps.map((step, stepIndex) => {
+	                        const active = activeNorthStarStep === step.key;
+	                        return (
+	                          <button
+	                            key={step.key}
+	                            type="button"
+	                            onClick={() => handleOpenSidePanel(step.panel)}
+	                            aria-label={`Go to workflow step ${stepIndex + 1}`}
+	                            aria-current={active ? "step" : undefined}
+	                            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${
+	                              active
+	                                ? "border-slate-950 bg-slate-950 text-white"
+	                                : "border-slate-200 bg-white/70 text-slate-500 hover:bg-white hover:text-slate-900"
+	                            }`}
+	                          >
+	                            {step.label}
+	                          </button>
+	                        );
+	                      })}
+	                    </div>
+	                  ) : null}
+	                </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
@@ -23839,22 +23878,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-3" data-testid="clean-setup-panel">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSidePanel("import_survey")}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                      >
-                        Import
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSidePanel("objects")}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                      >
-                        Draw
-                      </button>
-                    </div>
                     <details open className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
@@ -27751,27 +27774,6 @@ function PerformanceAIDashboardView({
                         </p>
                       </div>
                     </details>
-	                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-	                      <div className="flex items-start justify-between gap-3">
-	                        <div>
-	                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Draw & Object Manager</p>
-	                          <p className="mt-1 text-sm text-slate-600">
-	                            Select, focus, rename, recolor, layer, hide, and delete draft objects.
-	                          </p>
-	                        </div>
-	                        <button
-	                          type="button"
-	                          onClick={() => {
-	                            setPrompt("Add an office building, parking, detention basin, driveway, sidewalks, and public utilities inside the locked site.");
-	                            handleOpenSidePanel("chat");
-	                          }}
-	                          className="shrink-0 rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
-	                        >
-	                          Ask chat
-	                        </button>
-	                      </div>
-	                    </div>
-
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="needs-placement-tray">
                       <div className="flex items-start justify-between gap-3">
                         <div>
