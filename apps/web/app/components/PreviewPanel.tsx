@@ -1069,20 +1069,20 @@ export default function PreviewPanel({
       const reviewWidth = (normal: number, selectedWidth: number) => (reviewConcept ? (selected ? 0.32 : 0.18) : selected ? selectedWidth : normal);
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
-          building: { fill: "rgba(148, 163, 184, 0.16)", stroke: "#334155" },
-          parking: { fill: "rgba(148, 163, 184, 0.08)", stroke: "#64748b" },
-          road: { fill: "rgba(51, 65, 85, 0.12)", stroke: "#334155" },
-          water: { fill: "rgba(125, 211, 252, 0.16)", stroke: "#0369a1" },
-          landscape: { fill: "rgba(187, 247, 208, 0.14)", stroke: "#15803d" },
-          sidewalk: { fill: "rgba(248, 250, 252, 0.46)", stroke: "#94a3b8" },
-          utility: { fill: "rgba(59, 130, 246, 0.04)", stroke: "#1d4ed8" },
-          fallback: { fill: "rgba(248, 250, 252, 0.08)", stroke: "#64748b" },
+          building: { fill: "rgba(226, 232, 240, 0.22)", stroke: "#1f2937" },
+          parking: { fill: "rgba(241, 245, 249, 0.18)", stroke: "#64748b" },
+          road: { fill: "rgba(71, 85, 105, 0.10)", stroke: "#334155" },
+          water: { fill: "rgba(186, 230, 253, 0.18)", stroke: "#0369a1" },
+          landscape: { fill: "rgba(220, 252, 231, 0.14)", stroke: "#15803d" },
+          sidewalk: { fill: "rgba(248, 250, 252, 0.36)", stroke: "#94a3b8" },
+          utility: { fill: "rgba(59, 130, 246, 0.035)", stroke: "#1d4ed8" },
+          fallback: { fill: "rgba(248, 250, 252, 0.025)", stroke: "#94a3b8" },
         };
         const style = standardPalette[kind] ?? standardPalette.fallback;
 	        return {
 	          fill: style.fill,
 	          stroke: selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? style.stroke,
-          strokeWidth: selected ? (kind === "utility" ? 0.28 : 0.46) : reviewConcept ? 0.16 : kind === "fallback" ? 0.24 : kind === "road" || kind === "sidewalk" ? 0.32 : kind === "utility" ? 0.18 : 0.24,
+          strokeWidth: selected ? (kind === "utility" ? 0.28 : 0.46) : reviewConcept ? 0.16 : kind === "fallback" ? 0.16 : kind === "building" ? 0.3 : kind === "road" || kind === "sidewalk" ? 0.32 : kind === "utility" ? 0.18 : 0.22,
           strokeDasharray: dash,
           opacity: stateOpacity,
         };
@@ -1106,9 +1106,9 @@ export default function PreviewPanel({
         return { fill: "rgba(37, 99, 235, 0.065)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.34, 0.58), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "building") {
-        return { fill: "rgba(203, 213, 225, 0.24)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.28, 0.58), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(226, 232, 240, 0.28)", stroke: stateStroke("#1f2937"), strokeWidth: reviewWidth(0.34, 0.62), strokeDasharray: dash, opacity: stateOpacity };
       }
-      return { fill: "rgba(248, 250, 252, 0.08)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.24, 0.48), strokeDasharray: dash, opacity: stateOpacity };
+      return { fill: "rgba(248, 250, 252, 0.025)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.16, 0.42), strokeDasharray: dash, opacity: stateOpacity };
     },
     [isHighQuality, resolveVisualKind],
   );
@@ -9870,8 +9870,18 @@ export default function PreviewPanel({
                         style={viewportTransformStyle}
                       >
                         <defs>
+                          <filter id="plan-ink-soften" x="-10%" y="-10%" width="120%" height="120%">
+                            <feDropShadow dx="0" dy="0.08" stdDeviation="0.08" floodColor="rgba(15,23,42,0.18)" />
+                          </filter>
                           <pattern id="cad-hatch-diagonal" patternUnits="userSpaceOnUse" width="2.4" height="2.4" patternTransform="rotate(45)">
                             <line x1="0" y1="0" x2="0" y2="2.4" stroke="rgba(15,23,42,0.34)" strokeWidth="0.16" />
+                          </pattern>
+                          <pattern id="cad-building-poche" patternUnits="userSpaceOnUse" width="3.2" height="3.2" patternTransform="rotate(45)">
+                            <line x1="0" y1="0" x2="0" y2="3.2" stroke="rgba(15,23,42,0.16)" strokeWidth="0.12" />
+                          </pattern>
+                          <pattern id="cad-asphalt-light" patternUnits="userSpaceOnUse" width="3.4" height="3.4">
+                            <path d="M 0 3.4 L 3.4 0" stroke="rgba(51,65,85,0.08)" strokeWidth="0.12" />
+                            <path d="M 1.7 3.4 L 3.4 1.7" stroke="rgba(51,65,85,0.06)" strokeWidth="0.1" />
                           </pattern>
                           <pattern id="cad-hatch-water" patternUnits="userSpaceOnUse" width="4.4" height="2.6">
                             <path d="M 0 1.3 C 1.1 0.3 2.2 2.3 3.3 1.3 S 5.5 1.3 6.6 1.3" fill="none" stroke="rgba(2,132,199,0.42)" strokeWidth="0.18" />
@@ -9887,7 +9897,7 @@ export default function PreviewPanel({
                             y={0}
                             width={100}
                             height={100}
-                            fill="transparent"
+                            fill={showMap ? "transparent" : isHighQuality ? "rgba(248,250,252,0.22)" : "transparent"}
                             stroke="transparent"
                             strokeWidth={0}
                           />
@@ -10003,11 +10013,11 @@ export default function PreviewPanel({
                                   <polyline
                                     points={points.join(" ")}
                                     fill="none"
-                                    stroke="rgba(248, 250, 252, 0.72)"
-                                    strokeWidth={0.2}
-                                    strokeDasharray="1.4 1.4"
+                                    stroke="url(#cad-asphalt-light)"
+                                    strokeWidth={Math.max(0.34, corridorStrokeWidth * 0.42)}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
+                                    opacity={sourceState === "fallback" ? 0.28 : 0.72}
                                   />
                                 ) : null}
                                 {isHighQuality && isUtilityLine ? (
@@ -10070,6 +10080,16 @@ export default function PreviewPanel({
                                     >
                                       <title>{sourceStateLabel(sourceState)}</title>
                                     </polyline>
+                                    {isHighQuality ? (
+                                      <polyline
+                                        points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                                        fill="none"
+                                        stroke="url(#cad-asphalt-light)"
+                                        strokeWidth={Math.max(0.6, corridorAxis.width * 0.82)}
+                                        strokeLinecap="round"
+                                        opacity={sourceState === "fallback" ? 0.28 : 0.75}
+                                      />
+                                    ) : null}
                                     <polyline
                                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                                       fill="none"
@@ -10129,7 +10149,19 @@ export default function PreviewPanel({
                                       strokeLinejoin="round"
                                     >
                                       <title>{sourceStateLabel(sourceState)}</title>
-                                    </rect>
+                                      </rect>
+                                    {isHighQuality && visualKind === "building" ? (
+                                      <rect
+                                        x={rect.left}
+                                        y={rect.top}
+                                        width={rect.width}
+                                        height={rect.height}
+                                        rx={cornerRadius}
+                                        fill="url(#cad-building-poche)"
+                                        stroke="none"
+                                        opacity={sourceState === "fallback" ? 0.28 : 0.8}
+                                      />
+                                    ) : null}
                                     {isFallbackBounds ? (
                                       <rect
                                         x={rect.left + rect.width * 0.03}
@@ -10193,16 +10225,26 @@ export default function PreviewPanel({
                                       y1={rect.top + rect.height}
                                       x2={rect.left + rect.width}
                                       y2={rect.top}
-                                      stroke="rgba(15,23,42,0.45)"
-                                      strokeWidth={0.16}
+                                      stroke="rgba(15,23,42,0.32)"
+                                      strokeWidth={0.12}
                                     />
                                     <line
                                       x1={rect.left}
                                       y1={rect.top}
                                       x2={rect.left + rect.width}
                                       y2={rect.top + rect.height}
-                                      stroke="rgba(255,255,255,0.34)"
-                                      strokeWidth={0.12}
+                                      stroke="rgba(15,23,42,0.18)"
+                                      strokeWidth={0.1}
+                                    />
+                                    <rect
+                                      x={rect.left + rect.width * 0.08}
+                                      y={rect.top + rect.height * 0.08}
+                                      width={rect.width * 0.84}
+                                      height={rect.height * 0.84}
+                                      rx={0.08}
+                                      fill="none"
+                                      stroke="rgba(15,23,42,0.14)"
+                                      strokeWidth={0.08}
                                     />
                                   </>
                                 ) : null}

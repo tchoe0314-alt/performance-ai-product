@@ -28,6 +28,10 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
     await expect(page.getByTestId("plan-basin-shelf-cues").first()).toBeVisible();
     await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
+    await expect(canvas.locator("#cad-building-poche")).toHaveCount(1);
+    await expect(canvas.locator("#cad-asphalt-light")).toHaveCount(1);
+    await expect(canvas.locator('rect[fill="url(#cad-building-poche)"]').first()).toBeVisible();
+    await expect(canvas.locator('polyline[stroke="url(#cad-asphalt-light)"]').first()).toBeVisible();
 
     const hydrantOverlay = page.locator('div[data-object-overlay][aria-label="Select Hydrant W-12"]').first();
     const topVisibleOverlay = (await hydrantOverlay.isVisible().catch(() => false))
