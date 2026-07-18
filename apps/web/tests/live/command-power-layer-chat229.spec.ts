@@ -92,6 +92,21 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/site type or land use/i);
   });
 
+  test("site size first with address center wording locks the site", async ({ page }) => {
+    await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
+
+    await runCommand(
+      page,
+      "Set the site to 1000 ft by 1000 ft with 20525 Margo St Gretna NE as the center point",
+    );
+
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Site Locked/i, { timeout: 8_000 });
+    await page.getByRole("button", { name: "Setup" }).first().click();
+    await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
+    await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
+    await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/site type or land use/i);
+  });
+
   test("commands open generate, deliver, blocker view, layers, and AI realism mode", async ({ page }) => {
     await openDemoWorkspace(page);
 

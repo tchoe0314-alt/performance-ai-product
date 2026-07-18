@@ -12869,18 +12869,39 @@ function PerformanceAIDashboardView({
     const height = Number(sizeMatch[2].replace(/,/g, ""));
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
     const beforeSize = compact.slice(0, sizeMatch.index).trim();
+    const afterSize = compact.slice(sizeMatch.index + sizeMatch[0].length).trim();
+    const cleanAddressCandidate = (value: string) =>
+      value
+        .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
+        .replace(/^\b(?:with|using|at|centered\s+(?:at|on)|centred\s+(?:at|on))\b\s*/i, "")
+        .replace(/\b(?:as|for|with)?\s*(?:the\s+)?(?:center|centre)(?:\s+point)?\b.*$/i, "")
+        .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
+        .replace(/[.,;:]+$/g, "")
+        .trim();
     const afterAddressLead = beforeSize
       .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
       .split(/\s+\b(?:and|with)\b\s+(?:it'?s|it is|site|lot|gonna|going|will|should)/i)[0]
       .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
       .trim();
+    const addressAfterSize = cleanAddressCandidate(afterSize);
     const streetLikeFallback = beforeSize
       .replace(/\b(?:i want|make|set|create|start|the|site|lot|address|center point|centered|with)\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
-    const address = (afterAddressLead || streetLikeFallback)
-      .replace(/[.,;:]+$/g, "")
-      .trim();
+    const currentAddress = siteAddress.trim();
+    const addressCandidates = [afterAddressLead, addressAfterSize, streetLikeFallback]
+      .map((candidate) => candidate.replace(/[.,;:]+$/g, "").trim())
+      .filter(Boolean);
+    let address =
+      addressCandidates.find((candidate) => candidate.length >= 6 && /\d/.test(candidate)) ||
+      addressCandidates[0] ||
+      "";
+    if (/^(?:the\s+)?address$/i.test(address) && currentAddress) {
+      address = currentAddress;
+    }
+    if (!address && currentAddress && /\baddress\b/i.test(afterSize)) {
+      address = currentAddress;
+    }
     if (address.length < 6 || !/\d/.test(address)) return null;
     return { address, width, height };
   };
