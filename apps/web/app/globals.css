@@ -317,16 +317,21 @@ body,
 
 [data-testid="workspace-right-panel"] {
   color: var(--civora-text);
+  --civora-panel-card-bg: rgba(255, 255, 255, 0.96);
+  --civora-panel-muted-bg: rgba(248, 250, 252, 0.72);
 }
 
 .civora-left-mode-rail {
   z-index: 900 !important;
   pointer-events: auto;
   scrollbar-width: none;
+  box-shadow: 1px 0 0 rgba(15, 23, 42, 0.06);
 }
 
 .civora-left-mode-rail button {
   min-width: 0;
+  border-radius: 14px;
+  letter-spacing: 0;
 }
 
 @media (max-width: 1023px) {
@@ -361,11 +366,12 @@ body,
 }
 
 [data-testid="workspace-right-panel"] :where(.rounded-2xl) {
-  border-radius: var(--civora-radius-lg);
+  border-radius: 16px;
+  background: var(--civora-panel-card-bg);
 }
 
 [data-testid="workspace-right-panel"] :where(.rounded-xl) {
-  border-radius: var(--civora-radius-md);
+  border-radius: 12px;
 }
 
 [data-testid="workspace-right-panel"] :where(button, input, select, textarea) {
@@ -374,6 +380,7 @@ body,
 
 [data-testid="workspace-right-panel"] :where(button) {
   min-height: 2.25rem;
+  letter-spacing: 0.04em;
 }
 
 [data-testid="workspace-right-panel"] :where(button:not(:disabled)) {
@@ -398,7 +405,7 @@ body,
 }
 
 [data-testid="workspace-right-panel"] :where(.bg-slate-50) {
-  background-color: rgba(248, 250, 252, 0.72);
+  background-color: var(--civora-panel-muted-bg);
 }
 
 [data-testid="workspace-right-panel"] :where(.shadow-sm, .shadow-lg) {
@@ -406,8 +413,51 @@ body,
 }
 
 [data-testid="workspace-right-panel"] :where([data-testid="object-manager-row"]) {
-  border-radius: 10px;
+  border-radius: 14px;
   box-shadow: none;
+}
+
+[data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] :where(button[data-testid^="cad-tool-"]) {
+  min-height: 54px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  position: relative;
+  text-align: center;
+}
+
+[data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] :where(button[data-testid^="cad-tool-"] span:first-child) {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+}
+
+[data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] :where(button[data-testid^="cad-tool-"] span:last-child) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.civora-preview-panel {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)) !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+[data-testid="workspace-canvas-shell"] {
+  background: #f8fafc;
+}
+
+[data-testid="workspace-canvas-frame"] {
+  background: #f8fafc;
+}
+
+[data-testid="site-status"] {
+  box-shadow: 0 14px 38px -30px rgba(15, 23, 42, 0.45);
 }
 
 [data-testid="workspace-right-panel"] :where([data-testid="object-manager-row"] input, [data-testid="object-manager-row"] select) {

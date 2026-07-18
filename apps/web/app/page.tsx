@@ -22995,7 +22995,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[260] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 pb-28 pt-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-auto lg:left-4 lg:right-auto lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:w-[88px] lg:pb-3"
+            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[260] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 pb-28 pt-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-0 lg:left-0 lg:right-auto lg:top-16 lg:max-h-none lg:w-[76px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/92 lg:pb-4 lg:shadow-none"
           >
             <button
               type="button"
@@ -23312,8 +23312,8 @@ function PerformanceAIDashboardView({
               data-testid="workspace-right-panel"
               data-motion-state={sidePanelVisible ? "open" : "closed"}
               aria-hidden={!sidePanelVisible}
-            className={`civora-motion-right-panel fixed inset-x-0 ${commandBarVisible ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] max-h-[calc(82svh-4.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] lg:bottom-[5.25rem]" : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] max-h-[calc(92svh-0.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:max-h-[calc(90svh-1rem)] lg:bottom-4"} top-auto z-[90] order-3 flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/92 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:rounded-xl lg:inset-x-auto lg:left-auto lg:right-4 lg:top-24 lg:h-auto lg:max-h-none lg:rounded-xl ${
-              sidePanelForRender === "deliverables" ? "lg:w-[760px] xl:w-[860px]" : "lg:w-[420px] xl:w-[460px]"
+            className={`civora-motion-right-panel fixed inset-x-0 ${commandBarVisible ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] max-h-[calc(82svh-4.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] lg:bottom-0" : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] max-h-[calc(92svh-0.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:max-h-[calc(90svh-1rem)] lg:bottom-0"} top-auto z-[90] order-3 flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/94 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:rounded-xl lg:inset-x-auto lg:left-auto lg:right-0 lg:top-16 lg:h-auto lg:max-h-none lg:rounded-none lg:border-y-0 lg:border-r-0 lg:shadow-[-18px_0_60px_-54px_rgba(15,23,42,0.72)] ${
+              sidePanelForRender === "deliverables" ? "lg:w-[680px] xl:w-[760px]" : "lg:w-[360px] xl:w-[390px]"
             }`}
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
