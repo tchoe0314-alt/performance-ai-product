@@ -320,6 +320,8 @@ body,
 }
 
 .civora-left-mode-rail {
+  z-index: 900 !important;
+  pointer-events: auto;
   scrollbar-width: none;
 }
 

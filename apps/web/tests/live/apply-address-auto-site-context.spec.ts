@@ -158,7 +158,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("button", { name: "Setup" }).first().click();
-  await page.getByTestId("setup-address-truth").locator("summary").click();
+  const addressSection = page.getByTestId("setup-address-truth");
+  if (!(await addressSection.evaluate((node) => node.hasAttribute("open")))) {
+    await addressSection.locator("summary").click();
+  }
   await page.getByLabel("Type project address").fill("1 Main St, Test City, TX");
   await page.getByRole("button", { name: "Apply address" }).click();
 

@@ -16951,6 +16951,72 @@ function PerformanceAIDashboardView({
     }
   };
 
+  const handleCreateCenteredSiteFromSetup = useCallback(async () => {
+    const address = siteAddress.trim();
+    const width = parsePositiveNumber(lotWidth) ?? 1000;
+    const height = parsePositiveNumber(lotHeight) ?? 1000;
+    if (!address) {
+      updateProjectStatus({
+        state: "needs review",
+        area: "setup",
+        title: "Address needed",
+        detail: "Type the site address first.",
+        nextAction: "Enter an address, then create the centered site.",
+      });
+      siteAddressInputRef.current?.focus();
+      return;
+    }
+    setLotWidth(String(Math.round(width)));
+    setLotHeight(String(Math.round(height)));
+    clearGeneratedPreview();
+    autoFitSite(width, height, "Site Boundary", undefined, true, true, true);
+    setShowSiteBounds(false);
+    setSiteSelectionMode(false);
+    setPreviewMode("2d");
+    setPreviewQuality("high");
+    setPreviewInteraction("static");
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
+    setFitToSiteRequest((value) => value + 1);
+    updateProjectStatus({
+      state: "working",
+      area: "setup",
+      title: "Creating centered site",
+      detail: `${address} is being applied with a ${Math.round(width)} ft by ${Math.round(height)} ft site box centered on the address.`,
+      nextAction: "Review the detected source context, then draw or generate inside the locked site.",
+    });
+    setAutoExistingConditionsStatus({
+      status: "running",
+      message: `Creating a ${Math.round(width)} ft by ${Math.round(height)} ft site centered on ${address}, then checking available source context.`,
+      candidateCount: 0,
+      missing: [],
+    });
+    lastAppliedSiteRef.current = {
+      w: width,
+      h: height,
+      lat: viewportCenter?.lat,
+      lng: viewportCenter?.lng,
+    };
+    await saveSiteAddress(address, {
+      preserveLockedSite: true,
+      siteWidth: width,
+      siteHeight: height,
+    });
+  }, [
+    autoFitSite,
+    clearGeneratedPreview,
+    lotHeight,
+    lotWidth,
+    saveSiteAddress,
+    siteAddress,
+    updateProjectStatus,
+    viewportCenter?.lat,
+    viewportCenter?.lng,
+  ]);
+
   const handleMapCenter = useCallback(
     async (payload: { lat: number; lng: number }) => {
       const currentInput = currentProject?.project_input ?? payloadPreview;
@@ -23921,6 +23987,9 @@ function PerformanceAIDashboardView({
                         </label>
                         {addressSuggestions.length && !siteScaleLocked ? (
                           <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 text-xs text-slate-600">
+                            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              Optional address matches
+                            </p>
                             {addressSuggestions.map((suggestion) => (
                               <button
                                 key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
@@ -23948,6 +24017,18 @@ function PerformanceAIDashboardView({
                         </button>
                         <button
                           type="button"
+                          onClick={() => void handleCreateCenteredSiteFromSetup()}
+                          disabled={!siteAddress.trim() || onlineDiscoveryBusy}
+                          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          data-testid="create-centered-site-button"
+                        >
+                          Create centered site
+                          <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
+                            Uses the width/depth below. Empty size defaults to 1000 ft by 1000 ft.
+                          </span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={handleStartBlankSite}
                           aria-label="Start a blank site from detailed setup controls and clear address map evidence"
                           className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
@@ -23965,7 +24046,7 @@ function PerformanceAIDashboardView({
                       </div>
                     </details>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-site-box-controls">
+                    <details open={!siteScaleLocked} className="rounded-xl border border-slate-200 bg-white" data-testid="setup-site-box-controls">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site Boundary</span>
@@ -23982,6 +24063,7 @@ function PerformanceAIDashboardView({
                           <label className="flex flex-col gap-1 font-semibold">
                             Width (ft)
                             <input
+                              aria-label="Site width in feet"
                               type="number"
                               value={lotWidth}
                               disabled={siteScaleLocked}
@@ -23992,6 +24074,7 @@ function PerformanceAIDashboardView({
                           <label className="flex flex-col gap-1 font-semibold">
                             Depth (ft)
                             <input
+                              aria-label="Site depth in feet"
                               type="number"
                               value={lotHeight}
                               disabled={siteScaleLocked}
@@ -24005,6 +24088,18 @@ function PerformanceAIDashboardView({
                             {OVERSIZED_SITE_MESSAGE}
                           </p>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLotWidth("1000");
+                            setLotHeight("1000");
+                          }}
+                          disabled={siteScaleLocked}
+                          className="mt-3 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                          data-testid="use-1000-site-size"
+                        >
+                          Use 1000 ft x 1000 ft
+                        </button>
                         <div className="mt-3 grid grid-cols-2 gap-2">
                           <button
                             type="button"
@@ -24022,6 +24117,14 @@ function PerformanceAIDashboardView({
                             {siteScaleLocked ? "Change Boundary" : "Lock Boundary"}
                           </button>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleCreateCenteredSiteFromSetup()}
+                          disabled={!siteAddress.trim() || onlineDiscoveryBusy}
+                          className="mt-2 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          Create centered site from address
+                        </button>
                       </div>
                     </details>
 
