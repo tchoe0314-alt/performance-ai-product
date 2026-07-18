@@ -319,6 +319,8 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.24, 0.52);
     await clickExposedSurface(surface, 0.42, 0.46);
     await clickExposedSurface(surface, 0.5, 0.62);
+    await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
+    await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
 
     const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
@@ -349,6 +351,8 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.24, 0.52);
     await clickExposedSurface(surface, 0.42, 0.46);
     await clickExposedSurface(surface, 0.5, 0.62);
+    await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
+    await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
 
     const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
@@ -402,6 +406,8 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.24, 0.52);
     await clickExposedSurface(surface, 0.42, 0.46);
     await clickExposedSurface(surface, 0.5, 0.62);
+    await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
+    await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
 
     const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();

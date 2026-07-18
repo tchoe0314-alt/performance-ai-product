@@ -4446,7 +4446,7 @@ export default function PreviewPanel({
         activateDrawMode("polyline", "PLINE");
         break;
       case "area":
-        activateDrawMode("polygon", "AREA", 3);
+        activateDrawMode("polygon", "AREA");
         break;
       case "box":
         activateDrawMode("rect", "RECTANGLE");
@@ -5007,7 +5007,7 @@ export default function PreviewPanel({
         return;
       }
       setDrawMode(mode);
-      setDrawAutoFinishPointCount(mode === "polyline" ? 2 : mode === "polygon" ? 3 : null);
+      setDrawAutoFinishPointCount(mode === "polyline" ? 2 : null);
       clearDraftGeometry();
       if (mode !== "pan") {
         onSetPreviewInteraction("edit");
@@ -5040,7 +5040,7 @@ export default function PreviewPanel({
             : mode === "polyline"
               ? "Pick two points on the canvas to create a draft line."
               : mode === "polygon"
-                ? "Pick three points on the canvas to create a draft area."
+                ? "Pick area vertices on the canvas, then Finish."
                 : "Use the canvas; Finish appears when needed."
         }`,
       );
