@@ -74,6 +74,57 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(panel).toContainText(/pending placement|draft/i);
   });
 
+  test("typed layer commands hide, show, isolate, and restore draft CAD layers", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+
+    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first();
+    const parkingOverlay = page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first();
+    await expect(officeOverlay).toBeVisible({ timeout: 5_000 });
+    await expect(parkingOverlay).toBeVisible({ timeout: 5_000 });
+
+    await officeOverlay.click();
+    await runCommand(page, "LAYER C-BLDG");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("LAYER applied C-BLDG");
+
+    await parkingOverlay.click();
+    await runCommand(page, "LAYER C-ROAD");
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("LAYER applied C-ROAD");
+
+    await runCommand(page, "LAYER HIDE C-BLDG");
+    await expect(officeOverlay).toHaveCount(0);
+    await expect(parkingOverlay).toBeVisible();
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("LAYER HIDE hid C-BLDG.");
+
+    await runCommand(page, "LAYER SHOW C-BLDG");
+    await expect(officeOverlay).toBeVisible();
+
+    await runCommand(page, "LAYER OFF C-ROAD");
+    await expect(parkingOverlay).toHaveCount(0);
+    await expect(officeOverlay).toBeVisible();
+
+    await runCommand(page, "LAYER ON C-ROAD");
+    await expect(parkingOverlay).toBeVisible();
+
+    await runCommand(page, "LAYER ONLY C-BLDG");
+    await expect(officeOverlay).toBeVisible();
+    await expect(parkingOverlay).toHaveCount(0);
+
+    await runCommand(page, "LAYER ALL");
+    await expect(officeOverlay).toBeVisible();
+    await expect(parkingOverlay).toBeVisible();
+
+    await runCommand(page, "LAYER ISOLATE C-ROAD");
+    await expect(officeOverlay).toHaveCount(0);
+    await expect(parkingOverlay).toBeVisible();
+
+    await runCommand(page, "LAYER SHOWALL");
+    await expect(officeOverlay).toBeVisible();
+    await expect(parkingOverlay).toBeVisible();
+  });
+
   test("canvas window selection selects visible editable objects", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

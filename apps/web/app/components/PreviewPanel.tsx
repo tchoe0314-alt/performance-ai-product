@@ -4344,21 +4344,47 @@ export default function PreviewPanel({
       return;
     }
     if (commandKey === "LAYER") {
-      const layer = (args[0] || "").trim().toUpperCase();
-      if (!layer) {
+      const layerAction = (args[0] || "").trim().toUpperCase();
+      const layer = (args[1] || "").trim().toUpperCase();
+      if (layerAction === "ALL" || layerAction === "SHOWALL") {
+        setHiddenCadLayers([]);
+        pushCadCommandFeedback("LAYER", "applied", "LAYER ALL showed every draft CAD layer.");
+        return;
+      }
+      if (["HIDE", "OFF", "SHOW", "ON", "ONLY", "ISOLATE"].includes(layerAction)) {
+        if (!layer) {
+          pushCadCommandFeedback("LAYER", "blocked", `LAYER ${layerAction} blocked: provide a layer name like LAYER ${layerAction} C-UTIL.`);
+          return;
+        }
+        if (layerAction === "HIDE" || layerAction === "OFF") {
+          setHiddenCadLayers((prev) => Array.from(new Set([...prev, layer])));
+          pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} hid ${layer}.`);
+          return;
+        }
+        if (layerAction === "SHOW" || layerAction === "ON") {
+          setHiddenCadLayers((prev) => prev.filter((item) => item !== layer));
+          pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} showed ${layer}.`);
+          return;
+        }
+        setHiddenCadLayers(cadLayerOptions.filter((item) => item !== layer));
+        pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} isolated ${layer}.`);
+        return;
+      }
+      const targetLayer = layerAction;
+      if (!targetLayer) {
         pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: provide a layer name like LAYER C-UTIL.");
         return;
       }
-      setCadLayerDraft(layer);
+      setCadLayerDraft(targetLayer);
       if (selectedCadIds.length) {
         selectedCadIds.forEach((id) => {
           const target = buildingPlacements.find((item) => item.id === id);
           if (!target || target.locked || target.type === "site") return;
-          updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: layer } }, "Layer");
+          updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: targetLayer } }, "Layer");
         });
-        pushCadCommandFeedback("LAYER", "applied", `LAYER applied ${layer} to selected draft object(s).`);
+        pushCadCommandFeedback("LAYER", "applied", `LAYER applied ${targetLayer} to selected draft object(s).`);
       } else {
-        pushCadCommandFeedback("LAYER", "info", `Current draft layer set to ${layer}. Select objects to apply it.`);
+        pushCadCommandFeedback("LAYER", "info", `Current draft layer set to ${targetLayer}. Select objects to apply it.`);
       }
       return;
     }
@@ -4384,6 +4410,7 @@ export default function PreviewPanel({
     buildingPlacements,
     cadActiveCommand,
     cadCommandDraft,
+    cadLayerOptions,
     changeSelectedPolylineState,
     cadOrthoEnabled,
     cadSnapEnabled,
