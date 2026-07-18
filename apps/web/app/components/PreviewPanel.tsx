@@ -1186,13 +1186,14 @@ export default function PreviewPanel({
     debugWindow.__civoraPreviewQuality = previewQuality;
     debugWindow.__civoraMapLoaded = mapLoaded;
   }, [geocode, mapLoaded, mapOverlayEnabled, showMap, previewQuality]);
-  const selectedObject = useMemo(
-    () =>
+  const selectedObject = useMemo(() => {
+    const selectedIds = [selectedBuildingId, ...selectedObjectIds, ...cadSelectionSet].filter(Boolean);
+    return (
       [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
-        (item) => item.id === selectedBuildingId && item.type !== "site",
-      ) ?? null,
-    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements, selectedBuildingId],
-  );
+        (item) => selectedIds.includes(item.id) && item.type !== "site",
+      ) ?? null
+    );
+  }, [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, selectedBuildingId, selectedObjectIds, suggestedPlacements]);
   const aiRealismSourceObjects = useMemo(
     () =>
       [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]
@@ -1964,7 +1965,7 @@ export default function PreviewPanel({
         Math.max(item.w, 1) / Math.max(lotWidth, 1),
         Math.max(item.d, 1) / Math.max(lotHeight, 1),
       );
-      const focusScale = Math.min(Math.max(1 / Math.max(objectShare, 0.42), 0.96), 1.85);
+      const focusScale = Math.min(Math.max(1 / Math.max(objectShare, 0.42), 0.96), 1.35);
       setCanvasView({
         scale: focusScale,
         offsetX: (0.5 - centerX) * 96,
@@ -7023,7 +7024,7 @@ export default function PreviewPanel({
     const scale = Math.min(1 / (boxW + padding), 1 / (boxH + padding));
     const centerX = (minX + maxX) / 2 / lotWidth;
     const centerY = (minY + maxY) / 2 / lotHeight;
-    const nextTransform = { scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY };
+    const nextTransform = { scale: Math.min(Math.max(scale, 1), 1.6), tx: centerX, ty: centerY };
     const handle = window.requestAnimationFrame(() => updateFocusTransform(nextTransform));
     if (onClearFocusObject) {
       const timer = window.setTimeout(() => onClearFocusObject(), 500);

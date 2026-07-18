@@ -10403,6 +10403,7 @@ function PerformanceAIDashboardView({
       }
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
       setActivePlacementId(nextPlacement.id);
+      setSelectedObjectIds([nextPlacement.id]);
       setPlacementModeEnabled(false);
       setPreviewMode("2d");
       setPreviewInteraction("edit");
