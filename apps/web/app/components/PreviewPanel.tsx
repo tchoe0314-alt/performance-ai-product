@@ -949,7 +949,7 @@ export default function PreviewPanel({
   const showQuickDrawPalette =
     previewMode === "2d" &&
     (allowEdits || (drawMode !== "select" && drawMode !== "pan")) &&
-    !(selectedBuildingId && drawMode === "select");
+    !selectedBuildingId;
   const showMobileDrawToolbar = showQuickDrawPalette;
   const activeDrawMode =
     (drawMode === "site" && !siteLocked) ||
