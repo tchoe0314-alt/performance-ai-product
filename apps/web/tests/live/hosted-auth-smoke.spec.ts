@@ -90,12 +90,12 @@ test.describe("hosted authenticated smoke", () => {
     await page.getByRole("button", { name: "Generate" }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
     await page.getByTestId("generate-main-action").click();
-    await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Generate blocked/i, { timeout: 10_000 });
+    await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });
 
     await page.getByRole("button", { name: /^Deliver$/ }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Deliver|Review package/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();
-    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package blocked|Review package blocked/i, { timeout: 10_000 });
+    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package needs input|Review package needs input/i, { timeout: 10_000 });
 
     await askChat(page, "what changed?", /What changed|Last Generate|Recent changes|Auto Site Context/i);
     await askChat(page, "what is blocked?", /blocked|review-required|Outputs remain review-required/i);

@@ -303,7 +303,7 @@ test.describe("project drawer reliability", () => {
     });
     await page.getByRole("button", { name: "Save Project" }).click();
     await expect(page.getByTestId("project-drawer-detail")).toContainText(
-      /Save blocked: Backend unreachable or CORS\/API blocked/i,
+      /Save needs attention: Backend unreachable or CORS\/API blocked/i,
     );
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

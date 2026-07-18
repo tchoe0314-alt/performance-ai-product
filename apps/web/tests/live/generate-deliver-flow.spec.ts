@@ -64,14 +64,14 @@ test.describe("Generate and Deliver product flow", () => {
     await expect(page.getByTestId("plan-sheet-editor")).not.toContainText(/construction-ready|Civora approved|stamped by Civora|sealed by Civora|signed by Civora/i);
 
     await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Export DXF" }).click();
-    await expect(page.getByTestId("deliver-export-status")).toContainText(/authenticate with a backend session before exporting review packages|Export blocked/i);
+    await expect(page.getByTestId("deliver-export-status")).toContainText(/authenticate with a backend session before exporting review packages|Export needs input/i);
 
     await askChat(page, "what ran?", /Last Generate ran|Current fresh systems/i);
     await askChat(page, "what did you skip?", /Skipped:/i);
     await askChat(page, "what is blocked?", /Current blockers|Outputs remain review-required/i);
     await askChat(page, "what changed?", /Last Generate|Auto Site Context/i);
     await askChat(page, "what do I need next?", /next visible UI action|Review missing package inputs|review-required/i);
-    await askChat(page, "can I export?", /Export is blocked|engineer-review packages/i);
+    await askChat(page, "can I export?", /Export needs input|engineer-review packages/i);
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/construction-ready|Civora approved|stamped by Civora|sealed by Civora|signed by Civora/i);
   });
 });

@@ -995,7 +995,7 @@ function CivilSurfaceCorridorWorkflow({
     { key: "surface", label: "Surface", status: hasTerrainSource ? "Review" : "Missing" },
     { key: "alignment", label: "Alignment", status: hasAlignment ? "Review" : "Missing" },
     { key: "profile", label: "Profile", status: hasProfile ? "Review" : "Missing" },
-    { key: "corridor", label: "Corridor", status: corridorReviewBlocked ? "Blocked" : "Review" },
+    { key: "corridor", label: "Corridor", status: corridorReviewBlocked ? "Needs input" : "Review" },
     { key: "sections", label: "Sections", status: hasSections ? "Review" : "Missing" },
     { key: "cutfill", label: "Cut/Fill", status: gradingEarthworkUx.haulBalance.direction === "unknown" ? "Pending" : "Review" },
   ];
@@ -1022,7 +1022,7 @@ function CivilSurfaceCorridorWorkflow({
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-white"
           >
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{step.label}</p>
-            <p className={`mt-1 text-sm font-semibold ${step.status === "Blocked" || step.status === "Missing" ? "text-amber-700" : "text-slate-800"}`}>
+            <p className={`mt-1 text-sm font-semibold ${step.status === "Needs input" || step.status === "Missing" ? "text-amber-700" : "text-slate-800"}`}>
               {step.status}
             </p>
           </button>
@@ -1035,7 +1035,7 @@ function CivilSurfaceCorridorWorkflow({
           ["profile", "Profile"],
           ["sections", "Sections"],
           ["cutfill", "Cut/Fill"],
-          ["blockers", "Blockers"],
+          ["blockers", "Needs"],
           ["confidence", "Sources"],
         ].map(([key, label]) => (
           <button
@@ -1110,7 +1110,7 @@ function CivilSurfaceCorridorWorkflow({
             {[
               ["Alignment records", roadwayData.alignments.length],
               ["Profile samples", roadwayData.profilePoints.length || "Missing"],
-              ["Corridor state", corridorReviewBlocked ? "Blocked for review" : "Linked for review"],
+              ["Corridor state", corridorReviewBlocked ? "Needs input for review" : "Linked for review"],
               ["Source label", sourceLabel],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1724,19 +1724,30 @@ const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style
     return `${action} blocked: AI realism artifacts are visualization only, not editable site evidence.`;
   }
   if (action === "delete" && item.capabilities?.deletable === false) {
-    return `Delete blocked: ${item.label} is source-only or required project evidence.`;
+    return `Delete needs input: ${item.label} is source-only or required project evidence.`;
   }
   if ((action === "rename" || action === "style" || action === "type") && item.locked) {
     return `${action} blocked: unlock ${item.label} before editing metadata.`;
   }
   if (action === "delete" && item.locked) {
-    return `Delete blocked: unlock ${item.label} before deleting it.`;
+    return `Delete needs input: unlock ${item.label} before deleting it.`;
   }
   if ((action === "copy" || action === "transform" || action === "resize") && item.locked) {
     return `${action} blocked: unlock ${item.label} before changing draft geometry.`;
   }
   return null;
 };
+
+const formatCalmActionMessage = (message: string) =>
+  message
+    .replace(/\bblocked:/gi, "needs input:")
+    .replace(/\bblocked\b/gi, "needs input")
+    .replace(/\bBlocked\b/g, "Needs input")
+    .replace(/\bfailed\b/gi, "could not complete")
+    .replace(/\bInvalid\b/g, "Needs correction")
+    .replace(/\binvalid\b/g, "needs correction")
+    .replace(/\bStale\b/g, "Update recommended")
+    .replace(/\bstale\b/g, "update recommended");
 
 function CustomGeometryHandoffDetails({
   item,
@@ -2516,14 +2527,22 @@ const DEFAULT_PROJECT_STATUS: ProjectStatusSummary = {
 
 const projectStatusToneClass: Record<ProjectStatusState, string> = {
   working: "border-sky-200 bg-sky-50 text-sky-800",
-  blocked: "border-red-200 bg-red-50 text-red-800",
+  blocked: "border-amber-200 bg-amber-50 text-amber-800",
   "needs review": "border-amber-200 bg-amber-50 text-amber-800",
   stale: "border-orange-200 bg-orange-50 text-orange-800",
   ready: "border-emerald-200 bg-emerald-50 text-emerald-800",
 };
 
+const projectStatusDisplayLabel: Record<ProjectStatusState, string> = {
+  working: "Working",
+  blocked: "Needs input",
+  "needs review": "Needs review",
+  stale: "Update recommended",
+  ready: "Ready",
+};
+
 const formatProjectStatusText = (summary: ProjectStatusSummary) =>
-  `${summary.state}: ${summary.detail} Next: ${summary.nextAction}`;
+  `${projectStatusDisplayLabel[summary.state]}: ${summary.detail} Next: ${summary.nextAction}`;
 
 type RecentChangeType =
   | "object_added"
@@ -2607,7 +2626,7 @@ function ProjectStatusSummaryCard({ summary }: { summary: ProjectStatusSummary }
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold uppercase tracking-[0.14em]">
-            {summary.state}
+            {projectStatusDisplayLabel[summary.state]}
           </p>
           <p className="mt-1 text-sm font-semibold normal-case tracking-normal">
             {summary.title}
@@ -7375,9 +7394,10 @@ function PerformanceAIDashboardView({
   }, [clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordRecentChange, systemsImpactedByPlacement]);
 
   const reportObjectActionBlocker = useCallback((message: string) => {
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", message, "status");
+    const calmMessage = formatCalmActionMessage(message);
+    setObjectManagerStatusMessage(calmMessage);
+    setStatusMessage(calmMessage);
+    appendChatMessage("assistant", calmMessage, "status");
   }, []);
 
   const handleUpdateObjectVertex = useCallback((
@@ -10792,7 +10812,7 @@ function PerformanceAIDashboardView({
         : mode === "improve"
           ? "Civora AI is starting the improvement run."
           : "Civora AI is starting the review draft run.",
-      nextAction: "Keep this project open until the run finishes or shows a blocker.",
+      nextAction: "Keep this project open until the run finishes or shows what needs attention.",
     });
     const shouldQueueStagedRun = Boolean((forceQueue || requestPayload?.full_design_mode) && token);
     if (shouldQueueStagedRun) {
@@ -10834,12 +10854,12 @@ function PerformanceAIDashboardView({
         }
         return;
       } catch (queueError) {
-        const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
+	          const queueMessage = `Generate could not complete: ${panelErrorMessage(queueError, "Job queue could not complete.")} Next action: check the backend connection, then press Generate again.`;
         appendChatMessage("assistant", queueMessage, "status");
         updateProjectStatus({
           state: "blocked",
           area: "generate",
-          title: "Generate blocked",
+          title: "Generate needs sign-in",
           detail: panelErrorMessage(queueError, "Job queue failed."),
           nextAction: "Check the backend connection, then press Generate again.",
         });
@@ -10944,7 +10964,7 @@ function PerformanceAIDashboardView({
           updateProjectStatus({
             state: "blocked",
             area: "generate",
-            title: "Generate blocked",
+	            title: "Generate needs attention",
             detail: panelErrorMessage(queueError, "Job queue failed."),
             nextAction: "Check the backend connection, then press Generate again.",
           });
@@ -10995,7 +11015,7 @@ function PerformanceAIDashboardView({
           });
           return;
         } catch (queueError) {
-          const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
+	          const queueMessage = `Generate could not complete: ${panelErrorMessage(queueError, "Job queue could not complete.")} Next action: check the backend connection, then press Generate again.`;
           appendChatMessage(
             "assistant",
             queueMessage,
@@ -11004,7 +11024,7 @@ function PerformanceAIDashboardView({
           updateProjectStatus({
             state: "blocked",
             area: "generate",
-            title: "Generate blocked",
+	            title: "Generate needs attention",
             detail: panelErrorMessage(queueError, "Job queue failed."),
             nextAction: "Check the backend connection, then press Generate again.",
           });
@@ -11013,17 +11033,17 @@ function PerformanceAIDashboardView({
       }
       const message =
         mode === "fix"
-          ? `Fix pass failed: ${panelErrorMessage(error, "Could not complete the fix pass.")} Next action: review blockers, then retry Fix.`
+	          ? `Fix pass could not complete: ${panelErrorMessage(error, "Could not complete the fix pass.")} Next action: review inputs, then retry Fix.`
           : mode === "improve"
-            ? `Improve pass failed: ${panelErrorMessage(error, "Could not complete the improvement pass.")} Next action: review inputs, then retry Improve.`
-            : `Generate failed: ${panelErrorMessage(error, "Could not update the design.")} Next action: check the blocker/status message, then press Generate again.`;
+	            ? `Improve pass could not complete: ${panelErrorMessage(error, "Could not complete the improvement pass.")} Next action: review inputs, then retry Improve.`
+	            : `Generate could not complete: ${panelErrorMessage(error, "Could not update the design.")} Next action: check the status message, then press Generate again.`;
       appendChatMessage("assistant", message, "status");
       updateProjectStatus({
         state: "blocked",
         area: "generate",
-        title: mode === "run" ? "Generate blocked" : `${mode} blocked`,
+        title: mode === "run" ? "Generate needs attention" : `${mode} needs attention`,
         detail: panelErrorMessage(error, mode === "run" ? "Could not update the design." : "Could not complete the run."),
-        nextAction: mode === "run" ? "Check the blocker/status message, then press Generate again." : "Review blockers, then retry.",
+        nextAction: mode === "run" ? "Check the status message, then press Generate again." : "Review inputs, then retry.",
       });
     } finally {
       window.clearTimeout(timeoutId);
@@ -12227,7 +12247,7 @@ function PerformanceAIDashboardView({
         "assistant",
         roadwayWorkbenchData.sectionPoints.length
           ? `Opened the cross-section viewer with ${roadwayWorkbenchData.sectionPoints.length} section samples. These are review-required only.`
-          : "Opened the cross-section viewer. Corridor section samples are missing, so review blockers remain visible.",
+          : "Opened the cross-section viewer. Corridor section samples are missing, so review needs remain visible.",
         "status",
       );
       return true;
@@ -12242,7 +12262,7 @@ function PerformanceAIDashboardView({
         : ["No corridor-specific blocker text is recorded, but profile, section, surface, and source confidence still require review."];
       appendChatMessage(
         "assistant",
-        `Corridor review blockers:\n${blockers.map((item) => `- ${item}`).join("\n")}`,
+        `Corridor review needs:\n${blockers.map((item) => `- ${item}`).join("\n")}`,
         "status",
       );
       return true;
@@ -12365,13 +12385,13 @@ function PerformanceAIDashboardView({
         ...previewBlockedReasons,
         ...(reviewPackageFlowSummary?.missing ?? []),
       ].filter(Boolean);
-      const blockerText = exportBlockers.length
-        ? ` Current export/review blockers: ${Array.from(new Set(exportBlockers)).slice(0, 4).join("; ")}.`
-        : "";
+	      const blockerText = exportBlockers.length
+	        ? ` Current export/review needs: ${Array.from(new Set(exportBlockers)).slice(0, 4).join("; ")}.`
+	        : "";
       appendChatMessage(
         "assistant",
         reason
-          ? `Export is blocked: ${reason}.${blockerText}`
+	          ? `Export needs input: ${reason}.${blockerText}`
           : `Exports are available only as engineer-review packages. Field use is outside Civora and requires independent licensed-professional review.${blockerText}`,
         "status",
       );
@@ -12961,7 +12981,7 @@ function PerformanceAIDashboardView({
       appendChatMessage("user", message);
       if (!siteAddress.trim()) {
         handleOpenSidePanel("site_existing");
-        appendChatMessage("assistant", "Apply address is blocked: type a project address in Setup first.", "status");
+        appendChatMessage("assistant", "Apply Address needs a project address in Setup first.", "status");
         updateProjectStatus({
           state: "blocked",
           area: "setup",
@@ -13661,13 +13681,13 @@ function PerformanceAIDashboardView({
     autoFileNamedOverride?: boolean;
   } = {}): Promise<ProjectRecord | null> => {
     if (!token) {
-      const message = "Save blocked: sign in/connect backend to save projects.";
+      const message = "Sign in/connect backend to save projects.";
       if (!silent) {
         setProjectDrawerNotice(message);
         updateProjectStatus({
           state: "blocked",
           area: "projects",
-          title: "Save blocked",
+          title: "Save needs sign-in",
           detail: "Sign in/connect backend to save projects.",
           nextAction: "Sign in or reconnect the backend, then press Save Project again.",
         });
@@ -13685,7 +13705,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "projects",
-          title: "Save blocked",
+          title: "Save unavailable in demo",
           detail: "Demo workspace changes stay local and are not saved to pilot projects.",
           nextAction: "Start a non-demo project or sign in/connect backend before saving.",
         });
@@ -13699,7 +13719,7 @@ function PerformanceAIDashboardView({
         area: "projects",
         title: "Saving project",
         detail: `Saving "${resolvedName || "Untitled Project"}" to the project backend.`,
-        nextAction: "Keep the drawer open until the save finishes or shows a blocker.",
+            nextAction: "Keep the drawer open until the save finishes or shows what needs attention.",
       });
     }
     const liveChatThread = chatMessagesRef.current;
@@ -13774,13 +13794,13 @@ function PerformanceAIDashboardView({
       }
       return data.project;
     } catch (error) {
-      const message = panelErrorMessage(error, "Project save failed.");
-      setProjectDrawerNotice(`Save blocked: ${message}`);
+      const message = panelErrorMessage(error, "Project save could not complete.");
+      setProjectDrawerNotice(`Save needs attention: ${message}`);
       if (!silent) {
         updateProjectStatus({
           state: "blocked",
           area: "projects",
-          title: "Save blocked",
+          title: "Save could not finish",
           detail: message,
           nextAction: "Check auth/backend connectivity, then press Save Project again.",
         });
@@ -14844,12 +14864,12 @@ function PerformanceAIDashboardView({
       setSurveyUploadMessage(
         data.existing_conditions_package?.status === "ready"
           ? "Survey/topo imported and ready for review."
-          : "Survey/topo imported; exact review blockers are recorded.",
+          : "Survey/topo imported; exact review needs are recorded.",
       );
       setStatusMessage(
         data.existing_conditions_package?.status === "ready"
           ? "Existing conditions imported and ready."
-          : "Existing conditions imported; review blockers are recorded.",
+          : "Existing conditions imported; review needs are recorded.",
       );
     } catch (error) {
       setSurveyFileName(file.name);
@@ -17594,9 +17614,9 @@ function PerformanceAIDashboardView({
         setGenerateFlowSummary(summary);
         recordRecentChange({
           type: "generate_recorded",
-          label: summary.blocked ? "Generate blocked" : "Generate recorded",
+	          label: summary.blocked ? "Generate needs input" : "Generate recorded",
           detail: summary.blocked
-            ? `Generate blocked: ${summary.needs_review[0] || summary.next_action}`
+	            ? `Generate needs input: ${summary.needs_review[0] || summary.next_action}`
             : `Generate ran ${summary.ran.join(", ") || "none"}; skipped ${summary.skipped.join(", ") || "none"}.`,
           undoBlockedReason: "Generate history is a review record. Undo draft object edits separately, then rerun Generate if needed.",
         });
@@ -17617,13 +17637,13 @@ function PerformanceAIDashboardView({
         recordGenerateSummary(summary);
         appendChatMessage(
           "assistant",
-          `Generate is blocked: ${firstHardBlocker.label}. Next action: ${summary.next_action}`,
+	          `Generate needs input: ${firstHardBlocker.label}. Next action: ${summary.next_action}`,
           "status",
         );
         updateProjectStatus({
           state: "blocked",
           area: "generate",
-          title: "Generate blocked",
+	          title: "Generate needs input",
           detail: firstHardBlocker.label,
           nextAction: summary.next_action,
         });
@@ -17636,7 +17656,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "generate",
-          title: "Generate blocked",
+	          title: "Generate needs site boundary",
           detail: "Set and lock a site boundary first.",
           nextAction: summary.next_action,
         });
@@ -17653,7 +17673,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "generate",
-          title: "Generate blocked",
+	          title: "Generate needs locked boundary",
           detail: "Site boundary exists but is not locked.",
           nextAction: summary.next_action,
         });
@@ -17668,7 +17688,7 @@ function PerformanceAIDashboardView({
           updateProjectStatus({
             state: "blocked",
             area: "generate",
-            title: "Generate blocked",
+	            title: "Generate needs smaller grading area",
             detail: OVERSIZED_SITE_MESSAGE,
             nextAction: summary.next_action,
           });
@@ -17806,7 +17826,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "generate",
-          title: "Generate blocked",
+          title: "Generate needs sign-in",
           detail: "Hosted Generate needs a signed-in backend session. No backend request was sent.",
           nextAction: summary.next_action,
         });
@@ -17814,7 +17834,7 @@ function PerformanceAIDashboardView({
           "assistant",
           conceptCount
             ? `I added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"} to the canvas. Hosted Generate still needs a signed-in backend session before an engineering request can run.`
-            : "Generate is blocked because this hosted demo is not signed in to a backend session. I did not send an engineering request; keep editing locally or sign in/connect backend to run Generate.",
+            : "Generate needs a signed-in backend session on the hosted website. I did not send an engineering request; keep editing locally or sign in/connect backend to run Generate.",
           "status",
         );
         return;
@@ -18432,12 +18452,12 @@ function PerformanceAIDashboardView({
   const handleDeleteProject = async (projectIdToDelete: string) => {
     const deleteStartedAt = markCivoraInteraction();
     if (!token) {
-      const message = "Delete blocked: sign in and reconnect to the backend before deleting saved projects.";
+      const message = "Sign in and reconnect to the backend before deleting saved projects.";
       setProjectDrawerNotice(message);
       updateProjectStatus({
         state: "blocked",
         area: "projects",
-        title: "Delete blocked",
+        title: "Delete needs sign-in",
         detail: "Sign in and reconnect to the backend before deleting saved projects.",
         nextAction: "Sign in or reconnect backend, then retry delete from Projects.",
       });
@@ -18463,7 +18483,7 @@ function PerformanceAIDashboardView({
         token,
       });
       if (!response.success) {
-        throw new Error("Delete blocked: the backend did not confirm deletion.");
+        throw new Error("the backend did not confirm deletion.");
       }
       if (typeof window !== "undefined") {
         try {
@@ -18491,12 +18511,12 @@ function PerformanceAIDashboardView({
       });
     } catch (error) {
       const message =
-        error instanceof Error ? `Delete blocked: ${error.message}` : "Delete blocked: could not delete project.";
+        error instanceof Error ? `Delete could not finish: ${error.message}` : "Delete could not finish.";
       setProjectDrawerNotice(message);
       updateProjectStatus({
         state: "blocked",
         area: "projects",
-        title: "Delete blocked",
+        title: "Delete could not finish",
         detail: message,
         nextAction: "Check auth/backend connectivity, then retry delete from Projects.",
       });
@@ -18867,9 +18887,9 @@ function PerformanceAIDashboardView({
     setReviewPackageFlowSummary(summary);
     recordRecentChange({
       type: "review_package_recorded",
-      label: summary.blocked ? "Review package blocked" : "Review package created",
+      label: summary.blocked ? "Review package needs input" : "Review package created",
       detail: summary.blocked
-        ? `Review package blocked: ${summary.next_action}`
+        ? `Review package needs input: ${summary.next_action}`
         : `Review package created: ${summary.outputs_created.join(", ")}.`,
       undoBlockedReason: "Review package history is a review record. Revise drafts and make the package again if needed.",
     });
@@ -18905,7 +18925,7 @@ function PerformanceAIDashboardView({
                   rows: [
                     ["Review candidates", String(autoSiteContextFlowSummary.candidateCount)],
                     ["Missing sources", autoSiteContextFlowSummary.missingLabels.join(", ") || "None reported"],
-                    ["Package status", summary.blocked ? "Blocked / missing inputs" : "Review-only package created"],
+                    ["Package status", summary.blocked ? "Needs package inputs" : "Review package created"],
                   ] as Array<[string, string]>,
                 },
               ],
@@ -18950,7 +18970,7 @@ function PerformanceAIDashboardView({
     updateProjectStatus({
       state: summary.blocked ? "blocked" : "needs review",
       area: "deliver",
-      title: summary.blocked ? "Review package blocked" : "Review package needs review",
+      title: summary.blocked ? "Review package needs input" : "Review package needs review",
       detail: summary.blocked
         ? `Missing package inputs: ${summary.missing.slice(0, 3).join("; ") || "no usable output created"}.`
         : "Review package created from available outputs.",
@@ -19191,12 +19211,12 @@ function PerformanceAIDashboardView({
   const handleExportDxf = async () => {
     const blockReason = getExportBlockReason();
     if (blockReason) {
-      setExportActionMessage(`Export blocked: ${blockReason}`);
-      setStatusMessage(`Export blocked: ${blockReason}`);
+      setExportActionMessage(`Export needs input: ${blockReason}`);
+      setStatusMessage(`Export needs input: ${blockReason}`);
       return;
     }
     if (visibleActiveJob) {
-      setExportActionMessage("Export blocked: an export or generation job is already running.");
+      setExportActionMessage("Export is waiting for the current export or generation job to finish.");
       setStatusMessage("An export or generation job is already running. Wait for it to finish before starting another export.");
       return;
     }
@@ -19229,12 +19249,12 @@ function PerformanceAIDashboardView({
   const handleExportReport = async () => {
     const blockReason = getExportBlockReason();
     if (blockReason) {
-      setExportActionMessage(`Export blocked: ${blockReason}`);
-      setStatusMessage(`Export blocked: ${blockReason}`);
+      setExportActionMessage(`Export needs input: ${blockReason}`);
+      setStatusMessage(`Export needs input: ${blockReason}`);
       return;
     }
     if (visibleActiveJob) {
-      setExportActionMessage("Export blocked: an export or generation job is already running.");
+      setExportActionMessage("Export is waiting for the current export or generation job to finish.");
       setStatusMessage("An export or generation job is already running. Wait for it to finish before starting another export.");
       return;
     }
@@ -20557,7 +20577,7 @@ function PerformanceAIDashboardView({
         "Cost book / pricing",
         costPresent,
         ["UI", "chat", "API", "report"],
-        quantityCost.ready === true ? "Reviewed pricing source covers quantities" : "Blocked without reviewed/current unit-price book",
+        quantityCost.ready === true ? "Reviewed pricing source covers quantities" : "Needs reviewed/current unit-price book",
         "Cost pricing validation is absent until quantities and a unit-price book exist.",
         "Normalize and validate a reviewed unit-price book, then rerun quantities/cost evidence.",
         quantityCost.ready !== true,
@@ -20667,7 +20687,7 @@ function PerformanceAIDashboardView({
         key: "utilities",
         label: "Utilities",
         state: canonicalWorkspaceBlockers.some((item) => /utility|standards|source/i.test(item)) || hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
-        detail: canonicalWorkspaceBlockers.find((item) => /utility|standards|source/i.test(item)) || (hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered"),
+        detail: canonicalWorkspaceBlockers.find((item) => /utility|standards|source/i.test(item)) || (hasHardSystemBlock ? "Needs input / review" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered"),
       },
     ],
     [canonicalWorkspaceBlockers, hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
@@ -21157,7 +21177,7 @@ function PerformanceAIDashboardView({
 	      panel: "deliverables",
 	      icon: FileText,
 	      status: sidebarModeStatus("deliver"),
-	      metric: getExportBlockReason() ? "Export blocked" : "Review package",
+	      metric: getExportBlockReason() ? "Export needs input" : "Review package",
 	    },
 	  ];
 	  const workflowActionItems: Record<PrimaryWorkflowKey, WorkflowActionItem[]> = {
@@ -21186,7 +21206,7 @@ function PerformanceAIDashboardView({
 	      { label: "Utilities", panel: "system_utilities", detail: "Conflicts, clearances, reroutes", status: panelStatus("utilities") },
 	    ],
 	    analyze: [
-	      { label: "Issues", panel: "analysis", detail: previewBlockedReasons[0] || (hasHardSystemBlock ? "Hard system blocker recorded" : "Review blockers and warnings"), status: panelStatus("analysis") },
+	      { label: "Issues", panel: "analysis", detail: previewBlockedReasons[0] || (hasHardSystemBlock ? "Needs input before the next review step" : "Review notes and warnings"), status: panelStatus("analysis") },
 	      { label: "Quantities", panel: "quantities", detail: `${quantityRows.length} takeoff row${quantityRows.length === 1 ? "" : "s"}`, status: panelStatus("quantities") },
 	      { label: "Async Jobs", panel: "jobs", detail: visibleActiveJob ? `${visibleActiveJob.status}` : "Queue history", status: panelStatus("jobs") },
 	      { label: "Catalogs", panel: "catalogs", detail: "Parts, pipes, structures", status: panelStatus("catalogs") },
@@ -21242,12 +21262,12 @@ function PerformanceAIDashboardView({
         ? buildingPlacements.find((item) => item.id === selectedObjectIds[0])
         : null;
     if (!target) {
-      const message = "Delete blocked: no object is selected.";
+      const message = "Select an editable object before deleting.";
       setObjectManagerStatusMessage(message);
       updateProjectStatus({
         state: "blocked",
         area: "chat",
-        title: "Delete blocked",
+        title: "Delete needs a selection",
         detail: "No object is selected.",
         nextAction: "Select an editable draft object, then press Delete again.",
       });
@@ -21255,12 +21275,12 @@ function PerformanceAIDashboardView({
       return;
     }
     if (target.type === "site" || target.capabilities?.deletable === false) {
-      const message = `Delete blocked: ${target.label} cannot be deleted from shortcuts.`;
+      const message = `${target.label} cannot be deleted from shortcuts.`;
       setObjectManagerStatusMessage(message);
       updateProjectStatus({
         state: "blocked",
         area: "chat",
-        title: "Delete blocked",
+        title: "Open Object Manager",
         detail: `${target.label} cannot be deleted from shortcuts.`,
         nextAction: "Open Object Manager to review object locks and capabilities.",
       });
@@ -21268,12 +21288,12 @@ function PerformanceAIDashboardView({
       return;
     }
     if (target.locked) {
-      const message = `Delete blocked: unlock ${target.label} before deleting it.`;
+      const message = `Unlock ${target.label} before deleting it.`;
       setObjectManagerStatusMessage(message);
       updateProjectStatus({
         state: "blocked",
         area: "chat",
-        title: "Delete blocked",
+        title: "Delete needs unlock",
         detail: `Unlock ${target.label} before deleting it.`,
         nextAction: "Open Object Manager, unlock the object if appropriate, then delete.",
       });
@@ -21305,11 +21325,11 @@ function PerformanceAIDashboardView({
       const editable = targets.filter((item) => !getObjectEditBlocker(item, "copy"));
       const blockedCount = targets.length - editable.length;
       if (!editable.length) {
-        reportObjectActionBlocker("Copy blocked: selected objects are locked, source-only, or required project evidence.");
+        reportObjectActionBlocker("Select editable draft objects before copying.");
         updateProjectStatus({
           state: "blocked",
           area: "chat",
-          title: "Copy blocked",
+          title: "Copy needs editable objects",
           detail: "Selected objects are locked, source-only, or required project evidence.",
           nextAction: "Select editable draft objects, then press Cmd/Ctrl+C again.",
         });
@@ -21334,11 +21354,11 @@ function PerformanceAIDashboardView({
         ? buildingPlacements.find((item) => item.id === selectedObjectIds[0])
         : null;
     if (!target) {
-      reportObjectActionBlocker("Copy blocked: select an editable draft object first.");
+      reportObjectActionBlocker("Select an editable draft object before copying.");
       updateProjectStatus({
         state: "blocked",
         area: "chat",
-        title: "Copy blocked",
+        title: "Copy needs a selection",
         detail: "No object is selected.",
         nextAction: "Select an editable draft object, then press Cmd/Ctrl+C again.",
       });
@@ -21368,7 +21388,7 @@ function PerformanceAIDashboardView({
     updateProjectStatus({
       state: clipboardCount ? "stale" : "blocked",
       area: "chat",
-      title: clipboardCount ? (clipboardCount === 1 ? "Object pasted" : "Objects pasted") : "Paste blocked",
+      title: clipboardCount ? (clipboardCount === 1 ? "Object pasted" : "Objects pasted") : "Paste needs a copied object",
       detail: clipboardCount
         ? clipboardCount === 1
           ? `Pasted ${objectClipboard[0].label} as an editable draft duplicate.`
@@ -21387,11 +21407,11 @@ function PerformanceAIDashboardView({
       clearDraftUndoAction();
     };
     if (!draftAction) {
-      const message = "Undo blocked: no supported draft action is available to undo.";
+      const message = "Nothing available to undo yet.";
       updateProjectStatus({
         state: "blocked",
         area: "chat",
-        title: "Undo blocked",
+        title: "Undo not available yet",
         detail: "No supported draft action is available to undo.",
         nextAction: "Continue editing; the next supported draft add/delete can be undone.",
       });
@@ -21566,7 +21586,7 @@ function PerformanceAIDashboardView({
   const handleRedoDraftAction = useCallback(() => {
     const redoAction = redoDraftActionRef.current ?? redoDraftAction;
     if (!redoAction) {
-      const message = "Redo blocked: no supported draft action is available to redo.";
+      const message = "Nothing available to redo yet.";
       setObjectManagerStatusMessage(message);
       pushRecoveryMessage(message);
       appendChatMessage("assistant", message, "status");
@@ -21680,7 +21700,7 @@ function PerformanceAIDashboardView({
       finishRedo(`Redo: reapplied ${redoAction.after.length} draft objects from ${redoAction.label}.`);
       return;
     }
-    const message = `Redo blocked: ${redoAction.action === "bulk_update" ? `${redoAction.label} does not have an after snapshot yet.` : "this draft action cannot be reapplied safely."}`;
+    const message = `Redo not available: ${redoAction.action === "bulk_update" ? `${redoAction.label} does not have an after snapshot yet.` : "this draft action cannot be reapplied safely."}`;
     setObjectManagerStatusMessage(message);
     pushRecoveryMessage(message);
     appendChatMessage("assistant", message, "status");
@@ -21695,7 +21715,7 @@ function PerformanceAIDashboardView({
 
   const handleUndoRecentChange = useCallback((change: RecentChange) => {
     if (!change.undo) {
-      const message = `Undo blocked: ${change.undoBlockedReason || "this recent change does not have a reversible draft snapshot."}`;
+      const message = `Undo not available: ${change.undoBlockedReason || "this recent change does not have a reversible draft snapshot."}`;
       pushRecoveryMessage(message);
       appendChatMessage("assistant", message, "status");
       return;
@@ -21836,22 +21856,22 @@ function PerformanceAIDashboardView({
   const handleShortcutSaveProject = useCallback(() => {
     const effectiveProjectId = resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
     if (!token) {
-      appendChatMessage("assistant", "Save blocked: sign in/connect backend to save projects.", "status");
+      appendChatMessage("assistant", "Sign in/connect backend to save projects.", "status");
       updateProjectStatus({
         state: "blocked",
         area: "projects",
-        title: "Save blocked",
+        title: "Save needs sign-in",
         detail: "Sign in/connect backend to save projects.",
         nextAction: "Sign in or reconnect backend, then press Cmd/Ctrl+S again.",
       });
       return;
     }
     if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
-      appendChatMessage("assistant", "Save blocked: demo workspace changes stay local and are not saved to pilot projects.", "status");
+      appendChatMessage("assistant", "Demo workspace changes stay local and are not saved to pilot projects.", "status");
       updateProjectStatus({
         state: "blocked",
         area: "projects",
-        title: "Save blocked",
+        title: "Save unavailable in demo",
         detail: "Demo workspace changes stay local and are not saved to pilot projects.",
         nextAction: "Start a non-demo project or sign in/connect backend before saving.",
       });
@@ -21862,7 +21882,7 @@ function PerformanceAIDashboardView({
         "assistant",
         project
           ? `Saved project "${project.name || "Untitled Project"}".`
-          : "Save blocked: sign in/connect backend to save projects.",
+          : "Sign in/connect backend to save projects.",
         "status",
       );
     });
@@ -22216,11 +22236,11 @@ function PerformanceAIDashboardView({
       status: !backendResult ? "idle" : sidebarStaleSystems.length ? "review" : "ok",
     },
     {
-      label: "Blocked systems",
+      label: "Needs input",
       value: !sidebarHasTruthEvidence
         ? "not evaluated"
         : hasHardSystemBlock || previewBlockedReasons.length
-          ? "review blockers"
+          ? "review inputs"
           : "none recorded",
       status: !sidebarHasTruthEvidence ? "idle" : hasHardSystemBlock || previewBlockedReasons.length ? "block" : "ok",
     },
@@ -22365,7 +22385,7 @@ function PerformanceAIDashboardView({
         : "Clear setup gates before running systems.",
       why_blocked: Object.values(systemStatuses).some((status) => status === "fresh") || (siteScaleLocked && placedObjectCount > 1 && hasTerrainSource && panelStatus("standards") === "ok")
         ? ""
-        : "Blocked by boundary, survey/control, standards, or objects/program.",
+        : "Needs boundary, survey/control, standards, or objects/program.",
     },
     {
       id: "review_export_package",
@@ -22999,7 +23019,7 @@ function PerformanceAIDashboardView({
                   {[
                     ["Ready", sidebarTruthCounts.ready, "bg-slate-500"],
                     ["Review", sidebarTruthCounts.review, "bg-amber-500"],
-                    ["Blocked", sidebarTruthCounts.blocked, "bg-violet-500"],
+                    ["Needs input", sidebarTruthCounts.blocked, "bg-violet-500"],
                     ["Not Run", sidebarTruthCounts.notRun, "bg-slate-300"],
                   ].map(([label, value, dotClass]) => (
                     <div key={label} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
@@ -23323,13 +23343,13 @@ function PerformanceAIDashboardView({
                           </p>
                         </div>
                           <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                          hasHardSystemBlock
-                            ? "bg-red-50 text-red-600"
+	                          hasHardSystemBlock
+	                            ? "bg-amber-50 text-amber-700"
                             : backendResult
                               ? "bg-slate-100 text-slate-700"
                               : "bg-amber-50 text-amber-600"
                         }`}>
-                          {hasHardSystemBlock ? "Blocked" : backendResult ? "Review output" : "Setup"}
+	                          {hasHardSystemBlock ? "Needs input" : backendResult ? "Review output" : "Setup"}
                         </span>
                       </div>
                       <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -23439,7 +23459,7 @@ function PerformanceAIDashboardView({
 	                      </details>
 	                      {progressTimelineState.export_blockers?.length ? (
 	                        <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-	                          Export blocked: {progressTimelineState.export_blockers.slice(0, 3).join("; ")}
+	                          Export needs input: {progressTimelineState.export_blockers.slice(0, 3).join("; ")}
 	                        </div>
 	                      ) : null}
 	                    </div>
@@ -23623,8 +23643,8 @@ function PerformanceAIDashboardView({
                         {[
                           ["Ready", "Enough current, traceable evidence exists for review."],
                           ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
-                          ["Blocked", "Missing evidence, stale output, unsupported export, or unresolved conflict prevents the next review step."],
-                          ["Missing Input", "Required information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
+                          ["Needs input", "Something important is missing before the next review step can continue."],
+                          ["Missing input", "Helpful information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
                           ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
                           ["Visual preview only", "The view is a visual aid and is not evidence by itself."],
                           ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
@@ -24061,13 +24081,13 @@ function PerformanceAIDashboardView({
                           </span>
                         </span>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                          autoExistingConditionsStatus.status === "blocked"
-                            ? "bg-red-50 text-red-600"
+	                          autoExistingConditionsStatus.status === "blocked"
+	                            ? "bg-amber-50 text-amber-700"
                             : autoSiteContextFlowSummary.candidateCount
                               ? "bg-amber-50 text-amber-700"
                               : "bg-slate-100 text-slate-500"
                         }`}>
-                          {autoExistingConditionsStatus.status === "blocked" ? "Blocked" : `${autoSiteContextFlowSummary.candidateCount} found`}
+	                          {autoExistingConditionsStatus.status === "blocked" ? "Needs source" : `${autoSiteContextFlowSummary.candidateCount} found`}
                         </span>
 	                      </summary>
 	                      <div className="border-t border-slate-100 px-4 py-4" data-testid="auto-site-context-summary">
@@ -24697,7 +24717,7 @@ function PerformanceAIDashboardView({
                               </div>
                               <div className="rounded-lg border border-slate-200 bg-white p-3">
                                 <div className="flex items-center justify-between gap-2">
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Unreadable / Blocked</p>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Unreadable / Needs review</p>
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -25299,7 +25319,7 @@ function PerformanceAIDashboardView({
                             ["Mode", previewMode.toUpperCase()],
                             ["Quality", previewQuality],
                             ["Surface", hasGradingSurface ? "Grading surface" : "No grading surface"],
-                            ["Blocked", hasHardSystemBlock ? "Review required" : "None recorded"],
+                            ["Needs input", hasHardSystemBlock ? "Review required" : "None recorded"],
                           ].map(([label, value]) => (
                             <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                               <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
@@ -25471,13 +25491,13 @@ function PerformanceAIDashboardView({
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generate</p>
                           <p className="mt-1 text-sm font-semibold text-slate-950">Create a review draft from the current workspace.</p>
                           <p className="mt-1 text-xs leading-5 text-slate-500">
-                            Optional sources stay visible as missing or review items. A locked site boundary is the main blocker.
+	                        Optional sources stay visible as missing or review items. A locked site boundary is the main required input.
                           </p>
                         </div>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                          missingSite ? "bg-red-50 text-red-600" : busy || visibleActiveJob ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"
-                        }`}>
-                          {missingSite ? "Blocked" : busy || visibleActiveJob ? "Running" : "Ready"}
+	                          missingSite ? "bg-amber-50 text-amber-700" : busy || visibleActiveJob ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"
+	                        }`}>
+	                          {missingSite ? "Needs site" : busy || visibleActiveJob ? "Running" : "Ready"}
                         </span>
                       </div>
                       <button
@@ -25485,7 +25505,7 @@ function PerformanceAIDashboardView({
                         data-testid="generate-main-action"
                         onClick={() => {
                           if (missingSite) {
-                            setStatusMessage("Generate blocked: lock a site boundary in Setup first.");
+	                            setStatusMessage("Generate needs a locked site boundary in Setup first.");
                             setGenerateFlowSummary({
                               version: "generate_flow_summary_v1",
                               generated_at: new Date().toISOString(),
@@ -25506,7 +25526,7 @@ function PerformanceAIDashboardView({
                         disabled={busy || Boolean(visibleActiveJob)}
                         className="mt-4 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
-                        {busy || visibleActiveJob ? "Generation Running" : missingSite ? "Generate Blocked: Lock Site Boundary" : "Generate"}
+	                        {busy || visibleActiveJob ? "Generation Running" : missingSite ? "Generate needs site boundary" : "Generate"}
                         <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-white/70">
                           {missingSite ? "Setup needs one locked site boundary before a draft can run." : "Runs enabled systems and records skipped or review-needed items."}
                         </span>
@@ -25523,10 +25543,10 @@ function PerformanceAIDashboardView({
                     <div className="rounded-xl border border-slate-200 bg-white p-4" data-testid="generate-flow-status">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Run Status</p>
                       {generateFlowSummary ? (
-                        <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${generateFlowSummary.blocked ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="generate-flow-summary">
+	                        <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${generateFlowSummary.blocked ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="generate-flow-summary">
                           <p className="font-semibold uppercase tracking-[0.12em]">
                             {generateFlowSummary.blocked
-                              ? "Blocked"
+	                              ? "Needs input"
                               : generateFlowSummary.skipped.length
                                 ? "Started, with skipped systems"
                                 : "Started"}
@@ -25633,7 +25653,7 @@ function PerformanceAIDashboardView({
                       {[
                         ["Terrain", hasTerrainSource ? "Ready" : "Missing"],
                         ["Surface", hasGradingSurface ? "Rendered" : "Not rendered"],
-                        ["Status", siteTooLargeForGrading ? "Blocked / unsafe" : systemStatuses.grading === "fresh" ? "Complete" : "Not configured"],
+                        ["Status", siteTooLargeForGrading ? "Needs input / review" : systemStatuses.grading === "fresh" ? "Complete" : "Not configured"],
                         ["Source", useSurveyForGrading ? "Survey / terrain" : "Manual"],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -25740,7 +25760,7 @@ function PerformanceAIDashboardView({
                       {[
                         ["Basin", hasBasinPlaced ? "Placed" : "Missing"],
                         ["Surface", hasTerrainSource ? "Ready" : "Missing"],
-                        ["Status", hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.drainage === "fresh" ? "Complete" : "Not configured"],
+                        ["Status", hasHardSystemBlock ? "Needs input / review" : systemStatuses.drainage === "fresh" ? "Complete" : "Not configured"],
                         ["Source", drainageSourceOverride === "user" ? "User" : "Civora"],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -25816,7 +25836,7 @@ function PerformanceAIDashboardView({
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        ["Status", hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured"],
+                        ["Status", hasHardSystemBlock ? "Needs input / review" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured"],
                         ["Storm", drainage ? "Enabled" : "Off"],
                         ["Sanitary", utilities ? "Enabled" : "Off"],
                         ["Water", utilities ? "Enabled" : "Off"],
@@ -25897,7 +25917,7 @@ function PerformanceAIDashboardView({
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        ["Status", hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured"],
+                        ["Status", hasHardSystemBlock ? "Needs input / review" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured"],
                         ["Service", utilities ? "Enabled" : "Off"],
                         ["Pipe slope", pipeMinSlopePct || "Auto"],
                         ["Coverage", buildingPlacements.length ? `${confirmedObjectCounts.buildings} buildings` : "No buildings"],
@@ -25950,7 +25970,7 @@ function PerformanceAIDashboardView({
                     <div className="space-y-4" data-testid="water-fire-flow-workbench">
                       <div className="grid grid-cols-2 gap-2">
                         {[
-                          ["Status", hasHardSystemBlock ? "Blocked / unsafe" : waterFireFlowReview.readiness.status || (systemStatuses.utilities === "fresh" ? "Review" : "Not configured")],
+                          ["Status", hasHardSystemBlock ? "Needs input / review" : waterFireFlowReview.readiness.status || (systemStatuses.utilities === "fresh" ? "Review" : "Not configured")],
                           ["Hydrants", waterFireFlowReview.hydrants.length || buildingPlacements.filter((item) => item.type === "hydrant").length],
                           ["Pressure zones", waterFireFlowReview.pressureZones.length || "Missing"],
                           ["Blockers", waterFireFlowReview.blockerCards.length],
@@ -26093,7 +26113,7 @@ function PerformanceAIDashboardView({
                   > = {
                     system_grading: {
                       label: "Grading",
-                      status: siteTooLargeForGrading ? "Blocked / unsafe" : systemStatuses.grading === "fresh" ? "Complete" : "Not configured / not rendered",
+                      status: siteTooLargeForGrading ? "Needs input / review" : systemStatuses.grading === "fresh" ? "Complete" : "Not configured / not rendered",
                       needs: [
                         siteScaleLocked ? "Site boundary locked" : "Lock a site boundary",
                         hasTerrainSource ? "Terrain source ready" : "Import survey, DEM, or map terrain",
@@ -26104,7 +26124,7 @@ function PerformanceAIDashboardView({
                     },
                     system_storm: {
                       label: "Storm Drainage",
-                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.drainage === "fresh" ? "Complete" : "Not configured / not rendered",
+                      status: hasHardSystemBlock ? "Needs input / review" : systemStatuses.drainage === "fresh" ? "Complete" : "Not configured / not rendered",
                       needs: [
                         hasTerrainSource ? "Terrain source ready" : "Import terrain for flow direction",
                         hasBasinPlaced ? "Basin placed" : "Place a detention basin",
@@ -26115,7 +26135,7 @@ function PerformanceAIDashboardView({
                     },
                     system_sanitary: {
                       label: "Sanitary Sewer",
-                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+                      status: hasHardSystemBlock ? "Needs input / review" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
                       needs: [
                         buildingPlacements.length ? "Buildings available for service coverage" : "Add buildings or service targets",
                         utilities ? "Utility generation enabled" : "Enable utilities",
@@ -26126,7 +26146,7 @@ function PerformanceAIDashboardView({
                     },
                     system_water: {
                       label: "Water",
-                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+                      status: hasHardSystemBlock ? "Needs input / review" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
                       needs: [
                         utilities ? "Water network enabled" : "Enable utilities",
                         buildingPlacements.filter((item) => item.type === "hydrant").length ? "Hydrants placed" : "Add hydrants or allow generated hydrants",
@@ -26148,7 +26168,7 @@ function PerformanceAIDashboardView({
                     },
                     system_utilities: {
                       label: "Utilities",
-                      status: hasHardSystemBlock ? "Blocked / unsafe" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
+                      status: hasHardSystemBlock ? "Needs input / review" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered",
                       needs: [
                         utilities ? "Utility generation enabled" : "Enable utilities",
                         systemStatuses.drainage === "fresh" ? "Storm context ready" : "Generate or review drainage first",
@@ -26306,7 +26326,7 @@ function PerformanceAIDashboardView({
                                   <div key={path.id} className={`rounded-xl border px-3 py-2 text-xs ${path.capacityValid ? "border-emerald-200 bg-white text-slate-700" : "border-rose-200 bg-rose-50 text-rose-800"}`}>
                                     <div className="flex items-center justify-between gap-2">
                                       <span className="font-semibold">{path.name}</span>
-                                      <span className="font-semibold">{path.capacityValid ? "Capacity ok" : "Blocked"}</span>
+	                                      <span className="font-semibold">{path.capacityValid ? "Capacity ok" : "Needs input"}</span>
                                     </div>
                                     <p className="mt-1 text-[11px]">
                                       {path.capacityCfs !== null ? `${path.capacityCfs.toFixed(1)} cfs capacity` : "Capacity n/a"}; required {path.requiredCapacityCfs !== null ? `${path.requiredCapacityCfs.toFixed(1)} cfs` : "not recorded"}.
@@ -26635,12 +26655,12 @@ function PerformanceAIDashboardView({
                                   : "border-amber-200 bg-amber-50 text-amber-800"
                           }`}>
                             {selectedBuilding.type === "site"
-                              ? "Move/edit blocked: site boundary is controlled from Setup."
+                              ? "Move/edit is controlled from Setup for the site boundary."
                               : selectedBuilding.locked
-                                ? "Move/edit blocked: object is locked. Unlock it to edit."
+                                ? "Move/edit needs the object unlocked first."
                                 : selectedBuilding.placed
                                   ? "Move/edit controls available for this draft object."
-                                  : "Move/edit blocked: object needs placement first."}
+                                  : "Move/edit needs the object placed first."}
                           </p>
                           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                             Review-only: this object is draft/site evidence for qualified review, not construction-ready output.
@@ -27020,7 +27040,7 @@ function PerformanceAIDashboardView({
                         ["Model issues", issues.length],
                         ["Access issues", analysisIssues.length],
                         ["Systems complete", systemHealthItems.filter((item) => item.state === "complete").length],
-                        ["Blocked", systemHealthItems.filter((item) => item.state === "blocked").length],
+                        ["Needs input", systemHealthItems.filter((item) => item.state === "blocked").length],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
@@ -28949,9 +28969,9 @@ function PerformanceAIDashboardView({
                           </p>
                         </div>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                          reviewPackageFlowSummary?.blocked ? "bg-red-50 text-red-600" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                        }`}>
-                          {reviewPackageFlowSummary?.blocked ? "Blocked" : reviewPackageFlowSummary ? "Made" : "Review"}
+	                          reviewPackageFlowSummary?.blocked ? "bg-amber-50 text-amber-700" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+	                        }`}>
+	                          {reviewPackageFlowSummary?.blocked ? "Needs input" : reviewPackageFlowSummary ? "Made" : "Review"}
                         </span>
                       </div>
                       <button
@@ -29031,7 +29051,7 @@ function PerformanceAIDashboardView({
                       </div>
                       {getExportBlockReason() ? (
                         <p data-testid="deliver-export-blocker" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                          Export blocked: {getExportBlockReason()}
+                          Export needs input: {getExportBlockReason()}
                         </p>
                       ) : null}
                       {exportActionMessage ? (
@@ -29108,10 +29128,10 @@ function PerformanceAIDashboardView({
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span>
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Audit / Review Details</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">{sidebarReleaseStatus === "blocked" ? "Review package blocked" : "Review-only package"}</span>
+                          <span className="mt-1 block text-sm font-semibold text-slate-950">{sidebarReleaseStatus === "blocked" ? "Review package needs input" : "Review package"}</span>
                         </span>
-                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${sidebarReleaseStatus === "blocked" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"}`}>
-                          {sidebarReleaseStatus === "blocked" ? "Blocked" : "Review"}
+	                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${sidebarReleaseStatus === "blocked" ? "bg-amber-50 text-amber-700" : "bg-amber-50 text-amber-700"}`}>
+	                          {sidebarReleaseStatus === "blocked" ? "Needs input" : "Review"}
                         </span>
                       </summary>
                       <div className="border-t border-slate-100 px-4 py-4">
@@ -29170,7 +29190,7 @@ function PerformanceAIDashboardView({
                             ["QA items", issues.length + analysisIssues.length],
                             ["Missing", sidebarMissingInputs.length],
                             ["Assumptions", sidebarAssumptions.length],
-                            ["Blocked", systemHealthItems.filter((item) => item.state === "blocked").length],
+                            ["Needs input", systemHealthItems.filter((item) => item.state === "blocked").length],
                           ].map(([label, value]) => (
                             <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
                               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
@@ -29979,7 +29999,7 @@ function PerformanceAIDashboardView({
 	                        type="button"
 	                        onClick={() => {
 	                          if (selectedBuilding.locked || selectedBuilding.capabilities?.movable === false) {
-	                            const message = `Move/edit blocked: ${selectedBuilding.label} is locked or not movable.`;
+	                            const message = `Move/edit needs ${selectedBuilding.label} to be unlocked and movable.`;
 	                            setPlacementModeEnabled(false);
 	                            setMoveEditFeedback(message);
 	                            setStatusMessage(message);

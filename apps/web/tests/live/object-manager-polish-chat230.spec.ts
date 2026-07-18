@@ -399,7 +399,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await renamedRow.getByTestId("object-manager-lock").click();
     await expect(renamedRow).toContainText(/locked/i);
     await renamedRow.getByTestId("object-manager-length").fill("310");
-    await expect(page.getByTestId("object-manager-status")).toContainText("resize blocked: unlock HQ Office Test before changing draft geometry.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("resize needs input: unlock HQ Office Test before changing draft geometry.");
     await renamedRow.getByTestId("object-manager-lock").click();
     await expect(renamedRow).toContainText(/draft placed/i);
     await expect(renamedRow.getByTestId("object-manager-lock")).toHaveText("Lock");
@@ -504,7 +504,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(officeLayerRow).toContainText("0 locked");
     await officeLayerRow.getByTestId("object-manager-layer-lock").click();
     await officeRow.getByTestId("object-manager-color").fill("#111827");
-    await expect(page.getByTestId("object-manager-status")).toContainText("style blocked: unlock Office Building - 28,000 sf before editing metadata.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("style needs input: unlock Office Building - 28,000 sf before editing metadata.");
     await officeLayerRow.getByTestId("object-manager-layer-lock").click();
     await expect(officeLayerRow).toContainText("0 locked");
 
@@ -579,7 +579,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-align-left").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Layout blocked: select at least two editable draft objects first.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Layout needs input: select at least two editable draft objects first.");
   });
 
   test("select visible draft gathers editable visible objects for bulk work", async ({ page }) => {
@@ -607,7 +607,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("3 hidden objects");
     await page.getByRole("button", { name: "Clear" }).click();
     await page.getByTestId("object-manager-select-visible").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Select visible blocked: no visible editable draft objects are available.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Select visible needs input: no visible editable draft objects are available.");
   });
 
   test("invert selection swaps to the other visible editable draft objects", async ({ page }) => {
@@ -633,7 +633,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await officeRow.getByTestId("object-manager-visibility").click();
     await expect(officeRow.getByTestId("object-manager-visibility")).toContainText("Show");
     await page.getByTestId("object-manager-invert-selection").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Invert selection blocked: no visible editable draft objects are available.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Invert selection needs input: no visible editable draft objects are available.");
   });
 
   test("bulk lock and unlock protects selected draft objects", async ({ page }) => {
@@ -653,7 +653,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(parkingRow).toContainText(/locked/i);
 
     await officeRow.getByTestId("object-manager-color").fill("#111827");
-    await expect(page.getByTestId("object-manager-status")).toContainText("style blocked: unlock Office Building - 28,000 sf before editing metadata.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("style needs input: unlock Office Building - 28,000 sf before editing metadata.");
 
     await page.getByTestId("object-manager-bulk-unlock").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Unlocked 2 selected draft objects.");
@@ -664,7 +664,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-lock").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk lock blocked: selected objects are source-only or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk lock needs input: selected objects are source-only or required project evidence.");
   });
 
   test("multi-select can combine editable objects into one named review object", async ({ page }) => {
@@ -1217,7 +1217,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
     });
-    await expect(page.getByText(/Delete blocked: .*cannot be deleted|Delete blocked: locked site boundary/i)).toBeVisible();
+    await expect(page.getByTestId("object-manager-status")).toContainText(/cannot be deleted from shortcuts|unlock .* before deleting/i);
   });
 
   test("keyboard Delete removes and restores multi-selected draft objects", async ({ page }) => {
@@ -1310,7 +1310,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-delete").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk delete blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk delete needs input: selected objects are locked, source-only, or required project evidence.");
     await expect(siteRow).toBeVisible();
   });
 
@@ -1334,7 +1334,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-duplicate").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk duplicate blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Bulk duplicate needs input: selected objects are locked, source-only, or required project evidence.");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Site Copy" })).toHaveCount(0);
   });
 
@@ -1365,7 +1365,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-array-action").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Array blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Array needs input: selected objects are locked, source-only, or required project evidence.");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Site Array" })).toHaveCount(0);
   });
 
@@ -1421,14 +1421,14 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
     await siteRow.getByTestId("object-manager-bulk-select").check();
     await page.getByTestId("object-manager-bulk-move-action").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Move blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Move needs input: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-copy-offset-action").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Copy by offset blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Copy by offset needs input: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-move-to-action").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Move to coordinate blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Move to coordinate needs input: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-rotate-action").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Rotate needs input: selected objects are locked, source-only, or required project evidence.");
     await page.getByTestId("object-manager-bulk-mirror-x").click();
-    await expect(page.getByTestId("object-manager-status")).toContainText("Mirror blocked: selected objects are locked, source-only, or required project evidence.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Mirror needs input: selected objects are locked, source-only, or required project evidence.");
   });
 });

@@ -739,7 +739,7 @@ async function runProductWorkflow() {
     await sendChat(
       page,
       "why can't I export?",
-      [/Export is blocked|export[\s\S]{0,240}(blocked|review|engineer|construction)|engineer-review packages|Construction release remains blocked/i],
+      [/Export needs input|export[\s\S]{0,240}(needs input|review|engineer|construction)|engineer-review packages|construction remains outside Civora/i],
       "Chat export blocked",
     );
     await sendChat(page, "make review package", [/review package|engineer|blocked|export/i], "Chat review package");
@@ -753,7 +753,7 @@ async function runProductWorkflow() {
       await clickButton(page, /^Deliver/, { name: "Open Deliver panel", owner: "Chat 34", optional: true }).catch(() => null);
       await page.waitForTimeout(300);
       text = await visibleText(page);
-      const deliverOk = /Export blocked|Review-only package|Engineer review package|Construction remains blocked|external licensed engineer/i.test(text);
+      const deliverOk = /Export needs input|Review-only package|Engineer review package|construction remains outside Civora|external licensed engineer/i.test(text);
       return { ok: reviewOk && deliverOk, detail: text.slice(0, 500) };
     });
     await soft("Generate/analyze smoke records run or exact block without fake success", "Chat 34", "P1", async () => {

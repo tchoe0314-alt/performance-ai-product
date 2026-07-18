@@ -157,20 +157,20 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByTestId("shortcuts-help-overlay")).toHaveCount(0);
 
     await page.keyboard.press("G");
-    await expect(page.getByTestId("project-status-summary")).toContainText("ready");
+    await expect(page.getByTestId("project-status-summary")).toContainText(/Ready/i);
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
 
     await page.keyboard.press("D");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Object Manager|CAD Tools/i);
 
     await page.keyboard.press("P");
-    await expect(page.getByTestId("project-status-summary")).toContainText("ready");
+    await expect(page.getByTestId("project-status-summary")).toContainText(/Ready/i);
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
 
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "s", metaKey: true, ctrlKey: true, bubbles: true }));
     });
-    await expect(page.getByTestId("project-status-summary")).toContainText(/blocked/i);
+    await expect(page.getByTestId("project-status-summary")).toContainText(/Needs input/i);
     await expect(page.getByTestId("project-status-summary")).toContainText(/demo workspace|sign in\/connect backend/i);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -201,7 +201,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await openPanel(page, "Generate", /Generate systems/i);
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("project-status-summary")).toContainText(/working|needs review/i, { timeout: 5_000 });
-    await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Generate blocked/i, { timeout: 10_000 });
+    await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });
 
     await openPanel(page, /^Deliver$/, /Review package/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();

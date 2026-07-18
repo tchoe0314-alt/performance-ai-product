@@ -129,7 +129,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "s", metaKey: true, ctrlKey: true, bubbles: true }));
     });
-    await expect(page.getByText(/Save blocked: demo workspace changes stay local|Save blocked: sign in\/connect backend|Saved project/)).toBeVisible();
+    await expect(page.getByText(/Demo workspace changes stay local|Sign in\/connect backend to save projects|Saved project/)).toBeVisible();
 
     await runCommand(page, "stamp this");
     await expect(page.getByText(/can't stamp, seal, sign, certify/i)).toBeVisible();

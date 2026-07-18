@@ -258,7 +258,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await openDemoWorkspace(page);
     await openWorkspacePanel(page, /^Deliver$/, /Review package/i);
     await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Export DXF" }).click();
-    await expect(page.getByTestId("deliver-export-status")).toContainText(/Export blocked|authenticate with a backend session/i);
+    await expect(page.getByTestId("deliver-export-status")).toContainText(/Export needs input|authenticate with a backend session/i);
   });
 
   test("chat backend failures append friendly retry guidance", async ({ page }) => {

@@ -65,7 +65,7 @@ test.describe("Chat 32 UI functionality QA", () => {
 
     await composer.fill("why can't I export");
     await send.click();
-    await expect(chatPanel).toContainText("Export is blocked: authenticate with a backend session before exporting review packages.");
+    await expect(chatPanel).toContainText("Export needs input: authenticate with a backend session before exporting review packages.");
 
     await composer.fill("make this a basin");
     await send.click();

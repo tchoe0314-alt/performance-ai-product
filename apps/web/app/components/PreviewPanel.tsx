@@ -318,7 +318,7 @@ const sourceStateLabel = (state: PreviewSourceState) => {
   if (state === "imported") return "Imported geometry - review required";
   if (state === "inferred") return "Inferred geometry - low confidence";
   if (state === "stale") return "Stale geometry - rerun affected systems";
-  if (state === "blocked") return "Blocked geometry - review required";
+  if (state === "blocked") return "Geometry needs review";
   return "Fallback geometry - bounds only";
 };
 
@@ -4812,10 +4812,10 @@ export default function PreviewPanel({
   const finishDraftBlockedReason =
     drawMode !== "select" && drawMode !== "pan" && drawMode !== "point" && drawMode !== "rect" && draftPointCount < finishDraftMinPoints
       ? drawMode === "site"
-        ? "Blocked: draw at least three boundary points before Finish."
+        ? "Draw at least three boundary points before Finish."
         : drawMode === "polygon"
-          ? "Blocked: draw at least three area points before Finish."
-          : "Blocked: draw at least two line points before Finish."
+          ? "Draw at least three area points before Finish."
+          : "Draw at least two line points before Finish."
       : null;
   const activeDrawToolLabel =
     drawMode === "site"
@@ -8732,7 +8732,7 @@ export default function PreviewPanel({
                 <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold text-slate-600" data-testid="cad-topology-status">
                   {topologyIssues.length ? (
                     <>
-                      <p className="text-amber-700">Topology review blockers</p>
+                      <p className="text-amber-700">Topology review needs</p>
                       <ul className="mt-1 space-y-1">
                         {topologyIssues.slice(0, 3).map((issue) => (
                           <li key={`${issue.code}-${issue.objectIds.join("-")}`} className="break-words">
