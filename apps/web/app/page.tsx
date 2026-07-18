@@ -30487,7 +30487,13 @@ function PerformanceAIDashboardView({
 	                ) : null}
 	                <div
 	                  data-testid="workspace-canvas-frame"
-	                  className="absolute inset-0 z-0 h-full w-full overflow-hidden lg:left-[112px] lg:w-auto"
+	                  className={`absolute inset-0 z-0 h-full w-full overflow-hidden lg:left-[112px] lg:w-auto ${
+                      rightRailCollapsed
+                        ? "lg:right-0"
+                        : sidePanelForRender === "deliverables"
+                          ? "lg:right-[784px]"
+                          : "lg:right-[408px]"
+                    }`}
                   style={{
                     height: "100%",
                   }}
