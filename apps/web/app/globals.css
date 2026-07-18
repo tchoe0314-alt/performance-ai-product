@@ -326,11 +326,12 @@ body,
   pointer-events: auto;
   scrollbar-width: none;
   box-shadow: 1px 0 0 rgba(15, 23, 42, 0.06);
+  gap: 0.25rem;
 }
 
 .civora-left-mode-rail button {
   min-width: 0;
-  border-radius: 14px;
+  border-radius: 18px;
   letter-spacing: 0;
 }
 
@@ -351,7 +352,7 @@ body,
 
   .civora-left-mode-rail > button,
   .civora-left-mode-rail [data-testid="primary-workflow-sidebar"] button {
-    min-width: 4rem;
+    min-width: 4.75rem;
     min-height: 3.5rem;
   }
 

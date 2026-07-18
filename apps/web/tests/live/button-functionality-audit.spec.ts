@@ -12,19 +12,14 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
   if (await workspaceButton.isVisible()) {
     await workspaceButton.click();
   }
-  const directButton = page.getByRole("button", { name }).first();
-  if (await directButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
-    await directButton.click();
-  } else if (name instanceof RegExp && name.source === "^Draw$") {
-    await page.getByRole("button", { name: "Open canvas from sidebar" }).click();
-  } else {
-    await directButton.click();
-  }
+  const navName = name === "Object Manager" || name === "Open canvas from sidebar" ? /^Draw$/ : name;
+  const directButton = page.getByRole("button", { name: navName }).first();
+  await directButton.click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
 async function openDrawTools(page: Page) {
-  await openWorkspacePanel(page, "Object Manager", /Object Manager|CAD Tools/);
+  await openWorkspacePanel(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 
@@ -101,8 +96,7 @@ test.describe("button functionality audit", () => {
 
     const panels: Array<[RegExp | string, RegExp | string]> = [
       [/^Setup$/, /Project Setup/],
-      ["Open canvas from sidebar", /Draw Canvas|Canvas/],
-      ["Object Manager", /Object Manager|CAD Tools/],
+      [/^Draw$/, /Draw & Object Manager|CAD Tools/],
       ["Generate", /Generate Systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
       ["Recent changes", /Recent changes|History/],

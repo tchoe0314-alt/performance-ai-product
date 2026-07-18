@@ -22995,7 +22995,7 @@ function PerformanceAIDashboardView({
             data-testid="left-sidebar"
             data-motion-state={sidebarVisible ? "open" : "closed"}
             aria-hidden={!sidebarVisible}
-            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[260] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 pb-28 pt-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-0 lg:left-0 lg:right-auto lg:top-16 lg:max-h-none lg:w-[76px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/92 lg:pb-4 lg:shadow-none"
+            className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-3 top-20 z-[260] flex max-h-[calc(100svh-6rem)] min-w-0 shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200/80 bg-white/90 px-2.5 pb-28 pt-3 shadow-[0_24px_72px_-50px_rgba(15,23,42,0.62)] backdrop-blur-xl lg:bottom-0 lg:left-0 lg:right-auto lg:top-16 lg:max-h-none lg:w-[112px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/92 lg:px-3 lg:pb-4 lg:shadow-none"
           >
             <button
               type="button"
@@ -23004,10 +23004,14 @@ function PerformanceAIDashboardView({
                 handleOpenSidePanel("projects");
               }}
               aria-label="Open projects"
-              className="mb-2 flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-lg border border-transparent bg-transparent px-2 py-2 text-center transition hover:bg-slate-50"
+              className={`mb-2 flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center transition ${
+                sidePanelForRender === "projects"
+                  ? "border-slate-950 bg-slate-950 text-white"
+                  : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+              }`}
             >
-              <FolderOpen className="mx-auto h-4 w-4 text-slate-500" />
-              <span className="sr-only">Projects</span>
+              <FolderOpen className="mx-auto h-4 w-4" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">Projects</span>
               <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>
             </button>
             <button
@@ -23035,7 +23039,9 @@ function PerformanceAIDashboardView({
 	            </button>
 	            <div className="rounded-lg border border-transparent bg-transparent" data-testid="primary-workflow-sidebar">
 	              <div className="space-y-1.5">
-	                {primaryWorkflowItems.map((item) => {
+	                {primaryWorkflowItems
+                    .filter((item) => ["setup", "draw", "design", "deliver"].includes(item.key))
+                    .map((item) => {
 	                  const Icon = item.icon;
 	                  const isActive = activePrimaryWorkflowKey === item.key;
 	                  return (
@@ -23046,41 +23052,19 @@ function PerformanceAIDashboardView({
 	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
 	                      aria-current={isActive ? "page" : undefined}
 	                      title={`${item.label}: ${item.metric}`}
-	                      className={`flex min-h-[52px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
+	                      className={`flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center transition ${
 	                        isActive
 	                          ? "border-slate-950 bg-slate-950 text-white"
 	                          : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
 	                      }`}
 	                    >
 	                      <Icon className="h-4 w-4 shrink-0" />
-	                      <span className="sr-only">{item.label}</span>
-	                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-	                        item.status === "ok"
-	                          ? "bg-emerald-500"
-	                          : item.status === "block"
-	                            ? "bg-red-500"
-	                            : item.status === "review"
-	                              ? "bg-amber-400"
-	                              : "bg-slate-300"
-	                      }`} />
+	                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                          {item.key === "design" ? "Generate" : item.label}
+                        </span>
 	                    </button>
 	                  );
 	                })}
-	                <button
-	                  type="button"
-	                  aria-label="Open canvas from sidebar"
-	                  onClick={() => handleOpenPanelFromDrawer("model")}
-	                  title="Canvas: view, pan, zoom, and inspect"
-	                  className={`flex min-h-[52px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-center transition ${
-	                    sidePanelForRender === "model"
-	                      ? "border-slate-950 bg-slate-950 text-white"
-	                      : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
-	                  }`}
-	                >
-	                  <Box className="h-4 w-4 shrink-0" />
-	                  <span className="sr-only">Canvas</span>
-	                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300" />
-	                </button>
 	              </div>
 	            </div>
 	            <div className="hidden" data-testid="workflow-actions-sidebar">
@@ -30532,9 +30516,8 @@ function PerformanceAIDashboardView({
 	                ) : null}
 	                <div
 	                  data-testid="workspace-canvas-frame"
-	                  className="absolute inset-0 z-0 h-full w-full overflow-hidden"
+	                  className="absolute inset-0 z-0 h-full w-full overflow-hidden lg:left-[112px] lg:w-auto"
                   style={{
-                    width: "100%",
                     height: "100%",
                   }}
                 >

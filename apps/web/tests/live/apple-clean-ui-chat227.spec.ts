@@ -21,7 +21,8 @@ async function openPanel(page: Page, name: RegExp | string, expected: RegExp | s
   if (await workspaceButton.isVisible()) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).first().click();
+  const navName = name === "Object Manager" ? /^Draw$/ : name;
+  await page.getByRole("button", { name: navName }).first().click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
