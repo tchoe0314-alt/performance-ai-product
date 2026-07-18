@@ -21063,6 +21063,12 @@ function PerformanceAIDashboardView({
     if (panel) {
       setRightRailCollapsed(false);
     }
+    const drawAdjacentPanels: SidePanelKey[] = ["objects", "details", "layers", "model"];
+    if (panel && !drawAdjacentPanels.includes(panel)) {
+      setPlacementModeEnabled(false);
+      setPreviewInteraction("static");
+      setCadToolRequest({ id: Date.now(), tool: "select" });
+    }
     setActiveSidePanel(panel);
     if (!panel) return;
     setActiveWorkspaceMode(workspaceModeByPanel[panel]);
