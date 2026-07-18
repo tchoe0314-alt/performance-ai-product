@@ -25806,14 +25806,11 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "generate" ? (
                   <div className="space-y-3" data-testid="clean-generate-panel">
-                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generate</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-950">Create a review draft from the current workspace.</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">
-	                        Optional sources stay visible as missing or review items. A locked site boundary is the main required input.
-                          </p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generate Systems</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-950">Run what is ready from the current site model.</p>
                         </div>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
 	                          missingSite ? "bg-amber-50 text-amber-700" : busy || visibleActiveJob ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"
@@ -25845,26 +25842,55 @@ function PerformanceAIDashboardView({
                           void handleGenerateSystem("full");
                         }}
                         disabled={busy || Boolean(visibleActiveJob)}
-                        className="mt-4 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="mt-4 flex w-full items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-3 py-3 text-center text-sm font-semibold text-white shadow-[0_14px_30px_-24px_rgba(37,99,235,0.85)] transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
 	                        {busy || visibleActiveJob ? "Generation Running" : missingSite ? "Generate needs site boundary" : "Generate"}
-                        <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-white/70">
-                          {missingSite ? "Setup needs one locked site boundary before a draft can run." : "Runs enabled systems and records skipped or review-needed items."}
-                        </span>
                       </button>
                       <div
-                        className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
+                        className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600"
                         data-testid="generate-auto-site-context"
                       >
-                        Auto Site Context: {autoSiteContextFlowSummary.candidateCount} review-required source candidate{autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"}.
+                        Auto Site Context: {autoSiteContextFlowSummary.candidateCount} review-required source candidate{autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available.
                         {" "}Missing sources: {autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 bg-white p-4" data-testid="generate-flow-status">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="generate-system-list">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Systems</p>
+                      <div className="mt-3 space-y-2">
+                        {systemReadinessRows.map((row) => (
+                          <button
+                            key={row.key}
+                            type="button"
+                            data-testid={`generate-${row.key}`}
+                            onClick={() => void handleGenerateSystem(row.runTarget)}
+                            disabled={busy || Boolean(visibleActiveJob)}
+                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <span className="min-w-0">
+                              <span className="block font-semibold text-slate-900">{row.label}</span>
+                              <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
+                                {row.status === "fresh" ? "Current in this workspace" : row.blockers[0] || "Ready to run"}
+                              </span>
+                            </span>
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              row.status === "fresh"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : row.blockers.length
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-slate-100 text-slate-500"
+                            }`}>
+                              {row.status === "fresh" ? "Ran" : row.blockers.length ? "Needs input" : "Ready"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="generate-flow-status">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Run Status</p>
                       {generateFlowSummary ? (
-	                        <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${generateFlowSummary.blocked ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="generate-flow-summary">
+	                        <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${generateFlowSummary.blocked ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="generate-flow-summary">
                           <p className="font-semibold uppercase tracking-[0.12em]">
                             {generateFlowSummary.blocked
 	                              ? "Needs input"
@@ -25878,7 +25904,7 @@ function PerformanceAIDashboardView({
                           <p className="mt-1 font-semibold">Next: {generateFlowSummary.next_action}</p>
                         </div>
                       ) : (
-                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
                           No generation run started in this session.
                         </div>
                       )}
@@ -25887,34 +25913,14 @@ function PerformanceAIDashboardView({
                     <details className="rounded-xl border border-slate-200 bg-white" data-testid="generate-system-details">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span>
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">System Toggles / Details</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">What will run, skip, or need review</span>
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Advanced</span>
+                          <span className="mt-1 block text-sm font-semibold text-slate-950">System toggles and rerun preferences</span>
                         </span>
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                           Optional
                         </span>
                       </summary>
                       <div className="border-t border-slate-100 px-4 py-4">
-                        <div className="grid grid-cols-2 gap-2">
-                          {systemReadinessRows.map((row) => (
-                            <button
-                              key={row.key}
-                              type="button"
-                              data-testid={`generate-${row.key}`}
-                              onClick={() => void handleGenerateSystem(row.runTarget)}
-                              disabled={busy || Boolean(visibleActiveJob)}
-                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="font-semibold uppercase tracking-[0.12em] text-slate-700">{row.label}</p>
-                                <span className={`h-2.5 w-2.5 rounded-full ${row.status === "fresh" ? "bg-emerald-500" : row.blockers.length ? "bg-amber-400" : "bg-slate-300"}`} />
-                              </div>
-                              <p className="mt-1 text-slate-500">
-                                {row.status === "fresh" ? "Current" : row.blockers[0] || "Ready to run"}
-                              </p>
-                            </button>
-                          ))}
-                        </div>
                         <label className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800">
                           <span>Assisted generation</span>
                           <input
@@ -29391,15 +29397,12 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "deliverables" ? (
                   <div className="space-y-3" data-testid="clean-deliver-panel">
-                    <div className="rounded-xl border border-slate-200 bg-white p-4" data-testid="deliver-review-package-flow">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deliver-review-package-flow">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Deliver</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-950">Make a review package from available workspace evidence.</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">
-                            Missing items are listed instead of hidden. Exports remain review materials.
-                          </p>
-                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                          <p className="mt-1 text-sm font-semibold text-slate-950">Package your current project for review.</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
                             Review-only and engineer-review-required.
                           </p>
                         </div>
@@ -29411,17 +29414,15 @@ function PerformanceAIDashboardView({
                       </div>
                       <button
                         type="button"
+                        aria-label="Make Review Package"
                         onClick={handleMakeReviewPackage}
-                        className="mt-4 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
+                        className="mt-4 flex w-full items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-3 py-3 text-center text-sm font-semibold text-white shadow-[0_14px_30px_-24px_rgba(37,99,235,0.85)] transition hover:bg-blue-700"
                       >
-                        Make Review Package
-                        <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-white/70">
-                          Creates available package items and records exact missing items.
-                        </span>
+                        Make a review package
                       </button>
                       {reviewPackageFlowSummary ? (
-                        <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${reviewPackageFlowSummary.blocked ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="deliver-review-package-summary">
-                          <p className="font-semibold uppercase tracking-[0.12em]">{reviewPackageFlowSummary.blocked ? "Package blocked" : "Package made"}</p>
+                        <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${reviewPackageFlowSummary.blocked ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="deliver-review-package-summary">
+                          <p className="font-semibold uppercase tracking-[0.12em]">{reviewPackageFlowSummary.blocked ? "Needs input" : "Package made"}</p>
                           <p className="mt-1">Created: {reviewPackageFlowSummary.outputs_created.join(", ") || "none"}</p>
                           <p className="mt-1">Missing: {reviewPackageFlowSummary.missing.slice(0, 4).join("; ") || "none recorded"}</p>
                           <p className="mt-1 font-semibold">Next: {reviewPackageFlowSummary.next_action}</p>
@@ -29429,8 +29430,29 @@ function PerformanceAIDashboardView({
                       ) : null}
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 bg-white p-4" data-testid="deliver-package-contents">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Included / Missing</p>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deliver-package-contents">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Package Contents</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
+                          <p className="font-semibold uppercase tracking-[0.12em] text-emerald-700">Included</p>
+                          <p className="mt-1 text-lg font-semibold text-emerald-900">
+                            {[planPreviewUrl, backendResult, placedObjectCount > 0, sidebarTrustScore].filter(Boolean).length}
+                          </p>
+                          <p className="mt-1 text-[11px] font-medium text-emerald-700">items ready for review</p>
+                        </div>
+                        <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
+                          <p className="font-semibold uppercase tracking-[0.12em] text-amber-700">Missing</p>
+                          <p className="mt-1 text-lg font-semibold text-amber-900">
+                            {[
+                              !planPreviewUrl,
+                              !backendResult,
+                              !placedObjectCount,
+                              ...getPlanSheetBlockers().slice(0, 3).map(Boolean),
+                            ].filter(Boolean).length}
+                          </p>
+                          <p className="mt-1 text-[11px] font-medium text-amber-700">items to review or add</p>
+                        </div>
+                      </div>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         {[
                           ["Plan preview", planPreviewUrl ? "Included" : "Missing"],
@@ -29444,44 +29466,41 @@ function PerformanceAIDashboardView({
                           </div>
                         ))}
                       </div>
-                      <div className="mt-3 space-y-2">
-                        {(getPlanSheetBlockers().length ? getPlanSheetBlockers().slice(0, 3) : ["No sheet-specific missing items recorded."]).map((item) => (
-                          <p key={item} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
-                            {item}
-                          </p>
-                        ))}
-                      </div>
                     </div>
 
-                    <CivilReviewSheet
-                      projectName={siteName || currentProject?.name || "Untitled Project"}
-                      addressLabel={appliedAddressLabel || siteAddress.trim() || "No address applied"}
-                      lotWidth={parsePositiveNumber(lotWidth) ?? lotBounds.w ?? 0}
-                      lotHeight={parsePositiveNumber(lotHeight) ?? lotBounds.h ?? 0}
-                      placements={buildingPlacements}
-                      sourceCandidateCount={autoSiteContextFlowSummary.candidateCount}
-                      missingSources={autoSiteContextFlowSummary.missingLabels}
-                      generatedAt={planSheetSet.updatedAt}
-                    />
-
-                    <div className="rounded-xl border border-slate-200 bg-white p-4" data-testid="deliver-export-actions">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Download / Export</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deliver-export-actions">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Exports</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <button
                           type="button"
+                          onClick={handlePlanSheetExportPdf}
+                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Review PDF
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Export DXF"
                           onClick={handleExportDxf}
                           title={getExportBlockReason() || "Download DXF review export"}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
+                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
-                          Export DXF
+                          DXF
                         </button>
                         <button
                           type="button"
                           onClick={handleExportReport}
                           title={getExportBlockReason() || "Download review report"}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
+                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
-                          Export Report
+                          Report
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("quantities")}
+                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Quantities
                         </button>
                       </div>
                       {getExportBlockReason() ? (
@@ -29496,16 +29515,26 @@ function PerformanceAIDashboardView({
                       ) : null}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleOpenSidePanel("reports")}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Review gates
-                      <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
-                        Open blockers, QA issues, smart fixes, quantities, and package audit details.
-                      </span>
-                    </button>
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-source-notes">
+                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+                        <span>
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Source notes</span>
+                          <span className="mt-1 block text-sm font-semibold text-slate-950">Data sources and missing items included in this package</span>
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          {autoSiteContextFlowSummary.candidateCount}
+                        </span>
+                      </summary>
+                      <div className="border-t border-slate-100 px-4 py-4">
+                        <div className="space-y-2">
+                          {(getPlanSheetBlockers().length ? getPlanSheetBlockers().slice(0, 4) : ["No sheet-specific missing items recorded."]).map((item) => (
+                            <p key={item} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                              {item}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    </details>
 
                     <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-sheet-details">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
@@ -29555,6 +29584,30 @@ function PerformanceAIDashboardView({
                           onCreateSheet={handleCreateReviewSheet}
                           onExportJson={handlePlanSheetExportJson}
                           onExportPdf={handlePlanSheetExportPdf}
+                        />
+                      </div>
+                    </details>
+
+                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-review-sheet-preview">
+                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+                        <span>
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review sheet preview</span>
+                          <span className="mt-1 block text-sm font-semibold text-slate-950">Open only when you want sheet layout details</span>
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Preview
+                        </span>
+                      </summary>
+                      <div className="border-t border-slate-100 px-4 py-4">
+                        <CivilReviewSheet
+                          projectName={siteName || currentProject?.name || "Untitled Project"}
+                          addressLabel={appliedAddressLabel || siteAddress.trim() || "No address applied"}
+                          lotWidth={parsePositiveNumber(lotWidth) ?? lotBounds.w ?? 0}
+                          lotHeight={parsePositiveNumber(lotHeight) ?? lotBounds.h ?? 0}
+                          placements={buildingPlacements}
+                          sourceCandidateCount={autoSiteContextFlowSummary.candidateCount}
+                          missingSources={autoSiteContextFlowSummary.missingLabels}
+                          generatedAt={planSheetSet.updatedAt}
                         />
                       </div>
                     </details>
