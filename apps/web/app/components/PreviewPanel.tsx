@@ -752,6 +752,7 @@ export default function PreviewPanel({
   }, [previewLabels, selectedIssueLabel]);
   const [hoveredAnnotation, setHoveredAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
+  const [managedObjectId, setManagedObjectId] = useState<string | null>(null);
   const [pinnedAnnotation, setPinnedAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
@@ -834,6 +835,7 @@ export default function PreviewPanel({
   const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
   const hasDrawableSiteSize = lotWidth > 0 && lotHeight > 0;
   const canDrawObjects = Boolean(siteLocked && hasDrawableSiteSize);
+  const previousPlacementIdsRef = useRef<Set<string> | null>(null);
   const drawObjectsDisabledLabel = !siteLocked
     ? "Lock site boundary before drawing objects"
     : !hasDrawableSiteSize
@@ -1187,13 +1189,13 @@ export default function PreviewPanel({
     debugWindow.__civoraMapLoaded = mapLoaded;
   }, [geocode, mapLoaded, mapOverlayEnabled, showMap, previewQuality]);
   const selectedObject = useMemo(() => {
-    const selectedIds = [selectedBuildingId, ...selectedObjectIds, ...cadSelectionSet].filter(Boolean);
+    const selectedIds = [selectedBuildingId, managedObjectId, hoveredObjectId, ...selectedObjectIds, ...cadSelectionSet].filter(Boolean);
     return (
       [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
         (item) => selectedIds.includes(item.id) && item.type !== "site",
       ) ?? null
     );
-  }, [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, selectedBuildingId, selectedObjectIds, suggestedPlacements]);
+  }, [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, hoveredObjectId, managedObjectId, selectedBuildingId, selectedObjectIds, suggestedPlacements]);
   const aiRealismSourceObjects = useMemo(
     () =>
       [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]
@@ -1953,6 +1955,7 @@ export default function PreviewPanel({
         setCadCommandStatus(blocker || "FOCUS blocked: select an object first.");
         return;
       }
+      setManagedObjectId(item.id);
       onSelectBuilding(item.id);
       setHoveredObjectId(item.id);
       const minX = item.x ?? 0;
@@ -2435,6 +2438,27 @@ export default function PreviewPanel({
     () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...selectedObjectIds, ...cadSelectionSet])),
     [cadSelectionSet, selectedBuildingId, selectedObjectIds],
   );
+  useEffect(() => {
+    const currentIds = new Set(buildingPlacements.map((item) => item.id));
+    const previousIds = previousPlacementIdsRef.current;
+    previousPlacementIdsRef.current = currentIds;
+    if (!previousIds) return;
+
+    const newlyAddedDrafts = buildingPlacements.filter(
+      (item) =>
+        !previousIds.has(item.id) &&
+        item.type !== "site" &&
+        (item.source === "manual_drawn" || item.meta?.source === "manual_drawn"),
+    );
+    if (newlyAddedDrafts.length !== 1) return;
+    const [newlyAddedDraft] = newlyAddedDrafts;
+    if (!newlyAddedDraft) return;
+
+    setManagedObjectId(newlyAddedDraft.id);
+    onSelectBuilding(newlyAddedDraft.id);
+    onSelectObjects?.([newlyAddedDraft.id]);
+    setCadSelectionSet([newlyAddedDraft.id]);
+  }, [buildingPlacements, onSelectBuilding, onSelectObjects]);
   const applyCadHistorySnapshot = useCallback(
     (snapshot: BuildingPlacement) => {
       onUpdateBuilding(snapshot.id, {
@@ -7741,9 +7765,10 @@ export default function PreviewPanel({
                   <select
                     aria-label="Object Manager object list"
                     data-testid="preview-object-manager-list"
-                    value={selectedBuildingId ?? ""}
+                    value={selectedObject?.id ?? selectedBuildingId ?? ""}
                     onChange={(event) => {
                       const id = event.target.value || null;
+                      setManagedObjectId(id);
                       onSelectBuilding(id);
                       setCadSelectionSet(id ? [id] : []);
                       setSelectedVertex(null);

@@ -16878,7 +16878,7 @@ function PerformanceAIDashboardView({
         return;
       }
       clearGeneratedPreview();
-      nextSiteInputs.address = geocode.display_name;
+      nextSiteInputs.address = trimmed;
       nextSiteInputs.geocode = {
         lat: geocode.lat,
         lng: geocode.lng,
@@ -16966,6 +16966,10 @@ function PerformanceAIDashboardView({
         nextSiteInputs.existing_conditions_package = onlineFetch.existing_conditions_package;
       }
       nextSiteInputs.site_alignment_locked = preserveLockedSite ? true : false;
+      if (preserveLockedSite) {
+        nextSiteInputs.site_boundary_state = "locked_canonical";
+        nextSiteInputs.site_boundary_source = "dimensions";
+      }
       setAddressSuggestions([]);
       setActiveWorkspaceMode("setup");
       setActiveSidePanel("site_existing");
@@ -17019,10 +17023,36 @@ function PerformanceAIDashboardView({
         projectInputOverride: nextProjectInput,
         latestResultOverride,
       });
-      if (!preserveLockedSite) {
+      if (preserveLockedSite) {
+        setSiteScaleLocked(true);
+        setShowSiteBounds(false);
+        setSiteSelectionMode(false);
+        setBuildingPlacements((prevPlacements) =>
+          prevPlacements.map((item) =>
+            item.type === "site"
+              ? {
+                  ...item,
+                  locked: true,
+                  capabilities: {
+                    ...(item.capabilities ?? {}),
+                    movable: false,
+                    resizable: false,
+                    rotatable: false,
+                    deletable: false,
+                  },
+                  meta: {
+                    ...(item.meta ?? {}),
+                    site_boundary_state: "locked_canonical",
+                    source_ui_mode: item.meta?.source_ui_mode ?? "site_setup",
+                  },
+                }
+              : item,
+          ),
+        );
+      } else {
         setSiteScaleLocked(false);
       }
-      setSiteAddress(geocode.display_name);
+      setSiteAddress(trimmed);
       setShowSiteBounds(preserveLockedSite ? false : true);
       setPreviewQuality("high");
       setSiteSelectionMode(preserveLockedSite ? false : true);
@@ -20905,10 +20935,10 @@ function PerformanceAIDashboardView({
     ],
     [canonicalWorkspaceBlockers, hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
   );
-  const selectedBuilding = useMemo(
-    () => buildingPlacements.find((item) => item.id === activePlacementId) ?? null,
-    [activePlacementId, buildingPlacements],
-  );
+  const selectedBuilding = useMemo(() => {
+    const selectedIds = [activePlacementId, ...selectedObjectIds].filter(Boolean);
+    return buildingPlacements.find((item) => selectedIds.includes(item.id)) ?? null;
+  }, [activePlacementId, buildingPlacements, selectedObjectIds]);
   const selectedObjectSet = useMemo(() => new Set(selectedObjectIds), [selectedObjectIds]);
   const selectedObjectRows = useMemo(
     () => buildingPlacements.filter((item) => selectedObjectSet.has(item.id)),
