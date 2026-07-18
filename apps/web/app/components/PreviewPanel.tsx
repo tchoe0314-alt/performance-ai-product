@@ -951,6 +951,7 @@ export default function PreviewPanel({
   const activeDrawMode =
     (drawMode === "site" && !siteLocked) ||
     ((drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect" || drawMode === "point") && canDrawObjects);
+  const drawingOwnsCanvasHits = activeDrawMode || drawMode === "pan";
   const drawingSurfaceInteractive =
     placementMode ||
     activeDrawMode ||
@@ -960,6 +961,7 @@ export default function PreviewPanel({
     (allowEdits && drawMode === "select") ||
     (showMap && previewInteraction === "edit" && !mapLocked);
   const overlayPointerEvents = drawingSurfaceInteractive ? "pointer-events-auto" : "pointer-events-none";
+  const passiveOverlayPointerEvents = drawingOwnsCanvasHits ? "pointer-events-none" : "pointer-events-auto";
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
@@ -10930,7 +10932,7 @@ export default function PreviewPanel({
                               event.stopPropagation();
                               if (scenario) setSelectedFireScenarioId(scenario.id);
                             }}
-                            className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white/20 transition ${
+                            className={`${passiveOverlayPointerEvents} absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white/20 transition ${
                               selected
                                 ? "border-slate-950 shadow-[0_0_0_4px_rgba(14,165,233,0.18)]"
                                 : "border-white/80 hover:border-slate-950"
@@ -11004,7 +11006,7 @@ export default function PreviewPanel({
                             data-visual-kind={visualKind}
                             data-source-state={sourceState}
                             data-hit-priority={hitZIndex}
-                            className={`${allowItemInteraction ? "pointer-events-auto" : "pointer-events-none"} absolute z-[30]`}
+                            className={`${allowItemInteraction ? passiveOverlayPointerEvents : "pointer-events-none"} absolute z-[30]`}
                             style={{
                               left: `${rectPct.left}%`,
                               top: `${rectPct.top}%`,
@@ -11017,12 +11019,12 @@ export default function PreviewPanel({
                               cursor: caps.movable ? (isPolyline ? "grab" : "move") : "default",
                             }}
                             onMouseDown={(event) => {
-                              if (!allowItemInteraction) return;
+                              if (drawingOwnsCanvasHits || !allowItemInteraction) return;
                               if (draggingMode === "vertex" || hoveredSegment?.id === item.id) return;
                               handleBuildingMouseDown(event, item, "move");
                             }}
                             onMouseEnter={() => {
-                              if (!allowItemInteraction) return;
+                              if (drawingOwnsCanvasHits || !allowItemInteraction) return;
                               setHoveredObjectId(item.id);
                             }}
                             onMouseLeave={() => {
@@ -11030,7 +11032,7 @@ export default function PreviewPanel({
                               setHoveredVertex(null);
                             }}
                             onClick={(event) => {
-                              if (!allowItemInteraction) return;
+                              if (drawingOwnsCanvasHits || !allowItemInteraction) return;
                               if (suppressNextObjectClickRef.current) {
                                 suppressNextObjectClickRef.current = false;
                                 event.stopPropagation();
@@ -11419,7 +11421,7 @@ export default function PreviewPanel({
                         return (
                           <div
                             key={item.id}
-                            className="pointer-events-auto absolute"
+                            className={`${passiveOverlayPointerEvents} absolute`}
                             style={{
                               left: `${rectPct.left}%`,
                               top: `${rectPct.top}%`,
@@ -11431,8 +11433,12 @@ export default function PreviewPanel({
                               transformOrigin: "center",
                               cursor: "move",
                             }}
-                            onMouseDown={(event) => handleBuildingMouseDown(event, item, "move")}
+                            onMouseDown={(event) => {
+                              if (drawingOwnsCanvasHits) return;
+                              handleBuildingMouseDown(event, item, "move");
+                            }}
                             onMouseEnter={() => {
+                              if (drawingOwnsCanvasHits) return;
                               setHoveredObjectId(item.id);
                             }}
                             onMouseLeave={() => setHoveredObjectId(null)}
