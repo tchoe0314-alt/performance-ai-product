@@ -947,7 +947,9 @@ export default function PreviewPanel({
   const showHover = previewInteraction === "static";
   const allowEdits = previewInteraction === "edit";
   const showQuickDrawPalette =
-    previewMode === "2d" && (allowEdits || (drawMode !== "select" && drawMode !== "pan"));
+    previewMode === "2d" &&
+    (allowEdits || (drawMode !== "select" && drawMode !== "pan")) &&
+    !(selectedBuildingId && drawMode === "select");
   const showMobileDrawToolbar = showQuickDrawPalette;
   const activeDrawMode =
     (drawMode === "site" && !siteLocked) ||
@@ -11058,6 +11060,7 @@ export default function PreviewPanel({
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
                         const hitZIndex = resolveObjectHitZIndex(item, rectPct, isSelected);
+                        const overlayZIndex = isSelected ? Math.max(hitZIndex, 120) : hitZIndex;
                         return (
                           <div
                             key={item.id}
@@ -11074,7 +11077,7 @@ export default function PreviewPanel({
                               top: `${rectPct.top}%`,
                               width: `${rectPct.width}%`,
                               height: `${rectPct.height}%`,
-                              zIndex: hitZIndex,
+                              zIndex: overlayZIndex,
                               scrollMarginBottom: "10rem",
                               transform: `rotate(${rotation}deg)`,
                               transformOrigin: "center",
