@@ -1507,7 +1507,7 @@ const buildCustomGeometryMeta = (
       depth_ft: Number(metrics.depthFt.toFixed(2)),
     },
     canonical_note:
-      "Stored as user-authored project geometry for engineer review. Backend engineering generation does not automatically consume arbitrary drawn geometry.",
+      "Stored as user-authored project geometry for engineer review and passed to Generate as review context when present.",
   };
 };
 
@@ -13110,6 +13110,18 @@ function PerformanceAIDashboardView({
       appendChatMessage("user", message);
       handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", placed: true, meta: { network: "storm", command_created: true } });
       appendChatMessage("assistant", "Added and placed a storm-sewer utility corridor as draft review geometry.", "status");
+      return true;
+    }
+    if (/^add (?:detention )?basin$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleAddObject("basin", { label: "Detention Basin", placed: true, meta: { command_created: true } });
+      appendChatMessage("assistant", "Added and placed a detention basin as draft review geometry.", "status");
+      return true;
+    }
+    if (/^add outfall$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleAddObject("outfall", { label: "Outfall", placed: true, meta: { command_created: true, role: "storm_outfall_review_point" } });
+      appendChatMessage("assistant", "Added and placed an outfall point as draft review geometry.", "status");
       return true;
     }
     if (/^hide utilities$/.test(normalized)) {
