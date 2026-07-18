@@ -826,6 +826,7 @@ export default function PreviewPanel({
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
   const suppressNextDrawClickRef = useRef(false);
   const suppressNextObjectClickRef = useRef(false);
+  const lastDraftPreviewPointRef = useRef<[number, number] | null>(null);
   const [canvasView, setCanvasView] = useState({ scale: BALANCED_CANVAS_SCALE, offsetX: 0, offsetY: 0 });
   const autoFitSignatureRef = useRef("");
   const userAdjustedCanvasViewRef = useRef(false);
@@ -4675,8 +4676,15 @@ export default function PreviewPanel({
   const clearDraftGeometry = useCallback(() => {
     setDraftPoints([]);
     setDraftPreviewPoint(null);
+    lastDraftPreviewPointRef.current = null;
     setCadActiveCommand(null);
   }, []);
+
+  useEffect(() => {
+    if (draftPreviewPoint) {
+      lastDraftPreviewPointRef.current = draftPreviewPoint;
+    }
+  }, [draftPreviewPoint]);
 
   useEffect(() => {
     if (siteDrawRequest === lastSiteDrawRequestRef.current) return;
@@ -4695,7 +4703,11 @@ export default function PreviewPanel({
       pushCadCommandFeedback("FINISH", "blocked", "FINISH blocked: start Add Line, Add Area, Add Box, Add Point, or Draw Site Boundary first.");
       return;
     }
-    const effectivePoints = draftPoints;
+    const rectFinishPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current;
+    const effectivePoints =
+      drawMode === "rect" && draftPoints.length === 1 && rectFinishPreviewPoint
+        ? [draftPoints[0], rectFinishPreviewPoint]
+        : draftPoints;
     const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
     if (effectivePoints.length < minPoints) {
       const message =
@@ -4758,6 +4770,7 @@ export default function PreviewPanel({
   }, [
 	    clearDraftGeometry,
 	    draftPoints,
+      draftPreviewPoint,
 	    drawMode,
     onCreateCustomGeometry,
     onCreateSiteBoundary,
@@ -4766,8 +4779,15 @@ export default function PreviewPanel({
 
   const draftPointCount = draftPoints.length;
   const finishDraftMinPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
+  const finishDraftEffectivePointCount =
+    drawMode === "rect" && draftPointCount === 1 && (draftPreviewPoint || lastDraftPreviewPointRef.current) ? 2 : draftPointCount;
+  const canFinishDraftGeometry =
+    drawMode !== "select" &&
+    drawMode !== "pan" &&
+    drawMode !== "point" &&
+    finishDraftEffectivePointCount >= finishDraftMinPoints;
   const finishDraftBlockedReason =
-    drawMode !== "select" && drawMode !== "pan" && drawMode !== "point" && drawMode !== "rect" && draftPointCount < finishDraftMinPoints
+    drawMode !== "select" && drawMode !== "pan" && drawMode !== "point" && finishDraftEffectivePointCount < finishDraftMinPoints
       ? drawMode === "site"
         ? "Draw at least three boundary points before Finish."
         : drawMode === "polygon"
@@ -7680,10 +7700,10 @@ export default function PreviewPanel({
                         <button
                           type="button"
                           onClick={finishDraftGeometry}
-                          disabled={draftPointCount < finishDraftMinPoints}
+                          disabled={!canFinishDraftGeometry}
                           title={finishDraftBlockedReason ?? "Finish drawn geometry"}
                           className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
-                            draftPointCount < finishDraftMinPoints
+                            !canFinishDraftGeometry
                               ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
                               : "border-slate-900 bg-slate-950 text-white"
                           }`}
@@ -8081,10 +8101,10 @@ export default function PreviewPanel({
                     <button
                       type="button"
                       onClick={finishDraftGeometry}
-                      disabled={draftPointCount < finishDraftMinPoints}
+                      disabled={!canFinishDraftGeometry}
                       title={finishDraftBlockedReason ?? "Finish drawn geometry"}
                       className={`relative z-[90] inline-flex h-8 items-center rounded-md border px-3 text-xs ${
-                        draftPointCount < finishDraftMinPoints
+                        !canFinishDraftGeometry
                           ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
                           : "border-slate-900 bg-slate-950 text-white"
                       }`}
@@ -8401,7 +8421,7 @@ export default function PreviewPanel({
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
-                        disabled={draftPointCount < finishDraftMinPoints}
+                        disabled={!canFinishDraftGeometry}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
                         className="relative z-[90] inline-flex h-8 items-center rounded-md border border-slate-900 bg-slate-950 px-2 text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
@@ -9226,10 +9246,10 @@ export default function PreviewPanel({
 		                      type="button"
 		                      data-testid="canvas-quick-finish"
 		                      onClick={finishDraftGeometry}
-		                      disabled={draftPointCount < finishDraftMinPoints}
+		                      disabled={!canFinishDraftGeometry}
 		                      title={finishDraftBlockedReason ?? "Finish drawn geometry"}
 	                      className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
-	                        draftPointCount < finishDraftMinPoints
+	                        !canFinishDraftGeometry
 	                          ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
 	                          : "border-slate-900 bg-slate-950 text-white"
 	                      }`}
@@ -9558,10 +9578,10 @@ export default function PreviewPanel({
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
-                        disabled={draftPointCount < finishDraftMinPoints}
+                        disabled={!canFinishDraftGeometry}
                         title={finishDraftBlockedReason ?? "Finish drawn geometry"}
                         className={`relative z-[90] min-h-10 flex-1 rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
-                          draftPointCount < finishDraftMinPoints
+                          !canFinishDraftGeometry
                             ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
                             : "border-slate-900 bg-slate-950 text-white"
                         }`}

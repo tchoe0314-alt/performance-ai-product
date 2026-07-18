@@ -13058,6 +13058,27 @@ function PerformanceAIDashboardView({
       });
       return true;
     }
+    if (/^(?:add|create|place|put|make)\s+(?:a\s+)?(?:(?:detention|stormwater|drainage)\s+)?(?:basin|pond)$/.test(normalized)) {
+      appendChatMessage("user", message);
+      handleAddObject("basin", {
+        label: "Detention Basin",
+        placed: true,
+        meta: { command_created: true, command_source: "direct_object_command" },
+      });
+      setActivePlacementId(null);
+      setPreviewInteraction("static");
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      setSidePanelVisible(false);
+      setRightRailCollapsed(true);
+      appendChatMessage(
+        "assistant",
+        "Added and placed a detention basin as draft review geometry. It will be passed into Generate as review context.",
+        "status",
+      );
+      return true;
+    }
     if (tryHandleSiteProgramCommand(message)) {
       return true;
     }

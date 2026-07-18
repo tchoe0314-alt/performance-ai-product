@@ -151,6 +151,36 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIST selected .*Custom Line.*ft total.*first angle/i);
   });
 
+  test("Add Box can finish from the visible opposite-corner preview", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const surface = page.getByTestId("preview-drawing-surface");
+
+    await cadTools.getByTestId("cad-tool-box").click();
+    await clickExposedSurface(surface, 0.26, 0.36);
+    const target = await surface.evaluate(() => {
+      const site =
+        Array.from(document.querySelectorAll<HTMLElement>("[data-cad-object-id]")).find((element) =>
+          /site/i.test(element.getAttribute("aria-label") || ""),
+        ) ?? document.querySelector<HTMLElement>('[data-testid="preview-drawing-surface"]');
+      const rect = site?.getBoundingClientRect();
+      return rect
+        ? { x: rect.left + rect.width * 0.46, y: rect.top + rect.height * 0.52 }
+        : null;
+    });
+    expect(target).not.toBeNull();
+    await page.mouse.move(target!.x, target!.y);
+
+    const finish = page.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
+    await expect(finish).toBeEnabled();
+    await finish.click();
+
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/BOX created|Custom Box|manual_drawn/i);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom|Box|Rectangle/ }).first()).toBeVisible();
+  });
+
   test("draft precision HUD supports keyboard finish and cancel", async ({ page }) => {
     await startBlankSite(page);
     const surface = page.getByTestId("preview-drawing-surface");
