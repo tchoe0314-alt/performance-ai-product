@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock") {
+async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock", options?: { requireLockedSite?: boolean }) {
   const params = new URLSearchParams(query);
   if (!params.has("seedDemo")) {
     params.set("seedDemo", "1");
@@ -15,7 +15,9 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismPr
   page.on("pageerror", (error) => consoleErrors.push(error.message));
   await page.goto(`/demo/workspace?${params.toString()}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
+  if (options?.requireLockedSite !== false) {
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
+  }
   return consoleErrors;
 }
 
@@ -71,6 +73,23 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await openDrawPanel(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Office Building - 28,000 sf");
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
+  });
+
+  test("natural language address and site size setup bypasses generic design clarification", async ({ page }) => {
+    await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
+
+    await runCommand(
+      page,
+      "I want the address to be 20525 Margo St gretna ne and its gonna be 1000ft by 1000 ft with the address to be the center point",
+    );
+
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Site Locked/i, { timeout: 8_000 });
+    await page.getByRole("button", { name: "Setup" }).first().click();
+    await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
+    await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
+    await expect(page.getByTestId("setup-address-truth")).toContainText(/Local|Applied/i);
+    await expect(page.getByTestId("setup-address-truth")).not.toContainText(/Needs apply/i);
+    await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/site type or land use/i);
   });
 
   test("commands open generate, deliver, blocker view, layers, and AI realism mode", async ({ page }) => {

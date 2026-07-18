@@ -4100,6 +4100,10 @@ function PerformanceAIDashboardView({
     siteAddress.trim() &&
       siteAddress.trim() !== String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim(),
   );
+  const localAddressLocked = Boolean(!hasAppliedAddress && siteScaleLocked && siteAddress.trim());
+  const addressNeedsApply = Boolean(
+    !localAddressLocked && (pendingAddressEdit || (siteAddress.trim() && !hasAppliedAddress)),
+  );
   const smartFixBlockedReasons = useMemo(() => {
     const releaseReview = currentPlanMeta.release_review && typeof currentPlanMeta.release_review === "object"
       ? currentPlanMeta.release_review as Record<string, unknown>
@@ -13383,13 +13387,13 @@ function PerformanceAIDashboardView({
       return;
     }
     if (trimmed) {
+      const handledPowerCommand = tryHandlePowerCommand(trimmed);
+      if (handledPowerCommand) {
+        setPrompt("");
+        return;
+      }
       const routeToOrchestrator = shouldRouteToOrchestrator(trimmed);
       if (!routeToOrchestrator) {
-        const handledPowerCommand = tryHandlePowerCommand(trimmed);
-        if (handledPowerCommand) {
-          setPrompt("");
-          return;
-        }
         const handled = tryHandleObjectIntent(trimmed);
         if (handled) {
           setPrompt("");
@@ -23961,13 +23965,13 @@ function PerformanceAIDashboardView({
                           </span>
                         </span>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                          pendingAddressEdit || (siteAddress.trim() && !hasAppliedAddress)
+                          addressNeedsApply
                             ? "bg-amber-50 text-amber-700"
-                            : hasAppliedAddress
+                            : hasAppliedAddress || localAddressLocked
                               ? "bg-emerald-50 text-emerald-700"
                               : "bg-slate-100 text-slate-500"
                         }`}>
-                          {pendingAddressEdit || (siteAddress.trim() && !hasAppliedAddress) ? "Needs apply" : hasAppliedAddress ? "Applied" : "Not set"}
+                          {addressNeedsApply ? "Needs apply" : hasAppliedAddress ? "Applied" : localAddressLocked ? "Local" : "Not set"}
                         </span>
                       </summary>
                       <div className="border-t border-slate-100 px-4 py-4">
