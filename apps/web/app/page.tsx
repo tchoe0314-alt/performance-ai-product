@@ -2525,14 +2525,6 @@ const DEFAULT_PROJECT_STATUS: ProjectStatusSummary = {
   updatedAt: 0,
 };
 
-const projectStatusToneClass: Record<ProjectStatusState, string> = {
-  working: "border-sky-200 bg-sky-50 text-sky-800",
-  blocked: "border-amber-200 bg-amber-50 text-amber-800",
-  "needs review": "border-amber-200 bg-amber-50 text-amber-800",
-  stale: "border-orange-200 bg-orange-50 text-orange-800",
-  ready: "border-emerald-200 bg-emerald-50 text-emerald-800",
-};
-
 const projectStatusDisplayLabel: Record<ProjectStatusState, string> = {
   working: "Working",
   blocked: "Needs input",
@@ -2616,31 +2608,6 @@ type RecentChange = {
   undo?: DraftUndoAction;
   undoBlockedReason?: string;
 };
-
-function ProjectStatusSummaryCard({ summary }: { summary: ProjectStatusSummary }) {
-  return (
-    <div
-      data-testid="project-status-summary"
-      className={`rounded-xl border px-3 py-2.5 text-xs shadow-sm ${projectStatusToneClass[summary.state]}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-semibold uppercase tracking-[0.14em]">
-            {projectStatusDisplayLabel[summary.state]}
-          </p>
-          <p className="mt-1 text-sm font-semibold normal-case tracking-normal">
-            {summary.title}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
-          {summary.area}
-        </span>
-      </div>
-      <p className="mt-1 font-medium leading-5">{summary.detail}</p>
-      <p className="mt-1 font-semibold leading-5">Next: {summary.nextAction}</p>
-    </div>
-  );
-}
 
 type ArtifactJobResult = {
   artifact?: {
@@ -6811,6 +6778,29 @@ function PerformanceAIDashboardView({
           },
         });
       };
+      if (target === "full" && !hasExistingType("building", "office_building", "pad")) {
+        const requestedArea = parsePositiveNumber(buildingWidth) && parsePositiveNumber(buildingDepth)
+          ? Math.round((parsePositiveNumber(buildingWidth) ?? 0) * (parsePositiveNumber(buildingDepth) ?? 0))
+          : 28000;
+        const buildingDepthFt = Math.max(80, Math.min(lot.h * 0.18, Math.round(Math.sqrt(requestedArea / 2))));
+        const buildingWidthFt = Math.max(150, Math.min(lot.w * 0.34, Math.round(requestedArea / buildingDepthFt)));
+        addConcept({
+          id: `generate-office-${now}`,
+          label: `Review office building concept - ${requestedArea.toLocaleString()} sf`,
+          type: "office_building",
+          x: lot.w * 0.36,
+          y: lot.h * 0.22,
+          w: buildingWidthFt,
+          d: buildingDepthFt,
+          systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+          meta: {
+            cad_layer: "C-BLDG",
+            ui_color: "#64748b",
+            requested_area_sf: requestedArea,
+            generated_program_object: true,
+          },
+        });
+      }
       if (wants("roads") && !hasExistingType("road", "driveway", "entrance")) {
         addConcept({
           id: `generate-road-${now}`,
@@ -6829,6 +6819,26 @@ function PerformanceAIDashboardView({
           ],
           systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
           meta: { cad_layer: "C-ROAD", ui_color: "#334155" },
+        });
+      }
+      if ((wants("roads") || target === "full") && !hasExistingType("sidewalk")) {
+        addConcept({
+          id: `generate-sidewalk-${now}`,
+          label: "Review sidewalk / ADA route concept",
+          type: "sidewalk",
+          x: 0,
+          y: 0,
+          w: lot.w,
+          d: lot.h,
+          geometryType: "polyline",
+          geometry: [
+            [lot.w * 0.18, lot.h * 0.5],
+            [lot.w * 0.38, lot.h * 0.5],
+            [lot.w * 0.5, lot.h * 0.43],
+            [lot.w * 0.65, lot.h * 0.43],
+          ],
+          systemDependencies: ["roads", "parking", "grading"],
+          meta: { cad_layer: "C-WALK", routeKind: "ada_review_route", ui_color: "#0f766e" },
         });
       }
       if (wants("parking") && !hasExistingType("parking")) {
@@ -6869,8 +6879,32 @@ function PerformanceAIDashboardView({
           y: lot.h * 0.68,
           w: Math.min(lot.w * 0.2, 220),
           d: Math.min(lot.h * 0.16, 160),
+          geometryType: "polygon",
+          geometry: [
+            [lot.w * 0.72, lot.h * 0.74],
+            [lot.w * 0.75, lot.h * 0.68],
+            [lot.w * 0.86, lot.h * 0.66],
+            [lot.w * 0.93, lot.h * 0.73],
+            [lot.w * 0.89, lot.h * 0.83],
+            [lot.w * 0.76, lot.h * 0.84],
+          ],
           systemDependencies: ["grading", "drainage"],
           meta: { cad_layer: "C-DRAIN", ui_color: "#0284c7" },
+        });
+      }
+      if (wants("drainage") && !hasExistingType("outfall")) {
+        addConcept({
+          id: `generate-outfall-${now}`,
+          label: "Review outfall / discharge point",
+          type: "outfall",
+          x: lot.w * 0.87,
+          y: lot.h * 0.67,
+          w: 12,
+          d: 12,
+          geometryType: "point",
+          geometry: [[lot.w * 0.87, lot.h * 0.67]],
+          systemDependencies: ["drainage", "utilities"],
+          meta: { cad_layer: "C-DRAIN", role: "storm_outfall_review_point", ui_color: "#0ea5e9" },
         });
       }
       if (wants("drainage") && !hasExistingNetwork("storm")) {
@@ -11986,36 +12020,6 @@ function PerformanceAIDashboardView({
       const areaAcres = siteAreaAcresFromSize(lot.w, lot.h);
       const needsAll = target === "full";
       const needsGrading = needsAll || target === "grading" || target === "drainage";
-      const needsDrainage = needsAll || target === "drainage";
-      const needsUtilities = needsAll || target === "utilities";
-      const needsParking = needsAll || target === "parking" || target === "roads";
-      const hasBasinDraft = buildingPlacements.some((item) => item.type === "basin");
-      const basinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
-      const hasBuildingDraft = buildingPlacements.some((item) =>
-        ["building", "retail_building", "multifamily_building", "industrial_building", "office_building", "pad"].includes(item.type ?? ""),
-      );
-      const buildingPlaced = buildingPlacements.some((item) =>
-        item.placed && ["building", "retail_building", "multifamily_building", "industrial_building", "office_building", "pad"].includes(item.type ?? ""),
-      );
-      const hasOutfallDraft = buildingPlacements.some((item) => item.type === "outfall");
-      const outfallPlaced = buildingPlacements.some((item) => item.type === "outfall" && item.placed);
-      const hasUtilityDraft = buildingPlacements.some((item) =>
-        ["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
-        ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || "")),
-      );
-      const utilityPlaced = buildingPlacements.some((item) =>
-        item.placed &&
-        (["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
-          ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || ""))),
-      );
-      const hasParkingDraft = buildingPlacements.some((item) => item.type === "parking");
-      const parkingPlaced = buildingPlacements.some((item) => item.type === "parking" && item.placed);
-      const hasAdaDraft = buildingPlacements.some((item) =>
-        item.type === "sidewalk" && String(item.meta?.routeKind || "").includes("ada"),
-      );
-      const adaPlaced = buildingPlacements.some((item) =>
-        item.placed && item.type === "sidewalk" && String(item.meta?.routeKind || "").includes("ada"),
-      );
       const blockers: Array<{ label: string; action: SidePanelKey }> = [];
 
       if (missingBoundary) blockers.push({ label: "missing site boundary dimensions", action: "site_existing" });
@@ -12027,46 +12031,6 @@ function PerformanceAIDashboardView({
       }
       if (needsAll && !hasVerifiedSurveyControl && hasAssumedTerrainSlope) {
         blockers.push({ label: "assumed terrain slope / survey-control still needed", action: "import_survey" });
-      }
-      if (needsAll || target === "roads" || target === "utilities") {
-        if (hasBuildingDraft && !buildingPlaced) {
-          blockers.push({ label: "office building exists but needs placement", action: "objects" });
-        } else if (!hasBuildingDraft) {
-          blockers.push({ label: "missing office building", action: "objects" });
-        }
-      }
-      if (needsDrainage) {
-        if (hasBasinDraft && !basinPlaced) {
-          blockers.push({ label: "detention basin exists but needs placement", action: "objects" });
-        } else if (!hasBasinDraft) {
-          blockers.push({ label: "missing detention basin", action: "objects" });
-        }
-        if (hasOutfallDraft && !outfallPlaced) {
-          blockers.push({ label: "outfall exists but is not placed", action: "objects" });
-        } else if (!hasOutfallDraft) {
-          blockers.push({ label: "missing outfall", action: "objects" });
-        }
-      }
-      if (needsUtilities) {
-        if (hasUtilityDraft && !utilityPlaced) {
-          blockers.push({ label: "utility connection exists but is not placed", action: "objects" });
-        } else if (!hasUtilityDraft) {
-          blockers.push({ label: "missing utility connection", action: "objects" });
-        }
-      }
-      if (needsParking) {
-        if (hasParkingDraft && !parkingPlaced) {
-          blockers.push({ label: "parking layout exists but is not placed", action: "objects" });
-        } else if (!hasParkingDraft) {
-          blockers.push({ label: "missing parking layout", action: "objects" });
-        }
-      }
-      if (needsAll) {
-        if (hasAdaDraft && !adaPlaced) {
-          blockers.push({ label: "ADA route exists but is not placed", action: "objects" });
-        } else if (!hasAdaDraft) {
-          blockers.push({ label: "missing ADA route", action: "objects" });
-        }
       }
       if (areaAcres > SITE_GRADING_HARD_BLOCK_ACRES && needsGrading) {
         blockers.push({ label: OVERSIZED_SITE_MESSAGE, action: "site_existing" });
@@ -21021,14 +20985,6 @@ function PerformanceAIDashboardView({
   const activeCustomerTemplate = customerTemplates?.behavior?.active_template ?? null;
   const customerTemplateBlockerCount = Number(customerTemplates?.behavior?.blockers?.length ?? 0);
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
-  const showProjectStatusSummary =
-    sidePanelForRender === "site_existing" ||
-    sidePanelForRender === "trust" ||
-    sidePanelForRender === "generate" ||
-    sidePanelForRender === "deliverables" ||
-    sidePanelForRender === "chat" ||
-    sidePanelForRender === "projects" ||
-    sidePanelForRender === "model";
   const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
     projects: "dashboard",
     trust: "trust",
@@ -21412,23 +21368,6 @@ function PerformanceAIDashboardView({
 	      { label: "Settings", panel: "settings", detail: "Workspace defaults", status: panelStatus("settings") },
 	    ],
 	  };
-	  const northStarPanelSteps: Array<{ key: "setup" | "draw" | "generate" | "deliver"; label: string; panel: SidePanelKey }> = [
-	    { key: "setup", label: "Setup", panel: "site_existing" },
-	    { key: "draw", label: "Draw", panel: "objects" },
-	    { key: "generate", label: "Generate", panel: "generate" },
-	    { key: "deliver", label: "Deliver", panel: "deliverables" },
-	  ];
-	  const activeNorthStarStep =
-	    sidePanelForRender === "site_existing" || sidePanelForRender === "import_survey" || sidePanelForRender === "data" || sidePanelForRender === "standards"
-	      ? "setup"
-	      : sidePanelForRender === "objects" || sidePanelForRender === "model" || sidePanelForRender === "layers" || sidePanelForRender === "details"
-	        ? "draw"
-	        : sidePanelForRender === "generate" || sidePanelForRender === "grading" || sidePanelForRender === "drainage" || sidePanelForRender === "utilities" || sidePanelForRender === "sanitary" || sidePanelForRender === "water" || sidePanelForRender === "roadway" || sidePanelForRender === "landscape"
-	          ? "generate"
-	          : sidePanelForRender === "deliverables" || sidePanelForRender === "files" || sidePanelForRender === "reports" || sidePanelForRender === "quantities"
-	            ? "deliver"
-	            : null;
-
   const handleCancelActiveTool = useCallback(() => {
     if (shortcutsOverlayOpen) {
       setShortcutsOverlayOpen(false);
@@ -23306,29 +23245,6 @@ function PerformanceAIDashboardView({
 	                  <p className="mt-1 line-clamp-2 text-sm text-[var(--civora-text-muted)]">
 	                    {activePanelDescription}
 	                  </p>
-	                  {activeNorthStarStep ? (
-	                    <div className="mt-3 flex flex-wrap gap-1.5" data-testid="north-star-step-strip">
-	                      {northStarPanelSteps.map((step, stepIndex) => {
-	                        const active = activeNorthStarStep === step.key;
-	                        return (
-	                          <button
-	                            key={step.key}
-	                            type="button"
-	                            onClick={() => handleOpenSidePanel(step.panel)}
-	                            aria-label={`Go to workflow step ${stepIndex + 1}`}
-	                            aria-current={active ? "step" : undefined}
-	                            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${
-	                              active
-	                                ? "border-slate-950 bg-slate-950 text-white"
-	                                : "border-slate-200 bg-white/70 text-slate-500 hover:bg-white hover:text-slate-900"
-	                            }`}
-	                          >
-	                            {step.label}
-	                          </button>
-	                        );
-	                      })}
-	                    </div>
-	                  ) : null}
 	                </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
@@ -23431,11 +23347,6 @@ function PerformanceAIDashboardView({
 	                    </div>
 	                  </div>
 	                ) : null}
-                {showProjectStatusSummary ? (
-                  <div className="mb-4">
-                    <ProjectStatusSummaryCard summary={projectStatusSummary} />
-                  </div>
-                ) : null}
                 {sidePanelForRender === "projects" ? (
                   <div className="space-y-4" data-testid="projects-drawer">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
