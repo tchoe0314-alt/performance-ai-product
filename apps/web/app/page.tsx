@@ -11858,6 +11858,106 @@ function PerformanceAIDashboardView({
     onlineDiscovery,
     siteInputs?.auto_existing_conditions_v1,
   ]);
+  const autoSiteContextRows = useMemo(() => {
+    const readable = (value: unknown) => toReadableLabel(String(value ?? "")).trim();
+    const textFor = (value: unknown) => readable(value).toLowerCase();
+    const missingRecords = Array.isArray((onlineDiscovery as Record<string, unknown>).missing_sources)
+      ? ((onlineDiscovery as Record<string, unknown>).missing_sources as unknown[])
+      : [];
+    const categories = [
+      { key: "parcel", title: "Parcel / site boundary", terms: ["parcel", "boundary", "site"] },
+      { key: "roads", title: "Roads / ROW", terms: ["road", "row", "right of way", "frontage", "drive"] },
+      { key: "buildings", title: "Buildings", terms: ["building", "footprint", "structure"] },
+      { key: "terrain", title: "Terrain / elevation", terms: ["terrain", "elevation", "dem", "lidar", "contour", "grading"] },
+      { key: "flood_wetlands", title: "Flood / wetlands", terms: ["flood", "wetland", "constraint"] },
+      { key: "utilities", title: "Utilities", terms: ["utility", "utilities", "water", "sanitary", "storm", "sewer"] },
+    ];
+    const matches = (record: Record<string, unknown>, terms: string[]) => {
+      const blob = [
+        record.key,
+        record.label,
+        record.source_type,
+        record.feature_type,
+        record.provider,
+        record.agency,
+        record.status,
+        record.message,
+      ].map(textFor).join(" ");
+      return terms.some((term) => blob.includes(term));
+    };
+    const missingMatches = (value: unknown, terms: string[]) => {
+      const record = value && typeof value === "object" ? (value as Record<string, unknown>) : { label: value };
+      return matches(record, terms);
+    };
+    return categories.map((category) => {
+      const source = onlineDiscoverySources.find((item) => matches(item as Record<string, unknown>, category.terms));
+      const intelligenceFound = siteIntelligenceFound.filter((item) => matches(item, category.terms));
+      const intelligenceMissing = siteIntelligenceMissing.filter((item) => matches(item, category.terms));
+      const intelligenceAssumed = siteIntelligenceAssumed.filter((item) => matches(item, category.terms));
+      const intelligenceOutside = siteIntelligenceOutside.filter((item) => matches(item, category.terms));
+      const explicitMissing = missingRecords.filter((item) => missingMatches(item, category.terms));
+      const count = Math.max(
+        Number(source?.candidate_count ?? 0),
+        ...intelligenceFound.map((item) => Number(item.count ?? 1)).filter(Number.isFinite),
+        0,
+      );
+      const status =
+        count > 0
+          ? "found"
+          : intelligenceOutside.length
+            ? "outside"
+            : intelligenceAssumed.length || (category.key === "terrain" && hasAssumedTerrainSlope)
+              ? "assumed"
+              : source || explicitMissing.length || intelligenceMissing.length
+                ? "missing"
+                : "not_checked";
+      const blocker =
+        Array.isArray(source?.blockers) && source.blockers.length
+          ? source.blockers.map(String).join("; ")
+          : explicitMissing.length
+            ? explicitMissing
+                .map((item) => {
+                  const record = item && typeof item === "object" ? (item as Record<string, unknown>) : { label: item };
+                  const missing = Array.isArray(record.missing) ? record.missing.map(String).join("; ") : "";
+                  return missing || readable(record.label || record.key || record.source_type);
+                })
+                .filter(Boolean)
+                .join("; ")
+            : intelligenceMissing.length
+              ? intelligenceMissing.map((item) => readable(item.label || item.source_type || item.status)).join("; ")
+              : "";
+      const provider = readable(source?.provider || source?.agency || source?.source_type || "");
+      const detail =
+        status === "found"
+          ? `${count} review candidate${count === 1 ? "" : "s"}${provider ? ` from ${provider}` : ""}.`
+          : status === "outside"
+            ? `${intelligenceOutside.length} candidate${intelligenceOutside.length === 1 ? "" : "s"} found outside the active site.`
+            : status === "assumed"
+              ? category.key === "terrain" && hasAssumedTerrainSlope
+                ? `Using explicit ${assumedTerrainSlopePct || "8"}% assumed slope until survey/terrain is added.`
+                : "Context is inferred/assumed and needs review."
+              : status === "missing"
+                ? blocker || `${category.title} source returned no usable features or is not configured.`
+                : `Not checked yet. Apply an address and create/lock a site.`;
+      return {
+        key: category.key,
+        title: category.title,
+        status,
+        count,
+        provider,
+        detail,
+      };
+    });
+  }, [
+    assumedTerrainSlopePct,
+    hasAssumedTerrainSlope,
+    onlineDiscovery,
+    onlineDiscoverySources,
+    siteIntelligenceAssumed,
+    siteIntelligenceFound,
+    siteIntelligenceMissing,
+    siteIntelligenceOutside,
+  ]);
   const previewSourceContextBadges = useMemo(
     () => [
       ...autoSiteContextFlowSummary.candidateLabels.slice(0, 3).map((label) => ({
@@ -12107,6 +12207,30 @@ function PerformanceAIDashboardView({
         `Selected object: ${formatPlacement(selected)}`,
         "status",
       );
+      return true;
+    }
+
+    if (/(what did you find here|what did.*find|what.*detected|what sources.*available|what.*site context|auto site context|found context|roads.*buildings.*terrain)/i.test(normalized)) {
+      const foundRows = autoSiteContextRows.filter((row) => row.status === "found");
+      const missingRows = autoSiteContextRows.filter((row) => row.status === "missing");
+      const assumedRows = autoSiteContextRows.filter((row) => row.status === "assumed");
+      const outsideRows = autoSiteContextRows.filter((row) => row.status === "outside");
+      const lines = [
+        foundRows.length
+          ? `Found inside the site: ${foundRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
+          : "Found inside the site: no usable source candidates yet.",
+        missingRows.length
+          ? `Missing or unavailable: ${missingRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
+          : "Missing or unavailable: none reported by the current source check.",
+        assumedRows.length
+          ? `Assumed/inferred: ${assumedRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
+          : "",
+        outsideRows.length
+          ? `Outside active site: ${outsideRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
+          : "",
+        "These are source-context candidates for review, not survey/control or final professional evidence.",
+      ].filter(Boolean);
+      appendChatMessage("assistant", lines.join("\n"), "status");
       return true;
     }
 
@@ -24271,25 +24395,84 @@ function PerformanceAIDashboardView({
 	                            </div>
 	                          </div>
 	                        ) : null}
-	                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Found</p>
-                            <p className="mt-1 font-semibold text-slate-800" data-testid="auto-site-context-found">
-                              {onlineFoundSources.length ? onlineFoundSources.map((source) => source.label || source.key).join(", ") : "No usable features yet"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Missing</p>
-                            <p className="mt-1 font-semibold text-slate-800" data-testid="auto-site-context-missing">
-                              {autoSiteContextFlowSummary.missingLabels.length ? autoSiteContextFlowSummary.missingLabels.join(", ") : "None reported"}
-                            </p>
-                          </div>
-                        </div>
+	                        <div className="grid grid-cols-4 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500" data-testid="auto-site-context-counts">
+	                          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-found-count">
+	                            Found {autoSiteContextRows.filter((row) => row.status === "found").length}
+	                          </span>
+	                          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-missing-count">
+	                            Missing {autoSiteContextRows.filter((row) => row.status === "missing").length}
+	                          </span>
+	                          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-assumed-count">
+	                            Assumed {autoSiteContextRows.filter((row) => row.status === "assumed").length}
+	                          </span>
+	                          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-outside-count">
+	                            Outside {autoSiteContextRows.filter((row) => row.status === "outside").length}
+	                          </span>
+	                        </div>
+	                        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white" data-testid="auto-site-context-source-table">
+	                          {autoSiteContextRows.map((row) => (
+	                            <div
+	                              key={row.key}
+	                              className="grid gap-2 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_7.5rem]"
+	                              data-testid={`auto-site-context-row-${row.key}`}
+	                            >
+	                              <div className="min-w-0">
+	                                <div className="flex min-w-0 items-center gap-2">
+	                                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+	                                    row.status === "found"
+	                                      ? "bg-emerald-500"
+	                                      : row.status === "missing"
+	                                        ? "bg-amber-500"
+	                                        : row.status === "outside"
+	                                          ? "bg-blue-400"
+	                                          : row.status === "assumed"
+	                                            ? "bg-violet-400"
+	                                            : "bg-slate-300"
+	                                  }`} />
+	                                  <p className="truncate text-sm font-semibold text-slate-900">{row.title}</p>
+	                                </div>
+	                                <p className="mt-1 text-xs font-medium leading-5 text-slate-500" data-testid={`auto-site-context-detail-${row.key}`}>
+	                                  {row.detail}
+	                                </p>
+	                              </div>
+	                              <span className={`h-fit rounded-full px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] ${
+	                                row.status === "found"
+	                                  ? "bg-emerald-50 text-emerald-700"
+	                                  : row.status === "missing"
+	                                    ? "bg-amber-50 text-amber-700"
+	                                    : row.status === "outside"
+	                                      ? "bg-blue-50 text-blue-700"
+	                                      : row.status === "assumed"
+	                                        ? "bg-violet-50 text-violet-700"
+	                                        : "bg-slate-100 text-slate-500"
+	                              }`} data-testid={`auto-site-context-status-${row.key}`}>
+	                                {row.status.replace("_", " ")}
+	                              </span>
+	                            </div>
+	                          ))}
+	                        </div>
+	                        <div className="sr-only" aria-hidden="false">
+	                          <span data-testid="auto-site-context-found">
+	                            {onlineFoundSources.length ? onlineFoundSources.map((source) => source.label || source.key).join(", ") : "No usable features yet"}
+	                          </span>
+	                          <span data-testid="auto-site-context-missing">
+	                            {autoSiteContextFlowSummary.missingLabels.length ? autoSiteContextFlowSummary.missingLabels.join(", ") : "None reported"}
+	                          </span>
+	                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("data")}
+                          disabled={!autoSiteContextFlowSummary.candidateCount && !candidateReviewItems.length}
+                          className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          data-testid="review-found-context"
+                        >
+                          Review Found Context
+                        </button>
                         <button
                           type="button"
                           onClick={() => void saveSiteAddress()}
                           disabled={!hasAppliedAddress || onlineDiscoveryBusy}
-                          className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                           data-testid="rerun-site-context"
                         >
                           {hasAppliedAddress ? "Rerun Site Context" : "Apply Address First"}

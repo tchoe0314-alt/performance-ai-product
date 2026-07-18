@@ -170,6 +170,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");
   await expect(page.getByTestId("auto-site-context-missing")).toContainText("public utility layers");
   await expect(page.getByTestId("auto-site-context-candidates")).toContainText("review required");
+  await expect(page.getByTestId("auto-site-context-source-table")).toBeVisible();
+  await expect(page.getByTestId("auto-site-context-status-parcel")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-status-buildings")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-status-terrain")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-status-utilities")).toContainText("missing");
+  await expect(page.getByTestId("auto-site-context-detail-utilities")).toContainText("No existing utilities GIS source is configured");
   await expect(page.getByTestId("site-intelligence-summary")).toBeVisible();
   await expect(page.getByTestId("site-intelligence-one-sentence")).toContainText("Found road/ROW");
   await expect(page.getByTestId("site-intelligence-found-count")).toContainText("Found 3");
@@ -179,6 +186,15 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("site-intelligence-frontage")).toContainText("west side");
   await expect(page.getByTestId("site-intelligence-driveway")).toContainText("starting suggestion");
   await expect(page.getByTestId("site-intelligence-grading")).toContainText("not a grading surface");
+
+  await page.getByRole("button", { name: "Open chat from header" }).click();
+  const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  await composer.fill("what did you find here?");
+  await composer.press("Enter");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("Found inside the site");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("Buildings");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("Utilities");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("not survey/control");
 
   expect(fetchOnlineCalled).toBeTruthy();
   expect(JSON.stringify(savedProjectInput)).toContain("online_existing_conditions_discovery_v1");
