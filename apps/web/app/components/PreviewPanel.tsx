@@ -1081,25 +1081,27 @@ export default function PreviewPanel({
 	          : null;
       const dash =
 	        blocked ? "1.2 0.8" : reviewConcept ? "1.7 1.2" : stale ? "2.2 0.9 0.5 0.9" : lowConfidence ? "1.4 1.1" : imported ? "2.4 1" : undefined;
-	      const stateStroke = (fallback: string) => (selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? fallback);
+	      const stateStroke = (fallback: string) => (
+	        selected ? "#0f766e" : blocked ? "#dc2626" : sourceState === "fallback" ? "#64748b" : customStroke ?? fallback
+	      );
       const stateOpacity = blocked ? 0.92 : reviewConcept ? 0.62 : lowConfidence ? 0.9 : 1;
       const reviewWidth = (normal: number, selectedWidth: number) => (reviewConcept ? (selected ? 0.32 : 0.18) : selected ? selectedWidth : normal);
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
-          building: { fill: "rgba(226, 218, 202, 0.72)", stroke: "#8b7355" },
-          parking: { fill: "rgba(107, 114, 128, 0.18)", stroke: "#6b7280" },
-          road: { fill: "rgba(75, 85, 99, 0.18)", stroke: "#4b5563" },
-          water: { fill: "rgba(56, 189, 248, 0.2)", stroke: "#0891b2" },
-          landscape: { fill: "rgba(134, 239, 172, 0.2)", stroke: "#22c55e" },
-          sidewalk: { fill: "rgba(241, 245, 249, 0.52)", stroke: "#94a3b8" },
-          utility: { fill: "rgba(59, 130, 246, 0.08)", stroke: "#2563eb" },
-          fallback: { fill: "rgba(37, 99, 235, 0.18)", stroke: "#1d4ed8" },
+          building: { fill: "rgba(148, 163, 184, 0.16)", stroke: "#334155" },
+          parking: { fill: "rgba(148, 163, 184, 0.08)", stroke: "#64748b" },
+          road: { fill: "rgba(51, 65, 85, 0.12)", stroke: "#334155" },
+          water: { fill: "rgba(125, 211, 252, 0.16)", stroke: "#0369a1" },
+          landscape: { fill: "rgba(187, 247, 208, 0.14)", stroke: "#15803d" },
+          sidewalk: { fill: "rgba(248, 250, 252, 0.46)", stroke: "#94a3b8" },
+          utility: { fill: "rgba(59, 130, 246, 0.04)", stroke: "#1d4ed8" },
+          fallback: { fill: "rgba(248, 250, 252, 0.08)", stroke: "#64748b" },
         };
         const style = standardPalette[kind] ?? standardPalette.fallback;
 	        return {
 	          fill: style.fill,
 	          stroke: selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? style.stroke,
-          strokeWidth: selected ? (kind === "utility" ? 0.28 : 0.5) : reviewConcept ? 0.18 : kind === "fallback" ? 0.52 : kind === "road" || kind === "sidewalk" ? 0.38 : kind === "utility" ? 0.2 : 0.3,
+          strokeWidth: selected ? (kind === "utility" ? 0.28 : 0.46) : reviewConcept ? 0.16 : kind === "fallback" ? 0.24 : kind === "road" || kind === "sidewalk" ? 0.32 : kind === "utility" ? 0.18 : 0.24,
           strokeDasharray: dash,
           opacity: stateOpacity,
         };
@@ -1123,9 +1125,9 @@ export default function PreviewPanel({
         return { fill: "rgba(37, 99, 235, 0.065)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.34, 0.58), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "building") {
-        return { fill: "rgba(226, 218, 202, 0.72)", stroke: stateStroke("#8b7355"), strokeWidth: reviewWidth(0.34, 0.62), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(203, 213, 225, 0.24)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.28, 0.58), strokeDasharray: dash, opacity: stateOpacity };
       }
-      return { fill: "rgba(37, 99, 235, 0.13)", stroke: stateStroke("#1d4ed8"), strokeWidth: reviewWidth(0.58, 0.68), strokeDasharray: dash, opacity: stateOpacity };
+      return { fill: "rgba(248, 250, 252, 0.08)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.24, 0.48), strokeDasharray: dash, opacity: stateOpacity };
     },
     [isHighQuality, resolveVisualKind],
   );
@@ -9724,25 +9726,25 @@ export default function PreviewPanel({
                     className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f1_58%,#e8eef3_100%)]"
                   >
                     <div className="absolute inset-4 rounded-[22px] border border-white/70 bg-white/10 shadow-inner" />
-                    <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-center gap-2">
+                    <div className="absolute inset-x-6 bottom-5 flex flex-wrap items-center gap-1.5 opacity-75 transition-opacity hover:opacity-100">
                       <span
                         data-testid="preview-source-confidence-chip"
-                        className="rounded-md border border-slate-200 bg-white/88 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur"
+                        className="rounded-md border border-slate-200/70 bg-white/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm backdrop-blur"
                       >
                         {mapAvailable ? "Map loading or unavailable" : "Local review canvas"}
                       </span>
-                      <span className="rounded-md border border-slate-200 bg-white/88 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur">
+                      <span className="rounded-md border border-slate-200/70 bg-white/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm backdrop-blur">
                         Source-backed {sourceStateSummary.verified}
                       </span>
                       {sourceStateSummary.review ? (
-                        <span className="rounded-md border border-amber-200 bg-amber-50/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-800 shadow-sm backdrop-blur">
+                        <span className="rounded-md border border-amber-200/70 bg-amber-50/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow-sm backdrop-blur">
                           Review {sourceStateSummary.review}
                         </span>
                       ) : null}
                       {sourceStateSummary.fallback ? (
                         <span
                           data-testid="preview-fallback-geometry-chip"
-                          className="rounded-md border border-slate-300 bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur"
+                          className="rounded-md border border-slate-300/70 bg-white/72 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm backdrop-blur"
                         >
                           Fallback bounds {sourceStateSummary.fallback}
                         </span>
@@ -9751,12 +9753,12 @@ export default function PreviewPanel({
                         <span
                           key={`${badge.tone}-${badge.label}`}
                           data-testid={`preview-source-context-${badge.tone}`}
-                          className={`rounded-md border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] shadow-sm backdrop-blur ${
+                          className={`rounded-md border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] shadow-sm backdrop-blur ${
                             badge.tone === "found"
-                              ? "border-emerald-200 bg-emerald-50/90 text-emerald-800"
+                              ? "border-emerald-200/70 bg-emerald-50/72 text-emerald-700"
                               : badge.tone === "missing"
-                                ? "border-amber-200 bg-amber-50/90 text-amber-800"
-                                : "border-slate-200 bg-white/90 text-slate-700"
+                                ? "border-amber-200/70 bg-amber-50/72 text-amber-700"
+                                : "border-slate-200/70 bg-white/72 text-slate-500"
                           }`}
                         >
                           {badge.tone === "found" ? "Found" : badge.tone === "missing" ? "Missing" : "Review"} {badge.label}
@@ -10406,6 +10408,7 @@ export default function PreviewPanel({
                             const visualStyle = resolveSvgVisualStyle(item, selected);
                             const hatchFill = cadHatchPatternForItem(item);
                             const sourceState = resolveSourceState(item);
+                            const isFallbackBounds = sourceState === "fallback";
                             const useShapePath = ["water", "landscape", "sidewalk"].includes(visualKind);
                             const shapePath = useShapePath
                               ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
@@ -10456,9 +10459,10 @@ export default function PreviewPanel({
                                   <>
                                     <path
                                       d={shapePath}
-                                      fill={visualStyle.fill}
+                                      fill={isFallbackBounds ? "rgba(248,250,252,0.04)" : visualStyle.fill}
                                       stroke={visualStyle.stroke}
-                                      strokeWidth={visualStyle.strokeWidth}
+                                      strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
+                                      strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
                                       strokeLinejoin="round"
                                     >
                                       <title>{sourceStateLabel(sourceState)}</title>
@@ -10482,14 +10486,29 @@ export default function PreviewPanel({
                                       y={rect.top}
                                       width={rect.width}
                                       height={rect.height}
-                                      rx={cornerRadius}
-                                      fill={visualStyle.fill}
+                                      rx={isFallbackBounds ? 0.18 : cornerRadius}
+                                      fill={isFallbackBounds ? "rgba(248,250,252,0.035)" : visualStyle.fill}
                                       stroke={visualStyle.stroke}
-                                      strokeWidth={visualStyle.strokeWidth}
+                                      strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
+                                      strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
                                       strokeLinejoin="round"
                                     >
                                       <title>{sourceStateLabel(sourceState)}</title>
                                     </rect>
+                                    {isFallbackBounds ? (
+                                      <rect
+                                        x={rect.left + rect.width * 0.03}
+                                        y={rect.top + rect.height * 0.03}
+                                        width={rect.width * 0.94}
+                                        height={rect.height * 0.94}
+                                        rx={0.14}
+                                        fill="none"
+                                        stroke="#cbd5e1"
+                                        strokeWidth={0.06}
+                                        strokeDasharray="0.4 0.9"
+                                        opacity={0.5}
+                                      />
+                                    ) : null}
                                     {hatchFill ? (
                                       <rect
                                         data-testid="cad-hatch-fill"
@@ -10532,7 +10551,7 @@ export default function PreviewPanel({
                                     />
                                   </g>
                                 ) : null}
-                                {isHighQuality && visualKind === "building" ? (
+                                {isHighQuality && visualKind === "building" && sourceState !== "fallback" ? (
                                   <>
                                     <line
                                       x1={rect.left}
@@ -10615,6 +10634,7 @@ export default function PreviewPanel({
                             const visualKind = resolveVisualKind(item);
                             const sourceState = resolveSourceState(item);
                             const visualStyle = resolveSvgVisualStyle(item, isSelectedPolygon);
+                            const isFallbackBounds = sourceState === "fallback";
                             const hatchFill = cadHatchPatternForItem(item);
                             const geometry = (item.geometry || []) as Array<[number, number]>;
                             const bounds = points.reduce(
@@ -10665,15 +10685,25 @@ export default function PreviewPanel({
                                 <polygon
                                   data-testid="plan-polygon-object"
                                   points={points.join(" ")}
-                                  fill={visualStyle.fill}
+                                  fill={isFallbackBounds ? "rgba(248,250,252,0.035)" : visualStyle.fill}
                                   stroke={visualStyle.stroke}
-                                  strokeWidth={visualStyle.strokeWidth}
-                                  strokeDasharray={visualStyle.strokeDasharray}
+                                  strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
+                                  strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
                                   opacity={visualStyle.opacity}
                                   strokeLinejoin="round"
                                 >
                                   <title>{sourceStateLabel(sourceState)}</title>
                                 </polygon>
+                                {isFallbackBounds ? (
+                                  <polyline
+                                    points={points.join(" ")}
+                                    fill="none"
+                                    stroke="#94a3b8"
+                                    strokeWidth={0.08}
+                                    strokeDasharray="0.4 1.2"
+                                    opacity={0.5}
+                                  />
+                                ) : null}
                                 {hatchFill ? (
                                   <polygon
                                     data-testid="cad-hatch-fill"
