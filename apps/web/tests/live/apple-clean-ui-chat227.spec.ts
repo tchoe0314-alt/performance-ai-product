@@ -43,8 +43,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
     expect(await visibleButtonCount(page, /^Deliver$/)).toBe(1);
 
-    const labelCount = await page.getByTestId("preview-source-review-object-badge").count();
-    expect(labelCount).toBeLessThanOrEqual(4);
+    await expect(page.getByTestId("preview-source-review-object-badge")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Open projects from header" }).click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();

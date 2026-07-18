@@ -34,7 +34,8 @@ test.describe("Chat 234 preview realism truth pass", () => {
       ? hydrantOverlay
       : page.locator("[data-object-overlay][data-visual-kind]").first();
     await topVisibleOverlay.hover();
-    await expect(page.getByTestId("preview-fallback-object-badge").or(page.getByTestId("preview-source-review-object-badge")).first()).toBeVisible();
+    await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
+    await expect(page.getByTestId("preview-source-review-object-badge")).toHaveCount(0);
 
     const bodyText = await canvas.innerText();
     expect(bodyText).not.toMatch(/construction-ready|\bstamp\b|\bseal\b|certify|certified|approved for construction|engineer of record/i);

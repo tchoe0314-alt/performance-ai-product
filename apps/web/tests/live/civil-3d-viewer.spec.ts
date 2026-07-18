@@ -32,10 +32,6 @@ test.describe("Civil 3D model viewer", () => {
     await openDemoWorkspace(page);
     await open3D(page);
 
-    await expect(page.getByTestId("civil-3d-viewer")).toContainText(
-      /Terrain mesh from preview elevations|Terrain source loaded|Flat site fallback/,
-      { timeout: 10_000 },
-    );
     await expect(page.getByTestId("civil-3d-viewer")).toContainText("visual mode does not mutate canonical geometry");
     await expect(page.getByTestId("civil-3d-object-strip")).toContainText("Detention Basin A");
     await expect(page.getByTestId("civil-3d-object-strip")).toContainText(/DRAINAGE|PARKING|ROAD|UTILITY|BUILDING/);

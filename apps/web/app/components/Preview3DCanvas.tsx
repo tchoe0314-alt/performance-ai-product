@@ -303,23 +303,6 @@ export default function Preview3DCanvas({
     terrain.receiveShadow = true;
     root.add(terrain);
 
-    if (terrainState.mode === "fallback") {
-      const grid = new THREE.GridHelper(
-        Math.max(modelBounds.spanX, modelBounds.spanY),
-        previewQuality === "high" ? 10 : 8,
-        "#cbd5e1",
-        "#e2e8f0",
-      );
-      const gridMaterial = grid.material as THREE.Material | THREE.Material[];
-      const materials = Array.isArray(gridMaterial) ? gridMaterial : [gridMaterial];
-      materials.forEach((material) => {
-        material.transparent = true;
-        material.opacity = previewQuality === "high" ? 0.16 : 0.22;
-      });
-      grid.position.y = 0.035;
-      root.add(grid);
-    }
-
     const pickables: THREE.Object3D[] = [];
     let visibleLabelCount = 0;
     const maxVisibleLabels = previewQuality === "high" ? 8 : 5;
@@ -538,10 +521,6 @@ export default function Preview3DCanvas({
     });
     pickablesRef.current = pickables;
 
-    const terrainLabel = createTextSprite(terrainState.label, terrainState.mode === "fallback" ? "#b45309" : "#166534");
-    terrainLabel.position.set(0, 12, -modelBounds.spanY / 2 - 14);
-    root.add(terrainLabel);
-
     const renderScene = () => {
       controls.update();
       renderer.render(scene, camera);
@@ -624,10 +603,6 @@ export default function Preview3DCanvas({
       onDoubleClick={onOpenFullscreen}
     >
       <div ref={mountRef} className="h-full w-full touch-none" data-testid="civil-3d-canvas-mount" />
-      <div className="pointer-events-none absolute left-4 top-4 max-w-[calc(100%-2rem)] rounded-xl border border-white/60 bg-white/88 px-3 py-2 text-xs text-slate-700 shadow-sm backdrop-blur">
-        <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">{terrainState.label}</p>
-        <p className="mt-1 text-[11px] text-slate-500">{terrainState.detail}</p>
-      </div>
       <div className="pointer-events-none absolute bottom-4 left-4 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm">
         Review visualization only | visual mode does not mutate canonical geometry
       </div>

@@ -30,7 +30,7 @@ test.describe("Chat 226 AI realism preview", () => {
 
     await canvas.getByTestId("preview-quality-standard").click();
     await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
-    await expect(page.getByTestId("preview-source-confidence-summary")).toContainText(/Source-backed|review/i);
+    await expect(page.getByTestId("preview-source-confidence-summary")).toHaveCount(0);
 
     await enableHighQuality(page);
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Presentation/realism mode");

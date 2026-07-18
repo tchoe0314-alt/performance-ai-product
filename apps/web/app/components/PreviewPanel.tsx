@@ -1978,23 +1978,6 @@ export default function PreviewPanel({
     [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers],
   );
 
-  const sourceStateSummary = useMemo(() => {
-    const counts = {
-      verified: 0,
-      review: 0,
-      fallback: 0,
-    };
-    visibleCadObjects
-      .filter((item) => item.type !== "site" && item.placed)
-      .forEach((item) => {
-        const state = resolveSourceState(item);
-        if (state === "verified") counts.verified += 1;
-        else if (state === "fallback") counts.fallback += 1;
-        else counts.review += 1;
-      });
-    return counts;
-  }, [visibleCadObjects]);
-
   const canvasCompositionSignature = useMemo(
     () =>
       visibleCadObjects
@@ -8090,14 +8073,6 @@ export default function PreviewPanel({
               ) : null}
               <span>{Math.round(canvasView.scale * 100)}%</span>
               <span>{cadHistory.at(-1)?.label || "No command"}</span>
-              <span data-testid="preview-source-confidence-summary">
-                Source-backed {sourceStateSummary.verified} / review {sourceStateSummary.review}
-              </span>
-              {sourceStateSummary.fallback ? (
-                <span data-testid="preview-fallback-geometry-summary">
-                  Fallback bounds {sourceStateSummary.fallback}
-                </span>
-              ) : null}
               {drawMode !== "select" ? (
                 <>
                   {drawMode !== "point" && drawMode !== "pan" ? (
@@ -10697,129 +10672,6 @@ export default function PreviewPanel({
                             })}
                           </g>
                         ) : null}
-                        {surfaceModel ? (
-                          <g data-testid="surface-model-overlay">
-                            {surfaceModel.comparisonCells.map((cell, idx) => {
-                              const [x, y] = sitePointToPreviewPercent([cell.x, cell.y]);
-                              const fill =
-                                cell.mode === "cut"
-                                  ? "rgba(220,38,38,0.35)"
-                                  : cell.mode === "fill"
-                                    ? "rgba(2,132,199,0.35)"
-                                    : "rgba(22,163,74,0.28)";
-                              return (
-                                <circle
-                                  key={`surface-compare-${idx}`}
-                                  cx={x}
-                                  cy={y}
-                                  r={0.72}
-                                  fill={fill}
-                                  stroke="rgba(255,255,255,0.75)"
-                                  strokeWidth={0.18}
-                                />
-                              );
-                            })}
-                            {surfaceModel.contours.map((contour, idx) => {
-                              const points = contour.points.map((pt) => sitePointToPreviewPercent(pt).join(",")).join(" ");
-                              if (!points) return null;
-                              const isIndexContour = idx % 5 === 0;
-                              const labelPoint = contour.points[0] ? sitePointToPreviewPercent(contour.points[0]) : null;
-                              return (
-                                <g key={`surface-contour-${idx}`}>
-                                  <polyline
-                                    points={points}
-                                    fill="none"
-                                    stroke={isHighQuality ? "#334155" : "#475569"}
-                                    strokeWidth={isIndexContour ? 0.46 : 0.28}
-                                    strokeOpacity={isIndexContour ? 0.78 : 0.52}
-                                    strokeDasharray={isIndexContour ? undefined : "1.2 0.8"}
-                                  />
-                                  {isIndexContour && previewLabelDensity !== "low" && contour.points[0] ? (
-                                    <text
-                                      x={(labelPoint?.[0] ?? 0) + 0.8}
-                                      y={(labelPoint?.[1] ?? 0) - 0.8}
-                                      fontSize="2"
-                                      fill="#334155"
-                                      fontWeight={700}
-                                    >
-                                      {contour.level.toFixed(0)}
-                                    </text>
-                                  ) : null}
-                                </g>
-                              );
-                            })}
-                            {surfaceModel.flowPaths.map((path) => {
-                              const points = path.points.map((pt) => sitePointToPreviewPercent([pt.x, pt.y]).join(",")).join(" ");
-                              if (!points) return null;
-                              return (
-                                <polyline
-                                  key={`surface-flow-${path.id}`}
-                                  points={points}
-                                  fill="none"
-                                  stroke="#0f766e"
-                                  strokeWidth={0.58}
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeDasharray="1.4 0.8"
-                                />
-                              );
-                            })}
-                            {surfaceModel.slopeArrows.map((arrow, idx) => {
-                              const [x, y] = sitePointToPreviewPercent([arrow.x, arrow.y]);
-                              const scale = Math.min(2.7, Math.max(1.1, arrow.slopePct / 3));
-                              const x2 = x + arrow.dx * scale;
-                              const y2 = y + arrow.dy * scale;
-                              return (
-                                <g key={`surface-slope-${idx}`}>
-                                  <line
-                                    x1={x}
-                                    y1={y}
-                                    x2={x2}
-                                    y2={y2}
-                                    stroke="#0f766e"
-                                    strokeWidth={0.36}
-                                    strokeLinecap="round"
-                                  />
-                                  <circle cx={x2} cy={y2} r={0.32} fill="#0f766e" />
-                                </g>
-                              );
-                            })}
-                            {previewLabelDensity !== "low"
-                              ? surfaceModel.spotElevations.slice(0, previewLabelDensity === "high" ? 28 : 12).map((spot, idx) => {
-                                  const [x, y] = sitePointToPreviewPercent([spot.x, spot.y]);
-                                  return (
-                                    <g key={`surface-spot-${idx}`}>
-                                      <circle cx={x} cy={y} r={0.48} fill="#111827" />
-                                      <text
-                                        x={x + 0.85}
-                                        y={y - 0.65}
-                                        fontSize="2.05"
-                                        fill="#111827"
-                                        fontWeight={700}
-                                      >
-                                        {spot.z.toFixed(1)}
-                                      </text>
-                                    </g>
-                                  );
-                                })
-                              : null}
-                          </g>
-                        ) : null}
-                        {(surveyPoints ?? []).length
-                          ? (surveyPoints ?? []).slice(0, 1500).map((pt, idx) => {
-                              const [x, y] = sitePointToPreviewPercent([pt.x, pt.y]);
-                              return (
-                                <circle
-                                  key={`survey-${idx}`}
-                                  cx={x}
-                                  cy={y}
-                                  r={0.35}
-                                  fill="#7c3aed"
-                                  opacity={0.65}
-                                />
-                              );
-                            })
-                          : null}
                         {activeSnapPoint ? (
                           (() => {
                             const [snapX, snapY] = sitePointToPreviewPercent([activeSnapPoint.x, activeSnapPoint.y]);
@@ -11138,7 +10990,6 @@ export default function PreviewPanel({
                         const visualKind = resolveVisualKind(item);
                         const sourceState = resolveSourceState(item);
                         if (!rectIntersectsPreview(rectPct)) return null;
-                        const revealSourceBadge = !isSite && shouldRevealObjectLabel(item) && sourceState !== "verified";
                         const allowItemInteraction =
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
@@ -11302,18 +11153,6 @@ export default function PreviewPanel({
                             ) : null}
                             {showBox && isHighQuality && visualKind === "utility" ? (
                               <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-violet-500/80" />
-                            ) : null}
-                            {revealSourceBadge ? (
-                              <div
-                                data-testid={sourceState === "fallback" ? "preview-fallback-object-badge" : "preview-source-review-object-badge"}
-                                className={`pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-[calc(100%+6px)] whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] shadow ${
-                                  sourceState === "fallback"
-                                    ? "border-slate-300 bg-white text-slate-700"
-                                    : "border-amber-200 bg-amber-50 text-amber-800"
-                                }`}
-                              >
-                                {sourceState === "fallback" ? "Fallback review geometry" : sourceStateLabel(sourceState)}
-                              </div>
                             ) : null}
                             {showSelectionAffordances && isEditableVertexGeometry && Array.isArray(item.geometry)
                               ? item.geometry.map((pt, idx) => {
@@ -11760,13 +11599,6 @@ export default function PreviewPanel({
                       </div>
                     )}
                   </div>
-                </div>
-              ) : null}
-              {showHover ? (
-                <div
-                  className="civora-preview-hover-pill pointer-events-none absolute left-6 top-6 hidden rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white lg:block"
-                >
-                  Hover object for name, source, dimensions
                 </div>
               ) : null}
               {waterFireFlow.hasData ? (
