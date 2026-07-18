@@ -20956,7 +20956,7 @@ function PerformanceAIDashboardView({
     model: { title: "Draw Canvas", desc: "Use the canvas, map, 2D/3D view, and visible drawing controls." },
     site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
     import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
-    objects: { title: "Object Manager", desc: "Select, rename, recolor, hide, delete, and organize objects. CAD tools stay here when you need them." },
+    objects: { title: "Draw & Objects", desc: "Draw on the canvas, select objects, then edit names, colors, layers, transforms, and visibility from one place." },
     generate: { title: "Generate Systems", desc: "Run focused engines from one control panel." },
     grading: { title: "Grading Controls", desc: "Control grading rules, terrain inputs, and slope limits." },
     drainage: { title: "Drainage Controls", desc: "Control drainage rules, sources, and repair behavior." },
@@ -28029,10 +28029,57 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "objects" ? (
                   <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-workflow-summary">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Draw & Object Manager
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-950">
+                            Pick a tool, draw on the canvas, then edit the selected object.
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-slate-950 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                          {buildingPlacements.length} objects
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => document.querySelector('[data-testid="draw-cad-tools-section"]')?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                          data-testid="draw-workflow-tools-jump"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left font-semibold text-slate-700 hover:bg-white"
+                        >
+                          <span className="block text-[10px] uppercase tracking-[0.12em] text-slate-400">1 Tools</span>
+                          <span className="mt-1 block">Draw, edit, measure</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => document.querySelector('[data-testid="draw-selected-object-card"]')?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                          data-testid="draw-workflow-selected-jump"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left font-semibold text-slate-700 hover:bg-white"
+                        >
+                          <span className="block text-[10px] uppercase tracking-[0.12em] text-slate-400">2 Selected</span>
+                          <span className="mt-1 block truncate">{selectedBuilding?.label || "Nothing selected"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => document.querySelector('[data-testid="object-manager-list"]')?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                          data-testid="draw-workflow-list-jump"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left font-semibold text-slate-700 hover:bg-white"
+                        >
+                          <span className="block text-[10px] uppercase tracking-[0.12em] text-slate-400">3 Objects</span>
+                          <span className="mt-1 block">{placedObjects.length} placed · {pendingPlacementObjects.length} pending</span>
+                        </button>
+                      </div>
+                      <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+                        Labels stay quiet on the preview until hover or selection. Use Object Manager for names, colors, layers, copy, paste, rotate, flip, hide, and delete.
+                      </p>
+                    </div>
                     <details className="rounded-2xl border border-slate-200 bg-white p-4" open data-testid="draw-cad-tools-section">
                       <summary className="flex cursor-pointer items-center gap-3 text-left">
                         <span className="min-w-0 flex-1">
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">CAD Tools</span>
+                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Tools</span>
                           <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
                             Draw, modify, annotate, organize, command
                           </span>
@@ -28067,8 +28114,8 @@ function PerformanceAIDashboardView({
                             </div>
                           </div>
                         ))}
-                        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                          These are draft/edit tools for Civora’s canvas. Native DWG parity, full AutoCAD constraints, xrefs, UCS, and production CAD release are still outside this web editor.
+                        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+                          Finish and Cancel appear on the canvas while drawing. Advanced desktop CAD features such as native DWG editing, xrefs, UCS, and constraint solving stay outside this web canvas.
                         </p>
                       </div>
                     </details>
@@ -28109,11 +28156,85 @@ function PerformanceAIDashboardView({
                       ) : null}
                     </div>
 
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-selected-object-card">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Selected Object
+                          </p>
+                          <p className="mt-1 truncate text-sm font-semibold text-slate-950">
+                            {selectedBuilding?.label || "Nothing selected"}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-500">
+                            {selectedBuilding
+                              ? `${getObjectDisplayType(selectedBuilding)} · ${getObjectDimensionsLabel(selectedBuilding)}`
+                              : "Pick an object on the canvas or from the list below."}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          {selectedBuilding?.meta?.ui_hidden ? "Hidden" : selectedBuilding ? "Visible" : "None"}
+                        </span>
+                      </div>
+                      {selectedBuilding ? (
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleObjectManagerSelect(selectedBuilding.id);
+                              setPlacementModeEnabled(true);
+                            }}
+                            className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
+                          >
+                            Move
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFocusObjectId(selectedBuilding.id);
+                              setRightRailCollapsed(true);
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                          >
+                            Focus
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleObjectManagerCopy(selectedBuilding)}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                          >
+                            Copy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleObjectManagerTransform(selectedBuilding, "rotate")}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                          >
+                            Rotate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleObjectManagerTransform(selectedBuilding, "flip_horizontal")}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+                          >
+                            Flip H
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleObjectManagerDelete(selectedBuilding)}
+                            disabled={selectedBuilding.type === "site"}
+                            className="rounded-lg border border-rose-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Object Manager
+                            Object List
                           </p>
                           <p className="mt-1 text-sm font-semibold text-slate-900" data-testid="object-manager-summary">
                             {buildingPlacements.length} object{buildingPlacements.length === 1 ? "" : "s"} · {placedObjects.length} placed · {pendingPlacementObjects.length} pending
@@ -28127,6 +28248,20 @@ function PerformanceAIDashboardView({
                         <span className="shrink-0 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                           Selected {selectedObjectIds.length}
                         </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]" data-testid="object-manager-quick-stats">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2">
+                          <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Visible</p>
+                          <p className="mt-1 font-semibold text-slate-900">{Math.max(0, buildingPlacements.length - hiddenObjectCount)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2">
+                          <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Selected</p>
+                          <p className="mt-1 font-semibold text-slate-900">{selectedObjectIds.length}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2">
+                          <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Hidden</p>
+                          <p className="mt-1 font-semibold text-slate-900">{hiddenObjectCount}</p>
+                        </div>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="object-manager-clipboard-actions">
                         <button
@@ -28894,7 +29029,7 @@ function PerformanceAIDashboardView({
                           </div>
                         </div>
                       ) : null}
-                      <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+                      <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1" data-testid="object-manager-list">
                         {buildingPlacements.length ? (
                           buildingPlacements.map((item) => {
                             const confidenceEntry = sourceConfidenceByObjectId.get(item.id);

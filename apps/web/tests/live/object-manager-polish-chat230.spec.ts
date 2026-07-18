@@ -46,6 +46,28 @@ async function expectNoOverflow(page: Page) {
 }
 
 test.describe("Chat 230 Object Manager and inspector polish", () => {
+  test("draw panel presents tools, selected object, and object list as one drafting workflow", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const workflow = page.getByTestId("draw-workflow-summary");
+    await expect(workflow).toBeVisible();
+    await expect(workflow).toContainText("Pick a tool, draw on the canvas, then edit the selected object.");
+    await expect(workflow.getByTestId("draw-workflow-tools-jump")).toContainText("Tools");
+    await expect(workflow.getByTestId("draw-workflow-selected-jump")).toContainText(/Selected|Nothing selected/);
+    await expect(workflow.getByTestId("draw-workflow-list-jump")).toContainText("Objects");
+
+    await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
+    await expect(page.getByTestId("draw-selected-object-card")).toBeVisible();
+    await expect(page.getByTestId("draw-selected-object-card")).toContainText("Selected Object");
+    await expect(page.getByTestId("object-manager-panel")).toBeVisible();
+    await expect(page.getByTestId("object-manager-list")).toBeVisible();
+    await expect(page.getByTestId("object-manager-quick-stats")).toContainText("Visible");
+    await expect(page.getByTestId("object-manager-quick-stats")).toContainText("Selected");
+    await expect(page.getByTestId("object-manager-quick-stats")).toContainText("Hidden");
+    await expectNoOverflow(page);
+  });
+
   test("shows an exact empty state without console errors or overflow", async ({ page }) => {
     const consoleErrors = await openDemoWorkspace(page, "debugPreview=1&chat230EmptyObjects=1");
     await openDrawPanel(page);
