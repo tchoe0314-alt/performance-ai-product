@@ -46,13 +46,24 @@ export default function PinnedCommandBar({
   activePlanTool,
   thinkingState,
   statusText,
+  commandContext,
 }: PinnedCommandBarProps) {
   const isWorking = busy || hasVisibleActiveJob;
   const canSend = Boolean(prompt.trim() || imageName) && !isWorking;
   const quietStatus = statusText.trim();
   const showQuietStatus =
     Boolean(quietStatus) &&
-    !/^Civora:\s*(Duplicate blocked|Delete blocked)/i.test(quietStatus);
+    !/^Civora:\s*(Duplicate|Delete) (blocked|needs input)/i.test(quietStatus);
+  const contextChips = commandContext
+    ? [
+        ["Mode", commandContext.mode],
+        ["Tool", commandContext.interaction],
+        ["Layer", commandContext.layer],
+        ["Sel", String(commandContext.selectedCount)],
+        ["Snap", commandContext.snap],
+        ["View", commandContext.view],
+      ].filter(([, value]) => Boolean(value))
+    : [];
 
   return (
     <div
@@ -81,6 +92,19 @@ export default function PinnedCommandBar({
         >
           {quietStatus}
         </p>
+      ) : null}
+      {contextChips.length ? (
+        <div className="mb-2 flex min-w-0 gap-1.5 overflow-x-auto pb-0.5" data-testid="command-context-chips">
+          {contextChips.map(([label, value]) => (
+            <span
+              key={label}
+              className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+            >
+              <span className="text-slate-400">{label}</span>{" "}
+              <span className="text-slate-700">{value}</span>
+            </span>
+          ))}
+        </div>
       ) : null}
       <div className="flex min-w-0 items-end gap-2">
         <button

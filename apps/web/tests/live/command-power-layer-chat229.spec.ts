@@ -48,6 +48,9 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
     await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
     await expect(page.getByTestId("civora-command-input")).toBeFocused();
+    await expect(page.getByTestId("command-context-chips")).toContainText(/Mode/i);
+    await expect(page.getByTestId("command-context-chips")).toContainText(/Layer/i);
+    await expect(page.getByTestId("command-context-chips")).toContainText(/View/i);
 
     await page.locator("body").click({ position: { x: 20, y: 20 } });
     await page.keyboard.press("?");
