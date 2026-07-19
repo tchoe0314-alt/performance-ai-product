@@ -2573,6 +2573,7 @@ import { ObjectManagerHiddenState } from "./components/ObjectManagerHiddenState"
 import { ObjectManagerLayerControls, type ObjectManagerLayerRow } from "./components/ObjectManagerLayerControls";
 import { ObjectManagerMeasurementsPanel } from "./components/ObjectManagerMeasurementsPanel";
 import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
+import { ObjectManagerRow } from "./components/ObjectManagerRow";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
@@ -27691,348 +27692,130 @@ function PerformanceAIDashboardView({
                             const confidenceEntry = sourceConfidenceByObjectId.get(item.id);
                             const isSelected = activePlacementId === item.id || selectedObjectSet.has(item.id);
                             return (
-                            <div
-                              key={item.id}
-                              data-testid="object-manager-row"
-                              data-object-id={item.id}
-                              draggable={!item.locked}
-                              onDragStart={(event) => {
-                                if (item.locked) return;
-                                event.dataTransfer?.setData("civora-object-id", item.id);
-                                setPlacementModeEnabled(true);
-                              }}
-                              className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 ${
-                                isSelected
-                                  ? "border-slate-900 ring-2 ring-slate-200"
-                                  : "border-slate-200"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-start gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedObjectSet.has(item.id)}
-                                      onChange={(event) => handleObjectManagerToggleMultiSelect(item.id, event.target.checked)}
-                                      aria-label={`Select ${item.label} for bulk actions`}
-                                      data-testid="object-manager-bulk-select"
-                                      className="mt-1 h-4 w-4 shrink-0 accent-slate-950"
-                                    />
-                                    <div className="min-w-0">
-                                      <p className="truncate font-semibold text-slate-900">{item.label}</p>
-                                      <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">
-                                        {getObjectDisplayType(item)} · {item.placed ? "Placed" : "Unplaced"} · {item.meta?.ui_hidden ? "Hidden" : "Visible"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <p className="mt-2 text-[11px] font-medium text-slate-500" data-testid="object-manager-row-metrics">
-                                    {getObjectDimensionsLabel(item)}
-                                  </p>
-                                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400" data-testid="object-manager-row-status">
-                                    {getObjectSourceLabel(item)} · {getObjectReviewLabel(item)} · {getObjectLayerLabel(item)}
-                                  </p>
-                                  {confidenceEntry ? (
-                                    <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                      confidenceEntry.confidence_band === "higher"
-                                        ? "bg-emerald-50 text-emerald-700"
-                                        : confidenceEntry.confidence_band === "review"
-                                          ? "bg-amber-50 text-amber-700"
-                                          : "bg-red-50 text-red-700"
-                                    }`}>
-                                      {confidenceEntry.visible_badge || confidenceEntry.source_type || "low confidence"}
-                                    </span>
-                                  ) : null}
-                                  {item.type === "custom" ? (
-                                    <CustomGeometryHandoffDetails item={item} units={units} />
-                                  ) : null}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleObjectManagerDelete(item)}
-                                  data-testid="object-manager-delete"
-                                  className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-500"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-	                              {item.type !== "site" ? (
-	                                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-	                                  <label className="col-span-2 flex flex-col gap-1">
-	                                    Name
-	                                    <input
-	                                      type="text"
-	                                      value={item.label}
-                                        aria-label={`Rename ${item.label}`}
-                                        data-testid="object-manager-rename"
-	                                      onChange={(event) => {
-                                          const blocker = getObjectEditBlocker(item, "rename");
-                                          if (blocker) {
-                                            reportObjectActionBlocker(blocker);
-                                            return;
-                                          }
-	                                        handleUpdateBuilding(item.id, {
-	                                          label: event.target.value,
-	                                        });
-	                                      }}
-	                                      className="rounded-md border border-slate-200 px-2 py-1 text-sm"
-	                                    />
-	                                  </label>
-	                                  <label className="col-span-2 flex items-center justify-between gap-3 rounded-md border border-slate-200 px-2 py-2">
-	                                    <span className="font-semibold uppercase tracking-[0.12em] text-slate-400">Color</span>
-	                                    <input
-	                                      type="color"
-	                                      value={String(item.meta?.ui_color || item.meta?.color || objectOutlineColor || "#64748b")}
-                                        aria-label={`Color ${item.label}`}
-                                        data-testid="object-manager-color"
-	                                      onChange={(event) => {
-                                          const blocker = getObjectEditBlocker(item, "style");
-                                          if (blocker) {
-                                            reportObjectActionBlocker(blocker);
-                                            return;
-                                          }
-	                                        handleUpdateBuilding(item.id, {
-	                                          meta: {
-	                                            ...(item.meta ?? {}),
-	                                            ui_color: event.target.value,
-	                                          },
-	                                        });
-	                                      }}
-	                                      className="h-8 w-10 rounded border border-slate-200 bg-white"
-	                                    />
-	                                  </label>
-                                    <label className="col-span-2 flex flex-col gap-1">
-                                      Layer / type
-                                      <select
-                                        value={item.type ?? "custom"}
-                                        aria-label={`Layer type ${item.label}`}
-                                        data-testid="object-manager-type"
-                                        onChange={(event) => {
-                                          const blocker = getObjectEditBlocker(item, "type");
-                                          if (blocker) {
-                                            reportObjectActionBlocker(blocker);
-                                            return;
-                                          }
-                                          const nextType = event.target.value as SiteObjectType;
-                                          handleUpdateBuilding(item.id, {
-                                            type: nextType,
-                                            use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
-                                            meta: {
-                                              ...(item.meta ?? {}),
-                                              category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
-                                            },
-                                          });
-                                        }}
-                                        className="rounded-md border border-slate-200 px-2 py-1 text-sm"
-                                      >
-                                        {Object.entries(SITE_OBJECT_CATALOG)
-                                          .filter(([type]) => type !== "site")
-                                          .map(([type, catalog]) => (
-                                            <option key={type} value={type}>
-                                              {catalog.label}
-                                            </option>
-                                          ))}
-                                      </select>
-                                    </label>
-	                                  <label className="flex flex-col gap-1">
-	                                    Length
-	                                    <input
-                                      type="number"
-                                      value={item.w}
-                                      aria-label={`Length ${item.label}`}
-                                      data-testid="object-manager-length"
-                                      onChange={(event) => {
-                                        const blocker = getObjectEditBlocker(item, "resize");
-                                        if (blocker) {
-                                          reportObjectActionBlocker(blocker);
-                                          return;
-                                        }
-                                        handleUpdateBuilding(item.id, {
-                                          w: parsePositiveNumber(event.target.value) ?? item.w,
-                                        });
-                                      }}
-                                      className="rounded-md border border-slate-200 px-2 py-1"
-                                    />
-                                  </label>
-                                  <label className="flex flex-col gap-1">
-                                    Width
-                                    <input
-                                      type="number"
-                                      value={item.d}
-                                      aria-label={`Width ${item.label}`}
-                                      data-testid="object-manager-width"
-                                      onChange={(event) => {
-                                        const blocker = getObjectEditBlocker(item, "resize");
-                                        if (blocker) {
-                                          reportObjectActionBlocker(blocker);
-                                          return;
-                                        }
-                                        handleUpdateBuilding(item.id, {
-                                          d: parsePositiveNumber(event.target.value) ?? item.d,
-                                        });
-                                      }}
-                                      className="rounded-md border border-slate-200 px-2 py-1"
-                                    />
-                                  </label>
-                                  {SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined ? (
-                                    <label className="col-span-2 flex flex-col gap-1">
-                                      Height
-                                      <input
-                                        type="number"
-                                        value={item.h ?? ""}
-                                        aria-label={`Height ${item.label}`}
-                                        data-testid="object-manager-height"
-                                        onChange={(event) => {
-                                          const blocker = getObjectEditBlocker(item, "resize");
-                                          if (blocker) {
-                                            reportObjectActionBlocker(blocker);
-                                            return;
-                                          }
-                                          handleUpdateBuilding(item.id, {
-                                            h: parsePositiveNumber(event.target.value) ?? item.h,
-                                          });
-                                        }}
-                                        className="rounded-md border border-slate-200 px-2 py-1"
-                                      />
-                                    </label>
-                                  ) : null}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleBuildingLock(item.id)}
-                                    data-testid="object-manager-lock"
-                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                  >
-                                    {item.locked ? "Unlock" : "Lock"}
-                                  </button>
-	                                  <button
-	                                    type="button"
-	                                    onClick={() => {
-	                                      handleObjectManagerSelect(item.id);
-	                                      setPlacementModeEnabled(true);
-	                                    }}
-                                      data-testid="object-manager-move"
-	                                    className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
-	                                  >
-	                                    {item.placed ? "Move on Canvas" : "Place on Canvas"}
-	                                  </button>
-	                                  <button
-	                                    type="button"
-	                                    onClick={() => handleObjectManagerSelect(item.id)}
-                                      data-testid="object-manager-select"
-	                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-	                                  >
-	                                    Select
-	                                  </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleObjectManagerSelect(item.id);
-                                        setFocusObjectId(item.id);
-                                        setRightRailCollapsed(true);
-                                      }}
-                                      data-testid="object-manager-focus"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Focus
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        {
-                                        const blocker = getObjectEditBlocker(item, "hide");
-                                        if (blocker) {
-                                          reportObjectActionBlocker(blocker);
-                                          return;
-                                        }
-                                        handleUpdateBuilding(item.id, {
-                                          meta: {
-                                            ...(item.meta ?? {}),
-                                            ui_hidden: !Boolean(item.meta?.ui_hidden),
-                                          },
-                                        });
-                                      }}
-                                      data-testid="object-manager-visibility"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      {item.meta?.ui_hidden ? "Show" : "Hide"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleObjectManagerSelect(item.id);
-                                        handleOpenPanelFromDrawer("details");
-                                      }}
-                                      data-testid="object-manager-inspect"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Inspect
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleObjectManagerCopy(item)}
-                                      data-testid="object-manager-copy"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Copy
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleObjectManagerTransform(item, "rotate")}
-                                      data-testid="object-manager-rotate"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Rotate 90
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleObjectManagerTransform(item, "flip_horizontal")}
-                                      data-testid="object-manager-flip-horizontal"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Flip H
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleObjectManagerTransform(item, "flip_vertical")}
-                                      data-testid="object-manager-flip-vertical"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Flip V
-                                    </button>
-                                    {Array.isArray(item.meta?.combined_from_object_ids) && item.meta.combined_from_object_ids.length ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleObjectManagerExplodeCombined(item)}
-                                        data-testid="object-manager-explode-combined"
-                                        className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
-                                      >
-                                        Explode combined
-                                      </button>
-                                    ) : null}
-	                                </div>
-	                              ) : (
-                                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleObjectManagerSelect(item.id)}
-                                      data-testid="object-manager-select"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Select
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleObjectManagerSelect(item.id);
-                                        handleOpenPanelFromDrawer("details");
-                                      }}
-                                      data-testid="object-manager-inspect"
-                                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Inspect
-                                    </button>
-                                  </div>
-                                )}
-                            </div>
+                              <ObjectManagerRow
+                                key={item.id}
+                                item={item}
+                                isSelected={isSelected}
+                                isMultiSelected={selectedObjectSet.has(item.id)}
+                                confidenceEntry={confidenceEntry}
+                                displayType={getObjectDisplayType(item)}
+                                dimensionsLabel={getObjectDimensionsLabel(item)}
+                                sourceLabel={getObjectSourceLabel(item)}
+                                reviewLabel={getObjectReviewLabel(item)}
+                                layerLabel={getObjectLayerLabel(item)}
+                                objectTypeOptions={Object.entries(SITE_OBJECT_CATALOG)
+                                  .filter(([type]) => type !== "site")
+                                  .map(([type, catalog]) => ({ type: type as SiteObjectType, label: catalog.label }))}
+                                objectOutlineColor={objectOutlineColor || "#64748b"}
+                                hasDefaultHeight={SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined}
+                                customGeometryDetails={item.type === "custom" ? <CustomGeometryHandoffDetails item={item} units={units} /> : null}
+                                onDragStart={(event) => {
+                                  if (item.locked) return;
+                                  event.dataTransfer?.setData("civora-object-id", item.id);
+                                  setPlacementModeEnabled(true);
+                                }}
+                                onToggleMultiSelect={(checked) => handleObjectManagerToggleMultiSelect(item.id, checked)}
+                                onDelete={() => handleObjectManagerDelete(item)}
+                                onRename={(value) => {
+                                  const blocker = getObjectEditBlocker(item, "rename");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(item.id, { label: value });
+                                }}
+                                onColor={(value) => {
+                                  const blocker = getObjectEditBlocker(item, "style");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(item.id, {
+                                    meta: {
+                                      ...(item.meta ?? {}),
+                                      ui_color: value,
+                                    },
+                                  });
+                                }}
+                                onType={(nextType) => {
+                                  const blocker = getObjectEditBlocker(item, "type");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(item.id, {
+                                    type: nextType,
+                                    use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
+                                    meta: {
+                                      ...(item.meta ?? {}),
+                                      category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
+                                    },
+                                  });
+                                }}
+                                onLength={(value) => {
+                                  const blocker = getObjectEditBlocker(item, "resize");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(item.id, {
+                                    w: parsePositiveNumber(value) ?? item.w,
+                                  });
+                                }}
+                                onWidth={(value) => {
+                                  const blocker = getObjectEditBlocker(item, "resize");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(item.id, {
+                                    d: parsePositiveNumber(value) ?? item.d,
+                                  });
+                                }}
+                                onHeight={(value) => {
+                                  const blocker = getObjectEditBlocker(item, "resize");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(item.id, {
+                                    h: parsePositiveNumber(value) ?? item.h,
+                                  });
+                                }}
+                                onToggleLock={() => handleToggleBuildingLock(item.id)}
+                                onMove={() => {
+                                  handleObjectManagerSelect(item.id);
+                                  setPlacementModeEnabled(true);
+                                }}
+                                onSelect={() => handleObjectManagerSelect(item.id)}
+                                onFocus={() => {
+                                  handleObjectManagerSelect(item.id);
+                                  setFocusObjectId(item.id);
+                                  setRightRailCollapsed(true);
+                                }}
+                                onToggleVisibility={() => {
+                                  const blocker = getObjectEditBlocker(item, "hide");
+                                  if (blocker) {
+                                    reportObjectActionBlocker(blocker);
+                                    return;
+                                  }
+                                  handleUpdateBuilding(item.id, {
+                                    meta: {
+                                      ...(item.meta ?? {}),
+                                      ui_hidden: !Boolean(item.meta?.ui_hidden),
+                                    },
+                                  });
+                                }}
+                                onInspect={() => {
+                                  handleObjectManagerSelect(item.id);
+                                  handleOpenPanelFromDrawer("details");
+                                }}
+                                onCopy={() => handleObjectManagerCopy(item)}
+                                onRotate={() => handleObjectManagerTransform(item, "rotate")}
+                                onFlipHorizontal={() => handleObjectManagerTransform(item, "flip_horizontal")}
+                                onFlipVertical={() => handleObjectManagerTransform(item, "flip_vertical")}
+                                onExplodeCombined={() => handleObjectManagerExplodeCombined(item)}
+                              />
                             );
                           })
                         ) : (
