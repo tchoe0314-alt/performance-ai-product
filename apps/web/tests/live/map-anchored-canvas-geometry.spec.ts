@@ -26,6 +26,8 @@ type CanonicalObject = {
 const site = { width: 400, height: 300 };
 const viewport = { left: 12, top: 16, width: 800, height: 600 };
 const container = { left: 100, top: 50 };
+const EARTH_RADIUS_METERS = 6_378_137;
+const METERS_PER_FOOT = 0.3048;
 
 function rectangleBuilding(): CanonicalObject {
   return {
@@ -41,6 +43,35 @@ function rectangleBuilding(): CanonicalObject {
       [80, 130],
       [80, 70],
     ],
+  };
+}
+
+function toMercatorMeters(lngLat: [number, number]) {
+  const [lng, lat] = lngLat;
+  const lngRad = (lng * Math.PI) / 180;
+  const latRad = (lat * Math.PI) / 180;
+  return {
+    x: EARTH_RADIUS_METERS * lngRad,
+    y: EARTH_RADIUS_METERS * Math.log(Math.tan(Math.PI / 4 + latRad / 2)),
+  };
+}
+
+function mercatorDistanceFeet(a: [number, number], b: [number, number]) {
+  const aMeters = toMercatorMeters(a);
+  const bMeters = toMercatorMeters(b);
+  const dx = bMeters.x - aMeters.x;
+  const dy = bMeters.y - aMeters.y;
+  return Math.hypot(dx, dy) / METERS_PER_FOOT;
+}
+
+function projectMercatorPixels(lngLat: [number, number], center: [number, number], zoom: number) {
+  const point = toMercatorMeters(lngLat);
+  const centerPoint = toMercatorMeters(center);
+  const worldPixels = 512 * 2 ** zoom;
+  const metersPerPixelAtEquator = (2 * Math.PI * EARTH_RADIUS_METERS) / worldPixels;
+  return {
+    x: (point.x - centerPoint.x) / metersPerPixelAtEquator,
+    y: (centerPoint.y - point.y) / metersPerPixelAtEquator,
   };
 }
 
@@ -126,6 +157,60 @@ test.describe("map anchored canvas geometry transforms", () => {
     expect(recovered!.x).toBeCloseTo(building.x, 5);
     expect(recovered!.y).toBeCloseTo(building.y, 5);
     expect(building).toEqual(canonicalBefore);
+  });
+
+  test("map anchored site size stays accurate to the requested feet dimensions", () => {
+    const anchor = {
+      lat: 41.151,
+      lng: -96.247,
+      siteWidth: 1000,
+      siteHeight: 1000,
+      rotationDeg: 0,
+    };
+
+    const westMid = siteToMapLngLat({ x: 0, y: 500 }, anchor);
+    const eastMid = siteToMapLngLat({ x: 1000, y: 500 }, anchor);
+    const northMid = siteToMapLngLat({ x: 500, y: 0 }, anchor);
+    const southMid = siteToMapLngLat({ x: 500, y: 1000 }, anchor);
+
+    expect(westMid).not.toBeNull();
+    expect(eastMid).not.toBeNull();
+    expect(northMid).not.toBeNull();
+    expect(southMid).not.toBeNull();
+    expect(mercatorDistanceFeet(westMid!, eastMid!)).toBeCloseTo(1000, 4);
+    expect(mercatorDistanceFeet(northMid!, southMid!)).toBeCloseTo(1000, 4);
+
+    const recoveredCenter = mapLngLatToSite({ lng: anchor.lng, lat: anchor.lat }, anchor);
+    expect(recoveredCenter).not.toBeNull();
+    expect(recoveredCenter!.x).toBeCloseTo(500, 5);
+    expect(recoveredCenter!.y).toBeCloseTo(500, 5);
+  });
+
+  test("zoom changes screen projection without changing map anchored site dimensions", () => {
+    const anchor = {
+      lat: 41.151,
+      lng: -96.247,
+      siteWidth: 1000,
+      siteHeight: 1000,
+      rotationDeg: 22,
+    };
+    const center: [number, number] = [anchor.lng, anchor.lat];
+    const left = siteToMapLngLat({ x: 0, y: 500 }, anchor);
+    const right = siteToMapLngLat({ x: 1000, y: 500 }, anchor);
+
+    expect(left).not.toBeNull();
+    expect(right).not.toBeNull();
+    expect(mercatorDistanceFeet(left!, right!)).toBeCloseTo(1000, 4);
+
+    const leftZoom15 = projectMercatorPixels(left!, center, 15);
+    const rightZoom15 = projectMercatorPixels(right!, center, 15);
+    const leftZoom17 = projectMercatorPixels(left!, center, 17);
+    const rightZoom17 = projectMercatorPixels(right!, center, 17);
+    const pxAt15 = Math.hypot(rightZoom15.x - leftZoom15.x, rightZoom15.y - leftZoom15.y);
+    const pxAt17 = Math.hypot(rightZoom17.x - leftZoom17.x, rightZoom17.y - leftZoom17.y);
+
+    expect(pxAt17 / pxAt15).toBeCloseTo(4, 5);
+    expect(mercatorDistanceFeet(left!, right!)).toBeCloseTo(1000, 4);
   });
 
   test("intentional move and resize update canonical coordinates only from edit operations", () => {

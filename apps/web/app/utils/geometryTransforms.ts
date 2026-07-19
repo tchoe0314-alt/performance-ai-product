@@ -31,7 +31,8 @@ export type CoordinateMode = "map_anchored" | "site_local";
 
 const FEET_PER_METER = 3.28084;
 const METERS_PER_FOOT = 0.3048;
-const METERS_PER_DEGREE_LATITUDE = 111_320;
+const EARTH_RADIUS_METERS = 6_378_137;
+const MAX_WEB_MERCATOR_LAT = 85.05112878;
 
 export function resolveCoordinateMode(anchor?: Pick<MapAnchor, "lat" | "lng"> | null): CoordinateMode {
   return anchor && Number.isFinite(anchor.lat) && Number.isFinite(anchor.lng)
@@ -174,27 +175,50 @@ export function resizeSiteGeometryFromOrigin(
   ]);
 }
 
+function clampMercatorLat(lat: number) {
+  return Math.max(-MAX_WEB_MERCATOR_LAT, Math.min(MAX_WEB_MERCATOR_LAT, lat));
+}
+
+function lngLatToMercator(lngLat: { lng: number; lat: number }): Point2D | null {
+  if (!Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return null;
+  const lat = clampMercatorLat(lngLat.lat);
+  const lngRad = (lngLat.lng * Math.PI) / 180;
+  const latRad = (lat * Math.PI) / 180;
+  return {
+    x: EARTH_RADIUS_METERS * lngRad,
+    y: EARTH_RADIUS_METERS * Math.log(Math.tan(Math.PI / 4 + latRad / 2)),
+  };
+}
+
+function mercatorToLngLat(point: Point2D): [number, number] | null {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const lng = (point.x / EARTH_RADIUS_METERS) * (180 / Math.PI);
+  const lat = (2 * Math.atan(Math.exp(point.y / EARTH_RADIUS_METERS)) - Math.PI / 2) * (180 / Math.PI);
+  return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+}
+
 export function siteToMapLngLat(point: Point2D, anchor: MapAnchor): [number, number] | null {
   if (resolveCoordinateMode(anchor) !== "map_anchored") return null;
-  const metersPerDegLng = METERS_PER_DEGREE_LATITUDE * Math.cos((anchor.lat * Math.PI) / 180);
-  if (!Number.isFinite(metersPerDegLng) || Math.abs(metersPerDegLng) < 0.000001) return null;
+  const center = lngLatToMercator({ lng: anchor.lng, lat: anchor.lat });
+  if (!center) return null;
   const dxFt = point.x - anchor.siteWidth / 2;
   const dyFt = anchor.siteHeight / 2 - point.y;
   const theta = ((anchor.rotationDeg ?? 0) * Math.PI) / 180;
   const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
   const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
-  return [
-    anchor.lng + (dxRot / FEET_PER_METER) / metersPerDegLng,
-    anchor.lat + (dyRot / FEET_PER_METER) / METERS_PER_DEGREE_LATITUDE,
-  ];
+  return mercatorToLngLat({
+    x: center.x + dxRot * METERS_PER_FOOT,
+    y: center.y + dyRot * METERS_PER_FOOT,
+  });
 }
 
 export function mapLngLatToSite(lngLat: { lat: number; lng: number }, anchor: MapAnchor): Point2D | null {
   if (resolveCoordinateMode(anchor) !== "map_anchored") return null;
-  const metersPerDegLng = METERS_PER_DEGREE_LATITUDE * Math.cos((anchor.lat * Math.PI) / 180);
-  if (!Number.isFinite(metersPerDegLng) || Math.abs(metersPerDegLng) < 0.000001) return null;
-  const dxFt = (lngLat.lng - anchor.lng) * metersPerDegLng / METERS_PER_FOOT;
-  const dyFt = (lngLat.lat - anchor.lat) * METERS_PER_DEGREE_LATITUDE / METERS_PER_FOOT;
+  const center = lngLatToMercator({ lng: anchor.lng, lat: anchor.lat });
+  const target = lngLatToMercator(lngLat);
+  if (!center || !target) return null;
+  const dxFt = (target.x - center.x) * FEET_PER_METER;
+  const dyFt = (target.y - center.y) * FEET_PER_METER;
   const theta = -((anchor.rotationDeg ?? 0) * Math.PI) / 180;
   const invDx = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
   const invDy = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
