@@ -1270,6 +1270,113 @@ const getPolygonArea = (geometry: Array<[number, number]>) => {
   return Math.abs(sum) / 2;
 };
 
+const pointDistance = (a: [number, number], b: [number, number]) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+
+const selectedObjectsToSemanticArea = (items: BuildingPlacement[], tolerance = 0.25) => {
+  const segments: Array<[[number, number], [number, number]]> = [];
+  const blockers: string[] = [];
+  const areaItems: BuildingPlacement[] = [];
+  items.forEach((item) => {
+    const geometry = normalizeGeometryPoints(item.geometry);
+    if (item.geometryType === "polyline" && geometry && geometry.length >= 2) {
+      geometry.slice(1).forEach((pt, index) => segments.push([geometry[index], pt]));
+      return;
+    }
+    if ((item.geometryType === "polygon" || item.geometryType === "rect") && geometry && geometry.length >= 3) {
+      areaItems.push(item);
+      return;
+    }
+    if (item.geometryType === "point") {
+      blockers.push(`${item.label} is a point, not area linework.`);
+      return;
+    }
+    const x = item.x ?? 0;
+    const y = item.y ?? 0;
+    if (item.w > 0 && item.d > 0 && item.type !== "site") {
+      areaItems.push({
+        ...item,
+        geometryType: "polygon",
+        geometry: [
+          [x, y],
+          [x + item.w, y],
+          [x + item.w, y + item.d],
+          [x, y + item.d],
+        ],
+      });
+      return;
+    }
+    blockers.push(`${item.label} does not have usable geometry.`);
+  });
+  if (areaItems.length === 1 && !segments.length && !blockers.length) {
+    const geometry = normalizeGeometryPoints(areaItems[0].geometry) ?? [];
+    return { valid: geometry.length >= 3, geometry, blockers: geometry.length >= 3 ? [] : ["Selected area needs at least three points."], sourceMode: "existing_area" as const };
+  }
+  if (areaItems.length > 1 && !segments.length && !blockers.length) {
+    const geometryPoints = areaItems.flatMap((item) => normalizeGeometryPoints(item.geometry) ?? []);
+    const validPoints = geometryPoints.filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+    if (validPoints.length < 3) {
+      return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["Selected areas do not have enough geometry to group."], sourceMode: "program_group_bounds" as const };
+    }
+    const xs = validPoints.map(([x]) => x);
+    const ys = validPoints.map(([, y]) => y);
+    return {
+      valid: true,
+      geometry: [
+        [Math.min(...xs), Math.min(...ys)],
+        [Math.max(...xs), Math.min(...ys)],
+        [Math.max(...xs), Math.max(...ys)],
+        [Math.min(...xs), Math.max(...ys)],
+      ] as Array<[number, number]>,
+      blockers: [] as string[],
+      sourceMode: "program_group_bounds" as const,
+    };
+  }
+  if (areaItems.length > 1) {
+    return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["Select one area or select connected linework. Mixed areas and linework need an explicit merge step."], sourceMode: "mixed_area" as const };
+  }
+  if (blockers.length) return { valid: false, geometry: [] as Array<[number, number]>, blockers, sourceMode: "invalid" as const };
+  if (segments.length < 3) {
+    return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["Select at least three connected line segments to combine into an area."], sourceMode: "linework" as const };
+  }
+  const remaining = [...segments];
+  const [firstStart, firstEnd] = remaining.shift()!;
+  const ordered: Array<[number, number]> = [firstStart, firstEnd];
+  while (remaining.length) {
+    const current = ordered[ordered.length - 1];
+    let bestIndex = -1;
+    let bestReverse = false;
+    let bestGap = Number.POSITIVE_INFINITY;
+    remaining.forEach(([start, end], index) => {
+      const startGap = pointDistance(current, start);
+      const endGap = pointDistance(current, end);
+      if (startGap < bestGap) {
+        bestIndex = index;
+        bestReverse = false;
+        bestGap = startGap;
+      }
+      if (endGap < bestGap) {
+        bestIndex = index;
+        bestReverse = true;
+        bestGap = endGap;
+      }
+    });
+    if (bestIndex < 0 || bestGap > tolerance) {
+      return { valid: false, geometry: [] as Array<[number, number]>, blockers: [`Two endpoints do not meet. Gap is ${bestGap.toFixed(2)} ft.`], sourceMode: "linework" as const };
+    }
+    const [start, end] = remaining.splice(bestIndex, 1)[0];
+    ordered.push(bestReverse ? start : end);
+  }
+  const closeGap = pointDistance(ordered[ordered.length - 1], ordered[0]);
+  if (closeGap > tolerance) {
+    return { valid: false, geometry: [] as Array<[number, number]>, blockers: [`Shape is not closed. Final gap is ${closeGap.toFixed(2)} ft.`], sourceMode: "linework" as const };
+  }
+  const loop = ordered.slice(0, -1);
+  if (loop.length < 3) {
+    return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["Selected linework does not form an area."], sourceMode: "linework" as const };
+  }
+  return { valid: true, geometry: loop, blockers: [] as string[], sourceMode: "linework" as const };
+};
+
 const getCustomGeometryMetrics = (item: Pick<BuildingPlacement, "geometry" | "geometryType" | "w" | "d">) => {
   const geometry = Array.isArray(item.geometry) ? item.geometry : [];
   const isArea = item.geometryType === "polygon" || item.geometryType === "rect";
@@ -9341,8 +9448,8 @@ function PerformanceAIDashboardView({
   const handleObjectManagerCombineSelected = useCallback(() => {
     clearGeneratedPreview();
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (targets.length < 2) {
-      reportObjectActionBlocker("Combine blocked: select two or more drawn/editable objects first.");
+    if (targets.length < 1) {
+      reportObjectActionBlocker("Combine needs input: select connected drawn linework or one drawn area first.");
       return;
     }
     const editable = targets.filter(
@@ -9352,28 +9459,16 @@ function PerformanceAIDashboardView({
         !getObjectEditBlocker(item, "type") &&
         !getObjectEditBlocker(item, "style"),
     );
-    if (editable.length < 2) {
-      reportObjectActionBlocker("Combine blocked: selected objects are locked or source-only.");
+    if (editable.length < 1) {
+      reportObjectActionBlocker("Combine needs input: selected objects are locked or source-only.");
       return;
     }
-    const geometryPoints = editable.flatMap((item) => {
-      if (Array.isArray(item.geometry) && item.geometry.length) return item.geometry;
-      const x = item.x ?? 0;
-      const y = item.y ?? 0;
-      return [
-        [x, y],
-        [x + item.w, y],
-        [x + item.w, y + item.d],
-        [x, y + item.d],
-      ] as Array<[number, number]>;
-    });
-    const validPoints = geometryPoints.filter(
-      ([x, y]) => Number.isFinite(x) && Number.isFinite(y),
-    );
-    if (validPoints.length < 2) {
-      reportObjectActionBlocker("Combine blocked: selected objects do not have enough drawn geometry.");
+    const semanticArea = selectedObjectsToSemanticArea(editable);
+    if (!semanticArea.valid || semanticArea.geometry.length < 3) {
+      reportObjectActionBlocker(`Combine needs input: ${semanticArea.blockers[0] || "selected geometry does not form one closed area."}`);
       return;
     }
+    const validPoints = semanticArea.geometry;
     const xs = validPoints.map(([x]) => x);
     const ys = validPoints.map(([, y]) => y);
     const minX = Math.min(...xs);
@@ -9387,23 +9482,14 @@ function PerformanceAIDashboardView({
     const nextType = combineObjectType || "custom";
     const existingCount = buildingPlacements.filter((item) => item.type === nextType).length + 1;
     const nextLabel = combineObjectName.trim() || `${SITE_OBJECT_CATALOG[nextType]?.label ?? "Combined Object"} ${existingCount}`;
-    const nextGeometryType = pointTypes.has(nextType)
-      ? "point"
-      : linearTypes.has(nextType)
-        ? "polyline"
-        : "polygon";
-    const nextGeometry =
-      nextGeometryType === "point"
-        ? ([[minX + width / 2, minY + depth / 2]] as Array<[number, number]>)
-        : nextGeometryType === "polyline"
-          ? validPoints
-          : ([
-              [minX, minY],
-              [maxX, minY],
-              [maxX, maxY],
-              [minX, maxY],
-            ] as Array<[number, number]>);
+    const nextGeometryType = pointTypes.has(nextType) ? "point" : linearTypes.has(nextType) ? "polyline" : "polygon";
+    const nextGeometry = nextGeometryType === "point"
+      ? ([[minX + width / 2, minY + depth / 2]] as Array<[number, number]>)
+      : nextGeometryType === "polyline"
+        ? validPoints
+        : validPoints;
     const nextId = `${nextType}-combined-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const semanticAreaSf = getPolygonArea(validPoints);
     const combinedObject: BuildingPlacement = {
       id: nextId,
       label: nextLabel,
@@ -9429,14 +9515,20 @@ function PerformanceAIDashboardView({
       systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
       meta: {
         category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
-        source: "manual_drawn_combined",
+        source: "semantic_drafting_conversion",
         review_status: "engineer_review_required",
         engineering_status: "draft_review_required",
         handoff_status: "draft_review_required",
         construction_release_allowed: false,
+        semantic_geometry_state: "engineering_object_geometry",
+        semantic_object_model: "cad_engineering_objects_v1",
+        semantic_source_mode: semanticArea.sourceMode,
+        canonical_object_type: nextType,
+        footprint_area_sf: semanticAreaSf,
         combined_from_object_ids: editable.map((item) => item.id),
         combined_from_labels: editable.map((item) => item.label),
         combined_source_count: editable.length,
+        affected_systems: systemsImpactedByPlacement({ ...editable[0], type: nextType }),
       },
     };
     const undo: DraftUndoAction = {
@@ -9473,10 +9565,12 @@ function PerformanceAIDashboardView({
       detail: `${editable.length} drawn objects were combined into ${nextLabel}. Source pieces were hidden, not deleted.`,
       undo,
     });
-    const message = `Combined ${editable.length} drawn objects into ${nextLabel}. Source pieces are hidden for a cleaner plan and preserved for review trace.`;
+    const message = semanticArea.sourceMode === "program_group_bounds"
+      ? `Combined ${editable.length} drawn objects into ${nextLabel}. Group bounds area: ${formatDraftMeasure(semanticAreaSf, "sf")}.`
+      : `Combined ${editable.length} drawn geometry piece${editable.length === 1 ? "" : "s"} into ${nextLabel} as a semantic ${SITE_OBJECT_CATALOG[nextType]?.label ?? "object"}. Area: ${formatDraftMeasure(semanticAreaSf, "sf")}.`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
-    appendChatMessage("assistant", `${message} This remains draft review geometry, not construction-release evidence.`, "status");
+    appendChatMessage("assistant", `${message} Source pieces are hidden, preserved for trace, and the new object is review-required.`, "status");
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => {
@@ -28907,7 +29001,10 @@ function PerformanceAIDashboardView({
                           </div>
                           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-combine-selected">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              Combine into one object
+                              Combine / convert
+                            </p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-500" data-testid="object-manager-semantic-combine-help">
+                              Select connected linework or one drawn area, then turn it into a named civil object.
                             </p>
                             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
                               <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
@@ -28947,10 +29044,10 @@ function PerformanceAIDashboardView({
                               data-testid="object-manager-combine-action"
                               className="mt-2 w-full rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
                             >
-                              Combine selected
+                              Combine into Area
                             </button>
                             <p className="mt-2 text-[11px] leading-5 text-slate-500">
-                              Source pieces are hidden, not deleted, so the combined object stays traceable and review-required.
+                              Source pieces are hidden, not deleted. The result keeps trace, name, type, and affected systems for review.
                             </p>
                           </div>
                           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-block-library">

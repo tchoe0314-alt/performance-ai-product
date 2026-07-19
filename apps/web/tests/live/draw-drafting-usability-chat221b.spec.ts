@@ -323,6 +323,49 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ })).toHaveCount(2);
   });
 
+  test("connected linework combines into a named semantic area", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    const addLine = cadTools.getByTestId("cad-tool-line");
+    const commandInput = page.getByLabel("CAD command input");
+    const corners: Array<[number, number]> = [
+      [120, 120],
+      [240, 120],
+      [240, 220],
+      [120, 220],
+    ];
+
+    for (let index = 0; index < corners.length; index += 1) {
+      await addLine.click();
+      await commandInput.fill(`${corners[index][0]},${corners[index][1]}`);
+      await commandInput.press("Enter");
+      const next = corners[(index + 1) % corners.length];
+      await commandInput.fill(`${next[0]},${next[1]}`);
+      await commandInput.press("Enter");
+      await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
+      await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
+    }
+
+    const lineRows = page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ });
+    await expect(lineRows).toHaveCount(4);
+    for (let index = 0; index < 4; index += 1) {
+      await lineRows.nth(index).getByTestId("object-manager-bulk-select").check();
+    }
+
+    await page.getByTestId("object-manager-combine-name").fill("Office Footprint A");
+    await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+    await page.getByTestId("object-manager-combine-action").click();
+
+    await expect(page.getByTestId("object-manager-status")).toContainText(/semantic Office Building/i);
+    await expect(page.getByTestId("object-manager-status")).toContainText(/Area:/i);
+    await expect(page.getByTestId("object-manager-hidden-state")).toContainText("4 hidden objects");
+    const semanticRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Footprint A" }).first();
+    await expect(semanticRow).toBeVisible();
+    await expect(semanticRow).toContainText(/Office Building|Draft|Review/i);
+  });
+
   test("visible OPEN CLOSE and REVERSE edit selected draft area linework", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
