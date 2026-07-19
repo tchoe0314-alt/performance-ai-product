@@ -2574,6 +2574,7 @@ import { ProjectsDrawer } from "./components/ProjectsDrawer";
 import { QuantitiesPanel } from "./components/QuantitiesPanel";
 import { ReportGateListPanel } from "./components/ReportGateListPanel";
 import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
+import { SelectedObjectCard } from "./components/SelectedObjectCard";
 import { SourceConfidencePanel } from "./components/SourceConfidencePanel";
 import { StandardsPanel } from "./components/StandardsPanel";
 import { TakeoffSnapshotPanel } from "./components/TakeoffSnapshotPanel";
@@ -27489,79 +27490,23 @@ function PerformanceAIDashboardView({
                       onPlace={handleSelectPlacementTarget}
                     />
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-selected-object-card">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Selected Object
-                          </p>
-                          <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                            {selectedBuilding?.label || "Nothing selected"}
-                          </p>
-                          <p className="mt-1 text-xs font-medium text-slate-500">
-                            {selectedBuilding
-                              ? `${getObjectDisplayType(selectedBuilding)} · ${getObjectDimensionsLabel(selectedBuilding)}`
-                              : "Pick an object on the canvas or from the list below."}
-                          </p>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          {selectedBuilding?.meta?.ui_hidden ? "Hidden" : selectedBuilding ? "Visible" : "None"}
-                        </span>
-                      </div>
-                      {selectedBuilding ? (
-                        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleObjectManagerSelect(selectedBuilding.id);
-                              setPlacementModeEnabled(true);
-                            }}
-                            className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
-                          >
-                            Move
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFocusObjectId(selectedBuilding.id);
-                              setRightRailCollapsed(true);
-                            }}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                          >
-                            Focus
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleObjectManagerCopy(selectedBuilding)}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                          >
-                            Copy
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleObjectManagerTransform(selectedBuilding, "rotate")}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                          >
-                            Rotate
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleObjectManagerTransform(selectedBuilding, "flip_horizontal")}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                          >
-                            Flip H
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleObjectManagerDelete(selectedBuilding)}
-                            disabled={selectedBuilding.type === "site"}
-                            className="rounded-lg border border-rose-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
+                    <SelectedObjectCard
+                      selectedObject={selectedBuilding}
+                      displayType={selectedBuilding ? getObjectDisplayType(selectedBuilding) : ""}
+                      dimensionsLabel={selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : ""}
+                      onMove={(item) => {
+                        handleObjectManagerSelect(item.id);
+                        setPlacementModeEnabled(true);
+                      }}
+                      onFocus={(item) => {
+                        setFocusObjectId(item.id);
+                        setRightRailCollapsed(true);
+                      }}
+                      onCopy={handleObjectManagerCopy}
+                      onRotate={(item) => handleObjectManagerTransform(item, "rotate")}
+                      onFlipHorizontal={(item) => handleObjectManagerTransform(item, "flip_horizontal")}
+                      onDelete={handleObjectManagerDelete}
+                    />
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
                       <div className="flex items-start justify-between gap-3">
