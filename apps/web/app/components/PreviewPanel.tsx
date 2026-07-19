@@ -623,6 +623,10 @@ export default function PreviewPanel({
   const [cadHistory, setCadHistory] = useState<CadHistoryEntry[]>([]);
   const [cadRedoStack, setCadRedoStack] = useState<CadHistoryEntry[]>([]);
   const [activeSnapPoint, setActiveSnapPoint] = useState<(CadPoint & { kind: CadSnapKind }) | null>(null);
+  const cursorSitePointRafRef = useRef<number | null>(null);
+  const pendingCursorSitePointRef = useRef<CadPoint | null>(null);
+  const draftPointerRafRef = useRef<number | null>(null);
+  const pendingDraftPointerRef = useRef<(CadPoint & { kind: CadSnapKind }) | null>(null);
   const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const draftPointsRef = useRef<Array<[number, number]>>([]);
@@ -1459,6 +1463,67 @@ export default function PreviewPanel({
       lotHeight,
       lotWidth,
     ],
+  );
+  const applyCursorSitePoint = useCallback((nextPoint: CadPoint | null) => {
+    setCursorSitePoint((current) => {
+      if (!nextPoint) return current === null ? current : null;
+      return current &&
+        Math.abs(current.x - nextPoint.x) < 0.5 &&
+        Math.abs(current.y - nextPoint.y) < 0.5
+        ? current
+        : { x: nextPoint.x, y: nextPoint.y };
+    });
+  }, []);
+  const scheduleCursorSitePoint = useCallback(
+    (nextPoint: CadPoint | null) => {
+      pendingCursorSitePointRef.current = nextPoint;
+      if (cursorSitePointRafRef.current !== null) return;
+      cursorSitePointRafRef.current = window.requestAnimationFrame(() => {
+        cursorSitePointRafRef.current = null;
+        applyCursorSitePoint(pendingCursorSitePointRef.current);
+      });
+    },
+    [applyCursorSitePoint],
+  );
+  const clearScheduledPointerState = useCallback(() => {
+    if (cursorSitePointRafRef.current !== null) {
+      window.cancelAnimationFrame(cursorSitePointRafRef.current);
+      cursorSitePointRafRef.current = null;
+    }
+    if (draftPointerRafRef.current !== null) {
+      window.cancelAnimationFrame(draftPointerRafRef.current);
+      draftPointerRafRef.current = null;
+    }
+    pendingCursorSitePointRef.current = null;
+    pendingDraftPointerRef.current = null;
+    setCursorSitePoint(null);
+    setDraftPreviewPoint(null);
+    setActiveSnapPoint(null);
+  }, []);
+  const scheduleDraftPointerState = useCallback(
+    (sitePoint: (CadPoint & { kind: CadSnapKind }) | null) => {
+      pendingDraftPointerRef.current = sitePoint;
+      if (draftPointerRafRef.current !== null) return;
+      draftPointerRafRef.current = window.requestAnimationFrame(() => {
+        draftPointerRafRef.current = null;
+        const nextPoint = pendingDraftPointerRef.current;
+        setDraftPreviewPoint(nextPoint ? [nextPoint.x, nextPoint.y] : null);
+        setActiveSnapPoint(nextPoint);
+        applyCursorSitePoint(nextPoint);
+      });
+    },
+    [applyCursorSitePoint],
+  );
+  useEffect(
+    () => () => {
+      if (cursorSitePointRafRef.current !== null) {
+        window.cancelAnimationFrame(cursorSitePointRafRef.current);
+      }
+      if (draftPointerRafRef.current !== null) {
+        window.cancelAnimationFrame(draftPointerRafRef.current);
+      }
+    },
+    [],
   );
   const updateImageBounds = useCallback(
     (
@@ -5687,7 +5752,7 @@ export default function PreviewPanel({
       if (!showHover || !lotWidth || !lotHeight) return;
       const sitePoint = latLngToSite(event.lngLat.lat, event.lngLat.lng);
       if (!sitePoint) return;
-      setCursorSitePoint(sitePoint);
+      scheduleCursorSitePoint(sitePoint);
     };
     map.on("mousemove", handleMouseMove);
     return () => {
@@ -5704,7 +5769,7 @@ export default function PreviewPanel({
       map.off("pitch", requestMapOverlayUpdate);
       map.off("rotate", requestMapOverlayUpdate);
     };
-  }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
+  }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, scheduleCursorSitePoint, selectedBuildingId, onSelectBuilding, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;
@@ -9059,17 +9124,7 @@ export default function PreviewPanel({
                     ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
                     : null;
                   const sitePoint = rawSitePoint ? resolveCadSnapPoint(rawSitePoint, basePoint) : null;
-                  setDraftPreviewPoint(sitePoint ? [sitePoint.x, sitePoint.y] : null);
-                  setActiveSnapPoint(sitePoint);
-                  if (sitePoint) {
-                    setCursorSitePoint((current) =>
-                      current &&
-                      Math.abs(current.x - sitePoint.x) < 0.5 &&
-                      Math.abs(current.y - sitePoint.y) < 0.5
-                        ? current
-                        : { x: sitePoint.x, y: sitePoint.y },
-                    );
-                  }
+                  scheduleDraftPointerState(sitePoint);
                   return;
                 }
                 if (overlayBoundsResolved) {
@@ -9084,30 +9139,21 @@ export default function PreviewPanel({
                 }
                 if (showHover && overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
                   const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
-                  setCursorSitePoint((current) => {
-                    if (!sitePoint) return current === null ? current : null;
-                    return current &&
-                      Math.abs(current.x - sitePoint.x) < 0.5 &&
-                      Math.abs(current.y - sitePoint.y) < 0.5
-                      ? current
-                      : { x: sitePoint.x, y: sitePoint.y };
-                  });
+                  scheduleCursorSitePoint(sitePoint);
                 } else if (!showHover) {
-                  setCursorSitePoint(null);
+                  scheduleCursorSitePoint(null);
                 } else {
-                  setCursorSitePoint(null);
+                  scheduleCursorSitePoint(null);
                 }
               }}
               onMouseLeave={() => {
                 setHoveredAnnotation(null);
                 setHoveredObjectId(null);
                 setHoverPoint(null);
-                setCursorSitePoint(null);
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
                 setCanvasPanStart(null);
-                setDraftPreviewPoint(null);
-                setActiveSnapPoint(null);
+                clearScheduledPointerState();
                 if (!cadWindowSelect) setCadWindowSelect(null);
               }}
               onMouseUp={() => {
