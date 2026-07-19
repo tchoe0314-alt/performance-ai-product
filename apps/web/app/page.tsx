@@ -2575,6 +2575,7 @@ import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
 import { QuantitiesPanel } from "./components/QuantitiesPanel";
+import { RecentChangesPanel } from "./components/RecentChangesPanel";
 import { ReportGateListPanel } from "./components/ReportGateListPanel";
 import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
 import { SelectedObjectCard } from "./components/SelectedObjectCard";
@@ -27564,74 +27565,22 @@ function PerformanceAIDashboardView({
                           {objectManagerStatusMessage}
                         </p>
                       ) : null}
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="recent-changes-section">
-                        <div className="flex items-center justify-between gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setRecentChangesOpen((value) => !value)}
-                            aria-expanded={recentChangesOpen}
-                            className="min-w-0 text-left"
-                          >
-                            <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              Recent changes
-                            </span>
-                            <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
-                              {recentChanges[0]?.detail || "No draft changes recorded yet."}
-                            </span>
-                          </button>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={handleUndoDraftAction}
-                              disabled={!lastDraftAction}
-                              data-testid="recent-changes-undo"
-                              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Undo
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleRedoDraftAction}
-                              disabled={!redoDraftAction}
-                              data-testid="recent-changes-redo"
-                              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Redo
-                            </button>
-                          </div>
-                        </div>
-                        {recentChangesOpen ? (
-                          <div className="mt-3 space-y-2" data-testid="recent-changes-list">
-                            {recentChanges.length ? (
-                              recentChanges.map((change) => (
-                                <div key={change.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="text-xs font-semibold text-slate-900">{change.label}</p>
-                                      <p className="mt-1 text-xs text-slate-500">{change.detail}</p>
-                                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                                        {new Date(change.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUndoRecentChange(change)}
-                                      data-testid="recent-change-row-undo"
-                                      className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
-                                    >
-                                      {change.undo ? "Undo" : "Why blocked"}
-                                    </button>
-                                  </div>
-                                </div>
-                              ))
-                            ) : (
-                              <p className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-xs font-semibold text-slate-500">
-                                Recent draft UI changes will appear here. Engineering outputs remain review-required.
-                              </p>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
+                      <RecentChangesPanel
+                        changes={recentChanges.map((change) => ({
+                          id: change.id,
+                          label: change.label,
+                          detail: change.detail,
+                          createdAt: change.createdAt,
+                          canUndo: Boolean(change.undo),
+                          onAction: () => handleUndoRecentChange(change),
+                        }))}
+                        open={recentChangesOpen}
+                        canUndoDraft={Boolean(lastDraftAction)}
+                        canRedoDraft={Boolean(redoDraftAction)}
+                        onToggleOpen={() => setRecentChangesOpen((value) => !value)}
+                        onUndoDraft={handleUndoDraftAction}
+                        onRedoDraft={handleRedoDraftAction}
+                      />
                       {selectedObjectIds.length > 0 ? (
                         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="object-manager-multi-select">
                           <div className="flex items-center justify-between gap-3">
