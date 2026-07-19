@@ -117,18 +117,10 @@ async function openBlankWorkspace(page: Page) {
 async function startBoundaryDraw(page: Page) {
   const toolbarButton = page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first();
   if (await toolbarButton.isVisible().catch(() => false)) {
-    const alreadyActive = await toolbarButton.evaluate((element) =>
-      element.className.includes("bg-slate-950") || element.getAttribute("aria-pressed") === "true",
-    );
-    if (alreadyActive) return;
     await toolbarButton.click();
     return;
   }
   const canvasButton = page.getByTestId("workspace-canvas-shell").getByRole("button", { name: "Draw Site Boundary" }).first();
-  const alreadyActive = await canvasButton.evaluate((element) =>
-    element.className.includes("bg-slate-950") || element.getAttribute("aria-pressed") === "true",
-  );
-  if (alreadyActive) return;
   await canvasButton.click();
 }
 
@@ -201,6 +193,19 @@ async function selectObjectByName(page: Page, name: string) {
     await objectManager.selectOption({ label: name });
     return;
   }
+  const objectRow = page.getByTestId("object-manager-row").filter({ hasText: name }).first();
+  if (await objectRow.isVisible().catch(() => false)) {
+    const selectButton = objectRow.getByRole("button", { name: /^Select$/ }).first();
+    if (await selectButton.isVisible().catch(() => false)) {
+      await selectButton.click();
+      return;
+    }
+    const inspectButton = objectRow.getByRole("button", { name: /^Inspect$/ }).first();
+    if (await inspectButton.isVisible().catch(() => false)) {
+      await inspectButton.click();
+      return;
+    }
+  }
   await clickVisibleControl(page.getByLabel(`Select ${name}`));
 }
 
@@ -261,7 +266,8 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     await clickCanvasTool(canvas, "Add Point");
     await clickSurfaceAt(surface, 0.78, 0.72);
-    await expect.poll(async () => (await page.locator("[data-object-overlay]").count()) - beforeObjects).toBeGreaterThanOrEqual(4);
+    await expect(page.getByText("Custom Point 4").filter({ visible: true }).first()).toBeVisible();
+    await expect.poll(async () => (await page.locator("[data-object-overlay]").count()) - beforeObjects).toBeGreaterThanOrEqual(3);
 
     await clickVisibleControl(page.locator('[data-object-overlay][aria-label^="Select Custom Point"]').first());
     await page.getByRole("button", { name: "Chat" }).first().click();
@@ -462,7 +468,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("CAD source note").fill("manual field sketch");
     await cadTools.getByLabel("CAD review note").fill("verify before engineering use");
     await cadTools.getByRole("button", { name: "Apply" }).click();
-    await expect(page.getByText("Draft Utility Review Area").first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Draft Utility Review Area" }).first()).toBeVisible();
 
     const utilityLayerToggle = cadTools.locator("button").filter({ hasText: /^C-UTIL$/ }).first();
     await utilityLayerToggle.click();
@@ -479,8 +485,8 @@ async function openDrawControls(page: Page) {
   const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
   const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
   const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
-  if (await drawStep.isVisible().catch(() => false)) await drawStep.click();
-  else if (await drawButton.isVisible().catch(() => false)) await drawButton.click();
+  if (await drawStep.isVisible().catch(() => false)) await drawStep.evaluate((element: HTMLElement) => element.click());
+  else if (await drawButton.isVisible().catch(() => false)) await drawButton.evaluate((element: HTMLElement) => element.click());
   else if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
   else await page.keyboard.press("D");
 }

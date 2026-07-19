@@ -7,6 +7,7 @@ type AppHeaderProps = {
   onOpenProjects: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
+  onOpenWorkspaceControls: () => void;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   onLogout: () => void;
@@ -17,6 +18,7 @@ export default function AppHeader({
   onOpenProjects,
   onOpenDocs,
   onOpenChat,
+  onOpenWorkspaceControls,
   sidebarOpen,
   onToggleSidebar,
   onLogout,
@@ -33,6 +35,15 @@ export default function AppHeader({
             title={sidebarOpen ? "Hide left sidebar" : "Show left sidebar"}
           >
             {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenWorkspaceControls}
+            aria-label="Open workspace controls"
+            title="Open workspace controls"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white/80 text-slate-700 transition hover:bg-slate-50"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
           </button>
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-950 text-sm font-semibold text-white">
             C

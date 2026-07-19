@@ -273,8 +273,11 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "Open chat from header" }).click();
-    const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
-    await input.fill("Design a 5 acre site with parking, drainage, utilities, grading, a retail building, access drives, and a review package summary. Include enough detail to route this as a backend design request rather than a local note.");
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Command Center|Conversation/i);
+    const input = page
+      .getByTestId("workspace-right-panel")
+      .getByPlaceholder("Message Civora AI with what you want to create or change...");
+    await input.fill("Tell me something unusual about this workspace qzx-backend-only");
     await input.press("Enter");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/retry your message|could not reach the backend|could not finish/i, { timeout: 30_000 });
   });

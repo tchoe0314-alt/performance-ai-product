@@ -36,7 +36,8 @@ async function createBlankSite(page: Page) {
   const panel = page.getByTestId("workspace-right-panel");
   await expect(panel).toBeVisible({ timeout: 5_000 });
   const boundary = panel.getByTestId("setup-site-box-controls");
-  await boundary.locator("summary").click();
+  const boundaryOpen = await boundary.evaluate((element) => element.hasAttribute("open"));
+  if (!boundaryOpen) await boundary.locator("summary").click();
   await boundary.getByLabel("Width (ft)").fill("1000");
   await boundary.getByLabel("Depth (ft)").fill("1000");
   await boundary.getByRole("button", { name: "Lock Boundary" }).click();

@@ -1,9 +1,40 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
+
+const TOKEN_KEY = "civora-ai-token";
 
 test("focused generate sends reactive checkpoint metadata", async ({ page }) => {
   let observedPayload: unknown = null;
 
-  await page.route("**/api/orchestrate", async (route) => {
+  await page.addInitScript(
+    ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
+    [TOKEN_KEY, "reactive-rerun-token"] as const,
+  );
+
+  await page.route("**/api/auth/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, user: { user_id: "reactive-user", email: "reactive@example.com" } }),
+    });
+  });
+
+  await page.route("**/api/jobs**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, jobs: [] }) });
+  });
+
+  await page.route("**/api/projects", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, projects: [] }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, project: { project_id: "reactive-project", name: "Reactive Project", project_input: {} } }),
+    });
+  });
+
+  const fulfillObservedGenerate = async (route: Route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     observedPayload = body;
     await route.fulfill({
@@ -41,7 +72,10 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
         metadata: {},
       }),
     });
-  });
+  };
+
+  await page.route("**/api/orchestrate", fulfillObservedGenerate);
+  await page.route("**/api/jobs/orchestrate", fulfillObservedGenerate);
 
   await page.route("**/api/preview", async (route) => {
     await route.fulfill({
@@ -73,7 +107,9 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
   }
 
   const payload = observedPayload as Record<string, unknown>;
-  const meta = (payload.meta ?? {}) as Record<string, unknown>;
+  const nestedPayload =
+    ((payload.requestPayload ?? payload.request ?? payload.payload) as Record<string, unknown> | undefined) ?? payload;
+  const meta = (nestedPayload.meta ?? {}) as Record<string, unknown>;
   const orchestratorMeta = (meta.orchestrator_meta ?? {}) as Record<string, unknown>;
   const runtimeResume = (orchestratorMeta.runtime_resume ?? {}) as Record<string, unknown>;
   expect(meta.requested_system).toBe("grading");

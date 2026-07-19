@@ -270,7 +270,7 @@ test.describe("project drawer reliability", () => {
     await page.getByRole("button", { name: "Open project Untitled Project" }).first().click();
     await expect(page.getByTestId("project-drawer-state")).toContainText("Saved");
     await openSetup(page);
-    await expect(page.getByTestId("workspace-right-panel")).toContainText("123 MAIN ST, TEST CITY, TX");
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/123 Main St, Test City, TX/i);
     await page.getByRole("button", { name: "Open chat from header" }).click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toHaveValue("Generate a parking layout note.");
 

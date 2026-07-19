@@ -359,7 +359,7 @@ async function applyIssue(page: Page, actionLabel: string) {
 
   let applyButton = await waitForVisibleApplyButton(2_000);
   if (!applyButton) {
-    await clickFirstVisible(["Analyze", "Review & QA", "Issues", "Recent changes", "Review gates"]);
+    await clickFirstVisible(["Generate", "Analyze", "Review & QA", "Issues", "Recent changes", "Review gates"]);
 
     const modernPanel = page.getByTestId("bottom-review-panel");
     if (await modernPanel.isVisible().catch(() => false)) {

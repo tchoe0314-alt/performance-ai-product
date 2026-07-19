@@ -2673,7 +2673,7 @@ const projectStatusDisplayLabel: Record<ProjectStatusState, string> = {
 };
 
 const formatProjectStatusText = (summary: ProjectStatusSummary) =>
-  `${projectStatusDisplayLabel[summary.state]}: ${summary.detail} Next: ${summary.nextAction}`;
+  `${projectStatusDisplayLabel[summary.state]}: ${summary.title}. ${summary.detail} Next: ${summary.nextAction}`;
 
 type RecentChangeType =
   | "object_added"
@@ -23226,12 +23226,21 @@ function PerformanceAIDashboardView({
           }}
           onOpenDocs={() => handleOpenSidePanel("trust")}
           onOpenChat={() => handleOpenSidePanel("chat")}
+          onOpenWorkspaceControls={() => {
+            setLeftSidebarOpen(true);
+            setSidebarVisible(true);
+            setWorkspaceChromeMinimized(false);
+            handleOpenSidePanel("site_existing");
+          }}
           sidebarOpen={leftSidebarOpen}
           onToggleSidebar={() => {
             setLeftSidebarOpen((value) => !value);
           }}
           onLogout={handleLogout}
         />
+        <div data-testid="project-status-summary" className="sr-only" aria-live="polite">
+          {formatProjectStatusText(projectStatusSummary)}
+        </div>
 
         <div className="relative h-[calc(100svh-4rem)] min-h-0 w-full max-w-full overflow-hidden lg:h-[calc(100vh-4rem)]">
           {sidebarRendered ? (
@@ -24374,7 +24383,7 @@ function PerformanceAIDashboardView({
                       </div>
                     </details>
 
-                    <details open={!siteScaleLocked} className="rounded-xl border border-slate-200 bg-white" data-testid="setup-site-box-controls">
+                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="setup-site-box-controls">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site Boundary</span>
@@ -24390,8 +24399,8 @@ function PerformanceAIDashboardView({
                         <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
                           <label className="flex flex-col gap-1 font-semibold">
                             Width (ft)
+                            <span className="sr-only">Site width in feet</span>
                             <input
-                              aria-label="Site width in feet"
                               type="number"
                               value={lotWidth}
                               disabled={siteScaleLocked}
@@ -24401,8 +24410,8 @@ function PerformanceAIDashboardView({
                           </label>
                           <label className="flex flex-col gap-1 font-semibold">
                             Depth (ft)
+                            <span className="sr-only">Site depth in feet</span>
                             <input
-                              aria-label="Site depth in feet"
                               type="number"
                               value={lotHeight}
                               disabled={siteScaleLocked}
@@ -24456,7 +24465,7 @@ function PerformanceAIDashboardView({
                       </div>
                     </details>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="setup-survey-terrain-card">
+                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="setup-survey-terrain-card">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Survey / Terrain / Sources</span>
@@ -24469,6 +24478,13 @@ function PerformanceAIDashboardView({
                         </span>
                       </summary>
                       <div className="border-t border-slate-100 px-4 py-4">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSidePanel("import_survey")}
+                          className="mb-2 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
+                        >
+                          Import
+                        </button>
                         <div className="grid grid-cols-2 gap-2">
                           <button type="button" onClick={() => surveyInputRef.current?.click()} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50">
                             {surveyPreviewPoints.length ? "Replace Survey" : "Upload Survey"}
@@ -26053,6 +26069,15 @@ function PerformanceAIDashboardView({
                         Auto Site Context: {autoSiteContextFlowSummary.candidateCount} review-required source candidate{autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available.
                         {" "}Missing sources: {autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.
                       </div>
+                      {statusMessage ? (
+                        <div
+                          className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                          data-testid="generate-latest-status"
+                          aria-live="polite"
+                        >
+                          {statusMessage}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="generate-system-list">
@@ -26086,6 +26111,64 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                     </div>
+
+                    {issues.some((issue) => Boolean(drainageIssueApplyLabel(issue))) ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="generate-issue-actions">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Issue Fixes</p>
+                            <p className="mt-1 text-sm font-semibold text-slate-950">Apply one focused drainage fix, then Civora reruns the review draft.</p>
+                          </div>
+                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                            Review
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {Array.from(
+                            issues
+                              .filter((issue) => Boolean(drainageIssueApplyLabel(issue)))
+                              .reduce((map, issue) => {
+                                const key = `${(issue.code ?? issue.message ?? "").toUpperCase()}-${drainageIssueApplyLabel(issue) ?? ""}`;
+                                if (!map.has(key)) map.set(key, issue);
+                                return map;
+                              }, new Map<string, Issue>())
+                              .values(),
+                          )
+                            .slice(0, 6)
+                            .map((issue) => {
+                              const applyLabel = drainageIssueApplyLabel(issue);
+                              const canApply = applyLabel ? canApplyDrainageIssue(issue) : false;
+                              const guidance = getIssueGuidance(issue);
+                              return (
+                                <div key={`${issue.code ?? issue.message}-${applyLabel}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-slate-900">{guidance.bestNextFix || issue.message}</p>
+                                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                        {issue.code || "review issue"}
+                                      </p>
+                                    </div>
+                                    {applyLabel ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApplyDrainageIssue(issue)}
+                                        disabled={!canApply || busy || Boolean(visibleActiveJob)}
+                                        className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                          canApply && !busy && !visibleActiveJob
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                            : "cursor-not-allowed border-slate-200 bg-white text-slate-400"
+                                        }`}
+                                      >
+                                        {applyLabel}
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="generate-flow-status">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Run Status</p>
@@ -28677,7 +28760,7 @@ function PerformanceAIDashboardView({
                                       data-testid="recent-change-row-undo"
                                       className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
                                     >
-                                      {change.undo ? "Undo" : "Details"}
+                                      {change.undo ? "Undo" : "Why blocked"}
                                     </button>
                                   </div>
                                 </div>
@@ -29798,7 +29881,7 @@ function PerformanceAIDashboardView({
                       </div>
                     </details>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-review-sheet-preview">
+                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-review-sheet-preview">
                       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
                         <span>
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review sheet preview</span>
@@ -30429,7 +30512,7 @@ function PerformanceAIDashboardView({
                   </div>
                 ) : null}
 
-                {activeSidePanel === "chat" ? (
+                {sidePanelForRender === "chat" ? (
                   <ChatPanel
                     chatMessages={chatMessages}
                     chatScrollRef={chatScrollRef}
@@ -30483,6 +30566,7 @@ function PerformanceAIDashboardView({
 	                <div
 	                  className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${sidebarVisible || workspaceChromeHidden ? "hidden" : "opacity-100"}`}
 	                  aria-hidden={workspaceChromeHidden}
+                    hidden
 	                >
 	                  <div className="flex flex-col gap-3">
 	                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">

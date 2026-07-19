@@ -822,6 +822,7 @@ export default function PreviewPanel({
   const [activeSnapPoint, setActiveSnapPoint] = useState<(CadPoint & { kind: CadSnapKind }) | null>(null);
   const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
+  const draftPointsRef = useRef<Array<[number, number]>>([]);
   const [draftPreviewPoint, setDraftPreviewPoint] = useState<[number, number] | null>(null);
   const [drawAutoFinishPointCount, setDrawAutoFinishPointCount] = useState<number | null>(null);
   const lastSiteDrawRequestRef = useRef(siteDrawRequest);
@@ -834,13 +835,11 @@ export default function PreviewPanel({
   const drawingLotWidth = lotWidth > 0 ? lotWidth : 500;
   const drawingLotHeight = lotHeight > 0 ? lotHeight : 300;
   const hasDrawableSiteSize = lotWidth > 0 && lotHeight > 0;
-  const canDrawObjects = Boolean(siteLocked && hasDrawableSiteSize);
+  const canDrawObjects = hasDrawableSiteSize;
   const previousPlacementIdsRef = useRef<Set<string> | null>(null);
-  const drawObjectsDisabledLabel = !siteLocked
-    ? "Lock site boundary before drawing objects"
-    : !hasDrawableSiteSize
-      ? "Set site width and depth before drawing objects"
-      : "Drawing tools available";
+  const drawObjectsDisabledLabel = !hasDrawableSiteSize
+    ? "Set site width and depth before drawing objects"
+    : "Drawing tools available";
   const [canvasPanStart, setCanvasPanStart] = useState<{
     x: number;
     y: number;
@@ -950,9 +949,8 @@ export default function PreviewPanel({
   const allowEdits = previewInteraction === "edit";
   const showQuickDrawPalette =
     previewMode === "2d" &&
-    drawMode !== "select" &&
-    drawMode !== "pan" &&
-    !selectedBuildingId;
+    allowEdits &&
+    drawMode !== "pan";
   const showMobileDrawToolbar = showQuickDrawPalette;
   const activeDrawMode =
     (drawMode === "site" && !siteLocked) ||
@@ -1635,13 +1633,18 @@ export default function PreviewPanel({
       const relX = rawSitePoint.x / Math.max(effectiveLotWidth, 1);
       const relY = rawSitePoint.y / Math.max(effectiveLotHeight, 1);
       if (!Number.isFinite(relX) || !Number.isFinite(relY)) return null;
-      if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
+      const isDrawingMode = drawMode === "site" || drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect" || drawMode === "point";
+      if (!isDrawingMode && (relX < 0 || relX > 1 || relY < 0 || relY > 1)) return null;
+      const clampedRelX = Math.min(Math.max(relX, 0), 1);
+      const clampedRelY = Math.min(Math.max(relY, 0), 1);
+      const clampedX = Math.min(Math.max(rawSitePoint.x, 0), effectiveLotWidth);
+      const clampedY = Math.min(Math.max(rawSitePoint.y, 0), effectiveLotHeight);
       const snapStep = drawMode === "point" ? 1 : drawMode === "site" ? 5 : 2;
       return {
-        x: Math.round(rawSitePoint.x / snapStep) * snapStep,
-        y: Math.round(rawSitePoint.y / snapStep) * snapStep,
-        relX,
-        relY,
+        x: Math.round(clampedX / snapStep) * snapStep,
+        y: Math.round(clampedY / snapStep) * snapStep,
+        relX: clampedRelX,
+        relY: clampedRelY,
       };
     },
     [
@@ -2678,7 +2681,7 @@ export default function PreviewPanel({
     ) => {
       const minPoints = options.minPoints ?? (mode === "point" ? 1 : mode === "rect" ? 2 : mode === "polygon" ? 3 : 2);
       if (!canDrawObjects) {
-        pushCadCommandFeedback(command, "blocked", `${command.toUpperCase()} blocked: lock a scaled site boundary before creating draft CAD geometry.`);
+        pushCadCommandFeedback(command, "blocked", `${command.toUpperCase()} blocked: create or size the drawing canvas before creating draft geometry.`);
         return false;
       }
       if (points.length < minPoints) {
@@ -4715,11 +4718,16 @@ export default function PreviewPanel({
   ]);
 
   const clearDraftGeometry = useCallback(() => {
+    draftPointsRef.current = [];
     setDraftPoints([]);
     setDraftPreviewPoint(null);
     lastDraftPreviewPointRef.current = null;
     setCadActiveCommand(null);
   }, []);
+
+  useEffect(() => {
+    draftPointsRef.current = draftPoints;
+  }, [draftPoints]);
 
   useEffect(() => {
     if (draftPreviewPoint) {
@@ -4744,11 +4752,22 @@ export default function PreviewPanel({
       pushCadCommandFeedback("FINISH", "blocked", "FINISH blocked: start Add Line, Add Area, Add Box, Add Point, or Draw Site Boundary first.");
       return;
     }
-    const rectFinishPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current;
+    const cursorFinishPoint = cursorSitePoint ? ([cursorSitePoint.x, cursorSitePoint.y] as [number, number]) : null;
+    const rectFinishPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? cursorFinishPoint;
+    const previewFinishPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? cursorFinishPoint;
+    const currentDraftPoints = draftPointsRef.current.length ? draftPointsRef.current : draftPoints;
+    const shouldAppendPreviewPoint =
+      (drawMode === "site" || drawMode === "polygon") &&
+      previewFinishPoint &&
+      currentDraftPoints.length >= 2 &&
+      (currentDraftPoints[currentDraftPoints.length - 1][0] !== previewFinishPoint[0] ||
+        currentDraftPoints[currentDraftPoints.length - 1][1] !== previewFinishPoint[1]);
     const effectivePoints =
-      drawMode === "rect" && draftPoints.length === 1 && rectFinishPreviewPoint
-        ? [draftPoints[0], rectFinishPreviewPoint]
-        : draftPoints;
+      drawMode === "rect" && currentDraftPoints.length === 1 && rectFinishPreviewPoint
+        ? [currentDraftPoints[0], rectFinishPreviewPoint]
+        : shouldAppendPreviewPoint
+          ? [...currentDraftPoints, previewFinishPoint]
+          : currentDraftPoints;
     const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
     if (effectivePoints.length < minPoints) {
       const message =
@@ -4797,6 +4816,7 @@ export default function PreviewPanel({
       setDraftPoints([]);
       setDraftPreviewPoint(null);
       setCadActiveCommand(null);
+      draftPointsRef.current = [];
       setDrawMode("select");
       return;
     }
@@ -4810,6 +4830,7 @@ export default function PreviewPanel({
     setDrawMode("select");
   }, [
 	    clearDraftGeometry,
+	    cursorSitePoint,
 	    draftPoints,
       draftPreviewPoint,
 	    drawMode,
@@ -4820,8 +4841,18 @@ export default function PreviewPanel({
 
   const draftPointCount = draftPoints.length;
   const finishDraftMinPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
+  const finishDraftCursorPoint = cursorSitePoint ? ([cursorSitePoint.x, cursorSitePoint.y] as [number, number]) : null;
+  const finishDraftPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? finishDraftCursorPoint;
   const finishDraftEffectivePointCount =
-    drawMode === "rect" && draftPointCount === 1 && (draftPreviewPoint || lastDraftPreviewPointRef.current) ? 2 : draftPointCount;
+    drawMode === "rect" && draftPointCount === 1 && finishDraftPreviewPoint
+      ? 2
+      : (drawMode === "site" || drawMode === "polygon") &&
+          draftPointCount >= 2 &&
+          finishDraftPreviewPoint &&
+          (draftPoints[draftPoints.length - 1][0] !== finishDraftPreviewPoint[0] ||
+            draftPoints[draftPoints.length - 1][1] !== finishDraftPreviewPoint[1])
+        ? draftPointCount + 1
+        : draftPointCount;
   const canFinishDraftGeometry =
     drawMode !== "select" &&
     drawMode !== "pan" &&
@@ -4934,8 +4965,9 @@ export default function PreviewPanel({
       if (!rawSitePoint) return true;
       event.preventDefault();
       event.stopPropagation();
-      const basePoint = draftPoints.length
-        ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
+      const currentDraftPoints = draftPointsRef.current.length ? draftPointsRef.current : draftPoints;
+      const basePoint = currentDraftPoints.length
+        ? { x: currentDraftPoints[currentDraftPoints.length - 1][0], y: currentDraftPoints[currentDraftPoints.length - 1][1] }
         : null;
       const sitePoint = resolveCadSnapPoint(rawSitePoint, basePoint);
       setActiveSnapPoint(sitePoint);
@@ -4947,18 +4979,20 @@ export default function PreviewPanel({
         return true;
       }
       if (drawMode === "rect") {
-        if (!draftPoints.length) {
+        if (!currentDraftPoints.length) {
+          draftPointsRef.current = [point];
           setDraftPoints([point]);
           return true;
         }
-        onCreateCustomGeometry({ mode: "rect", points: [draftPoints[0], point] });
+        onCreateCustomGeometry({ mode: "rect", points: [currentDraftPoints[0], point] });
         pushCadCommandFeedback("BOX", "applied", "BOX created manual_drawn draft_review_required geometry.");
         setDrawMode("select");
         setDraftPreviewPoint(null);
+        draftPointsRef.current = [];
         setDraftPoints([]);
         return true;
       }
-      const nextPoints = [...draftPoints, point];
+      const nextPoints = [...currentDraftPoints, point];
       if (drawMode === "site" && nextPoints.length >= 4) {
         const cleaned = cleanupPolygon(nextPoints, 0.5);
         if (!cleaned.ok) {
@@ -4976,6 +5010,7 @@ export default function PreviewPanel({
         onCreateSiteBoundary?.({ points: cleaned.value });
         setDrawMode("select");
         setDraftPreviewPoint(null);
+        draftPointsRef.current = [];
         setDraftPoints([]);
         setDrawAutoFinishPointCount(null);
         setCadActiveCommand(null);
@@ -5018,11 +5053,13 @@ export default function PreviewPanel({
         }
         setDrawMode("select");
         setDraftPreviewPoint(null);
+        draftPointsRef.current = [];
         setDraftPoints([]);
         setDrawAutoFinishPointCount(null);
         setCadActiveCommand(null);
         return true;
       }
+      draftPointsRef.current = nextPoints;
       setDraftPoints(nextPoints);
       return true;
     },
@@ -7378,7 +7415,7 @@ export default function PreviewPanel({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
           <div className="relative isolate z-[220] mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
-            <div className="hidden">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
               <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
                   Canvas
@@ -7386,7 +7423,7 @@ export default function PreviewPanel({
                 <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                   {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} / {coordinateModeLabel(coordinateMode)}
                 </span>
-                <div className="hidden">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                   <button
                     type="button"
                     data-testid="preview-inner-quality-standard"
@@ -7769,7 +7806,7 @@ export default function PreviewPanel({
                 </section>
               ) : null}
               {previewMode === "2d" ? (
-                <section className={`${allowEdits && selectedObject ? "pointer-events-auto relative z-[230] flex" : "hidden"} min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.65)] backdrop-blur`} data-testid="preview-object-manager">
+                <section className={`${allowEdits && drawMode === "select" && selectedObject ? "pointer-events-auto relative z-[230] flex" : "hidden"} min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.65)] backdrop-blur`} data-testid="preview-object-manager">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
                   {selectedObject?.label ? (
                     <span className="max-w-[180px] truncate rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700">
@@ -8112,6 +8149,92 @@ export default function PreviewPanel({
                 </button>
               </section>
             </div>
+            {previewMode === "2d" && allowEdits ? (
+              <div className="pointer-events-auto relative z-[82] flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Draw</span>
+                <button
+                  type="button"
+                  data-testid="draw-site-boundary-toolbar"
+                  aria-pressed={drawMode === "site"}
+                  title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
+                  onClick={() => {
+                    if (siteLocked) {
+                      pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
+                      return;
+                    }
+                    activateDrawTool("site");
+                  }}
+                  className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                    drawMode === "site"
+                      ? "border-slate-900 bg-slate-950 text-white"
+                      : siteLocked
+                        ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  }`}
+                >
+                  Draw Site
+                </button>
+                {siteLocked && onUnlockSite ? (
+                  <button
+                    type="button"
+                    data-testid="change-site-boundary-toolbar"
+                    aria-label="Change Site Boundary"
+                    onClick={() => {
+                      onUnlockSite();
+                      clearDraftGeometry();
+                      setDrawMode("select");
+                      onSetPreviewInteraction("edit");
+                    }}
+                    className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    Change Site
+                  </button>
+                ) : null}
+                {!siteLocked && drawMode === "select" && hasDrawableSiteSize && onLockSite ? (
+                  <button
+                    type="button"
+                    data-testid="lock-site-boundary-toolbar"
+                    aria-label="Lock Site Boundary"
+                    onClick={() => {
+                      clearDraftGeometry();
+                      setDrawMode("select");
+                      onLockSite();
+                    }}
+                    className="inline-flex h-8 items-center rounded-md border border-slate-950 bg-slate-950 px-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    Lock Site
+                  </button>
+                ) : null}
+                {[
+                  { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
+                  { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
+                  { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
+                  { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
+                ].map((item) => {
+                  const active = drawMode === item.mode;
+                  const disabled = !canDrawObjects;
+                  return (
+                    <button
+                      key={`canvas-stable-draw-${item.mode}`}
+                      type="button"
+                      aria-pressed={active}
+                      title={disabled ? item.disabledLabel : item.label}
+                      data-blocked={disabled ? "true" : undefined}
+                      onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
+                      className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                        active
+                          ? "border-slate-900 bg-slate-950 text-white"
+                          : disabled
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
 	            <div className={`${drawMode !== "select" ? "pointer-events-auto relative z-[80] flex" : "hidden"} min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500`}>
               <span className="rounded-md border border-slate-900 bg-white px-2 py-1 text-slate-900" data-testid="draw-active-tool">
                 {activeDrawToolLabel}
@@ -8489,9 +8612,9 @@ export default function PreviewPanel({
               </div>
             </div>
           ) : null}
-	          {previewMode === "2d" && allowEdits && hasCadCommandActivity ? (
-            <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:max-w-[calc(100%-30rem)] lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
-              <section className="min-w-0">
+          {previewMode === "2d" && allowEdits && hasCadCommandActivity ? (
+            <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:max-w-[calc(100%-30rem)] xl:grid-cols-2 2xl:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
+              <section className="relative z-[30] min-w-0">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
@@ -8558,13 +8681,15 @@ export default function PreviewPanel({
                   <button
                     type="button"
                     onClick={applyCadCoordinate}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white"
+                    className="relative z-[40] inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white"
                   >
                     <MapPin className="h-3.5 w-3.5" />
                     XY
                   </button>
                 </div>
-                <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                <div className="mt-3">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Command Line</p>
+                  <div className="grid grid-cols-[1fr_auto] gap-2">
                   <input
                     aria-label="CAD command input"
                     value={cadCommandDraft}
@@ -8579,6 +8704,7 @@ export default function PreviewPanel({
                     className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
                   />
                   <button type="button" onClick={() => runCadCommand()} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white">Run</button>
+                  </div>
                 </div>
                 {cadActiveCommand ? (
                   <div
@@ -9024,6 +9150,17 @@ export default function PreviewPanel({
                 event.preventDefault();
               }}
               onMouseDownCapture={(event) => {
+                const target = event.target as HTMLElement | null;
+                if (
+                  drawMode !== "select" &&
+                  drawMode !== "pan" &&
+                  !target?.closest?.("button,input,textarea,select,[role='button'],[data-no-window-select]")
+                ) {
+                  if (handleDrawPointer(event, overlayBoundsResolved)) {
+                    suppressNextDrawClickRef.current = true;
+                    return;
+                  }
+                }
                 beginCadWindowSelect(event);
               }}
 	              onDrop={(event) => {
@@ -9196,7 +9333,7 @@ export default function PreviewPanel({
 	              {previewMode === "2d" && showQuickDrawPalette ? (
 		                <div
 		                  data-testid="canvas-quick-draw-palette"
-		                  className="pointer-events-auto absolute left-[7rem] top-20 z-[35] flex max-w-[calc(100%-8rem)] flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
+                  className="pointer-events-auto absolute bottom-4 left-1/2 z-[86] flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
 		                  onMouseDown={(event) => event.stopPropagation()}
 		                  onPointerDown={(event) => event.stopPropagation()}
 		                  onTouchStart={(event) => event.stopPropagation()}
@@ -9240,7 +9377,7 @@ export default function PreviewPanel({
 	                      Change Site
 	                    </button>
 	                  ) : null}
-	                  {!siteLocked && hasDrawableSiteSize && onLockSite ? (
+	                  {!siteLocked && drawMode === "select" && hasDrawableSiteSize && onLockSite ? (
 	                    <button
 	                      type="button"
 	                      data-testid="lock-site-boundary-toolbar"
@@ -9283,7 +9420,7 @@ export default function PreviewPanel({
 	                      </button>
 	                    );
 	                  })}
-			                  {drawMode !== "point" ? (
+			                  {drawMode !== "select" && drawMode !== "point" ? (
 		                    <button
 		                      type="button"
 		                      data-testid="canvas-quick-finish"
@@ -9426,6 +9563,54 @@ export default function PreviewPanel({
                   >
                     Change Site
                   </button>
+                ) : null}
+                {previewMode === "2d" && allowEdits ? (
+                  <>
+                    {!siteLocked ? (
+                      <button
+                        type="button"
+                        data-testid="draw-site-boundary-toolbar"
+                        aria-pressed={drawMode === "site"}
+                        title="Draw the site boundary"
+                        onClick={() => activateDrawTool("site")}
+                        className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                          drawMode === "site"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-amber-200 bg-amber-50 text-amber-800"
+                        }`}
+                      >
+                        Draw Site
+                      </button>
+                    ) : null}
+                    {[
+                      { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
+                      { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
+                      { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
+                      { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
+                    ].map((item) => {
+                      const active = drawMode === item.mode;
+                      const disabled = !canDrawObjects;
+                      return (
+                        <button
+                          key={`generated-draw-${item.mode}`}
+                          type="button"
+                          aria-pressed={active}
+                          title={disabled ? item.disabledLabel : item.label}
+                          data-blocked={disabled ? "true" : undefined}
+                          onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
+                          className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
+                            active
+                              ? "border-slate-900 bg-slate-950 text-white"
+                              : disabled
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : "border-slate-200 bg-white text-slate-600"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </>
                 ) : null}
               </div>
               {isHighQuality && aiRealismEnabled ? (
@@ -9614,7 +9799,7 @@ export default function PreviewPanel({
                     })}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-	                    {drawMode !== "point" ? (
+	                    {drawMode !== "select" && drawMode !== "point" ? (
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
@@ -11158,8 +11343,15 @@ export default function PreviewPanel({
                         ) : null}
                       </div>
                     ) : null}
+              <div
+                data-testid="preview-drawing-surface"
+                aria-label="Drawing surface"
+                className={`absolute inset-0 z-[14] ${
+                  drawMode !== "select" && drawMode !== "pan" ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"
+                }`}
+              />
                     <div
-                      data-testid="preview-drawing-surface"
+                      data-testid="preview-drawing-overlays"
                       className={`${overlayPointerEvents} absolute inset-0 z-[15]`}
                       style={{
                         transformOrigin: "top left",
