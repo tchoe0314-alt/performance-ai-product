@@ -2567,6 +2567,7 @@ import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import { NeedsPlacementTray } from "./components/NeedsPlacementTray";
+import { ObjectManagerHiddenState } from "./components/ObjectManagerHiddenState";
 import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
@@ -27522,45 +27523,34 @@ function PerformanceAIDashboardView({
                         onInvertSelection={handleObjectManagerInvertSelection}
                         onPaste={handleObjectManagerPaste}
                       />
-                      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="object-manager-hidden-state">
-                          <p className="text-xs font-semibold text-slate-700">
-                            {hiddenObjectCount} hidden object{hiddenObjectCount === 1 ? "" : "s"}{hiddenObjectCount ? " are excluded from the preview." : "."}
-                          </p>
-                          {hiddenObjectCount ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const hiddenObjects = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden));
-                                const restorableHiddenObjects = hiddenObjects.filter((item) => !item.meta?.combined_into_object_id);
-                                const preservedTraceCount = hiddenObjects.length - restorableHiddenObjects.length;
-                                restorableHiddenObjects
-                                  .forEach((item) => {
-                                    handleUpdateBuilding(item.id, {
-                                      meta: {
-                                        ...(item.meta ?? {}),
-                                        ui_hidden: false,
-                                      },
-                                    });
-                                  });
-                                recordRecentChange({
-                                  type: "object_visibility_changed",
-                                  label: "Objects shown",
-                                  detail: preservedTraceCount
-                                    ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown; ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden.`
-                                    : "All hidden objects are visible again.",
-                                  undoBlockedReason: "Hide specific objects again from Object Manager if needed.",
-                                });
-                                pushRecoveryMessage(preservedTraceCount
-                                  ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown. ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden until you explode the combined object.`
-                                  : "All hidden objects are visible again.");
-                              }}
-                              data-testid="object-manager-show-all"
-                              className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Show all
-                            </button>
-                          ) : null}
-                        </div>
+                      <ObjectManagerHiddenState
+                        hiddenCount={hiddenObjectCount}
+                        onShowAll={() => {
+                          const hiddenObjects = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden));
+                          const restorableHiddenObjects = hiddenObjects.filter((item) => !item.meta?.combined_into_object_id);
+                          const preservedTraceCount = hiddenObjects.length - restorableHiddenObjects.length;
+                          restorableHiddenObjects
+                            .forEach((item) => {
+                              handleUpdateBuilding(item.id, {
+                                meta: {
+                                  ...(item.meta ?? {}),
+                                  ui_hidden: false,
+                                },
+                              });
+                            });
+                          recordRecentChange({
+                            type: "object_visibility_changed",
+                            label: "Objects shown",
+                            detail: preservedTraceCount
+                              ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown; ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden.`
+                              : "All hidden objects are visible again.",
+                            undoBlockedReason: "Hide specific objects again from Object Manager if needed.",
+                          });
+                          pushRecoveryMessage(preservedTraceCount
+                            ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown. ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden until you explode the combined object.`
+                            : "All hidden objects are visible again.");
+                        }}
+                      />
                       {objectManagerLayerRows.length ? (
                         <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-layer-controls">
                           <div className="flex items-center justify-between gap-3">
