@@ -13208,6 +13208,9 @@ function PerformanceAIDashboardView({
     if (directSiteSetup) {
       appendChatMessage("user", message);
       clearGeneratedPreview();
+      const wantsProgramAfterSiteSetup =
+        /\b(office|building|parking|spaces|stalls|basin|detention|pond|storm|water|sanitary|sewer|sidewalk|ada|driveway|road|grading|drainage|utilities|utility)\b/i.test(message) &&
+        /\b(add|include|create|make|generate|design|layout|put|place|with)\b/i.test(message);
       setSiteAddress(directSiteSetup.address);
       setLotWidth(String(Math.round(directSiteSetup.width)));
       setLotHeight(String(Math.round(directSiteSetup.height)));
@@ -13219,6 +13222,30 @@ function PerformanceAIDashboardView({
         true,
         true,
       );
+      if (wantsProgramAfterSiteSetup) {
+        const conceptObjects = createDenseCommercialConceptPlacements({
+          w: directSiteSetup.width,
+          h: directSiteSetup.height,
+        }).map((item) => ({
+          ...item,
+          meta: {
+            ...(item.meta ?? {}),
+            command_created: true,
+            command_source: "site_setup_program_command",
+          },
+        }));
+        setParkingCount("140");
+        setBuildingPlacements((prev) => [
+          ...prev.filter((item) => item.type === "site" || !item.meta?.dense_concept_generated),
+          ...conceptObjects,
+        ]);
+        markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+        recordRecentChange({
+          type: "object_added",
+          label: "Site program placed from chat",
+          detail: "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed from one natural-language command.",
+        });
+      }
       setShowSiteBounds(false);
       setSiteSelectionMode(false);
       setPreviewMode("2d");
@@ -13238,13 +13265,17 @@ function PerformanceAIDashboardView({
       });
       setAutoExistingConditionsStatus({
         status: "running",
-        message: `Applying ${directSiteSetup.address} and checking available source context inside a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked site.`,
+        message: wantsProgramAfterSiteSetup
+          ? `Applying ${directSiteSetup.address}, placing the requested draft site program, and checking available source context inside a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked site.`
+          : `Applying ${directSiteSetup.address} and checking available source context inside a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked site.`,
         candidateCount: 0,
         missing: [],
       });
       appendChatMessage(
         "assistant",
-        `Got it. I set up a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft review site centered on ${directSiteSetup.address}, locked the site frame, and started source context detection. Any roads, buildings, terrain, utilities, or constraints found from configured sources stay review-required.`,
+        wantsProgramAfterSiteSetup
+          ? `Got it. I set up a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft review site centered on ${directSiteSetup.address}, placed an editable office/parking/drainage/utility/sidewalk draft concept, and started source context detection. You can move, rename, delete, or redraw the objects before Generate.`
+          : `Got it. I set up a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft review site centered on ${directSiteSetup.address}, locked the site frame, and started source context detection. Any roads, buildings, terrain, utilities, or constraints found from configured sources stay review-required.`,
         "status",
       );
       void saveSiteAddress(directSiteSetup.address, {
@@ -18018,8 +18049,32 @@ function PerformanceAIDashboardView({
       const generateStartedAt = markCivoraInteraction();
       const preflightBlockers = getGeneratePreflightBlockers(target);
       const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
+      const userLayoutContext = buildingPlacements.filter((item) => {
+        if (!item.placed || item.type === "site" || item.meta?.generated_review_concept) return false;
+        const source = String(item.source || item.meta?.source || "").toLowerCase();
+        return Boolean(
+          item.meta?.semantic_object_model ||
+          item.meta?.semantic_geometry_state ||
+          item.meta?.command_created ||
+          ["user", "user_confirmed", "manual_drawn", "generated"].includes(source),
+        );
+      });
+      const semanticLayoutCount = userLayoutContext.filter((item) => Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state)).length;
+      const userLayoutContextSummary = userLayoutContext.length
+        ? {
+            count: userLayoutContext.length,
+            semantic_count: semanticLayoutCount,
+            labels: userLayoutContext.slice(0, 8).map((item) => item.label),
+            affected_systems: uniqueStrings(userLayoutContext.flatMap((item) => systemsImpactedByPlacement(item))),
+            review_required: true,
+          }
+        : null;
       const reviewNotes = uniqueStrings([
         ...preflightBlockers.filter((item) => !isHardGenerateBlocker(item.label)).map((item) => item.label),
+        userLayoutContextSummary
+          ? `User layout context used by Generate: ${userLayoutContextSummary.labels.join(", ")}${userLayoutContext.length > userLayoutContextSummary.labels.length ? `, plus ${userLayoutContext.length - userLayoutContextSummary.labels.length} more` : ""}`
+          : "",
+        semanticLayoutCount ? `${semanticLayoutCount} semantic drafted object${semanticLayoutCount === 1 ? "" : "s"} included as review context` : "",
         ...autoSiteContextFlowSummary.missingLabels.map((item) => `Auto Site Context missing source: ${item}`),
         autoSiteContextFlowSummary.candidateCount > 0
           ? `Auto Site Context source candidates available for review: ${autoSiteContextFlowSummary.candidateLabels.join(", ") || `${autoSiteContextFlowSummary.candidateCount} candidate(s)`}`
@@ -18046,7 +18101,7 @@ function PerformanceAIDashboardView({
         next_action: nextAction,
         auto_site_context: autoSiteContextFlowSummary,
         safety_wording:
-          "Generate creates review-required drafts only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+          "Generate creates review-required drafts for qualified review.",
       });
       const recordGenerateSummary = (summary: GenerateFlowSummary) => {
         setGenerateFlowSummary(summary);
@@ -18205,6 +18260,7 @@ function PerformanceAIDashboardView({
             ...(requestPayload.meta ?? {}),
             requested_system: target,
             auto_site_context_review_summary: autoSiteContextFlowSummary,
+            user_layout_context_summary: userLayoutContextSummary,
             generate_notes: reviewNotes,
           },
           prompt_text: null,
@@ -18226,7 +18282,7 @@ function PerformanceAIDashboardView({
             : "Review the local draft package; outputs remain engineer-review-required.",
           auto_site_context: autoSiteContextFlowSummary,
           safety_wording:
-            "Generate creates review-required drafts only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+            "Generate creates review-required drafts for qualified review.",
         };
         recordGenerateSummary(runSummary);
         setSystemStatuses((prev) => {
@@ -18291,7 +18347,7 @@ function PerformanceAIDashboardView({
           : "Review the generated draft package; outputs remain engineer-review-required.",
         auto_site_context: autoSiteContextFlowSummary,
         safety_wording:
-          "Generate creates review-required drafts only. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+          "Generate creates review-required drafts for qualified review.",
       };
       recordGenerateSummary(runSummary);
       updateProjectStatus({

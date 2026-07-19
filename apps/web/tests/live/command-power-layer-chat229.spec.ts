@@ -107,6 +107,30 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/site type or land use/i);
   });
 
+  test("one messy command can set site and place a draft site program", async ({ page }) => {
+    await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
+
+    await runCommand(
+      page,
+      "20525 Margo St Gretna NE should be the center point, make it 1000 ft by 1000 ft with a 28000 sf office building, 140 parking spaces, detention basin, driveway, sidewalks, public water, sanitary, and storm sewer",
+    );
+
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Site Locked/i, { timeout: 8_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Detention Basin"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Setup" }).first().click();
+    await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
+    await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
+    await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/site type or land use|which systems/i);
+
+    await openDrawPanel(page);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Office Building - 28,000 sf");
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Storm Sewer");
+  });
+
   test("commands open generate, deliver, blocker view, layers, and AI realism mode", async ({ page }) => {
     await openDemoWorkspace(page);
 

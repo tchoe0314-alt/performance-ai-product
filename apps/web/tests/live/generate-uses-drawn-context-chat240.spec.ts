@@ -194,6 +194,9 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   const meta = request.meta as Record<string, unknown>;
   expect(meta.requested_system).toBe("full");
   expect(JSON.stringify(meta.auto_site_context_review_summary ?? {})).toContain("parcel/site boundary");
+  expect(JSON.stringify(meta.user_layout_context_summary ?? {})).toContain("Office Building - 28,000 sf");
+  expect(JSON.stringify(meta.user_layout_context_summary ?? {})).toContain("Custom Line");
+  expect(JSON.stringify(meta.generate_notes ?? [])).toContain("User layout context used by Generate");
   expect(JSON.stringify(siteObjects)).toContain("passed to Generate as review context");
   expect(JSON.stringify(siteObjects)).toContain("draft_review_required");
   expect(JSON.stringify(siteObjects)).toContain('"construction_release_allowed":false');
