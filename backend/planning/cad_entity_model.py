@@ -45,8 +45,49 @@ CAD_HISTORY_ACTIONS = {
     "entity_association_updated",
 }
 CAD_ENTITY_CHAT_OPERATION_VERSION = "cad_entity_chat_operation_v1"
+CAD_ENGINEERING_OBJECTS_VERSION = "cad_engineering_objects_v1"
 LOW_CONFIDENCE_LABELS = {"", "missing", "metadata-only", "metadata_only", "inferred", "GIS candidate", "map imagery candidate"}
 PDF_SOURCE_CONFIDENCE = "imported_pdf_review_required"
+AREA_ENGINEERING_OBJECT_TYPES = {
+    "building",
+    "parking_area",
+    "basin",
+    "pavement",
+    "sidewalk",
+    "landscape_area",
+    "property_area",
+    "drainage_area",
+    "utility_easement",
+    "custom_area",
+}
+PATH_ENGINEERING_OBJECT_TYPES = {
+    "road_centerline",
+    "driveway",
+    "sidewalk_path",
+    "storm_main",
+    "water_main",
+    "sanitary_main",
+    "force_main",
+    "swale",
+    "ditch",
+    "retaining_wall",
+    "fence",
+    "property_line",
+    "utility_corridor",
+    "custom_path",
+}
+POINT_ENGINEERING_OBJECT_TYPES = {
+    "inlet",
+    "manhole",
+    "hydrant",
+    "outfall",
+    "cleanout",
+    "utility_pole",
+    "survey_point",
+    "benchmark",
+    "structure",
+    "custom_point",
+}
 
 
 def now_iso() -> str:
@@ -89,6 +130,16 @@ def _summarize_entity(entity: Any) -> Dict[str, Any]:
         "geometry_keys": sorted([safe_str(key) for key in geometry.keys() if safe_str(key)]),
         "construction_release_allowed": False,
     }
+
+
+def _polygon_area(points: List[Dict[str, float]]) -> float:
+    if len(points) < 3:
+        return 0.0
+    total = 0.0
+    for index, point in enumerate(points):
+        nxt = points[(index + 1) % len(points)]
+        total += point["x"] * nxt["y"] - nxt["x"] * point["y"]
+    return abs(total) / 2.0
 
 
 def _changed_fields(before: Any, after: Any) -> List[str]:
@@ -605,6 +656,251 @@ def validate_cad_entity(entity: Dict[str, Any], *, known_layer_ids: Optional[Ite
         "construction_release_allowed": False,
         "review_required": True,
     }
+
+
+def _entity_segments_for_combine(entity: Dict[str, Any]) -> Tuple[List[Tuple[Dict[str, float], Dict[str, float]]], List[str]]:
+    rec = safe_dict(entity)
+    entity_type = safe_str(rec.get("type"))
+    geometry = safe_dict(rec.get("geometry"))
+    if _edit_blocker(rec):
+        return [], [_edit_blocker(rec)]
+    if entity_type == "line":
+        start = _point(geometry.get("start"))
+        end = _point(geometry.get("end"))
+        if not start or not end:
+            return [], ["invalid_geometry:line_requires_start_and_end"]
+        return [(start, end)], []
+    if entity_type == "rectangle":
+        bbox = entity_bounding_box(rec)
+        if not bbox:
+            return [], ["invalid_geometry:rectangle_requires_origin_width_height_or_vertices"]
+        points = [
+            {"x": bbox["min_x"], "y": bbox["min_y"]},
+            {"x": bbox["max_x"], "y": bbox["min_y"]},
+            {"x": bbox["max_x"], "y": bbox["max_y"]},
+            {"x": bbox["min_x"], "y": bbox["max_y"]},
+        ]
+        return list(zip(points, points[1:] + [points[0]])), []
+    if entity_type in {"polyline", "polygon"}:
+        points = _points(geometry.get("points") or geometry.get("vertices") or geometry.get("boundary"))
+        if len(points) < 2:
+            return [], [f"invalid_geometry:{entity_type}_requires_points"]
+        closed = entity_type == "polygon" or bool(geometry.get("closed")) or _distance(points[0], points[-1]) <= 0.000001
+        clean_points = points[:-1] if len(points) > 2 and _distance(points[0], points[-1]) <= 0.000001 else points
+        if entity_type == "polygon" and len(clean_points) < 3:
+            return [], ["invalid_geometry:polygon_requires_3_points"]
+        segments = list(zip(clean_points, clean_points[1:]))
+        if closed:
+            segments.append((clean_points[-1], clean_points[0]))
+        return segments, []
+    return [], [f"unsupported_combine_entity_type:{entity_type}"]
+
+
+def _segment_key(a: Dict[str, float], b: Dict[str, float], tolerance: float) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+    scale = 1.0 / max(abs(tolerance), 0.000001)
+    p1 = (round(a["x"] * scale), round(a["y"] * scale))
+    p2 = (round(b["x"] * scale), round(b["y"] * scale))
+    return tuple(sorted([p1, p2]))  # type: ignore[return-value]
+
+
+def _ordered_closed_loop(
+    segments: List[Tuple[Dict[str, float], Dict[str, float]]],
+    *,
+    tolerance: float,
+    close_gaps: bool,
+) -> Tuple[List[Dict[str, float]], List[str], List[Dict[str, Any]]]:
+    if len(segments) < 3:
+        return [], ["Select at least three connected segments to create an area."], []
+    seen_segments = set()
+    duplicate_count = 0
+    for start, end in segments:
+        key = _segment_key(start, end, tolerance)
+        if key in seen_segments:
+            duplicate_count += 1
+        seen_segments.add(key)
+    if duplicate_count:
+        return [], ["Duplicate segments conflict with the selected loop."], [{"action": "remove_duplicate_segment"}]
+
+    remaining = [(deepcopy(a), deepcopy(b)) for a, b in segments]
+    first_start, first_end = remaining.pop(0)
+    ordered = [first_start, first_end]
+    corrections: List[Dict[str, Any]] = []
+    max_gap = 0.0
+    while remaining:
+        current = ordered[-1]
+        best_index = -1
+        best_reverse = False
+        best_gap = float("inf")
+        for index, (start, end) in enumerate(remaining):
+            start_gap = _distance(current, start)
+            end_gap = _distance(current, end)
+            if start_gap < best_gap:
+                best_index = index
+                best_reverse = False
+                best_gap = start_gap
+            if end_gap < best_gap:
+                best_index = index
+                best_reverse = True
+                best_gap = end_gap
+        if best_index < 0:
+            return [], ["Select one connected set of lines."], []
+        if best_gap > tolerance:
+            return [], [f"Two endpoints do not meet. Gap is {best_gap:.2f} ft."], [{"action": "select_connected_geometry"}]
+        start, end = remaining.pop(best_index)
+        next_point = start if best_reverse else end
+        if best_gap > 0.000001:
+            max_gap = max(max_gap, best_gap)
+            corrections.append({"action": "snap_endpoints", "gap_ft": round(best_gap, 3)})
+            if close_gaps:
+                current["x"] = (current["x"] + (end if best_reverse else start)["x"]) / 2.0
+                current["y"] = (current["y"] + (end if best_reverse else start)["y"]) / 2.0
+        ordered.append(deepcopy(next_point))
+
+    close_gap = _distance(ordered[-1], ordered[0])
+    if close_gap > tolerance:
+        return [], [f"Shape is not closed. Final gap is {close_gap:.2f} ft."], [{"action": "close_gap"}]
+    if close_gap > 0.000001:
+        max_gap = max(max_gap, close_gap)
+        corrections.append({"action": "close_gap", "gap_ft": round(close_gap, 3)})
+        if close_gaps:
+            ordered[-1] = deepcopy(ordered[0])
+    if max_gap > 0.000001 and not close_gaps:
+        return [], [f"Small gap requires permission before snapping endpoints. Largest gap is {max_gap:.2f} ft."], corrections
+    loop = ordered[:-1] if len(ordered) > 3 and _distance(ordered[0], ordered[-1]) <= tolerance else ordered
+    if len(loop) < 3:
+        return [], ["Selected geometry does not form an area."], []
+    if _has_self_intersection(loop, closed=True):
+        return [], ["The selected shape crosses itself."], [{"action": "show_conflict"}]
+    return loop, [], corrections
+
+
+def validate_closed_geometry(
+    entities: List[Dict[str, Any]],
+    entity_ids: Iterable[Any],
+    *,
+    tolerance: float = 0.25,
+    close_gaps: bool = False,
+) -> Dict[str, Any]:
+    requested_ids = _dedupe(entity_ids)
+    by_id = {safe_str(entity.get("id")): normalize_cad_entity(entity) for entity in entities if safe_str(safe_dict(entity).get("id"))}
+    selected = [by_id[entity_id] for entity_id in requested_ids if entity_id in by_id]
+    missing = [entity_id for entity_id in requested_ids if entity_id not in by_id]
+    blockers: List[str] = []
+    suggested_actions: List[Dict[str, Any]] = []
+    if missing:
+        blockers.append("Selected geometry is missing: " + ", ".join(missing))
+    if len(selected) < 1:
+        blockers.append("Select linework before combining.")
+    segments: List[Tuple[Dict[str, float], Dict[str, float]]] = []
+    for entity in selected:
+        entity_segments, entity_blockers = _entity_segments_for_combine(entity)
+        segments.extend(entity_segments)
+        blockers.extend(entity_blockers)
+    if blockers:
+        return {
+            "version": "semantic_geometry_validation_v1",
+            "valid": False,
+            "geometry_kind": "area",
+            "selected_entity_ids": requested_ids,
+            "blockers": _dedupe(blockers),
+            "suggested_actions": suggested_actions,
+            "review_required": True,
+            "construction_release_allowed": False,
+        }
+    loop, loop_blockers, corrections = _ordered_closed_loop(segments, tolerance=abs(tolerance), close_gaps=close_gaps)
+    suggested_actions.extend(corrections)
+    bbox = _bbox_from_points(loop)
+    return {
+        "version": "semantic_geometry_validation_v1",
+        "valid": not loop_blockers,
+        "geometry_kind": "area",
+        "selected_entity_ids": requested_ids,
+        "point_count": len(loop),
+        "points": loop,
+        "area_sf": round(_polygon_area(loop), 3),
+        "bounding_box": bbox,
+        "blockers": _dedupe(loop_blockers),
+        "suggested_actions": suggested_actions,
+        "review_required": True,
+        "construction_release_allowed": False,
+        "truth_label": "Closed geometry validation proves drafting topology only; it is not survey or engineering approval evidence.",
+    }
+
+
+def _engineering_object_defaults(object_type: str, geometry_kind: str) -> Dict[str, Any]:
+    affected = {
+        "building": ["parking", "drainage", "water", "sanitary", "grading", "quantities", "review_package"],
+        "parking_area": ["parking", "drainage", "grading", "quantities", "review_package"],
+        "basin": ["drainage", "grading", "storm", "quantities", "review_package"],
+        "driveway": ["roadway", "drainage", "grading", "quantities", "review_package"],
+        "storm_main": ["storm", "drainage", "coordination", "review_package"],
+        "water_main": ["water", "coordination", "review_package"],
+        "sanitary_main": ["sanitary", "coordination", "review_package"],
+    }.get(object_type, ["quantities", "review_package"])
+    return {
+        "geometry_kind": geometry_kind,
+        "affected_systems": affected,
+        "missing_inputs": ["qualified review"],
+        "assumptions": [],
+        "standards_references": [],
+        "relationships": [],
+        "dependencies": [{"system": system, "status": "affected_by_object_geometry"} for system in affected],
+    }
+
+
+def normalize_engineering_object(raw_object: Dict[str, Any]) -> Dict[str, Any]:
+    rec = deepcopy(safe_dict(raw_object))
+    object_type = safe_str(rec.get("object_type") or rec.get("type"), "custom_area")
+    geometry_kind = safe_str(rec.get("geometry_kind"), "area")
+    defaults = _engineering_object_defaults(object_type, geometry_kind)
+    object_id = safe_str(rec.get("object_id") or rec.get("id")) or _stable_id("engobj", object_type, rec.get("geometry_entity_id"), rec.get("display_name"))
+    return {
+        "object_id": object_id,
+        "id": object_id,
+        "object_type": object_type,
+        "display_name": safe_str(rec.get("display_name") or rec.get("name"), object_type.replace("_", " ").title()),
+        "geometry_kind": geometry_kind,
+        "geometry_entity_id": safe_str(rec.get("geometry_entity_id")),
+        "source_entity_ids": _dedupe(rec.get("source_entity_ids") or []),
+        "source": safe_str(rec.get("source"), "converted_from_draft_geometry"),
+        "source_confidence": safe_str(rec.get("source_confidence"), "user_drawn_review_required"),
+        "creation_method": safe_str(rec.get("creation_method"), "semantic_conversion"),
+        "engineering_attributes": deepcopy(safe_dict(rec.get("engineering_attributes"))),
+        "relationships": deepcopy(safe_list(rec.get("relationships") or defaults["relationships"])),
+        "dependencies": deepcopy(safe_list(rec.get("dependencies") or defaults["dependencies"])),
+        "affected_systems": _dedupe(rec.get("affected_systems") or defaults["affected_systems"]),
+        "assumptions": deepcopy(safe_list(rec.get("assumptions") or defaults["assumptions"])),
+        "missing_inputs": _dedupe(rec.get("missing_inputs") or defaults["missing_inputs"]),
+        "standards_references": deepcopy(safe_list(rec.get("standards_references") or defaults["standards_references"])),
+        "export_mapping": deepcopy(safe_dict(rec.get("export_mapping"))) or {
+            "dxf_layer": f"C-{object_type.upper().replace('_', '-')}",
+            "review_package_section": object_type,
+        },
+        "visibility_state": safe_str(rec.get("visibility_state"), "visible"),
+        "review_status": safe_str(rec.get("review_status"), "needs_review"),
+        "review_required": True,
+        "construction_release_allowed": False,
+        "history": deepcopy(safe_list(rec.get("history"))),
+        "truth_label": "Converted engineering objects carry project meaning for review workflows, but still require qualified review before reliance.",
+    }
+
+
+def _source_engineering_objects(source_model: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw = source_model.get(CAD_ENGINEERING_OBJECTS_VERSION)
+    if isinstance(raw, dict):
+        raw_items = safe_list(raw.get("objects"))
+    else:
+        raw_items = safe_list(raw)
+    raw_items += safe_list(source_model.get("engineering_objects"))
+    objects: List[Dict[str, Any]] = []
+    seen = set()
+    for item in raw_items:
+        rec = normalize_engineering_object(safe_dict(item))
+        object_id = safe_str(rec.get("object_id"))
+        if object_id and object_id not in seen:
+            seen.add(object_id)
+            objects.append(rec)
+    return objects
 
 
 def _normalized_layer(layer: Dict[str, Any]) -> Dict[str, Any]:
@@ -1184,6 +1480,19 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
     non_printable_layer_ids = _dedupe(layer.get("id") for layer in layers if layer.get("printable") is False)
     review_blockers = blockers + safe_list(safe_dict(cad_source_confidence_summary(entities)).get("blockers"))
     dimension_annotation_trace = build_dimension_annotation_trace({"entities": entities})
+    engineering_objects = _source_engineering_objects(source_model)
+    engineering_by_geometry = {safe_str(item.get("geometry_entity_id")): item for item in engineering_objects if safe_str(item.get("geometry_entity_id"))}
+    for entity in entities:
+        linked = safe_dict(engineering_by_geometry.get(safe_str(entity.get("id"))))
+        if linked:
+            entity["linked_engineering_object_id"] = safe_str(linked.get("object_id"))
+            entity["semantic_geometry_state"] = "engineering_object_geometry"
+            entity["canonical_object_type"] = safe_str(linked.get("object_type"))
+    engineering_affected_systems = _dedupe(
+        system
+        for obj in engineering_objects
+        for system in safe_list(obj.get("affected_systems"))
+    )
     revision_timeline = {
         "latest_revision_id": latest_revision_id,
         "entity_counts": {
@@ -1200,6 +1509,8 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         "stale_dirty_entities": stale_entity_ids,
         "invalid_entities": invalid_entity_ids,
         "review_blockers": review_blockers,
+        "engineering_object_count": len(engineering_objects),
+        "engineering_affected_systems": engineering_affected_systems,
         "event_count": len(history),
         "review_required": True,
         "construction_release_allowed": False,
@@ -1238,6 +1549,16 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         },
         "source_confidence": cad_source_confidence_summary(entities),
         "dimension_annotation_trace": dimension_annotation_trace,
+        CAD_ENGINEERING_OBJECTS_VERSION: {
+            "version": CAD_ENGINEERING_OBJECTS_VERSION,
+            "object_count": len(engineering_objects),
+            "objects": engineering_objects,
+            "affected_systems": engineering_affected_systems,
+            "review_required": True,
+            "construction_release_allowed": False,
+            "truth_label": "Engineering objects created from draft geometry carry project meaning for review workflows but are not professional approval evidence.",
+        },
+        "engineering_objects": engineering_objects,
         "history": history,
         "history_events": history,
         "history_snapshots": history_snapshots,
@@ -1322,6 +1643,8 @@ def cad_entity_operation_result(
     created_entity_ids: Optional[List[str]] = None,
     updated_entity_ids: Optional[List[str]] = None,
     deleted_entity_ids: Optional[List[str]] = None,
+    combined_geometry_ids: Optional[List[str]] = None,
+    engineering_object_ids: Optional[List[str]] = None,
     updated_layer_ids: Optional[List[str]] = None,
     updated_style_ids: Optional[List[str]] = None,
     next_best_action: str = "",
@@ -1337,6 +1660,8 @@ def cad_entity_operation_result(
         "created_entity_ids": _dedupe(created_entity_ids or []),
         "updated_entity_ids": _dedupe(updated_entity_ids or []),
         "deleted_entity_ids": _dedupe(deleted_entity_ids or []),
+        "combined_geometry_ids": _dedupe(combined_geometry_ids or []),
+        "engineering_object_ids": _dedupe(engineering_object_ids or []),
         "updated_layer_ids": _dedupe(updated_layer_ids or []),
         "updated_style_ids": _dedupe(updated_style_ids or []),
         "review_required": True,
@@ -1491,10 +1816,13 @@ def apply_cad_entity_operation(
     created_ids: List[str] = []
     updated_ids: List[str] = []
     deleted_ids: List[str] = []
+    combined_geometry_ids: List[str] = []
+    engineering_object_ids: List[str] = []
     updated_layer_ids: List[str] = []
     updated_style_ids: List[str] = []
     action_history: List[Dict[str, Any]] = []
     selected_entity_ids = _dedupe(source_model.get("selected_entity_ids") or [])
+    engineering_objects = _source_engineering_objects(source_model)
 
     if action in {"select_single", "select_add", "select_multi", "select_window", "clear_selection"}:
         if action == "clear_selection":
@@ -1568,6 +1896,159 @@ def apply_cad_entity_operation(
         by_id[entity["id"]] = entity
         created_ids.append(entity["id"])
         action_history.append(history_event("entity_created", entity["id"], actor=actor, details={"source": "chat", "review_required": True}))
+    elif action == "combine_selected_geometry":
+        selected_for_combine = target_ids or selected_entity_ids
+        validation = validate_closed_geometry(
+            list(by_id.values()),
+            selected_for_combine,
+            tolerance=abs(safe_float(operation.get("tolerance"), 0.25)),
+            close_gaps=bool(operation.get("close_gaps") or operation.get("snap_gaps")),
+        )
+        if not validation.get("valid"):
+            safety_blockers.extend(safe_str(item) for item in safe_list(validation.get("blockers")) if safe_str(item))
+        else:
+            points = _points(validation.get("points"))
+            combined_id = safe_str(operation.get("entity_id")) or _stable_id("cadarea", ",".join(selected_for_combine), points, validation.get("area_sf"))
+            combined = normalize_cad_entity(
+                {
+                    "id": combined_id,
+                    "type": "polygon",
+                    "geometry": {"points": points, "closed": True, "units": "ft"},
+                    "layer_id": safe_str(operation.get("layer_id"), CAD_DEFAULT_LAYER_ID),
+                    "style_id": safe_str(operation.get("style_id"), CAD_DEFAULT_STYLE_ID),
+                    "source": "combined_draft_geometry",
+                    "source_confidence": "user_drawn_review_required",
+                    "review_status": "draft_review_required",
+                    "semantic_geometry_state": "combined_geometry",
+                    "combined_from_entity_ids": selected_for_combine,
+                    "draft_review_required": True,
+                    "dirty": True,
+                    "stale": True,
+                },
+                created_by=actor,
+            )
+            combined["semantic_geometry_state"] = "combined_geometry"
+            combined["combined_geometry_validation"] = validation
+            combined["combined_from_entity_ids"] = selected_for_combine
+            by_id[combined["id"]] = combined
+            created_ids.append(combined["id"])
+            combined_geometry_ids.append(combined["id"])
+            selected_entity_ids = [combined["id"]]
+            action_history.append(
+                history_event(
+                    "entity_converted",
+                    combined["id"],
+                    actor=actor,
+                    details={
+                        "semantic_action": "combine_selected_geometry",
+                        "source_entity_ids": selected_for_combine,
+                        "area_sf": validation.get("area_sf"),
+                        "review_required": True,
+                    },
+                    before={},
+                    after=combined,
+                    changed_fields=["entity", "geometry", "semantic_geometry_state"],
+                )
+            )
+    elif action == "convert_geometry_to_engineering_object":
+        selected_for_conversion = target_ids or selected_entity_ids
+        object_type = safe_str(operation.get("object_type"), "building")
+        entity_id = safe_str(selected_for_conversion[0] if selected_for_conversion else "")
+        entity = by_id.get(entity_id)
+        if not entity:
+            missing_inputs.append("selected combined geometry")
+        else:
+            entity_type = safe_str(entity.get("type"))
+            geometry_kind = "area" if entity_type in {"polygon", "rectangle", "circle"} else "path" if entity_type == "polyline" else "point" if entity_type == "block_reference" else ""
+            allowed = (
+                object_type in AREA_ENGINEERING_OBJECT_TYPES and geometry_kind == "area"
+                or object_type in PATH_ENGINEERING_OBJECT_TYPES and geometry_kind == "path"
+                or object_type in POINT_ENGINEERING_OBJECT_TYPES and geometry_kind == "point"
+            )
+            if not allowed:
+                safety_blockers.append(f"unsupported_conversion:{object_type}_requires_{'closed area' if object_type in AREA_ENGINEERING_OBJECT_TYPES else 'path' if object_type in PATH_ENGINEERING_OBJECT_TYPES else 'point'}")
+            else:
+                geometry_blockers = [
+                    safe_str(blocker)
+                    for blocker in safe_list(validate_cad_entity(entity).get("blockers"))
+                    if safe_str(blocker).startswith("invalid_geometry")
+                    or safe_str(blocker) in {"missing_entity_id", "unsupported_entity_type", "self_intersection"}
+                ]
+                if geometry_blockers:
+                    safety_blockers.append("Cannot convert invalid geometry into an engineering object.")
+                    safety_blockers.extend(geometry_blockers)
+                    entity = {}
+            if entity and not safety_blockers:
+                engineering_attributes = safe_dict(operation.get("attributes"))
+                if object_type == "building":
+                    points = _points(safe_dict(entity.get("geometry")).get("points") or safe_dict(entity.get("geometry")).get("vertices"))
+                    engineering_attributes = {
+                        "footprint_area_sf": round(_polygon_area(points), 3) if points else None,
+                        "use_type": safe_str(engineering_attributes.get("use_type")),
+                        "floor_count": safe_float(engineering_attributes.get("floor_count"), 0.0) or None,
+                        "finished_floor_elevation": engineering_attributes.get("finished_floor_elevation"),
+                        **{k: v for k, v in engineering_attributes.items() if k not in {"use_type", "floor_count", "finished_floor_elevation"}},
+                    }
+                object_id = safe_str(operation.get("object_id")) or _stable_id("engobj", object_type, entity_id, operation.get("display_name"))
+                eng_obj = normalize_engineering_object(
+                    {
+                        "object_id": object_id,
+                        "object_type": object_type,
+                        "display_name": safe_str(operation.get("display_name") or operation.get("name"), object_type.replace("_", " ").title()),
+                        "geometry_kind": geometry_kind,
+                        "geometry_entity_id": entity_id,
+                        "source_entity_ids": safe_list(entity.get("combined_from_entity_ids")) or [entity_id],
+                        "source": "converted_from_draft_geometry",
+                        "source_confidence": safe_str(entity.get("source_confidence"), "user_drawn_review_required"),
+                        "creation_method": "semantic_conversion",
+                        "engineering_attributes": engineering_attributes,
+                        "missing_inputs": _dedupe(operation.get("missing_inputs") or ["qualified review"]),
+                        "review_status": "needs_review",
+                        "history": [
+                            {
+                                "action": "object_converted_from_geometry",
+                                "geometry_entity_id": entity_id,
+                                "actor": actor,
+                                "timestamp": now_iso(),
+                                "review_required": True,
+                                "construction_release_allowed": False,
+                            }
+                        ],
+                    }
+                )
+                engineering_objects = [item for item in engineering_objects if safe_str(item.get("object_id")) != object_id] + [eng_obj]
+                before = deepcopy(entity)
+                updated = deepcopy(entity)
+                updated["linked_engineering_object_id"] = object_id
+                updated["semantic_geometry_state"] = "engineering_object_geometry"
+                updated["canonical_object_type"] = object_type
+                updated["dirty"] = True
+                updated["stale"] = True
+                updated["review_status"] = "draft_review_required"
+                by_id[entity_id] = normalize_cad_entity(updated, created_by=actor)
+                by_id[entity_id]["linked_engineering_object_id"] = object_id
+                by_id[entity_id]["semantic_geometry_state"] = "engineering_object_geometry"
+                by_id[entity_id]["canonical_object_type"] = object_type
+                updated_ids.append(entity_id)
+                engineering_object_ids.append(object_id)
+                selected_entity_ids = [entity_id]
+                action_history.append(
+                    history_event(
+                        "entity_converted",
+                        entity_id,
+                        actor=actor,
+                        details={
+                            "semantic_action": "convert_geometry_to_engineering_object",
+                            "engineering_object_id": object_id,
+                            "object_type": object_type,
+                            "affected_systems": eng_obj.get("affected_systems"),
+                            "review_required": True,
+                        },
+                        before=before,
+                        after=by_id[entity_id],
+                        changed_fields=["linked_engineering_object_id", "semantic_geometry_state", "canonical_object_type"],
+                    )
+                )
     elif action == "copy_selected":
         for index, entity_id in enumerate(target_ids):
             entity = by_id.get(entity_id)
@@ -1685,6 +2166,8 @@ def apply_cad_entity_operation(
         "entities": list(by_id.values()),
         "layers": layers,
         "styles": styles,
+        CAD_ENGINEERING_OBJECTS_VERSION: engineering_objects,
+        "engineering_objects": engineering_objects,
         "history": _safe_history(source_model) + action_history,
         "selected_entity_ids": [safe_str(entity_id) for entity_id in selected_entity_ids if safe_str(entity_id) in by_id],
     }
@@ -1697,6 +2180,8 @@ def apply_cad_entity_operation(
         created_entity_ids=created_ids,
         updated_entity_ids=updated_ids,
         deleted_entity_ids=deleted_ids,
+        combined_geometry_ids=combined_geometry_ids,
+        engineering_object_ids=engineering_object_ids,
         updated_layer_ids=updated_layer_ids,
         updated_style_ids=updated_style_ids,
         next_best_action=safe_str(operation.get("next_best_action"), "Review the changed CAD entities before using them in downstream workflows."),
@@ -2024,6 +2509,7 @@ def cad_source_confidence_summary(entities: List[Dict[str, Any]]) -> Dict[str, A
 
 __all__ = [
     "CAD_ENTITY_CHAT_OPERATION_VERSION",
+    "CAD_ENGINEERING_OBJECTS_VERSION",
     "CAD_ENTITY_MODEL_VERSION",
     "CAD_HISTORY_ACTIONS",
     "CAD_ENTITY_TYPES",
@@ -2045,9 +2531,11 @@ __all__ = [
     "locked_layer_blocker",
     "manual_drawn_objects_to_cad_entities",
     "normalize_cad_entity",
+    "normalize_engineering_object",
     "plan_pdf_elements_to_cad_entities",
     "refresh_dimension_associations",
     "selected_entity_grips",
+    "validate_closed_geometry",
     "validate_cad_entity",
     "window_select_entities",
 ]

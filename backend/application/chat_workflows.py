@@ -751,7 +751,14 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return None
     if "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("why", "what", "show", "which", "update", "refresh", "recalculate", "recalc")):
         return None
-    if any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin")) and "cad entity" not in lowered and "cad object" not in lowered and "layer" not in lowered:
+    semantic_action = any(phrase in lowered for phrase in ("combine", "convert", "make this", "treat this", "selected area", "selected geometry"))
+    if (
+        any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin"))
+        and "cad entity" not in lowered
+        and "cad object" not in lowered
+        and "layer" not in lowered
+        and not semantic_action
+    ):
         return None
     command_tokens = (
         "create",
@@ -784,6 +791,10 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "label",
         "cad entity",
         "cad object",
+        "combine",
+        "convert",
+        "engineering object",
+        "selected geometry",
     )
     if not any(token in lowered for token in command_tokens):
         return None
@@ -837,6 +848,58 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return {**base, "action": "set_layer_printable", "layer_id": layer_id, "printable": "non-printable" not in lowered and "non printable" not in lowered}
     if "company layer style" in lowered or "company layer standards" in lowered:
         return {**base, "action": "use_company_layer_style"}
+
+    if any(phrase in lowered for phrase in ("combine selected geometry", "combine these lines", "combine into area", "close linework", "make this an area")):
+        if not selected_ids:
+            return {
+                **base,
+                "action": "combine_selected_geometry",
+                "missing_inputs": ["selected CAD entities"],
+                "next_best_action": "Select the linework that forms one closed loop, then run Combine into Area.",
+            }
+        return {
+            **base,
+            "action": "combine_selected_geometry",
+            "target_entity_ids": selected_ids,
+            "close_gaps": any(phrase in lowered for phrase in ("snap gap", "close gap", "close gaps", "fix small gap")),
+            "next_best_action": "Name or convert the combined area after reviewing the geometry.",
+        }
+
+    wants_semantic_conversion = ("convert" in lowered or "make this" in lowered or "treat this" in lowered)
+    if wants_semantic_conversion and any(token in lowered for token in ("building", "parking", "basin", "pavement", "sidewalk", "drainage area")):
+        if not explicit_persistent_cad and not any(phrase in lowered for phrase in ("selected area", "combined geometry", "cad entity", "cad object", "engineering object")):
+            return None
+        if "parking" in lowered:
+            object_type = "parking_area"
+        elif "basin" in lowered or "pond" in lowered or "detention" in lowered:
+            object_type = "basin"
+        elif "sidewalk" in lowered:
+            object_type = "sidewalk"
+        elif "pavement" in lowered:
+            object_type = "pavement"
+        elif "drainage area" in lowered:
+            object_type = "drainage_area"
+        else:
+            object_type = "building"
+        name_match = re.search(r"(?:name(?:d)?|as|called)\s+([a-zA-Z0-9][a-zA-Z0-9 _.-]{1,60})", message, flags=re.IGNORECASE)
+        display_name = safe_str(name_match.group(1) if name_match else "")
+        if not selected_ids:
+            return {
+                **base,
+                "action": "convert_geometry_to_engineering_object",
+                "object_type": object_type,
+                "display_name": display_name,
+                "missing_inputs": ["selected combined geometry"],
+                "next_best_action": "Select a combined area, then convert it to an engineering object.",
+            }
+        return {
+            **base,
+            "action": "convert_geometry_to_engineering_object",
+            "object_type": object_type,
+            "display_name": display_name or object_type.replace("_", " ").title(),
+            "target_entity_ids": selected_ids[:1],
+            "next_best_action": "Review the object name and missing inputs, then update affected systems when ready.",
+        }
 
     wants_create = any(token in lowered for token in ("create", "draw", "add"))
     targeted_dimension = "dimension" in lowered and (bool(selected_ids) or "this line" in lowered or "this circle" in lowered or "this arc" in lowered)
@@ -980,6 +1043,7 @@ def _cad_entity_chat_response(
     asks_grip_blocker = "why" in lowered and "grip" in lowered and any(phrase in lowered for phrase in ("can't", "cannot", "cant", "won't", "blocked", "edit"))
     asks_layers = "show layers" in lowered or ("list" in lowered and "layers" in lowered)
     asks_layer_edit_blocker = "why" in lowered and "layer" in lowered and any(phrase in lowered for phrase in ("can't", "cannot", "cant", "won't", "blocked", "edit"))
+    asks_semantic_combine = any(phrase in lowered for phrase in ("combine selected geometry", "combine these lines", "combine into area", "close linework", "make this an area"))
 
     if record:
         project_input = deepcopy(_safe_dict(record.get("project_input")))
@@ -1012,6 +1076,7 @@ def _cad_entity_chat_response(
         or asks_grip_blocker
         or asks_layers
         or asks_layer_edit_blocker
+        or asks_semantic_combine
         or chat_operation
     ):
         return None
@@ -1049,6 +1114,8 @@ def _cad_entity_chat_response(
             operation_result.get("created_entity_ids")
             or operation_result.get("updated_entity_ids")
             or operation_result.get("deleted_entity_ids")
+            or operation_result.get("combined_geometry_ids")
+            or operation_result.get("engineering_object_ids")
             or operation_result.get("updated_layer_ids")
             or operation_result.get("updated_style_ids")
             or (selection_action and not missing_inputs and not safety_blockers)
@@ -1074,10 +1141,20 @@ def _cad_entity_chat_response(
             outcome = "understood_needs_more_info"
             needs_clarification = True
         else:
-            assistant_message = (
-                f"Applied CAD entity drafting command `{safe_str(operation_result.get('selected_action'))}` to the persistent CAD entity model. "
-                "The changed entities remain review_required=true and construction_release_allowed=false."
-            )
+            selected_action = safe_str(operation_result.get("selected_action"))
+            if selected_action == "combine_selected_geometry":
+                assistant_message = "Combined the selected draft linework into one review-required area. It stays selected so you can name it or convert it into an engineering object."
+            elif selected_action == "convert_geometry_to_engineering_object":
+                object_ids = _safe_list(operation_result.get("engineering_object_ids"))
+                assistant_message = (
+                    f"Converted the selected geometry into {len(object_ids)} review-required engineering object(s). "
+                    "Civora will track source, history, missing inputs, and affected systems for review."
+                )
+            else:
+                assistant_message = (
+                    f"Applied CAD entity drafting command `{selected_action}` to the persistent CAD entity model. "
+                    "The changed entities remain review-required."
+                )
             action_taken = "executed_cad_entity_command"
             outcome = "understood_and_executed"
             needs_clarification = False

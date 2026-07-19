@@ -205,4 +205,4 @@ def test_chat_moves_selected_to_drainage_layer_and_uses_company_layer_style():
 
     company = _chat("use my company layer style", store)
     assert company["action_taken"] == "executed_cad_entity_command"
-    assert "construction_release_allowed=false" in company["assistant_message"]
+    assert "review-required" in company["assistant_message"]

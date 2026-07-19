@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.application.chat_workflows import decide_chat
-from backend.planning.cad_entity_model import CAD_ENTITY_MODEL_VERSION, history_event
+from backend.planning.cad_entity_model import CAD_ENGINEERING_OBJECTS_VERSION, CAD_ENTITY_MODEL_VERSION, history_event
 from backend.planning.plan_pdf_understanding import SOURCE_CONFIDENCE
 from parsers.chat_intent_parser import decide_chat_message
 
@@ -1797,6 +1797,101 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(update["source"], "manual_drawn")
         self.assertEqual(update["confidence"], "user_drawn_review_required")
         self.assertEqual(update["engineering_status"], "draft_review_required")
+
+    def test_chat_combines_selected_cad_lines_and_converts_to_building_object(self):
+        record = _record()
+        record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION] = {
+            "entities": [
+                {
+                    "id": "cad-l1",
+                    "type": "line",
+                    "geometry": {"start": {"x": 0, "y": 0}, "end": {"x": 80, "y": 0}},
+                    "source": "manual_drawn",
+                    "source_confidence": "user_drawn_review_required",
+                    "review_status": "draft_review_required",
+                    "draft_review_required": True,
+                    "construction_release_allowed": False,
+                },
+                {
+                    "id": "cad-l2",
+                    "type": "line",
+                    "geometry": {"start": {"x": 80, "y": 0}, "end": {"x": 80, "y": 60}},
+                    "source": "manual_drawn",
+                    "source_confidence": "user_drawn_review_required",
+                    "review_status": "draft_review_required",
+                    "draft_review_required": True,
+                    "construction_release_allowed": False,
+                },
+                {
+                    "id": "cad-l3",
+                    "type": "line",
+                    "geometry": {"start": {"x": 80, "y": 60}, "end": {"x": 0, "y": 60}},
+                    "source": "manual_drawn",
+                    "source_confidence": "user_drawn_review_required",
+                    "review_status": "draft_review_required",
+                    "draft_review_required": True,
+                    "construction_release_allowed": False,
+                },
+                {
+                    "id": "cad-l4",
+                    "type": "line",
+                    "geometry": {"start": {"x": 0, "y": 60}, "end": {"x": 0, "y": 0}},
+                    "source": "manual_drawn",
+                    "source_confidence": "user_drawn_review_required",
+                    "review_status": "draft_review_required",
+                    "draft_review_required": True,
+                    "construction_release_allowed": False,
+                },
+            ],
+            "selected_entity_ids": ["cad-l1", "cad-l2", "cad-l3", "cad-l4"],
+        }
+        store = RecordingProjectStore(record)
+
+        combined = decide_chat(
+            {
+                "message": "combine selected geometry into area",
+                "context": {
+                    "current_project": {"project_id": "project_123"},
+                    "selected_cad_entity_ids": ["cad-l1", "cad-l2", "cad-l3", "cad-l4"],
+                },
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(combined["action_taken"], "executed_cad_entity_command")
+        self.assertTaxonomyMetadata(combined, "understood_and_executed")
+        command = combined["response_metadata"]["command_payload"]["cad_entity_chat_operation_v1"]
+        combined_id = command["combined_geometry_ids"][0]
+        self.assertIn("Combined the selected draft linework", combined["assistant_message"])
+
+        converted = decide_chat(
+            {
+                "message": "convert selected area to building named Office Building A",
+                "context": {
+                    "current_project": {"project_id": "project_123"},
+                    "selected_cad_entity_ids": [combined_id],
+                },
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(converted["action_taken"], "executed_cad_entity_command")
+        command = converted["response_metadata"]["command_payload"]["cad_entity_chat_operation_v1"]
+        self.assertEqual(len(command["engineering_object_ids"]), 1)
+        model = store.saved[-1]["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]
+        objects = model[CAD_ENGINEERING_OBJECTS_VERSION]["objects"]
+        building = objects[0]
+        self.assertEqual(building["object_type"], "building")
+        self.assertEqual(building["display_name"], "Office Building A")
+        self.assertEqual(building["engineering_attributes"]["footprint_area_sf"], 4800)
+        self.assertIn("drainage", building["affected_systems"])
+        self.assertTrue(building["review_required"])
+        self.assertFalse(building["construction_release_allowed"])
+        self.assertIn("review-required engineering object", converted["assistant_message"])
 
     def test_cad_geometry_edit_chat_answers_selected_draft_operations(self):
         phrases = [
