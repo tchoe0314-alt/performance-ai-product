@@ -86,7 +86,7 @@ test.describe("real website workflow clarity", () => {
     }
     await expect(page.getByTestId("setup-detect-inside-site")).toHaveAttribute("open", "");
 
-    const objectOpenMs = await timedOpen(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
+    const objectOpenMs = await timedOpen(page, /^Draw$/, /Draw & Objects|Tools/);
     await expect(page.getByTestId("draw-cad-tools-section")).toContainText(/Choose a tool, then draw on the canvas/);
     await expect(page.getByTestId("cad-tool-line")).toBeVisible();
     await page.getByTestId("cad-tool-line").click();

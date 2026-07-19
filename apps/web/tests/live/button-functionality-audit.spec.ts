@@ -15,7 +15,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
 }
 
 async function openDrawTools(page: Page) {
-  await openWorkspacePanel(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
+  await openWorkspacePanel(page, /^Draw$/, /Draw & Objects|Tools/);
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 
@@ -106,7 +106,7 @@ test.describe("button functionality audit", () => {
 
     const panels: Array<[RegExp | string, RegExp | string]> = [
       [/^Setup$/, /Project Setup/],
-      [/^Draw$/, /Draw & Object Manager|CAD Tools/],
+      [/^Draw$/, /Draw & Objects|Tools/],
       ["Generate", /Generate Systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
     ];

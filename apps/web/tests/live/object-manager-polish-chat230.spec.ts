@@ -37,7 +37,7 @@ async function runCommand(page: Page, command: string) {
 
 async function openDrawPanel(page: Page) {
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|Draw & Object Manager|CAD Tools/, { timeout: 5_000 });
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
 }
 
 async function expectNoOverflow(page: Page) {
@@ -49,8 +49,6 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
   test("draw panel presents tools, selected object, and object list as one drafting workflow", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
-
-    await expect(page.getByTestId("draw-workflow-summary")).toBeHidden();
 
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
     await expect(page.getByTestId("draw-cad-tools-section")).toContainText("Choose a tool, then draw on the canvas");

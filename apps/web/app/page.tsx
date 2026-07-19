@@ -6,8 +6,6 @@ import { usePathname } from "next/navigation";
 import {
   AlertCircle,
   Box,
-  CheckCircle2,
-  Circle,
   Crosshair,
   FileText,
   FolderOpen,
@@ -20,7 +18,6 @@ import {
   Pencil,
   Ruler,
   Route,
-  Settings,
   SlidersHorizontal,
 } from "lucide-react";
 
@@ -414,13 +411,6 @@ const hasAddressCoordinates = (
   );
 const sourceStatusLabel = (value: string | undefined) =>
   String(value || "missing").replace(/_/g, " ");
-type SidebarNavItem = {
-  label: string;
-  caption: string;
-  target: WorkspaceMode;
-  icon: typeof Gauge;
-  status: SidebarStatus;
-};
 type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "deliver";
 type CadToolRequestForPreview = CadToolRequest;
 type PrimaryWorkflowItem = {
@@ -431,12 +421,6 @@ type PrimaryWorkflowItem = {
   icon: typeof Gauge;
   status: SidebarStatus;
   metric: string;
-};
-type WorkflowActionItem = {
-  label: string;
-  panel: SidePanelKey;
-  detail: string;
-  status: SidebarStatus;
 };
 type QuantityReviewStatus = "ok" | "review" | "missing_cost" | "untraced" | "stale";
 type QuantityReviewRow = {
@@ -21543,15 +21527,6 @@ function PerformanceAIDashboardView({
     if (mode === "settings") return panelStatus("settings");
     return "idle";
   };
-	  const sidebarModes: SidebarNavItem[] = [
-	    { label: "Project Health", caption: "Status and changes", target: "dashboard", icon: Gauge, status: sidebarModeStatus("dashboard") },
-	    { label: "Setup", caption: "Site and boundary", target: "setup", icon: MapPinned, status: sidebarModeStatus("setup") },
-	    { label: "Canvas", caption: "Design workspace", target: "canvas", icon: Box, status: sidebarModeStatus("canvas") },
-    { label: "Layers", caption: "Visibility presets", target: "layers", icon: Layers, status: sidebarModeStatus("layers") },
-    { label: "Deliver", caption: "Sheets and exports", target: "deliver", icon: FileText, status: sidebarModeStatus("deliver") },
-    { label: "Data", caption: "Survey and sources", target: "data", icon: MapPinned, status: sidebarModeStatus("data") },
-	    { label: "Settings", caption: "Workspace defaults", target: "settings", icon: Settings, status: sidebarModeStatus("settings") },
-	  ];
 	  const primaryWorkflowGroups: Record<PrimaryWorkflowKey, SidePanelKey[]> = {
 	    setup: ["site_existing", "import_survey", "data", "standards"],
 	    draw: ["model", "layers", "files"],
@@ -21645,44 +21620,6 @@ function PerformanceAIDashboardView({
 	      metric: getExportBlockReason() ? "Export needs input" : "Review package",
 	    },
 	  ];
-	  const workflowActionItems: Record<PrimaryWorkflowKey, WorkflowActionItem[]> = {
-	    setup: [
-	      { label: "Address & Site", panel: "site_existing", detail: siteScaleLocked ? "Boundary locked" : "Set or draw boundary", status: sidebarModeStatus("setup") },
-	      { label: "Survey / Import", panel: "import_survey", detail: hasTerrainSource ? "Terrain source present" : "Upload survey, DEM, GIS, or PDF", status: panelStatus("import_survey") },
-	      { label: "Online Sources", panel: "data", detail: onlineDiscoveryCandidateCount ? `${onlineDiscoveryCandidateCount} candidate(s)` : "Find parcels, roads, wetlands", status: panelStatus("data") },
-	      { label: "Standards", panel: "standards", detail: panelStatus("standards") === "ok" ? "Review accepted sources" : "Add or accept standards", status: panelStatus("standards") },
-	    ],
-	    draw: [
-	      { label: "Draw Canvas", panel: "model", detail: "Canvas, 2D/3D, drawing controls", status: panelStatus("model") },
-	      { label: "Object Manager", panel: "objects", detail: "Objects, CAD tools, rename, hide, delete", status: panelStatus("objects") },
-	      { label: "Layers", panel: "layers", detail: "Visibility, source badges, overlays", status: panelStatus("layers") },
-	    ],
-	    objects: [
-	      { label: "Object Manager", panel: "objects", detail: "Rename, recolor, select, move, delete", status: panelStatus("objects") },
-	      { label: "Draw Canvas", panel: "model", detail: "Lines, areas, boxes, points, snaps, dimensions", status: panelStatus("model") },
-	      { label: "Object Details", panel: "details", detail: activePlacementId ? "Selected object details" : "Select or draw an object", status: panelStatus("details") },
-	    ],
-	    design: [
-	      { label: "Run Systems", panel: "generate", detail: "Queue grading, drainage, utilities", status: panelStatus("generate") },
-	      { label: "Grading", panel: "system_grading", detail: "TIN, contours, cut/fill", status: panelStatus("grading") },
-	      { label: "Storm", panel: "system_storm", detail: "HGL/EGL, inlets, routing", status: panelStatus("drainage") },
-	      { label: "Roadway", panel: "system_roadway", detail: "Alignment, profile, sections", status: panelStatus("roadway") },
-	      { label: "Water", panel: "system_water", detail: "Hydrants, pressure, fire flow", status: panelStatus("water") },
-	      { label: "Utilities", panel: "system_utilities", detail: "Conflicts, clearances, reroutes", status: panelStatus("utilities") },
-	    ],
-	    analyze: [
-	      { label: "Issues", panel: "analysis", detail: previewBlockedReasons[0] || (hasHardSystemBlock ? "Needs input before the next review step" : "Review notes and warnings"), status: panelStatus("analysis") },
-	      { label: "Quantities", panel: "quantities", detail: `${quantityRows.length} takeoff row${quantityRows.length === 1 ? "" : "s"}`, status: panelStatus("quantities") },
-	      { label: "Async Jobs", panel: "jobs", detail: visibleActiveJob ? `${visibleActiveJob.status}` : "Queue history", status: panelStatus("jobs") },
-	      { label: "Catalogs", panel: "catalogs", detail: "Parts, pipes, structures", status: panelStatus("catalogs") },
-	    ],
-	    deliver: [
-	      { label: "Plan Sheets", panel: "deliverables", detail: "Sheet editor, report, DXF", status: panelStatus("deliverables") },
-	      { label: "Files / PDFs", panel: "files", detail: "Plan PDF understanding", status: panelStatus("files") },
-	      { label: "Chat", panel: "chat", detail: "Ask, edit, fix, explain", status: panelStatus("chat") },
-	      { label: "Settings", panel: "settings", detail: "Workspace defaults", status: panelStatus("settings") },
-	    ],
-	  };
   const handleCancelActiveTool = useCallback(() => {
     if (shortcutsOverlayOpen) {
       setShortcutsOverlayOpen(false);
@@ -22716,35 +22653,6 @@ function PerformanceAIDashboardView({
       status: !sidebarHasTruthEvidence ? "idle" : hasHardSystemBlock || previewBlockedReasons.length ? "block" : "ok",
     },
   ] as const;
-  const sidebarTruthCounts = {
-    ready: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "ok").length : 0,
-    review: sidebarHasTruthEvidence ? sidebarTruthItems.filter((item) => item.status === "review").length : 0,
-    blocked: 0,
-    notRun: backendResult ? 0 : 1,
-  };
-  const sidebarTruthTotal = Math.max(
-    1,
-    sidebarTruthCounts.ready +
-      sidebarTruthCounts.review +
-      sidebarTruthCounts.blocked +
-      sidebarTruthCounts.notRun,
-  );
-  const sidebarTruthScore = sidebarHasTruthEvidence
-    ? Math.max(
-        0,
-        Math.min(
-          100,
-          Math.round(
-            ((sidebarTruthCounts.ready + sidebarTruthCounts.review * 0.45) /
-              sidebarTruthTotal) *
-              100,
-          ),
-        ),
-      )
-    : null;
-  const truthReadyDeg = (sidebarTruthCounts.ready / sidebarTruthTotal) * 360;
-  const truthReviewDeg = truthReadyDeg + (sidebarTruthCounts.review / sidebarTruthTotal) * 360;
-  const truthBlockedDeg = truthReviewDeg + (sidebarTruthCounts.blocked / sidebarTruthTotal) * 360;
   const reviewGateItems = [
     {
       label: "Standards",
@@ -23315,228 +23223,6 @@ function PerformanceAIDashboardView({
 	                })}
 	              </div>
 	            </div>
-	            <div className="hidden" data-testid="workflow-actions-sidebar">
-	              <div className="flex items-center justify-between gap-3">
-	                <div>
-	                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-	                    {primaryWorkflowItems.find((item) => item.key === activePrimaryWorkflowKey)?.label || "Workflow"}
-	                  </p>
-	                  <p className="mt-1 text-sm font-semibold text-slate-950">
-	                    {primaryWorkflowItems.find((item) => item.key === activePrimaryWorkflowKey)?.caption || "Open the next tool"}
-	                  </p>
-	                </div>
-	                <button
-	                  type="button"
-	                  onClick={() => handleOpenPanelFromDrawer("chat")}
-	                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-white"
-	                >
-	                  Chat
-	                </button>
-	              </div>
-	              <div className="mt-3 space-y-1.5">
-	                {workflowActionItems[activePrimaryWorkflowKey].map((item) => {
-	                  const isActive = sidePanelForRender === item.panel;
-	                  return (
-	                    <button
-	                      key={`${activePrimaryWorkflowKey}-${item.panel}-${item.label}`}
-	                      type="button"
-	                      onClick={() => handleOpenPanelFromDrawer(item.panel)}
-	                      className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition ${
-	                        isActive
-	                          ? "border-slate-950 bg-slate-950 text-white"
-	                          : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-	                      }`}
-	                    >
-	                      <span className="min-w-0">
-	                        <span className="block truncate text-sm font-semibold">{item.label}</span>
-	                        <span className={`mt-0.5 block truncate text-[11px] font-medium ${
-	                          isActive ? "text-white/55" : "text-slate-500"
-	                        }`}>
-	                          {item.detail}
-	                        </span>
-	                      </span>
-	                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-	                        item.status === "ok"
-	                          ? "bg-emerald-500"
-	                          : item.status === "block"
-	                            ? "bg-red-500"
-	                            : item.status === "review"
-	                              ? "bg-amber-400"
-	                              : "bg-slate-300"
-	                      }`} />
-	                    </button>
-	                  );
-	                })}
-	              </div>
-	            </div>
-	            <div className="hidden" data-testid="compact-truth-sidebar">
-	              <div className="flex items-start justify-between gap-3">
-	                <div>
-	                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Truth Status</p>
-	                  <p className="mt-1 text-sm font-semibold text-slate-950">
-	                    {sidebarHasTruthEvidence ? `${sidebarTruthScore ?? "-"} overall` : "No data yet"}
-	                  </p>
-	                </div>
-	                <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
-	                  Review required
-	                </span>
-	              </div>
-	              <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.1em]">
-	                {[
-	                  ["Ready", sidebarTruthCounts.ready, "text-slate-700"],
-	                  ["Review", sidebarTruthCounts.review, "text-amber-700"],
-	                  ["Block", sidebarTruthCounts.blocked, "text-red-600"],
-	                  ["Not run", sidebarTruthCounts.notRun, "text-slate-400"],
-	                ].map(([label, value, textClass]) => (
-	                  <div key={label} className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-2">
-	                    <p className={`text-sm ${textClass}`}>{value}</p>
-	                    <p className="mt-0.5 truncate text-slate-400">{label}</p>
-	                  </div>
-	                ))}
-	              </div>
-	              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-	                Field use and professional responsibility remain outside Civora.
-	              </p>
-	            </div>
-	            <div className="hidden mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3" data-testid="progress-timeline-sidebar">
-              <button
-                type="button"
-                onClick={() => handleOpenPanelFromDrawer(progressPanelTarget(progressTimelineState.current_panel))}
-                className="w-full text-left"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Progress Timeline
-                    </p>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                      {progressTimelineState.current_step_label || "Setup"}
-                    </p>
-                  </div>
-                  <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] ${progressTimelineStatusClass(progressTimelineState.current_status)}`}>
-                    {String(progressTimelineState.current_status || "pending").replace("_", " ")}
-                  </span>
-                </div>
-                <p className="mt-2 line-clamp-2 text-xs font-medium text-slate-600">
-                  {progressTimelineState.next_action || "Review the next timeline step."}
-                </p>
-              </button>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-slate-800" style={{ width: `${progressPercent}%` }} />
-              </div>
-              <div className="mt-3 grid grid-cols-4 gap-1.5">
-                {progressTimelineSteps.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    title={`${item.label}: ${item.status.replace("_", " ")}`}
-                    onClick={() => handleOpenPanelFromDrawer(progressPanelTarget(item.action_panel || item.action?.target))}
-                    className="flex min-h-9 flex-col items-center justify-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1 py-1 hover:bg-white"
-                  >
-                    <span className={`h-2.5 w-2.5 rounded-full border ${progressTimelineDotClass(item.status)}`} />
-                    <span className="max-w-full truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      {item.label.split(" ")[0]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {progressTimelineState.exact_blockers?.length ? (
-                <p className="mt-3 line-clamp-2 rounded-md border border-red-100 bg-red-50 px-2 py-1.5 text-[11px] font-semibold text-red-700">
-                  {progressTimelineState.exact_blockers[0]}
-                </p>
-              ) : null}
-            </div>
-	            <div className="hidden mb-4 rounded-lg border border-slate-200 bg-white px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Truth Status
-              </p>
-              <div className="mt-3 flex items-center gap-4">
-                <div
-                  className="grid h-24 w-24 shrink-0 place-items-center rounded-full"
-                  style={{
-                    background: `conic-gradient(#64748b 0deg ${truthReadyDeg}deg, #f59e0b ${truthReadyDeg}deg ${truthReviewDeg}deg, #8b5cf6 ${truthReviewDeg}deg ${truthBlockedDeg}deg, #cbd5e1 ${truthBlockedDeg}deg 360deg)`,
-                  }}
-                  aria-label={sidebarTruthScore === null ? "Truth status not evaluated" : `Truth score ${sidebarTruthScore}`}
-                >
-                  <div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center shadow-inner">
-                    <span className="text-xl font-semibold text-slate-950">{sidebarTruthScore ?? "-"}</span>
-                    <span className="-mt-2 text-[9px] font-semibold text-slate-500">
-                      {sidebarTruthScore === null ? "No data" : "Overall"}
-                    </span>
-                  </div>
-                </div>
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  {[
-                    ["Ready", sidebarTruthCounts.ready, "bg-slate-500"],
-                    ["Review", sidebarTruthCounts.review, "bg-amber-500"],
-                    ["Needs input", sidebarTruthCounts.blocked, "bg-violet-500"],
-                    ["Not Run", sidebarTruthCounts.notRun, "bg-slate-300"],
-                  ].map(([label, value, dotClass]) => (
-                    <div key={label} className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-                        <span className="truncate">{label}</span>
-                      </span>
-                      <span className="text-slate-500">{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                {sidebarHasTruthEvidence
-                  ? "Professional review needed before reliance"
-                  : "No project evidence yet | Review needed before reliance"}
-              </p>
-            </div>
-	            <div className="hidden shrink-0 flex-col gap-1 pr-1">
-              <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Workspace
-              </p>
-              {sidebarModes.map((item) => {
-                const isActive = activeWorkspaceMode === item.target;
-                const status = item.status;
-                const Icon = item.icon;
-                const StatusIcon = status === "ok" ? CheckCircle2 : status === "block" ? AlertCircle : status === "review" ? AlertCircle : Circle;
-                return (
-                  <button
-                    key={item.target}
-                    type="button"
-                    aria-label={item.target === "canvas" ? "Open canvas from sidebar" : undefined}
-                    onClick={() => handleOpenWorkspaceMode(item.target)}
-                    className={`flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${
-                      isActive
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold">{item.label}</span>
-                        <span className={`block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                          isActive ? "text-white/55" : "text-slate-400"
-                        }`}>
-                          {item.caption}
-                        </span>
-                      </span>
-                    </span>
-                    <StatusIcon
-                      className={`h-3.5 w-3.5 shrink-0 ${
-                        isActive
-                          ? "text-white/80"
-                          : status === "ok"
-                            ? "text-slate-700"
-                            : status === "block"
-                              ? "text-red-500"
-                              : status === "review"
-                                ? "text-amber-500"
-                                : "text-slate-300"
-                      }`}
-                    />
-                  </button>
-                );
-              })}
-            </div>
           </aside>
           ) : null}
           {sidePanelForRender ? (
@@ -26458,53 +26144,6 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "objects" ? (
                   <div className="space-y-4">
-                    <div className="hidden rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-workflow-summary">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Draw & Object Manager
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-slate-950">
-                            Pick a tool, draw on the canvas, then edit the selected object.
-                          </p>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-slate-950 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
-                          {buildingPlacements.length} objects
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
-                        <button
-                          type="button"
-                          onClick={() => document.querySelector('[data-testid="draw-cad-tools-section"]')?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                          data-testid="draw-workflow-tools-jump"
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left font-semibold text-slate-700 hover:bg-white"
-                        >
-                          <span className="block text-[10px] uppercase tracking-[0.12em] text-slate-400">1 Tools</span>
-                          <span className="mt-1 block">Draw, edit, measure</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => document.querySelector('[data-testid="draw-selected-object-card"]')?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                          data-testid="draw-workflow-selected-jump"
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left font-semibold text-slate-700 hover:bg-white"
-                        >
-                          <span className="block text-[10px] uppercase tracking-[0.12em] text-slate-400">2 Selected</span>
-                          <span className="mt-1 block truncate">{selectedBuilding?.label || "Nothing selected"}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => document.querySelector('[data-testid="object-manager-list"]')?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                          data-testid="draw-workflow-list-jump"
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left font-semibold text-slate-700 hover:bg-white"
-                        >
-                          <span className="block text-[10px] uppercase tracking-[0.12em] text-slate-400">3 Objects</span>
-                          <span className="mt-1 block">{placedObjects.length} placed · {pendingPlacementObjects.length} pending</span>
-                        </button>
-                      </div>
-                      <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
-                        Labels stay quiet on the preview until hover or selection. Use Object Manager for names, colors, layers, copy, paste, rotate, flip, hide, and delete.
-                      </p>
-                    </div>
                     <DrawCadToolsPanel groups={cadToolGroups} onSelectTool={triggerCadTool} />
                     <NeedsPlacementTray
                       items={pendingPlacementObjects.map((item) => ({
