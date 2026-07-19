@@ -2883,6 +2883,10 @@ def _ui_action_reply(selected_action_id: str, payload: Dict[str, Any]) -> str:
 
 def _looks_like_site_setup(message: str) -> bool:
     lowered = _normalized_chat_text(message)
+    has_address = bool(_extract_address_text(message))
+    has_site_dimensions = bool(_extract_site_dimensions(message))
+    if has_address and has_site_dimensions:
+        return True
     design_program_signal = any(
         phrase in lowered
         for phrase in [
@@ -2911,13 +2915,15 @@ def _looks_like_site_setup(message: str) -> bool:
             "around the address",
             "with the address",
             "as the center",
+            "center point",
+            "centered on",
         ]
     )
     if design_program_signal and not setup_only_signal:
         return False
-    if _extract_address_text(message):
+    if has_address:
         return True
-    if _extract_site_dimensions(message) and any(
+    if has_site_dimensions and any(
         phrase in lowered
         for phrase in [
             "site size",
@@ -2938,8 +2944,6 @@ def _looks_like_site_setup(message: str) -> bool:
             "with the address",
         ]
     ):
-        return True
-    if _extract_site_dimensions(message) and _extract_address_text(message):
         return True
     if _extract_site_area_acres(message) and "blank site" in lowered:
         return True

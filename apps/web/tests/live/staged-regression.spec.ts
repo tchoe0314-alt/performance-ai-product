@@ -320,20 +320,10 @@ async function waitForComposer(page: Page) {
   return composer;
 }
 
-async function answerClarificationIfNeeded(page: Page) {
-  const clarificationPrompt = page.getByText(
-    "Before I move forward, I still need the site type or land use",
-    { exact: false },
-  );
-  try {
-    await clarificationPrompt.waitFor({ state: "visible", timeout: 30_000 });
-  } catch {
-    return;
-  }
-  const clarificationComposer = await waitForComposer(page);
-  await clarificationComposer.fill("Mixed-use");
-  await expect(clarificationComposer).toHaveValue("Mixed-use");
-  await page.getByRole("button", { name: "Send" }).click();
+async function expectNoGenericDesignClarification(page: Page) {
+  await expect(
+    page.getByText(/Before I move forward, I still need the site type or land use|which systems to include/i),
+  ).toHaveCount(0, { timeout: 5_000 });
 }
 
 async function ensureNewProject(page: Page) {
@@ -380,13 +370,10 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
   await ensureNewProject(page);
 
   const composer = await waitForComposer(page);
-  const enrichedPrompt = /site type|land use|mixed-use|residential|commercial/i.test(prompt)
-    ? prompt
-    : `${prompt}\nSite type: mixed-use.`;
-  await composer.fill(enrichedPrompt);
+  await composer.fill(prompt);
   await page.getByRole("button", { name: "Send" }).click();
 
-  await answerClarificationIfNeeded(page);
+  await expectNoGenericDesignClarification(page);
 
   const newJob = await waitForNewJob(page, request, token, knownJobIds);
   const jobId = String(newJob.job_id);

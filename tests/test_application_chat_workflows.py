@@ -952,6 +952,60 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(saved_meta["canonical_site_state"]["requested_address_anchor"], "center_point")
         self.assertFalse(saved_meta["canonical_site_state"]["construction_release_allowed"])
 
+    def test_site_setup_with_program_terms_still_captures_site_first(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": (
+                    "20525 Margo St Gretna NE should be the center point, make it 1000 ft by 1000 ft "
+                    "with a 28000 sf office building, 140 parking spaces, detention basin, driveway, "
+                    "sidewalks, public water, sanitary, and storm sewer"
+                ),
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertFalse(result["needs_clarification"])
+        self.assertNotIn("site type or land use", result["assistant_message"])
+        self.assertNotIn("which systems", result["assistant_message"])
+        self.assertIn("1000 ft x 1000 ft", result["assistant_message"])
+        self.assertIn("centered on that address", result["assistant_message"])
+        self.assertEqual(result["response_metadata"]["command_payload"]["address_anchor"], "center_point")
+        saved_input = store.saved[-1]["project_input"]
+        saved_meta = store.saved[-1]["latest_result"]["final_plan"]["meta"]
+        self.assertEqual(saved_input["manual_fields"]["lot"]["w"], 1000.0)
+        self.assertEqual(saved_input["manual_fields"]["lot"]["h"], 1000.0)
+        self.assertEqual(saved_input["meta"]["site_inputs"]["address"], "20525 Margo St, Gretna, NE")
+        self.assertEqual(saved_meta["canonical_site_state"]["requested_address_anchor"], "center_point")
+        self.assertFalse(saved_meta["canonical_site_state"]["construction_release_allowed"])
+
+    def test_site_setup_with_plain_site_and_program_terms_still_captures_site_first(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": "make me a 1000x1000 site at 20525 Margo St Gretna NE with office parking drainage water and sewer",
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertFalse(result["needs_clarification"])
+        self.assertNotIn("site type or land use", result["assistant_message"])
+        self.assertNotIn("which systems", result["assistant_message"])
+        saved_input = store.saved[-1]["project_input"]
+        self.assertEqual(saved_input["manual_fields"]["lot"]["w"], 1000.0)
+        self.assertEqual(saved_input["manual_fields"]["lot"]["h"], 1000.0)
+        self.assertEqual(saved_input["meta"]["site_inputs"]["address"], "20525 Margo St, Gretna, NE")
+
     def test_site_setup_dimensions_only_changes_site_state(self):
         store = RecordingProjectStore()
 
