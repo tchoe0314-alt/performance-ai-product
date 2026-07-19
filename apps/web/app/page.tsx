@@ -2558,6 +2558,7 @@ import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
 import { DashboardEngineDepthPanel } from "./components/DashboardEngineDepthPanel";
+import { DashboardGuidancePanel } from "./components/DashboardGuidancePanel";
 import { DashboardIssueReportPanel } from "./components/DashboardIssueReportPanel";
 import { DashboardProgressTimeline } from "./components/DashboardProgressTimeline";
 import { DashboardProjectSummary } from "./components/DashboardProjectSummary";
@@ -22912,6 +22913,12 @@ function PerformanceAIDashboardView({
     action: step.next_action,
     detail: step.status.replaceAll("_", " "),
   }));
+  const dashboardGuidanceStats: Array<[string, number]> = [
+    ["Objects", placedObjectCount],
+    ["Issues", issues.length + analysisIssues.length],
+    ["Fresh", Object.values(systemStatuses).filter((status) => status === "fresh").length],
+    ["Outputs", backendResult ? 1 : 0],
+  ];
   const setupWizardStatusClass = (status?: SetupWizardStep["status"]) =>
     status === "complete"
       ? "text-emerald-700"
@@ -23600,71 +23607,11 @@ function PerformanceAIDashboardView({
                         onOpenPanel={handleOpenSidePanel}
                       />
                     ) : null}
-	                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        ["Objects", placedObjectCount],
-                        ["Issues", issues.length + analysisIssues.length],
-                        ["Fresh", Object.values(systemStatuses).filter((status) => status === "fresh").length],
-                        ["Outputs", backendResult ? 1 : 0],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                          <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-	                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Onboarding checklist
-                      </summary>
-                      <div className="mt-3 space-y-2">
-                        {setupChecklistItems.map((item) => (
-                          <button
-                            key={item.label}
-                            type="button"
-                            onClick={() => handleOpenSidePanel(item.panel)}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:bg-white"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <span className="text-sm font-semibold text-slate-800">{item.label}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                item.status === "done"
-                                  ? "bg-emerald-50 text-emerald-700"
-                                  : item.status === "blocked"
-                                    ? "bg-red-50 text-red-600"
-                                    : "bg-amber-50 text-amber-700"
-                              }`}>
-                                {item.status}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-slate-500">{item.action}</p>
-                            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{item.detail}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </details>
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        What do statuses mean?
-                      </summary>
-                      <div className="mt-3 space-y-2 text-sm text-slate-600">
-                        {[
-                          ["Ready", "Enough current, traceable evidence exists for review."],
-                          ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
-                          ["Needs input", "Something important is missing before the next review step can continue."],
-                          ["Missing input", "Helpful information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
-                          ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
-                          ["Visual preview only", "The view is a visual aid and is not evidence by itself."],
-                          ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
-                          ["Field use", "Remains outside Civora and requires independent licensed-professional review."],
-                        ].map(([label, desc]) => (
-                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold text-slate-800">{label}</p>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">{desc}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
+                    <DashboardGuidancePanel
+                      stats={dashboardGuidanceStats}
+                      checklistItems={setupChecklistItems}
+                      onOpenPanel={handleOpenSidePanel}
+                    />
                     <DashboardIssueReportPanel
                       message={issueReportMessage}
                       diagnosticSummary={issueDiagnosticSummary}
