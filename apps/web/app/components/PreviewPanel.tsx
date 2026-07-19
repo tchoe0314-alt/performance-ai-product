@@ -46,6 +46,7 @@ import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../ut
 import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
 import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
 import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
+import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
@@ -7613,7 +7614,7 @@ export default function PreviewPanel({
 	              <CanvasQuickDrawPalette
                 visible={previewMode === "2d" && showQuickDrawPalette}
                 drawMode={drawMode}
-                siteLocked={siteLocked}
+                siteLocked={Boolean(siteLocked)}
                 hasDrawableSiteSize={hasDrawableSiteSize}
                 canDrawObjects={canDrawObjects}
                 drawObjectsDisabledLabel={drawObjectsDisabledLabel}
@@ -7634,128 +7635,29 @@ export default function PreviewPanel({
                 onSetPreviewInteraction={onSetPreviewInteraction}
                 onPushCadCommandFeedback={pushCadCommandFeedback}
               />
-              <div className="absolute left-1/2 top-3 z-[85] flex max-w-[calc(100%-8rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
-                <button
-                  type="button"
-                  data-testid="preview-mode-2d"
-                  aria-label="Show 2D plan preview"
-                  onClick={() => onSetPreviewMode("2d")}
-                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                    previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  2D
-                </button>
-                <button
-                  type="button"
-                  data-testid="preview-mode-3d"
-                  aria-label="Show 3D model preview"
-                  onClick={() => {
-                    if (!canUse3D) return;
-                    onSetPreviewMode("3d");
-                  }}
-                  disabled={!canUse3D}
-                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                    activePreviewMode === "3d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600 disabled:text-slate-300"
-                  }`}
-                >
-                  3D
-                </button>
-                <PreviewQualityToggle
-                  value={previewQuality}
-                  onChange={onSetPreviewQuality}
-                  onQueuePreviewRefresh={onQueuePreviewRefresh}
-                  standardTestId="preview-quality-standard"
-                  highTestId="preview-quality-high"
-                  buttonClassName="h-8 rounded-md border px-2.5 text-xs font-semibold"
-                />
-                {isHighQuality ? (
-                  <div
-                    data-testid="ai-realism-toggle"
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5"
-                    aria-label="AI Visualization toggle"
-                  >
-                    <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">AI Visualization</span>
-                    <button
-                      type="button"
-                      data-testid="ai-realism-off"
-                      onClick={setAiVisualizationOff}
-                        aria-pressed={!aiRealismEnabled}
-                      className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
-                        !aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                      }`}
-                    >
-                      Off
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="ai-realism-on"
-                      onClick={setAiVisualizationOn}
-                        aria-pressed={aiRealismEnabled}
-                      className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
-                        aiRealismEnabled ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                      }`}
-                    >
-                      On
-                    </button>
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  data-testid="preview-interaction-edit"
-                  aria-label="Use canvas edit tool"
-                  onClick={() => onSetPreviewInteraction("edit")}
-                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                    allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  Edit
-                </button>
-                {siteLocked && onUnlockSite ? (
-                  <button
-                    type="button"
-                    title="Unlock the site boundary for editing"
-                    aria-label="Change Site Boundary"
-                    onClick={() => {
-                      onUnlockSite();
-                      clearDraftGeometry();
-                      setDrawMode("select");
-                      onSetPreviewInteraction("edit");
-                    }}
-                    className="h-8 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600"
-                  >
-                    Change Site
-                  </button>
-                ) : null}
-                {previewMode === "2d" && allowEdits ? (
-                  <>
-                    {!siteLocked ? (
-                      <button
-                        type="button"
-                        data-testid="draw-site-boundary-toolbar-compact"
-                        aria-pressed={drawMode === "site"}
-                        title="Draw the site boundary"
-                        onClick={() => activateDrawTool("site")}
-                        className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                          drawMode === "site"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-amber-200 bg-amber-50 text-amber-800"
-                        }`}
-                      >
-                        Draw Site
-                      </button>
-                    ) : null}
-                    <PreviewDrawToolButtons
-                      drawMode={drawMode}
-                      disabled={!canDrawObjects}
-                      disabledLabel={drawObjectsDisabledLabel}
-                      onActivate={activateDrawTool}
-                      buttonClassName="h-8 rounded-md border px-2.5 text-xs font-semibold"
-                      itemKeyPrefix="generated-draw"
-                    />
-                  </>
-                ) : null}
-              </div>
+              <PreviewFloatingToolbar
+                previewMode={previewMode}
+                activePreviewMode={activePreviewMode}
+                previewQuality={previewQuality}
+                canUse3D={canUse3D}
+                isHighQuality={isHighQuality}
+                aiRealismEnabled={aiRealismEnabled}
+                allowEdits={allowEdits}
+                siteLocked={Boolean(siteLocked)}
+                canDrawObjects={canDrawObjects}
+                drawObjectsDisabledLabel={drawObjectsDisabledLabel}
+                drawMode={drawMode}
+                onSetPreviewMode={onSetPreviewMode}
+                onSetPreviewQuality={onSetPreviewQuality}
+                onQueuePreviewRefresh={onQueuePreviewRefresh}
+                onSetAiVisualizationOff={setAiVisualizationOff}
+                onSetAiVisualizationOn={setAiVisualizationOn}
+                onSetPreviewInteraction={onSetPreviewInteraction}
+                onUnlockSite={onUnlockSite}
+                onClearDraftGeometry={clearDraftGeometry}
+                onSetDrawMode={setDrawMode}
+                onActivateDrawTool={activateDrawTool}
+              />
               {isHighQuality && aiRealismEnabled ? (
                 <AiRealismPreviewOverlay
                   artifact={aiRealismDisplayArtifact}
