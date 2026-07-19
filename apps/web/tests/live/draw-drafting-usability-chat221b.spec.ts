@@ -130,7 +130,7 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     const canvas = page.getByTestId("workspace-canvas-shell");
     const drawSite = page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first();
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
 
     if (await drawSite.isVisible().catch(() => false)) {
       const alreadyActive = await drawSite.evaluate((element) =>
@@ -156,7 +156,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
     const addLine = cadTools.getByTestId("cad-tool-line");
 
     await expect(cadTools).toBeVisible();
@@ -176,7 +176,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
 
     await cadTools.getByTestId("cad-tool-box").click();
     await clickExposedSurface(surface, 0.26, 0.36);
@@ -203,7 +203,7 @@ test.describe("Chat 221B draw drafting usability", () => {
 
   test("draft precision HUD supports keyboard finish and cancel", async ({ page }) => {
     await startBlankSite(page);
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
     const drawSite = page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first();
     if (await drawSite.isVisible().catch(() => false)) {
       const alreadyActive = await drawSite.evaluate((element) =>
@@ -241,7 +241,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
     await page.keyboard.press("o");
     await cadTools.getByTestId("cad-tool-line").click();
     await clickExposedSurface(surface, 0.2, 0.32);
@@ -294,7 +294,7 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
     const addLine = cadTools.getByTestId("cad-tool-line");
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
 
     await addLine.click();
     await clickExposedSurface(surface, 0.2, 0.24);
@@ -371,7 +371,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
 
     await cadTools.getByTestId("cad-tool-line").click();
     await clickExposedSurface(surface, 0.62, 0.5);
@@ -408,7 +408,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
 
     await cadTools.getByTestId("cad-tool-area").click();
     await clickExposedSurface(surface, 0.24, 0.52);
@@ -463,7 +463,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const surface = page.getByTestId("preview-drawing-surface");
+    const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
 
     await cadTools.getByTestId("cad-tool-area").click();
     await clickExposedSurface(surface, 0.24, 0.52);

@@ -37,8 +37,8 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await expect(page.getByRole("button", { name: "Open chat from header" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open projects from header" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Search unavailable" })).toHaveCount(0);
-    await expect(page.getByTestId("preview-mode-2d").first()).toBeVisible();
-    await expect(page.getByTestId("preview-quality-high").first()).toBeVisible();
+    await expect(page.getByTestId("preview-inner-mode-2d").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByTestId("preview-inner-quality-high").filter({ visible: true }).first()).toBeVisible();
 
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
     expect(await visibleButtonCount(page, /^Deliver$/)).toBe(1);

@@ -19869,14 +19869,12 @@ function PerformanceAIDashboardView({
   // Intentionally avoid auto-loading the last project on initial load so the
   // workspace starts clean and only loads a project when the user selects it.
 
-  const {
-    previewReview,
-    previewBlockedReasons,
-    previewCompletedPhaseCount,
-    previewTotalPhaseCount,
-    previewRunningPhase,
-    previewNextPendingPhase,
-  } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
+	  const {
+	    previewReview,
+	    previewBlockedReasons,
+	    previewRunningPhase,
+	    previewNextPendingPhase,
+	  } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
   const getExportBlockReason = useCallback(() => {
     if (!token) {
       return "authenticate with a backend session before exporting review packages";
@@ -29786,11 +29784,7 @@ function PerformanceAIDashboardView({
                   <div className="h-full w-full">
                     <PreviewPanel
                 previewReview={previewReview}
-                previewTotalPhaseCount={previewTotalPhaseCount}
-                previewCompletedPhaseCount={previewCompletedPhaseCount}
-                previewRunningPhase={previewRunningPhase}
-                previewNextPendingPhase={previewNextPendingPhase}
-                onRefreshPreview={handlePreviewPlan}
+	                onRefreshPreview={handlePreviewPlan}
                 busy={busy}
                 planPreviewUrl={planPreviewUrl}
                 planPreviewProjectId={planPreviewProjectId}
@@ -29889,10 +29883,7 @@ function PerformanceAIDashboardView({
                 onOpenFullscreen={() => setPreviewFullscreenOpen(true)}
                 previewFullscreenOpen={previewFullscreenOpen}
                 onCloseFullscreen={() => setPreviewFullscreenOpen(false)}
-                onExportDxf={handleExportDxf}
-                onExportReport={handleExportReport}
-                exportBlockReason={getExportBlockReason()}
-                planPreviewAnnotations={planPreviewAnnotations}
+	                planPreviewAnnotations={planPreviewAnnotations}
                 selectedIssueLabel={selectedIssueLabel}
                 showMeasurements={showMeasurements}
                 showCalculations={showCalculations}

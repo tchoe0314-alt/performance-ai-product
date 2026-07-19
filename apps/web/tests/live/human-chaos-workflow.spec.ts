@@ -147,15 +147,15 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
   await shot(page, testInfo, "05-object-manager-edits");
 
   await timed("preview mode and quality toggles", async () => {
-    const high = page.getByTestId("preview-toolbar-quality-high").filter({ visible: true }).first();
+    const high = page.getByTestId("preview-inner-quality-high").filter({ visible: true }).first();
     if (await high.isVisible().catch(() => false)) await humanClick(high, "High Quality");
     const ai = page.getByTestId("ai-realism-toggle").filter({ visible: true }).first();
     if (await ai.isVisible().catch(() => false)) await humanClick(ai, "AI Visualization toggle");
-    const mode3d = page.getByTestId("preview-toolbar-mode-3d").filter({ visible: true }).first();
+    const mode3d = page.getByTestId("preview-inner-mode-3d").filter({ visible: true }).first();
     if (await mode3d.isVisible().catch(() => false)) {
       await humanClick(mode3d, "3D mode");
-      await expect(page.getByTestId("preview-3d-canvas")).toBeVisible({ timeout: 30_000 });
-      const mode2d = page.getByTestId("preview-toolbar-mode-2d").filter({ visible: true }).first();
+      await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 30_000 });
+      const mode2d = page.getByTestId("preview-inner-mode-2d").filter({ visible: true }).first();
       if (await mode2d.isVisible().catch(() => false)) await humanClick(mode2d, "2D mode");
     }
   }, 35_000);
