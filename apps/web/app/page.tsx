@@ -2597,6 +2597,7 @@ import useJobPolling from "./hooks/useJobPolling";
 import useAuthState from "./hooks/useAuthState";
 import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
+import { AnalysisPanel } from "./components/AnalysisPanel";
 
 function formatTimestamp(value?: number): string {
   if (!value) return "Unknown time";
@@ -27271,60 +27272,33 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "analysis" ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        ["Model issues", issues.length],
-                        ["Access issues", analysisIssues.length],
-                        ["Systems complete", systemHealthItems.filter((item) => item.state === "complete").length],
-                        ["Needs input", systemHealthItems.filter((item) => item.state === "blocked").length],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button type="button" onClick={handleAnalyzeSiteAccess} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Run access analysis</button>
-                      <button type="button" onClick={() => handleOpenSidePanel("dashboard")} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">Open dashboard</button>
-                    </div>
-                    {[
-                      ...issues.map((issue, index) => ({ ...issue, id: `issue-${index}` })),
-                      ...analysisIssues.map((issue) => ({ id: issue.id, message: issue.message, severity: "warning" as const })),
-                    ].map((issue) => {
-                      const applyLabel = "code" in issue ? drainageIssueApplyLabel(issue as Issue) : "";
-                      const canApply = applyLabel ? canApplyDrainageIssue(issue as Issue) : false;
-                      return (
-                        <div key={issue.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${issue.severity === "error" ? "text-red-600" : "text-amber-600"}`}>{issue.severity}</p>
-                              <p className="mt-2 text-sm text-slate-700">{issue.message}</p>
-                              {"code" in issue && issue.code ? (
-                                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{issue.code}</p>
-                              ) : null}
-                            </div>
-                            {applyLabel ? (
-                              <button
-                                type="button"
-                                onClick={() => handleApplyDrainageIssue(issue as Issue)}
-                                disabled={!canApply}
-                                className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                  canApply
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                    : "cursor-not-allowed border-slate-200 bg-white text-slate-400"
-                                }`}
-                              >
-                                {applyLabel}
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {!issues.length && !analysisIssues.length ? <p className="text-sm text-slate-500">No active analysis issues.</p> : null}
-                  </div>
+                  <AnalysisPanel
+                    modelIssueCount={issues.length}
+                    accessIssueCount={analysisIssues.length}
+                    systemsCompleteCount={systemHealthItems.filter((item) => item.state === "complete").length}
+                    blockedSystemCount={systemHealthItems.filter((item) => item.state === "blocked").length}
+                    issues={[
+                      ...issues.map((issue, index) => {
+                        const applyLabel = drainageIssueApplyLabel(issue) ?? undefined;
+                        return {
+                          id: `issue-${index}`,
+                          severity: issue.severity,
+                          message: issue.message,
+                          code: issue.code,
+                          applyLabel,
+                          canApply: applyLabel ? canApplyDrainageIssue(issue) : false,
+                          onApply: applyLabel ? () => handleApplyDrainageIssue(issue) : undefined,
+                        };
+                      }),
+                      ...analysisIssues.map((issue) => ({
+                        id: issue.id,
+                        message: issue.message,
+                        severity: "warning" as const,
+                      })),
+                    ]}
+                    onRunAccessAnalysis={handleAnalyzeSiteAccess}
+                    onOpenDashboard={() => handleOpenSidePanel("dashboard")}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "files" ? (
