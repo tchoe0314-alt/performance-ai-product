@@ -8007,8 +8007,8 @@ function PerformanceAIDashboardView({
       undo: undoAction,
     });
     const message = visiblePastedObjects.length === 1
-      ? `Pasted ${visiblePastedObjects[0].label}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}. It remains draft review geometry, not construction-release evidence.`
-      : `Pasted ${visiblePastedObjects.length} copied draft objects${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blocked.length ? `; ${blocked.length} blocked.` : "."} They remain draft review geometry, not construction-release evidence.`;
+      ? `Pasted ${visiblePastedObjects[0].label}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}. It remains review-required draft geometry.`
+      : `Pasted ${visiblePastedObjects.length} copied draft objects${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blocked.length ? `; ${blocked.length} blocked.` : "."} They remain review-required draft geometry.`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     appendChatMessage("assistant", message, "status");
@@ -8646,7 +8646,7 @@ function PerformanceAIDashboardView({
     const message = `Duplicated ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Duplicates remain draft review geometry, not construction-release evidence.`, "status");
+    appendChatMessage("assistant", `${message} Duplicates remain review-required draft geometry.`, "status");
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
       .then(() => {
@@ -8717,7 +8717,7 @@ function PerformanceAIDashboardView({
     const message = `Copied ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"} by ${dx},${dy}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Copies remain draft review geometry, not construction-release evidence.`, "status");
+    appendChatMessage("assistant", `${message} Copies remain review-required draft geometry.`, "status");
     recordRecentChange({
       type: "object_added",
       label: "Objects copied by offset",
@@ -8824,7 +8824,7 @@ function PerformanceAIDashboardView({
     const message = `Array created ${visibleDuplicates.length} draft review cop${visibleDuplicates.length === 1 ? "y" : "ies"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} selected object${blockedCount === 1 ? "" : "s"} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Array output remains draft review geometry, not construction-release evidence.`, "status");
+    appendChatMessage("assistant", `${message} Array output remains review-required draft geometry.`, "status");
     recordRecentChange({
       type: "object_added",
       label: "Objects arrayed",
@@ -9622,7 +9622,7 @@ function PerformanceAIDashboardView({
     setDraftBlockLibrary((prev) => [nextBlock, ...prev.filter((block) => block.name !== name)].slice(0, 12));
     setDraftBlockName("");
     const message = `Saved ${name} as a reusable draft block with ${editable.length} source object${editable.length === 1 ? "" : "s"}.`;
-    setObjectManagerStatusMessage(`${message} Inserts remain review-required and are not construction-release evidence.`);
+    setObjectManagerStatusMessage(`${message} Inserts remain review-required draft geometry.`);
     setStatusMessage(message);
     recordRecentChange({
       type: "object_added",
@@ -9780,7 +9780,7 @@ function PerformanceAIDashboardView({
       undo,
     });
     const message = `Inserted ${definition.name} as ${blockLabel} with ${linkedSources.length} hidden source trace piece${linkedSources.length === 1 ? "" : "s"}.`;
-    setObjectManagerStatusMessage(`${message} It remains draft review geometry, not construction-release evidence.`);
+    setObjectManagerStatusMessage(`${message} It remains review-required draft geometry.`);
     setStatusMessage(message);
     appendChatMessage("assistant", `${message} Use Explode combined if you need to edit the source pieces.`, "status");
     void ensureProjectDraftRef.current()
@@ -18064,7 +18064,7 @@ function PerformanceAIDashboardView({
         ? {
             count: userLayoutContext.length,
             semantic_count: semanticLayoutCount,
-            labels: userLayoutContext.slice(0, 8).map((item) => item.label),
+            labels: userLayoutContext.slice(0, 20).map((item) => item.label),
             affected_systems: uniqueStrings(userLayoutContext.flatMap((item) => systemsImpactedByPlacement(item))),
             review_required: true,
           }

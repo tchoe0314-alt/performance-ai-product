@@ -150,15 +150,14 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await page.getByRole("button", { name: "Projects" }).first().click();
   await page.getByRole("button", { name: "New Project" }).first().click();
 
-  await runCommand(page, "I want the address to be 20525 Margo St Gretna NE and it is gonna be 1000ft by 1000 ft with the address as the center point");
+  await runCommand(
+    page,
+    "20525 Margo St Gretna NE should be the center point, make it 1000 ft by 1000 ft with a 28000 sf office building, 140 parking spaces, detention basin, driveway, sidewalks, public water, sanitary, and storm sewer",
+  );
   await expect(page.getByText("SITE LOCKED").first()).toBeVisible({ timeout: 30_000 });
-
-  await runCommand(page, "add 28000 sf office building");
   await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 5_000 });
-  await runCommand(page, "add detention basin");
   await expect(page.locator('[data-cad-object-id][aria-label*="Basin"], [data-cad-object-id][aria-label*="Detention"]').first()).toBeVisible({ timeout: 5_000 });
-  await runCommand(page, "add water line");
-  await expect(page.locator('[data-cad-object-id][aria-label*="Water Line"], [data-cad-object-id][aria-label*="water-line"]').first()).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"], [data-cad-object-id][aria-label*="water-line"]').first()).toBeVisible({ timeout: 5_000 });
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const cadTools = page.getByTestId("draw-cad-tools-section");
@@ -189,7 +188,7 @@ test("Generate queues drawn and placed objects as engineering context", async ({
 
   expect(buildings.some((item) => String(item.label).includes("Office Building - 28,000 sf"))).toBeTruthy();
   expect(ponds.some((item) => /Basin|Detention/i.test(String(item.name)))).toBeTruthy();
-  expect(sitePlan?.parking_count ?? null).not.toBe(140);
+  expect(sitePlan?.parking_count ?? null).toBe(140);
 
   const meta = request.meta as Record<string, unknown>;
   expect(meta.requested_system).toBe("full");
