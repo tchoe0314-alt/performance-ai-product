@@ -27845,7 +27845,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "templates" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <PanelCard>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Firm template registry</p>
@@ -27907,8 +27907,8 @@ function PerformanceAIDashboardView({
                           Export JSON
                         </button>
                       </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    </PanelCard>
+                    <PanelCard>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Registered templates</p>
                       <div className="mt-3 space-y-2">
                         {customerTemplateSummaries.map((item) => (
@@ -27955,13 +27955,13 @@ function PerformanceAIDashboardView({
                           </p>
                         ) : null}
                       </div>
-                    </div>
+                    </PanelCard>
                   </div>
                 ) : null}
 
                 {sidePanelForRender === "catalogs" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <PanelCard>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Utility catalog manager</p>
@@ -28006,8 +28006,8 @@ function PerformanceAIDashboardView({
                       <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                         Catalog entries require explicit source and workspace review metadata. Listed sizes do not claim standards compliance.
                       </p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    </PanelCard>
+                    <PanelCard>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pipe material / size catalogs</p>
                       <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
                         <table className="min-w-[720px] w-full border-collapse text-left text-xs">
@@ -28047,8 +28047,8 @@ function PerformanceAIDashboardView({
                           <p className="p-4 text-sm font-semibold text-slate-500">No pipe catalogs match this filter.</p>
                         ) : null}
                       </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    </PanelCard>
+                    <PanelCard>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Structures / valves / fittings</p>
                       <div className="mt-3 grid gap-2">
                         {filteredUtilityParts.map((item) => (
@@ -28078,7 +28078,7 @@ function PerformanceAIDashboardView({
                           <p className="text-sm font-semibold text-slate-500">No part catalogs match this filter.</p>
                         ) : null}
                       </div>
-                    </div>
+                    </PanelCard>
                   </div>
                 ) : null}
 
