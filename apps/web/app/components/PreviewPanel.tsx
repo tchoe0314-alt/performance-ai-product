@@ -4,7 +4,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { ComponentType, MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { AlertTriangle, CornerUpLeft, CornerUpRight, Droplets, Eye, EyeOff, Flame, GitBranch, Hand, Lock, MapPin, Maximize2, MousePointer2, Move, Navigation, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, Unlock, X, ZoomIn, ZoomOut } from "lucide-react";
+import { AlertTriangle, CornerUpLeft, CornerUpRight, Droplets, Eye, EyeOff, Flame, GitBranch, Hand, MapPin, Maximize2, MousePointer2, Move, Navigation, Pentagon, PencilLine, RefreshCw, RotateCcw, RotateCw, Route, Ruler, Scale, Scissors, ShieldCheck, Square, Table2, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 
 import type {
   Preview3DItem,
@@ -25,7 +25,6 @@ import {
   siteToRelativePoint,
   siteTupleToPercent,
   translateSiteGeometry,
-  coordinateModeLabel,
 } from "../utils/geometryTransforms";
 import {
   cleanupPolygon,
@@ -41,6 +40,7 @@ import {
 } from "../utils/cadGeometryKernel";
 import type { CadDimensionMode, CadSymbolKind, CadToolRequest, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
+import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
 import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
@@ -7042,185 +7042,40 @@ export default function PreviewPanel({
     <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
       <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
           <div className="relative isolate z-[220] mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
-            <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-              <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
-                  Canvas
-                </span>
-                <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} / {coordinateModeLabel(coordinateMode)}
-                </span>
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <PreviewQualityToggle
-                    value={previewQuality}
-                    onChange={onSetPreviewQuality}
-                    onQueuePreviewRefresh={onQueuePreviewRefresh}
-                    standardTestId="preview-inner-quality-standard"
-                    highTestId="preview-inner-quality-high"
-                  />
-                  <button
-                    type="button"
-                    data-testid="preview-inner-mode-2d"
-                    onClick={() => onSetPreviewMode("2d")}
-                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                      previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    2D
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="preview-inner-mode-3d"
-                    onClick={() => {
-                      if (!canUse3D) return;
-                      onSetPreviewMode("3d");
-                    }}
-                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                      previewMode === "3d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  disabled={!canUse3D}
-                >
-                  3D
-                </button>
-                <button
-                  type="button"
-                  data-testid="preview-inner-map-toggle"
-                  onClick={() => setMapOverlayEnabled((value) => !value)}
-                  disabled={!mapAvailable}
-                  title={mapAvailable ? "Toggle satellite/map context" : "Map context needs an applied geocoded address"}
-                  className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                    mapOverlayEnabled
-                      ? "border-slate-900 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  } disabled:cursor-not-allowed disabled:opacity-45`}
-                >
-                  Map {mapOverlayEnabled ? "On" : "Off"}
-                </button>
-	                <button
-	                  type="button"
-	                  data-testid="preview-inner-interaction-edit"
-	                    aria-label="Use canvas edit tool"
-	                    onClick={() => onSetPreviewInteraction("edit")}
-                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                      allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                    }`}
-	                  >
-	                    Edit
-	                  </button>
-	                  {previewMode === "2d" ? (
-	                    <button
-	                      type="button"
-		                      data-testid="preview-inner-draw-site-boundary"
-	                      aria-pressed={drawMode === "site"}
-	                      title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
-	                      onClick={() => {
-	                        if (siteLocked) {
-	                          pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
-	                          return;
-	                        }
-	                        activateDrawTool("site");
-	                      }}
-	                      className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-	                        drawMode === "site"
-	                          ? "border-slate-900 bg-slate-950 text-white"
-	                          : siteLocked
-	                            ? "border-slate-200 bg-white text-slate-600"
-	                            : "border-amber-200 bg-amber-50 text-amber-800"
-	                      }`}
-	                    >
-	                      Draw Site Boundary
-	                    </button>
-	                  ) : null}
-	                  {previewMode === "2d" && siteLocked && onUnlockSite ? (
-	                    <button
-	                      type="button"
-	                      data-testid="change-site-boundary-toolbar-hidden"
-	                      aria-label="Change Site Boundary"
-	                      onClick={() => {
-	                        onUnlockSite();
-	                        clearDraftGeometry();
-	                        setDrawMode("select");
-	                        onSetPreviewInteraction("edit");
-	                      }}
-	                      className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600"
-	                    >
-	                      Change Site
-	                    </button>
-	                  ) : null}
-	                  {previewMode === "2d" ? (
-	                    <PreviewDrawToolButtons
-	                      drawMode={drawMode}
-	                      disabled={!canDrawObjects}
-	                      disabledLabel={drawObjectsDisabledLabel}
-	                      onActivate={activateDrawTool}
-	                      itemKeyPrefix="canvas-primary-draw"
-	                    />
-	                  ) : null}
-	                </div>
-                {isHighQuality ? (
-                  <span
-                    data-testid="high-quality-preview-only-label"
-                    className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
-                  >
-                    Visual preview only. Canonical geometry unchanged. Not engineering evidence.
-                  </span>
-                ) : null}
-                {useLightHighQuality ? (
-                  <span className="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-800">
-                    High Quality Lite
-                  </span>
-                ) : null}
-              </div>
-              <div className="pointer-events-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
-                {showMap ? (
-                  <button
-                    type="button"
-                    onClick={() => setMapLocked((prev) => !prev)}
-                    className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
-                      mapLocked
-                        ? "border-slate-900 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    {mapLocked ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-                    {mapLocked ? "Unlock Map" : "Lock Map"}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFocusTransform(null);
-                    onResetView?.();
-                  }}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={onRefreshPreview}
-                  disabled={busy}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh
-                </button>
-                {analysisHighlight ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFocusTransform(null);
-                      onClearHighlights?.();
-                    }}
-                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <X className="h-4 w-4" />
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-            </div>
+            <PreviewCanvasHeaderControls
+              previewMode={previewMode}
+              previewQuality={previewQuality}
+              coordinateMode={coordinateMode}
+              canUse3D={canUse3D}
+              mapAvailable={mapAvailable}
+              mapOverlayEnabled={mapOverlayEnabled}
+              mapLocked={mapLocked}
+              showMap={showMap}
+              allowEdits={allowEdits}
+              drawMode={drawMode}
+              siteLocked={siteLocked}
+              canDrawObjects={canDrawObjects}
+              drawObjectsDisabledLabel={drawObjectsDisabledLabel}
+              isHighQuality={isHighQuality}
+              useLightHighQuality={useLightHighQuality}
+              busy={busy}
+              analysisHighlight={analysisHighlight}
+              onSetPreviewQuality={onSetPreviewQuality}
+              onQueuePreviewRefresh={onQueuePreviewRefresh}
+              onSetPreviewMode={onSetPreviewMode}
+              onSetPreviewInteraction={onSetPreviewInteraction}
+              onSetMapOverlayEnabled={setMapOverlayEnabled}
+              onSetMapLocked={setMapLocked}
+              onActivateDrawTool={activateDrawTool}
+              onPushCadCommandFeedback={pushCadCommandFeedback}
+              onUnlockSite={onUnlockSite}
+              onClearDraftGeometry={clearDraftGeometry}
+              onSetDrawMode={setDrawMode}
+              onSetFocusTransform={setFocusTransform}
+              onResetView={onResetView}
+              onRefreshPreview={onRefreshPreview}
+              onClearHighlights={onClearHighlights}
+            />
             <div className="pointer-events-none relative z-[220] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
               {previewMode === "2d" ? (
                 <section className={`${allowEdits && drawMode === "select" && selectedObject ? "pointer-events-auto relative z-[230] flex" : "hidden"} min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.65)] backdrop-blur`} data-testid="preview-object-manager">
