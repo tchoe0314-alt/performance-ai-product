@@ -2565,6 +2565,7 @@ import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
 import { QuantitiesPanel } from "./components/QuantitiesPanel";
+import { ReportGateListPanel } from "./components/ReportGateListPanel";
 import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
 import { SourceConfidencePanel } from "./components/SourceConfidencePanel";
 import { StandardsPanel } from "./components/StandardsPanel";
@@ -29427,36 +29428,8 @@ function PerformanceAIDashboardView({
                             handleOpenSidePanel("chat");
                           }}
                         />
-                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Truth gates</p>
-                          <div className="mt-3 space-y-2">
-                            {sidebarTruthItems.map((item) => (
-                              <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                                <span className="font-semibold text-slate-700">{item.label}</span>
-                                <span className={`text-xs font-semibold uppercase tracking-[0.12em] ${
-                                  item.status === "block" ? "text-red-600" : item.status === "review" ? "text-amber-600" : "text-slate-500"
-                                }`}>
-                                  {item.value}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review gates</p>
-                          <div className="mt-3 space-y-2">
-                            {reviewGateItems.map((item) => (
-                              <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                                <span className="font-semibold text-slate-700">{item.label}</span>
-                                <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${
-                                  item.status === "block" ? "text-red-600" : "text-amber-600"
-                                }`}>
-                                  {item.value}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        <ReportGateListPanel title="Truth gates" items={sidebarTruthItems} />
+                        <ReportGateListPanel title="Review gates" items={reviewGateItems} />
                         <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="design-alternatives-panel">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
