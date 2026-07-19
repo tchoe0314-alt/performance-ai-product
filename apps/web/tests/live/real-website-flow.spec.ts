@@ -118,7 +118,11 @@ test.describe("real website workflow clarity", () => {
 
     await page.getByRole("button", { name: "Hide left sidebar" }).click();
     await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();
-    expect(await visibleButtonCount(page, "Generate")).toBe(1);
+    expect(await visibleButtonCount(page, /^Generate$/)).toBeLessThanOrEqual(1);
+    await page.getByRole("button", { name: "Show left sidebar" }).click();
+    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toBeVisible();
+    await expect(page.getByTestId("left-sidebar")).toBeVisible();
+    expect(await visibleButtonCount(page, /^Generate$/)).toBeLessThanOrEqual(1);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);

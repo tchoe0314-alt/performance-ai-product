@@ -180,8 +180,13 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
   test("upload, PDF, and survey/topo failures stay inline", async ({ page }, testInfo) => {
     await openDemoWorkspace(page);
-    await page.getByRole("button", { name: "Open workspace controls" }).click();
-    await page.getByRole("button", { name: "Import" }).click();
+    await openWorkspacePanel(page, /^Setup$/, /Project Setup/i);
+    const sources = page.getByTestId("setup-survey-terrain-card");
+    if (!(await sources.evaluate((element) => element.hasAttribute("open")))) {
+      await sources.locator("summary").click();
+    }
+    await expect(sources).toContainText(/Map snapshot|Survey/i, { timeout: 10_000 });
+    await sources.getByRole("button", { name: /^Import$/ }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Import inputs", { timeout: 10_000 });
     const imagePath = testInfo.outputPath("site-image.png");
     await testInfo.attach("empty-image", { body: Buffer.from("not an image"), contentType: "text/plain" });

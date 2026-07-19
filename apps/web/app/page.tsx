@@ -27633,7 +27633,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "jobs" ? (
                   <div className="space-y-4" data-testid="async-jobs-panel">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <PanelCard>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Job workflow</p>
@@ -27684,9 +27684,9 @@ function PerformanceAIDashboardView({
                           {jobsPanelStatusMessage}
                         </p>
                       ) : null}
-                    </div>
+                    </PanelCard>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <PanelCard>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">History</p>
                       <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
                         {jobHistory.length ? jobHistory.map((job) => {
@@ -27734,10 +27734,10 @@ function PerformanceAIDashboardView({
                           </p>
                         )}
                       </div>
-                    </div>
+                    </PanelCard>
 
                     {selectedJob ? (
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="job-detail-drawer">
+                      <PanelCard testId="job-detail-drawer">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detail drawer</p>
@@ -27807,10 +27807,10 @@ function PerformanceAIDashboardView({
                             </div>
                           </div>
                         ) : null}
-                      </div>
+                      </PanelCard>
                     ) : null}
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <PanelCard>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Artifact history</p>
                       <div className="mt-3 space-y-2">
                         {artifactHistory.length ? artifactHistory.slice(0, 8).map((artifact, index) => (
@@ -27839,7 +27839,7 @@ function PerformanceAIDashboardView({
                           </p>
                         )}
                       </div>
-                    </div>
+                    </PanelCard>
                   </div>
                 ) : null}
 
