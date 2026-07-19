@@ -39,7 +39,26 @@ import {
   type CadSegment2D,
   type CadSnapKind,
 } from "../utils/cadGeometryKernel";
+import type { CadDimensionMode, CadSymbolKind, CadToolRequest, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
+import {
+  firstMetaNumber,
+  formatClearance,
+  formatFlowValue,
+  geometryTruthLabel,
+  hasParkingGeometryEvidence,
+  normalizeFlowStatus,
+  normalizeSystemLabel,
+  readMetaNumber,
+  resolveSourceState,
+  scalePolygonTowardCenter,
+  sourceStateLabel,
+  stableHash,
+  supportsParkingModuleRendering,
+  toFiniteNumber,
+  utilityStrokeColor,
+  type ParkingParams,
+} from "../utils/previewGeometryTruth";
 
 const Preview3DCanvas = lazy(() => import("./Preview3DCanvas"));
 
@@ -49,49 +68,7 @@ type EngineeringSystemStatuses = Record<
   "roads" | "parking" | "grading" | "drainage" | "utilities",
   EngineeringSystemStatus
 >;
-type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rect" | "point";
 type CadPoint = { x: number; y: number };
-type CadSymbolKind = "hydrant" | "inlet" | "manhole" | "valve" | "tree" | "light" | "sign" | "utility_marker" | "benchmark" | "note_callout";
-type CadDimensionMode = "linear" | "aligned";
-type CadToolRequest = {
-  id: number;
-  commandText?: string;
-  tool:
-    | "select"
-    | "line"
-    | "polyline"
-    | "area"
-    | "box"
-    | "point"
-    | "circle"
-    | "arc"
-    | "text"
-    | "move"
-    | "copy"
-    | "rotate"
-    | "scale"
-    | "offset"
-    | "trim"
-    | "extend"
-    | "fillet"
-    | "join"
-    | "split"
-    | "close"
-    | "open"
-    | "reverse"
-    | "hatch"
-    | "delete"
-    | "dimension"
-    | "measure"
-    | "symbol"
-    | "layer"
-    | "properties"
-    | "snap"
-    | "ortho"
-    | "undo"
-    | "redo"
-    | "command";
-};
 type CadHistoryEntry = {
   id: string;
   label: string;
@@ -122,20 +99,6 @@ type StormHydrologyOverlay = {
     capacityValid: boolean;
     path: Array<{ x: number; y: number }>;
   }>;
-};
-
-type ParkingParams = {
-  stallWidth?: number;
-  stallDepth?: number;
-  aisleWidth?: number;
-  adaAisleWidth?: number;
-  adaCount?: number;
-  compactCount?: number;
-  compactWidth?: number;
-  angleDeg?: number;
-  loading?: "single" | "double";
-  useMixedAngles?: boolean;
-  compactZone?: boolean;
 };
 
 type WaterHydrantView = {
@@ -231,166 +194,6 @@ type AiRealismArtifact = {
 
 const AI_REALISM_WATERMARK =
   "AI visualization from current review layout - visual concept only, not engineering evidence.";
-
-const toFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const readMetaNumber = (meta: Record<string, unknown> | undefined, keys: string[]): number | null => {
-  if (!meta) return null;
-  for (const key of keys) {
-    const value = toFiniteNumber(meta[key]);
-    if (value !== null) return value;
-  }
-  return null;
-};
-
-const normalizeFlowStatus = (value: unknown): "pass" | "review" | "fail" => {
-  const status = String(value || "").toLowerCase();
-  if (status.includes("fail") || status.includes("block")) return "fail";
-  if (status.includes("pass") || status.includes("ok") || status.includes("ready")) return "pass";
-  return "review";
-};
-
-const formatFlowValue = (value: number | null | undefined, unit: string, decimals = 0) =>
-  value === null || value === undefined || Number.isNaN(value) ? "--" : `${value.toFixed(decimals)} ${unit}`;
-
-const normalizeSystemLabel = (value: unknown) => {
-  const raw = String(value || "").toLowerCase();
-  if (raw.includes("storm") || raw.includes("drain")) return "Storm";
-  if (raw.includes("sanitary") || raw.includes("sewer")) return "Sanitary";
-  if (raw.includes("water") || raw.includes("hydrant")) return "Water";
-  if (raw.includes("gas")) return "Gas";
-  if (raw.includes("electric") || raw.includes("power")) return "Electric";
-  if (raw.includes("telecom") || raw.includes("fiber")) return "Telecom";
-  if (raw.includes("road")) return "Road";
-  if (raw.includes("building")) return "Building";
-  if (raw.includes("utility")) return "Utility";
-  return String(value || "Utility").replace(/_/g, " ");
-};
-
-const formatClearance = (value: number | null | undefined) =>
-  value === null || value === undefined || Number.isNaN(value) ? "Needs source" : `${value.toFixed(1)} ft`;
-
-type PreviewSourceState = "verified" | "imported" | "inferred" | "stale" | "blocked" | "fallback";
-
-const resolveSourceState = (item: BuildingPlacement): PreviewSourceState => {
-  const meta = item.meta ?? {};
-  const statusText = [
-    meta.source_confidence,
-    meta.cad_source_confidence,
-    meta.classification_status,
-    meta.engineering_status,
-    meta.review_status,
-    meta.handoff_status,
-    meta.source,
-    item.source,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  if (item.meta?.unsupported_entity_placeholder || statusText.includes("blocked")) return "blocked";
-  if (statusText.includes("stale") || statusText.includes("dirty")) return "stale";
-  if (statusText.includes("inferred") || statusText.includes("low") || item.source === "inferred") return "inferred";
-  if (statusText.includes("import") || item.source === "detected_from_image") return "imported";
-  const hasPathGeometry = hasExplicitFootprintGeometry(item);
-  const sourceBackedRect =
-    item.geometryType === "rect" &&
-    (item.source === "user" ||
-      item.source === "manual_drawn" ||
-      item.source === "user_confirmed" ||
-      statusText.includes("verified") ||
-      statusText.includes("source-backed") ||
-      statusText.includes("survey") ||
-      statusText.includes("import"));
-  if (!hasPathGeometry && item.geometryType === "rect" && item.type !== "site" && !sourceBackedRect) return "fallback";
-  if (!hasPathGeometry && item.geometryType !== "rect" && item.type !== "site") return "fallback";
-  return "verified";
-};
-
-const sourceStateLabel = (state: PreviewSourceState) => {
-  if (state === "verified") return "Source-backed geometry";
-  if (state === "imported") return "Imported geometry - review required";
-  if (state === "inferred") return "Inferred geometry - low confidence";
-  if (state === "stale") return "Stale geometry - rerun affected systems";
-  if (state === "blocked") return "Geometry needs review";
-  return "Fallback geometry - bounds only";
-};
-
-const geometryTruthLabel = (item: BuildingPlacement) => {
-  const state = resolveSourceState(item);
-  const entityType = String(item.meta?.cad_entity_type || item.geometryType || "");
-  if (state === "fallback") return sourceStateLabel(state);
-  if (item.geometryType === "polygon") return "True polygon footprint";
-  if (item.geometryType === "polyline") return "True linework";
-  if (item.geometryType === "point") return "Point / symbol";
-  if (item.geometryType === "rect" || entityType === "rectangle") return "Draft rectangular footprint";
-  return sourceStateLabel(state);
-};
-
-const utilityStrokeColor = (item: BuildingPlacement) => {
-  const text = `${item.type || ""} ${item.label || ""} ${item.meta?.system || ""} ${item.meta?.discipline || ""}`.toLowerCase();
-  if (text.includes("water") || text.includes("hydrant")) return "#2563eb";
-  if (text.includes("sanitary") || text.includes("manhole")) return "#15803d";
-  if (text.includes("storm") || text.includes("drain") || text.includes("inlet") || text.includes("sewer")) return "#c2410c";
-  if (text.includes("electric") || text.includes("power")) return "#ca8a04";
-  if (text.includes("gas")) return "#dc2626";
-  return "#64748b";
-};
-
-const polygonCentroid = (points: Array<[number, number]>): [number, number] => {
-  if (!points.length) return [0, 0];
-  const sum = points.reduce(
-    (acc, pt) => {
-      acc.x += pt[0];
-      acc.y += pt[1];
-      return acc;
-    },
-    { x: 0, y: 0 },
-  );
-  return [sum.x / points.length, sum.y / points.length];
-};
-
-const scalePolygonTowardCenter = (points: Array<[number, number]>, scale: number): Array<[number, number]> => {
-  const [cx, cy] = polygonCentroid(points);
-  return points.map(([x, y]) => [cx + (x - cx) * scale, cy + (y - cy) * scale]);
-};
-
-const firstMetaNumber = (item: BuildingPlacement, keys: string[]): number | null => readMetaNumber(item.meta, keys);
-
-const hasExplicitFootprintGeometry = (item: BuildingPlacement) =>
-  (item.geometryType === "polygon" || item.geometryType === "polyline" || item.geometryType === "point") &&
-  Array.isArray(item.geometry) &&
-  item.geometry.length > 0;
-
-const supportsParkingModuleRendering = (item: BuildingPlacement) => {
-  const params = (item.meta as { parkingParams?: ParkingParams } | undefined)?.parkingParams ?? {};
-  const stallDepth = Number.isFinite(params.stallDepth) ? Number(params.stallDepth) : 18;
-  const aisleWidth = Number.isFinite(params.aisleWidth) ? Number(params.aisleWidth) : 24;
-  const stallWidth = Number.isFinite(params.stallWidth) ? Number(params.stallWidth) : 9;
-  const loading = params.loading === "single" ? "single" : "double";
-  const minDepth = stallDepth * (loading === "double" ? 2 : 1) + aisleWidth;
-  const minWidth = Math.max(stallWidth * 2.5, 24);
-  return item.type === "parking" && item.w >= minWidth && item.d >= minDepth * 0.82;
-};
-
-const hasParkingGeometryEvidence = (item: BuildingPlacement) =>
-  supportsParkingModuleRendering(item) &&
-  Number.isFinite(item.w) &&
-  Number.isFinite(item.d);
-
-const stableHash = (value: string) => {
-  let hash = 5381;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 33) ^ value.charCodeAt(index);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-};
 
 type PreviewPanelProps = {
   previewReview: PreviewReview | null;
@@ -854,6 +657,7 @@ export default function PreviewPanel({
     containerLeft: number;
     containerTop: number;
   } | null>(null);
+  const cadWindowSelectRef = useRef<typeof cadWindowSelect>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
   const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | "vertex" | null>(null);
   const [draggingVertex, setDraggingVertex] = useState<{ id: string; index: number } | null>(null);
@@ -949,7 +753,7 @@ export default function PreviewPanel({
   const allowEdits = previewInteraction === "edit";
   const showQuickDrawPalette =
     previewMode === "2d" &&
-    allowEdits &&
+    (allowEdits || drawMode !== "select") &&
     drawMode !== "pan";
   const showMobileDrawToolbar = showQuickDrawPalette;
   const activeDrawMode =
@@ -2061,15 +1865,16 @@ export default function PreviewPanel({
 
   const resolveCadSnapPoint = useCallback(
     (point: CadPoint, basePoint?: CadPoint | null): (CadPoint & { kind: CadSnapKind }) => {
-      return resolveCadSnap(point, cadSegments, {
+      const shouldIgnoreObjectSnap = drawMode === "site" || drawMode === "polygon";
+      return resolveCadSnap(point, shouldIgnoreObjectSnap ? [] : cadSegments, {
         enabled: cadSnapEnabled,
-        ortho: cadOrthoEnabled,
+        ortho: shouldIgnoreObjectSnap ? false : cadOrthoEnabled,
         basePoint,
         threshold: Math.max(lotWidth, lotHeight, 1) * 0.018,
         gridSize: 5,
       });
     },
-    [cadOrthoEnabled, cadSegments, cadSnapEnabled, lotHeight, lotWidth],
+    [cadOrthoEnabled, cadSegments, cadSnapEnabled, drawMode, lotHeight, lotWidth],
   );
 
   const updateCadObject = useCallback(
@@ -2623,6 +2428,32 @@ export default function PreviewPanel({
     },
     [allowEdits, drawMode, placementMode, visibleCadObjects],
   );
+
+  useEffect(() => {
+    cadWindowSelectRef.current = cadWindowSelect;
+  }, [cadWindowSelect]);
+
+  useEffect(() => {
+    if (!cadWindowSelect) return;
+    const handleMove = (event: MouseEvent) => {
+      setCadWindowSelect((current) =>
+        current ? { ...current, currentX: event.clientX, currentY: event.clientY } : current,
+      );
+    };
+    const handleUp = () => {
+      const selection = cadWindowSelectRef.current;
+      if (selection) finishCadWindowSelect(selection);
+      cadWindowSelectRef.current = null;
+      setCadWindowSelect(null);
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp, { once: true });
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [cadWindowSelect, finishCadWindowSelect]);
+
   const parseCadPointToken = useCallback((token: string): [number, number] | null => {
     const match = token.trim().match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
     if (!match) return null;
@@ -4463,6 +4294,8 @@ export default function PreviewPanel({
       setDrawAutoFinishPointCount(autoFinishPointCount);
       setCadActiveCommand(null);
       onSelectBuilding(null);
+      setManagedObjectId(null);
+      setHoveredObjectId(null);
       setSelectedVertex(null);
       setCadSelectionSet([]);
       setDrawMode(mode);
@@ -4754,20 +4587,11 @@ export default function PreviewPanel({
     }
     const cursorFinishPoint = cursorSitePoint ? ([cursorSitePoint.x, cursorSitePoint.y] as [number, number]) : null;
     const rectFinishPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? cursorFinishPoint;
-    const previewFinishPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? cursorFinishPoint;
     const currentDraftPoints = draftPointsRef.current.length ? draftPointsRef.current : draftPoints;
-    const shouldAppendPreviewPoint =
-      (drawMode === "site" || drawMode === "polygon") &&
-      previewFinishPoint &&
-      currentDraftPoints.length >= 2 &&
-      (currentDraftPoints[currentDraftPoints.length - 1][0] !== previewFinishPoint[0] ||
-        currentDraftPoints[currentDraftPoints.length - 1][1] !== previewFinishPoint[1]);
     const effectivePoints =
       drawMode === "rect" && currentDraftPoints.length === 1 && rectFinishPreviewPoint
         ? [currentDraftPoints[0], rectFinishPreviewPoint]
-        : shouldAppendPreviewPoint
-          ? [...currentDraftPoints, previewFinishPoint]
-          : currentDraftPoints;
+        : currentDraftPoints;
     const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
     if (effectivePoints.length < minPoints) {
       const message =
@@ -4785,11 +4609,21 @@ export default function PreviewPanel({
       const cleaned = cleanupPolygon(effectivePoints, 0.5);
       if (!cleaned.ok) {
         setCadCommandStatus(`POLYGON blocked: ${cleaned.reason}`);
+        pushCadCommandFeedback(
+          drawMode === "site" ? "SITE" : "AREA",
+          "blocked",
+          `${drawMode === "site" ? "SITE" : "AREA"} blocked: ${cleaned.reason}`,
+        );
         return;
       }
       const validation = validatePolygon(cleaned.value);
       if (!validation.ok) {
         setCadCommandStatus(`POLYGON blocked: ${validation.issues.join(", ")}`);
+        pushCadCommandFeedback(
+          drawMode === "site" ? "SITE" : "AREA",
+          "blocked",
+          `${drawMode === "site" ? "SITE" : "AREA"} blocked: ${validation.issues.join(", ")}`,
+        );
         return;
       }
       if (drawMode === "site") {
@@ -5092,6 +4926,8 @@ export default function PreviewPanel({
       }
       if (mode !== "select") {
         onSelectBuilding(null);
+        setManagedObjectId(null);
+        setHoveredObjectId(null);
         setSelectedVertex(null);
         setCadSelectionSet([]);
       }
@@ -7840,6 +7676,14 @@ export default function PreviewPanel({
                   <span className="hidden h-9 items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 lg:inline-flex" data-testid="preview-object-manager-counts">
                     {objectManagerCounts.draft} draft / {objectManagerCounts.generated} generated
                   </span>
+                  {selectedCadIds.length ? (
+                    <span
+                      data-testid="preview-object-manager-selection-count"
+                      className="h-9 items-center rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700"
+                    >
+                      {selectedCadIds.length} object{selectedCadIds.length === 1 ? "" : "s"} selected
+                    </span>
+                  ) : null}
                   {selectedObject ? (
                     <>
                       <input
@@ -8154,7 +7998,7 @@ export default function PreviewPanel({
                 <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Draw</span>
                 <button
                   type="button"
-                  data-testid="draw-site-boundary-toolbar"
+                  data-testid="draw-site-boundary-toolbar-top"
                   aria-pressed={drawMode === "site"}
                   title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
                   onClick={() => {
@@ -8164,7 +8008,7 @@ export default function PreviewPanel({
                     }
                     activateDrawTool("site");
                   }}
-                  className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
+                  className={`pointer-events-auto inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
                     drawMode === "site"
                       ? "border-slate-900 bg-slate-950 text-white"
                       : siteLocked
@@ -9264,11 +9108,12 @@ export default function PreviewPanel({
                 setCanvasPanStart(null);
                 setDraftPreviewPoint(null);
                 setActiveSnapPoint(null);
-                setCadWindowSelect(null);
+                if (!cadWindowSelect) setCadWindowSelect(null);
               }}
               onMouseUp={() => {
                 if (cadWindowSelect) {
                   finishCadWindowSelect(cadWindowSelect);
+                  cadWindowSelectRef.current = null;
                   setCadWindowSelect(null);
                 }
                 setDraggingBuildingId(null);
@@ -9569,7 +9414,7 @@ export default function PreviewPanel({
                     {!siteLocked ? (
                       <button
                         type="button"
-                        data-testid="draw-site-boundary-toolbar"
+                        data-testid="draw-site-boundary-toolbar-compact"
                         aria-pressed={drawMode === "site"}
                         title="Draw the site boundary"
                         onClick={() => activateDrawTool("site")}
@@ -11345,8 +11190,10 @@ export default function PreviewPanel({
                     ) : null}
               <div
                 data-testid="preview-drawing-surface"
+                data-draw-mode={drawMode}
+                data-draft-point-count={draftPointCount}
                 aria-label="Drawing surface"
-                className={`absolute inset-0 z-[14] ${
+                className={`absolute inset-0 ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
                   drawMode !== "select" && drawMode !== "pan" ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"
                 }`}
               />
@@ -12389,7 +12236,8 @@ export default function PreviewPanel({
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
                         const isSite = item.type === "site";
                         const allowItemInteraction =
-                          !isSite || (previewInteraction === "edit" && !siteLocked);
+                          drawMode === "select" &&
+                          (!isSite || (previewInteraction === "edit" && !siteLocked));
                         const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
                         const borderColorMap: Record<string, string> = {
                           site: "border-slate-400",

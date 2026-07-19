@@ -422,45 +422,7 @@ type SidebarNavItem = {
   status: SidebarStatus;
 };
 type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "deliver";
-type CadToolRequestForPreview = {
-  id: number;
-  commandText?: string;
-  tool:
-    | "select"
-    | "line"
-    | "polyline"
-    | "area"
-    | "box"
-    | "point"
-    | "circle"
-    | "arc"
-    | "text"
-    | "move"
-    | "copy"
-    | "rotate"
-    | "scale"
-    | "offset"
-    | "trim"
-    | "extend"
-    | "fillet"
-    | "join"
-    | "split"
-    | "close"
-    | "open"
-    | "reverse"
-    | "hatch"
-    | "delete"
-    | "dimension"
-    | "measure"
-    | "symbol"
-    | "layer"
-    | "properties"
-    | "snap"
-    | "ortho"
-    | "undo"
-    | "redo"
-    | "command";
-};
+type CadToolRequestForPreview = CadToolRequest;
 type PrimaryWorkflowItem = {
   key: PrimaryWorkflowKey;
   label: string;
@@ -475,20 +437,6 @@ type WorkflowActionItem = {
   panel: SidePanelKey;
   detail: string;
   status: SidebarStatus;
-};
-type ParkingParams = {
-  stallWidth?: number;
-  stallDepth?: number;
-  aisleWidth?: number;
-  adaAisleWidth?: number;
-  adaCount?: number;
-  compactCount?: number;
-  compactWidth?: number;
-  angleDeg?: number;
-  loading?: "single" | "double";
-  autoResizeToFitCount?: boolean;
-  useMixedAngles?: boolean;
-  compactZone?: boolean;
 };
 type QuantityReviewStatus = "ok" | "review" | "missing_cost" | "untraced" | "stale";
 type QuantityReviewRow = {
@@ -2478,15 +2426,18 @@ import {
 } from "./utils/chat";
 
 import { uploadedImageSrc } from "./utils/auth";
+import type { CadToolRequest } from "./utils/cadToolTypes";
 import {
   markCivoraInteraction,
   measureCivoraInteractionAfterPaint,
 } from "./utils/performanceProbes";
+import type { ParkingParams } from "./utils/previewGeometryTruth";
 import {
   DEFAULT_PROJECT_STATUS,
   disciplinePanelLinks,
   engineeringHealthPanelLinks,
   formatProjectStatusText,
+  projectStatusDisplayLabel,
   sidePanelCopy,
   workspaceModeByPanel,
   workspacePanelByMode,
@@ -7510,7 +7461,8 @@ function PerformanceAIDashboardView({
     axis: "x" | "y",
     rawValue: string,
   ) => {
-    const blocker = getObjectEditBlocker(item, "resize");
+    const latestItem = buildingPlacements.find((candidate) => candidate.id === item.id) ?? item;
+    const blocker = getObjectEditBlocker(latestItem, "resize");
     if (blocker) {
       reportObjectActionBlocker(blocker);
       return;
@@ -7520,7 +7472,7 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Vertex edit blocked: enter a finite coordinate.");
       return;
     }
-    const geometry = normalizeGeometryPoints(item.geometry);
+    const geometry = normalizeGeometryPoints(latestItem.geometry);
     if (!geometry?.length || vertexIndex < 0 || vertexIndex >= geometry.length) {
       reportObjectActionBlocker("Vertex edit blocked: select a draft object with editable vertices.");
       return;
@@ -7531,17 +7483,17 @@ function PerformanceAIDashboardView({
         : ([x, y] as [number, number]),
     );
     const bounds = getGeometryBounds(nextGeometry);
-    handleUpdateBuilding(item.id, {
+    handleUpdateBuilding(latestItem.id, {
       x: bounds.minX,
       y: bounds.minY,
       w: Math.max(1, bounds.width),
       d: Math.max(1, bounds.depth),
       geometry: nextGeometry,
     });
-    const message = `Updated ${item.label} vertex ${vertexIndex + 1} ${axis.toUpperCase()} to ${value}.`;
+    const message = `Updated ${latestItem.label} vertex ${vertexIndex + 1} ${axis.toUpperCase()} to ${value}.`;
     setObjectManagerStatusMessage(`${message} Vertex coordinates remain draft review geometry.`);
     setStatusMessage(message);
-  }, [handleUpdateBuilding, reportObjectActionBlocker]);
+  }, [buildingPlacements, handleUpdateBuilding, reportObjectActionBlocker]);
 
   const handleInsertObjectVertex = useCallback((item: BuildingPlacement, vertexIndex: number) => {
     const blocker = getObjectEditBlocker(item, "resize");
@@ -12884,7 +12836,7 @@ function PerformanceAIDashboardView({
     setWorkspaceChromeMinimized(true);
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
-    setCadToolRequest({ id: Date.now(), tool: "select" });
+    setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
     window.requestAnimationFrame(() => {
       const input =
         commandInputRef.current ??
@@ -13452,7 +13404,7 @@ function PerformanceAIDashboardView({
       setActivePlacementId(null);
       setPendingClarification(null);
       setPreviewInteraction("static");
-      setCadToolRequest({ id: Date.now(), tool: "select" });
+      setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
       setStatusMessage("Active drawing/tool state cancelled.");
       return;
     }
@@ -21183,7 +21135,7 @@ function PerformanceAIDashboardView({
     if (panel && !drawAdjacentPanels.includes(panel)) {
       setPlacementModeEnabled(false);
       setPreviewInteraction("static");
-      setCadToolRequest({ id: Date.now(), tool: "select" });
+      setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
     }
     setActiveSidePanel(panel);
     if (!panel) return;
@@ -21227,7 +21179,7 @@ function PerformanceAIDashboardView({
     setWorkspaceChromeMinimized(true);
     setRightRailCollapsed(false);
     setActiveSidePanel("objects");
-    setCadToolRequest({ id: Date.now(), tool });
+    setCadToolRequest({ id: Date.now() + Math.random(), tool });
     setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
     measureCivoraInteractionAfterPaint("draw.canvas.tool.click", startedAt, { tool, label });
   }, []);
@@ -21524,7 +21476,7 @@ function PerformanceAIDashboardView({
     setSelectedObjectIds([]);
     setPendingClarification(null);
     setPreviewInteraction("static");
-    setCadToolRequest({ id: Date.now(), tool: "select" });
+    setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
     updateProjectStatus({
       state: "ready",
       area: "chat",
@@ -23040,7 +22992,7 @@ function PerformanceAIDashboardView({
           onLogout={handleLogout}
         />
         <div data-testid="project-status-summary" className="sr-only" aria-live="polite">
-          {formatProjectStatusText(projectStatusSummary)}
+          {`${projectStatusDisplayLabel[projectStatusSummary.state]}: ${projectStatusSummary.title}.`}
         </div>
 
         <div className="relative h-[calc(100svh-4rem)] min-h-0 w-full max-w-full overflow-hidden lg:h-[calc(100vh-4rem)]">
@@ -27199,6 +27151,7 @@ function PerformanceAIDashboardView({
                                           disabled={editBlocked}
                                           aria-label={`Vertex ${index + 1} X`}
                                           data-testid="selected-object-vertex-x"
+                                          onInput={(event) => handleUpdateObjectVertex(selectedBuilding, index, "x", event.currentTarget.value)}
                                           onChange={(event) => handleUpdateObjectVertex(selectedBuilding, index, "x", event.target.value)}
                                           className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold normal-case tracking-normal text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                         />
@@ -27211,6 +27164,7 @@ function PerformanceAIDashboardView({
                                           disabled={editBlocked}
                                           aria-label={`Vertex ${index + 1} Y`}
                                           data-testid="selected-object-vertex-y"
+                                          onInput={(event) => handleUpdateObjectVertex(selectedBuilding, index, "y", event.currentTarget.value)}
                                           onChange={(event) => handleUpdateObjectVertex(selectedBuilding, index, "y", event.target.value)}
                                           className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold normal-case tracking-normal text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                                         />
