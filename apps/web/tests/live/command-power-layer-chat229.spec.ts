@@ -34,7 +34,7 @@ async function runCommand(page: Page, command: string) {
 
 async function openDrawPanel(page: Page) {
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Object Manager|CAD Tools/, { timeout: 5_000 });
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
 }
 
 test.describe("Chat 229 command power layer and shortcuts", () => {
@@ -164,7 +164,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await page.keyboard.press("G");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
     await page.keyboard.press("D");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Object Manager|CAD Tools/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/i);
     await page.keyboard.press("P");
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await page.keyboard.press("Escape");

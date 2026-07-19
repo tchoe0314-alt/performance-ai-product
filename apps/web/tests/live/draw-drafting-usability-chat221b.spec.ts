@@ -8,7 +8,7 @@ async function openDemoWorkspace(page: Page) {
 
 async function openDrawPanel(page: Page) {
   if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) {
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/);
     return;
   }
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
@@ -23,11 +23,11 @@ async function openDrawPanel(page: Page) {
   else if (await drawButton.isVisible().catch(() => false)) await drawButton.click();
   else await page.keyboard.press("D");
   if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) {
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/);
     return;
   }
   await page.getByRole("button", { name: /Object Manager/i }).filter({ visible: true }).first().click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|CAD Tools/);
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/);
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 

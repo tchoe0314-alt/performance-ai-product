@@ -32,7 +32,7 @@ async function runCommand(page: Page, command: string) {
 
 async function openDrawPanel(page: Page) {
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Object Manager|CAD Tools/, { timeout: 5_000 });
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
 }
 
 async function openRecentChanges(page: Page) {

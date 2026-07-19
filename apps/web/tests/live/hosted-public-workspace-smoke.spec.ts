@@ -70,7 +70,7 @@ test.describe("hosted/public workspace smoke", () => {
     await expect(page.getByTestId("setup-address-truth")).toContainText(/Address \/ Location/i);
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/Site Boundary/i);
 
-    await openPanel(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
+    await openPanel(page, /^Draw$/, /Draw & Objects|Tools/);
     await expect(page.getByTestId("cad-tool-line")).toBeVisible();
     await page.getByTestId("cad-tool-line").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/i);

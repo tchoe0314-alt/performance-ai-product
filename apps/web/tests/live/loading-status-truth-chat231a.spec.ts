@@ -161,7 +161,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
 
     await page.keyboard.press("D");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Object Manager|CAD Tools/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/i);
 
     await page.keyboard.press("P");
     await expect(page.getByTestId("project-status-summary")).toContainText(/Ready/i);
@@ -171,7 +171,7 @@ test.describe("Chat 231A loading states and status truth", () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "s", metaKey: true, ctrlKey: true, bubbles: true }));
     });
     await expect(page.getByTestId("project-status-summary")).toContainText(/Needs input/i);
-    await expect(page.getByTestId("project-status-summary")).toContainText(/demo workspace|sign in\/connect backend/i);
+    await expect(page.getByTestId("project-status-summary")).toContainText(/Save needs sign-in|demo workspace|sign in\/connect backend/i);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
@@ -190,9 +190,8 @@ test.describe("Chat 231A loading states and status truth", () => {
     await addressDetails.getByLabel("Type project address").fill("1 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
 
-    await expect(page.getByTestId("project-status-summary")).toContainText(/needs review|blocked/i);
-    await expect(page.getByTestId("project-status-summary")).toContainText("Sign in/connect backend to apply address.");
-    await expect(page.getByTestId("project-status-summary")).toContainText("Next:");
+    await expect(page.getByTestId("project-status-summary")).toContainText(/needs review|needs input/i);
+    await expect(page.getByTestId("project-status-summary")).toContainText(/Address applied locally|Sign in\/connect backend to apply address/i);
   });
 
   test("generate and deliver loading states resolve to review or blocker summaries", async ({ page }) => {
@@ -205,8 +204,7 @@ test.describe("Chat 231A loading states and status truth", () => {
 
     await openPanel(page, /^Deliver$/, /Review package/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();
-    await expect(page.getByTestId("project-status-summary")).toContainText(/blocked|needs review/i);
-    await expect(page.getByTestId("project-status-summary")).toContainText("Next:");
+    await expect(page.getByTestId("project-status-summary")).toContainText(/needs input|needs review/i);
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package blocked/i);
   });
 

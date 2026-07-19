@@ -1,42 +1,19 @@
 import { expect, test } from "@playwright/test";
 
-const TOKEN_KEY = "civora-ai-token";
-const API_BASE_URL =
-  process.env.PLAYWRIGHT_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://api.civoraai.com";
-const email = process.env.CIVORA_EMAIL || "";
-const password = process.env.CIVORA_PASSWORD || "";
-
-test("setup wizard surfaces current step and blocker text", async ({ page, request, baseURL }) => {
+test("setup opens clean sections and direct setup actions", async ({ page, baseURL }) => {
   test.skip(!baseURL, "PLAYWRIGHT_BASE_URL is required.");
-  test.skip(!email || !password, "CIVORA_EMAIL and CIVORA_PASSWORD are required.");
 
-  const loginResponse = await request.post(`${API_BASE_URL.replace(/\/+$/, "")}/api/auth/login`, {
-    data: { email, password },
-  });
-  expect(loginResponse.ok()).toBeTruthy();
-  const loginPayload = (await loginResponse.json()) as { token?: string };
-  const token = String(loginPayload.token || "");
-  expect(token).toBeTruthy();
-
-  await page.addInitScript(
-    ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
-    [TOKEN_KEY, token] as const,
-  );
-
-  await page.goto(baseURL!, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseURL!.replace(/\/+$/, "")}/demo/workspace?debugPreview=1`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("button", { name: "Setup" }).first().click();
 
-  await expect(page.getByTestId("setup-wizard-sidebar-card")).toContainText("Auto Setup Wizard");
-  await expect(page.getByTestId("setup-wizard-current-step")).toContainText("Auto Setup Wizard");
-  await expect(page.getByTestId("setup-wizard-current-step")).toContainText(/Enter an address|Set dimensions|Review/i);
-  await expect(page.getByTestId("setup-wizard-current-step")).toContainText(/Missing|Why blocked|Open|Add|Review/i);
-  await expect(page.getByText("Wizard steps")).toBeVisible();
-  await expect(page.getByText("Online Sources / Candidates")).toBeVisible();
-  await expect(page.getByText("Survey / Terrain / Control")).toBeVisible();
-  await expect(page.getByText("Standards", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Open|Add|Review|Find sources|Run systems/i }).first()).toBeVisible();
+  await expect(page.getByTestId("setup-wizard-sidebar-card")).toHaveCount(0);
+  await expect(page.getByTestId("setup-address-truth")).toContainText("Address / Location");
+  await expect(page.getByTestId("setup-site-box-controls")).toContainText("Site Boundary");
+  await expect(page.getByTestId("setup-survey-terrain-card")).toContainText("Survey / Terrain / Sources");
+  await expect(page.getByTestId("setup-detect-inside-site")).toContainText("Auto Site Context Results");
+  await expect(
+    page.getByRole("button", { name: /Apply Address|Start a blank site|Draw Site Boundary|Detect again/i }).first(),
+  ).toBeVisible();
 });

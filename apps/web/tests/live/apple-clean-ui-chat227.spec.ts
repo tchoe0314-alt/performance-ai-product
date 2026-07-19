@@ -88,7 +88,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
 
   test("Object Manager can select, rename, color, layer, hide, focus, and delete", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
-    await openPanel(page, "Object Manager", /Draw & Object Manager|CAD Tools/);
+    await openPanel(page, "Object Manager", /Draw & Objects|Tools/);
 
     const rows = page.getByTestId("object-manager-row");
     await expect(rows.first()).toBeVisible();
@@ -113,7 +113,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await editable.getByTestId("object-manager-focus").click();
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
 
-    await openPanel(page, "Object Manager", /Draw & Object Manager|CAD Tools/);
+    await openPanel(page, "Object Manager", /Draw & Objects|Tools/);
     const renamed = page.getByTestId("object-manager-row").filter({ hasText: "Apple Clean Test Object" }).first();
     await renamed.getByTestId("object-manager-delete").click();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Apple Clean Test Object" })).toHaveCount(0);

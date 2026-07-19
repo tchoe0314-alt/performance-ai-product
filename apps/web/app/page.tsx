@@ -22833,16 +22833,6 @@ function PerformanceAIDashboardView({
     ["Fresh", Object.values(systemStatuses).filter((status) => status === "fresh").length],
     ["Outputs", backendResult ? 1 : 0],
   ];
-  const setupWizardStatusClass = (status?: SetupWizardStep["status"]) =>
-    status === "complete"
-      ? "text-emerald-700"
-      : status === "blocked"
-        ? "text-red-600"
-        : status === "needs_review"
-          ? "text-amber-600"
-          : status === "pending"
-            ? "text-slate-600"
-          : "text-slate-400";
   const statusFromSetup = (status?: SetupWizardStep["status"]): ProgressTimelineStep["status"] =>
     status === "complete"
       ? "completed"
@@ -23170,29 +23160,6 @@ function PerformanceAIDashboardView({
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">Projects</span>
               <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => handleOpenPanelFromDrawer((setupWizardCurrentStep?.panel as SidePanelKey) || "site_existing")}
-              className="hidden"
-              data-testid="setup-wizard-sidebar-card"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Auto Setup Wizard
-                  </p>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-950">
-                    {setupWizardState.current_step_label || "Setup"}
-                  </p>
-                </div>
-                <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] ${setupWizardStatusClass(setupWizardState.current_status)}`}>
-                  {String(setupWizardState.current_status || "pending").replace("_", " ")}
-                </span>
-              </div>
-	              <p className="mt-2 line-clamp-2 text-xs font-medium text-slate-600">
-	                {setupWizardState.next_action}
-	              </p>
-	            </button>
 	            <div className="rounded-lg border border-transparent bg-transparent" data-testid="primary-workflow-sidebar">
 	              <div className="space-y-1.5">
 	                {primaryWorkflowItems
