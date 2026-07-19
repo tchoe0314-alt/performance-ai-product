@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
   const params = new URLSearchParams(query);
@@ -21,6 +21,40 @@ async function enableHighQuality(page: Page) {
 
 async function getAiArtifact(page: Page) {
   return page.evaluate(() => (window as typeof window & { __civoraAiRealismArtifact?: unknown }).__civoraAiRealismArtifact);
+}
+
+async function clickExposedSurface(surface: Locator, xRatio: number, yRatio: number) {
+  await surface.scrollIntoViewIfNeeded();
+  const point = await surface.evaluate(
+    (element, ratios) => {
+      const rect = element.getBoundingClientRect();
+      const clamp = (value: number) => Math.max(0.08, Math.min(0.92, value));
+      const candidates: Array<{ x: number; y: number; distance: number }> = [];
+      for (const xOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32]) {
+        for (const yOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24]) {
+          const nextXRatio = clamp(ratios.xRatio + xOffset);
+          const nextYRatio = clamp(ratios.yRatio + yOffset);
+          const x = rect.left + rect.width * nextXRatio;
+          const y = rect.top + rect.height * nextYRatio;
+          const hit = document.elementFromPoint(x, y);
+          const blocked = hit?.closest?.(
+            '[data-object-overlay],button,input,select,textarea,aside,header,[data-testid="cad-precision-tools"],[data-testid="workspace-right-panel"]',
+          );
+          if ((hit === element || element.contains(hit)) && !blocked) {
+            candidates.push({
+              x,
+              y,
+              distance: Math.abs(nextXRatio - ratios.xRatio) + Math.abs(nextYRatio - ratios.yRatio),
+            });
+          }
+        }
+      }
+      candidates.sort((a, b) => a.distance - b.distance);
+      return candidates[0] ?? { x: rect.left + rect.width * clamp(ratios.xRatio), y: rect.top + rect.height * clamp(ratios.yRatio) };
+    },
+    { xRatio, yRatio },
+  );
+  await surface.page().mouse.click(point.x, point.y);
 }
 
 test.describe("Chat 226 AI realism preview", () => {
@@ -99,10 +133,10 @@ test.describe("Chat 226 AI realism preview", () => {
 
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
-    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-command").click();
-    await expect(page.getByLabel("CAD command input")).toBeVisible();
-    await page.getByLabel("CAD command input").fill("LINE 20,20 90,20");
-    await page.getByLabel("CAD command input").press("Enter");
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-line").click();
+    const surface = page.getByTestId("preview-drawing-surface");
+    await clickExposedSurface(surface, 0.22, 0.34);
+    await clickExposedSurface(surface, 0.42, 0.34);
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("LINE created");
 
     await expect(page.getByTestId("ai-realism-stale-warning")).toContainText(

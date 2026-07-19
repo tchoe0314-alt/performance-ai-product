@@ -41,6 +41,7 @@ import {
 } from "../utils/cadGeometryKernel";
 import type { CadDimensionMode, CadSymbolKind, CadToolRequest, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
+import { PreviewQualityToggle } from "./PreviewQualityToggle";
 import {
   firstMetaNumber,
   formatClearance,
@@ -7059,34 +7060,13 @@ export default function PreviewPanel({
               Design Canvas
             </span>
             <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-              <button
-                type="button"
-                data-testid="preview-panel-quality-standard"
-                onClick={() => {
-                  if (previewQuality === "standard") return;
-                  onQueuePreviewRefresh("Requesting standard-quality preview...");
-                  onSetPreviewQuality("standard");
-                }}
-                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                  previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Standard
-              </button>
-              <button
-                type="button"
-                data-testid="preview-panel-quality-high"
-                onClick={() => {
-                  if (previewQuality === "high") return;
-                  onQueuePreviewRefresh("Requesting high-quality preview...");
-                  onSetPreviewQuality("high");
-                }}
-                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                  previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                High
-              </button>
+              <PreviewQualityToggle
+                value={previewQuality}
+                onChange={onSetPreviewQuality}
+                onQueuePreviewRefresh={onQueuePreviewRefresh}
+                standardTestId="preview-panel-quality-standard"
+                highTestId="preview-panel-quality-high"
+              />
               <button
                 type="button"
                 data-testid="preview-panel-mode-2d"
@@ -7325,34 +7305,13 @@ export default function PreviewPanel({
                   {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} / {coordinateModeLabel(coordinateMode)}
                 </span>
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    data-testid="preview-inner-quality-standard"
-                    onClick={() => {
-                      if (previewQuality === "standard") return;
-                      onQueuePreviewRefresh("Requesting standard-quality preview...");
-                      onSetPreviewQuality("standard");
-                    }}
-                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                      previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    Standard
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="preview-inner-quality-high"
-                    onClick={() => {
-                      if (previewQuality === "high") return;
-                      onQueuePreviewRefresh("Requesting high-quality preview...");
-                      onSetPreviewQuality("high");
-                    }}
-                    className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                      previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    High
-                  </button>
+                  <PreviewQualityToggle
+                    value={previewQuality}
+                    onChange={onSetPreviewQuality}
+                    onQueuePreviewRefresh={onQueuePreviewRefresh}
+                    standardTestId="preview-inner-quality-standard"
+                    highTestId="preview-inner-quality-high"
+                  />
                   <button
                     type="button"
                     data-testid="preview-inner-mode-2d"
@@ -7575,34 +7534,14 @@ export default function PreviewPanel({
                 >
                   Map {mapOverlayEnabled ? "On" : "Off"}
                 </button>
-                <button
-                  type="button"
-                  data-testid="preview-toolbar-quality-standard"
-                  onClick={() => {
-                    if (previewQuality === "standard") return;
-                    onQueuePreviewRefresh("Requesting standard-quality preview...");
-                    onSetPreviewQuality("standard");
-                  }}
-                  className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
-                    previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  Standard
-                </button>
-                <button
-                  type="button"
-                  data-testid="preview-toolbar-quality-high"
-                  onClick={() => {
-                    if (previewQuality === "high") return;
-                    onQueuePreviewRefresh("Requesting high-quality preview...");
-                    onSetPreviewQuality("high");
-                  }}
-                  className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
-                    previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  High
-                </button>
+                <PreviewQualityToggle
+                  value={previewQuality}
+                  onChange={onSetPreviewQuality}
+                  onQueuePreviewRefresh={onQueuePreviewRefresh}
+                  standardTestId="preview-toolbar-quality-standard"
+                  highTestId="preview-toolbar-quality-high"
+                  buttonClassName="inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold"
+                />
               </section>
               {previewMode === "2d" ? (
                 <section className="hidden" data-testid="canvas-draw-controls">
@@ -8271,36 +8210,12 @@ export default function PreviewPanel({
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Quality</span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (previewQuality === "standard") return;
-                  onQueuePreviewRefresh("Requesting standard-quality preview...");
-                  onSetPreviewQuality("standard");
-                }}
-                className={`rounded-lg border px-2.5 py-1 ${
-                  previewQuality === "standard"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Standard
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (previewQuality === "high") return;
-                  onQueuePreviewRefresh("Requesting high-quality preview...");
-                  onSetPreviewQuality("high");
-                }}
-                className={`rounded-lg border px-2.5 py-1 ${
-                  previewQuality === "high"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                High
-              </button>
+              <PreviewQualityToggle
+                value={previewQuality}
+                onChange={onSetPreviewQuality}
+                onQueuePreviewRefresh={onQueuePreviewRefresh}
+                buttonClassName="rounded-lg border px-2.5 py-1"
+              />
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               <span>Labels</span>
@@ -8930,34 +8845,14 @@ export default function PreviewPanel({
                   >
                     3D
                   </button>
-                  <button
-                    type="button"
-                    data-testid="preview-quality-standard"
-                    onClick={() => {
-                      if (previewQuality === "standard") return;
-                      onQueuePreviewRefresh("Requesting standard-quality preview...");
-                      onSetPreviewQuality("standard");
-                    }}
-                    className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                      previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    Standard
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="preview-quality-high"
-                    onClick={() => {
-                      if (previewQuality === "high") return;
-                      onQueuePreviewRefresh("Requesting high-quality preview...");
-                      onSetPreviewQuality("high");
-                    }}
-                    className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                      previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    High
-                  </button>
+                  <PreviewQualityToggle
+                    value={previewQuality}
+                    onChange={onSetPreviewQuality}
+                    onQueuePreviewRefresh={onQueuePreviewRefresh}
+                    standardTestId="preview-quality-standard"
+                    highTestId="preview-quality-high"
+                    buttonClassName="h-8 rounded-md border px-2.5 text-xs font-semibold"
+                  />
                   {isHighQuality ? (
                     <div
                       data-testid="ai-realism-toggle"
@@ -9369,34 +9264,14 @@ export default function PreviewPanel({
                 >
                   3D
                 </button>
-                <button
-                  type="button"
-                  data-testid="preview-quality-standard"
-                  onClick={() => {
-                    if (previewQuality === "standard") return;
-                    onQueuePreviewRefresh("Requesting standard-quality preview...");
-                    onSetPreviewQuality("standard");
-                  }}
-                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                    previewQuality === "standard" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  Standard
-                </button>
-                <button
-                  type="button"
-                  data-testid="preview-quality-high"
-                  onClick={() => {
-                    if (previewQuality === "high") return;
-                    onQueuePreviewRefresh("Requesting high-quality preview...");
-                    onSetPreviewQuality("high");
-                  }}
-                  className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                    previewQuality === "high" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  High
-                </button>
+                <PreviewQualityToggle
+                  value={previewQuality}
+                  onChange={onSetPreviewQuality}
+                  onQueuePreviewRefresh={onQueuePreviewRefresh}
+                  standardTestId="preview-quality-standard"
+                  highTestId="preview-quality-high"
+                  buttonClassName="h-8 rounded-md border px-2.5 text-xs font-semibold"
+                />
                 {isHighQuality ? (
                   <div
                     data-testid="ai-realism-toggle"
@@ -9507,7 +9382,7 @@ export default function PreviewPanel({
               {isHighQuality && aiRealismEnabled ? (
                 <div
                   data-testid="ai-realism-preview"
-                  className="absolute inset-0 z-[60] flex items-center justify-center overflow-hidden rounded-[24px] bg-slate-950"
+                  className="pointer-events-none absolute inset-0 z-[160] flex items-center justify-center overflow-hidden rounded-[24px] bg-slate-950"
                   onClick={(event) => event.stopPropagation()}
                   onDoubleClick={(event) => event.stopPropagation()}
                   onMouseDown={(event) => event.stopPropagation()}
@@ -9521,7 +9396,7 @@ export default function PreviewPanel({
                         data-testid="ai-realism-image"
                         src={aiRealismDisplayArtifact.image_data_url}
                         alt="AI realism visualization generated from the current review layout"
-                        className="h-full w-full object-cover"
+                        className="pointer-events-none h-full w-full object-cover"
                       />
                       <div
                         data-testid="ai-realism-watermark"
@@ -9531,7 +9406,7 @@ export default function PreviewPanel({
                       </div>
                       <div
                         data-testid="ai-realism-source-summary"
-                        className="absolute left-4 top-4 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
+                        className="pointer-events-auto absolute left-4 top-4 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
@@ -9619,7 +9494,7 @@ export default function PreviewPanel({
                   ) : (
                     <div
                       data-testid="ai-realism-blocker"
-                      className="mx-4 max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-lg"
+                      className="pointer-events-auto mx-4 max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-lg"
                     >
                       <p className="font-semibold">
                         {aiRealismBlocker || "AI realism provider is not configured."}
