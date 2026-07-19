@@ -118,12 +118,6 @@ type CadEntityPreview = {
   sourceIds: Set<string>;
   linkedIds: Set<string>;
 };
-type JobToast = {
-  id: string;
-  title: string;
-  detail?: string;
-  tone?: "info" | "success" | "warning" | "error";
-};
 
 const CAD_PREVIEW_SUPPORTED_TYPES = new Set([
   "line",
@@ -254,55 +248,6 @@ const cadEntityReviewBlockers = (entity: CadEntityModelEntityV1, modelBlockers: 
       ...(entity.source_confidence ? [`source_confidence:${entity.source_confidence}`] : ["source_confidence:missing"]),
     ]),
   );
-type SidePanelKey =
-  | "projects"
-  | "trust"
-  | "dashboard"
-  | "model"
-  | "site_existing"
-  | "import_survey"
-  | "objects"
-  | "generate"
-  | "grading"
-  | "drainage"
-  | "sanitary"
-  | "water"
-  | "utilities"
-  | "roadway"
-  | "landscape"
-  | "details"
-  | "layers"
-  | "analysis"
-  | "reports"
-  | "quantities"
-  | "deliverables"
-  | "files"
-  | "jobs"
-  | "standards"
-  | "templates"
-  | "catalogs"
-  | "libraries"
-  | "data"
-  | "settings"
-  | "chat"
-  | "system_grading"
-  | "system_storm"
-  | "system_sanitary"
-  | "system_water"
-  | "system_roadway"
-  | "system_utilities"
-  | "system_landscape";
-type WorkspaceMode =
-  | "trust"
-  | "dashboard"
-  | "setup"
-  | "canvas"
-  | "layers"
-  | "review"
-  | "deliver"
-  | "data"
-  | "settings";
-type SidebarStatus = "ok" | "review" | "block" | "idle";
 type CapabilityExposure = {
   key: string;
   label: string;
@@ -2537,6 +2482,19 @@ import {
   markCivoraInteraction,
   measureCivoraInteractionAfterPaint,
 } from "./utils/performanceProbes";
+import {
+  DEFAULT_PROJECT_STATUS,
+  disciplinePanelLinks,
+  engineeringHealthPanelLinks,
+  formatProjectStatusText,
+  sidePanelCopy,
+  workspaceModeByPanel,
+  workspacePanelByMode,
+  type ProjectStatusSummary,
+  type SidebarStatus,
+  type SidePanelKey,
+  type WorkspaceMode,
+} from "./utils/workspaceShell";
 
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
@@ -2545,6 +2503,8 @@ import CivilReviewSheet from "./components/CivilReviewSheet";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
+import WorkspaceRightPanel from "./components/WorkspaceRightPanel";
+import WorkspaceToasts, { type WorkspaceToast } from "./components/WorkspaceToasts";
 import type {
   PlanSheet,
   PlanSheetAnnotation,
@@ -2641,39 +2601,6 @@ function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean {
 }
 
 type ApprovalState = "idle" | "approving" | "starting";
-
-type ProjectStatusState = "working" | "blocked" | "needs review" | "stale" | "ready";
-
-type ProjectStatusArea = "setup" | "generate" | "deliver" | "chat" | "projects" | "ai realism";
-
-type ProjectStatusSummary = {
-  state: ProjectStatusState;
-  area: ProjectStatusArea;
-  title: string;
-  detail: string;
-  nextAction: string;
-  updatedAt: number;
-};
-
-const DEFAULT_PROJECT_STATUS: ProjectStatusSummary = {
-  state: "needs review",
-  area: "setup",
-  title: "Workspace needs review",
-  detail: "Start by applying an address or locking a site boundary.",
-  nextAction: "Open Setup and define the site before generating review drafts.",
-  updatedAt: 0,
-};
-
-const projectStatusDisplayLabel: Record<ProjectStatusState, string> = {
-  working: "Working",
-  blocked: "Needs input",
-  "needs review": "Needs review",
-  stale: "Update recommended",
-  ready: "Ready",
-};
-
-const formatProjectStatusText = (summary: ProjectStatusSummary) =>
-  `${projectStatusDisplayLabel[summary.state]}: ${summary.title}. ${summary.detail} Next: ${summary.nextAction}`;
 
 type RecentChangeType =
   | "object_added"
@@ -3223,7 +3150,7 @@ function PerformanceAIDashboardView({
   const [selectedRunId, setSelectedRunId] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [selectedJobId, setSelectedJobId] = useState("");
-  const [jobToasts, setJobToasts] = useState<JobToast[]>([]);
+  const [jobToasts, setJobToasts] = useState<WorkspaceToast[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
   const [projectStatusSummary, setProjectStatusSummary] =
     useState<ProjectStatusSummary>(DEFAULT_PROJECT_STATUS);
@@ -13862,7 +13789,7 @@ function PerformanceAIDashboardView({
     }
   };
 
-  const pushJobToast = useCallback((toast: Omit<JobToast, "id">) => {
+  const pushJobToast = useCallback((toast: Omit<WorkspaceToast, "id">) => {
     const id = `job-toast-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setJobToasts((current) => [{ id, ...toast }, ...current].slice(0, 4));
     window.setTimeout(() => {
@@ -21220,62 +21147,6 @@ function PerformanceAIDashboardView({
         .sort((a, b) => a.label.localeCompare(b.label)),
     [buildingPlacements],
   );
-  const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }> = {
-    projects: { title: "Projects", desc: "Open, create, and manage project records." },
-    trust: { title: "What Civora does", desc: "Clear product boundaries for planning, drafting, source context, review packages, and AI visualization." },
-    dashboard: { title: "Project Health", desc: "See what needs attention, what changed, and what is ready to review." },
-    model: { title: "Draw Canvas", desc: "Use the canvas, map, 2D/3D view, and visible drawing controls." },
-    site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
-    import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
-    objects: { title: "Draw & Objects", desc: "Draw on the canvas, select objects, then edit names, colors, layers, transforms, and visibility from one place." },
-    generate: { title: "Generate Systems", desc: "Run focused engines from one control panel." },
-    grading: { title: "Grading Controls", desc: "Control grading rules, terrain inputs, and slope limits." },
-    drainage: { title: "Drainage Controls", desc: "Control drainage rules, sources, and repair behavior." },
-    sanitary: { title: "Sanitary Controls", desc: "Configure sanitary coverage, slopes, and service assumptions." },
-    water: { title: "Water Controls", desc: "Configure water, hydrant, loop, and pressure assumptions." },
-    utilities: { title: "Utility Controls", desc: "Control utility generation and coordination assumptions." },
-    roadway: { title: "Roadway Controls", desc: "Control roads, parking, and corridor behavior." },
-    landscape: { title: "Landscape Controls", desc: "Place open space and landscape-related site objects." },
-    details: { title: "Object Manager", desc: "Review profiles, cross sections, selected objects, locks, and object metadata." },
-    layers: { title: "Layers", desc: "Choose visible model layers and labels." },
-    analysis: { title: "Project health", desc: "Open only when you want blockers, evidence, and QA detail." },
-    reports: { title: "Review package status", desc: "Review package gates, assumptions, standards, conflicts, and system readiness." },
-    quantities: { title: "Quantities", desc: "Review takeoff totals, stale labels, source confidence, and cost inputs." },
-    deliverables: { title: "Deliver", desc: "Review sheets, reports, quantities, profiles, sections, exports, and package gates." },
-    files: { title: "Files", desc: "Manage imported inputs and generated outputs." },
-    jobs: { title: "Async Jobs", desc: "Inspect background runs, retries, review holds, exports, and artifact history." },
-    standards: { title: "Standards", desc: "Review rule packs, assumptions, and project criteria." },
-    templates: { title: "Template Manager", desc: "Manage firm templates for layers, title blocks, labels, symbols, reports, cost links, pipes, and roadway hooks." },
-    catalogs: { title: "Utility Catalogs", desc: "Manage source-traced pipe and parts catalogs for storm, sanitary, and water networks." },
-    libraries: { title: "Libraries", desc: "Use reusable objects, templates, and project presets." },
-    data: { title: "Data", desc: "Configure survey, terrain, GIS, parcels, standards sources, imported utilities, and confidence labels." },
-    settings: { title: "Settings", desc: "Set project rules, defaults, and run preferences." },
-    chat: { title: "Chat", desc: "Conversation and assisted workflow control." },
-    system_grading: { title: "Grading Health", desc: "Review what grading needs before it can be trusted." },
-    system_storm: { title: "Storm Drainage Health", desc: "Review what storm drainage needs before it can be trusted." },
-    system_sanitary: { title: "Sanitary Sewer Health", desc: "Review what sanitary needs before it can be trusted." },
-    system_water: { title: "Water Health", desc: "Review what water needs before it can be trusted." },
-    system_roadway: { title: "Roadway Health", desc: "Review what roadway needs before it can be trusted." },
-    system_utilities: { title: "Utilities Health", desc: "Review what utility coordination needs before it can be trusted." },
-    system_landscape: { title: "Landscape Health", desc: "Review what landscape needs before it can be trusted." },
-  };
-  const disciplinePanelLinks: Array<{ panel: SidePanelKey; label: string }> = [
-    { panel: "grading", label: "Grading" },
-    { panel: "drainage", label: "Drainage" },
-    { panel: "utilities", label: "Utilities" },
-    { panel: "roadway", label: "Roadway" },
-    { panel: "landscape", label: "Landscape" },
-  ];
-  const engineeringHealthPanelLinks: Array<{ panel: SidePanelKey; label: string }> = [
-    { panel: "system_grading", label: "Grading" },
-    { panel: "system_storm", label: "Storm" },
-    { panel: "system_sanitary", label: "Sanitary" },
-    { panel: "system_water", label: "Water" },
-    { panel: "system_roadway", label: "Roadway" },
-    { panel: "system_utilities", label: "Utilities" },
-    { panel: "system_landscape", label: "Landscape" },
-    { panel: "analysis", label: "Review & QA" },
-  ];
   const sidePanelForRender = rightRailCollapsed
     ? null
     : activeSidePanel ?? renderedSidePanel ?? "dashboard";
@@ -21292,56 +21163,6 @@ function PerformanceAIDashboardView({
   const activeCustomerTemplate = customerTemplates?.behavior?.active_template ?? null;
   const customerTemplateBlockerCount = Number(customerTemplates?.behavior?.blockers?.length ?? 0);
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
-  const workspaceModeByPanel: Record<SidePanelKey, WorkspaceMode> = {
-    projects: "dashboard",
-    trust: "trust",
-    dashboard: "dashboard",
-    model: "canvas",
-    site_existing: "setup",
-    import_survey: "setup",
-    objects: "canvas",
-    generate: "canvas",
-    grading: "canvas",
-    drainage: "canvas",
-    sanitary: "canvas",
-    water: "canvas",
-    utilities: "canvas",
-    roadway: "canvas",
-    landscape: "canvas",
-    details: "review",
-    layers: "layers",
-    analysis: "review",
-    reports: "review",
-    quantities: "deliver",
-    deliverables: "deliver",
-    files: "data",
-    jobs: "review",
-    standards: "data",
-    templates: "data",
-    catalogs: "data",
-    libraries: "data",
-    data: "data",
-    settings: "settings",
-    chat: "canvas",
-    system_grading: "review",
-    system_storm: "review",
-    system_sanitary: "review",
-    system_water: "review",
-    system_roadway: "review",
-    system_utilities: "review",
-    system_landscape: "review",
-  };
-  const workspacePanelByMode: Record<WorkspaceMode, SidePanelKey> = {
-    trust: "trust",
-    dashboard: "dashboard",
-    setup: "site_existing",
-    canvas: "model",
-    layers: "layers",
-    review: "reports",
-    deliver: "deliverables",
-    data: "data",
-    settings: "settings",
-  };
   const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
     if (sidePanelCloseTimeoutRef.current !== null) {
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
@@ -23196,27 +23017,7 @@ function PerformanceAIDashboardView({
         handleCancelActiveTool();
       }}
     >
-      {jobToasts.length ? (
-        <div className="fixed right-3 top-20 z-[70] flex w-[min(360px,calc(100vw-1.5rem))] flex-col gap-2">
-          {jobToasts.map((toast) => (
-            <div
-              key={toast.id}
-              className={`rounded-xl border px-3 py-2 shadow-lg backdrop-blur ${
-                toast.tone === "error"
-                  ? "border-red-200 bg-red-50/95 text-red-800"
-                  : toast.tone === "success"
-                    ? "border-emerald-200 bg-emerald-50/95 text-emerald-800"
-                    : toast.tone === "warning"
-                      ? "border-amber-200 bg-amber-50/95 text-amber-800"
-                      : "border-slate-200 bg-white/95 text-slate-800"
-              }`}
-            >
-              <p className="text-sm font-semibold">{toast.title}</p>
-              {toast.detail ? <p className="mt-0.5 text-xs leading-5 opacity-80">{toast.detail}</p> : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <WorkspaceToasts toasts={jobToasts} />
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={effectiveUser.email}
@@ -23545,35 +23346,14 @@ function PerformanceAIDashboardView({
           </aside>
           ) : null}
           {sidePanelForRender ? (
-            <aside
-              data-testid="workspace-right-panel"
-              data-motion-state={sidePanelVisible ? "open" : "closed"}
-              aria-hidden={!sidePanelVisible}
-            className={`civora-motion-right-panel fixed inset-x-0 ${commandBarVisible ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] max-h-[calc(82svh-4.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] sm:max-h-[calc(78svh-5.25rem)] lg:bottom-0" : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] max-h-[calc(92svh-0.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:max-h-[calc(90svh-1rem)] lg:bottom-0"} top-auto z-[90] order-3 flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-xl border border-slate-200/80 bg-white/94 shadow-[0_-28px_80px_-50px_rgba(15,23,42,0.62)] backdrop-blur-2xl sm:inset-x-4 sm:rounded-xl lg:inset-x-auto lg:left-auto lg:right-0 lg:top-16 lg:h-auto lg:max-h-none lg:rounded-none lg:border-y-0 lg:border-r-0 lg:shadow-[-18px_0_60px_-54px_rgba(15,23,42,0.72)] ${
-              sidePanelForRender === "deliverables" ? "lg:w-[680px] xl:w-[760px]" : "lg:w-[360px] xl:w-[390px]"
-            }`}
+            <WorkspaceRightPanel
+              title={activePanelTitle}
+              description={activePanelDescription}
+              visible={sidePanelVisible}
+              commandBarVisible={commandBarVisible}
+              wide={sidePanelForRender === "deliverables"}
+              onMinimize={handleCloseSidePanel}
             >
-              <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
-                <div className="min-w-0">
-                  <p className="civora-muted-label">{activePanelTitle}</p>
-	                  <p className="mt-1 line-clamp-2 text-sm text-[var(--civora-text-muted)]">
-	                    {activePanelDescription}
-	                  </p>
-	                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCloseSidePanel}
-                    className="civora-control px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--civora-text-muted)]"
-                  >
-                    Minimize
-                  </button>
-                </div>
-              </div>
-              <div
-                className="civora-right-panel-sections flex-1 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-4"
-                data-sections-collapsed="false"
-              >
                 {sidePanelForRender === "trust" ? (
                   <div className="space-y-4" data-testid="civora-trust-panel">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -30547,8 +30327,7 @@ function PerformanceAIDashboardView({
                     summaryText={chatSummary}
                   />
                 ) : null}
-              </div>
-            </aside>
+            </WorkspaceRightPanel>
           ) : null}
           <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
 	            <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
