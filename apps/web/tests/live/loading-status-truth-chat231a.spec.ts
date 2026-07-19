@@ -205,7 +205,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await openPanel(page, /^Deliver$/, /Review package/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();
     await expect(page.getByTestId("project-status-summary")).toContainText(/needs input|needs review/i);
-    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package blocked/i);
+    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input/i);
   });
 
   test("chat status answers match visible status and unsafe commands refuse boundaries", async ({ page }) => {
@@ -218,7 +218,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByText(/Current status:/i).last()).toContainText(visibleStatus.includes("blocked") ? "blocked" : /needs review|ready|working|stale/i);
 
     await runCommand(page, "what is blocked?");
-    await expect(page.getByText(/Current blockers|No blockers|No current blockers/i).last()).toBeVisible();
+    await expect(page.getByText(/Needs input|No needs-input items|No current needs-input items/i).last()).toBeVisible();
 
     await runCommand(page, "stamp this");
     await expect(page.getByText(/can't stamp, seal, sign, certify/i).last()).toBeVisible();

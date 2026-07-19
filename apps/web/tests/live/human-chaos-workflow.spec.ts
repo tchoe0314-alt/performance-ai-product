@@ -167,7 +167,7 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|blocked|Needs review/i, { timeout: 15_000 });
     await openPanel(page, /^Deliver$/, /Review package|Make Review Package/i);
     await humanClick(page.getByRole("button", { name: /Make Review Package/i }), "Make Review Package");
-    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package blocked|missing/i, { timeout: 15_000 });
+    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input|missing/i, { timeout: 15_000 });
   }, 45_000);
   await shot(page, testInfo, "07-generate-deliver");
 

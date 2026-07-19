@@ -98,7 +98,7 @@ test.describe("hosted authenticated smoke", () => {
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package needs input|Review package needs input/i, { timeout: 10_000 });
 
     await askChat(page, "what changed?", /What changed|Last Generate|Recent changes|Auto Site Context/i);
-    await askChat(page, "what is blocked?", /blocked|review-required|Outputs remain review-required/i);
+    await askChat(page, "what is blocked?", /Needs input|review-required|Outputs remain review-required/i);
     await askChat(page, "can I export?", /export|review package|blocked/i);
 
     await expect(page.getByTestId("workspace-canvas-shell")).not.toContainText(

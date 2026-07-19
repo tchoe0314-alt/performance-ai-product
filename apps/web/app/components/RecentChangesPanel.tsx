@@ -82,7 +82,7 @@ export function RecentChangesPanel({
                     data-testid="recent-change-row-undo"
                     className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
                   >
-                    {change.canUndo ? "Undo" : "Why blocked"}
+                    {change.canUndo ? "Undo" : "Why unavailable"}
                   </button>
                 </div>
               </div>

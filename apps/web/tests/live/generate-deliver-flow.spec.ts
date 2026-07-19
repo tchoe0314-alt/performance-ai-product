@@ -58,7 +58,7 @@ test.describe("Generate and Deliver product flow", () => {
 
     await openWorkspacePanel(page, /^Deliver$/, /Review package/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();
-    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package blocked/i);
+    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input/i);
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Auto Site Context source missing|generated system result|model preview|none recorded/i);
     await expect(page.getByTestId("plan-sheet-editor")).toContainText(/Review-required/i);
     await expect(page.getByTestId("plan-sheet-editor")).not.toContainText(/construction-ready|Civora approved|stamped by Civora|sealed by Civora|signed by Civora/i);
@@ -68,7 +68,7 @@ test.describe("Generate and Deliver product flow", () => {
 
     await askChat(page, "what ran?", /Last Generate ran|Current fresh systems/i);
     await askChat(page, "what did you skip?", /Skipped:/i);
-    await askChat(page, "what is blocked?", /Current blockers|Outputs remain review-required/i);
+    await askChat(page, "what is blocked?", /Needs input|Outputs remain review-required/i);
     await askChat(page, "what changed?", /Last Generate|Auto Site Context/i);
     await askChat(page, "what do I need next?", /next visible UI action|Review missing package inputs|review-required/i);
     await askChat(page, "can I export?", /Export needs input|engineer-review packages/i);

@@ -12212,7 +12212,7 @@ function PerformanceAIDashboardView({
   const canonicalWorkspaceBlockerText =
     canonicalWorkspaceBlockers.length
       ? canonicalWorkspaceBlockers.join("; ")
-      : "No blockers recorded for the active workspace; Civora outputs remain review-required.";
+      : "No needs-input items recorded for the active workspace; Civora outputs remain review-required.";
   const restoreTruthLabel =
     workspaceRestoreState === "failed"
       ? "Could not restore saved workspace"
@@ -12267,7 +12267,7 @@ function PerformanceAIDashboardView({
     if (/^(hi|hello|hey|yo|good\s+(morning|afternoon|evening))[\s.!?]*$/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        `Hi. I can help with casual project questions, setup commands, draw/edit commands, blocker review, review/export questions, and focused fixes. ${progressTimelineState.next_action ? `Best next action: ${progressTimelineState.next_action}.` : nextSetupAction} Outputs stay review-required.`,
+        `Hi. I can help with casual project questions, setup commands, draw/edit commands, needs-input review, review/export questions, and focused fixes. ${progressTimelineState.next_action ? `Best next action: ${progressTimelineState.next_action}.` : nextSetupAction} Outputs stay review-required.`,
         "status",
       );
       return true;
@@ -12399,7 +12399,7 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(what is blocked|what's blocked|what.*blocked|blocked right now)/i.test(normalized)) {
+    if (/(what is blocked|what's blocked|what.*blocked|blocked right now|what needs input|needs input|what needs attention)/i.test(normalized)) {
       const flowBlockers = uniqueStrings([
         projectStatusSummary.state === "blocked" ? `${projectStatusSummary.title}: ${projectStatusSummary.detail}` : "",
         ...(generateFlowSummary?.blocked ? generateFlowSummary.needs_review : []),
@@ -12409,8 +12409,8 @@ function PerformanceAIDashboardView({
       appendChatMessage(
         "assistant",
         canonicalWorkspaceBlockers.length || flowBlockers.length
-          ? `Current blockers:\n${uniqueStrings([...canonicalWorkspaceBlockers, ...flowBlockers]).map((reason) => `- ${reason}`).join("\n")}`
-          : "No current blockers are recorded. Outputs remain review-required.",
+          ? `Needs input:\n${uniqueStrings([...canonicalWorkspaceBlockers, ...flowBlockers]).map((reason) => `- ${reason}`).join("\n")}`
+          : "No current needs-input items are recorded. Outputs remain review-required.",
         "status",
       );
       return true;
@@ -12650,7 +12650,7 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(blocked|why.*(drainage|utilities|grading))/i.test(normalized)) {
+    if (/(blocked|needs input|needs attention|why.*(drainage|utilities|grading))/i.test(normalized)) {
       const blockers = [
         ...(progressTimelineState.exact_blockers ?? []),
         ...previewBlockedReasons,
@@ -12659,15 +12659,15 @@ function PerformanceAIDashboardView({
         appendChatMessage(
           "assistant",
           topSmartFix?.one_action_needed_next
-            ? `No blocker text is currently recorded, but the smart-fix panel recommends: ${topSmartFix.one_action_needed_next}`
-            : "No blockers are currently recorded in the active project metadata.",
+            ? `No needs-input text is currently recorded, but the smart-fix panel recommends: ${topSmartFix.one_action_needed_next}`
+            : "No needs-input items are currently recorded in the active project metadata.",
           "status",
         );
         return true;
       }
       appendChatMessage(
         "assistant",
-        `Current blockers:\n${Array.from(new Set(blockers)).map((reason) => `- ${reason}`).join("\n")}`,
+        `Needs input:\n${Array.from(new Set(blockers)).map((reason) => `- ${reason}`).join("\n")}`,
         "status",
       );
       return true;
@@ -13472,8 +13472,8 @@ function PerformanceAIDashboardView({
         state: canonicalWorkspaceBlockers.length ? "blocked" : "ready",
         area: "chat",
         title: "Blocker view opened",
-        detail: canonicalWorkspaceBlockers.length ? canonicalWorkspaceBlockers[0] : "No current blockers are recorded in the active workspace.",
-        nextAction: canonicalWorkspaceBlockers.length ? "Review the open blocker panel and fix the first blocker." : "Continue setup, generate, or deliver from the current workspace.",
+        detail: canonicalWorkspaceBlockers.length ? canonicalWorkspaceBlockers[0] : "No current needs-input items are recorded in the active workspace.",
+        nextAction: canonicalWorkspaceBlockers.length ? "Review the needs-input panel and fix the first item." : "Continue setup, generate, or deliver from the current workspace.",
       });
       return true;
     }
@@ -13505,7 +13505,7 @@ function PerformanceAIDashboardView({
       );
       return true;
     }
-    if (/^what is blocked\??$/.test(normalized)) {
+    if (/^(what is blocked|what needs input|what needs attention)\??$/.test(normalized)) {
       appendChatMessage("user", message);
       const blockers = uniqueStrings([
         projectStatusSummary.state === "blocked" ? `${projectStatusSummary.title}: ${projectStatusSummary.detail}` : "",
@@ -13516,7 +13516,7 @@ function PerformanceAIDashboardView({
       ]);
       appendChatMessage(
         "assistant",
-        blockers.length ? `Current blockers:\n${blockers.map((item) => `- ${item}`).join("\n")}` : "No blockers are currently recorded in the active workspace.",
+        blockers.length ? `Needs input:\n${blockers.map((item) => `- ${item}`).join("\n")}` : "No needs-input items are currently recorded in the active workspace.",
         "status",
       );
       return true;
@@ -18740,7 +18740,7 @@ function PerformanceAIDashboardView({
             : "";
     const fallbackDetails = [
       currentManualFailures.length
-        ? `Current blockers: ${currentManualFailures
+        ? `Needs input: ${currentManualFailures
             .slice(0, 3)
             .map((failure) => failure.code || failure.message || "missing information issue")
             .join(", ")}.`

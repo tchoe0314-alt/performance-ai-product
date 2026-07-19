@@ -99,7 +99,7 @@ test.describe("Chat 231B undo recovery and change history", () => {
 
     await page.getByRole("button", { name: /^Deliver$/ }).first().click();
     await page.getByRole("button", { name: /Make Review Package/i }).click();
-    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Package blocked/i);
+    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input/i);
     await openDrawPanel(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText(/Review package/);
 
@@ -116,7 +116,7 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await expect(page.getByTestId("recent-changes-section")).toContainText(/AI realism visualization is stale|AI realism stale/i);
 
     await openRecentChanges(page);
-    await page.getByTestId("recent-change-row-undo").filter({ hasText: /Why blocked/i }).first().click();
+    await page.getByTestId("recent-change-row-undo").filter({ hasText: /Why unavailable/i }).first().click();
     await expect(page.getByTestId("object-manager-status")).toContainText(/Undo not available:/);
   });
 });
