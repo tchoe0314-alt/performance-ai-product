@@ -3221,7 +3221,6 @@ function PerformanceAIDashboardView({
   const [previewInteraction, setPreviewInteraction] = useState<"static" | "edit">("static");
   const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
-  const [previewLabelDensityTouched, setPreviewLabelDensityTouched] = useState(false);
   const [layerManagerOpen, setLayerManagerOpen] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
   const [objectOutlineColor] = useState("#1f2937");
@@ -20065,9 +20064,8 @@ function PerformanceAIDashboardView({
   ]);
 
   useEffect(() => {
-    if (previewLabelDensityTouched) return;
     setPreviewLabelDensity(previewQuality === "high" ? "high" : "standard");
-  }, [previewLabelDensityTouched, previewQuality]);
+  }, [previewQuality]);
 
   const hasGradingSurface = useMemo(() => {
     const gradingMeta =
@@ -22587,6 +22585,13 @@ function PerformanceAIDashboardView({
       active: showMeasurements,
     },
     {
+      label: "Calcs",
+      icon: Gauge,
+      modes: ["analyze"] as PrimaryWorkflowKey[],
+      action: () => setShowCalculations((value) => !value),
+      active: showCalculations,
+    },
+    {
       label: "Snaps",
       icon: Crosshair,
       modes: ["draw"] as PrimaryWorkflowKey[],
@@ -24879,7 +24884,7 @@ function PerformanceAIDashboardView({
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">3D engineering review</p>
                         <p className="mt-2 text-sm text-slate-600">
-                          Use the canvas toolbar for 2D/3D and quality. Review geometry, grading surface, annotations, and blocked systems before export.
+                          Use the canvas toolbar for 2D/3D and quality. Review geometry, grading surface, annotations, and needs-input systems before export.
                         </p>
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                           {[
@@ -24909,142 +24914,6 @@ function PerformanceAIDashboardView({
                           <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">Issues</p>
                           <p className="mt-1 text-lg font-semibold text-slate-900">{issues.length + analysisIssues.length}</p>
                         </div>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Canvas controls</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        {[
-                          ["View", previewMode.toUpperCase()],
-                          ["Quality", previewQuality],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                            <p className="mt-1 font-semibold text-slate-800">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          View behavior
-                        </p>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          {(["static", "edit"] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => setPreviewInteraction(mode)}
-                              className={`rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${
-                                previewInteraction === mode
-                                  ? "border-slate-950 bg-slate-950 text-white"
-                                  : "border-slate-200 bg-white text-slate-700"
-                              }`}
-                            >
-                              {mode}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          {(["low", "standard", "high"] as const).map((density) => (
-                            <button
-                              key={density}
-                              type="button"
-                              onClick={() => {
-                                setPreviewLabelDensityTouched(true);
-                                setPreviewLabelDensity(density);
-                              }}
-                              className={`rounded-xl border px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                previewLabelDensity === density
-                                  ? "border-slate-950 bg-slate-950 text-white"
-                                  : "border-slate-200 bg-white text-slate-700"
-                              }`}
-                            >
-                              {density}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
-                          <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            <span>Measurements overlay</span>
-                            <input
-                              type="checkbox"
-                              checked={showMeasurements}
-                              onChange={(event) => setShowMeasurements(event.target.checked)}
-                              className="h-4 w-4 accent-slate-950"
-                            />
-                          </label>
-                          <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            <span>Calculation overlay</span>
-                            <input
-                              type="checkbox"
-                              checked={showCalculations}
-                              onChange={(event) => setShowCalculations(event.target.checked)}
-                              className="h-4 w-4 accent-slate-950"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setFitToSiteRequest((value) => value + 1)}
-                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                      >
-                        Fit site
-                      </button>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAnalysisSelectedIssueId(null);
-                            setFocusDetectedId(null);
-                            setAnalysisFocusLocked(false);
-                            setFitToSiteRequest((value) => value + 1);
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Reset view
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handlePreviewPlan}
-                          disabled={busy}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Refresh preview
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFullscreenOpen(true)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Fullscreen
-                        </button>
-                      </div>
-	                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Legend</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700">
-                        {[
-                          ["Buildings", "#0f172a", "solid"],
-                          ["Roads", "#475569", "solid"],
-                          ["Parking", "#cbd5e1", "solid"],
-                          ["Drainage", "#2563eb", "solid"],
-                          ["Utilities", "#7c3aed", "solid"],
-                          ["Site boundary", "#94a3b8", "dash"],
-                          ["AI detected", "#f59e0b", "dash"],
-                          ["Survey points", "#14b8a6", "dot"],
-                        ].map(([label, color, style]) => (
-                          <div key={label} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <span
-                              className={`h-3 w-8 rounded-full ${style === "dash" ? "border-t-2 border-dashed" : style === "dot" ? "w-3" : ""}`}
-                              style={{
-                                backgroundColor: style === "dash" ? "transparent" : color,
-                                borderColor: color,
-                              }}
-                            />
-                            <span>{label}</span>
-                          </div>
-                        ))}
                       </div>
                     </div>
                   </div>
