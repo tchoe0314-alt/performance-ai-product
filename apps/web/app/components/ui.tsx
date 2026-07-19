@@ -188,3 +188,22 @@ export function DisclosurePanel({
     </details>
   );
 }
+
+export function PanelCard({
+  children,
+  className = "",
+  testId,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-slate-200 bg-white p-4 ${className}`}
+      data-testid={testId}
+    >
+      {children}
+    </div>
+  );
+}

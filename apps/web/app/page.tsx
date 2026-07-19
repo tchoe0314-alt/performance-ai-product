@@ -2563,7 +2563,7 @@ import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
 import WorkspaceRightPanel from "./components/WorkspaceRightPanel";
 import WorkspaceToasts, { type WorkspaceToast } from "./components/WorkspaceToasts";
-import { DisclosurePanel } from "./components/ui";
+import { DisclosurePanel, PanelCard } from "./components/ui";
 import type {
   PlanSheet,
   PlanSheetAnnotation,
@@ -29569,7 +29569,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "deliverables" ? (
                   <div className="space-y-3" data-testid="clean-deliver-panel">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deliver-review-package-flow">
+                    <PanelCard testId="deliver-review-package-flow">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Deliver</p>
@@ -29600,9 +29600,9 @@ function PerformanceAIDashboardView({
                           <p className="mt-1 font-semibold">Next: {reviewPackageFlowSummary.next_action}</p>
                         </div>
                       ) : null}
-                    </div>
+                    </PanelCard>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deliver-package-contents">
+                    <PanelCard testId="deliver-package-contents">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Package Contents</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
@@ -29638,9 +29638,9 @@ function PerformanceAIDashboardView({
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </PanelCard>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="deliver-export-actions">
+                    <PanelCard testId="deliver-export-actions">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Exports</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <button
@@ -29685,7 +29685,7 @@ function PerformanceAIDashboardView({
                           {exportActionMessage}
                         </p>
                       ) : null}
-                    </div>
+                    </PanelCard>
 
                     <DisclosurePanel
                       testId="deliver-source-notes"
