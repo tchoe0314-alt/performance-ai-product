@@ -2567,6 +2567,7 @@ import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import { NeedsPlacementTray } from "./components/NeedsPlacementTray";
+import { ObjectManagerBulkToolsPanel } from "./components/ObjectManagerBulkToolsPanel";
 import { ObjectManagerHiddenState } from "./components/ObjectManagerHiddenState";
 import { ObjectManagerLayerControls, type ObjectManagerLayerRow } from "./components/ObjectManagerLayerControls";
 import { ObjectManagerMeasurementsPanel } from "./components/ObjectManagerMeasurementsPanel";
@@ -27600,327 +27601,48 @@ function PerformanceAIDashboardView({
                             summary={selectedObjectMeasurementSummary}
                             measurements={selectedObjectMeasurements}
                           />
-                          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkVisibility(true)}
-                              data-testid="object-manager-bulk-hide"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Hide selected
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkVisibility(false)}
-                              data-testid="object-manager-bulk-show"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Show selected
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleObjectManagerIsolateSelected}
-                              data-testid="object-manager-isolate-selected"
-                              className="col-span-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Isolate selected
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkLock(true)}
-                              data-testid="object-manager-bulk-lock"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Lock selected
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkLock(false)}
-                              data-testid="object-manager-bulk-unlock"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Unlock selected
-                            </button>
-                            <label className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              Color
-                              <input
-                                type="color"
-                                defaultValue="#0f766e"
-                                onChange={(event) => handleObjectManagerBulkColor(event.target.value)}
-                                data-testid="object-manager-bulk-color"
-                                className="h-7 w-9 rounded border border-slate-200 bg-white"
-                              />
-                            </label>
-                            <select
-                              aria-label="Bulk layer type"
-                              data-testid="object-manager-bulk-type"
-                              defaultValue=""
-                              onChange={(event) => {
-                                if (!event.target.value) return;
-                                handleObjectManagerBulkType(event.target.value as SiteObjectType);
-                              }}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold text-slate-600"
-                            >
-                              <option value="">Layer/type</option>
-                              {Object.entries(SITE_OBJECT_CATALOG)
-                                .filter(([type]) => type !== "site")
-                                .map(([type, catalog]) => (
-                                  <option key={`bulk-${type}`} value={type}>
-                                    {catalog.label}
-                                  </option>
-                                ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={handleObjectManagerBulkDuplicate}
-                              data-testid="object-manager-bulk-duplicate"
-                              className="col-span-2 rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Duplicate selected
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkLayout("align_left")}
-                              data-testid="object-manager-bulk-align-left"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Align left
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkLayout("align_top")}
-                              data-testid="object-manager-bulk-align-top"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Align top
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkLayout("distribute_x")}
-                              data-testid="object-manager-bulk-distribute-x"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Distribute X
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerBulkLayout("distribute_y")}
-                              data-testid="object-manager-bulk-distribute-y"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                            >
-                              Distribute Y
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleObjectManagerBulkDelete}
-                              data-testid="object-manager-bulk-delete"
-                              className="col-span-2 rounded-lg border border-rose-200 bg-white px-2 py-2 font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50"
-                            >
-                              Delete selected
-                            </button>
-                          </div>
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-array-selected">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              Rectangular array
-                            </p>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                Rows
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="10"
-                                  value={arrayRows}
-                                  onChange={(event) => setArrayRows(event.target.value)}
-                                  data-testid="object-manager-array-rows"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                Columns
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="10"
-                                  value={arrayColumns}
-                                  onChange={(event) => setArrayColumns(event.target.value)}
-                                  data-testid="object-manager-array-columns"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                X spacing
-                                <input
-                                  type="number"
-                                  value={arraySpacingX}
-                                  onChange={(event) => setArraySpacingX(event.target.value)}
-                                  data-testid="object-manager-array-spacing-x"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                Y spacing
-                                <input
-                                  type="number"
-                                  value={arraySpacingY}
-                                  onChange={(event) => setArraySpacingY(event.target.value)}
-                                  data-testid="object-manager-array-spacing-y"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleObjectManagerArraySelected}
-                              data-testid="object-manager-array-action"
-                              className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-900 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
-                            >
-                              Create array
-                            </button>
-                            <p className="mt-2 text-[11px] font-medium text-slate-500">
-                              Draft copies stay review-required and trace back to the selected source object.
-                            </p>
-                          </div>
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-transform-selected">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              Transform selected
-                            </p>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                Move X
-                                <input
-                                  type="number"
-                                  value={bulkMoveX}
-                                  onChange={(event) => setBulkMoveX(event.target.value)}
-                                  data-testid="object-manager-bulk-move-x"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                Move Y
-                                <input
-                                  type="number"
-                                  value={bulkMoveY}
-                                  onChange={(event) => setBulkMoveY(event.target.value)}
-                                  data-testid="object-manager-bulk-move-y"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleObjectManagerBulkMove}
-                              data-testid="object-manager-bulk-move-action"
-                              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                            >
-                              Move selected
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleObjectManagerBulkCopyByOffset}
-                              data-testid="object-manager-bulk-copy-offset-action"
-                              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                            >
-                              Copy by offset
-                            </button>
-                            <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-2" data-testid="object-manager-move-to-coordinate">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                                Move selection top-left to coordinate
-                              </p>
-                              <div className="mt-2 grid grid-cols-2 gap-2">
-                                <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                  Target X
-                                  <input
-                                    type="number"
-                                    value={bulkMoveToX}
-                                    onChange={(event) => setBulkMoveToX(event.target.value)}
-                                    data-testid="object-manager-bulk-move-to-x"
-                                    className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                  />
-                                </label>
-                                <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                  Target Y
-                                  <input
-                                    type="number"
-                                    value={bulkMoveToY}
-                                    onChange={(event) => setBulkMoveToY(event.target.value)}
-                                    data-testid="object-manager-bulk-move-to-y"
-                                    className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                  />
-                                </label>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={handleObjectManagerBulkMoveTo}
-                                data-testid="object-manager-bulk-move-to-action"
-                                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-                              >
-                                Move to coordinate
-                              </button>
-                            </div>
-                            <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                Scale factor
-                                <input
-                                  type="number"
-                                  step="0.05"
-                                  min="0.05"
-                                  max="10"
-                                  value={bulkScaleFactor}
-                                  onChange={(event) => setBulkScaleFactor(event.target.value)}
-                                  data-testid="object-manager-bulk-scale-factor"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                onClick={handleObjectManagerBulkScale}
-                                data-testid="object-manager-bulk-scale-action"
-                                className="self-end rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                              >
-                                Scale
-                              </button>
-                            </div>
-                            <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-                              <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500">
-                                Rotate degrees
-                                <input
-                                  type="number"
-                                  step="1"
-                                  value={bulkRotateAngle}
-                                  onChange={(event) => setBulkRotateAngle(event.target.value)}
-                                  data-testid="object-manager-bulk-rotate-angle"
-                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                onClick={handleObjectManagerBulkRotate}
-                                data-testid="object-manager-bulk-rotate-action"
-                                className="self-end rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                              >
-                                Rotate
-                              </button>
-                            </div>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleObjectManagerBulkMirror("x")}
-                                data-testid="object-manager-bulk-mirror-x"
-                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                              >
-                                Mirror X
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleObjectManagerBulkMirror("y")}
-                                data-testid="object-manager-bulk-mirror-y"
-                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-                              >
-                                Mirror Y
-                              </button>
-                            </div>
-                          </div>
+                          <ObjectManagerBulkToolsPanel
+                            objectTypeOptions={Object.entries(SITE_OBJECT_CATALOG)
+                              .filter(([type]) => type !== "site")
+                              .map(([type, catalog]) => ({ type: type as SiteObjectType, label: catalog.label }))}
+                            arrayRows={arrayRows}
+                            arrayColumns={arrayColumns}
+                            arraySpacingX={arraySpacingX}
+                            arraySpacingY={arraySpacingY}
+                            bulkMoveX={bulkMoveX}
+                            bulkMoveY={bulkMoveY}
+                            bulkMoveToX={bulkMoveToX}
+                            bulkMoveToY={bulkMoveToY}
+                            bulkScaleFactor={bulkScaleFactor}
+                            bulkRotateAngle={bulkRotateAngle}
+                            onHideSelected={() => handleObjectManagerBulkVisibility(true)}
+                            onShowSelected={() => handleObjectManagerBulkVisibility(false)}
+                            onIsolateSelected={handleObjectManagerIsolateSelected}
+                            onLockSelected={() => handleObjectManagerBulkLock(true)}
+                            onUnlockSelected={() => handleObjectManagerBulkLock(false)}
+                            onColorSelected={handleObjectManagerBulkColor}
+                            onTypeSelected={handleObjectManagerBulkType}
+                            onDuplicateSelected={handleObjectManagerBulkDuplicate}
+                            onLayoutSelected={handleObjectManagerBulkLayout}
+                            onDeleteSelected={handleObjectManagerBulkDelete}
+                            onArrayRowsChange={setArrayRows}
+                            onArrayColumnsChange={setArrayColumns}
+                            onArraySpacingXChange={setArraySpacingX}
+                            onArraySpacingYChange={setArraySpacingY}
+                            onCreateArray={handleObjectManagerArraySelected}
+                            onBulkMoveXChange={setBulkMoveX}
+                            onBulkMoveYChange={setBulkMoveY}
+                            onMoveSelected={handleObjectManagerBulkMove}
+                            onCopyByOffset={handleObjectManagerBulkCopyByOffset}
+                            onBulkMoveToXChange={setBulkMoveToX}
+                            onBulkMoveToYChange={setBulkMoveToY}
+                            onMoveToCoordinate={handleObjectManagerBulkMoveTo}
+                            onBulkScaleFactorChange={setBulkScaleFactor}
+                            onScaleSelected={handleObjectManagerBulkScale}
+                            onBulkRotateAngleChange={setBulkRotateAngle}
+                            onRotateSelected={handleObjectManagerBulkRotate}
+                            onMirrorSelected={handleObjectManagerBulkMirror}
+                          />
                           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3" data-testid="object-manager-combine-selected">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                               Combine / convert
