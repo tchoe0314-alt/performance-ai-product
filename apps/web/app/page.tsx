@@ -28140,7 +28140,7 @@ function PerformanceAIDashboardView({
                 {sidePanelForRender === "libraries" ? (
                   <div className="space-y-4">
                     {ADD_MENU_SECTIONS.map((group) => (
-                      <div key={group.key} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <PanelCard key={group.key}>
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{group.title}</p>
                         <div className="mt-3 grid grid-cols-2 gap-2">
                           {group.items.map((type) => (
@@ -28149,14 +28149,14 @@ function PerformanceAIDashboardView({
                             </button>
                           ))}
                         </div>
-                      </div>
+                      </PanelCard>
                     ))}
                   </div>
                 ) : null}
 
                 {sidePanelForRender === "settings" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <PanelCard>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Workspace settings</p>
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
                         {[
@@ -28177,8 +28177,8 @@ function PerformanceAIDashboardView({
                         <button type="button" onClick={() => handleOpenSidePanel("standards")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Standards</button>
                         <button type="button" onClick={() => handleOpenSidePanel("deliverables")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Export settings</button>
                       </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    </PanelCard>
+                    <PanelCard>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Run defaults</p>
                       <div className="mt-3 space-y-2">
                         {disciplineToggles.map((toggle) => (
@@ -28188,7 +28188,7 @@ function PerformanceAIDashboardView({
                           </label>
                         ))}
                       </div>
-                    </div>
+                    </PanelCard>
                   </div>
                 ) : null}
 
