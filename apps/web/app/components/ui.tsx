@@ -130,3 +130,61 @@ export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
     />
   );
 }
+
+export function DisclosurePanel({
+  title,
+  subtitle,
+  status,
+  statusClassName = "bg-slate-100 text-slate-500",
+  children,
+  defaultOpen = false,
+  className = "",
+  bodyClassName = "",
+  testId,
+}: {
+  title: string;
+  subtitle: React.ReactNode;
+  status?: React.ReactNode;
+  statusClassName?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+  bodyClassName?: string;
+  testId?: string;
+}) {
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
+
+  React.useEffect(() => {
+    if (defaultOpen) setIsOpen(true);
+  }, [defaultOpen]);
+
+  return (
+    <details
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      className={`rounded-xl border border-slate-200 bg-white ${className}`}
+      data-testid={testId}
+    >
+      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+        <span className="min-w-0">
+          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            {title}
+          </span>
+          <span className="mt-1 block truncate text-sm font-semibold text-slate-950">
+            {subtitle}
+          </span>
+        </span>
+        {status ? (
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${statusClassName}`}
+          >
+            {status}
+          </span>
+        ) : null}
+      </summary>
+      <div className={`border-t border-slate-100 px-4 py-4 ${bodyClassName}`}>
+        {children}
+      </div>
+    </details>
+  );
+}

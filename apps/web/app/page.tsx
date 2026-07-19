@@ -2563,6 +2563,7 @@ import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
 import WorkspaceRightPanel from "./components/WorkspaceRightPanel";
 import WorkspaceToasts, { type WorkspaceToast } from "./components/WorkspaceToasts";
+import { DisclosurePanel } from "./components/ui";
 import type {
   PlanSheet,
   PlanSheetAnnotation,
@@ -24200,25 +24201,20 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-3" data-testid="clean-setup-panel">
-                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="setup-address-truth">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Address / Location</span>
-                          <span className="mt-1 block truncate text-sm font-semibold text-slate-950">
-                            {pendingAddressEdit ? siteAddress.trim() : siteInputs?.address || siteAddress.trim() || "No address applied"}
-                          </span>
-                        </span>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                    <DisclosurePanel
+                      defaultOpen
+                      testId="setup-address-truth"
+                      title="Address / Location"
+                      subtitle={pendingAddressEdit ? siteAddress.trim() : siteInputs?.address || siteAddress.trim() || "No address applied"}
+                      status={addressNeedsApply ? "Needs apply" : hasAppliedAddress ? "Applied" : localAddressLocked ? "Local" : "Not set"}
+                      statusClassName={
                           addressNeedsApply
                             ? "bg-amber-50 text-amber-700"
                             : hasAppliedAddress || localAddressLocked
                               ? "bg-emerald-50 text-emerald-700"
                               : "bg-slate-100 text-slate-500"
-                        }`}>
-                          {addressNeedsApply ? "Needs apply" : hasAppliedAddress ? "Applied" : localAddressLocked ? "Local" : "Not set"}
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4">
+                      }
+                    >
                         <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Type project address
                           <input
@@ -24291,22 +24287,16 @@ function PerformanceAIDashboardView({
                             {autoExistingConditionsStatus.message}
                           </p>
                         ) : null}
-                      </div>
-                    </details>
+                    </DisclosurePanel>
 
-                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="setup-site-box-controls">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Site Boundary</span>
-                          <span className="mt-1 block truncate text-sm font-semibold text-slate-950">
-                            {lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "No boundary locked"}
-                          </span>
-                        </span>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                          {siteScaleLocked ? "Locked" : "Needs lock"}
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4">
+                    <DisclosurePanel
+                      defaultOpen
+                      testId="setup-site-box-controls"
+                      title="Site Boundary"
+                      subtitle={lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "No boundary locked"}
+                      status={siteScaleLocked ? "Locked" : "Needs lock"}
+                      statusClassName={siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}
+                    >
                         <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
                           <label className="flex flex-col gap-1 font-semibold">
                             Width (ft)
@@ -24373,22 +24363,15 @@ function PerformanceAIDashboardView({
                         >
                           Create centered site from address
                         </button>
-                      </div>
-                    </details>
+                    </DisclosurePanel>
 
-                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="setup-survey-terrain-card">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Survey / Terrain / Sources</span>
-                          <span className="mt-1 block truncate text-sm font-semibold text-slate-950">
-                            {hasTerrainSource ? "Terrain source available" : surveyFileName || uploadedImagePreviewUrl || uploadedImageApiUrl ? "Sources added for review" : "Optional sources not added"}
-                          </span>
-                        </span>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${hasTerrainSource ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                          {hasTerrainSource ? "Ready" : "Optional"}
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4">
+                    <DisclosurePanel
+                      testId="setup-survey-terrain-card"
+                      title="Survey / Terrain / Sources"
+                      subtitle={hasTerrainSource ? "Terrain source available" : surveyFileName || uploadedImagePreviewUrl || uploadedImageApiUrl ? "Sources added for review" : "Optional sources not added"}
+                      status={hasTerrainSource ? "Ready" : "Optional"}
+                      statusClassName={hasTerrainSource ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}
+                    >
                         <button
                           type="button"
                           onClick={() => handleOpenSidePanel("import_survey")}
@@ -24454,32 +24437,24 @@ function PerformanceAIDashboardView({
                             event.currentTarget.value = "";
                           }}
                         />
-                      </div>
-                    </details>
+                    </DisclosurePanel>
 
-                    <details
-                      className="rounded-xl border border-slate-200 bg-white"
-                      data-testid="setup-detect-inside-site"
-                      open={autoSiteContextFlowSummary.candidateCount > 0 || autoExistingConditionsStatus.status !== "waiting"}
-                    >
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Auto Site Context Results</span>
-                          <span className="mt-1 block truncate text-sm font-semibold text-slate-950">
-                            {autoSiteContextFlowSummary.message}
-                          </span>
-                        </span>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                    <DisclosurePanel
+                      defaultOpen={autoSiteContextFlowSummary.candidateCount > 0 || autoExistingConditionsStatus.status !== "waiting"}
+                      testId="setup-detect-inside-site"
+                      title="Auto Site Context Results"
+                      subtitle={autoSiteContextFlowSummary.message}
+                      status={autoExistingConditionsStatus.status === "blocked" ? "Needs source" : `${autoSiteContextFlowSummary.candidateCount} found`}
+                      statusClassName={
 	                          autoExistingConditionsStatus.status === "blocked"
 	                            ? "bg-amber-50 text-amber-700"
                             : autoSiteContextFlowSummary.candidateCount
                               ? "bg-amber-50 text-amber-700"
                               : "bg-slate-100 text-slate-500"
-                        }`}>
-	                          {autoExistingConditionsStatus.status === "blocked" ? "Needs source" : `${autoSiteContextFlowSummary.candidateCount} found`}
-                        </span>
-	                      </summary>
-	                      <div className="border-t border-slate-100 px-4 py-4" data-testid="auto-site-context-summary">
+                      }
+                      bodyClassName=""
+                    >
+	                      <div data-testid="auto-site-context-summary">
                           <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-testid="auto-site-context-candidates">
                             {autoExistingConditionsStatus.status === "blocked"
                               ? autoExistingConditionsStatus.message
@@ -24605,7 +24580,7 @@ function PerformanceAIDashboardView({
                           {hasAppliedAddress ? "Rerun Site Context" : "Apply Address First"}
                         </button>
                       </div>
-                    </details>
+                    </DisclosurePanel>
                   </div>
                 ) : null}
 
