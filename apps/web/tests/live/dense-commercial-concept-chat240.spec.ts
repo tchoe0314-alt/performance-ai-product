@@ -52,6 +52,10 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
   await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-grading-context-lines").first()).toBeVisible();
+  await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
+  await expect(page.getByTestId("survey-boundary-annotation").first()).toBeVisible();
+  await expect(page.getByTestId("survey-spot-elevation").first()).toBeVisible();
+  await expect(page.getByTestId("survey-utility-callout").first()).toBeVisible();
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const objectPanel = page.getByTestId("object-manager-panel");

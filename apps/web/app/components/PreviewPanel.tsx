@@ -336,11 +336,11 @@ const geometryTruthLabel = (item: BuildingPlacement) => {
 const utilityStrokeColor = (item: BuildingPlacement) => {
   const text = `${item.type || ""} ${item.label || ""} ${item.meta?.system || ""} ${item.meta?.discipline || ""}`.toLowerCase();
   if (text.includes("water") || text.includes("hydrant")) return "#0284c7";
-  if (text.includes("sanitary") || text.includes("sewer") || text.includes("manhole")) return "#7c3aed";
-  if (text.includes("storm") || text.includes("drain") || text.includes("inlet")) return "#0f766e";
+  if (text.includes("sanitary") || text.includes("manhole")) return "#16a34a";
+  if (text.includes("storm") || text.includes("drain") || text.includes("inlet") || text.includes("sewer")) return "#f97316";
   if (text.includes("electric") || text.includes("power")) return "#ca8a04";
   if (text.includes("gas")) return "#dc2626";
-  return "#7c3aed";
+  return "#64748b";
 };
 
 const polygonCentroid = (points: Array<[number, number]>): [number, number] => {
@@ -1033,6 +1033,18 @@ export default function PreviewPanel({
     const widthPct = Math.min(36, Math.max(12, (lengthFt / currentSiteSize.width) * 100));
     return { lengthFt, widthPct };
   }, [currentSiteSize.height, currentSiteSize.width]);
+  const surveySheetSpotElevations = useMemo(
+    () => [
+      { x: 12, y: 18, label: "x 952.4" },
+      { x: 35, y: 26, label: "x 953.1" },
+      { x: 63, y: 20, label: "x 954.6" },
+      { x: 78, y: 38, label: "x 951.8" },
+      { x: 20, y: 58, label: "x 950.2" },
+      { x: 45, y: 70, label: "x 949.7" },
+      { x: 68, y: 78, label: "x 948.9" },
+    ],
+    [],
+  );
   const resolveVisualKind = useCallback((item: BuildingPlacement) => {
     const type = String(item.type || "building");
     if (type.includes("building") || type === "pad" || !item.type) return "building";
@@ -9916,6 +9928,9 @@ export default function PreviewPanel({
                             <path d="M 0 3.2 L 3.2 0" stroke="rgba(22,101,52,0.34)" strokeWidth="0.14" />
                             <circle cx="2.8" cy="2.8" r="0.22" fill="rgba(22,101,52,0.34)" />
                           </pattern>
+                          <marker id="survey-flow-arrow" viewBox="0 0 4 4" refX="3.5" refY="2" markerWidth="2.6" markerHeight="2.6" orient="auto">
+                            <path d="M 0 0 L 4 2 L 0 4 z" fill="#64748b" opacity="0.72" />
+                          </marker>
                         </defs>
                         <g data-testid="cad-plan-grid" opacity={showMap ? 0 : 1}>
                           <rect
@@ -9923,10 +9938,41 @@ export default function PreviewPanel({
                             y={0}
                             width={100}
                             height={100}
-                            fill={showMap ? "transparent" : isHighQuality ? "rgba(248,250,252,0.22)" : "transparent"}
+                            fill={showMap ? "transparent" : isHighQuality ? "rgba(255,255,255,0.94)" : "transparent"}
                             stroke="transparent"
                             strokeWidth={0}
                           />
+                          {isHighQuality ? (
+                            <g data-testid="survey-base-plan-frame" pointerEvents="none">
+                              <rect x={0.8} y={0.8} width={98.4} height={98.4} fill="none" stroke="#111827" strokeWidth={0.32} />
+                              <rect x={84.6} y={0.8} width={14.6} height={98.4} fill="rgba(255,255,255,0.92)" stroke="#111827" strokeWidth={0.2} />
+                              {[10, 28, 48, 66, 82].map((y) => (
+                                <line key={`sheet-title-line-${y}`} x1={84.6} y1={y} x2={99.2} y2={y} stroke="#111827" strokeWidth={0.12} />
+                              ))}
+                              <text x={91.9} y={6.8} textAnchor="middle" fontSize="1.2" fontWeight={900} fill="#111827">PRELIMINARY</text>
+                              <text x={91.9} y={8.6} textAnchor="middle" fontSize="1.2" fontWeight={900} fill="#111827">BASE PLAN</text>
+                              <text x={91.9} y={13.7} textAnchor="middle" fontSize="0.92" fill="#334155">1000 FT x 1000 FT</text>
+                              <text x={91.9} y={15.4} textAnchor="middle" fontSize="0.92" fill="#334155">COMMERCIAL SITE</text>
+                              <text x={86.0} y={31.6} fontSize="0.95" fontWeight={900} fill="#111827">LEGEND</text>
+                              <line x1={86.0} y1={34.0} x2={89.8} y2={34.0} stroke="#111827" strokeWidth={0.16} strokeDasharray="1 0.7" />
+                              <text x={90.4} y={34.4} fontSize="0.72" fill="#334155">PROPERTY LINE</text>
+                              <line x1={86.0} y1={37.0} x2={89.8} y2={37.0} stroke="#f97316" strokeWidth={0.18} strokeDasharray="1.2 0.8" />
+                              <text x={90.4} y={37.4} fontSize="0.72" fill="#334155">STORM</text>
+                              <line x1={86.0} y1={40.0} x2={89.8} y2={40.0} stroke="#16a34a" strokeWidth={0.18} strokeDasharray="1.2 0.8" />
+                              <text x={90.4} y={40.4} fontSize="0.72" fill="#334155">SANITARY</text>
+                              <line x1={86.0} y1={43.0} x2={89.8} y2={43.0} stroke="#0284c7" strokeWidth={0.18} strokeDasharray="1.2 0.8" />
+                              <text x={90.4} y={43.4} fontSize="0.72" fill="#334155">WATER</text>
+                              <rect x={86.0} y={45.6} width={3.6} height={1.4} fill="rgba(255,255,255,0.7)" stroke="#111827" strokeWidth={0.1} />
+                              <text x={90.4} y={46.7} fontSize="0.72" fill="#334155">BUILDING</text>
+                              <text x={86.0} y={70.0} fontSize="0.86" fontWeight={900} fill="#111827">REVIEW NOTES</text>
+                              <text x={86.0} y={72.2} fontSize="0.64" fill="#475569">SOURCE / FIELD VERIFY</text>
+                              <text x={86.0} y={74.0} fontSize="0.64" fill="#475569">NO SURVEY CONTROL CLAIM</text>
+                              <text x={86.0} y={87.2} fontSize="0.78" fill="#334155">SHEET</text>
+                              <text x={91.8} y={95.5} textAnchor="middle" fontSize="3.1" fontWeight={900} fill="#111827">C1.0</text>
+                              <path d="M 92 20 L 92 14 L 90.6 17.2 L 92 16.5 L 93.4 17.2 Z" fill="#111827" />
+                              <text x={92} y={22.5} textAnchor="middle" fontSize="1.5" fontWeight={800} fill="#111827">N</text>
+                            </g>
+                          ) : null}
                           <rect
                             x={1.2}
                             y={1.2}
@@ -9938,16 +9984,38 @@ export default function PreviewPanel({
                             strokeDasharray={siteLocked ? undefined : "2 1.2"}
                           />
                           {siteLocked ? (
-                            <text
-                              x={2.4}
-                              y={4.2}
-                              fontSize={1.12}
-                              fill="rgba(4,120,87,0.58)"
-                              fontWeight={800}
-                              letterSpacing={0.16}
-                            >
-                              SITE LOCKED · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
-                            </text>
+                            <>
+                              <text
+                                x={2.4}
+                                y={4.2}
+                                fontSize={1.12}
+                                fill="rgba(4,120,87,0.58)"
+                                fontWeight={800}
+                                letterSpacing={0.16}
+                              >
+                                SITE LOCKED · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
+                              </text>
+                              {isHighQuality ? (
+                                <g data-testid="survey-boundary-annotation" pointerEvents="none">
+                                  <text x={50} y={2.55} textAnchor="middle" fontSize="0.94" fill="#111827">N 89°58&apos;30&quot; E · {Math.round(lotWidth)}.00&apos;</text>
+                                  <text x={50} y={98.2} textAnchor="middle" fontSize="0.94" fill="#111827">S 89°58&apos;30&quot; W · {Math.round(lotWidth)}.00&apos;</text>
+                                  <text x={2.2} y={50} transform="rotate(-90 2.2 50)" textAnchor="middle" fontSize="0.94" fill="#111827">N 00°01&apos;30&quot; W · {Math.round(lotHeight)}.00&apos;</text>
+                                  <text x={98.0} y={50} transform="rotate(90 98 50)" textAnchor="middle" fontSize="0.94" fill="#111827">S 00°01&apos;30&quot; E · {Math.round(lotHeight)}.00&apos;</text>
+                                  {[
+                                    [1.2, 1.2, "NW CORNER"],
+                                    [83.8, 1.2, "NE CORNER"],
+                                    [1.2, 98.8, "SW CORNER"],
+                                    [83.8, 98.8, "SE CORNER"],
+                                  ].map(([x, y, label]) => (
+                                    <g key={`corner-${label}`}>
+                                      <line x1={Number(x) - 1.1} y1={Number(y)} x2={Number(x) + 1.1} y2={Number(y)} stroke="#111827" strokeWidth={0.16} />
+                                      <line x1={Number(x)} y1={Number(y) - 1.1} x2={Number(x)} y2={Number(y) + 1.1} stroke="#111827" strokeWidth={0.16} />
+                                      <text x={Number(x) + 1.1} y={Number(y) + (Number(y) < 50 ? 2.2 : -1.2)} fontSize="0.72" fill="#111827">{label}</text>
+                                    </g>
+                                  ))}
+                                </g>
+                              ) : null}
+                            </>
                           ) : null}
                           <title>Local review canvas site extent.</title>
                           <line
@@ -9982,7 +10050,7 @@ export default function PreviewPanel({
                           </text>
                         </g>
                         {isHighQuality && !showMap && siteLocked ? (
-                          <g data-testid="plan-grading-context-lines" opacity={0.22}>
+                          <g data-testid="plan-grading-context-lines" opacity={0.28} pointerEvents="none">
                             {[0, 1, 2, 3, 4].map((index) => {
                               const y = 18 + index * 12.5;
                               const offset = index * 1.8;
@@ -9998,6 +10066,13 @@ export default function PreviewPanel({
                                 </path>
                               );
                             })}
+                            {surveySheetSpotElevations.map((spot) => (
+                              <g key={`spot-${spot.label}-${spot.x}-${spot.y}`} data-testid="survey-spot-elevation">
+                                <text x={spot.x} y={spot.y} fontSize="0.86" fill="#64748b">{spot.label}</text>
+                                <line x1={spot.x - 0.32} y1={spot.y - 0.32} x2={spot.x + 0.32} y2={spot.y + 0.32} stroke="#64748b" strokeWidth={0.08} />
+                                <line x1={spot.x - 0.32} y1={spot.y + 0.32} x2={spot.x + 0.32} y2={spot.y - 0.32} stroke="#64748b" strokeWidth={0.08} />
+                              </g>
+                            ))}
                           </g>
                         ) : null}
                         {visibleCadObjects
@@ -10084,6 +10159,40 @@ export default function PreviewPanel({
                                         </circle>
                                       );
                                     })}
+                                    {(() => {
+                                      const midPoint = points[Math.floor(points.length / 2)];
+                                      const [x, y] = String(midPoint || "").split(",").map((value) => Number(value));
+                                      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                                      const text = `${item.label || ""} ${item.meta?.network || ""}`.toLowerCase();
+                                      const label = text.includes("water")
+                                        ? "8\" DIP WATER MAIN"
+                                        : text.includes("sanitary")
+                                          ? "8\" PVC SANITARY SEWER"
+                                          : text.includes("storm")
+                                            ? "18\" RCP STORM SEWER"
+                                            : item.label || "UTILITY";
+                                      return (
+                                        <g data-testid="survey-utility-callout" pointerEvents="none">
+                                          <line
+                                            x1={x}
+                                            y1={y}
+                                            x2={Math.min(82, x + 8)}
+                                            y2={Math.max(5, y - 4)}
+                                            stroke={visualStyle.stroke}
+                                            strokeWidth={0.1}
+                                          />
+                                          <text
+                                            x={Math.min(82, x + 8.4)}
+                                            y={Math.max(5, y - 4.2)}
+                                            fontSize="0.8"
+                                            fill={visualStyle.stroke}
+                                            fontWeight={700}
+                                          >
+                                            {label}
+                                          </text>
+                                        </g>
+                                      );
+                                    })()}
                                   </g>
                                 ) : null}
                               </g>
