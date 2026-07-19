@@ -43,6 +43,7 @@ import {
 } from "../utils/cadGeometryKernel";
 import type { CadDimensionMode, CadSymbolKind, CadToolRequest, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
+import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
 import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
 import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
@@ -7756,136 +7757,14 @@ export default function PreviewPanel({
                 ) : null}
               </div>
               {isHighQuality && aiRealismEnabled ? (
-                <div
-                  data-testid="ai-realism-preview"
-                  className="pointer-events-none absolute inset-0 z-[160] flex items-center justify-center overflow-hidden rounded-[24px] bg-slate-950"
-                  onClick={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onMouseMove={(event) => event.stopPropagation()}
-                  onMouseUp={(event) => event.stopPropagation()}
-                >
-                  {aiRealismDisplayArtifact ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        data-testid="ai-realism-image"
-                        src={aiRealismDisplayArtifact.image_data_url}
-                        alt="AI realism visualization generated from the current review layout"
-                        className="pointer-events-none h-full w-full object-cover"
-                      />
-                      <div
-                        data-testid="ai-realism-watermark"
-                        className="absolute inset-x-4 bottom-4 rounded-lg border border-white/25 bg-slate-950/82 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur"
-                      >
-                        {AI_REALISM_WATERMARK}
-                      </div>
-                      <div
-                        data-testid="ai-realism-source-summary"
-                        className="pointer-events-auto absolute left-4 top-4 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-                              high_quality_ai_render_v1
-                            </p>
-                            <p className="mt-0.5 text-[11px] text-slate-500">
-                              Source summary: {aiRealismDisplayArtifact.source_objects_summary.total} review object(s)
-                              {Object.keys(aiRealismDisplayArtifact.source_objects_summary.counts_by_type).length
-                                ? ` across ${Object.entries(aiRealismDisplayArtifact.source_objects_summary.counts_by_type)
-                                    .map(([type, count]) => `${type}: ${count}`)
-                                    .join(", ")}`
-                                : ""}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            <a
-                              data-testid="ai-realism-view-snapshot"
-                              href={aiRealismDisplayArtifact.image_data_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
-                            >
-                              View snapshot
-                            </a>
-                            <a
-                              data-testid="ai-realism-save-snapshot"
-                              href={aiRealismDisplayArtifact.image_data_url}
-                              download={`ai-visualization-${aiRealismDisplayArtifact.project_id}.svg`}
-                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
-                            >
-                              Save snapshot
-                            </a>
-                            <button
-                              type="button"
-                              data-testid="ai-realism-regenerate"
-                              onClick={generateAiRealismArtifact}
-                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
-                            >
-                              Regenerate
-                            </button>
-                          </div>
-                        </div>
-                        {aiRealismStale ? (
-                          <p
-                            data-testid="ai-realism-stale-warning"
-                            className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 font-semibold text-amber-800"
-                          >
-                            AI visualization is stale. Regenerate from current layout.
-                          </p>
-                        ) : null}
-                        <dl className="mt-2 grid gap-1">
-                          <div>
-                            <dt className="font-semibold text-slate-900">Objects included</dt>
-                            <dd data-testid="ai-realism-objects-included" className="text-slate-600">
-                              {aiRealismDisplayArtifact.source_objects_summary.objects_included.slice(0, 5).join(", ")}
-                              {aiRealismDisplayArtifact.source_objects_summary.total > 5 ? "..." : ""}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="font-semibold text-slate-900">Missing context</dt>
-                            <dd data-testid="ai-realism-missing-context" className="text-slate-600">
-                              {aiRealismDisplayArtifact.missing_inputs.length
-                                ? aiRealismDisplayArtifact.missing_inputs.join(", ")
-                                : "None reported from current review layout."}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="font-semibold text-slate-900">Terrain/source confidence</dt>
-                            <dd data-testid="ai-realism-terrain-confidence" className="text-slate-600">
-                              {hasTerrainSource
-                                ? "Terrain source present in review context; source confidence remains review-only."
-                                : "Terrain/source confidence missing or not source-backed."}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="font-semibold text-slate-900">Generated timestamp</dt>
-                            <dd data-testid="ai-realism-generated-timestamp" className="text-slate-600">
-                              {aiRealismDisplayArtifact.generated_timestamp}
-                            </dd>
-                          </div>
-                        </dl>
-                      </div>
-                    </>
-                  ) : (
-                    <div
-                      data-testid="ai-realism-blocker"
-                      className="pointer-events-auto mx-4 max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-lg"
-                    >
-                      <p className="font-semibold">
-                        {aiRealismBlocker || "AI realism provider is not configured."}
-                      </p>
-                      <button
-                        type="button"
-                        data-testid="ai-realism-regenerate"
-                        onClick={generateAiRealismArtifact}
-                        className="mt-3 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-900"
-                      >
-                        Regenerate
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <AiRealismPreviewOverlay
+                  artifact={aiRealismDisplayArtifact}
+                  blocker={aiRealismBlocker}
+                  stale={aiRealismStale}
+                  hasTerrainSource={hasTerrainSource}
+                  watermark={AI_REALISM_WATERMARK}
+                  onRegenerate={generateAiRealismArtifact}
+                />
               ) : null}
               {showMobileDrawToolbar ? (
                 <PreviewMobileDrawToolbar
