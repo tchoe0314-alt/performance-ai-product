@@ -45,11 +45,11 @@ import type { CadDimensionMode, CadSymbolKind, CadToolRequest, DrawMode } from "
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
 import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
-import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
 import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
+import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import {
   firstMetaNumber,
@@ -7108,70 +7108,20 @@ export default function PreviewPanel({
               ) : null}
             </div>
             {previewMode === "2d" && allowEdits ? (
-              <div className="pointer-events-auto relative z-[82] flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Draw</span>
-                <button
-                  type="button"
-                  data-testid="draw-site-boundary-toolbar-top"
-                  aria-pressed={drawMode === "site"}
-                  title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
-                  onClick={() => {
-                    if (siteLocked) {
-                      pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
-                      return;
-                    }
-                    activateDrawTool("site");
-                  }}
-                  className={`pointer-events-auto inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                    drawMode === "site"
-                      ? "border-slate-900 bg-slate-950 text-white"
-                      : siteLocked
-                        ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                        : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                  }`}
-                >
-                  Draw Site
-                </button>
-                {siteLocked && onUnlockSite ? (
-                  <button
-                    type="button"
-                    data-testid="change-site-boundary-toolbar"
-                    aria-label="Change Site Boundary"
-                    onClick={() => {
-                      onUnlockSite();
-                      clearDraftGeometry();
-                      setDrawMode("select");
-                      onSetPreviewInteraction("edit");
-                    }}
-                    className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                  >
-                    Change Site
-                  </button>
-                ) : null}
-                {!siteLocked && drawMode === "select" && hasDrawableSiteSize && onLockSite ? (
-                  <button
-                    type="button"
-                    data-testid="lock-site-boundary-toolbar"
-                    aria-label="Lock Site Boundary"
-                    onClick={() => {
-                      clearDraftGeometry();
-                      setDrawMode("select");
-                      onLockSite();
-                    }}
-                    className="inline-flex h-8 items-center rounded-md border border-slate-950 bg-slate-950 px-2.5 text-xs font-semibold text-white hover:bg-slate-800"
-                  >
-                    Lock Site
-                  </button>
-                ) : null}
-                <PreviewDrawToolButtons
-                  drawMode={drawMode}
-                  disabled={!canDrawObjects}
-                  disabledLabel={drawObjectsDisabledLabel}
-                  onActivate={activateDrawTool}
-                  inactiveClassName="border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  itemKeyPrefix="canvas-stable-draw"
-                />
-              </div>
+              <PreviewStableDrawToolbar
+                drawMode={drawMode}
+                siteLocked={Boolean(siteLocked)}
+                hasDrawableSiteSize={hasDrawableSiteSize}
+                canDrawObjects={canDrawObjects}
+                drawObjectsDisabledLabel={drawObjectsDisabledLabel}
+                onUnlockSite={onUnlockSite}
+                onLockSite={onLockSite}
+                onClearDraftGeometry={clearDraftGeometry}
+                onSetDrawMode={setDrawMode}
+                onSetPreviewInteraction={onSetPreviewInteraction}
+                onActivateDrawTool={activateDrawTool}
+                onPushCadCommandFeedback={pushCadCommandFeedback}
+              />
             ) : null}
             <PreviewActiveDrawHud
               drawMode={drawMode}
