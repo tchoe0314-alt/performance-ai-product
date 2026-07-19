@@ -201,7 +201,7 @@ export function PreviewCanvasHeaderControls({
             data-testid="high-quality-preview-only-label"
             className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
           >
-            Visual preview only. Canonical geometry unchanged. Not engineering evidence.
+            Presentation/realism mode. Visual preview only. Canonical geometry unchanged. Not engineering evidence.
           </span>
         ) : null}
         {useLightHighQuality ? (
