@@ -90,6 +90,16 @@ type CadCommandHistoryEntry = {
   status: "applied" | "blocked" | "info";
   message: string;
 };
+
+const formatCalmCadStatus = (message: string) =>
+  message
+    .replace(/\bblocked:/gi, "needs input:")
+    .replace(/\bblocked\b/gi, "needs input")
+    .replace(/\bBlocked\b/g, "Needs input")
+    .replace(/\bfailed\b/gi, "could not complete")
+    .replace(/\binvalid\b/gi, "needs correction")
+    .replace(/\bInvalid\b/g, "Needs correction");
+
 type StormHydrologyOverlay = {
   inletChecks?: Array<{
     id: string;
@@ -2313,6 +2323,15 @@ export default function PreviewPanel({
     [cadSelectionSet, selectedBuildingId, selectedObjectIds],
   );
   const hasCadCommandActivity = Boolean(selectedCadObject) || drawMode !== "select" || Boolean(cadActiveCommand) || cadCommandHistory.length > 0;
+  const cadCommandStatusDisplay = useMemo(() => formatCalmCadStatus(cadCommandStatus), [cadCommandStatus]);
+  const cadCommandHistoryDisplay = useMemo(
+    () =>
+      cadCommandHistory.map((entry) => ({
+        ...entry,
+        message: formatCalmCadStatus(entry.message),
+      })),
+    [cadCommandHistory],
+  );
   useEffect(() => {
     const currentIds = new Set(buildingPlacements.map((item) => item.id));
     const previousIds = previousPlacementIdsRef.current;
@@ -7150,8 +7169,8 @@ export default function PreviewPanel({
             cadOrthoEnabled={cadOrthoEnabled}
             cadCoordinateDraft={cadCoordinateDraft}
             cadCommandDraft={cadCommandDraft}
-            cadCommandStatus={cadCommandStatus}
-            cadCommandHistory={cadCommandHistory}
+            cadCommandStatus={cadCommandStatusDisplay}
+            cadCommandHistory={cadCommandHistoryDisplay}
             cadActiveCommand={cadActiveCommand}
             draftPoints={draftPoints}
             cadHistory={cadHistory}
@@ -9233,7 +9252,7 @@ export default function PreviewPanel({
                                   data-testid="selected-object-quick-status"
                                   className="max-w-[22rem] truncate rounded-md bg-slate-50 px-2 py-0.5 normal-case tracking-normal text-slate-500"
                                 >
-                                  {cadCommandStatus}
+                                  {cadCommandStatusDisplay}
                                 </p>
                               </div>
                             ) : null}
