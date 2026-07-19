@@ -2558,6 +2558,7 @@ import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
 import CivilReviewSheet from "./components/CivilReviewSheet";
+import { LibrariesPanel } from "./components/LibrariesPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
@@ -21296,6 +21297,14 @@ function PerformanceAIDashboardView({
   const customerTemplateSummaries = customerTemplates?.summaries ?? [];
   const activeCustomerTemplate = customerTemplates?.behavior?.active_template ?? null;
   const customerTemplateBlockerCount = Number(customerTemplates?.behavior?.blockers?.length ?? 0);
+  const libraryPanelSections = ADD_MENU_SECTIONS.map((group) => ({
+    key: group.key,
+    title: group.title,
+    items: group.items.map((type) => ({
+      type,
+      label: SITE_OBJECT_CATALOG[type].label,
+    })),
+  }));
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
   const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
     if (sidePanelCloseTimeoutRef.current !== null) {
@@ -28067,20 +28076,10 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "libraries" ? (
-                  <div className="space-y-4">
-                    {ADD_MENU_SECTIONS.map((group) => (
-                      <PanelCard key={group.key}>
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{group.title}</p>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          {group.items.map((type) => (
-                            <button key={type} type="button" onClick={() => handleAddObject(type)} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">
-                              {SITE_OBJECT_CATALOG[type].label}
-                            </button>
-                          ))}
-                        </div>
-                      </PanelCard>
-                    ))}
-                  </div>
+                  <LibrariesPanel
+                    sections={libraryPanelSections}
+                    onAddObject={(type) => handleAddObject(type as SiteObjectType)}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "settings" ? (
