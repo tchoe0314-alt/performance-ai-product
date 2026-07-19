@@ -41,6 +41,7 @@ import {
 } from "../utils/cadGeometryKernel";
 import type { CadDimensionMode, CadSymbolKind, CadToolRequest, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
+import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
 import {
   firstMetaNumber,
@@ -7401,36 +7402,15 @@ export default function PreviewPanel({
 	                      Change Site
 	                    </button>
 	                  ) : null}
-	                  {previewMode === "2d"
-	                    ? ([
-	                        { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
-	                        { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
-	                        { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
-	                        { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
-	                      ]).map((item) => {
-	                        const active = drawMode === item.mode;
-	                        const disabled = !canDrawObjects;
-	                        return (
-	                          <button
-	                            key={`canvas-primary-draw-${item.mode}`}
-	                            type="button"
-	                            aria-pressed={active}
-	                            title={disabled ? item.disabledLabel : item.label}
-	                            data-blocked={disabled ? "true" : undefined}
-	                            onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
-	                            className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-	                              active
-	                                ? "border-slate-900 bg-slate-950 text-white"
-	                                : disabled
-	                                  ? "border-amber-200 bg-amber-50 text-amber-800"
-	                                  : "border-slate-200 bg-white text-slate-600"
-	                            }`}
-	                          >
-	                            {item.label}
-	                          </button>
-	                        );
-	                      })
-	                    : null}
+	                  {previewMode === "2d" ? (
+	                    <PreviewDrawToolButtons
+	                      drawMode={drawMode}
+	                      disabled={!canDrawObjects}
+	                      disabledLabel={drawObjectsDisabledLabel}
+	                      onActivate={activateDrawTool}
+	                      itemKeyPrefix="canvas-primary-draw"
+	                    />
+	                  ) : null}
 	                </div>
                 {isHighQuality ? (
                   <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800">
@@ -7584,34 +7564,14 @@ export default function PreviewPanel({
                       Change Site
                     </button>
                   ) : null}
-                  {[
-                    { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
-                    { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
-                    { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
-                    { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
-                  ].map((item) => {
-                    const active = drawMode === item.mode;
-                    const disabled = !canDrawObjects;
-                    return (
-                      <button
-                        key={`canvas-draw-${item.mode}`}
-                        type="button"
-                        aria-pressed={active}
-                        title={disabled ? item.disabledLabel : item.label}
-                        data-blocked={disabled ? "true" : undefined}
-                        onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
-                        className={`inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold ${
-                          active
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : disabled
-                              ? "border-amber-200 bg-amber-50 text-amber-800"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
+                  <PreviewDrawToolButtons
+                    drawMode={drawMode}
+                    disabled={!canDrawObjects}
+                    disabledLabel={drawObjectsDisabledLabel}
+                    onActivate={activateDrawTool}
+                    buttonClassName="inline-flex h-9 items-center rounded-md border px-3 text-xs font-semibold"
+                    itemKeyPrefix="canvas-draw"
+                  />
                   {drawMode !== "select" ? (
                     <>
                       {drawMode !== "point" && drawMode !== "pan" ? (
@@ -7849,34 +7809,15 @@ export default function PreviewPanel({
 	                  >
 	                    Draw Site Boundary
 	                  </button>
-	                  {[
-	                    { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
-	                    { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
-	                    { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
-	                    { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
-	                  ].map((item) => {
-	                    const active = drawMode === item.mode;
-	                    const disabled = !canDrawObjects;
-	                    return (
-	                      <button
-	                        key={`canvas-visible-draw-${item.mode}`}
-	                        type="button"
-	                        aria-pressed={active}
-	                        title={disabled ? item.disabledLabel : item.label}
-	                        data-blocked={disabled ? "true" : undefined}
-	                        onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
-	                        className={`inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-xs font-semibold ${
-	                          active
-	                            ? "border-slate-900 bg-slate-950 text-white"
-	                            : disabled
-	                              ? "border-amber-200 bg-amber-50 text-amber-800"
-	                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-	                        }`}
-	                      >
-	                        {item.label}
-	                      </button>
-	                    );
-	                  })}
+	                  <PreviewDrawToolButtons
+	                    drawMode={drawMode}
+	                    disabled={!canDrawObjects}
+	                    disabledLabel={drawObjectsDisabledLabel}
+	                    onActivate={activateDrawTool}
+	                    buttonClassName="inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-xs font-semibold"
+	                    inactiveClassName="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+	                    itemKeyPrefix="canvas-visible-draw"
+	                  />
 	                  <button
 	                    type="button"
 	                    data-testid="preview-toolbar-interaction-edit"
@@ -8053,34 +7994,14 @@ export default function PreviewPanel({
                     Lock Site
                   </button>
                 ) : null}
-                {[
-                  { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
-                  { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
-                  { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
-                  { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
-                ].map((item) => {
-                  const active = drawMode === item.mode;
-                  const disabled = !canDrawObjects;
-                  return (
-                    <button
-                      key={`canvas-stable-draw-${item.mode}`}
-                      type="button"
-                      aria-pressed={active}
-                      title={disabled ? item.disabledLabel : item.label}
-                      data-blocked={disabled ? "true" : undefined}
-                      onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
-                      className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-                        active
-                          ? "border-slate-900 bg-slate-950 text-white"
-                          : disabled
-                            ? "border-amber-200 bg-amber-50 text-amber-800"
-                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
+                <PreviewDrawToolButtons
+                  drawMode={drawMode}
+                  disabled={!canDrawObjects}
+                  disabledLabel={drawObjectsDisabledLabel}
+                  onActivate={activateDrawTool}
+                  inactiveClassName="border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  itemKeyPrefix="canvas-stable-draw"
+                />
               </div>
             ) : null}
 	            <div className={`${drawMode !== "select" ? "pointer-events-auto relative z-[80] flex" : "hidden"} min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500`}>
@@ -9178,34 +9099,15 @@ export default function PreviewPanel({
 	                      Lock Site
 	                    </button>
 	                  ) : null}
-	                  {[
-	                    { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
-	                    { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
-	                    { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
-	                    { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
-	                  ].map((item) => {
-	                    const active = drawMode === item.mode;
-	                    const disabled = !canDrawObjects;
-	                    return (
-	                      <button
-	                        key={`canvas-quick-draw-${item.mode}`}
-	                        type="button"
-	                        aria-pressed={active}
-	                        title={disabled ? item.disabledLabel : item.label}
-	                        data-blocked={disabled ? "true" : undefined}
-	                        onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
-	                        className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
-	                          active
-	                            ? "border-slate-900 bg-slate-950 text-white"
-	                            : disabled
-	                              ? "border-amber-200 bg-amber-50 text-amber-800"
-	                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-	                        }`}
-	                      >
-	                        {item.label}
-	                      </button>
-	                    );
-	                  })}
+	                  <PreviewDrawToolButtons
+	                    drawMode={drawMode}
+	                    disabled={!canDrawObjects}
+	                    disabledLabel={drawObjectsDisabledLabel}
+	                    onActivate={activateDrawTool}
+	                    buttonClassName="inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold"
+	                    inactiveClassName="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+	                    itemKeyPrefix="canvas-quick-draw"
+	                  />
 			                  {drawMode !== "select" && drawMode !== "point" ? (
 		                    <button
 		                      type="button"
@@ -9348,34 +9250,14 @@ export default function PreviewPanel({
                         Draw Site
                       </button>
                     ) : null}
-                    {[
-                      { mode: "polyline" as DrawMode, label: "Add Line", disabledLabel: drawObjectsDisabledLabel },
-                      { mode: "polygon" as DrawMode, label: "Add Area", disabledLabel: drawObjectsDisabledLabel },
-                      { mode: "rect" as DrawMode, label: "Add Box", disabledLabel: drawObjectsDisabledLabel },
-                      { mode: "point" as DrawMode, label: "Add Point", disabledLabel: drawObjectsDisabledLabel },
-                    ].map((item) => {
-                      const active = drawMode === item.mode;
-                      const disabled = !canDrawObjects;
-                      return (
-                        <button
-                          key={`generated-draw-${item.mode}`}
-                          type="button"
-                          aria-pressed={active}
-                          title={disabled ? item.disabledLabel : item.label}
-                          data-blocked={disabled ? "true" : undefined}
-                          onClick={() => activateDrawTool(item.mode, disabled ? item.disabledLabel : undefined)}
-                          className={`h-8 rounded-md border px-2.5 text-xs font-semibold ${
-                            active
-                              ? "border-slate-900 bg-slate-950 text-white"
-                              : disabled
-                                ? "border-amber-200 bg-amber-50 text-amber-800"
-                                : "border-slate-200 bg-white text-slate-600"
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      );
-                    })}
+                    <PreviewDrawToolButtons
+                      drawMode={drawMode}
+                      disabled={!canDrawObjects}
+                      disabledLabel={drawObjectsDisabledLabel}
+                      onActivate={activateDrawTool}
+                      buttonClassName="h-8 rounded-md border px-2.5 text-xs font-semibold"
+                      itemKeyPrefix="generated-draw"
+                    />
                   </>
                 ) : null}
               </div>
