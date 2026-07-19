@@ -2561,6 +2561,7 @@ import CivilReviewSheet from "./components/CivilReviewSheet";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DesignAlternativesPanel } from "./components/DesignAlternativesPanel";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
+import { FilesPanel } from "./components/FilesPanel";
 import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
@@ -27327,58 +27328,22 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "files" ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Input files</p>
-                      <div className="mt-3 space-y-2">
-                        {[
-                          ["Map snapshot", uploadedImageApiUrl || uploadedImagePreviewUrl ? "Ready" : "Not uploaded"],
-                          ["Survey/topo", surveyFileName || "Not uploaded"],
-                          ["Project record", currentProject?.project_id || projectId || "Draft"],
-                        ].map(([label, value]) => (
-                          <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                            <span className="font-semibold text-slate-700">{label}</span>
-                            <span className="max-w-[150px] truncate text-xs uppercase tracking-[0.12em] text-slate-500">{value}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <button type="button" onClick={() => handleOpenSidePanel("import_survey")} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Import files</button>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => mapSnapshotInputRef.current?.click()} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Map image</button>
-                        <button type="button" onClick={() => surveyInputRef.current?.click()} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Survey file</button>
-                        <button type="button" onClick={() => handleOpenSidePanel("data")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Plan PDF</button>
-                      </div>
-                      {surveyUploadMessage ? (
-                        <p data-testid="survey-upload-status" className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
-                          surveyUploadMessage.toLowerCase().includes("failed")
-                            ? "border-red-200 bg-red-50 text-red-700"
-                            : "border-slate-200 bg-slate-50 text-slate-600"
-                        }`}>
-                          {surveyUploadMessage}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generated outputs</p>
-                      <div className="mt-3 space-y-2">
-                        {[
-                          ["Preview", planPreviewUrl ? "Review ready" : "Not generated"],
-                          ["Report", backendResult ? "Review package" : "Not generated"],
-                          ["DXF", getExportBlockReason() || (backendResult ? "Review export" : "Needs run")],
-                          ["DWG", "Unsupported natively"],
-                        ].map(([label, value]) => (
-                          <div key={label} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                            <span className="font-semibold text-slate-700">{label}</span>
-                            <span className="text-xs uppercase tracking-[0.12em] text-slate-500">{value}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button type="button" onClick={handleExportDxf} title={getExportBlockReason() || "Download DXF review export"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">DXF</button>
-                        <button type="button" onClick={handleExportReport} title={getExportBlockReason() || "Download engineer-review report"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Report</button>
-                      </div>
-                    </div>
-                  </div>
+                  <FilesPanel
+                    mapSnapshotReady={Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl)}
+                    surveyFileName={surveyFileName}
+                    projectRecordLabel={currentProject?.project_id || projectId || "Draft"}
+                    surveyUploadMessage={surveyUploadMessage}
+                    previewReady={Boolean(planPreviewUrl)}
+                    reportReady={Boolean(backendResult)}
+                    dxfStatus={getExportBlockReason() || (backendResult ? "Review export" : "Needs run")}
+                    onOpenImportFiles={() => handleOpenSidePanel("import_survey")}
+                    onSelectMapImage={() => mapSnapshotInputRef.current?.click()}
+                    onSelectSurveyFile={() => surveyInputRef.current?.click()}
+                    onOpenPlanPdf={() => handleOpenSidePanel("data")}
+                    onExportDxf={handleExportDxf}
+                    onExportReport={handleExportReport}
+                    exportBlockReason={getExportBlockReason()}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "jobs" ? (
