@@ -2567,6 +2567,7 @@ import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import { NeedsPlacementTray } from "./components/NeedsPlacementTray";
+import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
@@ -27509,68 +27510,18 @@ function PerformanceAIDashboardView({
                     />
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Object List
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900" data-testid="object-manager-summary">
-                            {buildingPlacements.length} object{buildingPlacements.length === 1 ? "" : "s"} · {placedObjects.length} placed · {pendingPlacementObjects.length} pending
-                          </p>
-                          {objectManagerTypes.length ? (
-                            <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
-                              {objectManagerTypes.slice(0, 5).join(", ")}
-                            </p>
-                          ) : null}
-                        </div>
-                        <span className="shrink-0 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Selected {selectedObjectIds.length}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]" data-testid="object-manager-quick-stats">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2">
-                          <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Visible</p>
-                          <p className="mt-1 font-semibold text-slate-900">{Math.max(0, buildingPlacements.length - hiddenObjectCount)}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2">
-                          <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Selected</p>
-                          <p className="mt-1 font-semibold text-slate-900">{selectedObjectIds.length}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2">
-                          <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">Hidden</p>
-                          <p className="mt-1 font-semibold text-slate-900">{hiddenObjectCount}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="object-manager-clipboard-actions">
-                        <button
-                          type="button"
-                          onClick={handleObjectManagerSelectVisibleDraft}
-                          data-testid="object-manager-select-visible"
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
-                        >
-                          Select visible draft
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleObjectManagerInvertSelection}
-                          data-testid="object-manager-invert-selection"
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
-                        >
-                          Invert selection
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleObjectManagerPaste}
-                          disabled={!objectClipboard.length}
-                          data-testid="object-manager-paste"
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Paste{objectClipboard.length === 1 ? ` ${objectClipboard[0].label}` : objectClipboard.length > 1 ? ` ${objectClipboard.length} objects` : ""}
-                        </button>
-                        <span className="text-[11px] font-medium text-slate-500">
-                          Copy, paste, rotate, and flip work on editable draft objects.
-                        </span>
-                      </div>
+                      <ObjectManagerOverview
+                        totalCount={buildingPlacements.length}
+                        placedCount={placedObjects.length}
+                        pendingCount={pendingPlacementObjects.length}
+                        selectedCount={selectedObjectIds.length}
+                        hiddenCount={hiddenObjectCount}
+                        typeLabels={objectManagerTypes}
+                        clipboardLabels={objectClipboard.map((item) => item.label)}
+                        onSelectVisibleDraft={handleObjectManagerSelectVisibleDraft}
+                        onInvertSelection={handleObjectManagerInvertSelection}
+                        onPaste={handleObjectManagerPaste}
+                      />
                       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="object-manager-hidden-state">
                           <p className="text-xs font-semibold text-slate-700">
                             {hiddenObjectCount} hidden object{hiddenObjectCount === 1 ? "" : "s"}{hiddenObjectCount ? " are excluded from the preview." : "."}
