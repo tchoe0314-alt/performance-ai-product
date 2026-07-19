@@ -26079,17 +26079,12 @@ function PerformanceAIDashboardView({
                       )}
                     </div>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="generate-system-details">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span>
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Advanced</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">System toggles and rerun preferences</span>
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Optional
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4">
+                    <DisclosurePanel
+                      testId="generate-system-details"
+                      title="Advanced"
+                      subtitle="System toggles and rerun preferences"
+                      status="Optional"
+                    >
                         <label className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800">
                           <span>Assisted generation</span>
                           <input
@@ -26099,24 +26094,18 @@ function PerformanceAIDashboardView({
                             className="h-4 w-4 accent-slate-950"
                           />
                         </label>
-                      </div>
-                    </details>
+                    </DisclosurePanel>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="generate-reactive-details">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span>
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Rerun Details</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">
-                            {reactiveValidation.status === "idle" ? "No stale systems" : reactiveValidation.message || "Impacted systems detected"}
-                          </span>
-                        </span>
-                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                    <DisclosurePanel
+                      testId="generate-reactive-details"
+                      title="Rerun Details"
+                      subtitle={reactiveValidation.status === "idle" ? "No stale systems" : reactiveValidation.message || "Impacted systems detected"}
+                      status={reactiveValidation.requiresConfirmation ? "Confirm" : reactiveValidation.status}
+                      statusClassName={
                           reactiveValidation.requiresConfirmation ? "bg-amber-50 text-amber-700" : reactiveValidation.status === "idle" ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700"
-                        }`}>
-                          {reactiveValidation.requiresConfirmation ? "Confirm" : reactiveValidation.status}
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4 text-xs text-slate-600">
+                      }
+                      bodyClassName="text-xs text-slate-600"
+                    >
                         {reactiveValidation.message ? <p className="leading-5">{reactiveValidation.message}</p> : null}
                         {reactiveAffectedRunTarget && reactiveValidation.status !== "idle" ? (
                           <button
@@ -26137,8 +26126,7 @@ function PerformanceAIDashboardView({
                             ))}
                           </div>
                         ) : null}
-                      </div>
-                    </details>
+                    </DisclosurePanel>
                   </div>
                 ) : null}
 
@@ -29699,17 +29687,12 @@ function PerformanceAIDashboardView({
                       ) : null}
                     </div>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-source-notes">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span>
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Source notes</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">Data sources and missing items included in this package</span>
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          {autoSiteContextFlowSummary.candidateCount}
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4">
+                    <DisclosurePanel
+                      testId="deliver-source-notes"
+                      title="Source notes"
+                      subtitle="Data sources and missing items included in this package"
+                      status={autoSiteContextFlowSummary.candidateCount}
+                    >
                         <div className="space-y-2">
                           {(getPlanSheetBlockers().length ? getPlanSheetBlockers().slice(0, 4) : ["No sheet-specific missing items recorded."]).map((item) => (
                             <p key={item} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
@@ -29717,20 +29700,15 @@ function PerformanceAIDashboardView({
                             </p>
                           ))}
                         </div>
-                      </div>
-                    </details>
+                    </DisclosurePanel>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-sheet-details">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span>
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review Sheet Details</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">Sheets, labels, notes, viewports, and PDF/JSON export</span>
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Advanced
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-3 py-3">
+                    <DisclosurePanel
+                      testId="deliver-sheet-details"
+                      title="Review Sheet Details"
+                      subtitle="Sheets, labels, notes, viewports, and PDF/JSON export"
+                      status="Advanced"
+                      bodyClassName="px-3 py-3"
+                    >
                         <PlanSheetEditor
                           sheetSet={{ ...planSheetSet, blockers: getPlanSheetBlockers() }}
                           onUpdateTitleBlock={handlePlanSheetTitleBlockUpdate}
@@ -29769,20 +29747,15 @@ function PerformanceAIDashboardView({
                           onExportJson={handlePlanSheetExportJson}
                           onExportPdf={handlePlanSheetExportPdf}
                         />
-                      </div>
-                    </details>
+                    </DisclosurePanel>
 
-                    <details open className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-review-sheet-preview">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span>
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review sheet preview</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">Open only when you want sheet layout details</span>
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Preview
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4">
+                    <DisclosurePanel
+                      defaultOpen
+                      testId="deliver-review-sheet-preview"
+                      title="Review sheet preview"
+                      subtitle="Open only when you want sheet layout details"
+                      status="Preview"
+                    >
                         <CivilReviewSheet
                           projectName={siteName || currentProject?.name || "Untitled Project"}
                           addressLabel={appliedAddressLabel || siteAddress.trim() || "No address applied"}
@@ -29793,20 +29766,15 @@ function PerformanceAIDashboardView({
                           missingSources={autoSiteContextFlowSummary.missingLabels}
                           generatedAt={planSheetSet.updatedAt}
                         />
-                      </div>
-                    </details>
+                    </DisclosurePanel>
 
-                    <details className="rounded-xl border border-slate-200 bg-white" data-testid="deliver-audit-details">
-                      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                        <span>
-                          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Audit / Review Details</span>
-                          <span className="mt-1 block text-sm font-semibold text-slate-950">{sidebarReleaseStatus === "blocked" ? "Review package needs input" : "Review package"}</span>
-                        </span>
-	                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${sidebarReleaseStatus === "blocked" ? "bg-amber-50 text-amber-700" : "bg-amber-50 text-amber-700"}`}>
-	                          {sidebarReleaseStatus === "blocked" ? "Needs input" : "Review"}
-                        </span>
-                      </summary>
-                      <div className="border-t border-slate-100 px-4 py-4">
+                    <DisclosurePanel
+                      testId="deliver-audit-details"
+                      title="Audit / Review Details"
+                      subtitle={sidebarReleaseStatus === "blocked" ? "Review package needs input" : "Review package"}
+                      status={sidebarReleaseStatus === "blocked" ? "Needs input" : "Review"}
+                      statusClassName="bg-amber-50 text-amber-700"
+                    >
                         <div className="space-y-2">
                           {reviewGateItems.map((item) => (
                             <div key={item.label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
@@ -29826,8 +29794,7 @@ function PerformanceAIDashboardView({
                             {topSmartFix.can_civora_fix ? "Fix Current Blocker" : "Show Needed Input"}
                           </button>
                         ) : null}
-                      </div>
-                    </details>
+                    </DisclosurePanel>
                   </div>
                 ) : null}
 
