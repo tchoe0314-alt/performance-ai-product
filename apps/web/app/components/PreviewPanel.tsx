@@ -14,6 +14,7 @@ import type {
   GradingEarthworkUx,
 } from "../types";
 import { CadPrecisionDock } from "./CadPrecisionDock";
+import { CanvasQuickDrawPalette } from "./CanvasQuickDrawPalette";
 import { Preview3DShell } from "./Preview3DShell";
 import { formatCount, formatMetric } from "../utils/formatting";
 import {
@@ -7608,109 +7609,31 @@ export default function PreviewPanel({
 	                });
 	              }}
 	            >
-	              {previewMode === "2d" && showQuickDrawPalette ? (
-		                <div
-		                  data-testid="canvas-quick-draw-palette"
-                  className="pointer-events-auto absolute bottom-4 left-1/2 z-[86] flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/96 p-1.5 shadow-[0_18px_55px_-34px_rgba(15,23,42,0.75)] backdrop-blur"
-		                  onMouseDown={(event) => event.stopPropagation()}
-		                  onPointerDown={(event) => event.stopPropagation()}
-		                  onTouchStart={(event) => event.stopPropagation()}
-		                  onClick={(event) => event.stopPropagation()}
-		                >
-	                  <button
-	                    type="button"
-	                    data-testid="draw-site-boundary-toolbar"
-	                    aria-pressed={drawMode === "site"}
-	                    title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
-	                    onClick={() => {
-	                      if (siteLocked) {
-	                        pushCadCommandFeedback("SITE", "blocked", "SITE boundary is locked. Use Change Site before drawing a replacement boundary.");
-	                        return;
-	                      }
-	                      activateDrawTool("site");
-	                    }}
-	                    className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
-	                      drawMode === "site"
-	                        ? "border-slate-900 bg-slate-950 text-white"
-	                        : siteLocked
-	                          ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-	                          : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-	                    }`}
-	                  >
-	                    Draw Site
-	                  </button>
-	                  {siteLocked && onUnlockSite ? (
-	                    <button
-	                      type="button"
-	                      data-testid="change-site-boundary-toolbar"
-	                      aria-label="Change Site Boundary"
-	                      onClick={() => {
-	                        onUnlockSite();
-	                        clearDraftGeometry();
-	                        setDrawMode("select");
-	                        onSetPreviewInteraction("edit");
-	                      }}
-	                      className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-	                    >
-	                      Change Site
-	                    </button>
-	                  ) : null}
-	                  {!siteLocked && drawMode === "select" && hasDrawableSiteSize && onLockSite ? (
-	                    <button
-	                      type="button"
-	                      data-testid="lock-site-boundary-toolbar"
-	                      aria-label="Lock Site Boundary"
-	                      onClick={() => {
-	                        clearDraftGeometry();
-	                        setDrawMode("select");
-	                        onLockSite();
-	                      }}
-	                      className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-950 bg-slate-950 px-2.5 text-[11px] font-semibold text-white hover:bg-slate-800"
-	                    >
-	                      Lock Site
-	                    </button>
-	                  ) : null}
-	                  <PreviewDrawToolButtons
-	                    drawMode={drawMode}
-	                    disabled={!canDrawObjects}
-	                    disabledLabel={drawObjectsDisabledLabel}
-	                    onActivate={activateDrawTool}
-	                    buttonClassName="inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold"
-	                    inactiveClassName="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-	                    itemKeyPrefix="canvas-quick-draw"
-	                  />
-			                  {drawMode !== "select" && drawMode !== "point" ? (
-		                    <button
-		                      type="button"
-		                      data-testid="canvas-quick-finish"
-		                      onClick={finishDraftGeometry}
-		                      disabled={!canFinishDraftGeometry}
-		                      title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-	                      className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
-	                        !canFinishDraftGeometry
-	                          ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
-	                          : "border-slate-900 bg-slate-950 text-white"
-	                      }`}
-	                    >
-	                      Finish
-	                    </button>
-	                  ) : null}
-	                    <button
-	                      type="button"
-	                      data-testid="canvas-quick-cancel"
-	                      onClick={() => {
-	                        clearDraftGeometry();
-	                        setDrawMode("select");
-	                        setActiveSnapPoint(null);
-	                        setCadCommandStatus("Cancelled active drawing tool.");
-	                      }}
-	                      className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-	                    >
-	                      Cancel
-	                    </button>
-	                </div>
-	              ) : null}
-	              <div className="absolute left-1/2 top-3 z-[85] flex max-w-[calc(100%-8rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
+	              <CanvasQuickDrawPalette
+                visible={previewMode === "2d" && showQuickDrawPalette}
+                drawMode={drawMode}
+                siteLocked={siteLocked}
+                hasDrawableSiteSize={hasDrawableSiteSize}
+                canDrawObjects={canDrawObjects}
+                drawObjectsDisabledLabel={drawObjectsDisabledLabel}
+                canFinishDraftGeometry={canFinishDraftGeometry}
+                finishDraftBlockedReason={finishDraftBlockedReason}
+                onActivateDrawTool={activateDrawTool}
+                onFinishDraftGeometry={finishDraftGeometry}
+                onCancelDraw={() => {
+                  clearDraftGeometry();
+                  setDrawMode("select");
+                  setActiveSnapPoint(null);
+                  setCadCommandStatus("Cancelled active drawing tool.");
+                }}
+                onUnlockSite={onUnlockSite}
+                onLockSite={onLockSite}
+                onClearDraftGeometry={clearDraftGeometry}
+                onSetDrawMode={setDrawMode}
+                onSetPreviewInteraction={onSetPreviewInteraction}
+                onPushCadCommandFeedback={pushCadCommandFeedback}
+              />
+              <div className="absolute left-1/2 top-3 z-[85] flex max-w-[calc(100%-8rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
                 <button
                   type="button"
                   data-testid="preview-mode-2d"
