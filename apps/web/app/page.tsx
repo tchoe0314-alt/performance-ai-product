@@ -2563,6 +2563,7 @@ import { LibrariesPanel } from "./components/LibrariesPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
+import { StandardsPanel } from "./components/StandardsPanel";
 import { TemplatesPanel } from "./components/TemplatesPanel";
 import { UtilityCatalogPanel } from "./components/UtilityCatalogPanel";
 import { WorkspaceSettingsPanel } from "./components/WorkspaceSettingsPanel";
@@ -21298,6 +21299,17 @@ function PerformanceAIDashboardView({
       label: SITE_OBJECT_CATALOG[type].label,
     })),
   }));
+  const standardsPanelCriteria = [
+    { label: "Min slope", value: minSlopePct || "Auto" },
+    { label: "Parking max", value: maxParkingSlopePct || "Auto" },
+    { label: "Road max", value: maxRoadGradePct || "Auto" },
+    { label: "ADA cross", value: maxAdaCrossSlopePct || "Auto" },
+    { label: "Pipe slope", value: pipeMinSlopePct || "Auto" },
+    { label: "Parking angle", value: `${parkingAngle} deg` },
+  ];
+  const standardsPanelRows = capabilityAuditRows.filter(
+    (item) => item.key === "standards_source_registry" || item.key === "candidate_standards_review",
+  );
   const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
   const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
     if (sidePanelCloseTimeoutRef.current !== null) {
@@ -27722,58 +27734,12 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "standards" ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active criteria</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {[
-                          ["Min slope", minSlopePct || "Auto"],
-                          ["Parking max", maxParkingSlopePct || "Auto"],
-                          ["Road max", maxRoadGradePct || "Auto"],
-                          ["ADA cross", maxAdaCrossSlopePct || "Auto"],
-                          ["Pipe slope", pipeMinSlopePct || "Auto"],
-                          ["Parking angle", `${parkingAngle} deg`],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Standards source registry</p>
-                      <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
-                        {capabilityAuditRows
-                          .filter((item) => item.key === "standards_source_registry" || item.key === "candidate_standards_review")
-                          .map((item) => (
-                            <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <div className="flex items-start justify-between gap-3">
-                                <span>{item.label}</span>
-                                <span className={`text-right text-[10px] uppercase tracking-[0.12em] ${
-                                  item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
-                                }`}>
-                                  {item.value}
-                                </span>
-                              </div>
-                              {item.status === "block" || item.status === "idle" ? (
-                                <p className="mt-1 text-xs font-medium normal-case tracking-normal text-slate-500">
-                                  {item.exactFix}
-                                </p>
-                              ) : null}
-                            </div>
-                          ))}
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => handleOpenSidePanel("data")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">
-                          Source data
-                        </button>
-                        <button type="button" onClick={() => handleOpenSidePanel("reports")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">
-                          Review gates
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <StandardsPanel
+                    criteria={standardsPanelCriteria}
+                    rows={standardsPanelRows}
+                    onOpenSourceData={() => handleOpenSidePanel("data")}
+                    onOpenReviewGates={() => handleOpenSidePanel("reports")}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "libraries" ? (
