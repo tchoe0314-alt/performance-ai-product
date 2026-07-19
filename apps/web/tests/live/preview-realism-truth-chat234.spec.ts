@@ -27,6 +27,11 @@ test.describe("Chat 234 preview realism truth pass", () => {
 
     await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
     await expect(page.getByTestId("plan-basin-shelf-cues").first()).toBeVisible();
+    await expect(page.getByTestId("professional-basin-footprint").first()).toBeVisible();
+    await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
+    await expect(page.getByTestId("professional-building-cues").first()).toBeVisible();
+    await expect(page.getByTestId("professional-parking-field").first()).toBeVisible();
+    await expect(page.getByTestId("plan-grading-context-lines").first()).toBeVisible();
     await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
     await expect(canvas.locator("#cad-building-poche")).toHaveCount(1);
     await expect(canvas.locator("#cad-asphalt-light")).toHaveCount(1);

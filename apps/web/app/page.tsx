@@ -12871,29 +12871,44 @@ function PerformanceAIDashboardView({
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
     const beforeSize = compact.slice(0, sizeMatch.index).trim();
     const afterSize = compact.slice(sizeMatch.index + sizeMatch[0].length).trim();
+    const looksLikeStreetAddress = (value: string) =>
+      value.length >= 6 &&
+      /\d/.test(value) &&
+      /\b(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ln|lane|ct|court|way|pkwy|parkway|hwy|highway|ne|nw|se|sw|tx|ga|co|az|nc|nebraska|texas|georgia|colorado|arizona|carolina)\b/i.test(
+        value,
+      );
     const cleanAddressCandidate = (value: string) =>
       value
         .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
         .replace(/^\b(?:with|using|at|centered\s+(?:at|on)|centred\s+(?:at|on))\b\s*/i, "")
+        .replace(/^(?:is|it'?s|it is|gonna|going to be|will be|should be)\b\s*/i, "")
         .replace(/\b(?:as|for|with)?\s*(?:the\s+)?(?:center|centre)(?:\s+point)?\b.*$/i, "")
         .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
         .replace(/[.,;:]+$/g, "")
         .trim();
-    const afterAddressLead = beforeSize
-      .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
-      .split(/\s+\b(?:and|with)\b\s+(?:it'?s|it is|site|lot|gonna|going|will|should)/i)[0]
-      .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
-      .trim();
-    const addressAfterSize = cleanAddressCandidate(afterSize);
-    const streetLikeFallback = beforeSize
-      .replace(/\b(?:i want|make|set|create|start|the|site|lot|address|center point|centered|with)\b/gi, " ")
+    const explicitAddressMatch =
+      compact.match(
+        /\baddress\b\s*(?:is|as|to be|to|=|:)?\s+(.+?)(?=\s+(?:and\s+)?(?:it'?s|it is|its|site|lot|gonna|going to be|will be|should be|with\s+(?:a\s+)?\d|make\s+it|set\s+it|center(?:ed)?|as\s+the\s+center)|$)/i,
+      ) ||
+      compact.match(
+        /\b(?:at|use|around|center(?:ed)?\s+(?:at|on))\s+(.+?)(?=\s+(?:and\s+)?(?:make|set|it'?s|it is|its|site|lot|with\s+(?:a\s+)?\d|center(?:ed)?|as\s+the\s+center)|$)/i,
+      );
+    const beforeStreetCandidate = beforeSize
+      .replace(/\b(?:i want|make|set|create|start|the|site|lot|address|with|use|at|around|center point|centered|center|as|to be)\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
+    const afterStreetCandidate = afterSize
+      .replace(/\b(?:with|as|the|center|centre|point|address|is|to be|it'?s|it is|gonna|going|will|should|site|lot)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const afterAddressLead = explicitAddressMatch ? cleanAddressCandidate(explicitAddressMatch[1]) : cleanAddressCandidate(beforeSize);
+    const addressAfterSize = cleanAddressCandidate(afterSize);
     const currentAddress = siteAddress.trim();
-    const addressCandidates = [afterAddressLead, addressAfterSize, streetLikeFallback]
+    const addressCandidates = [afterAddressLead, addressAfterSize, beforeStreetCandidate, afterStreetCandidate, currentAddress]
       .map((candidate) => candidate.replace(/[.,;:]+$/g, "").trim())
       .filter(Boolean);
     let address =
+      addressCandidates.find(looksLikeStreetAddress) ||
       addressCandidates.find((candidate) => candidate.length >= 6 && /\d/.test(candidate)) ||
       addressCandidates[0] ||
       "";

@@ -1074,9 +1074,9 @@ export default function PreviewPanel({
       const reviewWidth = (normal: number, selectedWidth: number) => (reviewConcept ? (selected ? 0.32 : 0.18) : selected ? selectedWidth : normal);
       if (!isHighQuality) {
         const standardPalette: Record<string, { fill: string; stroke: string }> = {
-          building: { fill: "rgba(226, 232, 240, 0.22)", stroke: "#1f2937" },
-          parking: { fill: "rgba(241, 245, 249, 0.18)", stroke: "#64748b" },
-          road: { fill: "rgba(71, 85, 105, 0.10)", stroke: "#334155" },
+          building: { fill: "rgba(255, 255, 255, 0.42)", stroke: "#111827" },
+          parking: { fill: "rgba(248, 250, 252, 0.2)", stroke: "#64748b" },
+          road: { fill: "rgba(71, 85, 105, 0.08)", stroke: "#334155" },
           water: { fill: "rgba(186, 230, 253, 0.18)", stroke: "#0369a1" },
           landscape: { fill: "rgba(220, 252, 231, 0.14)", stroke: "#15803d" },
           sidewalk: { fill: "rgba(248, 250, 252, 0.36)", stroke: "#94a3b8" },
@@ -1093,10 +1093,10 @@ export default function PreviewPanel({
         };
       }
       if (kind === "road") {
-        return { fill: "rgba(71, 85, 105, 0.1)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.62, 0.86), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(71, 85, 105, 0.085)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.62, 0.86), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "parking") {
-        return { fill: "rgba(100, 116, 139, 0.14)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.28, 0.58), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(248, 250, 252, 0.2)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.24, 0.54), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "water") {
         return { fill: "rgba(125, 211, 252, 0.22)", stroke: stateStroke("#0284c7"), strokeWidth: reviewWidth(0.34, 0.62), strokeDasharray: dash, opacity: stateOpacity };
@@ -1111,7 +1111,7 @@ export default function PreviewPanel({
         return { fill: "rgba(37, 99, 235, 0.065)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.34, 0.58), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "building") {
-        return { fill: "rgba(226, 232, 240, 0.28)", stroke: stateStroke("#1f2937"), strokeWidth: reviewWidth(0.34, 0.62), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(255, 255, 255, 0.48)", stroke: stateStroke("#111827"), strokeWidth: reviewWidth(0.3, 0.58), strokeDasharray: dash, opacity: stateOpacity };
       }
       return { fill: "rgba(248, 250, 252, 0.025)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.16, 0.42), strokeDasharray: dash, opacity: stateOpacity };
     },
@@ -9981,6 +9981,25 @@ export default function PreviewPanel({
                             {planScaleBar.lengthFt} FT
                           </text>
                         </g>
+                        {isHighQuality && !showMap && siteLocked ? (
+                          <g data-testid="plan-grading-context-lines" opacity={0.22}>
+                            {[0, 1, 2, 3, 4].map((index) => {
+                              const y = 18 + index * 12.5;
+                              const offset = index * 1.8;
+                              return (
+                                <path
+                                  key={`review-contour-${index}`}
+                                  d={`M ${9 + offset} ${y} C ${25 + offset} ${y - 4.2} ${37 - offset} ${y + 5.8} ${54 + offset} ${y + 1.2} S ${79 - offset} ${y - 3.6} ${93 - offset * 0.2} ${y + 1.8}`}
+                                  fill="none"
+                                  stroke="#64748b"
+                                  strokeWidth={0.12}
+                                >
+                                  <title>Subtle review contour cue. Not survey control.</title>
+                                </path>
+                              );
+                            })}
+                          </g>
+                        ) : null}
                         {visibleCadObjects
                           .filter((item) => !item.meta?.unsupported_entity_placeholder && item.geometryType === "polyline" && Array.isArray(item.geometry))
                           .map((item) => {
@@ -10163,6 +10182,13 @@ export default function PreviewPanel({
                                 ) : (
                                   <>
                                     <rect
+                                      data-testid={
+                                        visualKind === "building"
+                                          ? "professional-building-footprint"
+                                          : visualKind === "parking"
+                                            ? "professional-parking-field"
+                                            : undefined
+                                      }
                                       x={rect.left}
                                       y={rect.top}
                                       width={rect.width}
@@ -10236,6 +10262,21 @@ export default function PreviewPanel({
                                       strokeWidth={0.16}
                                     />
                                     <path
+                                      data-testid="professional-basin-footprint"
+                                      d={roundedSiteShapePath(
+                                        {
+                                          left: rect.left + rect.width * 0.24,
+                                          top: rect.top + rect.height * 0.32,
+                                          width: rect.width * 0.5,
+                                          height: rect.height * 0.32,
+                                        },
+                                        "water",
+                                      )}
+                                      fill="rgba(125,211,252,0.16)"
+                                      stroke="rgba(2,132,199,0.36)"
+                                      strokeWidth={0.1}
+                                    />
+                                    <path
                                       d={`M ${rect.left + rect.width * 0.18} ${rect.top + rect.height * 0.55} C ${rect.left + rect.width * 0.35} ${rect.top + rect.height * 0.46} ${rect.left + rect.width * 0.58} ${rect.top + rect.height * 0.64} ${rect.left + rect.width * 0.82} ${rect.top + rect.height * 0.5}`}
                                       fill="none"
                                       stroke="rgba(14,116,144,0.34)"
@@ -10244,8 +10285,8 @@ export default function PreviewPanel({
                                     />
                                   </g>
                                 ) : null}
-                                {isHighQuality && visualKind === "building" && sourceState !== "fallback" ? (
-                                  <>
+                                {isHighQuality && visualKind === "building" ? (
+                                  <g data-testid="professional-building-cues" opacity={sourceState === "fallback" ? 0.42 : 0.86}>
                                     <line
                                       x1={rect.left}
                                       y1={rect.top + rect.height}
@@ -10272,7 +10313,21 @@ export default function PreviewPanel({
                                       stroke="rgba(15,23,42,0.14)"
                                       strokeWidth={0.08}
                                     />
-                                  </>
+                                    <line
+                                      x1={rect.left + rect.width * 0.43}
+                                      y1={rect.top + rect.height}
+                                      x2={rect.left + rect.width * 0.57}
+                                      y2={rect.top + rect.height}
+                                      stroke="rgba(15,23,42,0.62)"
+                                      strokeWidth={0.16}
+                                    />
+                                    <path
+                                      d={`M ${rect.left + rect.width * 0.43} ${rect.top + rect.height * 1.04} Q ${rect.left + rect.width * 0.5} ${rect.top + rect.height * 1.1} ${rect.left + rect.width * 0.57} ${rect.top + rect.height * 1.04}`}
+                                      fill="none"
+                                      stroke="rgba(15,23,42,0.24)"
+                                      strokeWidth={0.1}
+                                    />
+                                  </g>
                                 ) : null}
                                 {isHighQuality && visualKind === "parking" && hasParkingGeometryEvidence(item) ? (
                                   <g data-testid="plan-parking-stall-cues">
