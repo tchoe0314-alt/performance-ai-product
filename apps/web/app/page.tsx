@@ -2585,6 +2585,7 @@ import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
 import { SelectedObjectCard } from "./components/SelectedObjectCard";
 import { SetupAddressSection } from "./components/SetupAddressSection";
 import { SetupSiteBoundarySection } from "./components/SetupSiteBoundarySection";
+import { SetupSurveyTerrainSection } from "./components/SetupSurveyTerrainSection";
 import { SourceConfidencePanel } from "./components/SourceConfidencePanel";
 import { StandardsPanel } from "./components/StandardsPanel";
 import { TakeoffSnapshotPanel } from "./components/TakeoffSnapshotPanel";
@@ -24034,79 +24035,23 @@ function PerformanceAIDashboardView({
                       onCreateCenteredSite={() => void handleCreateCenteredSiteFromSetup()}
                     />
 
-                    <DisclosurePanel
-                      testId="setup-survey-terrain-card"
-                      title="Survey / Terrain / Sources"
-                      subtitle={hasTerrainSource ? "Terrain source available" : surveyFileName || uploadedImagePreviewUrl || uploadedImageApiUrl ? "Sources added for review" : "Optional sources not added"}
-                      status={hasTerrainSource ? "Ready" : "Optional"}
-                      statusClassName={hasTerrainSource ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}
-                    >
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSidePanel("import_survey")}
-                          className="mb-2 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
-                        >
-                          Import
-                        </button>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button type="button" onClick={() => surveyInputRef.current?.click()} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50">
-                            {surveyPreviewPoints.length ? "Replace Survey" : "Upload Survey"}
-                          </button>
-                          <button type="button" onClick={() => mapSnapshotInputRef.current?.click()} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50">
-                            {uploadedImagePreviewUrl || uploadedImageApiUrl ? "Replace Map" : "Upload Map"}
-                          </button>
-                        </div>
-                        {surveyUploadMessage ? (
-                          <p data-testid="survey-upload-status" className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
-                            surveyUploadMessage.toLowerCase().includes("failed")
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-slate-200 bg-slate-50 text-slate-600"
-                          }`}>
-                            {surveyUploadMessage}
-                          </p>
-                        ) : null}
-                        {imageUploadState !== "idle" ? (
-                          <p data-testid="image-upload-status" className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${
-                            imageUploadState === "failed" ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-slate-50 text-slate-600"
-                          }`}>
-                            {imageUploadNote || (imageUploadState === "uploading" ? "Uploading image..." : imageUploadState === "detecting" ? "Detecting site features..." : imageUploadState === "failed" ? "Image upload failed." : "Image uploaded.")}
-                          </p>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={analyzeMapSnapshot}
-                          disabled={!mapSnapshotPath}
-                          className="mt-3 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {mapSnapshotPath ? "Analyze Map Snapshot" : "Upload Map Before Analysis"}
-                        </button>
-                        <input
-                          ref={mapSnapshotInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={async (event) => {
-                            const file = event.currentTarget.files?.[0];
-                            if (file) {
-                              await uploadImage(file);
-                            }
-                            event.currentTarget.value = "";
-                          }}
-                        />
-                        <input
-                          ref={surveyInputRef}
-                          type="file"
-                          accept=".csv,.geojson,.json,.dxf,.shp,.zip,.gpkg,.tif,.tiff,.las,.laz,.xml,.landxml"
-                          className="hidden"
-                          onChange={async (event) => {
-                            const file = event.currentTarget.files?.[0];
-                            if (file) {
-                              await uploadExistingConditions(file);
-                            }
-                            event.currentTarget.value = "";
-                          }}
-                        />
-                    </DisclosurePanel>
+                    <SetupSurveyTerrainSection
+                      hasTerrainSource={hasTerrainSource}
+                      surveyFileName={surveyFileName}
+                      uploadedImagePreviewUrl={uploadedImagePreviewUrl}
+                      uploadedImageApiUrl={uploadedImageApiUrl}
+                      surveyPreviewPointCount={surveyPreviewPoints.length}
+                      surveyUploadMessage={surveyUploadMessage}
+                      imageUploadState={imageUploadState}
+                      imageUploadNote={imageUploadNote}
+                      mapSnapshotPath={mapSnapshotPath}
+                      mapSnapshotInputRef={mapSnapshotInputRef}
+                      surveyInputRef={surveyInputRef}
+                      onOpenImport={() => handleOpenSidePanel("import_survey")}
+                      onAnalyzeMapSnapshot={analyzeMapSnapshot}
+                      onUploadImage={uploadImage}
+                      onUploadExistingConditions={uploadExistingConditions}
+                    />
 
                     <DisclosurePanel
                       defaultOpen={autoSiteContextFlowSummary.candidateCount > 0 || autoExistingConditionsStatus.status !== "waiting"}
