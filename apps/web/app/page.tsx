@@ -2583,6 +2583,7 @@ import { RecentChangesPanel } from "./components/RecentChangesPanel";
 import { ReportGateListPanel } from "./components/ReportGateListPanel";
 import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
 import { SelectedObjectCard } from "./components/SelectedObjectCard";
+import { SetupAddressSection } from "./components/SetupAddressSection";
 import { SourceConfidencePanel } from "./components/SourceConfidencePanel";
 import { StandardsPanel } from "./components/StandardsPanel";
 import { TakeoffSnapshotPanel } from "./components/TakeoffSnapshotPanel";
@@ -23995,93 +23996,25 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "site_existing" ? (
                   <div className="space-y-3" data-testid="clean-setup-panel">
-                    <DisclosurePanel
-                      defaultOpen
-                      testId="setup-address-truth"
-                      title="Address / Location"
-                      subtitle={pendingAddressEdit ? siteAddress.trim() : siteInputs?.address || siteAddress.trim() || "No address applied"}
-                      status={addressNeedsApply ? "Needs apply" : hasAppliedAddress ? "Applied" : localAddressLocked ? "Local" : "Not set"}
-                      statusClassName={
-                          addressNeedsApply
-                            ? "bg-amber-50 text-amber-700"
-                            : hasAppliedAddress || localAddressLocked
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-slate-100 text-slate-500"
-                      }
-                    >
-                        <label className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Type project address
-                          <input
-                            ref={siteAddressInputRef}
-                            aria-label="Type project address"
-                            value={siteAddress}
-                            onChange={(event) => {
-                              setSiteAddress(event.target.value);
-                              setSelectedAddressSuggestion(null);
-                            }}
-                            placeholder="123 Main St, City, State"
-                            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 focus:border-slate-400 focus:outline-none"
-                          />
-                        </label>
-                        {addressSuggestions.length && !siteScaleLocked ? (
-                          <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 text-xs text-slate-600">
-                            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                              Optional address matches
-                            </p>
-                            {addressSuggestions.map((suggestion) => (
-                              <button
-                                key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
-                                type="button"
-                                aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
-                                onClick={() => {
-                                  setSelectedAddressSuggestion(suggestion);
-                                  setSiteAddress(suggestion.display_name ?? siteAddress);
-                                  setAddressSuggestions([]);
-                                }}
-                                className="w-full rounded-md px-3 py-2 text-left text-[12px] transition hover:bg-slate-50"
-                              >
-                                <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void saveSiteAddress()}
-                          disabled={!siteAddress.trim() || onlineDiscoveryBusy}
-                          className="mt-3 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                        >
-                          {onlineDiscoveryBusy ? "Applying address..." : siteAddress.trim() ? "Apply Address" : "Enter Address First"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleCreateCenteredSiteFromSetup()}
-                          disabled={!siteAddress.trim() || onlineDiscoveryBusy}
-                          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          data-testid="create-centered-site-button"
-                        >
-                          Create centered site
-                          <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
-                            Uses the width/depth below. Empty size defaults to 1000 ft by 1000 ft.
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleStartBlankSite}
-                          aria-label="Start a blank site from detailed setup controls and clear address map evidence"
-                          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
-                        >
-                          Start blank site
-                          <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-slate-500">
-                            Clears address and map evidence; review-only drafting stays visible.
-                          </span>
-                        </button>
-                        {autoExistingConditionsStatus.status === "blocked" ? (
-                          <p data-testid="apply-address-status" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                            {autoExistingConditionsStatus.message}
-                          </p>
-                        ) : null}
-                    </DisclosurePanel>
+                    <SetupAddressSection
+                      pendingAddressEdit={pendingAddressEdit}
+                      siteAddress={siteAddress}
+                      appliedAddress={siteInputs?.address || ""}
+                      addressNeedsApply={addressNeedsApply}
+                      hasAppliedAddress={hasAppliedAddress}
+                      localAddressLocked={localAddressLocked}
+                      siteScaleLocked={siteScaleLocked}
+                      onlineDiscoveryBusy={onlineDiscoveryBusy}
+                      addressSuggestions={addressSuggestions}
+                      autoExistingConditionsStatus={autoExistingConditionsStatus}
+                      siteAddressInputRef={siteAddressInputRef}
+                      onSiteAddressChange={setSiteAddress}
+                      onSelectedAddressSuggestionChange={setSelectedAddressSuggestion}
+                      onAddressSuggestionsChange={setAddressSuggestions}
+                      onSaveSiteAddress={() => void saveSiteAddress()}
+                      onCreateCenteredSite={() => void handleCreateCenteredSiteFromSetup()}
+                      onStartBlankSite={handleStartBlankSite}
+                    />
 
                     <DisclosurePanel
                       defaultOpen
