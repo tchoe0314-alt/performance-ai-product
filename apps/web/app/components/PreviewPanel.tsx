@@ -9976,12 +9976,12 @@ export default function PreviewPanel({
                           <rect
                             x={1.2}
                             y={1.2}
-                            width={97.6}
+                            width={isHighQuality ? 82.6 : 97.6}
                             height={97.6}
-                            fill={siteLocked ? "rgba(16,185,129,0.024)" : "none"}
-                            stroke={siteLocked ? "rgba(5,150,105,0.62)" : isHighQuality ? "rgba(15,23,42,0.44)" : "rgba(51,65,85,0.36)"}
-                            strokeWidth={siteLocked ? 0.34 : 0.26}
-                            strokeDasharray={siteLocked ? undefined : "2 1.2"}
+                            fill={siteLocked && !isHighQuality ? "rgba(16,185,129,0.024)" : "none"}
+                            stroke={siteLocked ? (isHighQuality ? "#111827" : "rgba(5,150,105,0.62)") : isHighQuality ? "rgba(15,23,42,0.44)" : "rgba(51,65,85,0.36)"}
+                            strokeWidth={siteLocked ? (isHighQuality ? 0.18 : 0.34) : 0.26}
+                            strokeDasharray={isHighQuality ? "1.8 0.8 0.35 0.8" : siteLocked ? undefined : "2 1.2"}
                           />
                           {siteLocked ? (
                             <>
@@ -9997,10 +9997,10 @@ export default function PreviewPanel({
                               </text>
                               {isHighQuality ? (
                                 <g data-testid="survey-boundary-annotation" pointerEvents="none">
-                                  <text x={50} y={2.55} textAnchor="middle" fontSize="0.94" fill="#111827">N 89°58&apos;30&quot; E · {Math.round(lotWidth)}.00&apos;</text>
-                                  <text x={50} y={98.2} textAnchor="middle" fontSize="0.94" fill="#111827">S 89°58&apos;30&quot; W · {Math.round(lotWidth)}.00&apos;</text>
+                                  <text x={42.6} y={2.55} textAnchor="middle" fontSize="0.94" fill="#111827">N 89°58&apos;30&quot; E · {Math.round(lotWidth)}.00&apos;</text>
+                                  <text x={42.6} y={98.2} textAnchor="middle" fontSize="0.94" fill="#111827">S 89°58&apos;30&quot; W · {Math.round(lotWidth)}.00&apos;</text>
                                   <text x={2.2} y={50} transform="rotate(-90 2.2 50)" textAnchor="middle" fontSize="0.94" fill="#111827">N 00°01&apos;30&quot; W · {Math.round(lotHeight)}.00&apos;</text>
-                                  <text x={98.0} y={50} transform="rotate(90 98 50)" textAnchor="middle" fontSize="0.94" fill="#111827">S 00°01&apos;30&quot; E · {Math.round(lotHeight)}.00&apos;</text>
+                                  <text x={83.8} y={50} transform="rotate(90 83.8 50)" textAnchor="middle" fontSize="0.94" fill="#111827">S 00°01&apos;30&quot; E · {Math.round(lotHeight)}.00&apos;</text>
                                   {[
                                     [1.2, 1.2, "NW CORNER"],
                                     [83.8, 1.2, "NE CORNER"],
@@ -10483,8 +10483,8 @@ export default function PreviewPanel({
                                       height={rect.height + 0.56}
                                       rx={0.7}
                                       fill="none"
-                                      stroke="rgba(15,118,110,0.58)"
-                                      strokeWidth={0.22}
+                                      stroke={isHighQuality ? "rgba(15,23,42,0.32)" : "rgba(15,118,110,0.58)"}
+                                      strokeWidth={isHighQuality ? 0.12 : 0.22}
                                       strokeDasharray="1.2 0.9"
                                     />
                                   )
