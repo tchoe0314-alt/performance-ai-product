@@ -27524,7 +27524,6 @@ function PerformanceAIDashboardView({
                 previewMode={previewMode}
                 previewInteraction={canvasPreviewInteraction}
                 previewQuality={previewQuality}
-                previewLabelDensity={previewLabelDensity}
                 systemStatuses={systemStatuses}
                 hasTerrainSource={hasTerrainSource}
                 hasBasinPlaced={hasBasinPlaced}
@@ -27601,10 +27600,6 @@ function PerformanceAIDashboardView({
                     undoBlockedReason: "AI realism is a visual preview record. Regenerate from the current review layout instead of undoing it.",
                   });
                   pushRecoveryMessage(`${event.detail} AI realism remains visual preview only.`);
-                }}
-                onSetPreviewLabelDensity={(value) => {
-                  setPreviewLabelDensityTouched(true);
-                  setPreviewLabelDensity(value);
                 }}
                 onQueuePreviewRefresh={queuePreviewRefresh}
                 previewRefreshing={previewRefreshing}

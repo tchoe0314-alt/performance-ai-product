@@ -48,7 +48,6 @@ import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
 import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
-import { PreviewQualityToggle } from "./PreviewQualityToggle";
 import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import {
@@ -212,7 +211,6 @@ type PreviewPanelProps = {
   previewMode: "2d" | "3d";
   previewInteraction: "static" | "edit";
   previewQuality: "standard" | "high";
-  previewLabelDensity: "low" | "standard" | "high";
   systemStatuses: EngineeringSystemStatuses;
   hasTerrainSource: boolean;
   hasBasinPlaced: boolean;
@@ -223,7 +221,6 @@ type PreviewPanelProps = {
   onSetPreviewInteraction: (value: "static" | "edit") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onAiRealismChange?: (event: { type: "generated" | "stale" | "blocked"; detail: string }) => void;
-  onSetPreviewLabelDensity: (value: "low" | "standard" | "high") => void;
   onQueuePreviewRefresh: (reason: string) => void;
   previewRefreshing: boolean;
   previewRefreshNote: string | null;
@@ -339,7 +336,6 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   previewQuality,
-  previewLabelDensity,
   systemStatuses,
   hasTerrainSource,
   hasGeneratedPlan,
@@ -347,7 +343,6 @@ export default function PreviewPanel({
   onSetPreviewInteraction,
   onSetPreviewQuality,
   onAiRealismChange,
-  onSetPreviewLabelDensity,
   onQueuePreviewRefresh,
   preview3DEffectiveItems,
   usingAnnotation3D,
@@ -7144,126 +7139,6 @@ export default function PreviewPanel({
                 setCadCommandStatus("Cancelled active drawing tool.");
               }}
             />
-          </div>
-          <div className="hidden mb-3 min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white/85 px-3 py-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Preview Mode</span>
-              <button
-                type="button"
-                onClick={() => onSetPreviewMode("2d")}
-                className={`rounded-lg border px-2.5 py-1 ${
-                  previewMode === "2d"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                2D
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canUse3D) return;
-                  onSetPreviewMode("3d");
-                }}
-                className={`rounded-lg border px-2.5 py-1 ${
-                  previewMode === "3d"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-                disabled={!canUse3D}
-              >
-                3D
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Interaction</span>
-              <button
-                type="button"
-                onClick={() => onSetPreviewInteraction("static")}
-                className={`rounded-lg border px-2.5 py-1 ${
-                  previewInteraction === "static"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Static
-              </button>
-              <button
-                type="button"
-                aria-label="Set preview interaction to edit"
-                onClick={() => {
-                  if (previewInteraction === "edit") return;
-                  onQueuePreviewRefresh("Entering edit mode...");
-                  onSetPreviewInteraction("edit");
-                }}
-                className={`rounded-lg border px-2.5 py-1 ${
-                  previewInteraction === "edit"
-                    ? "border-slate-900 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                Edit
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Quality</span>
-              <PreviewQualityToggle
-                value={previewQuality}
-                onChange={onSetPreviewQuality}
-                onQueuePreviewRefresh={onQueuePreviewRefresh}
-                buttonClassName="rounded-lg border px-2.5 py-1"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Labels</span>
-              {(["low", "standard", "high"] as const).map((density) => (
-                <button
-                  key={density}
-                  type="button"
-                  onClick={() => {
-                    if (previewLabelDensity === density) return;
-                    onQueuePreviewRefresh(`Requesting ${density} label density...`);
-                    onSetPreviewLabelDensity(density);
-                  }}
-                  className={`rounded-lg border px-2.5 py-1 ${
-                    previewLabelDensity === density
-                      ? "border-slate-900 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  {density === "standard" ? "Std" : density}
-                </button>
-              ))}
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Legend</span>
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.building }} />
-                Buildings
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.road }} />
-                Roads
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.parking }} />
-                Parking
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.drainage }} />
-                Drainage
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: legendPalette.utilities }} />
-                Utilities
-              </span>
-              {cursorSitePoint ? (
-                <span className="ml-2 flex items-center gap-2 text-[11px] text-slate-500">
-                  <span className="font-semibold text-slate-700">Cursor</span>
-                  X {cursorSitePoint.x.toFixed(1)} ft • Y {cursorSitePoint.y.toFixed(1)} ft
-                </span>
-              ) : null}
-            </div>
           </div>
           <CadPrecisionDock
             visible={previewMode === "2d" && allowEdits && hasCadCommandActivity}
