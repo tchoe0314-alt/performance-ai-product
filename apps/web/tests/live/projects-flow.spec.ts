@@ -217,7 +217,7 @@ async function openProjects(page: Page) {
 async function openSetup(page: Page) {
   await page.getByRole("button", { name: "Open workspace controls" }).click();
   await page.getByRole("button", { name: /^Setup$/ }).first().click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText("Project Setup");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
 }
 
 test.describe("project drawer reliability", () => {

@@ -105,7 +105,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
   test("Apply Address shows signed-out blocker inline", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
-    await openWorkspacePanel(page, /^Setup$/, /Project Setup/i);
+    await openWorkspacePanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
     const addressDetails = page.getByTestId("setup-address-truth");
     await expect(addressDetails).toBeVisible();
     if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
@@ -180,7 +180,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
   test("upload, PDF, and survey/topo failures stay inline", async ({ page }, testInfo) => {
     await openDemoWorkspace(page);
-    await openWorkspacePanel(page, /^Setup$/, /Project Setup/i);
+    await openWorkspacePanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
     const sources = page.getByTestId("setup-survey-terrain-card");
     if (!(await sources.evaluate((element) => element.hasAttribute("open")))) {
       await sources.locator("summary").click();

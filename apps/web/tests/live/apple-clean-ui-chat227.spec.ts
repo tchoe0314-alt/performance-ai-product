@@ -74,7 +74,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
   test("drawer sections and major workflow actions stay focused", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await openPanel(page, /^Setup$/, /Project Setup/);
+    await openPanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/);
     await expect(page.getByTestId("setup-address-truth")).toHaveAttribute("open", "");
     await expect(page.getByLabel(/Type project address/i)).toBeVisible();
     expect(await visibleButtonCount(page, /Enter Address First|Apply Address/i)).toBe(1);

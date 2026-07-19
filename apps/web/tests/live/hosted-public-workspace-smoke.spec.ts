@@ -66,7 +66,7 @@ test.describe("hosted/public workspace smoke", () => {
     await expect(page.getByTestId("preview-mode-2d").first()).toBeVisible();
     await page.getByTestId("preview-mode-2d").first().click();
 
-    await openPanel(page, /^Setup$/, /Project Setup/);
+    await openPanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/);
     await expect(page.getByTestId("setup-address-truth")).toContainText(/Address \/ Location/i);
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/Site Boundary/i);
 

@@ -142,7 +142,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
     await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
 
-    await openPanel(page, /^Setup$/, /Project Setup/i);
+    await openPanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
     await expect(page.getByTestId("project-status-summary")).toContainText(/needs review|ready|blocked|working/i);
 
     await page.keyboard.press("/");
@@ -180,7 +180,7 @@ test.describe("Chat 231A loading states and status truth", () => {
 
   test("reports apply address and source discovery blockers with next action", async ({ page }) => {
     await openDemoWorkspace(page);
-    await openPanel(page, /^Setup$/, /Project Setup/i);
+    await openPanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
 
     const addressDetails = page.getByTestId("setup-address-truth");
     await expect(addressDetails).toBeVisible();
@@ -211,7 +211,7 @@ test.describe("Chat 231A loading states and status truth", () => {
   test("chat status answers match visible status and unsafe commands refuse boundaries", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await openPanel(page, /^Setup$/, /Project Setup/i);
+    await openPanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
     const visibleStatus = (await page.getByTestId("project-status-summary").innerText()).toLowerCase();
     await runCommand(page, "what should I do next?");
     await expect(page.getByText(/Current status:/i).last()).toContainText(/needs review|ready|blocked|working|stale/i);

@@ -10,7 +10,7 @@ test("Templates panel remains reachable after component extraction", async ({ pa
   await openDemoWorkspace(page);
 
   await page.getByRole("button", { name: /^Setup$/ }).click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText("Project Setup");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
 
   const sources = page.getByTestId("setup-survey-terrain-card");
   if (!(await sources.evaluate((element) => element.hasAttribute("open")))) {

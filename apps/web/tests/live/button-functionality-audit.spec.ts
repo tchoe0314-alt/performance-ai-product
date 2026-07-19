@@ -105,7 +105,7 @@ test.describe("button functionality audit", () => {
     await expect(page.getByRole("button", { name: "Notifications unavailable" })).toHaveCount(0);
 
     const panels: Array<[RegExp | string, RegExp | string]> = [
-      [/^Setup$/, /Project Setup/],
+      [/^Setup$/, /Setup|Address \/ Location|Site Boundary/],
       [/^Draw$/, /Draw & Objects|Tools/],
       ["Generate", /Generate Systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
@@ -119,7 +119,7 @@ test.describe("button functionality audit", () => {
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
     await page.getByRole("button", { name: /^Setup$/ }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toContainText("Project Setup");
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
     await expect(page.getByTestId("setup-address-truth")).toBeVisible();
 
     await page.getByRole("button", { name: "Hide left sidebar" }).click();

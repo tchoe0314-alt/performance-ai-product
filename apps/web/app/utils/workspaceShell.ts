@@ -88,7 +88,7 @@ export const sidePanelCopy: Record<SidePanelKey, { title: string; desc: string }
   trust: { title: "What Civora does", desc: "Clear product boundaries for planning, drafting, source context, review packages, and AI visualization." },
   dashboard: { title: "Project Health", desc: "See what needs attention, what changed, and what is ready to review." },
   model: { title: "Draw Canvas", desc: "Use the canvas, map, 2D/3D view, and visible drawing controls." },
-  site_existing: { title: "Project Setup", desc: "Start from address, blank site, site size, boundary drawing, and first objects." },
+  site_existing: { title: "Setup", desc: "Start from address, blank site, site size, boundary drawing, and source context." },
   import_survey: { title: "Import & Survey", desc: "Bring in survey, map snapshots, and terrain sources." },
   objects: { title: "Draw & Objects", desc: "Draw on the canvas, select objects, then edit names, colors, layers, transforms, and visibility from one place." },
   generate: { title: "Generate Systems", desc: "Run focused engines from one control panel." },

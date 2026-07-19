@@ -85,7 +85,7 @@ test.describe("hosted authenticated smoke", () => {
 
     await page.getByRole("button", { name: "Open workspace controls" }).click();
     await page.getByRole("button", { name: /^Setup$/ }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Project Setup|Address \/ Location/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/i);
 
     await page.getByRole("button", { name: "Generate" }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
