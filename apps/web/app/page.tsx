@@ -2562,6 +2562,7 @@ import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DesignAlternativesPanel } from "./components/DesignAlternativesPanel";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
 import { JobsPanel } from "./components/JobsPanel";
+import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
@@ -27262,44 +27263,10 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "layers" ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPreviewLayers((prev) =>
-                            Object.fromEntries(Object.keys(prev).map((key) => [key, true])) as typeof prev,
-                          )
-                        }
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                      >
-                        Show all
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPreviewLayers((prev) => ({
-                            ...Object.fromEntries(Object.keys(prev).map((key) => [key, false])),
-                            buildings: true,
-                          }) as typeof prev)
-                        }
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                      >
-                        Buildings only
-                      </button>
-                    </div>
-                    {Object.entries(previewLayers).map(([key, value]) => (
-                      <label key={key} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold capitalize text-slate-700">
-                        <span>{key.replace("_", " ")}</span>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(value)}
-                          onChange={(event) => setPreviewLayers((prev) => ({ ...prev, [key]: event.target.checked }))}
-                          className="h-4 w-4 accent-slate-950"
-                        />
-                      </label>
-                    ))}
-                  </div>
+                  <LayersPanel
+                    layers={previewLayers}
+                    onLayersChange={(updater) => setPreviewLayers((previous) => updater(previous) as typeof previous)}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "analysis" ? (
