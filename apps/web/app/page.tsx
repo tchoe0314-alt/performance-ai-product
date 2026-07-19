@@ -3256,6 +3256,7 @@ function PerformanceAIDashboardView({
   const lastJobPhaseSignatureRef = useRef<Record<string, string>>({});
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
+  const previewAutoRefreshTimeoutRef = useRef<number | null>(null);
   const panelOpenProbeRef = useRef<{ label: string; panel: SidePanelKey; startedAt: number } | null>(null);
   const panelCloseProbeRef = useRef<{ label: string; panel: SidePanelKey | null; startedAt: number } | null>(null);
   const previewModeProbeRef = useRef<{ value: "2d" | "3d"; startedAt: number } | null>(null);
@@ -19976,11 +19977,20 @@ function PerformanceAIDashboardView({
   }, [previewLayersEffective]);
 
   useEffect(() => {
-    if (!token) return;
-    if (!hasPreviewablePlanResult(backendResult)) return;
+    if (!token || !hasPreviewablePlanResult(backendResult)) {
+      if (previewAutoRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(previewAutoRefreshTimeoutRef.current);
+        previewAutoRefreshTimeoutRef.current = null;
+      }
+      return;
+    }
     const intent = previewRefreshIntentRef.current;
     if (intent) {
       previewRefreshIntentRef.current = null;
+      if (previewAutoRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(previewAutoRefreshTimeoutRef.current);
+        previewAutoRefreshTimeoutRef.current = null;
+      }
       setPreviewRefreshNote(intent.reason);
       requestPreviewInBackground(artifactPayload, {
         silentStatus: true,
@@ -19988,12 +19998,31 @@ function PerformanceAIDashboardView({
       });
       return;
     }
-    requestPreviewInBackground(artifactPayload, { silentStatus: true });
+    if (previewAutoRefreshTimeoutRef.current !== null) {
+      window.clearTimeout(previewAutoRefreshTimeoutRef.current);
+    }
+    previewAutoRefreshTimeoutRef.current = window.setTimeout(() => {
+      previewAutoRefreshTimeoutRef.current = null;
+      const startedAt = markCivoraInteraction();
+      requestPreviewInBackground(artifactPayload, { silentStatus: true });
+      measureCivoraInteractionAfterPaint("preview.background_refresh.debounced", startedAt, {
+        mode: previewMode,
+        quality: previewQuality,
+      });
+    }, 450);
+    return () => {
+      if (previewAutoRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(previewAutoRefreshTimeoutRef.current);
+        previewAutoRefreshTimeoutRef.current = null;
+      }
+    };
   }, [
     previewLayerList,
     token,
     artifactPayload,
     backendResult,
+    previewMode,
+    previewQuality,
   ]);
 
   useEffect(() => {
