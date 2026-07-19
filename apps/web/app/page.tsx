@@ -2562,6 +2562,7 @@ import { DashboardGuidancePanel } from "./components/DashboardGuidancePanel";
 import { DashboardIssueReportPanel } from "./components/DashboardIssueReportPanel";
 import { DashboardProgressTimeline } from "./components/DashboardProgressTimeline";
 import { DashboardProjectSummary } from "./components/DashboardProjectSummary";
+import { DashboardQuickActions } from "./components/DashboardQuickActions";
 import { DashboardRunReviewPanel } from "./components/DashboardRunReviewPanel";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DeliverPanel } from "./components/DeliverPanel";
@@ -23644,11 +23645,7 @@ function PerformanceAIDashboardView({
                       formatMetric={formatMetric}
                       statusLabelForQuantityReview={statusLabelForQuantityReview}
                     />
-                    <div className="grid grid-cols-3 gap-2">
-                      <button type="button" onClick={() => handleOpenSidePanel("objects")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Objects</button>
-                      <button type="button" onClick={() => handleOpenSidePanel("analysis")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Review</button>
-                      <button type="button" onClick={() => handleOpenSidePanel("deliverables")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50">Deliver</button>
-                    </div>
+                    <DashboardQuickActions onOpenPanel={handleOpenSidePanel} />
                   </div>
                 ) : null}
 
