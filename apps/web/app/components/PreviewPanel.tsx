@@ -335,9 +335,9 @@ const geometryTruthLabel = (item: BuildingPlacement) => {
 
 const utilityStrokeColor = (item: BuildingPlacement) => {
   const text = `${item.type || ""} ${item.label || ""} ${item.meta?.system || ""} ${item.meta?.discipline || ""}`.toLowerCase();
-  if (text.includes("water") || text.includes("hydrant")) return "#0284c7";
-  if (text.includes("sanitary") || text.includes("manhole")) return "#16a34a";
-  if (text.includes("storm") || text.includes("drain") || text.includes("inlet") || text.includes("sewer")) return "#f97316";
+  if (text.includes("water") || text.includes("hydrant")) return "#2563eb";
+  if (text.includes("sanitary") || text.includes("manhole")) return "#15803d";
+  if (text.includes("storm") || text.includes("drain") || text.includes("inlet") || text.includes("sewer")) return "#c2410c";
   if (text.includes("electric") || text.includes("power")) return "#ca8a04";
   if (text.includes("gas")) return "#dc2626";
   return "#64748b";
@@ -1105,25 +1105,25 @@ export default function PreviewPanel({
         };
       }
       if (kind === "road") {
-        return { fill: "rgba(71, 85, 105, 0.085)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.62, 0.86), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(71, 85, 105, 0.045)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.28, 0.46), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "parking") {
-        return { fill: "rgba(248, 250, 252, 0.2)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.24, 0.54), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(248, 250, 252, 0.16)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.16, 0.34), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "water") {
-        return { fill: "rgba(125, 211, 252, 0.22)", stroke: stateStroke("#0284c7"), strokeWidth: reviewWidth(0.34, 0.62), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(125, 211, 252, 0.16)", stroke: stateStroke("#0284c7"), strokeWidth: reviewWidth(0.22, 0.42), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "landscape") {
         return { fill: "rgba(134, 239, 172, 0.16)", stroke: stateStroke("#16a34a"), strokeWidth: reviewWidth(0.28, 0.56), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "sidewalk") {
-        return { fill: "rgba(248, 250, 252, 0.42)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.32, 0.56), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(248, 250, 252, 0.32)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.16, 0.34), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "utility") {
-        return { fill: "rgba(37, 99, 235, 0.065)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.34, 0.58), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(37, 99, 235, 0.012)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.055, 0.14), strokeDasharray: dash, opacity: stateOpacity };
       }
       if (kind === "building") {
-        return { fill: "rgba(255, 255, 255, 0.48)", stroke: stateStroke("#111827"), strokeWidth: reviewWidth(0.3, 0.58), strokeDasharray: dash, opacity: stateOpacity };
+        return { fill: "rgba(255, 255, 255, 0.46)", stroke: stateStroke("#111827"), strokeWidth: reviewWidth(0.18, 0.36), strokeDasharray: dash, opacity: stateOpacity };
       }
       return { fill: "rgba(248, 250, 252, 0.025)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.16, 0.42), strokeDasharray: dash, opacity: stateOpacity };
     },
@@ -10091,7 +10091,7 @@ export default function PreviewPanel({
                               (isCorridorLine ? Math.max(Math.min(item.w, item.d), 18) : null);
                             const corridorStrokeWidth =
                               corridorWidthFt && isCorridorLine
-                                ? Math.max(1.15, Math.min(5.5, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100))
+                                ? Math.max(0.38, Math.min(1.85, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100 * 0.48))
                                 : visualStyle.strokeWidth;
                             return (
                               <g key={`poly-${item.id}`}>
@@ -10100,7 +10100,7 @@ export default function PreviewPanel({
                                     data-testid="plan-road-corridor"
                                     points={points.join(" ")}
                                     fill="none"
-                                    stroke={sourceState === "fallback" ? "rgba(100,116,139,0.2)" : "rgba(15, 23, 42, 0.16)"}
+                                    stroke={sourceState === "fallback" ? "rgba(100,116,139,0.13)" : "rgba(15, 23, 42, 0.11)"}
                                     strokeWidth={corridorStrokeWidth}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
@@ -10123,18 +10123,24 @@ export default function PreviewPanel({
                                   points={points.join(" ")}
                                   fill="none"
                                   stroke={visualStyle.stroke}
-                                  strokeWidth={isCorridorLine && isHighQuality ? Math.max(0.22, corridorStrokeWidth * 0.12) : visualStyle.strokeWidth}
+                                  strokeWidth={
+                                    isUtilityLine && isHighQuality
+                                      ? 0.045
+                                      : isCorridorLine && isHighQuality
+                                        ? Math.max(0.1, corridorStrokeWidth * 0.07)
+                                        : visualStyle.strokeWidth
+                                  }
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
-                                  strokeDasharray={visualStyle.strokeDasharray || (isUtilityLine ? "1.2 0.85" : undefined)}
-                                  opacity={visualStyle.opacity}
+                                  strokeDasharray={visualStyle.strokeDasharray || (isUtilityLine ? "0.46 0.42" : undefined)}
+                                  opacity={isUtilityLine && isHighQuality ? 0.72 : visualStyle.opacity}
                                 />
                                 {isHighQuality && isCorridorLine ? (
                                   <polyline
                                     points={points.join(" ")}
                                     fill="none"
                                     stroke="url(#cad-asphalt-light)"
-                                    strokeWidth={Math.max(0.34, corridorStrokeWidth * 0.42)}
+                                    strokeWidth={Math.max(0.12, corridorStrokeWidth * 0.2)}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     opacity={sourceState === "fallback" ? 0.28 : 0.72}
@@ -10150,10 +10156,10 @@ export default function PreviewPanel({
                                           key={`utility-node-${item.id}-${idx}`}
                                           cx={x}
                                           cy={y}
-                                          r={0.42}
+                                          r={0.24}
                                           fill="#ffffff"
                                           stroke={visualStyle.stroke}
-                                          strokeWidth={0.18}
+                                          strokeWidth={0.1}
                                         >
                                           <title>{sourceStateLabel(sourceState)}</title>
                                         </circle>
@@ -10179,7 +10185,7 @@ export default function PreviewPanel({
                                             x2={Math.min(82, x + 8)}
                                             y2={Math.max(5, y - 4)}
                                             stroke={visualStyle.stroke}
-                                            strokeWidth={0.1}
+                                            strokeWidth={0.07}
                                           />
                                           <text
                                             x={Math.min(82, x + 8.4)}
@@ -10228,9 +10234,9 @@ export default function PreviewPanel({
                                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                                       fill="none"
                                       stroke={visualStyle.fill}
-                                      strokeWidth={corridorAxis.width}
+                                      strokeWidth={Math.max(0.32, corridorAxis.width * 0.42)}
                                       strokeLinecap="round"
-                                      opacity={visualStyle.opacity}
+                                      opacity={Math.min(0.72, visualStyle.opacity)}
                                     >
                                       <title>{sourceStateLabel(sourceState)}</title>
                                     </polyline>
@@ -10239,7 +10245,7 @@ export default function PreviewPanel({
                                         points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                                         fill="none"
                                         stroke="url(#cad-asphalt-light)"
-                                        strokeWidth={Math.max(0.6, corridorAxis.width * 0.82)}
+                                        strokeWidth={Math.max(0.12, corridorAxis.width * 0.22)}
                                         strokeLinecap="round"
                                         opacity={sourceState === "fallback" ? 0.28 : 0.75}
                                       />
@@ -10248,7 +10254,7 @@ export default function PreviewPanel({
                                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                                       fill="none"
                                       stroke={visualStyle.stroke}
-                                      strokeWidth={Math.max(0.24, visualStyle.strokeWidth)}
+                                      strokeWidth={Math.max(0.08, visualStyle.strokeWidth)}
                                       strokeLinecap="round"
                                       strokeDasharray={visualStyle.strokeDasharray}
                                       opacity={visualStyle.opacity}
@@ -10258,7 +10264,7 @@ export default function PreviewPanel({
                                         points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                                         fill="none"
                                         stroke="rgba(248,250,252,0.7)"
-                                        strokeWidth={0.16}
+                                        strokeWidth={0.08}
                                         strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
                                         strokeLinecap="round"
                                       />
@@ -10368,7 +10374,7 @@ export default function PreviewPanel({
                                       )}
                                       fill="none"
                                       stroke="rgba(224,242,254,0.72)"
-                                      strokeWidth={0.16}
+                                      strokeWidth={0.1}
                                     />
                                     <path
                                       data-testid="professional-basin-footprint"
@@ -10383,13 +10389,13 @@ export default function PreviewPanel({
                                       )}
                                       fill="rgba(125,211,252,0.16)"
                                       stroke="rgba(2,132,199,0.36)"
-                                      strokeWidth={0.1}
+                                      strokeWidth={0.07}
                                     />
                                     <path
                                       d={`M ${rect.left + rect.width * 0.18} ${rect.top + rect.height * 0.55} C ${rect.left + rect.width * 0.35} ${rect.top + rect.height * 0.46} ${rect.left + rect.width * 0.58} ${rect.top + rect.height * 0.64} ${rect.left + rect.width * 0.82} ${rect.top + rect.height * 0.5}`}
                                       fill="none"
                                       stroke="rgba(14,116,144,0.34)"
-                                      strokeWidth={0.18}
+                                      strokeWidth={0.09}
                                       strokeLinecap="round"
                                     />
                                   </g>
@@ -10445,9 +10451,9 @@ export default function PreviewPanel({
                                       y1={rect.top + rect.height * 0.5}
                                       x2={rect.left + rect.width * 0.92}
                                       y2={rect.top + rect.height * 0.5}
-                                      stroke="rgba(248,250,252,0.78)"
-                                      strokeWidth={0.2}
-                                      strokeDasharray="1 0.8"
+                                      stroke="rgba(71,85,105,0.26)"
+                                      strokeWidth={0.035}
+                                      strokeDasharray="0.42 0.34"
                                     />
                                     {Array.from({ length: Math.min(10, Math.max(3, Math.round(rect.width / 3.6))) }).map((_, stallIdx, stalls) => {
                                       const x = rect.left + rect.width * (0.12 + (stallIdx / Math.max(stalls.length - 1, 1)) * 0.76);
@@ -10458,8 +10464,8 @@ export default function PreviewPanel({
                                           y1={rect.top + rect.height * 0.16}
                                           x2={x}
                                           y2={rect.top + rect.height * 0.84}
-                                          stroke="rgba(248,250,252,0.5)"
-                                          strokeWidth={0.12}
+                                          stroke="rgba(71,85,105,0.22)"
+                                          strokeWidth={0.028}
                                         />
                                       );
                                     })}
@@ -10471,7 +10477,7 @@ export default function PreviewPanel({
                                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                                       fill="none"
                                       stroke="rgba(15,118,110,0.34)"
-                                      strokeWidth={Math.max(0.9, corridorAxis.width + 0.32)}
+                                      strokeWidth={Math.max(0.46, corridorAxis.width * 0.7)}
                                       strokeLinecap="round"
                                       opacity={0.48}
                                     />
@@ -10583,15 +10589,15 @@ export default function PreviewPanel({
                                   </polygon>
                                 ) : null}
                                 {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
-                                  <g data-testid="plan-parking-stall-cues" opacity={0.72}>
+                                  <g data-testid="plan-parking-stall-cues" opacity={0.54}>
                                     <line
                                       x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
                                       y1={(bounds.minY + bounds.maxY) / 2}
                                       x2={bounds.maxX - (bounds.maxX - bounds.minX) * 0.1}
                                       y2={(bounds.minY + bounds.maxY) / 2}
-                                      stroke="rgba(248,250,252,0.75)"
-                                      strokeWidth={0.18}
-                                      strokeDasharray="1.1 0.8"
+                                      stroke="rgba(71,85,105,0.26)"
+                                      strokeWidth={0.035}
+                                      strokeDasharray="0.42 0.34"
                                     />
                                     {Array.from({ length: stripeCount }).map((_, stripeIdx) => {
                                       const x =
@@ -10605,8 +10611,8 @@ export default function PreviewPanel({
                                           y1={bounds.minY + (bounds.maxY - bounds.minY) * 0.16}
                                           x2={x}
                                           y2={bounds.maxY - (bounds.maxY - bounds.minY) * 0.16}
-                                          stroke="rgba(248,250,252,0.48)"
-                                          strokeWidth={0.1}
+                                          stroke="rgba(71,85,105,0.22)"
+                                          strokeWidth={0.028}
                                         />
                                       );
                                     })}
@@ -10618,7 +10624,7 @@ export default function PreviewPanel({
                                       points={(innerShelf.length ? innerShelf.map(sitePointToSvgPercent).join(" ") : innerPolygonPoints)}
                                       fill="none"
                                       stroke="rgba(224,242,254,0.7)"
-                                      strokeWidth={0.16}
+                                      strokeWidth={0.09}
                                       strokeLinejoin="round"
                                     />
                                     {bottomShelf.length ? (
@@ -10626,7 +10632,7 @@ export default function PreviewPanel({
                                         points={bottomShelf.map(sitePointToSvgPercent).join(" ")}
                                         fill="rgba(2,132,199,0.1)"
                                         stroke="rgba(3,105,161,0.6)"
-                                        strokeWidth={0.14}
+                                        strokeWidth={0.08}
                                         strokeLinejoin="round"
                                       />
                                     ) : null}
@@ -10635,7 +10641,7 @@ export default function PreviewPanel({
                                         points={waterSurface.map(sitePointToSvgPercent).join(" ")}
                                         fill="rgba(125,211,252,0.24)"
                                         stroke="rgba(14,165,233,0.58)"
-                                        strokeWidth={0.12}
+                                        strokeWidth={0.07}
                                         strokeLinejoin="round"
                                       />
                                     ) : null}
@@ -10646,7 +10652,7 @@ export default function PreviewPanel({
                                     points={roadAxis.map(sitePointToSvgPercent).join(" ")}
                                     fill="none"
                                     stroke="rgba(248,250,252,0.62)"
-                                    strokeWidth={0.14}
+                                    strokeWidth={0.07}
                                     strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
                                     strokeLinecap="round"
                                   />
@@ -10677,8 +10683,8 @@ export default function PreviewPanel({
                             );
                             return (
                               <g key={`cad-symbol-${item.id}`} data-testid="cad-symbol">
-                                <circle cx={x} cy={y} r={1.55} fill="#ffffff" stroke="#0f172a" strokeWidth={0.42} />
-                                <text x={x} y={y + 0.72} textAnchor="middle" fontSize="2.3" fill="#0f172a" fontWeight={800}>
+                                <circle cx={x} cy={y} r={1.05} fill="#ffffff" stroke="#0f172a" strokeWidth={0.22} />
+                                <text x={x} y={y + 0.48} textAnchor="middle" fontSize="1.55" fill="#0f172a" fontWeight={800}>
                                   {glyph[symbol] ?? "U"}
                                 </text>
                               </g>
@@ -10773,38 +10779,38 @@ export default function PreviewPanel({
                             buildParkingModules(item, accessPointsForParking).map((module, idx) => {
                               const toPct = (pt: [number, number]) => sitePointToSvgPercent(pt);
                               const moduleFill = module.isAdaModule
-                                ? "rgba(16,185,129,0.18)"
+                                ? "rgba(16,185,129,0.06)"
                                 : module.isCompactModule
-                                  ? "rgba(168,85,247,0.16)"
+                                  ? "rgba(168,85,247,0.055)"
                                   : module.angle === 45
-                                    ? "rgba(56,189,248,0.14)"
+                                    ? "rgba(56,189,248,0.045)"
                                     : module.angle === 60
-                                      ? "rgba(129,140,248,0.14)"
-                                      : "rgba(148,163,184,0.1)";
+                                      ? "rgba(129,140,248,0.045)"
+                                      : "rgba(148,163,184,0.035)";
                               return (
                                 <g key={`parking-mod-${item.id}-${idx}`}>
                                   {showParkingAnalysis ? (
                                     <polygon
                                       points={module.bounds.map(toPct).join(" ")}
                                       fill={moduleFill}
-                                      stroke="rgba(15,23,42,0.15)"
-                                      strokeWidth={0.22}
+                                      stroke="rgba(15,23,42,0.08)"
+                                      strokeWidth={0.08}
                                     />
                                   ) : null}
                                   {module.stallPolygons.map((stall, polyIdx) => {
                                     const fill =
                                       showParkingAnalysis && stall.kind === "ada"
-                                        ? "rgba(16,185,129,0.55)"
+                                        ? "rgba(16,185,129,0.2)"
                                         : showParkingAnalysis && stall.kind === "ada_aisle"
-                                          ? "rgba(52,211,153,0.35)"
+                                          ? "rgba(52,211,153,0.14)"
                                         : showParkingAnalysis && stall.kind === "compact"
-                                          ? "rgba(168,85,247,0.45)"
-                                          : legendPalette.parkingFill;
+                                          ? "rgba(168,85,247,0.18)"
+                                          : "rgba(148,163,184,0.045)";
                                     const stroke =
                                       showParkingAnalysis && stall.kind !== "standard"
-                                        ? "#0f172a"
-                                        : legendPalette.parking;
-                                    const strokeWidth = showParkingAnalysis && stall.kind !== "standard" ? 0.38 : 0.28;
+                                        ? "rgba(15,23,42,0.34)"
+                                        : "rgba(71,85,105,0.24)";
+                                    const strokeWidth = showParkingAnalysis && stall.kind !== "standard" ? 0.12 : 0.045;
                                     return (
                                       <polygon
                                         key={`stall-${polyIdx}`}
@@ -10818,16 +10824,16 @@ export default function PreviewPanel({
                                   <polyline
                                     points={module.aisleLine.map(toPct).join(" ")}
                                     fill="none"
-                                    stroke={legendPalette.road}
-                                    strokeWidth={0.45}
+                                    stroke="rgba(71,85,105,0.24)"
+                                    strokeWidth={0.08}
                                   />
                                   {module.stripeLines.map((line, stripeIdx) => (
                                     <polyline
                                       key={`stripe-${stripeIdx}`}
                                       points={line.map(toPct).join(" ")}
                                       fill="none"
-                                      stroke="#cbd5f5"
-                                      strokeWidth={0.24}
+                                      stroke="rgba(71,85,105,0.2)"
+                                      strokeWidth={0.045}
                                     />
                                   ))}
                                 </g>
@@ -10875,10 +10881,10 @@ export default function PreviewPanel({
                                   key={`water-zone-${zone.id}`}
                                   points={points}
                                   fill={zone.color}
-                                  opacity={0.1}
+                                  opacity={previewQuality === "high" ? 0.035 : 0.08}
                                   stroke={zone.color}
-                                  strokeWidth={0.45}
-                                  strokeDasharray="2 1"
+                                  strokeWidth={previewQuality === "high" ? 0.12 : 0.28}
+                                  strokeDasharray={previewQuality === "high" ? "0.7 0.55" : "1.4 0.8"}
                                 />
                               );
                             })}
@@ -10892,9 +10898,26 @@ export default function PreviewPanel({
                                   key={`water-segment-${segment.id}`}
                                   points={points}
                                   fill="none"
-                                  stroke={segment.networkType === "loop" ? "#0284c7" : "#f97316"}
-                                  strokeWidth={segment.networkType === "loop" ? 0.72 : 0.58}
-                                  strokeDasharray={segment.networkType === "loop" ? undefined : "1.5 1"}
+                                  stroke={segment.networkType === "loop" ? "#2563eb" : "#c2410c"}
+                                  strokeWidth={
+                                    previewQuality === "high"
+                                      ? segment.networkType === "loop"
+                                        ? 0.16
+                                        : 0.12
+                                      : segment.networkType === "loop"
+                                        ? 0.46
+                                        : 0.36
+                                  }
+                                  strokeDasharray={
+                                    segment.networkType === "loop"
+                                      ? previewQuality === "high"
+                                        ? "1 0.45"
+                                        : undefined
+                                      : previewQuality === "high"
+                                        ? "0.55 0.42"
+                                        : "1.2 0.8"
+                                  }
+                                  opacity={previewQuality === "high" ? 0.7 : 0.9}
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
@@ -10908,16 +10931,17 @@ export default function PreviewPanel({
                                   ? "#16a34a"
                                   : hydrant.status === "fail"
                                     ? "#dc2626"
-                                    : "#f97316";
+                                : "#c2410c";
                               return (
                                 <g key={`hydrant-marker-${hydrant.id}`}>
                                   <circle
                                     cx={x}
                                     cy={y}
-                                    r={selected ? 1.25 : 0.92}
-                                    fill={statusColor}
-                                    stroke="#ffffff"
-                                    strokeWidth={0.32}
+                                    r={selected ? 0.72 : 0.48}
+                                    fill={previewQuality === "high" ? "#ffffff" : statusColor}
+                                    stroke={statusColor}
+                                    strokeWidth={selected ? 0.22 : 0.16}
+                                    opacity={previewQuality === "high" ? 0.78 : 0.95}
                                   >
                                     <title>{hydrant.label}</title>
                                   </circle>
@@ -10934,15 +10958,15 @@ export default function PreviewPanel({
                             <circle
                               cx={snapX}
                               cy={snapY}
-                              r={1.15}
+                              r={0.82}
                               fill="none"
                               stroke="#f59e0b"
-                              strokeWidth={0.42}
+                              strokeWidth={0.24}
                             />
                             <path
-                              d={`M ${snapX - 1.6} ${snapY} L ${snapX + 1.6} ${snapY} M ${snapX} ${snapY - 1.6} L ${snapX} ${snapY + 1.6}`}
+                              d={`M ${snapX - 1.15} ${snapY} L ${snapX + 1.15} ${snapY} M ${snapX} ${snapY - 1.15} L ${snapX} ${snapY + 1.15}`}
                               stroke="#f59e0b"
-                              strokeWidth={0.32}
+                              strokeWidth={0.2}
                               strokeLinecap="round"
                             />
                           </g>
@@ -10969,17 +10993,17 @@ export default function PreviewPanel({
                                 <g>
                                   <polygon
                                     points={pct.join(" ")}
-                                    fill={drawMode === "site" ? "rgba(245,158,11,0.1)" : "rgba(14,165,233,0.08)"}
+                                    fill={drawMode === "site" ? "rgba(245,158,11,0.05)" : "rgba(14,165,233,0.045)"}
                                     stroke={draftColor}
-                                    strokeWidth={0.55}
-                                    strokeDasharray="1.5 1"
+                                    strokeWidth={0.36}
+                                    strokeDasharray="0.9 0.7"
                                   />
                                   {points.map((pt, idx) => (
                                     <circle
                                       key={`draft-poly-${idx}`}
                                       cx={siteTupleToPercent(pt, effectiveSiteSize)[0]}
                                       cy={siteTupleToPercent(pt, effectiveSiteSize)[1]}
-                                      r={0.55}
+                                      r={0.42}
                                       fill={draftColor}
                                     />
                                   ))}
@@ -11003,10 +11027,10 @@ export default function PreviewPanel({
                                   y={rectPct.top}
                                   width={rectPct.width}
                                   height={rectPct.height}
-                                  fill="rgba(14,165,233,0.08)"
+                                  fill="rgba(14,165,233,0.045)"
                                   stroke="#0284c7"
-                                  strokeWidth={0.55}
-                                  strokeDasharray="1.5 1"
+                                  strokeWidth={0.36}
+                                  strokeDasharray="0.9 0.7"
                                 />
                               );
                             }
@@ -11017,8 +11041,8 @@ export default function PreviewPanel({
                                     points={pct.join(" ")}
                                     fill="none"
                                     stroke="#0284c7"
-                                    strokeWidth={0.55}
-                                    strokeDasharray="1.5 1"
+                                    strokeWidth={0.36}
+                                    strokeDasharray="0.9 0.7"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                   />
@@ -11027,7 +11051,7 @@ export default function PreviewPanel({
                                       key={`draft-line-${idx}`}
                                       cx={siteTupleToPercent(pt, effectiveSiteSize)[0]}
                                       cy={siteTupleToPercent(pt, effectiveSiteSize)[1]}
-                                      r={0.55}
+                                      r={0.42}
                                       fill="#0284c7"
                                     />
                                   ))}
@@ -11039,7 +11063,7 @@ export default function PreviewPanel({
                               <circle
                                 cx={siteTupleToPercent(pt, effectiveSiteSize)[0]}
                                 cy={siteTupleToPercent(pt, effectiveSiteSize)[1]}
-                                r={0.65}
+                                r={0.46}
                                 fill="#0284c7"
                               />
                             );
