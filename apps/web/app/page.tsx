@@ -2560,6 +2560,7 @@ import ChatPanel from "./components/ChatPanel";
 import CivilReviewSheet from "./components/CivilReviewSheet";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DesignAlternativesPanel } from "./components/DesignAlternativesPanel";
+import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
 import { JobsPanel } from "./components/JobsPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
@@ -2572,6 +2573,7 @@ import { SourceConfidencePanel } from "./components/SourceConfidencePanel";
 import { StandardsPanel } from "./components/StandardsPanel";
 import { TakeoffSnapshotPanel } from "./components/TakeoffSnapshotPanel";
 import { TemplatesPanel } from "./components/TemplatesPanel";
+import { TrustPanel } from "./components/TrustPanel";
 import { UtilityCatalogPanel } from "./components/UtilityCatalogPanel";
 import { WorkspaceSettingsPanel } from "./components/WorkspaceSettingsPanel";
 import WorkspaceRightPanel from "./components/WorkspaceRightPanel";
@@ -23513,93 +23515,14 @@ function PerformanceAIDashboardView({
               wide={sidePanelForRender === "deliverables"}
               onMinimize={handleCloseSidePanel}
             >
-                {sidePanelForRender === "trust" ? (
-                  <div className="space-y-4" data-testid="civora-trust-panel">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Product boundary
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-700">
-                        Civora supports site planning and review workflows. It helps teams gather source-backed context, draft layouts, prepare review packages, and create AI visualization from the current review layout.
-                      </p>
-                      <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
-                        Outputs are planning and review aids. Licensed professionals remain responsible for final decisions and field use.
-                      </p>
-                    </div>
-                    <div className="grid gap-3">
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          What Civora does
-                        </p>
-                        <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-700">
-                          {[
-                            "Supports site planning and review workflows.",
-                            "Organizes source-backed context from project inputs, GIS-style sources, PDFs, imagery, and uploaded survey/topo files.",
-                            "Helps with layout and drafting, including objects, boundaries, drawings, and system drafts.",
-                            "Builds review package materials such as sheets, reports, quantities, blockers, and source notes.",
-                            "Creates AI visualization for presentation and review from the current layout; it is not evidence.",
-                          ].map((item) => (
-                            <li key={item} className="flex gap-2">
-                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          What Civora does not do
-                        </p>
-                        <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-700">
-                          {[
-                            "It does not replace licensed professionals.",
-                            "It does not stamp, seal, sign, certify, or approve construction.",
-                            "It does not submit construction documents.",
-                            "It does not act as engineer of record.",
-                            "It does not turn GIS, AI, PDF, satellite, or other source data into survey or control.",
-                          ].map((item) => (
-                            <li key={item} className="flex gap-2">
-                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Review package boundary
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-700">
-                        Deliver creates review-only packages with visible missing items, source notes, and blockers so a project team can hand off clearer material for professional review.
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
+                {sidePanelForRender === "trust" ? <TrustPanel /> : null}
                 {isDisciplinePanel ? (
-                  <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
-                    <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Discipline controls
-                    </p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {disciplinePanelLinks.map((item) => (
-                        <button
-                          key={item.panel}
-                          type="button"
-                          onClick={() => handleOpenSidePanel(item.panel)}
-                          aria-current={sidePanelForRender === item.panel ? "page" : undefined}
-                          className={`rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
-                            sidePanelForRender === item.panel
-                              ? "border-slate-950 bg-slate-950 text-white"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-	                      ))}
-	                    </div>
-	                  </div>
-	                ) : null}
+                  <DisciplinePanelTabs
+                    items={disciplinePanelLinks}
+                    activePanel={sidePanelForRender}
+                    onOpenPanel={handleOpenSidePanel}
+                  />
+                ) : null}
                 {sidePanelForRender === "projects" ? (
                   <div className="space-y-4" data-testid="projects-drawer">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

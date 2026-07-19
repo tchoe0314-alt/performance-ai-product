@@ -61,15 +61,15 @@ test.describe("Chat 232 naming and trust copy", () => {
     await expectNoOverflow(page);
   });
 
-  test("AI Realism remains visualization and review package stays review-only", async ({ page }) => {
+  test("AI Visualization remains visual-only and review package stays review-only", async ({ page }) => {
     await openDemoWorkspace(page);
 
     const canvas = page.getByTestId("workspace-canvas-shell");
     await canvas.getByTestId("preview-quality-high").click();
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Presentation/realism mode");
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Canonical geometry unchanged");
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Not engineering evidence");
-    await expect(canvas).toContainText("AI Realism");
-    await expect(canvas).toContainText("AI visualization");
+    await expect(canvas).toContainText("AI Visualization");
 
     await page.getByRole("button", { name: /^Deliver$/ }).first().click();
     await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/review package/i);
