@@ -2557,6 +2557,7 @@ import {
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
+import { DashboardProjectSummary } from "./components/DashboardProjectSummary";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DeliverPanel } from "./components/DeliverPanel";
 import { DesignAlternativesPanel } from "./components/DesignAlternativesPanel";
@@ -23556,65 +23557,30 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "dashboard" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Dashboard</p>
-                          <p className="mt-1 text-lg font-semibold text-slate-950">{siteName || "Untitled Project"}</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {fileName || "No file name"} · {lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "Site not locked"}
-                          </p>
-                        </div>
-                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-	                          hasHardSystemBlock
-	                            ? "bg-amber-50 text-amber-700"
-                            : backendResult
-                              ? "bg-slate-100 text-slate-700"
-                              : "bg-amber-50 text-amber-600"
-                        }`}>
-	                          {hasHardSystemBlock ? "Needs input" : backendResult ? "Review output" : "Setup"}
-                        </span>
-                      </div>
-                      <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Rename project
-                        </summary>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <input
-                            value={siteName}
-                            onChange={(event) => {
-                              setSiteName(event.target.value);
-                              setSiteNameAuto(false);
-                            }}
-                            placeholder="Project name"
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
-                          />
-                          <input
-                            value={fileName}
-                            onChange={(event) => {
-                              setFileName(event.target.value);
-                              setFileNameAuto(false);
-                            }}
-                            placeholder="File name"
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void saveProject({
-                              nameOverride: siteName.trim(),
-                              fileNameOverride: fileName.trim(),
-                              autoNamedOverride: false,
-                              autoFileNamedOverride: false,
-                            })
-                          }
-                          className="mt-3 w-full rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
-                        >
-                          Save name
-                        </button>
-                      </details>
-	                    </div>
+                    <DashboardProjectSummary
+                      siteName={siteName}
+                      fileName={fileName}
+                      lotWidth={lotBounds.w}
+                      lotHeight={lotBounds.h}
+                      hasHardSystemBlock={hasHardSystemBlock}
+                      hasBackendResult={Boolean(backendResult)}
+                      onSiteNameChange={(value) => {
+                        setSiteName(value);
+                        setSiteNameAuto(false);
+                      }}
+                      onFileNameChange={(value) => {
+                        setFileName(value);
+                        setFileNameAuto(false);
+                      }}
+                      onSaveName={() =>
+                        void saveProject({
+                          nameOverride: siteName.trim(),
+                          fileNameOverride: fileName.trim(),
+                          autoNamedOverride: false,
+                          autoFileNamedOverride: false,
+                        })
+                      }
+                    />
 	                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="progress-timeline-dashboard">
 	                      <div className="flex items-start justify-between gap-3">
 	                        <div>
