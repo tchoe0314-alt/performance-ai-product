@@ -13,6 +13,7 @@
     "lint": "eslint",
     "release:regression": "../../scripts/release_regression.sh",
     "test:live": "npm run clean:next && playwright test --config=playwright.config.ts",
+    "test:hosted": "node scripts/run-hosted-gauntlet.mjs",
     "test:hosted:public": "PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL:-https://civoraai.com} playwright test --config=playwright.config.ts tests/live/hosted-public-workspace-smoke.spec.ts --project=chromium --workers=1",
     "test:hosted:auth": "playwright test --config=playwright.config.ts tests/live/hosted-auth-smoke.spec.ts --project=chromium --workers=1",
     "test:live:chat34": "node tests/live/chat34-controlled-pilot-readiness.js",
