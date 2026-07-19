@@ -2566,6 +2566,7 @@ import { FilesPanel } from "./components/FilesPanel";
 import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
+import { NeedsPlacementTray } from "./components/NeedsPlacementTray";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
@@ -27477,42 +27478,16 @@ function PerformanceAIDashboardView({
                       </p>
                     </div>
                     <DrawCadToolsPanel groups={cadToolGroups} onSelectTool={triggerCadTool} />
-                    <div className={`${pendingPlacementObjects.length ? "" : "hidden"} rounded-2xl border border-amber-200 bg-amber-50 p-4`} data-testid="needs-placement-tray">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Needs placement</p>
-                          <p className="mt-1 text-sm font-semibold text-amber-950">
-                            {pendingPlacementObjects.length
-                              ? `${pendingPlacementObjects.length} draft object${pendingPlacementObjects.length === 1 ? "" : "s"} must be placed before Generate can rely on them.`
-                              : "No pending placement objects."}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
-                          Pending {pendingPlacementObjects.length}
-                        </span>
-                      </div>
-                      {pendingPlacementObjects.length ? (
-                        <div className="mt-3 space-y-2">
-                          {pendingPlacementObjects.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm">
-                              <div className="min-w-0">
-                                <p className="truncate font-semibold text-slate-900">{item.label}</p>
-                                <p className="text-xs font-medium text-slate-500">
-                                  {SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object"} · {item.w} ft x {item.d} ft
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleSelectPlacementTarget(item.id)}
-                                className="shrink-0 rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
-                              >
-                                Place
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
+                    <NeedsPlacementTray
+                      items={pendingPlacementObjects.map((item) => ({
+                        id: item.id,
+                        label: item.label,
+                        typeLabel: SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object",
+                        widthFt: item.w,
+                        depthFt: item.d,
+                      }))}
+                      onPlace={handleSelectPlacementTarget}
+                    />
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-selected-object-card">
                       <div className="flex items-start justify-between gap-3">
