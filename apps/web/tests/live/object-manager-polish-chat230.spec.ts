@@ -50,14 +50,15 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
 
-    const workflow = page.getByTestId("draw-workflow-summary");
-    await expect(workflow).toBeVisible();
-    await expect(workflow).toContainText("Pick a tool, draw on the canvas, then edit the selected object.");
-    await expect(workflow.getByTestId("draw-workflow-tools-jump")).toContainText("Tools");
-    await expect(workflow.getByTestId("draw-workflow-selected-jump")).toContainText(/Selected|Nothing selected/);
-    await expect(workflow.getByTestId("draw-workflow-list-jump")).toContainText("Objects");
+    await expect(page.getByTestId("draw-workflow-summary")).toBeHidden();
 
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
+    await expect(page.getByTestId("draw-cad-tools-section")).toContainText("Choose a tool, then draw on the canvas");
+    await expect(page.getByTestId("cad-tool-line")).toBeVisible();
+    await expect(page.getByTestId("cad-tool-area")).toBeVisible();
+    await expect(page.getByTestId("cad-tool-box")).toBeVisible();
+    await expect(page.getByTestId("draw-cad-tools-section")).toContainText("Modify");
+    await expect(page.getByTestId("draw-cad-tools-section")).toContainText("Annotate / Organize");
     await expect(page.getByTestId("draw-selected-object-card")).toBeVisible();
     await expect(page.getByTestId("draw-selected-object-card")).toContainText("Selected Object");
     await expect(page.getByTestId("object-manager-panel")).toBeVisible();

@@ -38,6 +38,26 @@ async function showCadTools(page: Page) {
   return cadTools;
 }
 
+async function revealCadTool(page: Page, tool: string) {
+  const cadTools = await showCadTools(page);
+  let toolButton = cadTools.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+  if (!(await toolButton.isVisible().catch(() => false))) {
+    const summaries = cadTools.locator("details summary");
+    const count = await summaries.count();
+    for (let index = 0; index < count; index += 1) {
+      const summary = summaries.nth(index);
+      const parentDetails = summary.locator("xpath=ancestor::details[1]");
+      const isOpen = await parentDetails.evaluate((element) => (element as HTMLDetailsElement).open).catch(() => true);
+      if (!isOpen) await summary.click();
+      toolButton = cadTools.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+      if (await toolButton.isVisible().catch(() => false)) break;
+    }
+  }
+  await expect(toolButton).toBeVisible();
+  await toolButton.scrollIntoViewIfNeeded();
+  return toolButton;
+}
+
 async function startBlankSite(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundary=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
@@ -147,7 +167,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.42, 0.34);
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
 
-    await cadTools.getByTestId("cad-tool-measure").click();
+    await (await revealCadTool(page, "measure")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIST selected .*Custom Line.*ft total.*first angle/i);
   });
 
@@ -228,7 +248,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.48, 0.43);
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
 
-    await cadTools.getByTestId("cad-tool-measure").click();
+    await (await revealCadTool(page, "measure")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/first angle (0\.0|90\.0|180\.0|270\.0) deg/i);
   });
 
@@ -252,7 +272,7 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created manual_drawn draft_review_required geometry/);
-    await cadTools.getByTestId("cad-tool-measure").click();
+    await (await revealCadTool(page, "measure")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/80\.00 ft total.*first angle 0\.0 deg/i);
 
     await cadTools.getByTestId("cad-tool-line").click();
@@ -289,14 +309,14 @@ test.describe("Chat 221B draw drafting usability", () => {
     const lineRows = page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ });
     await lineRows.nth(0).getByTestId("object-manager-bulk-select").check();
     await lineRows.nth(1).getByTestId("object-manager-bulk-select").check();
-    await cadTools.getByTestId("cad-tool-join").click();
+    await (await revealCadTool(page, "join")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/JOIN created .* from 2 draft source objects/);
 
     const joinedRow = page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined CAD Object/ }).first();
     await expect(joinedRow).toBeVisible();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
 
-    await cadTools.getByTestId("cad-tool-split").click();
+    await (await revealCadTool(page, "split")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SPLIT restored 2 source trace objects/);
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined CAD Object/ })).toHaveCount(0);
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
@@ -328,15 +348,15 @@ test.describe("Chat 221B draw drafting usability", () => {
     await areaRow.getByTestId("object-manager-inspect").click();
 
     await showCadTools(page);
-    await cadTools.getByTestId("cad-tool-open").click();
+    await (await revealCadTool(page, "open")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/OPEN converted selected draft area into open review linework/);
 
     await showCadTools(page);
-    await cadTools.getByTestId("cad-tool-close").click();
+    await (await revealCadTool(page, "close")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/CLOSE converted selected draft linework into closed review area geometry/);
 
     await showCadTools(page);
-    await cadTools.getByTestId("cad-tool-reverse").click();
+    await (await revealCadTool(page, "reverse")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/REVERSE flipped the selected draft linework vertex order/);
   });
 
@@ -415,12 +435,12 @@ test.describe("Chat 221B draw drafting usability", () => {
     await areaRow.getByTestId("object-manager-inspect").click();
 
     await showCadTools(page);
-    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-hatch").click();
+    await (await revealCadTool(page, "hatch")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/HATCH applied as draft review fill/);
     await expect(page.getByTestId("cad-hatch-fill").first()).toBeVisible();
 
     await showCadTools(page);
-    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-hatch").click();
+    await (await revealCadTool(page, "hatch")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/HATCH removed from selected draft area/);
     await expect(page.getByTestId("cad-hatch-fill")).toHaveCount(0);
   });

@@ -950,7 +950,8 @@ export default function PreviewPanel({
   const allowEdits = previewInteraction === "edit";
   const showQuickDrawPalette =
     previewMode === "2d" &&
-    (allowEdits || (drawMode !== "select" && drawMode !== "pan")) &&
+    drawMode !== "select" &&
+    drawMode !== "pan" &&
     !selectedBuildingId;
   const showMobileDrawToolbar = showQuickDrawPalette;
   const activeDrawMode =
@@ -2438,6 +2439,7 @@ export default function PreviewPanel({
     () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...selectedObjectIds, ...cadSelectionSet])),
     [cadSelectionSet, selectedBuildingId, selectedObjectIds],
   );
+  const hasCadCommandActivity = Boolean(selectedCadObject) || drawMode !== "select" || Boolean(cadActiveCommand) || cadCommandHistory.length > 0;
   useEffect(() => {
     const currentIds = new Set(buildingPlacements.map((item) => item.id));
     const previousIds = previousPlacementIdsRef.current;
@@ -7755,7 +7757,7 @@ export default function PreviewPanel({
                 </section>
               ) : null}
               {previewMode === "2d" ? (
-                <section className={`${allowEdits ? "pointer-events-auto relative z-[230] flex" : "hidden"} min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1`} data-testid="preview-object-manager">
+                <section className={`${allowEdits && selectedObject ? "pointer-events-auto relative z-[230] flex" : "hidden"} min-w-[280px] max-w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.65)] backdrop-blur`} data-testid="preview-object-manager">
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Objects</span>
                   {selectedObject?.label ? (
                     <span className="max-w-[180px] truncate rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700">
@@ -8098,7 +8100,7 @@ export default function PreviewPanel({
                 </button>
               </section>
             </div>
-            <div className={`${allowEdits || drawMode !== "select" ? "pointer-events-auto relative z-[80] flex" : "hidden"} min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500`}>
+	            <div className={`${drawMode !== "select" ? "pointer-events-auto relative z-[80] flex" : "hidden"} min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500`}>
               <span className="rounded-md border border-slate-900 bg-white px-2 py-1 text-slate-900" data-testid="draw-active-tool">
                 {activeDrawToolLabel}
               </span>
@@ -8475,7 +8477,7 @@ export default function PreviewPanel({
               </div>
             </div>
           ) : null}
-          {previewMode === "2d" && allowEdits ? (
+	          {previewMode === "2d" && allowEdits && hasCadCommandActivity ? (
             <div className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:max-w-[calc(100%-30rem)] lg:grid-cols-[1.05fr_1fr_1fr_1.1fr]" data-testid="cad-precision-tools">
               <section className="min-w-0">
                 <div className="flex items-center justify-between gap-3">
@@ -9269,7 +9271,7 @@ export default function PreviewPanel({
 	                      </button>
 	                    );
 	                  })}
-		                  {drawMode !== "select" && drawMode !== "point" && drawMode !== "pan" ? (
+			                  {drawMode !== "point" ? (
 		                    <button
 		                      type="button"
 		                      data-testid="canvas-quick-finish"
@@ -9285,13 +9287,12 @@ export default function PreviewPanel({
 	                      Finish
 	                    </button>
 	                  ) : null}
-		                  {drawMode !== "select" ? (
-		                    <button
-		                      type="button"
-		                      data-testid="canvas-quick-cancel"
-		                      onClick={() => {
-		                        clearDraftGeometry();
-		                        setDrawMode("select");
+	                    <button
+	                      type="button"
+	                      data-testid="canvas-quick-cancel"
+	                      onClick={() => {
+	                        clearDraftGeometry();
+	                        setDrawMode("select");
 	                        setActiveSnapPoint(null);
 	                        setCadCommandStatus("Cancelled active drawing tool.");
 	                      }}
@@ -9299,7 +9300,6 @@ export default function PreviewPanel({
 	                    >
 	                      Cancel
 	                    </button>
-	                  ) : null}
 	                </div>
 	              ) : null}
 	              <div className="absolute left-1/2 top-3 z-[85] flex max-w-[calc(100%-8rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
@@ -9602,7 +9602,7 @@ export default function PreviewPanel({
                     })}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {drawMode !== "select" && drawMode !== "point" && drawMode !== "pan" ? (
+	                    {drawMode !== "point" ? (
                       <button
                         type="button"
                         onClick={finishDraftGeometry}
@@ -9617,7 +9617,6 @@ export default function PreviewPanel({
                         Finish
                       </button>
                     ) : null}
-                    {drawMode !== "select" ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -9630,7 +9629,6 @@ export default function PreviewPanel({
                       >
                         Cancel
                       </button>
-                    ) : null}
                     {siteLocked && onUnlockSite ? (
                       <button
                         type="button"

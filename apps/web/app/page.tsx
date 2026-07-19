@@ -18668,7 +18668,7 @@ function PerformanceAIDashboardView({
     setRenderedSidePanel(null);
     setSidePanelVisible(false);
     setRightRailCollapsed(true);
-    setWorkspaceChromeMinimized(false);
+    setWorkspaceChromeMinimized(true);
     setLeftSidebarOpen(true);
     const nextThread = [createWelcomeMessage()];
     chatMessagesRef.current = nextThread;
@@ -23006,10 +23006,7 @@ function PerformanceAIDashboardView({
           onOpenChat={() => handleOpenSidePanel("chat")}
           sidebarOpen={leftSidebarOpen}
           onToggleSidebar={() => {
-            setLeftSidebarOpen((value) => {
-              if (value) setWorkspaceChromeMinimized(false);
-              return !value;
-            });
+            setLeftSidebarOpen((value) => !value);
           }}
           onLogout={handleLogout}
         />
@@ -28016,7 +28013,7 @@ function PerformanceAIDashboardView({
 
                 {sidePanelForRender === "objects" ? (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-workflow-summary">
+                    <div className="hidden rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-workflow-summary">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -28068,19 +28065,16 @@ function PerformanceAIDashboardView({
                         <span className="min-w-0 flex-1">
                           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Tools</span>
                           <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
-                            Draw, modify, annotate, organize, command
+                            Choose a tool, then draw on the canvas
                           </span>
                         </span>
-                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-700">
-                          {cadToolGroups.reduce((count, group) => count + group.tools.length, 0)} tools
+                        <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Basic first
                         </span>
                       </summary>
-                      <div className="mt-4 space-y-4">
-                        {cadToolGroups.map((group) => (
-                          <div key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-2">
-                            <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                              {group.title}
-                            </p>
+                      <div className="mt-4 space-y-3">
+                        {cadToolGroups.map((group, groupIndex) => {
+                          const toolGrid = (
                             <div className="grid grid-cols-3 gap-1.5">
                               {group.tools.map((item) => (
                                 <button
@@ -28088,25 +28082,38 @@ function PerformanceAIDashboardView({
                                   type="button"
                                   onClick={() => triggerCadTool(item.tool, item.label)}
                                   data-testid={`cad-tool-${item.tool}`}
-                                  className="min-h-[58px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-left transition hover:border-slate-950 hover:bg-white"
+                                  className="min-h-[54px] rounded-xl border border-slate-200 bg-white px-2 py-2 text-center transition hover:border-slate-950 hover:bg-white"
                                 >
-                                  <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">
+                                  <span className="block text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-900">
                                     {item.label}
                                   </span>
-                                  <span className="mt-1 block text-[10px] font-medium leading-3 text-slate-500">
+                                  <span className="mt-1 block text-[10px] font-medium leading-3 text-slate-400">
                                     {item.hint}
                                   </span>
                                 </button>
                               ))}
                             </div>
-                          </div>
-                        ))}
-                        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
-                          Finish and Cancel appear on the canvas while drawing. Advanced desktop CAD features such as native DWG editing, xrefs, UCS, and constraint solving stay outside this web canvas.
-                        </p>
+                          );
+                          if (groupIndex === 0) {
+                            return (
+                              <div key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                                {toolGrid}
+                              </div>
+                            );
+                          }
+                          return (
+                            <details key={group.title} className="rounded-xl border border-slate-200 bg-white p-2">
+                              <summary className="flex cursor-pointer items-center justify-between px-1 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                {group.title}
+                                <span>{group.tools.length}</span>
+                              </summary>
+                              <div className="mt-2">{toolGrid}</div>
+                            </details>
+                          );
+                        })}
                       </div>
                     </details>
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="needs-placement-tray">
+                    <div className={`${pendingPlacementObjects.length ? "" : "hidden"} rounded-2xl border border-amber-200 bg-amber-50 p-4`} data-testid="needs-placement-tray">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Needs placement</p>

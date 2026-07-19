@@ -37,6 +37,25 @@ async function expectSectionToggles(page: Page, testId: string, headerName: RegE
   await expect(section).toHaveAttribute("open", "");
 }
 
+async function revealCadTool(page: Page, tool: string) {
+  const cadTools = page.getByTestId("draw-cad-tools-section");
+  let toolButton = cadTools.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+  if (!(await toolButton.isVisible().catch(() => false))) {
+    const summaries = cadTools.locator("details summary");
+    const count = await summaries.count();
+    for (let index = 0; index < count; index += 1) {
+      const summary = summaries.nth(index);
+      const details = summary.locator("xpath=ancestor::details[1]");
+      const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open).catch(() => true);
+      if (!isOpen) await summary.click();
+      toolButton = cadTools.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+      if (await toolButton.isVisible().catch(() => false)) break;
+    }
+  }
+  await expect(toolButton).toBeVisible();
+  return toolButton;
+}
+
 test.describe("real website workflow clarity", () => {
   test("uses one visible workflow home per major action and stays responsive", async ({ page }) => {
     await openDemoWorkspace(page);
@@ -68,21 +87,21 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByTestId("setup-detect-inside-site")).toHaveAttribute("open", "");
 
     const objectOpenMs = await timedOpen(page, /^Draw$/, /Draw & Object Manager|CAD Tools/);
-    await expect(page.getByTestId("draw-cad-tools-section")).toContainText(/Draw, modify, annotate, organize, command/);
+    await expect(page.getByTestId("draw-cad-tools-section")).toContainText(/Choose a tool, then draw on the canvas/);
     await expect(page.getByTestId("cad-tool-line")).toBeVisible();
     await page.getByTestId("cad-tool-line").click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
-    await page.getByTestId("cad-tool-snap").click();
+    await (await revealCadTool(page, "snap")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SNAP (on|off)/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
-    await page.getByTestId("cad-tool-offset").click();
+    await (await revealCadTool(page, "offset")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/OFFSET/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
-    await page.getByTestId("cad-tool-dimension").click();
+    await (await revealCadTool(page, "dimension")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIM/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
-    await page.getByTestId("cad-tool-command").click();
+    await (await revealCadTool(page, "command")).click();
     await expect(page.getByLabel("CAD command input")).toHaveValue(/LINE/);
     const generateOpenMs = await timedOpen(page, "Generate", /Generate Systems/);
     const deliverOpenMs = await timedOpen(page, /^Deliver$/, /Deliver|Plan Sheets|Files/);

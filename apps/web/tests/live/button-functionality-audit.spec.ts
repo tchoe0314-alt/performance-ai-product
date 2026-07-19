@@ -21,7 +21,20 @@ async function openDrawTools(page: Page) {
 
 async function clickCadTool(page: Page, tool: string, expected: RegExp) {
   await openDrawTools(page);
-  const toolButton = page.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+  const cadTools = page.getByTestId("draw-cad-tools-section");
+  let toolButton = cadTools.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+  if (!(await toolButton.isVisible().catch(() => false))) {
+    const summaries = cadTools.locator("details summary");
+    const count = await summaries.count();
+    for (let index = 0; index < count; index += 1) {
+      const summary = summaries.nth(index);
+      const parentDetails = summary.locator("xpath=ancestor::details[1]");
+      const isOpen = await parentDetails.evaluate((element) => (element as HTMLDetailsElement).open).catch(() => true);
+      if (!isOpen) await summary.click();
+      toolButton = cadTools.getByTestId(`cad-tool-${tool}`).filter({ visible: true }).first();
+      if (await toolButton.isVisible().catch(() => false)) break;
+    }
+  }
   await toolButton.scrollIntoViewIfNeeded();
   await expect(toolButton).toBeEnabled();
   await toolButton.click();
