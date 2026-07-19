@@ -2546,7 +2546,6 @@ import { DashboardGuidancePanel } from "./components/DashboardGuidancePanel";
 import { DashboardIssueReportPanel } from "./components/DashboardIssueReportPanel";
 import { DashboardProgressTimeline } from "./components/DashboardProgressTimeline";
 import { DashboardProjectSummary } from "./components/DashboardProjectSummary";
-import { DashboardQuickActions } from "./components/DashboardQuickActions";
 import { DashboardRunReviewPanel } from "./components/DashboardRunReviewPanel";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DeliverPanel } from "./components/DeliverPanel";
@@ -23303,7 +23302,6 @@ function PerformanceAIDashboardView({
                       formatMetric={formatMetric}
                       statusLabelForQuantityReview={statusLabelForQuantityReview}
                     />
-                    <DashboardQuickActions onOpenPanel={handleOpenSidePanel} />
                   </div>
                 ) : null}
 

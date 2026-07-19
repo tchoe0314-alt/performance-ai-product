@@ -9,22 +9,15 @@ async function openDashboardPanel(page: Page) {
   return panel;
 }
 
-test("Dashboard status panels remain reachable and keep quick links", async ({ page }) => {
-  let panel = await openDashboardPanel(page);
+test("Dashboard status panels remain reachable without duplicate quick actions", async ({ page }) => {
+  const panel = await openDashboardPanel(page);
 
   await expect(panel).toContainText("Data");
   await expect(panel).toContainText("Roadway");
   await expect(panel).toContainText("Grading");
   await expect(panel).toContainText("Takeoff snapshot");
 
-  await panel.getByRole("button", { name: "Objects" }).click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Object Manager|Draw Canvas/i);
-
-  panel = await openDashboardPanel(page);
-  await panel.getByRole("button", { name: "Review" }).click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Review|Issues|Assumptions/i);
-
-  panel = await openDashboardPanel(page);
-  await panel.getByRole("button", { name: "Deliver" }).click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Deliver|Review Package|Export/i);
+  await expect(panel.getByRole("button", { name: "Objects" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Review" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Deliver" })).toHaveCount(0);
 });
