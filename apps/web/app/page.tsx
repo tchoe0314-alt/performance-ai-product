@@ -2084,6 +2084,145 @@ const createDemoPlacements = (): BuildingPlacement[] => [
   },
 ];
 
+const createDenseCommercialConceptPlacements = (lot: { w: number; h: number }): BuildingPlacement[] => {
+  const now = Date.now();
+  const siteW = Math.max(lot.w || 1000, 200);
+  const siteH = Math.max(lot.h || 1000, 200);
+  const place = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    x: number,
+    y: number,
+    w: number,
+    d: number,
+    extra: Partial<BuildingPlacement> = {},
+  ): BuildingPlacement => ({
+    id: `dense-${id}-${now}`,
+    label,
+    type,
+    w,
+    d,
+    x: Math.max(16, Math.min(siteW - w - 16, x)),
+    y: Math.max(16, Math.min(siteH - d - 16, y)),
+    rotation: 0,
+    locked: false,
+    placed: true,
+    source: "user_confirmed",
+    generated: false,
+    capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
+    systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+    meta: {
+      dense_concept_generated: true,
+      draft_review_required: true,
+      construction_release_allowed: false,
+      source_confidence: "user_confirmed_review_geometry",
+      ...(extra.meta ?? {}),
+    },
+    ...extra,
+  });
+  const line = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    geometry: Array<[number, number]>,
+    meta: Record<string, unknown> = {},
+  ) => {
+    const bounds = geometry.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y),
+      }),
+      { minX: siteW, minY: siteH, maxX: 0, maxY: 0 },
+    );
+    return place(
+      id,
+      label,
+      type,
+      bounds.minX,
+      bounds.minY,
+      Math.max(10, bounds.maxX - bounds.minX),
+      Math.max(10, bounds.maxY - bounds.minY),
+      {
+        geometryType: "polyline",
+        geometry,
+        capabilities: { movable: true, resizable: false, rotatable: false, deletable: true },
+        meta,
+      },
+    );
+  };
+  const buildingW = Math.min(190, siteW * 0.22);
+  const buildingD = Math.min(82, siteH * 0.09);
+  const parkingW = Math.min(300, siteW * 0.32);
+  const parkingD = Math.min(125, siteH * 0.13);
+  return [
+    place("office-main", "Office Building - 28,000 sf", "office_building", siteW * 0.35, siteH * 0.18, buildingW, buildingD, {
+      h: 34,
+      meta: { requested_area_sf: 28000, dense_concept_generated: true },
+    }),
+    place("office-flex", "Future Flex / Service Pad", "building", siteW * 0.12, siteH * 0.18, buildingW * 0.75, buildingD * 0.72, {
+      h: 24,
+      meta: { dense_concept_generated: true },
+    }),
+    place("parking-north", "Parking Field - 84 stalls", "parking", siteW * 0.30, siteH * 0.36, parkingW, parkingD, {
+      stallCount: 84,
+      meta: { requested_stalls: 84, parkingCapacity: 96, parkingModuleCols: 12, parkingModuleRows: 4, dense_concept_generated: true },
+    }),
+    place("parking-south", "Parking Field - 56 stalls", "parking", siteW * 0.18, siteH * 0.66, parkingW * 0.86, parkingD * 0.92, {
+      stallCount: 56,
+      meta: { requested_stalls: 56, parkingCapacity: 64, parkingModuleCols: 8, parkingModuleRows: 4, dense_concept_generated: true },
+    }),
+    place("basin", "Detention Basin A", "basin", siteW * 0.68, siteH * 0.66, siteW * 0.18, siteH * 0.12, {
+      meta: { normal_pool_elevation_ft: 1012.4, bottom_elevation_ft: 1007.2, dense_concept_generated: true },
+    }),
+    line("loop-road", "Internal Loop Drive", "road", [
+      [siteW * 0.14, siteH * 0.54],
+      [siteW * 0.28, siteH * 0.42],
+      [siteW * 0.64, siteH * 0.42],
+      [siteW * 0.78, siteH * 0.56],
+      [siteW * 0.66, siteH * 0.78],
+      [siteW * 0.20, siteH * 0.78],
+      [siteW * 0.14, siteH * 0.54],
+    ], { corridor_width_ft: 28, dense_concept_generated: true }),
+    line("driveway", "Driveway Connection", "driveway", [
+      [siteW * 0.03, siteH * 0.54],
+      [siteW * 0.14, siteH * 0.54],
+      [siteW * 0.28, siteH * 0.42],
+    ], { corridor_width_ft: 30, dense_concept_generated: true }),
+    line("ada-route", "Sidewalk / ADA Route", "sidewalk", [
+      [siteW * 0.18, siteH * 0.36],
+      [siteW * 0.36, siteH * 0.36],
+      [siteW * 0.48, siteH * 0.26],
+      [siteW * 0.58, siteH * 0.36],
+      [siteW * 0.70, siteH * 0.66],
+    ], { routeKind: "ada_review_route", dense_concept_generated: true }),
+    line("water-main", "Public Water Line", "utility_corridor", [
+      [siteW * 0.08, siteH * 0.29],
+      [siteW * 0.46, siteH * 0.29],
+      [siteW * 0.82, siteH * 0.42],
+    ], { network: "water", dense_concept_generated: true }),
+    line("sanitary-main", "Public Sanitary Line", "utility_corridor", [
+      [siteW * 0.10, siteH * 0.84],
+      [siteW * 0.54, siteH * 0.84],
+      [siteW * 0.84, siteH * 0.74],
+    ], { network: "sanitary", dense_concept_generated: true }),
+    line("storm-main", "Storm Sewer", "utility_corridor", [
+      [siteW * 0.44, siteH * 0.47],
+      [siteW * 0.70, siteH * 0.56],
+      [siteW * 0.76, siteH * 0.70],
+      [siteW * 0.78, siteH * 0.72],
+    ], { network: "storm", dense_concept_generated: true }),
+    place("inlet-a", "Storm Inlet S-1", "inlet", siteW * 0.46, siteH * 0.46, 12, 12, { meta: { dense_concept_generated: true } }),
+    place("inlet-b", "Storm Inlet S-2", "inlet", siteW * 0.66, siteH * 0.57, 12, 12, { meta: { dense_concept_generated: true } }),
+    place("outfall", "Outfall OF-1", "outfall", siteW * 0.78, siteH * 0.72, 12, 12, { meta: { dense_concept_generated: true } }),
+    place("hydrant-a", "Hydrant W-1", "hydrant", siteW * 0.24, siteH * 0.31, 10, 10, { meta: { dense_concept_generated: true } }),
+    place("hydrant-b", "Hydrant W-2", "hydrant", siteW * 0.70, siteH * 0.43, 10, 10, { meta: { dense_concept_generated: true } }),
+    place("manhole-a", "Sanitary Manhole SS-1", "manhole", siteW * 0.52, siteH * 0.82, 12, 12, { meta: { network: "sanitary", dense_concept_generated: true } }),
+  ];
+};
+
 const createDefaultPlanSheet = (index = 0, projectName = "Untitled Project"): PlanSheet => {
   const sheetNumber = `R-${String(index + 1).padStart(2, "0")}`;
   return {
@@ -12922,9 +13061,77 @@ function PerformanceAIDashboardView({
     return { address, width, height };
   };
 
+  const handleCreateDenseCommercialConcept = useCallback((message: string) => {
+    appendChatMessage("user", message);
+    if (!hasSiteBoundary()) {
+      appendChatMessage(
+        "assistant",
+        "I can create a dense review concept, but I need a site first. Type an address and size, or draw and lock the site boundary, then ask for the dense plan again.",
+        "status",
+      );
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel("site_existing");
+      setRenderedSidePanel("site_existing");
+      setSidePanelVisible(true);
+      setRightRailCollapsed(false);
+      return true;
+    }
+    clearGeneratedPreview();
+    const lot = resolveLotBounds();
+    const conceptObjects = createDenseCommercialConceptPlacements(lot);
+    setBuildingPlacements((prev) => {
+      const keep = prev.filter((item) => item.type === "site" || !item.meta?.dense_concept_generated);
+      return [...keep, ...conceptObjects];
+    });
+    markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+    setActivePlacementId(null);
+    setPlacementModeEnabled(false);
+    setPreviewMode("2d");
+    setPreviewQuality("high");
+    setPreviewInteraction("static");
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
+    setFitToSiteRequest((value) => value + 1);
+    recordRecentChange({
+      type: "object_added",
+      label: "Dense concept plan created",
+      detail: "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed.",
+    });
+    updateProjectStatus({
+      state: "needs review",
+      area: "setup",
+      title: "Dense review concept created",
+      detail: "Placed a coherent editable concept with building, parking, drainage, utilities, access, and sidewalk objects.",
+      nextAction: "Edit the objects directly, then run Generate when the layout looks right.",
+    });
+    appendChatMessage(
+      "assistant",
+      "Created a dense editable review concept: office building, two parking fields, detention basin, loop drive, driveway, sidewalk/ADA route, public water, public sanitary, storm sewer, inlets, outfall, hydrants, and sanitary manhole. Everything is draft review geometry and can be edited before Generate.",
+      "status",
+    );
+    return true;
+  }, [
+    appendChatMessage,
+    clearGeneratedPreview,
+    hasSiteBoundary,
+    markSystemsStale,
+    recordRecentChange,
+    resolveLotBounds,
+    updateProjectStatus,
+  ]);
+
   const tryHandleSiteProgramCommand = (message: string): boolean => {
     const lower = message.toLowerCase();
     if (!/\b(add|create|place|make|include|put)\b/.test(lower)) return false;
+    if (
+      /\b(dense|full|complete|professional|civil|utility design|site plan|like the image|recreate)\b/.test(lower) &&
+      /\b(office|building|parking|basin|detention|drainage|storm|water|sanitary|sidewalk|driveway|utilities)\b/.test(lower)
+    ) {
+      return handleCreateDenseCommercialConcept(message);
+    }
     const lot = resolveLotBounds();
     const requested: Array<() => void> = [];
     const labels: string[] = [];
