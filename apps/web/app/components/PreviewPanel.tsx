@@ -42,6 +42,7 @@ import {
 import type { CadDimensionMode, CadSymbolKind, CadToolRequest, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
+import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
 import {
   firstMetaNumber,
@@ -9226,136 +9227,54 @@ export default function PreviewPanel({
                 </div>
               ) : null}
               {showMobileDrawToolbar ? (
-                <div className="absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 sm:bottom-2 md:hidden">
-                  <div className="grid grid-cols-4 gap-1.5 pb-1 min-[420px]:grid-cols-7">
-                    {drawModeButtons.map((item) => {
-                      const Icon = item.icon;
-                      const active = drawMode === item.mode;
-                      const disabled = Boolean(item.disabled);
-                      const mobileLabel =
-                        item.mode === "site"
-                          ? "Site"
-                          : item.mode === "polyline"
-                            ? "Line"
-                            : item.mode === "polygon"
-                              ? "Area"
-                              : item.mode === "rect"
-                                ? "Box"
-                                : item.mode === "point"
-                                  ? "Point"
-                                  : item.label;
-                      return (
-                        <button
-                          key={`mobile-${item.mode}`}
-                          type="button"
-                          data-testid={compactViewport && item.mode === "site" ? "draw-site-boundary-toolbar-mobile" : undefined}
-                          title={disabled ? item.disabledLabel ?? item.label : item.label}
-                          aria-label={item.mode === "site" ? "Site boundary drawing tool" : item.label}
-                          data-blocked={disabled ? "true" : undefined}
-                          onClick={() => {
-                            activateDrawTool(item.mode, disabled ? item.disabledLabel ?? `${item.label} blocked.` : undefined);
-                            if (!disabled && item.mode !== "select") {
-                              window.requestAnimationFrame(() => {
-                                previewRef.current?.scrollIntoView({
-                                  behavior: "auto",
-                                  block: "center",
-                                  inline: "nearest",
-                                });
-                              });
-                            }
-                          }}
-                          className={`relative z-[90] inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg border px-1.5 py-2 text-[11px] font-semibold transition ${
-                            active
-                              ? "border-slate-900 bg-slate-950 text-white"
-                              : disabled
-                                ? "border-amber-200 bg-amber-50 text-amber-700"
-                                : "border-slate-200 bg-white text-slate-700"
-                          }`}
-                        >
-                          <Icon className="h-4 w-4" />
-                          <span className="truncate">{mobileLabel}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-	                    {drawMode !== "select" && drawMode !== "point" ? (
-                      <button
-                        type="button"
-                        onClick={finishDraftGeometry}
-                        disabled={!canFinishDraftGeometry}
-                        title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-                        className={`relative z-[90] min-h-10 flex-1 rounded-lg border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] ${
-                          !canFinishDraftGeometry
-                            ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
-                            : "border-slate-900 bg-slate-950 text-white"
-                        }`}
-                      >
-                        Finish
-                      </button>
-                    ) : null}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          clearDraftGeometry();
-                          setDrawMode("select");
-                          setActiveSnapPoint(null);
-                          setCadCommandStatus("Cancelled active drawing tool.");
-                        }}
-                        className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
-                      >
-                        Cancel
-                      </button>
-                    {siteLocked && onUnlockSite ? (
-                      <button
-                        type="button"
-                        title="Unlock the site boundary for editing"
-                        aria-label="Change Site Boundary"
-                        onClick={() => {
-                          onUnlockSite();
-                          clearDraftGeometry();
-                          setDrawMode("select");
-                          onSetPreviewInteraction("edit");
-                        }}
-                        className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
-                      >
-                        Change Site
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={resetCanvasView}
-                      className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
-                    >
-                      Reset
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!selectedDeletableObject}
-                      onClick={() => {
-                        if (!selectedDeletableObject) return;
-                        const targetObject = buildingPlacements.find((item) => item.id === selectedDeletableObject.id);
-                        if (targetObject) {
-                          setLastRectEdit({
-                            id: targetObject.id,
-                            snapshot: { ...targetObject },
-                            action: "delete",
-                            ts: Date.now(),
-                          });
-                        }
-                        onRemoveBuilding(selectedDeletableObject.id);
-                      }}
-                      className="min-h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  {finishDraftBlockedReason ? (
-                    <p className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
-                      {finishDraftBlockedReason}
-                    </p>
-                  ) : null}
-                </div>
+                <PreviewMobileDrawToolbar
+                  drawModeButtons={drawModeButtons}
+                  drawMode={drawMode}
+                  compactViewport={compactViewport}
+                  canFinishDraftGeometry={canFinishDraftGeometry}
+                  finishDraftBlockedReason={finishDraftBlockedReason}
+                  selectedDeletable={Boolean(selectedDeletableObject)}
+                  siteLocked={Boolean(siteLocked)}
+                  onActivateTool={(mode, blockedMessage) => {
+                    activateDrawTool(mode, blockedMessage);
+                    if (!blockedMessage && mode !== "select") {
+                      window.requestAnimationFrame(() => {
+                        previewRef.current?.scrollIntoView({
+                          behavior: "auto",
+                          block: "center",
+                          inline: "nearest",
+                        });
+                      });
+                    }
+                  }}
+                  onFinish={finishDraftGeometry}
+                  onCancel={() => {
+                    clearDraftGeometry();
+                    setDrawMode("select");
+                    setActiveSnapPoint(null);
+                    setCadCommandStatus("Cancelled active drawing tool.");
+                  }}
+                  onChangeSite={onUnlockSite ? () => {
+                    onUnlockSite();
+                    clearDraftGeometry();
+                    setDrawMode("select");
+                    onSetPreviewInteraction("edit");
+                  } : undefined}
+                  onResetView={resetCanvasView}
+                  onDeleteSelected={() => {
+                    if (!selectedDeletableObject) return;
+                    const targetObject = buildingPlacements.find((item) => item.id === selectedDeletableObject.id);
+                    if (targetObject) {
+                      setLastRectEdit({
+                        id: targetObject.id,
+                        snapshot: { ...targetObject },
+                        action: "delete",
+                        ts: Date.now(),
+                      });
+                    }
+                    onRemoveBuilding(selectedDeletableObject.id);
+                  }}
+                />
               ) : null}
               <div
                 className="relative flex h-full w-full items-center justify-center overflow-hidden"
