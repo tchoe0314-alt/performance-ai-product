@@ -2557,8 +2557,8 @@ import {
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
-import CivilReviewSheet from "./components/CivilReviewSheet";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
+import { DeliverPanel } from "./components/DeliverPanel";
 import { DesignAlternativesPanel } from "./components/DesignAlternativesPanel";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
 import { DrawCadToolsPanel, type DrawCadToolGroup } from "./components/DrawCadToolsPanel";
@@ -2576,7 +2576,6 @@ import { ObjectManagerMeasurementsPanel } from "./components/ObjectManagerMeasur
 import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
 import { ObjectManagerRow } from "./components/ObjectManagerRow";
 import PinnedCommandBar from "./components/PinnedCommandBar";
-import PlanSheetEditor from "./components/PlanSheetEditor";
 import PreviewPanel from "./components/PreviewPanel";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
 import { QuantitiesPanel } from "./components/QuantitiesPanel";
@@ -2593,7 +2592,7 @@ import { UtilityCatalogPanel } from "./components/UtilityCatalogPanel";
 import { WorkspaceSettingsPanel } from "./components/WorkspaceSettingsPanel";
 import WorkspaceRightPanel from "./components/WorkspaceRightPanel";
 import WorkspaceToasts, { type WorkspaceToast } from "./components/WorkspaceToasts";
-import { DisclosurePanel, PanelCard } from "./components/ui";
+import { DisclosurePanel } from "./components/ui";
 import type {
   PlanSheet,
   PlanSheetAnnotation,
@@ -27630,234 +27629,66 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "deliverables" ? (
-                  <div className="space-y-3" data-testid="clean-deliver-panel">
-                    <PanelCard testId="deliver-review-package-flow">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Deliver</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-950">Package your current project for review.</p>
-                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
-                            Review-only and engineer-review-required.
-                          </p>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-	                          reviewPackageFlowSummary?.blocked ? "bg-amber-50 text-amber-700" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-	                        }`}>
-	                          {reviewPackageFlowSummary?.blocked ? "Needs input" : reviewPackageFlowSummary ? "Made" : "Review"}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        aria-label="Make Review Package"
-                        onClick={handleMakeReviewPackage}
-                        className="mt-4 flex w-full items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-3 py-3 text-center text-sm font-semibold text-white shadow-[0_14px_30px_-24px_rgba(37,99,235,0.85)] transition hover:bg-blue-700"
-                      >
-                        Make a review package
-                      </button>
-                      {reviewPackageFlowSummary ? (
-                        <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${reviewPackageFlowSummary.blocked ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="deliver-review-package-summary">
-                          <p className="font-semibold uppercase tracking-[0.12em]">{reviewPackageFlowSummary.blocked ? "Needs input" : "Package made"}</p>
-                          <p className="mt-1">Created: {reviewPackageFlowSummary.outputs_created.join(", ") || "none"}</p>
-                          <p className="mt-1">Missing: {reviewPackageFlowSummary.missing.slice(0, 4).join("; ") || "none recorded"}</p>
-                          <p className="mt-1 font-semibold">Next: {reviewPackageFlowSummary.next_action}</p>
-                        </div>
-                      ) : null}
-                    </PanelCard>
-
-                    <PanelCard testId="deliver-package-contents">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Package Contents</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
-                          <p className="font-semibold uppercase tracking-[0.12em] text-emerald-700">Included</p>
-                          <p className="mt-1 text-lg font-semibold text-emerald-900">
-                            {[planPreviewUrl, backendResult, placedObjectCount > 0, sidebarTrustScore].filter(Boolean).length}
-                          </p>
-                          <p className="mt-1 text-[11px] font-medium text-emerald-700">items ready for review</p>
-                        </div>
-                        <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
-                          <p className="font-semibold uppercase tracking-[0.12em] text-amber-700">Missing</p>
-                          <p className="mt-1 text-lg font-semibold text-amber-900">
-                            {[
-                              !planPreviewUrl,
-                              !backendResult,
-                              !placedObjectCount,
-                              ...getPlanSheetBlockers().slice(0, 3).map(Boolean),
-                            ].filter(Boolean).length}
-                          </p>
-                          <p className="mt-1 text-[11px] font-medium text-amber-700">items to review or add</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        {[
-                          ["Plan preview", planPreviewUrl ? "Included" : "Missing"],
-                          ["Generated result", backendResult ? "Included" : "Missing"],
-                          ["Objects", placedObjectCount ? `${placedObjectCount} placed` : "Missing"],
-                          ["Source notes", sidebarTrustScore || "Review"],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
-                            <p className="mt-1 font-semibold text-slate-800">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </PanelCard>
-
-                    <PanelCard testId="deliver-export-actions">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Exports</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        <button
-                          type="button"
-                          onClick={handlePlanSheetExportPdf}
-                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                          Review PDF
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Export DXF"
-                          onClick={handleExportDxf}
-                          title={getExportBlockReason() || "Download DXF review export"}
-                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                          DXF
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleExportReport}
-                          title={getExportBlockReason() || "Download review report"}
-                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                          Report
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSidePanel("quantities")}
-                          className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                          Quantities
-                        </button>
-                      </div>
-                      {getExportBlockReason() ? (
-                        <p data-testid="deliver-export-blocker" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                          Export needs input: {getExportBlockReason()}
-                        </p>
-                      ) : null}
-                      {exportActionMessage ? (
-                        <p data-testid="deliver-export-status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                          {exportActionMessage}
-                        </p>
-                      ) : null}
-                    </PanelCard>
-
-                    <DisclosurePanel
-                      testId="deliver-source-notes"
-                      title="Source notes"
-                      subtitle="Data sources and missing items included in this package"
-                      status={autoSiteContextFlowSummary.candidateCount}
-                    >
-                        <div className="space-y-2">
-                          {(getPlanSheetBlockers().length ? getPlanSheetBlockers().slice(0, 4) : ["No sheet-specific missing items recorded."]).map((item) => (
-                            <p key={item} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                              {item}
-                            </p>
-                          ))}
-                        </div>
-                    </DisclosurePanel>
-
-                    <DisclosurePanel
-                      testId="deliver-sheet-details"
-                      title="Review Sheet Details"
-                      subtitle="Sheets, labels, notes, viewports, and PDF/JSON export"
-                      status="Advanced"
-                      bodyClassName="px-3 py-3"
-                    >
-                        <PlanSheetEditor
-                          sheetSet={{ ...planSheetSet, blockers: getPlanSheetBlockers() }}
-                          onUpdateTitleBlock={handlePlanSheetTitleBlockUpdate}
-                          onChangeScale={handlePlanSheetScaleChange}
-                          onUpdateViewport={handlePlanSheetViewportUpdate}
-                          onDeleteViewport={handlePlanSheetViewportDelete}
-                          onAddNote={handlePlanSheetAddNote}
-                          onAddLabel={() => {
-                            addPlanSheetAnnotation("label", "New sheet label");
-                            setStatusMessage("Added a sheet label.");
-                          }}
-                          onAddCallout={() => {
-                            addPlanSheetAnnotation("callout", "Review callout");
-                            setStatusMessage("Added a sheet callout.");
-                          }}
-                          onAddDimension={() => {
-                            addPlanSheetAnnotation("dimension", "Dimension reference");
-                            setStatusMessage("Added a dimension note.");
-                          }}
-                          onAddViewport={handlePlanSheetAddViewport}
-                          onToggleViewportLayer={handlePlanSheetViewportLayerToggle}
-                          onToggleViewportScaleLock={handlePlanSheetViewportScaleLockToggle}
-                          onToggleGrayscale={handlePlanSheetGrayscaleToggle}
-                          onAddRevision={() => handlePlanSheetAddRevision()}
-                          onAddTable={handlePlanSheetAddTable}
-                          onAddDetailBlock={handlePlanSheetAddDetailBlock}
-                          onAddReference={handlePlanSheetAddReference}
-                          onSelectSheet={(sheetId) => {
-                            setPlanSheetSet((current) => ({
-                              ...current,
-                              activeSheetId: sheetId,
-                              updatedAt: new Date().toISOString(),
-                            }));
-                          }}
-                          onCreateSheet={handleCreateReviewSheet}
-                          onExportJson={handlePlanSheetExportJson}
-                          onExportPdf={handlePlanSheetExportPdf}
-                        />
-                    </DisclosurePanel>
-
-                    <DisclosurePanel
-                      defaultOpen
-                      testId="deliver-review-sheet-preview"
-                      title="Review sheet preview"
-                      subtitle="Open only when you want sheet layout details"
-                      status="Preview"
-                    >
-                        <CivilReviewSheet
-                          projectName={siteName || currentProject?.name || "Untitled Project"}
-                          addressLabel={appliedAddressLabel || siteAddress.trim() || "No address applied"}
-                          lotWidth={parsePositiveNumber(lotWidth) ?? lotBounds.w ?? 0}
-                          lotHeight={parsePositiveNumber(lotHeight) ?? lotBounds.h ?? 0}
-                          placements={buildingPlacements}
-                          sourceCandidateCount={autoSiteContextFlowSummary.candidateCount}
-                          missingSources={autoSiteContextFlowSummary.missingLabels}
-                          generatedAt={planSheetSet.updatedAt}
-                        />
-                    </DisclosurePanel>
-
-                    <DisclosurePanel
-                      testId="deliver-audit-details"
-                      title="Audit / Review Details"
-                      subtitle={sidebarReleaseStatus === "blocked" ? "Review package needs input" : "Review package"}
-                      status={sidebarReleaseStatus === "blocked" ? "Needs input" : "Review"}
-                      statusClassName="bg-amber-50 text-amber-700"
-                    >
-                        <div className="space-y-2">
-                          {reviewGateItems.map((item) => (
-                            <div key={item.label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                              <span className="font-semibold text-slate-700">{item.label}</span>
-                              <span className={`text-right text-xs font-semibold uppercase tracking-[0.12em] ${item.status === "block" ? "text-red-600" : "text-amber-600"}`}>
-                                {item.value}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        {topSmartFix ? (
-                          <button
-                            type="button"
-                            onClick={() => handleSmartFixAction(topSmartFix)}
-                            className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
-                          >
-                            {topSmartFix.can_civora_fix ? "Fix Current Blocker" : "Show Needed Input"}
-                          </button>
-                        ) : null}
-                    </DisclosurePanel>
-                  </div>
+                  <DeliverPanel
+                    reviewPackageFlowSummary={reviewPackageFlowSummary}
+                    planPreviewUrl={planPreviewUrl}
+                    hasBackendResult={Boolean(backendResult)}
+                    placedObjectCount={placedObjectCount}
+                    sidebarTrustScore={sidebarTrustScore}
+                    exportActionMessage={exportActionMessage}
+                    exportBlockReason={getExportBlockReason() || ""}
+                    planSheetSet={planSheetSet}
+                    planSheetBlockers={getPlanSheetBlockers()}
+                    projectName={siteName || currentProject?.name || "Untitled Project"}
+                    addressLabel={appliedAddressLabel || siteAddress.trim() || "No address applied"}
+                    lotWidth={parsePositiveNumber(lotWidth) ?? lotBounds.w ?? 0}
+                    lotHeight={parsePositiveNumber(lotHeight) ?? lotBounds.h ?? 0}
+                    placements={buildingPlacements}
+                    autoSiteContextFlowSummary={autoSiteContextFlowSummary}
+                    sidebarReleaseStatus={sidebarReleaseStatus}
+                    reviewGateItems={reviewGateItems}
+                    topSmartFix={topSmartFix}
+                    onMakeReviewPackage={handleMakeReviewPackage}
+                    onPlanSheetExportPdf={handlePlanSheetExportPdf}
+                    onExportDxf={handleExportDxf}
+                    onExportReport={handleExportReport}
+                    onOpenQuantities={() => handleOpenSidePanel("quantities")}
+                    onPlanSheetTitleBlockUpdate={handlePlanSheetTitleBlockUpdate}
+                    onPlanSheetScaleChange={handlePlanSheetScaleChange}
+                    onPlanSheetViewportUpdate={handlePlanSheetViewportUpdate}
+                    onPlanSheetViewportDelete={handlePlanSheetViewportDelete}
+                    onPlanSheetAddNote={handlePlanSheetAddNote}
+                    onPlanSheetAddLabel={() => {
+                      addPlanSheetAnnotation("label", "New sheet label");
+                      setStatusMessage("Added a sheet label.");
+                    }}
+                    onPlanSheetAddCallout={() => {
+                      addPlanSheetAnnotation("callout", "Review callout");
+                      setStatusMessage("Added a sheet callout.");
+                    }}
+                    onPlanSheetAddDimension={() => {
+                      addPlanSheetAnnotation("dimension", "Dimension reference");
+                      setStatusMessage("Added a dimension note.");
+                    }}
+                    onPlanSheetAddViewport={handlePlanSheetAddViewport}
+                    onPlanSheetViewportLayerToggle={handlePlanSheetViewportLayerToggle}
+                    onPlanSheetViewportScaleLockToggle={handlePlanSheetViewportScaleLockToggle}
+                    onPlanSheetGrayscaleToggle={handlePlanSheetGrayscaleToggle}
+                    onPlanSheetAddRevision={() => handlePlanSheetAddRevision()}
+                    onPlanSheetAddTable={handlePlanSheetAddTable}
+                    onPlanSheetAddDetailBlock={handlePlanSheetAddDetailBlock}
+                    onPlanSheetAddReference={handlePlanSheetAddReference}
+                    onPlanSheetSelectSheet={(sheetId) => {
+                      setPlanSheetSet((current) => ({
+                        ...current,
+                        activeSheetId: sheetId,
+                        updatedAt: new Date().toISOString(),
+                      }));
+                    }}
+                    onCreateReviewSheet={handleCreateReviewSheet}
+                    onPlanSheetExportJson={handlePlanSheetExportJson}
+                    onSmartFixAction={handleSmartFixAction}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" ? (
