@@ -112,9 +112,12 @@ import {
 import { buildDashboardContextualToolbarTools } from "./utils/dashboardContextualToolbar";
 import {
   buildDashboardSystemReadinessRows,
-  getDashboardSystemBlockers,
   type DashboardSystemBlockerContext,
 } from "./utils/dashboardSystemReadiness";
+import {
+  buildDashboardCivil3DWorkflowBlockers,
+  buildDashboardWorkflowActionHints,
+} from "./utils/dashboardWorkflowHints";
 import {
   buildCustomGeometryMeta,
   clampValue,
@@ -15731,50 +15734,43 @@ function PerformanceAIDashboardView({
     siteTooLargeForGrading,
     utilities,
   ]);
-  const getSystemBlockers = useCallback(
-    (target: Parameters<typeof getDashboardSystemBlockers>[0]) =>
-      getDashboardSystemBlockers(target, systemBlockerContext),
-    [systemBlockerContext],
-  );
   const systemReadinessRows = useMemo(
     () => buildDashboardSystemReadinessRows({ systemStatuses, blockerContext: systemBlockerContext }),
     [systemBlockerContext, systemStatuses],
   );
-  const civil3DWorkflowBlockers = useMemo(() => {
-    const blockers = [
-      ...getSystemBlockers("roadway"),
-      ...getSystemBlockers("grading"),
-      ...previewBlockedReasons,
-      ...issues
-        .filter((issue) => /corridor|road|profile|section|surface|grading|cut|fill/i.test(`${issue.code ?? ""} ${issue.message}`))
-        .map((issue) => issue.message),
-    ];
-    return Array.from(new Set(blockers.filter(Boolean))).slice(0, 8);
-  }, [
-    confirmedObjectCounts.access,
-    confirmedObjectCounts.buildings,
-    hasHardSystemBlock,
-    hasTerrainSource,
-    issues,
-    missingSite,
-    previewBlockedReasons,
-    roads,
-    siteScaleLocked,
-    siteTooLargeForGrading,
-    systemStatuses.grading,
-    systemStatuses.roads,
-  ]);
-  const workflowActionHints = [
-    !hasLocationEvidence ? "Setup panel -> Start from address or blank site." : "",
-    !siteSizeSet ? "Setup panel -> enter site width and depth." : "",
-    !buildingPlacements.some((item) => item.type === "site") ? "Setup panel -> Draw site boundary." : "",
-    !siteScaleLocked ? "Setup panel -> Lock site boundary." : "",
-    existingConditionRows.some((item) => item.status === "block") ? "Data panel -> resolve missing existing-condition evidence." : "",
-    placedObjectCount <= 1 ? "Objects panel -> add or draw buildings, parking, roads, basin/outfall, and utility points/lines." : "",
-    systemReadinessRows.some((row) => row.blockers.some(isHardGenerateBlocker)) ? `Generate Systems panel -> ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.label}: ${systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker))?.blockers.find(isHardGenerateBlocker)}` : "",
-    getExportBlockReason() ? `Deliver panel -> export blocked: ${getExportBlockReason()}.` : "",
-  ].filter(Boolean);
   const exportBlockReason = getExportBlockReason();
+  const civil3DWorkflowBlockers = useMemo(
+    () =>
+      buildDashboardCivil3DWorkflowBlockers({
+        blockerContext: systemBlockerContext,
+        previewBlockedReasons,
+        issues,
+      }),
+    [issues, previewBlockedReasons, systemBlockerContext],
+  );
+  const workflowActionHints = useMemo(
+    () =>
+      buildDashboardWorkflowActionHints({
+        hasLocationEvidence,
+        siteSizeSet,
+        buildingPlacements,
+        siteScaleLocked,
+        existingConditionRows,
+        placedObjectCount,
+        systemReadinessRows,
+        exportBlockReason,
+      }),
+    [
+      buildingPlacements,
+      existingConditionRows,
+      exportBlockReason,
+      hasLocationEvidence,
+      placedObjectCount,
+      siteScaleLocked,
+      siteSizeSet,
+      systemReadinessRows,
+    ],
+  );
   const capabilityAuditRows = useMemo<CapabilityExposure[]>(() => buildDashboardCapabilityAuditRows({
     currentPlanMeta: currentPlanMeta as Record<string, unknown>,
     manualFields: currentProject?.project_input?.manual_fields as Record<string, unknown> | undefined,
