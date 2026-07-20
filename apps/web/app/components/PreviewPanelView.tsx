@@ -52,7 +52,6 @@ import {
   resolveSourceState,
   scalePolygonTowardCenter,
   sourceStateLabel,
-  stableHash,
   supportsParkingModuleRendering,
   type ParkingParams,
 } from "../utils/previewGeometryTruth";
@@ -62,6 +61,8 @@ import {
 } from "../utils/previewUtilityCoordination";
 import {
   aiRealismMissingInputs as buildAiRealismMissingInputs,
+  buildAiRealismLayoutHash,
+  buildAiRealismSourceObjects,
   createAiRealismArtifact,
   summarizeAiRealismSourceObjects,
 } from "../utils/previewAiRealism";
@@ -538,46 +539,18 @@ export default function PreviewPanel({
     );
   }, [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, hoveredObjectId, managedObjectId, selectedBuildingId, selectedObjectIds, suggestedPlacements]);
   const aiRealismSourceObjects = useMemo(
-    () =>
-      [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]
-        .filter(
-          (item) =>
-            item.type !== "site" &&
-            item.placed &&
-            Number.isFinite(item.x) &&
-            Number.isFinite(item.y),
-        )
-        .map((item) => ({
-          id: item.id,
-          label: item.label || item.type || item.id,
-          type: item.type || "custom",
-          x: Number(item.x ?? 0),
-          y: Number(item.y ?? 0),
-          w: Number(item.w ?? 0),
-          d: Number(item.d ?? 0),
-          h: Number(item.h ?? 0),
-          rotation: Number(item.rotation ?? 0),
-          geometryType: item.geometryType || "rect",
-          geometry: Array.isArray(item.geometry) ? item.geometry : undefined,
-          source: item.source || (item.generated ? "generated" : "user"),
-          confidence: typeof item.confidence === "number" ? item.confidence : null,
-        }))
-        .sort((a, b) => a.id.localeCompare(b.id)),
+    () => buildAiRealismSourceObjects([...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]),
     [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements],
   );
   const aiRealismLayoutHash = useMemo(
     () =>
-      stableHash(
-        JSON.stringify({
-          site: {
-            lotWidth,
-            lotHeight,
-            siteRotationDeg: siteRotationDeg ?? 0,
-            terrain: hasTerrainSource ? "terrain-source" : "terrain-missing",
-          },
-          objects: aiRealismSourceObjects,
-        }),
-      ),
+      buildAiRealismLayoutHash({
+        lotWidth,
+        lotHeight,
+        siteRotationDeg,
+        hasTerrainSource,
+        sourceObjects: aiRealismSourceObjects,
+      }),
     [aiRealismSourceObjects, hasTerrainSource, lotHeight, lotWidth, siteRotationDeg],
   );
   const aiRealismSourceSummary = useMemo(

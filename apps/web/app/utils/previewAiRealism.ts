@@ -1,4 +1,6 @@
 import type { AiRealismArtifact } from "../components/previewPanelTypes";
+import type { BuildingPlacement } from "../types";
+import { stableHash } from "./previewGeometryTruth";
 
 export type AiRealismSourceObject = {
   id: string;
@@ -15,6 +17,59 @@ export type AiRealismSourceObject = {
   source: string;
   confidence: number | null;
 };
+
+export function buildAiRealismSourceObjects(items: BuildingPlacement[]) {
+  return items
+    .filter(
+      (item) =>
+        item.type !== "site" &&
+        item.placed &&
+        Number.isFinite(item.x) &&
+        Number.isFinite(item.y),
+    )
+    .map((item) => ({
+      id: item.id,
+      label: item.label || item.type || item.id,
+      type: item.type || "custom",
+      x: Number(item.x ?? 0),
+      y: Number(item.y ?? 0),
+      w: Number(item.w ?? 0),
+      d: Number(item.d ?? 0),
+      h: Number(item.h ?? 0),
+      rotation: Number(item.rotation ?? 0),
+      geometryType: item.geometryType || "rect",
+      geometry: Array.isArray(item.geometry) ? item.geometry : undefined,
+      source: item.source || (item.generated ? "generated" : "user"),
+      confidence: typeof item.confidence === "number" ? item.confidence : null,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function buildAiRealismLayoutHash({
+  lotWidth,
+  lotHeight,
+  siteRotationDeg,
+  hasTerrainSource,
+  sourceObjects,
+}: {
+  lotWidth: string | number;
+  lotHeight: string | number;
+  siteRotationDeg?: number | null;
+  hasTerrainSource: boolean;
+  sourceObjects: AiRealismSourceObject[];
+}) {
+  return stableHash(
+    JSON.stringify({
+      site: {
+        lotWidth,
+        lotHeight,
+        siteRotationDeg: siteRotationDeg ?? 0,
+        terrain: hasTerrainSource ? "terrain-source" : "terrain-missing",
+      },
+      objects: sourceObjects,
+    }),
+  );
+}
 
 export function summarizeAiRealismSourceObjects(sourceObjects: AiRealismSourceObject[]) {
   const counts: Record<string, number> = {};
