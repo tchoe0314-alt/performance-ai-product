@@ -128,6 +128,33 @@ export function DeliverPanel({
   onPlanSheetExportJson,
   onSmartFixAction,
 }: DeliverPanelProps) {
+  const packageContextObjects = placements
+    .filter((item) => item.placed && item.type !== "site" && !item.meta?.ui_hidden)
+    .slice()
+    .sort((a, b) => {
+      const score = (item: BuildingPlacement) => {
+        const type = String(item.type || "").toLowerCase();
+        const source = String(item.source || item.meta?.source || "").toLowerCase();
+        let value = 0;
+        if (item.meta?.semantic_object_model || item.meta?.semantic_geometry_state) value += 120;
+        if (Array.isArray(item.meta?.combined_from_object_ids) && item.meta.combined_from_object_ids.length > 0) value += 100;
+        if (item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source)) value += 80;
+        if (["office_building", "building"].includes(type)) value += 70;
+        if (["parking", "basin"].includes(type)) value += 60;
+        if (["road", "driveway", "sidewalk", "utility_corridor"].includes(type)) value += 40;
+        return value;
+      };
+      return score(b) - score(a);
+    });
+  const packageContextLabels = packageContextObjects.slice(0, 5).map((item) => item.label);
+  const packageSemanticCount = packageContextObjects.filter((item) =>
+    Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state),
+  ).length;
+  const packageDraftCount = packageContextObjects.filter((item) => {
+    const source = String(item.source || item.meta?.source || "").toLowerCase();
+    return Boolean(item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source));
+  }).length;
+
   return (
     <div className="space-y-3" data-testid="clean-deliver-panel">
       <PanelCard testId="deliver-review-package-flow">
@@ -155,6 +182,19 @@ export function DeliverPanel({
             <p className="font-semibold uppercase tracking-[0.12em]">{reviewPackageFlowSummary.blocked ? "Needs input" : "Package made"}</p>
             <p className="mt-1">Created: {reviewPackageFlowSummary.outputs_created.join(", ") || "none"}</p>
             <p className="mt-1">Missing: {reviewPackageFlowSummary.missing.slice(0, 4).join("; ") || "none recorded"}</p>
+            <div className="mt-2 rounded-lg border border-emerald-200 bg-white/70 px-2.5 py-2 text-emerald-900" data-testid="deliver-package-context">
+              <p className="font-semibold">
+                Package includes: {packageContextLabels.length ? packageContextLabels.join(", ") : "no placed drawing objects yet"}{packageContextObjects.length > packageContextLabels.length ? `, plus ${packageContextObjects.length - packageContextLabels.length} more` : ""}
+              </p>
+              <p className="mt-1 text-[11px] text-emerald-800">
+                {packageDraftCount} draft object{packageDraftCount === 1 ? "" : "s"} · {packageSemanticCount} semantic object{packageSemanticCount === 1 ? "" : "s"} · {autoSiteContextFlowSummary.candidateCount} source candidate{autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} · review package only
+              </p>
+              {autoSiteContextFlowSummary.missingLabels.length ? (
+                <p className="mt-1 text-[11px] text-emerald-800">
+                  Source notes: missing {autoSiteContextFlowSummary.missingLabels.slice(0, 3).join(", ")}{autoSiteContextFlowSummary.missingLabels.length > 3 ? `, plus ${autoSiteContextFlowSummary.missingLabels.length - 3} more` : ""}
+                </p>
+              ) : null}
+            </div>
             <p className="mt-1 font-semibold">Next: {reviewPackageFlowSummary.next_action}</p>
           </div>
         ) : null}
