@@ -124,11 +124,7 @@ import {
   buildDashboardCivil3DWorkflowBlockers,
   buildDashboardWorkflowActionHints,
 } from "./utils/dashboardWorkflowHints";
-import {
-  buildDashboardGradingEarthworkUx,
-  buildDashboardGradingSourceSummary,
-} from "./utils/dashboardGradingEarthworkView";
-import { buildDashboardSiteDerivedView } from "./utils/dashboardSiteDerivedView";
+import { buildDashboardSiteGradingView } from "./utils/dashboardSiteGradingView";
 import {
   parseDashboardDirectSiteSetupCommand,
   parseDashboardObjectCommandIntent,
@@ -11877,9 +11873,13 @@ function PerformanceAIDashboardView({
       sourceConfidenceByObjectId,
     ],
   );
-  const siteDerivedView = useMemo(
+  const {
+    gradingEarthworkUx,
+    gradingSourceSummary,
+    siteDerivedView,
+  } = useMemo(
     () =>
-      buildDashboardSiteDerivedView({
+      buildDashboardSiteGradingView({
         lotBounds,
         lotWidth,
         lotHeight,
@@ -11892,18 +11892,32 @@ function PerformanceAIDashboardView({
         projects,
         siteWarningAcres: SITE_WARNING_ACRES,
         siteGradingHardBlockAcres: SITE_GRADING_HARD_BLOCK_ACRES,
+        siteInputs,
+        gradingSummary,
+        cutFillNet,
+        managerMetrics,
+        gradingBlocker,
+        gradingResultSummary,
+        hasGradingSurface,
       }),
     [
       buildingPlacements,
+      cutFillNet,
       detectedPlacements,
       detectionConfidenceFilter,
       drainageSummary,
+      gradingBlocker,
+      gradingResultSummary,
+      gradingSummary,
+      hasGradingSurface,
       lotBounds,
       lotHeight,
       lotWidth,
+      managerMetrics,
       mapAnalysis,
       mapSnapshotPath,
       projects,
+      siteInputs,
     ],
   );
   const {
@@ -11924,39 +11938,6 @@ function PerformanceAIDashboardView({
     filteredDetectedPlacements,
     sortedProjects,
   } = siteDerivedView;
-  const gradingSourceSummary = useMemo(
-    () => buildDashboardGradingSourceSummary(siteInputs),
-    [siteInputs],
-  );
-
-  const gradingEarthworkUx = useMemo(
-    () =>
-      buildDashboardGradingEarthworkUx({
-        lotBounds,
-        gradingSummary,
-        cutFillNet,
-        managerMetrics,
-        buildingPlacements,
-        gradingBlocker,
-        siteTooLargeForGrading,
-        gradingResultSummary,
-        gradingSourceSummary,
-        hasGradingSurface,
-      }),
-    [
-      buildingPlacements,
-      cutFillNet,
-      gradingBlocker,
-      gradingResultSummary,
-      gradingSourceSummary,
-      gradingSummary,
-      hasGradingSurface,
-      lotBounds,
-      managerMetrics,
-      siteTooLargeForGrading,
-    ],
-  );
-
   useEffect(() => {
     if (debugGradingFixtureLoaded) return;
     if (typeof window === "undefined") return;
