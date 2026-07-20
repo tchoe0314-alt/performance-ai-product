@@ -113,6 +113,7 @@ import {
   buildDashboardEngineeringMetrics,
   buildDashboardMeasurementOverlayStats,
 } from "./utils/dashboardEngineeringMetrics";
+import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
 import {
   buildObjectManagerLayerRows,
   buildObjectManagerTypes,
@@ -16656,61 +16657,36 @@ function PerformanceAIDashboardView({
     handleOpenSidePanel(nextPanel);
   }, [handleOpenSidePanel]);
   const controlsHealthStatus = Object.values(systemStatuses).some((value) => value === "fresh") ? "ok" : "review";
-  const panelStatus = (target: SidePanelKey): SidebarStatus => {
-    if (target === "dashboard" || target === "analysis") {
-      return issues.length || analysisIssues.length || hasHardSystemBlock ? "review" : backendResult ? "ok" : "idle";
-    }
-    if (target === "site_existing" || target === "data") {
-      return siteScaleLocked || Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ? "ok" : "review";
-    }
-    if (target === "import_survey" || target === "files") {
-      return hasTerrainSource || surveyPreviewPoints.length || uploadedImagePreviewUrl || uploadedImageApiUrl || mapSnapshotPath
-        ? "ok"
-        : "review";
-    }
-    if (target === "model" || target === "layers") {
-      return placedObjectCount > 0 || planPreviewUrl ? "ok" : "idle";
-    }
-    if (target === "objects" || target === "details") {
-      return buildingPlacements.length > 0 ? "ok" : "idle";
-    }
-    if (target === "generate") {
-      return controlsHealthStatus;
-    }
-    if (target === "grading") {
-      return siteTooLargeForGrading ? "block" : hasTerrainSource || systemStatuses.grading === "fresh" ? "ok" : "review";
-    }
-    if (target === "drainage") {
-      return hasHardSystemBlock ? "block" : hasBasinPlaced || systemStatuses.drainage === "fresh" ? "ok" : "review";
-    }
-    if (target === "sanitary" || target === "water" || target === "utilities") {
-      return hasHardSystemBlock ? "block" : utilities || systemStatuses.utilities === "fresh" ? "ok" : "review";
-    }
-    if (target === "roadway") {
-      return roads || systemStatuses.roads === "fresh" ? "ok" : "review";
-    }
-    if (target === "landscape") {
-      return buildingPlacements.some((value) => ["open_space", "amenity", "pool", "sidewalk"].includes(value.type ?? ""))
-        ? "ok"
-        : "idle";
-    }
-    if (target === "reports" || target === "quantities" || target === "deliverables") {
-      return backendResult ? "ok" : "idle";
-    }
-    if (target === "standards") {
-      return minSlopePct || maxRoadGradePct || pipeMinSlopePct || maxAdaCrossSlopePct ? "ok" : "review";
-    }
-    if (target === "templates") {
-      return customerTemplateBlockerCount > 0 ? "review" : customerTemplates ? "ok" : "idle";
-    }
-    if (target === "catalogs") {
-      return Number(utilityCatalog?.summary?.review_required_count ?? 0) > 0 ? "review" : utilityCatalog ? "ok" : "idle";
-    }
-    if (target === "libraries" || target === "settings" || target === "chat" || target === "projects") {
-      return "ok";
-    }
-    return "idle";
-  };
+  const panelStatus = (target: SidePanelKey): SidebarStatus =>
+    resolveDashboardPanelStatus(target, {
+      issuesLength: issues.length,
+      analysisIssuesLength: analysisIssues.length,
+      hasHardSystemBlock,
+      backendResultPresent: Boolean(backendResult),
+      siteScaleLocked,
+      geocodePresent: Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng),
+      hasTerrainSource,
+      surveyPreviewPointsLength: surveyPreviewPoints.length,
+      uploadedImagePreviewUrl,
+      uploadedImageApiUrl,
+      mapSnapshotPath,
+      placedObjectCount,
+      planPreviewUrl,
+      buildingPlacements,
+      controlsHealthStatus,
+      siteTooLargeForGrading,
+      hasBasinPlaced,
+      systemStatuses,
+      utilities,
+      roads,
+      minSlopePct,
+      maxRoadGradePct,
+      pipeMinSlopePct,
+      maxAdaCrossSlopePct,
+      customerTemplateBlockerCount,
+      customerTemplates,
+      utilityCatalog,
+    });
   const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus => {
     if (mode === "trust") return "ok";
     if (mode === "dashboard") return panelStatus("dashboard");
