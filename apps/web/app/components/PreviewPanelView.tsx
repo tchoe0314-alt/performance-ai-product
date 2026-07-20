@@ -32,7 +32,7 @@ import {
 import type { CadDimensionMode, CadSymbolKind, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
-import { PreviewAnalysisPathsOverlay } from "./PreviewAnalysisPathsOverlay";
+import { Preview2DOverlayStack } from "./Preview2DOverlayStack";
 import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
 import { PreviewCanvasControlStack } from "./PreviewCanvasControlStack";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
@@ -40,14 +40,10 @@ import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewGeneratedPlanFullscreen } from "./PreviewGeneratedPlanFullscreen";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
-import { PreviewEditableObjectHitTargets } from "./PreviewEditableObjectHitTargets";
 import {
   PreviewFullscreenHeader,
   PreviewPlanAnnotationOverlay,
 } from "./PreviewPlanAnnotationOverlay";
-import { PreviewPlanCanvasLayers } from "./PreviewPlanCanvasLayers";
-import { PreviewSuggestedObjectHitTargets } from "./PreviewSuggestedObjectHitTargets";
-import { PreviewWaterFireFlowHitTargets } from "./PreviewWaterFireFlowHitTargets";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import { usePreviewFocusTransform } from "./usePreviewFocusTransform";
 import { usePreviewAnnotationHover } from "./usePreviewAnnotationHover";
@@ -3845,172 +3841,142 @@ export default function PreviewPanel({
                   </div>
                 ) : null}
                 {overlayBoundsResolved && previewMode === "2d" ? (
-                  <>
-                    <PreviewPlanCanvasLayers
-                      overlayBoundsResolved={overlayBoundsResolved}
-                      previewMode={previewMode}
-                      siteLocked={Boolean(siteLocked)}
-                      showSiteBounds={showSiteBounds}
-                      drawMode={drawMode}
-                      legendPalette={legendPalette}
-                      viewportTransformStyle={viewportTransformStyle}
-                      buildingPlacements={buildingPlacements}
-                      suggestedPlacements={suggestedPlacements}
-                      surveyPointCount={surveyPoints?.length ?? 0}
-                      showMap={showMap}
-                      isHighQuality={isHighQuality}
-                      lotWidth={lotWidth}
-                      lotHeight={lotHeight}
-                      planScaleBar={planScaleBar}
-                      visibleCadObjects={visibleCadObjects}
-                      selectedBuildingId={selectedBuildingId}
-                      currentSiteSize={currentSiteSize}
-                      sitePointToSvgPercent={sitePointToSvgPercent}
-                      mapAnchoredRectPercent={(item) => mapAnchoredRectPercent(item, mapRef.current)}
-                      shouldRevealObjectLabel={shouldRevealObjectLabel}
-                      getObjectGeometryPoints={getObjectGeometryPoints}
-                      accessPointsForParking={accessPointsForParking}
-                      showParkingAnalysis={showParkingAnalysis}
-                      waterFireFlow={waterFireFlow}
-                      previewQuality={previewQuality}
-                      sitePointToPreviewPercent={sitePointToPreviewPercent}
-                      activeSnapPoint={activeSnapPoint}
-                      draftPoints={draftPoints}
-                      draftPreviewPoint={draftPreviewPoint}
-                      drawingLotWidth={drawingLotWidth}
-                      drawingLotHeight={drawingLotHeight}
-                      siteTupleToPercent={siteTupleToPercent}
-                      siteRectToPercent={siteRectToPercent}
-                      showEarthworkUx={showEarthworkUx}
-                      gradingEarthworkUx={gradingEarthworkUx}
-                    />
-              <div
-                data-testid="preview-drawing-surface"
-                data-draw-mode={drawMode}
-                data-draft-point-count={draftPointCount}
-                aria-label="Drawing surface"
-                className={`absolute inset-0 ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
-                  drawMode !== "select" && drawMode !== "pan" ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"
-                }`}
-              />
-                    <div
-                      data-testid="preview-drawing-overlays"
-                      className={`${overlayPointerEvents} absolute inset-0 z-[15]`}
-                      style={{
-                        transformOrigin: "top left",
-                        transform: `${viewportTransformStyle.transform}${
-                          focusTransform
-                            ? ` translate(50%, 50%) scale(${focusTransform.scale}) translate(-${focusTransform.tx * 100}%, -${focusTransform.ty * 100}%)`
-                            : ""
-                        }`,
-                      }}
-                      onMouseDown={(event) => {
-                        if (beginCadWindowSelect(event)) return;
-                        if (!showMap || mapLocked) return;
-                        if (previewInteraction !== "edit") return;
-                        if (placementMode) return;
-                        if ((event.target as HTMLElement)?.closest?.("[data-object-overlay]")) return;
-                        mapDragActiveRef.current = true;
-                        mapDragRef.current = { x: event.clientX, y: event.clientY };
-                      }}
-                      onWheel={(event) => {
-                        if (!showMap || mapLocked) return;
-                        if (previewInteraction !== "edit") return;
-                        if (!mapRef.current) return;
-                        event.preventDefault();
-                        const map = mapRef.current;
-                        const zoom = map.getZoom();
-                        const nextZoom = zoom + (event.deltaY < 0 ? 0.4 : -0.4);
-                        map.zoomTo(nextZoom, { animate: false });
-                      }}
-                      onClick={() => {
-                        if (analysisFocusLocked) return;
-                        onClearHighlights?.();
-                      }}
-                    >
-                      <PreviewWaterFireFlowHitTargets
-                        waterFireFlow={waterFireFlow}
-                        passiveOverlayPointerEvents={passiveOverlayPointerEvents}
-                        sitePointToPreviewPercent={sitePointToPreviewPercent}
-                        setSelectedFireScenarioId={setSelectedFireScenarioId}
-                      />
-                      <PreviewEditableObjectHitTargets
-                        visibleCadObjects={visibleCadObjects}
-                        previewInteraction={previewInteraction}
-                        siteLocked={Boolean(siteLocked)}
-                        showSiteBounds={showSiteBounds}
-                        showMap={showMap}
-                        drawMode={drawMode}
-                        selectedBuildingId={selectedBuildingId}
-                        analysisHighlight={analysisHighlight}
-                        previewQuality={previewQuality}
-                        isHighQuality={isHighQuality}
-                        allowEdits={allowEdits}
-                        passiveOverlayPointerEvents={passiveOverlayPointerEvents}
-                        drawingOwnsCanvasHits={drawingOwnsCanvasHits}
-                        draggingMode={draggingMode}
-                        draggingVertex={draggingVertex}
-                        hoveredVertex={hoveredVertex}
-                        selectedVertex={selectedVertex}
-                        hoveredSegment={hoveredSegment}
-                        lastPolylineEdit={lastPolylineEdit}
-                        lastRectEdit={lastRectEdit}
-                        polylineInsertHintDismissed={polylineInsertHintDismissed}
-                        polylineSegmentRef={polylineSegmentRef}
-                        hoveredObjectId={hoveredObjectId}
-                        objectHoverDetails={objectHoverDetails}
-                        selectedDeletableObject={selectedDeletableObject}
-                        cadCommandStatusDisplay={cadCommandStatusDisplay}
-                        suppressNextObjectClickRef={suppressNextObjectClickRef}
-                        getEditCapabilities={getEditCapabilities}
-                        interactiveRectPercent={(item) => interactiveRectPercent(item, mapRef.current)}
-                        rectIntersectsPreview={rectIntersectsPreview}
-                        resolveObjectHitZIndex={resolveObjectHitZIndex}
-                        shouldRevealObjectLabel={shouldRevealObjectLabel}
-                        handleBuildingMouseDown={handleBuildingMouseDown}
-                        onSelectBuilding={onSelectBuilding}
-                        setSelectedVertex={setSelectedVertex}
-                        setHoveredObjectId={setHoveredObjectId}
-                        setHoveredVertex={setHoveredVertex}
-                        setHoveredSegment={setHoveredSegment}
-                        setLastPolylineEdit={setLastPolylineEdit}
-                        setLastRectEdit={setLastRectEdit}
-                        setDraggingBuildingId={setDraggingBuildingId}
-                        setDraggingMode={setDraggingMode}
-                        setDraggingVertex={setDraggingVertex}
-                        runCadCommand={runCadCommand}
-                        copySelectedCadObjectsByVector={copySelectedCadObjectsByVector}
-                        transformSelectedCadObjects={transformSelectedCadObjects}
-                        pushCadCommandFeedback={pushCadCommandFeedback}
-                        onRemoveBuilding={onRemoveBuilding}
-                        onUpdateSuggested={onUpdateSuggested}
-                        onUpdateBuilding={onUpdateBuilding}
-                        insertVertexOnSegment={insertVertexOnSegment}
-                        applyPolylineUndo={applyPolylineUndo}
-                        deleteSelectedVertex={deleteSelectedVertex}
-                        applyRectUndo={applyRectUndo}
-                      />
-                      <PreviewSuggestedObjectHitTargets
-                        suggestedPlacements={suggestedPlacements}
-                        passiveOverlayPointerEvents={passiveOverlayPointerEvents}
-                        drawingOwnsCanvasHits={drawingOwnsCanvasHits}
-                        hoveredObjectId={hoveredObjectId}
-                        objectHoverDetails={objectHoverDetails}
-                        mapAnchoredRectPercent={(item) => interactiveRectPercent(item, mapRef.current)}
-                        rectIntersectsPreview={rectIntersectsPreview}
-                        resolveObjectHitZIndex={resolveObjectHitZIndex}
-                        selectedBuildingId={selectedBuildingId}
-                        showMap={showMap}
-                        handleBuildingMouseDown={handleBuildingMouseDown}
-                        setHoveredObjectId={setHoveredObjectId}
-                      />
-                      <PreviewAnalysisPathsOverlay
-                        analysisPaths={analysisPaths}
-                        analysisHighlight={analysisHighlight}
-                        sitePointToPreviewPercent={sitePointToPreviewPercent}
-                      />
-                    </div>
-                  </>
+                  <Preview2DOverlayStack
+                    drawMode={drawMode}
+                    draftPointCount={draftPointCount}
+                    overlayPointerEvents={overlayPointerEvents}
+                    viewportTransformStyle={viewportTransformStyle}
+                    focusTransform={focusTransform}
+                    showMap={showMap}
+                    mapLocked={mapLocked}
+                    previewInteraction={previewInteraction}
+                    placementMode={placementMode}
+                    mapRef={mapRef}
+                    mapDragActiveRef={mapDragActiveRef}
+                    mapDragRef={mapDragRef}
+                    analysisFocusLocked={analysisFocusLocked}
+                    onClearHighlights={onClearHighlights}
+                    beginCadWindowSelect={beginCadWindowSelect}
+                    planCanvasLayersProps={{
+                      overlayBoundsResolved,
+                      previewMode,
+                      siteLocked: Boolean(siteLocked),
+                      showSiteBounds,
+                      drawMode,
+                      legendPalette,
+                      viewportTransformStyle,
+                      buildingPlacements,
+                      suggestedPlacements,
+                      surveyPointCount: surveyPoints?.length ?? 0,
+                      showMap,
+                      isHighQuality,
+                      lotWidth,
+                      lotHeight,
+                      planScaleBar,
+                      visibleCadObjects,
+                      selectedBuildingId,
+                      currentSiteSize,
+                      sitePointToSvgPercent,
+                      mapAnchoredRectPercent: (item) => mapAnchoredRectPercent(item, mapRef.current),
+                      shouldRevealObjectLabel,
+                      getObjectGeometryPoints,
+                      accessPointsForParking,
+                      showParkingAnalysis,
+                      waterFireFlow,
+                      previewQuality,
+                      sitePointToPreviewPercent,
+                      activeSnapPoint,
+                      draftPoints,
+                      draftPreviewPoint,
+                      drawingLotWidth,
+                      drawingLotHeight,
+                      siteTupleToPercent,
+                      siteRectToPercent,
+                      showEarthworkUx,
+                      gradingEarthworkUx,
+                    }}
+                    waterFireFlowHitTargetsProps={{
+                      waterFireFlow,
+                      passiveOverlayPointerEvents,
+                      sitePointToPreviewPercent,
+                      setSelectedFireScenarioId,
+                    }}
+                    editableObjectHitTargetsProps={{
+                      visibleCadObjects,
+                      previewInteraction,
+                      siteLocked: Boolean(siteLocked),
+                      showSiteBounds,
+                      showMap,
+                      drawMode,
+                      selectedBuildingId,
+                      analysisHighlight,
+                      previewQuality,
+                      isHighQuality,
+                      allowEdits,
+                      passiveOverlayPointerEvents,
+                      drawingOwnsCanvasHits,
+                      draggingMode,
+                      draggingVertex,
+                      hoveredVertex,
+                      selectedVertex,
+                      hoveredSegment,
+                      lastPolylineEdit,
+                      lastRectEdit,
+                      polylineInsertHintDismissed,
+                      polylineSegmentRef,
+                      hoveredObjectId,
+                      objectHoverDetails,
+                      selectedDeletableObject,
+                      cadCommandStatusDisplay,
+                      suppressNextObjectClickRef,
+                      getEditCapabilities,
+                      interactiveRectPercent: (item) => interactiveRectPercent(item, mapRef.current),
+                      rectIntersectsPreview,
+                      resolveObjectHitZIndex,
+                      shouldRevealObjectLabel,
+                      handleBuildingMouseDown,
+                      onSelectBuilding,
+                      setSelectedVertex,
+                      setHoveredObjectId,
+                      setHoveredVertex,
+                      setHoveredSegment,
+                      setLastPolylineEdit,
+                      setLastRectEdit,
+                      setDraggingBuildingId,
+                      setDraggingMode,
+                      setDraggingVertex,
+                      runCadCommand,
+                      copySelectedCadObjectsByVector,
+                      transformSelectedCadObjects,
+                      pushCadCommandFeedback,
+                      onRemoveBuilding,
+                      onUpdateSuggested,
+                      onUpdateBuilding,
+                      insertVertexOnSegment,
+                      applyPolylineUndo,
+                      deleteSelectedVertex,
+                      applyRectUndo,
+                    }}
+                    suggestedObjectHitTargetsProps={{
+                      suggestedPlacements,
+                      passiveOverlayPointerEvents,
+                      drawingOwnsCanvasHits,
+                      hoveredObjectId,
+                      objectHoverDetails,
+                      mapAnchoredRectPercent: (item) => interactiveRectPercent(item, mapRef.current),
+                      rectIntersectsPreview,
+                      resolveObjectHitZIndex,
+                      selectedBuildingId,
+                      showMap,
+                      handleBuildingMouseDown,
+                      setHoveredObjectId,
+                    }}
+                    analysisPathsOverlayProps={{
+                      analysisPaths,
+                      analysisHighlight,
+                      sitePointToPreviewPercent,
+                    }}
+                  />
                 ) : null}
                 {cadWindowSelect ? (
                   <div
