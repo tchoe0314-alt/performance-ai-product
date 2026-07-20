@@ -301,6 +301,10 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("object-manager-panel")).toContainText("7 pending");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Unplaced");
+
+    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await expect(page.getByTestId("generate-placement-context")).toContainText("7 requested objects still need placement");
+    await expect(page.getByTestId("generate-placement-context")).toContainText("Parking Field - 140 stalls");
   });
 
   test("opens, clears drafts, saves, restores, deletes, reloads, and reports backend blockers", async ({ page }) => {

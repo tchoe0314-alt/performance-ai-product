@@ -48,6 +48,8 @@ type GeneratePanelProps = {
   hasVisibleActiveJob: boolean;
   statusMessage: string;
   assistedEnabled: boolean;
+  pendingPlacementCount: number;
+  pendingPlacementLabels: string[];
   autoSiteContextFlowSummary: AutoSiteContextFlowSummary;
   systemReadinessRows: readonly SystemReadinessRow[];
   issues: Issue[];
@@ -71,6 +73,8 @@ export function GeneratePanel({
   hasVisibleActiveJob,
   statusMessage,
   assistedEnabled,
+  pendingPlacementCount,
+  pendingPlacementLabels,
   autoSiteContextFlowSummary,
   systemReadinessRows,
   issues,
@@ -146,6 +150,16 @@ export function GeneratePanel({
         >
           Auto Site Context: {autoSiteContextFlowSummary.candidateCount} review-required source candidate{autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available.
           {" "}Missing sources: {autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.
+        </div>
+        <div
+          className={`mt-2 rounded-xl border px-3 py-2 text-xs font-medium ${
+            pendingPlacementCount ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-600"
+          }`}
+          data-testid="generate-placement-context"
+        >
+          Placement: {pendingPlacementCount
+            ? `${pendingPlacementCount} requested object${pendingPlacementCount === 1 ? "" : "s"} still need placement: ${pendingPlacementLabels.slice(0, 4).join(", ")}${pendingPlacementCount > 4 ? `, plus ${pendingPlacementCount - 4} more` : ""}.`
+            : "All requested workspace objects are placed or no requested objects are waiting."}
         </div>
         {statusMessage ? (
           <div

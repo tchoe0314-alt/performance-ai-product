@@ -18284,6 +18284,9 @@ function PerformanceAIDashboardView({
           ? `User layout context used by Generate: ${userLayoutContextSummary.labels.join(", ")}${userLayoutContext.length > userLayoutContextSummary.labels.length ? `, plus ${userLayoutContext.length - userLayoutContextSummary.labels.length} more` : ""}`
           : "",
         semanticLayoutCount ? `${semanticLayoutCount} semantic drafted object${semanticLayoutCount === 1 ? "" : "s"} included as review context` : "",
+        pendingPlacementObjects.length
+          ? `Requested objects still need placement before Generate can use them as layout context: ${pendingPlacementLabels.slice(0, 8).join(", ")}${pendingPlacementObjects.length > 8 ? `, plus ${pendingPlacementObjects.length - 8} more` : ""}`
+          : "",
         ...autoSiteContextFlowSummary.missingLabels.map((item) => `Auto Site Context missing source: ${item}`),
         autoSiteContextFlowSummary.candidateCount > 0
           ? `Auto Site Context source candidates available for review: ${autoSiteContextFlowSummary.candidateLabels.join(", ") || `${autoSiteContextFlowSummary.candidateCount} candidate(s)`}`
@@ -20626,6 +20629,7 @@ function PerformanceAIDashboardView({
   const missingImage = !mapSnapshotPath;
   const placedObjects = buildingPlacements.filter((item) => item.placed && item.type !== "site");
   const pendingPlacementObjects = buildingPlacements.filter((item) => !item.placed && item.type !== "site");
+  const pendingPlacementLabels = pendingPlacementObjects.map((item) => item.label);
   const hasBasinObject = buildingPlacements.some((item) => item.type === "basin");
   const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
   const hasUtilityConnectionObject = buildingPlacements.some((item) =>
@@ -24747,6 +24751,8 @@ function PerformanceAIDashboardView({
                     hasVisibleActiveJob={Boolean(visibleActiveJob)}
                     statusMessage={statusMessage}
                     assistedEnabled={assistedEnabled}
+                    pendingPlacementCount={pendingPlacementObjects.length}
+                    pendingPlacementLabels={pendingPlacementLabels}
                     autoSiteContextFlowSummary={autoSiteContextFlowSummary}
                     systemReadinessRows={systemReadinessRows}
                     issues={issues}
