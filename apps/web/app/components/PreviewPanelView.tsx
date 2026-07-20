@@ -51,6 +51,7 @@ import { PreviewWaterFireFlowHitTargets } from "./PreviewWaterFireFlowHitTargets
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import { usePreviewFocusTransform } from "./usePreviewFocusTransform";
 import { usePreviewAnnotationHover } from "./usePreviewAnnotationHover";
+import { usePreview2DShellHandlers } from "./usePreview2DShellHandlers";
 import { usePreviewMapLayerSync } from "./usePreviewMapLayerSync";
 import { usePreviewMapRuntime } from "./usePreviewMapRuntime";
 import { usePreviewResizeObservers } from "./usePreviewResizeObservers";
@@ -3414,6 +3415,57 @@ export default function PreviewPanel({
   });
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   const activePreviewMode: "2d" | "3d" = previewMode;
+  const preview2DShellHandlers = usePreview2DShellHandlers({
+    allowMapInteraction,
+    drawMode,
+    overlayBoundsResolved,
+    previewRef,
+    previewContainerBounds,
+    previewMode,
+    showMap,
+    lotWidth,
+    lotHeight,
+    draftPoints,
+    canvasView,
+    placementMode,
+    showHover,
+    hoverPoint,
+    hoveredAnnotation,
+    hoveredObjectId,
+    cadWindowSelect,
+    cadWindowSelectRef,
+    rotateDragStart,
+    canvasPanStart,
+    suppressNextDrawClickRef,
+    suppressNextObjectClickRef,
+    userAdjustedCanvasViewRef,
+    onSetSiteRotationDeg,
+    handleDrawPointer,
+    beginCadWindowSelect,
+    finishCadWindowSelect,
+    onPlaceObject,
+    screenToSitePoint,
+    resolveCadSnapPoint,
+    scheduleDraftPointerState,
+    scheduleCanvasPanView,
+    updateDraggedBuilding,
+    resolveHover,
+    resolvePlacement,
+    clearScheduledHoverAnnotationState,
+    scheduleCursorSitePoint,
+    finishCanvasPanInteraction,
+    clearScheduledPointerState,
+    finishDraftGeometry,
+    setHoverPoint,
+    setHoveredObjectId,
+    setCadWindowSelect,
+    setRotateDragStart,
+    setCanvasPanStart,
+    setDraggingBuildingId,
+    setDraggingMode,
+    setPinnedAnnotation,
+    setCanvasView,
+  });
   return (
     <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
       <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
@@ -3600,169 +3652,7 @@ export default function PreviewPanel({
                 placementMode || allowEdits ? "cursor-crosshair" : "cursor-default"
               }`}
               style={{ touchAction: drawMode === "select" ? "auto" : "none" }}
-              onDragOver={(event) => {
-                event.preventDefault();
-              }}
-              onMouseDownCapture={(event) => {
-                const target = event.target as HTMLElement | null;
-                if (
-                  drawMode !== "select" &&
-                  drawMode !== "pan" &&
-                  !target?.closest?.("button,input,textarea,select,[role='button'],[data-no-window-select]")
-                ) {
-                  if (handleDrawPointer(event, overlayBoundsResolved)) {
-                    suppressNextDrawClickRef.current = true;
-                    return;
-                  }
-                }
-                beginCadWindowSelect(event);
-              }}
-	              onDrop={(event) => {
-	                event.preventDefault();
-	                const payload = event.dataTransfer?.getData("civora-object-id");
-	                if (!payload) return;
-                const rect = previewRef.current?.getBoundingClientRect();
-                const bounds = overlayBoundsResolved ?? {
-                  left: 0,
-                  top: 0,
-                  width: rect?.width ?? 1,
-                  height: rect?.height ?? 1,
-                };
-                onPlaceObject(payload, {
-                  x: Math.min(
-                    Math.max((event.clientX - (rect?.left ?? 0) - bounds.left) / Math.max(bounds.width, 1), 0),
-                    1,
-                  ),
-                  y: Math.min(
-                    Math.max((event.clientY - (rect?.top ?? 0) - bounds.top) / Math.max(bounds.height, 1), 0),
-                    1,
-	                  ),
-	                });
-	              }}
-		              onMouseMove={(event) => {
-                if (allowMapInteraction) return;
-                if (cadWindowSelect) {
-                  setCadWindowSelect((current) =>
-                    current ? { ...current, currentX: event.clientX, currentY: event.clientY } : current,
-                  );
-                  return;
-                }
-                if (rotateDragStart && previewContainerBounds && onSetSiteRotationDeg) {
-                  const deltaX = event.clientX - rotateDragStart.x;
-                  const width = Math.max(previewContainerBounds.width, 1);
-                  const deltaDeg = (deltaX / width) * 180;
-                  const nextValue = rotateDragStart.value + deltaDeg;
-                  onSetSiteRotationDeg(Math.max(-180, Math.min(180, nextValue)));
-                  return;
-                }
-                if (canvasPanStart) {
-                  scheduleCanvasPanView({
-                    offsetX: canvasPanStart.offsetX + event.clientX - canvasPanStart.x,
-                    offsetY: canvasPanStart.offsetY + event.clientY - canvasPanStart.y,
-                  });
-                  return;
-                }
-                if (drawMode !== "select" && drawMode !== "pan" && overlayBoundsResolved) {
-                  const rawSitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
-                  const basePoint = draftPoints.length
-                    ? { x: draftPoints[draftPoints.length - 1][0], y: draftPoints[draftPoints.length - 1][1] }
-                    : null;
-                  const sitePoint = rawSitePoint ? resolveCadSnapPoint(rawSitePoint, basePoint) : null;
-                  scheduleDraftPointerState(sitePoint);
-                  return;
-                }
-                if (overlayBoundsResolved) {
-                  updateDraggedBuilding(event, overlayBoundsResolved);
-                }
-                if (showHover) {
-                  resolveHover(event, previewRef, overlayBoundsResolved, setHoverPoint);
-                } else {
-                  if (hoverPoint || hoveredAnnotation) clearScheduledHoverAnnotationState(setHoverPoint);
-                  if (hoveredObjectId) setHoveredObjectId(null);
-                }
-                if (showHover && overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
-                  const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
-                  scheduleCursorSitePoint(sitePoint);
-                } else if (!showHover) {
-                  scheduleCursorSitePoint(null);
-                } else {
-                  scheduleCursorSitePoint(null);
-                }
-              }}
-              onMouseLeave={() => {
-                clearScheduledHoverAnnotationState(setHoverPoint);
-                setHoveredObjectId(null);
-                setDraggingBuildingId(null);
-                setDraggingMode(null);
-                finishCanvasPanInteraction();
-                setCanvasPanStart(null);
-                clearScheduledPointerState();
-                if (!cadWindowSelect) setCadWindowSelect(null);
-              }}
-              onMouseUp={() => {
-                if (cadWindowSelect) {
-                  finishCadWindowSelect(cadWindowSelect);
-                  cadWindowSelectRef.current = null;
-                  setCadWindowSelect(null);
-                }
-                setDraggingBuildingId(null);
-                setDraggingMode(null);
-                setRotateDragStart(null);
-                finishCanvasPanInteraction();
-                setCanvasPanStart(null);
-              }}
-              onClick={(event) => {
-                if (suppressNextObjectClickRef.current) {
-                  suppressNextObjectClickRef.current = false;
-                  event.stopPropagation();
-                  return;
-                }
-                if (allowMapInteraction) return;
-                if (drawMode !== "select") {
-                  if (suppressNextDrawClickRef.current) {
-                    suppressNextDrawClickRef.current = false;
-                    return;
-                  }
-                  if (handleDrawPointer(event, overlayBoundsResolved)) return;
-                }
-                if (placementMode) {
-                  resolvePlacement(event, previewRef, overlayBoundsResolved);
-                  return;
-                }
-                if (!showHover || !hoveredAnnotation) return;
-                setPinnedAnnotation((prev) =>
-                  prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
-                );
-              }}
-              onDoubleClick={(event) => {
-                if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") return;
-                event.preventDefault();
-                event.stopPropagation();
-                finishDraftGeometry();
-              }}
-	              onWheel={(event) => {
-	                if (previewMode !== "2d" || !overlayBoundsResolved || showMap) return;
-	                userAdjustedCanvasViewRef.current = true;
-                const nextScale = Math.min(
-                  Math.max(canvasView.scale + (event.deltaY < 0 ? 0.12 : -0.12), 0.55),
-                  4,
-                );
-                const rect = previewRef.current?.getBoundingClientRect();
-                if (!rect) {
-                  setCanvasView((prev) => ({ ...prev, scale: nextScale }));
-                  return;
-                }
-                const localX = event.clientX - rect.left - overlayBoundsResolved.left;
-                const localY = event.clientY - rect.top - overlayBoundsResolved.top;
-                setCanvasView((prev) => {
-                  const ratio = nextScale / Math.max(prev.scale, 0.1);
-                  return {
-                    scale: nextScale,
-                    offsetX: localX - (localX - prev.offsetX) * ratio,
-                    offsetY: localY - (localY - prev.offsetY) * ratio,
-                  };
-	                });
-	              }}
+              {...preview2DShellHandlers}
 	            >
 	              <CanvasQuickDrawPalette
                 visible={previewMode === "2d" && showQuickDrawPalette}
