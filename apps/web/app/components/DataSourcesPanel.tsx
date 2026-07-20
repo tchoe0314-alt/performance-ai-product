@@ -36,7 +36,7 @@ type PlanPdfElementPatch = {
   };
 };
 
-type DataSourcesPanelProps = {
+export type DataSourcesPanelProps = {
   sourceHubLinks: Array<readonly [SidePanelKey, string]>;
   sourceHubMetrics: Array<readonly [string, string | number]>;
   sourceConfidenceEntryCount: number;

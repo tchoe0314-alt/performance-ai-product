@@ -249,6 +249,7 @@ import { useDashboardEngineeringReviewState } from "./hooks/useDashboardEngineer
 import { useDashboardAutoSiteContextState } from "./hooks/useDashboardAutoSiteContextState";
 import { useDashboardShellReviewState } from "./hooks/useDashboardShellReviewState";
 import { useDashboardStartPanelProps } from "./hooks/useDashboardStartPanelProps";
+import { useDashboardDataSourcesPanelProps } from "./hooks/useDashboardDataSourcesPanelProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -9135,6 +9136,99 @@ function PerformanceAIDashboardView({
       scheduleRotationSave(value);
     },
   });
+  const dataSourcesPanelProps = useDashboardDataSourcesPanelProps({
+    sourceHubLinks,
+    sourceHubMetrics,
+    sourceConfidenceEntryCount: sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length,
+    sourceConfidenceRows,
+    onOpenPanel: handleOpenSidePanel,
+    planPdfAnalysis,
+    planPdfSourceUrl,
+    planPdfFirstPage,
+    planPdfElements,
+    selectedPlanPdfElement,
+    planPdfChangedReport,
+    planPdfChangedElements,
+    planPdfUnreadableItems,
+    planPdfBlockers,
+    planPdfUploadState,
+    planPdfUploadMessage,
+    planPdfElementDraftText,
+    planPdfMoveX,
+    planPdfMoveY,
+    planPdfExtractionSummaryRows,
+    planPdfClassificationPreviewRows,
+    planPdfInputRef,
+    onUploadPlanPdf: uploadPlanPdf,
+    onSelectPlanPdfElement: setSelectedPlanPdfElementId,
+    onPlanPdfDraftTextChange: setPlanPdfElementDraftText,
+    onPlanPdfMoveXChange: setPlanPdfMoveX,
+    onPlanPdfMoveYChange: setPlanPdfMoveY,
+    onUpdatePlanPdfElement: updatePlanPdfElement,
+    onExportPlanPdfJson: exportPlanPdfReport,
+    onExportPlanPdf: exportPlanPdfReviewPdf,
+    onPromptChange: setPrompt,
+    onStatusMessageChange: setStatusMessage,
+    capabilityAuditRows,
+    onlineDiscoveryStatus: onlineDiscovery.status ?? "",
+    onlineDiscoveryRan: Boolean(onlineDiscovery.version),
+    onlineDiscoverySources,
+    candidateReviewCounts,
+    candidateReviewItems,
+    onCandidateDecision: handleCandidateReviewDecision,
+    siteAddress,
+    selectedAddressSuggestion,
+    addressSuggestions,
+    onSiteAddressChange: setSiteAddress,
+    onSelectedAddressSuggestionChange: setSelectedAddressSuggestion,
+    onAddressSuggestionsChange: setAddressSuggestions,
+    onApplyAddress: saveSiteAddress,
+    autoExistingConditionsStatus,
+    mapSnapshotInputRef,
+    uploadedImageApiUrl,
+    uploadedImagePreviewUrl,
+    imageUploadState,
+    imageUploadNote,
+    mapSnapshotPath,
+    mapAnalysis,
+    onAnalyzeMapSnapshot: analyzeMapSnapshot,
+    siteScaleLocked,
+    onUnlockSite: handleUnlockSite,
+    onApplySite: handleApplySite,
+    lotBounds,
+    siteTooLargeForWarning,
+    missingSite,
+    hasTerrainSource,
+    siteTooLargeForGrading,
+    onGenerateSystem: handleGenerateSystem,
+    onAnalyzeImageFeatures: handleAnalyzeImageFeatures,
+    missingImage,
+    detectedPlacements,
+    siteSelectionMode,
+    buildingPlacements,
+    detectionChoices,
+    onDetectionChoicesChange: setDetectionChoices,
+    onRunSelectedDetections: runSelectedDetections,
+    onAnalyzeSiteAccess: handleAnalyzeSiteAccess,
+    confirmedObjectCounts,
+    analysisIssueCount: analysisIssues.length,
+    mapAnalysisCounts,
+    siteRotationDeg,
+    siteRotationInput,
+    onSiteRotationDegChange: setSiteRotationDeg,
+    onSiteRotationInputChange: setSiteRotationInput,
+    onScheduleRotationSave: scheduleRotationSave,
+    onFitToSite: () => setFitToSiteRequest((value) => value + 1),
+    onUseMapCenter: () => setMapCenterRequest((value) => value + 1),
+    onAlignToRoad: () => setAlignToRoadRequest((value) => value + 1),
+    drainageSourceOverride,
+    drainageSurfaceSummary,
+    onDrainageSourceOverrideChange: setDrainageSourceOverride,
+    currentProject,
+    payloadPreview,
+    onSaveProject: saveProject,
+    onUploadImage: uploadImage,
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9284,129 +9378,7 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "data" ? (
-                  <DataSourcesPanel
-                    sourceHubLinks={sourceHubLinks}
-                    sourceHubMetrics={sourceHubMetrics}
-                    sourceConfidenceEntryCount={sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length}
-                    sourceConfidenceRows={sourceConfidenceRows}
-                    onOpenPanel={handleOpenSidePanel}
-                    planPdfAnalysis={planPdfAnalysis}
-                    planPdfSourceUrl={planPdfSourceUrl}
-                    planPdfFirstPage={planPdfFirstPage}
-                    planPdfElements={planPdfElements}
-                    selectedPlanPdfElement={selectedPlanPdfElement}
-                    planPdfChangedReport={planPdfChangedReport}
-                    planPdfChangedElements={planPdfChangedElements}
-                    planPdfUnreadableItems={planPdfUnreadableItems}
-                    planPdfBlockers={planPdfBlockers}
-                    planPdfUploadState={planPdfUploadState}
-                    planPdfUploadMessage={planPdfUploadMessage}
-                    planPdfElementDraftText={planPdfElementDraftText}
-                    planPdfMoveX={planPdfMoveX}
-                    planPdfMoveY={planPdfMoveY}
-                    planPdfExtractionSummaryRows={planPdfExtractionSummaryRows}
-                    planPdfClassificationPreviewRows={planPdfClassificationPreviewRows}
-                    planPdfInputRef={planPdfInputRef}
-                    onUploadPlanPdf={uploadPlanPdf}
-                    onSelectPlanPdfElement={setSelectedPlanPdfElementId}
-                    onPlanPdfDraftTextChange={setPlanPdfElementDraftText}
-                    onPlanPdfMoveXChange={setPlanPdfMoveX}
-                    onPlanPdfMoveYChange={setPlanPdfMoveY}
-                    onUpdatePlanPdfElement={(elementId, patch) => void updatePlanPdfElement(elementId, patch)}
-                    onExportPlanPdfJson={() => void exportPlanPdfReport()}
-                    onExportPlanPdf={() => void exportPlanPdfReviewPdf()}
-                    onEditPdfByChat={() => {
-                      setPrompt("change pool deck elevation");
-                      handleOpenSidePanel("chat");
-                    }}
-                    onWhatChanged={() => {
-                      setPrompt("what changed?");
-                      handleOpenSidePanel("chat");
-                    }}
-                    onAskUnreadable={() => {
-                      setPrompt("show unreadable text");
-                      handleOpenSidePanel("chat");
-                    }}
-                    onInvalidPlanPdfMove={() => {
-                      setStatusMessage("Moving a PDF-derived element requires explicit target x0/y0 coordinates.");
-                    }}
-                    capabilityAuditRows={capabilityAuditRows}
-                    onlineDiscoveryStatus={onlineDiscovery.status ?? ""}
-                    onlineDiscoveryRan={Boolean(onlineDiscovery.version)}
-                    onlineDiscoverySources={onlineDiscoverySources}
-                    candidateReviewCounts={candidateReviewCounts}
-                    candidateReviewItems={candidateReviewItems}
-                    onCandidateDecision={(candidateId, decision) => void handleCandidateReviewDecision(candidateId, decision)}
-                    siteAddress={siteAddress}
-                    selectedAddressSuggestion={selectedAddressSuggestion}
-                    addressSuggestions={addressSuggestions}
-                    onSiteAddressChange={setSiteAddress}
-                    onSelectedAddressSuggestionChange={setSelectedAddressSuggestion}
-                    onAddressSuggestionsChange={setAddressSuggestions}
-                    onApplyAddress={() => void saveSiteAddress()}
-                    autoExistingConditionsStatus={autoExistingConditionsStatus}
-                    mapSnapshotInputRef={mapSnapshotInputRef}
-                    uploadedImageApiUrl={uploadedImageApiUrl}
-                    uploadedImagePreviewUrl={uploadedImagePreviewUrl}
-                    imageUploadState={imageUploadState}
-                    imageUploadNote={imageUploadNote}
-                    mapSnapshotPath={mapSnapshotPath}
-                    mapAnalysis={mapAnalysis}
-                    onAnalyzeMapSnapshot={analyzeMapSnapshot}
-                    siteScaleLocked={siteScaleLocked}
-                    onUnlockSite={handleUnlockSite}
-                    onApplySite={() => void handleApplySite()}
-                    lotBounds={lotBounds}
-                    siteTooLargeForWarning={siteTooLargeForWarning}
-                    missingSite={missingSite}
-                    hasTerrainSource={hasTerrainSource}
-                    siteTooLargeForGrading={siteTooLargeForGrading}
-                    onGenerateSystem={handleGenerateSystem}
-                    onAnalyzeImageFeatures={() => handleAnalyzeImageFeatures()}
-                    missingImage={missingImage}
-                    detectedPlacementsCount={detectedPlacements.length}
-                    siteSelectionMode={siteSelectionMode}
-                    hasSiteObject={buildingPlacements.some((item) => item.type === "site")}
-                    detectionChoices={detectionChoices}
-                    onDetectionChoicesChange={setDetectionChoices}
-                    onRunSelectedDetections={() => void runSelectedDetections()}
-                    onAnalyzeSiteAccess={handleAnalyzeSiteAccess}
-                    confirmedObjectCounts={confirmedObjectCounts}
-                    analysisIssueCount={analysisIssues.length}
-                    mapAnalysisCounts={mapAnalysisCounts}
-                    siteRotationDeg={siteRotationDeg}
-                    siteRotationInput={siteRotationInput}
-                    onSiteRotationDegChange={setSiteRotationDeg}
-                    onSiteRotationInputChange={setSiteRotationInput}
-                    onScheduleRotationSave={scheduleRotationSave}
-                    onFitToSite={() => setFitToSiteRequest((value) => value + 1)}
-                    onUseMapCenter={() => setMapCenterRequest((value) => value + 1)}
-                    onAlignToRoad={() => setAlignToRoadRequest((value) => value + 1)}
-                    drainageSourceOverride={drainageSourceOverride}
-                    drainageSurfaceSummary={drainageSurfaceSummary}
-                    onDrainageSourceOverrideChange={(next) => {
-                      setDrainageSourceOverride(next);
-                      const currentInput = currentProject?.project_input ?? payloadPreview;
-                      void saveProject({
-                        silent: true,
-                        projectInputOverride: {
-                          ...currentInput,
-                          input_mode: "user",
-                          strict_mode: false,
-                          allow_ai_fill_for_blanks: false,
-                          meta: {
-                            ...(currentInput?.meta ?? {}),
-                            site_inputs: {
-                              ...(currentInput?.meta?.site_inputs ?? {}),
-                              drainage_source_override: next,
-                            },
-                          },
-                        },
-                      });
-                    }}
-                    mapSnapshotUploadInputRef={mapSnapshotInputRef}
-                    onUploadImage={uploadImage}
-                  />
+                  <DataSourcesPanel {...dataSourcesPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "model" ? (
