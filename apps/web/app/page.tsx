@@ -12619,7 +12619,7 @@ function PerformanceAIDashboardView({
               : projectStatusSummary.nextAction || progressTimelineState.next_action || nextSetupAction;
 	      appendChatMessage(
 	        "assistant",
-	        `${visibleAction} Project status: ${projectStatusSummary.state}. Current blocker source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
+	        `${visibleAction} Current status: ${projectStatusDisplayLabel[projectStatusSummary.state]}. Current needs-input source: ${canonicalWorkspaceBlockerText} This is the next visible UI action; all outputs remain review-required.`,
         "status",
       );
       return true;
@@ -12627,7 +12627,7 @@ function PerformanceAIDashboardView({
 
     if (/(why is this review[- ]only|why.*review[- ]only|why.*engineer review|required review)/i.test(normalized)) {
       const lines = [
-        "Civora is review-only because it is showing draft layouts, source evidence, assumptions, blockers, and generated artifacts for qualified review.",
+        "Civora is review-only because it is showing draft layouts, source evidence, assumptions, needs-input items, and generated artifacts for qualified review.",
         hasAppliedAddress
           ? `Address context is applied (${appliedAddressLabel || "coordinate context"}), but address/GIS context is not survey/control.`
           : "Address/location evidence is not fully applied yet.",
@@ -12652,7 +12652,7 @@ function PerformanceAIDashboardView({
         "assistant",
         roadwayWorkbenchData.profilePoints.length
           ? `Opened the linked profile view with ${roadwayWorkbenchData.profilePoints.length} profile samples. This remains review-required evidence.`
-          : "Opened the profile view. No profile samples are recorded yet, so the corridor stays blocked for review.",
+          : "Opened the profile view. No profile samples are recorded yet, so the corridor still needs review.",
         "status",
       );
       return true;
@@ -12679,7 +12679,7 @@ function PerformanceAIDashboardView({
       setActiveCivil3DWorkflowTab("blockers");
       const blockers = civil3DWorkflowBlockers.length
         ? civil3DWorkflowBlockers
-        : ["No corridor-specific blocker text is recorded, but profile, section, surface, and source confidence still require review."];
+        : ["No corridor-specific needs-input note is recorded, but profile, section, surface, and source confidence still require review."];
       appendChatMessage(
         "assistant",
         `Corridor review needs:\n${blockers.map((item) => `- ${item}`).join("\n")}`,
@@ -12724,7 +12724,7 @@ function PerformanceAIDashboardView({
 
     if (/(what should i do next|what next|next step|where should i start|what do i do next)/i.test(normalized)) {
       const blockers = progressTimelineState.exact_blockers?.length
-        ? ` Blockers: ${progressTimelineState.exact_blockers.slice(0, 3).join("; ")}.`
+        ? ` Needs input: ${progressTimelineState.exact_blockers.slice(0, 3).join("; ")}.`
         : "";
       const current = progressTimelineState.current_step_label
         ? `Current step: ${progressTimelineState.current_step_label}. `
@@ -13722,7 +13722,7 @@ function PerformanceAIDashboardView({
         : pendingPlacementObjects.length
           ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
           : projectStatusSummary.nextAction || workflowActionHints[0] || progressTimelineState.next_action || (siteScaleLocked ? "Open Generate and run a review draft." : "Open Setup and lock a site boundary.");
-      appendChatMessage("assistant", `Next action: ${next} Current status: ${projectStatusSummary.state}.`, "status");
+      appendChatMessage("assistant", `Next action: ${next} Current status: ${projectStatusDisplayLabel[projectStatusSummary.state]}.`, "status");
       return true;
     }
     if (/^create ai realism$/.test(normalized)) {
@@ -13730,7 +13730,7 @@ function PerformanceAIDashboardView({
       handleSetPreviewQuality("high");
       handleSetPreviewMode("2d");
       handleOpenSidePanel("model");
-      appendChatMessage("assistant", "Opened high-quality preview mode. Use the AI Realism toggle there; provider/layout blockers will be shown exactly in the preview panel.", "status");
+      appendChatMessage("assistant", "Opened high-quality preview mode. Use the AI Realism toggle there; provider/layout needs will be shown exactly in the preview panel.", "status");
       return true;
     }
     if (/^turn ai realism off$/.test(normalized)) {

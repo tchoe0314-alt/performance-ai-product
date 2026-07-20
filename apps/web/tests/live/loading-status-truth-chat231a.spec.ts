@@ -214,8 +214,8 @@ test.describe("Chat 231A loading states and status truth", () => {
     await openPanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
     const visibleStatus = (await page.getByTestId("project-status-summary").innerText()).toLowerCase();
     await runCommand(page, "what should I do next?");
-    await expect(page.getByText(/Current status:/i).last()).toContainText(/needs review|ready|blocked|working|stale/i);
-    await expect(page.getByText(/Current status:/i).last()).toContainText(visibleStatus.includes("blocked") ? "blocked" : /needs review|ready|working|stale/i);
+    await expect(page.getByText(/Current status:/i).last()).toContainText(/needs input|needs review|ready|working|update recommended/i);
+    await expect(page.getByText(/Current status:/i).last()).toContainText(visibleStatus.includes("needs input") ? "Needs input" : /needs review|ready|working|update recommended/i);
 
     await runCommand(page, "what is blocked?");
     await expect(page.getByText(/Needs input|No needs-input items|No current needs-input items/i).last()).toBeVisible();

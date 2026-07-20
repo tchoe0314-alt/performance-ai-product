@@ -119,8 +119,9 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(sidebar).toBeVisible();
     await expect(sidebar).toHaveAttribute("data-motion-state", "open");
 
-    await sidebar.getByRole("button", { name: "Open canvas from sidebar" }).click();
-    await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();
+    await sidebar.getByRole("button", { name: /^Draw$/ }).click();
+    await expect(canvas.getByRole("button", { name: "Add Line" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Add Area" })).toBeVisible();
     await expect(canvas).toBeVisible();
 
     const postToggleOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
