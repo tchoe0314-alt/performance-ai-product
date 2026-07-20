@@ -1,5 +1,8 @@
 import type { DrawMode } from "./cadToolTypes";
-import { parseCadVectorToken } from "./previewCadCommandParsing";
+import {
+  parseCadPointTokens,
+  parseCadVectorToken,
+} from "./previewCadCommandParsing";
 import type { CadActiveCommand } from "../components/previewPanelTypes";
 
 type CadCommandFeedbackStatus = "applied" | "blocked" | "info";
@@ -106,5 +109,146 @@ export function finishPreviewCadActiveCommand({
   setCadActiveCommand(null);
   setDrawMode("select");
   setCadCommandDraft("");
+  return true;
+}
+
+type HandlePreviewCadActiveCommandInputContext = {
+  cadActiveCommand: CadActiveCommand;
+  raw: string;
+  tokens: string[];
+  selectedCadObject: unknown | null;
+  selectedCadIds: string[];
+  draftPoints: Array<[number, number]>;
+  setCadOffsetDistance: (value: string) => void;
+  setCadTransformValue: (value: string) => void;
+  setCadActiveCommand: (command: CadActiveCommand | null) => void;
+  setCadCommandDraft: (command: string) => void;
+  setDraftPoints: (points: Array<[number, number]>) => void;
+  setDraftPreviewPoint: (point: [number, number] | null) => void;
+  setDrawMode: (mode: DrawMode) => void;
+  offsetSelectedCadObjectBy: (valueOverride?: string) => void;
+  trimExtendSelectedCadObject: (operationOverride: "trim" | "extend", amountOverride?: string) => void;
+  moveSelectedCadObjectsByVector: (dx: number, dy: number) => void;
+  copySelectedCadObjectsByVector: (vectorOverride?: [number, number]) => void;
+  transformSelectedCadObjects: (operation: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", value: string) => void;
+  createCadCommandGeometry: (
+    command: string,
+    mode: "polyline" | "polygon" | "rect" | "point",
+    points: Array<[number, number]>,
+    options?: { label?: string; meta?: Record<string, unknown>; minPoints?: number },
+  ) => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+export function handlePreviewCadActiveCommandInput({
+  cadActiveCommand,
+  raw,
+  tokens,
+  selectedCadObject,
+  selectedCadIds,
+  draftPoints,
+  setCadOffsetDistance,
+  setCadTransformValue,
+  setCadActiveCommand,
+  setCadCommandDraft,
+  setDraftPoints,
+  setDraftPreviewPoint,
+  setDrawMode,
+  offsetSelectedCadObjectBy,
+  trimExtendSelectedCadObject,
+  moveSelectedCadObjectsByVector,
+  copySelectedCadObjectsByVector,
+  transformSelectedCadObjects,
+  createCadCommandGeometry,
+  pushCadCommandFeedback,
+}: HandlePreviewCadActiveCommandInputContext) {
+  if (cadActiveCommand.kind === "offset") {
+    const distance = Number(raw);
+    if (!Number.isFinite(distance) || Math.abs(distance) < 0.001) {
+      pushCadCommandFeedback("OFFSET", "blocked", "OFFSET expected a non-zero distance like 10.");
+      return true;
+    }
+    setCadOffsetDistance(String(distance));
+    if (!selectedCadObject) {
+      setCadActiveCommand({ command: "OFFSET", kind: "offset", distance });
+      setCadCommandDraft("");
+      pushCadCommandFeedback("OFFSET", "info", `OFFSET distance set to ${distance}. Select one draft object, then run OFFSET or press Run empty.`);
+      return true;
+    }
+    offsetSelectedCadObjectBy(String(distance));
+    setCadActiveCommand(null);
+    setCadCommandDraft("");
+    return true;
+  }
+  if (cadActiveCommand.kind === "modify") {
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || Math.abs(amount) < 0.001) {
+      pushCadCommandFeedback(cadActiveCommand.command, "blocked", `${cadActiveCommand.command} expected a non-zero amount like 8.`);
+      return true;
+    }
+    setCadTransformValue(String(amount));
+    if (!selectedCadObject) {
+      setCadActiveCommand({ command: cadActiveCommand.command, kind: "modify", amount });
+      setCadCommandDraft("");
+      pushCadCommandFeedback(cadActiveCommand.command, "info", `${cadActiveCommand.command} amount set to ${amount}. Select one line/polyline draft object, then run ${cadActiveCommand.command} or press Run empty.`);
+      return true;
+    }
+    trimExtendSelectedCadObject(cadActiveCommand.command.toLowerCase() as "trim" | "extend", String(amount));
+    setCadActiveCommand(null);
+    setCadCommandDraft("");
+    return true;
+  }
+  if (cadActiveCommand.kind === "transform") {
+    setCadActiveCommand({ command: cadActiveCommand.command, kind: "transform", value: raw });
+    setCadCommandDraft("");
+    if (!selectedCadObject && cadActiveCommand.command === "COPY") {
+      pushCadCommandFeedback("COPY", "info", `COPY vector set to ${raw}. Select one editable draft object, then run COPY or press Run empty.`);
+      return true;
+    }
+    if (!selectedCadIds.length && cadActiveCommand.command !== "COPY") {
+      pushCadCommandFeedback(cadActiveCommand.command, "info", `${cadActiveCommand.command} value set to ${raw}. Select one or more editable draft objects, then run ${cadActiveCommand.command} or press Run empty.`);
+      return true;
+    }
+    if (cadActiveCommand.command === "MOVE") {
+      const vector = parseCadVectorToken(raw);
+      if (vector) {
+        moveSelectedCadObjectsByVector(vector[0], vector[1]);
+      } else {
+        transformSelectedCadObjects("move", raw);
+      }
+    } else if (cadActiveCommand.command === "COPY") {
+      copySelectedCadObjectsByVector(parseCadVectorToken(raw) ?? undefined);
+    } else {
+      transformSelectedCadObjects(cadActiveCommand.command.toLowerCase() as "rotate" | "scale", raw);
+    }
+    setCadActiveCommand(null);
+    return true;
+  }
+  const activePoints = parseCadPointTokens(tokens);
+  if (!activePoints.length) {
+    pushCadCommandFeedback(
+      cadActiveCommand.command,
+      "blocked",
+      `${cadActiveCommand.command} expected a coordinate like 100,50, or press Enter to finish.`,
+    );
+    return true;
+  }
+  const nextPoints = [...draftPoints, ...activePoints];
+  if (cadActiveCommand.mode === "rect" && nextPoints.length >= 2) {
+    createCadCommandGeometry("RECTANGLE", "rect", nextPoints.slice(0, 2), { label: "Command Rectangle", minPoints: 2 });
+    setDraftPoints([]);
+    setDraftPreviewPoint(null);
+    setCadActiveCommand(null);
+    setDrawMode("select");
+    setCadCommandDraft("");
+    return true;
+  }
+  setDraftPoints(nextPoints);
+  setCadCommandDraft("");
+  pushCadCommandFeedback(
+    cadActiveCommand.command,
+    "info",
+    `${cadActiveCommand.command} accepted ${nextPoints.length} point${nextPoints.length === 1 ? "" : "s"}. Type next point or press Enter/Run with an empty command to finish.`,
+  );
   return true;
 }
