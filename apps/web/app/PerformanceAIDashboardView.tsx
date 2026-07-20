@@ -287,6 +287,7 @@ import { DrawCadToolsPanel, type DrawCadToolGroup } from "./components/DrawCadTo
 import { FilesPanel } from "./components/FilesPanel";
 import { FloatingObjectInspector } from "./components/FloatingObjectInspector";
 import { GeneratePanel } from "./components/GeneratePanel";
+import { ImportSurveyPanel } from "./components/ImportSurveyPanel";
 import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
@@ -20518,147 +20519,39 @@ function PerformanceAIDashboardView({
 
 
                 {sidePanelForRender === "import_survey" ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Import inputs</p>
-                      <div className="mt-3 space-y-2">
-                        <button type="button" onClick={() => mapSnapshotInputRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                          <span>Map snapshot / image</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{uploadedImagePreviewUrl || uploadedImageApiUrl ? "Ready" : "Upload"}</span>
-                        </button>
-                        {imageUploadState !== "idle" ? (
-                          <p data-testid="image-upload-status" className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
-                            imageUploadState === "failed"
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-slate-200 bg-slate-50 text-slate-600"
-                          }`}>
-                            {imageUploadNote ||
-                              (imageUploadState === "uploading"
-                                ? "Uploading image..."
-                                : imageUploadState === "detecting"
-                                  ? "Detecting site features..."
-                                  : imageUploadState === "failed"
-                                    ? "Image upload failed."
-                                    : "Image uploaded.")}
-                          </p>
-                        ) : null}
-                        <button type="button" onClick={() => surveyInputRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                          <span>Survey / topo file</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{surveyPreviewPoints.length ? "Ready" : "Upload"}</span>
-                        </button>
-                        {surveyUploadMessage ? (
-                          <p data-testid="survey-upload-status" className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
-                            surveyUploadMessage.toLowerCase().includes("failed")
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-slate-200 bg-slate-50 text-slate-600"
-                          }`}>
-                            {surveyUploadMessage}
-                          </p>
-                        ) : null}
-                        <button type="button" onClick={() => handleOpenSidePanel("data")} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                          <span>Plan PDF visual editor</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{planPdfAnalysis ? "Review" : "Open"}</span>
-                        </button>
-                        <button type="button" onClick={analyzeMapSnapshot} disabled={!mapSnapshotPath} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                          <span>Analyze map snapshot</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{mapAnalysis?.success ? "Ready" : "Analyze"}</span>
-                        </button>
-                      </div>
-                      <input
-                        ref={mapSnapshotInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const file = event.currentTarget.files?.[0];
-                          if (file) {
-                            await uploadImage(file);
-                          }
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                      <input
-                        ref={surveyInputRef}
-                        type="file"
-                        accept=".csv,.geojson,.json,.dxf,.shp,.zip,.gpkg,.tif,.tiff,.las,.laz,.xml,.landxml"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const file = event.currentTarget.files?.[0];
-                          if (file) {
-                            await uploadExistingConditions(file);
-                          }
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        ["Survey pts", surveyPreviewPoints.length],
-                        ["Terrain", hasTerrainSource ? "Ready" : "Missing"],
-                        ["Image", uploadedImagePreviewUrl || uploadedImageApiUrl ? "Ready" : "Missing"],
-                        ["Scale", detectionScaleFtPerPx ? `${detectionScaleFtPerPx.toFixed(2)} ft/px` : "Unset"],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Map calibration</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setFitToSiteRequest((value) => value + 1)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Fit to site
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setMapCenterRequest((value) => value + 1)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Map center
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAlignToRoadRequest((value) => value + 1)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Align road
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSiteRotationDeg(0);
-                            setSiteRotationInput("0");
-                            scheduleRotationSave(0);
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                        >
-                          Reset rotation
-                        </button>
-                      </div>
-                      <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Rotation
-                        <input
-                          type="range"
-                          min={-180}
-                          max={180}
-                          value={siteRotationDeg}
-                          disabled={siteScaleLocked}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            setSiteRotationDeg(value);
-                            setSiteRotationInput(String(value));
-                            scheduleRotationSave(value);
-                          }}
-                          className="mt-2 h-2 w-full accent-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                      </label>
-                    </div>
-                  </div>
+                  <ImportSurveyPanel
+                    mapSnapshotReady={Boolean(uploadedImagePreviewUrl || uploadedImageApiUrl)}
+                    surveyPointCount={surveyPreviewPoints.length}
+                    imageUploadState={imageUploadState}
+                    imageUploadNote={imageUploadNote}
+                    surveyUploadMessage={surveyUploadMessage}
+                    planPdfReady={Boolean(planPdfAnalysis)}
+                    mapAnalysisReady={Boolean(mapAnalysis?.success)}
+                    mapSnapshotPath={mapSnapshotPath}
+                    hasTerrainSource={hasTerrainSource}
+                    detectionScaleFtPerPx={detectionScaleFtPerPx}
+                    siteRotationDeg={siteRotationDeg}
+                    siteScaleLocked={siteScaleLocked}
+                    mapSnapshotInputRef={mapSnapshotInputRef}
+                    surveyInputRef={surveyInputRef}
+                    onUploadImage={uploadImage}
+                    onUploadExistingConditions={uploadExistingConditions}
+                    onOpenPlanPdf={() => handleOpenSidePanel("data")}
+                    onAnalyzeMapSnapshot={analyzeMapSnapshot}
+                    onFitToSite={() => setFitToSiteRequest((value) => value + 1)}
+                    onMapCenter={() => setMapCenterRequest((value) => value + 1)}
+                    onAlignRoad={() => setAlignToRoadRequest((value) => value + 1)}
+                    onResetRotation={() => {
+                      setSiteRotationDeg(0);
+                      setSiteRotationInput("0");
+                      scheduleRotationSave(0);
+                    }}
+                    onRotationChange={(value) => {
+                      setSiteRotationDeg(value);
+                      setSiteRotationInput(String(value));
+                      scheduleRotationSave(value);
+                    }}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "data" ? (
