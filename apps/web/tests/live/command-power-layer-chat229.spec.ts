@@ -78,6 +78,22 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
   });
 
+  test("natural grading and drainage context commands create editable review geometry", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await runCommand(page, "add grading and drainage context");
+
+    await expect(page.locator('[data-cad-object-id][aria-label*="Review Grading Fall Line"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Review Drainage Area Cue"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/editable review context/i)).toBeVisible({ timeout: 5_000 });
+    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/not survey\/control evidence/i);
+
+    await openDrawPanel(page);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Review Grading Fall Line");
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Review Drainage Area Cue");
+  });
+
   test("chat explains preview marks like a human instead of leaving mystery geometry", async ({ page }) => {
     await openDemoWorkspace(page);
 

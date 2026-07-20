@@ -7022,6 +7022,146 @@ function PerformanceAIDashboardView({
     ],
   );
 
+  const addGradingDrainageReviewContext = useCallback(
+    (message: string, mode: "grading" | "drainage" | "both" = "both") => {
+      clearGeneratedPreview();
+      if (!hasSiteBoundary()) {
+        ensureSiteBoundary("Created a default review site so grading/drainage context can be added immediately.");
+      }
+      const lot = resolveLotBounds();
+      const stamp = Date.now();
+      const wantsGrading = mode === "grading" || mode === "both";
+      const wantsDrainage = mode === "drainage" || mode === "both";
+      const additions: BuildingPlacement[] = [];
+      const makeLine = (
+        suffix: string,
+        label: string,
+        geometry: Array<[number, number]>,
+        meta: Record<string, unknown>,
+      ): BuildingPlacement => {
+        const bounds = geometry.reduce(
+          (acc, [x, y]) => ({
+            minX: Math.min(acc.minX, x),
+            minY: Math.min(acc.minY, y),
+            maxX: Math.max(acc.maxX, x),
+            maxY: Math.max(acc.maxY, y),
+          }),
+          { minX: lot.w, minY: lot.h, maxX: 0, maxY: 0 },
+        );
+        return {
+          id: `review-${suffix}-${stamp}-${Math.random().toString(36).slice(2, 8)}`,
+          label,
+          type: "custom",
+          w: Math.max(10, bounds.maxX - bounds.minX),
+          d: Math.max(10, bounds.maxY - bounds.minY),
+          x: bounds.minX,
+          y: bounds.minY,
+          rotation: 0,
+          locked: false,
+          placed: true,
+          source: "user",
+          generated: false,
+          geometryType: "polyline",
+          geometry,
+          capabilities: {
+            movable: true,
+            resizable: false,
+            rotatable: false,
+            deletable: true,
+          },
+          systemDependencies: ["grading", "drainage"],
+          meta: {
+            command_created: true,
+            source_confidence: "user_drawn_review_required",
+            draft_review_required: true,
+            construction_release_allowed: false,
+            ...meta,
+          },
+        };
+      };
+      if (wantsGrading) {
+        additions.push(
+          makeLine(
+            "grading-fall-line",
+            "Review Grading Fall Line",
+            [
+              [lot.w * 0.18, lot.h * 0.22],
+              [lot.w * 0.42, lot.h * 0.34],
+              [lot.w * 0.70, lot.h * 0.58],
+              [lot.w * 0.84, lot.h * 0.74],
+            ],
+            {
+              cad_layer: "C-GRADE",
+              ui_color: "#64748b",
+              role: "grading_fall_direction_review_line",
+              slope_context: "draft_review_required",
+            },
+          ),
+        );
+      }
+      if (wantsDrainage) {
+        additions.push(
+          makeLine(
+            "drainage-area-cue",
+            "Review Drainage Area Cue",
+            [
+              [lot.w * 0.22, lot.h * 0.28],
+              [lot.w * 0.58, lot.h * 0.30],
+              [lot.w * 0.78, lot.h * 0.56],
+              [lot.w * 0.70, lot.h * 0.78],
+              [lot.w * 0.28, lot.h * 0.72],
+              [lot.w * 0.22, lot.h * 0.28],
+            ],
+            {
+              cad_layer: "C-DRAIN",
+              ui_color: "#0ea5e9",
+              role: "drainage_area_review_boundary",
+              hydrology_context: "draft_review_required",
+            },
+          ),
+        );
+      }
+      setBuildingPlacements((prev) => [...prev, ...additions]);
+      additions.forEach((item) => recordDraftUndoAction({ action: "add", object: item }));
+      markSystemsStale(["grading", "drainage"]);
+      setActivePlacementId(null);
+      setPlacementModeEnabled(false);
+      setPreviewMode("2d");
+      setPreviewInteraction("static");
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      setSidePanelVisible(false);
+      setRightRailCollapsed(true);
+      setFitToSiteRequest((value) => value + 1);
+      recordRecentChange({
+        type: "object_added",
+        label: "Grading/drainage context added",
+        detail: `${additions.map((item) => item.label).join(", ")} added as draft review geometry.`,
+      });
+      const messageLabel = additions.map((item) => item.label).join(" and ");
+      appendChatMessage(
+        "assistant",
+        `${messageLabel} added to the canvas as editable review context. Generate will treat it as draft grading/drainage intent, not survey/control evidence.`,
+        "status",
+      );
+      setStatusMessage(
+        `${messageLabel} added as editable review context. Draft grading/drainage intent only; not survey/control evidence.`,
+      );
+      return true;
+    },
+    [
+      appendChatMessage,
+      clearGeneratedPreview,
+      ensureSiteBoundary,
+      hasSiteBoundary,
+      markSystemsStale,
+      recordDraftUndoAction,
+      recordRecentChange,
+      resolveLotBounds,
+    ],
+  );
+
   const createGenerateConceptObjects = useCallback(
     (target: SystemGenerationTarget, notes: string[]) => {
       const lot = resolveLotBounds();
@@ -11683,6 +11823,20 @@ function PerformanceAIDashboardView({
       /(add|create|set)\s+(a\s+)?(lot|plot|site)[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
     );
     const plotAcreMatch = lower.match(/(add|create|set)\s+(a\s+)?(\d+(\.\d+)?)\s*acre/);
+
+    if (
+      /\b(add|create|place|show|draw|make)\b/.test(lower) &&
+      /\b(grading|grade|fall line|slope direction|drainage area|drainage context|flow path)\b/.test(lower)
+    ) {
+      const wantsGrading = /\b(grading|grade|fall line|slope direction)\b/.test(lower);
+      const wantsDrainage = /\b(drainage|flow path|drainage area)\b/.test(lower);
+      appendChatMessage("user", message);
+      addGradingDrainageReviewContext(
+        message,
+        wantsGrading && wantsDrainage ? "both" : wantsGrading ? "grading" : "drainage",
+      );
+      return true;
+    }
 
     if (parkingCountCommandMatch) {
       if (!lot.w || !lot.h) {
