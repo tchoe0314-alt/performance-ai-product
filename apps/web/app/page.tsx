@@ -13379,7 +13379,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "chat",
-          title: "Command focus blocked",
+          title: "Command focus needs attention",
           detail: "Command input is not mounted.",
           nextAction: "Open the chat panel or return to the canvas, then try / again.",
         });
@@ -13784,7 +13784,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "setup",
-          title: "Apply address blocked",
+          title: "Apply address needs input",
           detail: "No address is typed.",
           nextAction: "Type a project address in Setup, then run apply address again.",
         });
@@ -14849,7 +14849,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "projects",
-        title: "Open blocked",
+        title: "Open needs attention",
         detail: message,
         nextAction: "Check auth/backend connectivity, then open the project again.",
       });
@@ -15837,7 +15837,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "setup",
-        title: "Site context blocked",
+        title: "Site context needs connection",
         detail: "Sign in/connect backend to detect site context.",
         nextAction: "Sign in or reconnect backend, then run map/image detection again.",
       });
@@ -15852,7 +15852,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "setup",
-        title: "Site context blocked",
+        title: "Site context needs image",
         detail: "A site image or map snapshot is required before detection.",
         nextAction: "Upload a site image or map snapshot, then run detection.",
       });
@@ -15880,7 +15880,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "setup",
-        title: "Site context blocked",
+        title: "Site context needs site size",
         detail: "Site boundary dimensions are required before detection.",
         nextAction: "Set site width/depth or draw a boundary, then run detection again.",
       });
@@ -15920,7 +15920,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: result.success ? "needs review" : "blocked",
         area: "setup",
-        title: result.success ? "Site context needs review" : "Site context blocked",
+        title: result.success ? "Site context needs review" : "Site context needs attention",
         detail: result.success
           ? (mapped.length ? "Detection complete. Review suggested objects." : "Detection complete. No detections were found.")
           : result.message || "Detection failed.",
@@ -15934,7 +15934,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "setup",
-        title: "Site context blocked",
+        title: "Site context needs attention",
         detail: error instanceof Error ? error.message : "Detection failed.",
         nextAction: "Check the uploaded map/image and backend connection, then retry detection.",
       });
@@ -16789,7 +16789,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "setup",
-          title: "Site context blocked",
+          title: "Site context needs address",
           detail: "Site is locked, but address/geocode context is missing.",
           nextAction: "Add an address or map center context, then recheck sources inside the site.",
         });
@@ -16805,7 +16805,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "setup",
-          title: "Site context blocked",
+          title: "Site context needs connection",
           detail: "Automatic source discovery needs a backend session.",
           nextAction: "Sign in or reconnect backend, then recheck sources inside the site.",
         });
@@ -17016,7 +17016,11 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: providerFailed || providersAbsent ? "blocked" : "needs review",
         area: "setup",
-        title: providerFailed || providersAbsent ? "Site context blocked" : "Site context needs review",
+        title: providerFailed
+          ? "Site context needs provider"
+          : providersAbsent
+            ? "Site context needs sources"
+            : "Site context needs review",
         detail:
           providerFailed
             ? "Existing-condition source lookup failed; retry after providers/backend respond."
@@ -17048,7 +17052,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "setup",
-          title: "Site context blocked",
+          title: "Site context needs attention",
           detail: message,
           nextAction: "Check backend/provider connectivity, then recheck sources inside the site.",
         });
@@ -17103,7 +17107,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "setup",
-        title: "Apply site blocked",
+        title: "Apply site needs size",
         detail: "Set the site width and height before applying the site.",
         nextAction: "Type width/depth or draw a site boundary, then lock the site.",
       });
@@ -17115,7 +17119,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "setup",
-        title: "Apply site blocked",
+        title: "Apply site needs smaller area",
         detail: OVERSIZED_SITE_MESSAGE,
         nextAction: "Reduce the site area or zoom to a smaller review boundary.",
       });
@@ -17543,7 +17547,7 @@ function PerformanceAIDashboardView({
         updateProjectStatus({
           state: "blocked",
           area: "setup",
-          title: "Apply address blocked",
+          title: "Apply address needs correction",
           detail: `${geocodeMessage} The map was not moved.`,
           nextAction: "Check the address, or set site size/draw the boundary manually.",
         });
@@ -17746,7 +17750,7 @@ function PerformanceAIDashboardView({
         state: lookupUnavailable ? "blocked" : candidateCount > 0 ? "needs review" : "ready",
         area: "setup",
         title: lookupUnavailable
-          ? "Address applied, source lookup blocked"
+          ? "Address applied, source lookup needs attention"
           : candidateCount > 0
             ? "Address applied, sources need review"
             : "Address applied",
@@ -17791,7 +17795,7 @@ function PerformanceAIDashboardView({
       updateProjectStatus({
         state: "blocked",
         area: "setup",
-        title: "Apply address blocked",
+        title: "Apply address needs attention",
         detail: message,
         nextAction: "Check the address or retry after the backend responds.",
       });
