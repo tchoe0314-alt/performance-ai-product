@@ -59,13 +59,21 @@ async function seedBrowserToken(page: Page, token: string) {
 
 async function hasAuthenticatedShell(page: Page) {
   const shellControls = [
+    page.getByRole("button", { name: "Open projects from header" }),
     page.getByRole("button", { name: "Open projects", exact: true }),
+    page.getByRole("button", { name: /^Projects$/ }).first(),
     page.getByText(/^Dashboard$/).first(),
   ];
   for (const control of shellControls) {
     if (await control.isVisible().catch(() => false)) return true;
   }
   return false;
+}
+
+function projectsControl(page: Page) {
+  return page
+    .getByRole("button", { name: /^(Open projects from header|Open projects|Projects)$/ })
+    .first();
 }
 
 async function waitForAuthenticatedShell(page: Page, timeout = 30_000) {
@@ -282,7 +290,7 @@ function resolveActionLabel(configuredAction: string | null, issues: string[]) {
 async function openProject(page: Page, token: string, name: string, projectId?: string) {
   await seedBrowserToken(page, token);
   await ensureSignedIn(page, token);
-  const projectsButton = page.getByRole("button", { name: "Open projects", exact: true });
+  const projectsButton = projectsControl(page);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const projectButton = page
       .getByRole("button", { name: new RegExp(`^(Open project )?${escapeRegExp(name)}\\b`, "i") })
