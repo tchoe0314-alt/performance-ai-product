@@ -646,9 +646,9 @@ function PerformanceAIDashboardView({
     recentChangesOpen,
     recordDraftRedoAction,
     recordDraftUndoAction,
+    recordRecentChange,
     redoDraftAction,
     redoDraftActionRef,
-    setRecentChanges,
     setRecentChangesOpen,
   } = useDashboardDraftHistoryState();
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
@@ -1199,17 +1199,6 @@ function PerformanceAIDashboardView({
     handleSetPreviewMode,
     handleSetPreviewQuality,
   } = useDashboardPreviewModeState({ updateProjectStatus });
-
-  const recordRecentChange = useCallback((change: Omit<RecentChange, "id" | "createdAt">) => {
-    const nextChange: RecentChange = {
-      ...change,
-      id: `change-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      createdAt: Date.now(),
-    };
-    setRecentChanges((current) => [nextChange, ...current].slice(0, 12));
-    setRecentChangesOpen(true);
-    return nextChange;
-  }, []);
 
   const pushRecoveryMessage = useCallback(
     (message: string) => {
