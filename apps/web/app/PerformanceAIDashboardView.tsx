@@ -343,6 +343,11 @@ import {
   markCivoraInteraction,
   measureCivoraInteractionAfterPaint,
 } from "./utils/performanceProbes";
+import {
+  runDashboardPlaceBuilding,
+  runDashboardPlaceObject,
+  runDashboardSelectPlacementTarget,
+} from "./utils/dashboardPlacementActions";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -3502,161 +3507,61 @@ function PerformanceAIDashboardView({
     handleUpdateBuilding(id, { locked: !target.locked });
   }, [buildingPlacements, handleUpdateBuilding]);
 
+  const dashboardPlacementActions = useMemo(() => ({
+    askClarification,
+    buildDefaultPolyline,
+    clearGeneratedPreview,
+    debugLog,
+    ensureSiteBoundary,
+    markSystemsStale,
+    persistDraftRefresh,
+    resolveDefaultBuildingDims,
+    resolveLotBounds,
+    setActivePlacementId,
+    setBuildingPlacements,
+    setPlacementModeEnabled,
+    setPreviewInteraction,
+    setPreviewMode,
+    setSelectedObjectIds,
+    setStatusMessage,
+    systemsImpactedByPlacement,
+  }), [
+    askClarification,
+    buildDefaultPolyline,
+    clearGeneratedPreview,
+    debugLog,
+    ensureSiteBoundary,
+    markSystemsStale,
+    persistDraftRefresh,
+    resolveDefaultBuildingDims,
+    resolveLotBounds,
+    systemsImpactedByPlacement,
+  ]);
+
   const handlePlaceBuilding = useCallback(
     (position: { x: number; y: number }) => {
-      clearGeneratedPreview();
-      if (!siteScaleLocked) {
-        setStatusMessage("Lock the site boundary before placing buildings.");
-        return;
-      }
-      const lot = resolveLotBounds();
-      if (!lot.w || !lot.h) {
-        setStatusMessage("Set the site width and height before placing buildings.");
-        return;
-      }
-      const { w, d } = resolveDefaultBuildingDims();
-      const clampedX = Math.min(Math.max(position.x, 0), 1);
-      const clampedY = Math.min(Math.max(position.y, 0), 1);
-      const nextX = lot.x + clampedX * lot.w - w / 2;
-      const nextY = lot.y + clampedY * lot.h - d / 2;
-      if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
-        setStatusMessage("Placement failed: invalid coordinates.");
-        return;
-      }
-      const boundedX = Math.min(Math.max(nextX, lot.x), lot.x + lot.w - w);
-      const boundedY = Math.min(Math.max(nextY, lot.y), lot.y + lot.h - d);
-      debugLog("place-building", {
-        activePlacementId: activePlacementId ?? null,
-        boundedX,
-        boundedY,
+      runDashboardPlaceBuilding({
+        position,
+        activePlacementId,
+        buildingPlacements,
+        siteScaleLocked,
+        actions: dashboardPlacementActions,
       });
-      if (activePlacementId) {
-        const activePlacement = buildingPlacements.find((item) => item.id === activePlacementId);
-        setBuildingPlacements((prev) =>
-          prev.map((item) =>
-            item.id === activePlacementId
-              ? {
-                  ...item,
-                  x: boundedX,
-                  y: boundedY,
-                  placed: true,
-                  geometry:
-                    item.geometryType === "polyline"
-                      ? buildDefaultPolyline({ x: boundedX, y: boundedY, w: item.w, d: item.d })
-                      : item.geometry,
-                }
-              : item,
-          ),
-        );
-        setActivePlacementId(null);
-        markSystemsStale(systemsImpactedByPlacement(activePlacement));
-        debugLog("place-building-commit", { id: activePlacementId ?? null });
-        setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
-        void ensureProjectDraftRef.current()
-          .then(() => saveProjectRef.current({ silent: true }))
-          .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
-        return;
-      }
-      const nextPlacement: BuildingPlacement = {
-        id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        label: `Building ${buildingPlacements.length + 1}`,
-        type: "building",
-        x: boundedX,
-        y: boundedY,
-        w,
-        d,
-        rotation: 0,
-        locked: false,
-        placed: true,
-      };
-      setBuildingPlacements((prev) => [...prev, nextPlacement]);
-      debugLog("place-building-new", {
-        id: nextPlacement.id,
-        x: nextPlacement.x,
-        y: nextPlacement.y,
-      });
-      markSystemsStale(systemsImpactedByPlacement(nextPlacement));
-      setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
-      void ensureProjectDraftRef.current()
-        .then(() => saveProjectRef.current({ silent: true }))
-        .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
     },
-    [
-      activePlacementId,
-      buildingPlacements.length,
-      buildingPlacements,
-      clearGeneratedPreview,
-      markSystemsStale,
-      resolveDefaultBuildingDims,
-      resolveLotBounds,
-      siteScaleLocked,
-      systemsImpactedByPlacement,
-    ],
+    [activePlacementId, buildingPlacements, dashboardPlacementActions, siteScaleLocked],
   );
 
   const handlePlaceObject = useCallback(
     (id: string, position: { x: number; y: number }) => {
-      clearGeneratedPreview();
-      if (!siteScaleLocked) {
-        setStatusMessage("Lock the site boundary before placing objects.");
-        return;
-      }
-      const lot = resolveLotBounds();
-      if (!lot.w || !lot.h) {
-        const ok = ensureSiteBoundary(
-          "Place the object again to drop it on the new site.",
-        );
-        if (!ok) {
-          setStatusMessage("Set the site width and height before placing objects.");
-        }
-        return;
-      }
-      const clampedX = Math.min(Math.max(position.x, 0), 1);
-      const clampedY = Math.min(Math.max(position.y, 0), 1);
-      debugLog("place-object", { id, clampedX, clampedY });
-      const target = buildingPlacements.find((item) => item.id === id);
-      setBuildingPlacements((prev) =>
-        prev.map((item) => {
-          if (item.id !== id) return item;
-          const x = lot.x + clampedX * lot.w - item.w / 2;
-          const y = lot.y + clampedY * lot.h - item.d / 2;
-          if (!Number.isFinite(x) || !Number.isFinite(y)) {
-            return { ...item, placed: false };
-          }
-          const boundedX = Math.min(Math.max(x, lot.x), lot.x + lot.w - item.w);
-          const boundedY = Math.min(Math.max(y, lot.y), lot.y + lot.h - item.d);
-          debugLog("place-object-commit", { id, x: boundedX, y: boundedY });
-          return {
-            ...item,
-            x: boundedX,
-            y: boundedY,
-            placed: true,
-            geometry:
-              item.geometryType === "polyline"
-                ? buildDefaultPolyline({ x: boundedX, y: boundedY, w: item.w, d: item.d })
-                : item.geometry,
-          };
-        }),
-      );
-      setActivePlacementId((prev) => (prev === id ? null : prev));
-      setPlacementModeEnabled(false);
-      markSystemsStale(systemsImpactedByPlacement(target));
-      debugLog("place-object-complete", { id });
-      setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
-      void ensureProjectDraftRef.current()
-        .then(() => saveProjectRef.current({ silent: true }))
-        .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object placement...", track: true });
+      runDashboardPlaceObject({
+        id,
+        position,
+        buildingPlacements,
+        siteScaleLocked,
+        actions: dashboardPlacementActions,
+      });
     },
-    [
-      buildDefaultPolyline,
-      buildingPlacements,
-      clearGeneratedPreview,
-      ensureSiteBoundary,
-      markSystemsStale,
-      resolveLotBounds,
-      siteScaleLocked,
-      systemsImpactedByPlacement,
-    ],
+    [buildingPlacements, dashboardPlacementActions, siteScaleLocked],
   );
 
   const handleCreateSiteBoundary = useCallback(
@@ -3986,50 +3891,12 @@ function PerformanceAIDashboardView({
   );
 
   const handleSelectPlacementTarget = useCallback((id: string) => {
-    const lot = resolveLotBounds();
-    const target = buildingPlacements.find((item) => item.id === id);
-    if (!lot.w || !lot.h) {
-      const message = `Cannot place ${target?.label || "object"} yet: site width and depth are missing. Set or draw a site boundary first.`;
-      askClarification(message, "place_object_missing_site", { id });
-      return;
-    }
-    if (target && target.type === "site") {
-      setStatusMessage("Site boundary is already configured and cannot be moved from the object tray.");
-      return;
-    }
-    if (target && !target.placed) {
-      const nextX = Math.min(Math.max(16, (lot.w - target.w) / 2), Math.max(0, lot.w - target.w));
-      const nextY = Math.min(Math.max(16, (lot.h - target.d) / 2), Math.max(0, lot.h - target.d));
-      setBuildingPlacements((prev) =>
-        prev.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                x: Number.isFinite(nextX) ? nextX : 0,
-                y: Number.isFinite(nextY) ? nextY : 0,
-                placed: true,
-              }
-            : item,
-        ),
-      );
-      markSystemsStale(systemsImpactedByPlacement(target));
-      setPreviewMode("2d");
-      setPreviewInteraction("edit");
-      setActivePlacementId(id);
-      setPlacementModeEnabled(false);
-      setStatusMessage(`${target.label} placed as a visible draft. Select it to move or edit.`);
-      return;
-    }
-    setPreviewMode("2d");
-    setPreviewInteraction("edit");
-    setActivePlacementId(id);
-    setPlacementModeEnabled(true);
-    setStatusMessage(
-      target
-        ? `Ready to place ${target.label}. Click on the canvas to drop it.`
-        : "Placement active. Click on the canvas to drop the object.",
-    );
-  }, [askClarification, buildingPlacements, markSystemsStale, resolveLotBounds, systemsImpactedByPlacement]);
+    runDashboardSelectPlacementTarget({
+      id,
+      buildingPlacements,
+      actions: dashboardPlacementActions,
+    });
+  }, [buildingPlacements, dashboardPlacementActions]);
 
   function askClarification(question: string, action: string, payload?: Record<string, unknown>) {
     setPendingClarification({ action, payload, question });
