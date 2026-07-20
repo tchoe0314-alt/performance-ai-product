@@ -283,6 +283,7 @@ import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
 import { type DrawCadToolGroup } from "./components/DrawCadToolsPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { FloatingObjectInspector } from "./components/FloatingObjectInspector";
+import { FloatingLayerManager, type PreviewLayerVisibility } from "./components/FloatingLayerManager";
 import { GeneratePanel } from "./components/GeneratePanel";
 import { ImportSurveyPanel } from "./components/ImportSurveyPanel";
 import { JobsPanel } from "./components/JobsPanel";
@@ -620,7 +621,7 @@ function PerformanceAIDashboardView({
   const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [showCalculations, setShowCalculations] = useState(false);
-  const [previewLayers, setPreviewLayers] = useState({
+  const [previewLayers, setPreviewLayers] = useState<PreviewLayerVisibility>({
     buildings: true,
     roads: true,
     grading: true,
@@ -19731,7 +19732,6 @@ function PerformanceAIDashboardView({
   const handleOpenFloatingObjectDetails = useCallback(() => {
     handleOpenPanelFromDrawer("details");
   }, [handleOpenPanelFromDrawer]);
-  const visibleLayerCount = Object.values(previewLayers).filter(Boolean).length;
   const sidebarStaleSystems = (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
     .filter(([, status]) => status === "stale")
     .map(([system]) => system);
@@ -22695,69 +22695,16 @@ function PerformanceAIDashboardView({
 	                    </div>
 	                  </div>
 	                </div>
-	                {layerManagerOpen ? (
-	                  <div
-	                    data-testid="floating-layer-manager"
-	                    className={`absolute right-3 top-[9.75rem] z-40 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:top-[9rem] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
-	                  >
-	                    <div className="flex items-start justify-between gap-3">
-	                      <div>
-	                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Layers</p>
-	                        <p className="mt-1 text-xs font-semibold text-slate-700">{visibleLayerCount}/{Object.keys(previewLayers).length} visible</p>
-	                      </div>
-	                      <button
-	                        type="button"
-	                        onClick={() => setLayerManagerOpen(false)}
-	                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
-	                      >
-	                        Close
-	                      </button>
-	                    </div>
-	                    <div className="mt-3 grid grid-cols-2 gap-2">
-	                      {[
-	                        ["Show all", { buildings: true, roads: true, grading: true, drainage: true, utilities: true, structures: true, lots: true }],
-	                        ["Proposed", { buildings: true, roads: true, grading: false, drainage: true, utilities: true, structures: true, lots: false }],
-	                        ["Utilities", { buildings: false, roads: true, grading: false, drainage: true, utilities: true, structures: true, lots: false }],
-	                        ["Clean", { buildings: true, roads: true, grading: false, drainage: false, utilities: false, structures: false, lots: false }],
-	                      ].map(([label, preset]) => (
-	                        <button
-	                          key={String(label)}
-	                          type="button"
-	                          onClick={() => setPreviewLayers(preset as typeof previewLayers)}
-	                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-white"
-	                        >
-	                          {String(label)}
-	                        </button>
-	                      ))}
-	                    </div>
-	                    <div className="mt-3 space-y-1.5">
-	                      {Object.entries(previewLayers).map(([key, value]) => (
-	                        <label
-	                          key={`floating-layer-${key}`}
-	                          className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold capitalize text-slate-700"
-	                        >
-	                          <span>{key.replace("_", " ")}</span>
-	                          <span className="flex items-center gap-2">
-	                            <span className={`h-2 w-2 rounded-full ${value ? "bg-emerald-500" : "bg-slate-300"}`} />
-	                            <input
-	                              type="checkbox"
-	                              checked={Boolean(value)}
-	                              onChange={(event) => setPreviewLayers((prev) => ({ ...prev, [key]: event.target.checked }))}
-	                              className="h-4 w-4 accent-slate-950"
-	                            />
-	                          </span>
-	                        </label>
-	                      ))}
-	                    </div>
-	                    <button
-	                      type="button"
-	                      onClick={() => handleOpenPanelFromDrawer("layers")}
-	                      className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-	                    >
-	                      Open full layer details
-	                    </button>
-	                  </div>
-	                ) : null}
+		                {layerManagerOpen ? (
+		                  <FloatingLayerManager
+		                    layers={previewLayers}
+		                    rightRailCollapsed={rightRailCollapsed}
+		                    onClose={() => setLayerManagerOpen(false)}
+		                    onApplyPreset={setPreviewLayers}
+		                    onToggleLayer={(key, visible) => setPreviewLayers((prev) => ({ ...prev, [key]: visible }))}
+		                    onOpenFullDetails={() => handleOpenPanelFromDrawer("layers")}
+		                  />
+		                ) : null}
 	                {selectedBuilding && !(previewInteraction === "edit" && activePrimaryWorkflowKey === "draw") ? (
 	                  <FloatingObjectInspector
 	                    selectedBuilding={selectedBuilding}
