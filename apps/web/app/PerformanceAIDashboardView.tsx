@@ -290,13 +290,6 @@ import {
   cloneBuildingPlacementForUndo,
   cloneBuildingPlacementWithUpdatesForUndo,
   createDraftCopyWithTrace as createObjectManagerDraftCopyWithTrace,
-  createObjectManagerLayoutUpdateEntries,
-  createObjectManagerMirrorUpdateEntries,
-  createObjectManagerMoveToCoordinateUpdateEntries,
-  createObjectManagerMoveUpdateEntries,
-  createObjectManagerRotateUpdateEntries,
-  createObjectManagerScaleUpdateEntries,
-  createTraceAwareBulkUpdate as createObjectManagerTraceAwareBulkUpdate,
   formatVisibleDraftSelectionMessage,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
@@ -320,6 +313,14 @@ import {
   runObjectManagerLayerSelect,
   runObjectManagerLayerVisibility,
 } from "./utils/dashboardObjectManagerBulkActions";
+import {
+  runObjectManagerBulkLayout,
+  runObjectManagerBulkMirror,
+  runObjectManagerBulkMove,
+  runObjectManagerBulkMoveTo,
+  runObjectManagerBulkRotate,
+  runObjectManagerBulkScale,
+} from "./utils/dashboardObjectManagerTransformActions";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -3571,17 +3572,6 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
-  const createTraceAwareBulkUpdate = useCallback((
-    entries: Array<{ item: BuildingPlacement; updates: Partial<BuildingPlacement> }>,
-    label: string,
-  ): { undo: DraftUndoAction; afterById: Map<string, BuildingPlacement> } =>
-    createObjectManagerTraceAwareBulkUpdate({
-      entries,
-      label,
-      buildingPlacements,
-    }),
-  [buildingPlacements]);
-
   const handleObjectManagerBulkDuplicate = useCallback(() => {
     runObjectManagerBulkDuplicate({
       buildingPlacements,
@@ -3613,290 +3603,60 @@ function PerformanceAIDashboardView({
   }, [arrayColumns, arrayRows, arraySpacingX, arraySpacingY, buildingPlacements, objectManagerCopyActions, selectedObjectIds]);
 
   const handleObjectManagerBulkLayout = useCallback((layout: ObjectManagerLayoutAction) => {
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (targets.length < 2) {
-      reportObjectActionBlocker("Layout blocked: select at least two editable draft objects first.");
-      return;
-    }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
-    const blockedCount = targets.length - editable.length;
-    if (editable.length < 2) {
-      reportObjectActionBlocker("Layout blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const { undo, afterById } = createTraceAwareBulkUpdate(
-      createObjectManagerLayoutUpdateEntries(editable, layout),
-      `layout ${layout.replace("_", " ")}`,
-    );
-    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
-    editable.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
+    runObjectManagerBulkLayout({
+      layout,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
     });
-    const labelMap: Record<typeof layout, string> = {
-      align_left: "Aligned left",
-      align_top: "Aligned top",
-      distribute_x: "Distributed X",
-      distribute_y: "Distributed Y",
-    };
-    const message = `${labelMap[layout]} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Layout changes remain draft review geometry.`, "status");
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Objects laid out",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    buildingPlacements,
-    createObjectManagerLayoutUpdateEntries,
-    createTraceAwareBulkUpdate,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
 
   const handleObjectManagerBulkMove = useCallback(() => {
-    const dx = Number(bulkMoveX);
-    const dy = Number(bulkMoveY);
-    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
-      reportObjectActionBlocker("Move blocked: enter a non-zero X or Y offset.");
-      return;
-    }
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Move blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
-    const blockedCount = targets.length - editable.length;
-    if (!editable.length) {
-      reportObjectActionBlocker("Move blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const updateEntries = createObjectManagerMoveUpdateEntries(editable, dx, dy);
-    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk move");
-    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
-    editable.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
+    runObjectManagerBulkMove({
+      bulkMoveX,
+      bulkMoveY,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
     });
-    const message = `Moved ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${dx},${dy}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Move remains draft review geometry.`, "status");
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Objects moved",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    bulkMoveX,
-    bulkMoveY,
-    buildingPlacements,
-    createObjectManagerMoveUpdateEntries,
-    createTraceAwareBulkUpdate,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, bulkMoveX, bulkMoveY, objectManagerBulkActions, selectedObjectIds]);
 
   const handleObjectManagerBulkMoveTo = useCallback(() => {
-    const targetX = Number(bulkMoveToX);
-    const targetY = Number(bulkMoveToY);
-    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
-      reportObjectActionBlocker("Move to coordinate blocked: enter finite target X and Y coordinates.");
-      return;
-    }
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Move to coordinate blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
-    const blockedCount = targets.length - editable.length;
-    if (!editable.length) {
-      reportObjectActionBlocker("Move to coordinate blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const { updateEntries, dx, dy } = createObjectManagerMoveToCoordinateUpdateEntries(editable, targetX, targetY);
-    if (dx === 0 && dy === 0) {
-      reportObjectActionBlocker("Move to coordinate blocked: selected objects are already at that target coordinate.");
-      return;
-    }
-    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk move to coordinate");
-    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
-    editable.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
+    runObjectManagerBulkMoveTo({
+      bulkMoveToX,
+      bulkMoveToY,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
     });
-    const message = `Moved ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} to ${targetX},${targetY}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Absolute move remains draft review geometry.`, "status");
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Objects moved to coordinate",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    bulkMoveToX,
-    bulkMoveToY,
-    buildingPlacements,
-    createObjectManagerMoveToCoordinateUpdateEntries,
-    createTraceAwareBulkUpdate,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, bulkMoveToX, bulkMoveToY, objectManagerBulkActions, selectedObjectIds]);
 
   const handleObjectManagerBulkScale = useCallback(() => {
-    const factor = Number(bulkScaleFactor);
-    if (!Number.isFinite(factor) || factor <= 0 || factor > 10) {
-      reportObjectActionBlocker("Scale blocked: enter a scale factor greater than 0 and no more than 10.");
-      return;
-    }
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Scale blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "resize"));
-    const blockedCount = targets.length - editable.length;
-    if (!editable.length) {
-      reportObjectActionBlocker("Scale blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const updateEntries = createObjectManagerScaleUpdateEntries(editable, factor);
-    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk scale");
-    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
-    editable.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
+    runObjectManagerBulkScale({
+      bulkScaleFactor,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
     });
-    const message = `Scaled ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${factor}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Scale remains draft review geometry.`, "status");
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Objects scaled",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    bulkScaleFactor,
-    buildingPlacements,
-    createObjectManagerScaleUpdateEntries,
-    createTraceAwareBulkUpdate,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, bulkScaleFactor, objectManagerBulkActions, selectedObjectIds]);
 
   const handleObjectManagerBulkRotate = useCallback(() => {
-    const angle = Number(bulkRotateAngle);
-    if (!Number.isFinite(angle) || angle === 0) {
-      reportObjectActionBlocker("Rotate blocked: enter a non-zero angle.");
-      return;
-    }
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Rotate blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
-    const blockedCount = targets.length - editable.length;
-    if (!editable.length) {
-      reportObjectActionBlocker("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const updateEntries = createObjectManagerRotateUpdateEntries(editable, angle);
-    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk rotate");
-    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
-    editable.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
+    runObjectManagerBulkRotate({
+      bulkRotateAngle,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
     });
-    const message = `Rotated ${editable.length} selected draft object${editable.length === 1 ? "" : "s"} by ${angle} degrees${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Rotation remains draft review geometry.`, "status");
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Objects rotated",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    bulkRotateAngle,
-    buildingPlacements,
-    createObjectManagerRotateUpdateEntries,
-    createTraceAwareBulkUpdate,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, bulkRotateAngle, objectManagerBulkActions, selectedObjectIds]);
 
   const handleObjectManagerBulkMirror = useCallback((axis: "x" | "y") => {
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Mirror blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "transform"));
-    const blockedCount = targets.length - editable.length;
-    if (!editable.length) {
-      reportObjectActionBlocker("Mirror blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const updateEntries = createObjectManagerMirrorUpdateEntries(editable, axis);
-    const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, `bulk mirror ${axis.toUpperCase()}`);
-    setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
-    editable.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
+    runObjectManagerBulkMirror({
+      axis,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
     });
-    const message = `Mirrored ${axis.toUpperCase()} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Mirror remains draft review geometry.`, "status");
-    recordRecentChange({
-      type: "object_style_changed",
-      label: `Objects mirrored ${axis.toUpperCase()}`,
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    buildingPlacements,
-    createObjectManagerMirrorUpdateEntries,
-    createTraceAwareBulkUpdate,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
 
   const handleObjectManagerLayerVisibility = useCallback((layerType: SiteObjectType, hidden: boolean) => {
     runObjectManagerLayerVisibility({
