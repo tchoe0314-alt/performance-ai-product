@@ -34,6 +34,7 @@ import {
 import type { CadDimensionMode, CadSymbolKind, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
+import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
 import { PreviewBasePlanGrid } from "./PreviewBasePlanGrid";
 import { PreviewCadMarkers } from "./PreviewCadMarkers";
 import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
@@ -47,6 +48,7 @@ import {
 import { PreviewGradingEarthworkDock } from "./PreviewGradingEarthworkDock";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
+import { PreviewMetricOverlayCard } from "./PreviewMetricOverlayCard";
 import { PreviewObjectHoverCard } from "./PreviewObjectHoverCard";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
 import { PreviewParkingModules } from "./PreviewParkingModules";
@@ -5442,42 +5444,13 @@ export default function PreviewPanel({
                 ) : null}
               </div>
               {showHover && activeAnnotation && hoverPoint ? (
-                <div
-                  className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
-                  style={{
-                    left: Math.min(Math.max(hoverPoint.x + 16, 16), 520),
-                    top: Math.min(Math.max(hoverPoint.y + 16, 16), 420),
-                  }}
-                >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    {activeAnnotation.label}
-                  </p>
-                  <div className="mt-2 space-y-1">
-                    {hoverDetails.length ? (
-                      hoverDetails.map((detail) => (
-                        <div key={detail.label} className="flex items-center justify-between gap-2">
-                          <span className="text-slate-500">{detail.label}</span>
-                          <span className="font-semibold text-slate-900">{detail.value}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="space-y-1 text-slate-500">
-                        <div className="flex items-center justify-between gap-2">
-                          <span>Layer</span>
-                          <span className="font-semibold text-slate-900">
-                            {activeAnnotation.layer || "Unknown"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span>Type</span>
-                          <span className="font-semibold text-slate-900">
-                            {activeAnnotation.meta?.entity_type || "Shape"}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <PreviewAnnotationHoverCard
+                  annotation={activeAnnotation}
+                  details={hoverDetails}
+                  point={hoverPoint}
+                  maxLeft={520}
+                  maxTop={420}
+                />
               ) : null}
               <WaterFireFlowEvidenceDock
                 waterFireFlow={waterFireFlow}
@@ -5730,82 +5703,30 @@ export default function PreviewPanel({
                   </div>
                 ) : null}
                 {showHover && activeAnnotation && fullscreenHoverPoint ? (
-                  <div
-                    className="pointer-events-none absolute z-20 min-w-[220px] max-w-[280px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-lg"
-                    style={{
-                      left: Math.min(Math.max(fullscreenHoverPoint.x + 16, 16), 620),
-                      top: Math.min(Math.max(fullscreenHoverPoint.y + 16, 16), 520),
-                    }}
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      {activeAnnotation.label}
-                    </p>
-                    <div className="mt-2 space-y-1">
-                    {hoverDetails.length ? (
-                      hoverDetails.map((detail) => (
-                        <div key={detail.label} className="flex items-center justify-between gap-2">
-                          <span className="text-slate-500">{detail.label}</span>
-                          <span className="font-semibold text-slate-900">{detail.value}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="space-y-1 text-slate-500">
-                        <div className="flex items-center justify-between gap-2">
-                          <span>Layer</span>
-                          <span className="font-semibold text-slate-900">
-                            {activeAnnotation.layer || "Unknown"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span>Type</span>
-                          <span className="font-semibold text-slate-900">
-                            {activeAnnotation.meta?.entity_type || "Shape"}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  <PreviewAnnotationHoverCard
+                    annotation={activeAnnotation}
+                    details={hoverDetails}
+                    point={fullscreenHoverPoint}
+                    maxLeft={620}
+                    maxTop={520}
+                  />
               ) : null}
                 {allowEdits && showMeasurements ? (
-                  <div className="pointer-events-none absolute left-6 top-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Measurements
-                    </p>
-                    <div className="mt-2 space-y-1">
-                      {measurementOverlayStats
-                        .filter((item) => Number(item.value || 0) > 0)
-                        .map((item) => (
-                          <div key={item.label} className="flex items-center justify-between gap-2">
-                            <span>{item.label}</span>
-                            <span className="font-semibold">
-                              {item.unit === "stalls"
-                                ? formatCount(Number(item.value || 0), item.unit)
-                                : formatMetric(Number(item.value || 0), item.unit)}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                  <PreviewMetricOverlayCard
+                    title="Measurements"
+                    position="top-left"
+                    stats={measurementOverlayStats}
+                    formatMetric={formatMetric}
+                    formatCount={formatCount}
+                  />
                 ) : null}
                 {allowEdits && showCalculations ? (
-                  <div className="pointer-events-none absolute bottom-6 left-6 w-[240px] rounded-2xl border border-slate-200/70 bg-white/90 p-3 text-xs text-slate-700 shadow-sm backdrop-blur">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Calculations
-                    </p>
-                    <div className="mt-2 space-y-1">
-                      {calculationOverlayStats
-                        .filter((item) => Number(item.value || 0) > 0)
-                        .map((item) => (
-                          <div key={item.label} className="flex items-center justify-between gap-2">
-                            <span>{item.label}</span>
-                            <span className="font-semibold">
-                              {formatMetric(Number(item.value || 0), item.unit)}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                  <PreviewMetricOverlayCard
+                    title="Calculations"
+                    position="bottom-left"
+                    stats={calculationOverlayStats}
+                    formatMetric={formatMetric}
+                  />
                 ) : null}
               </div>
             </div>
