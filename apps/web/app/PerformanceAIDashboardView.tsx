@@ -101,6 +101,11 @@ import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
 import { resolveActivePrimaryWorkflowKey } from "./utils/dashboardPrimaryWorkflows";
 import { buildDashboardPrimaryWorkflowItems } from "./utils/dashboardPrimaryWorkflowItems";
 import {
+  buildDashboardConfirmedObjectCounts,
+  buildDashboardExistingConditionRows,
+  buildDashboardSourceHubMetrics,
+} from "./utils/dashboardEvidenceSummaries";
+import {
   buildGenerateLayoutContext,
   systemsImpactedByPlacement,
 } from "./utils/dashboardGenerateLayoutContext";
@@ -1471,14 +1476,15 @@ function PerformanceAIDashboardView({
     [],
   );
   const sourceHubMetrics = useMemo<Array<[string, string | number]>>(
-    () => [
-      ["CRS / datum", (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "Not set"],
-      ["Terrain", hasTerrainSource ? "Provided" : "Missing"],
-      ["GIS", mapAnalysis?.success ? "Analyzed" : "Not analyzed"],
-      ["Low confidence", sourceConfidenceSummary.low_confidence_count ?? 0],
-      ["Need control", sourceConfidenceSummary.needs_survey_control_count ?? 0],
-      ["Stale/missing", sourceConfidenceSummary.stale_or_missing_count ?? 0],
-    ],
+    () =>
+      buildDashboardSourceHubMetrics({
+        coordinateSystem: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "",
+        hasTerrainSource,
+        mapAnalysisSuccess: Boolean(mapAnalysis?.success),
+        lowConfidenceCount: Number(sourceConfidenceSummary.low_confidence_count ?? 0),
+        needsSurveyControlCount: Number(sourceConfidenceSummary.needs_survey_control_count ?? 0),
+        staleOrMissingCount: Number(sourceConfidenceSummary.stale_or_missing_count ?? 0),
+      }),
     [
       hasTerrainSource,
       mapAnalysis?.success,
@@ -15981,24 +15987,10 @@ function PerformanceAIDashboardView({
     () => analysisIssues.find((issue) => issue.id === analysisSelectedIssueId) ?? null,
     [analysisIssues, analysisSelectedIssueId],
   );
-  const confirmedObjectCounts = useMemo(() => {
-    const confirmed = buildingPlacements.filter(
-      (item) => item.placed && (item.source === "user" || item.source === "user_confirmed"),
-    );
-    const buildingTypes = new Set<SiteObjectType>([
-      "building",
-      "retail_building",
-      "multifamily_building",
-      "industrial_building",
-      "office_building",
-      "pad",
-    ]);
-    const accessTypes = new Set<SiteObjectType>(["road", "entrance", "parking", "sidewalk", "driveway"]);
-    return {
-      buildings: confirmed.filter((item) => buildingTypes.has(item.type as SiteObjectType)).length,
-      access: confirmed.filter((item) => accessTypes.has(item.type as SiteObjectType)).length,
-    };
-  }, [buildingPlacements]);
+  const confirmedObjectCounts = useMemo(
+    () => buildDashboardConfirmedObjectCounts(buildingPlacements),
+    [buildingPlacements],
+  );
   const filteredDetectedPlacements = useMemo(() => {
     const threshold = detectionConfidenceFilter === "high" ? 0.6 : detectionConfidenceFilter === "medium" ? 0.3 : 0.0;
     return detectedPlacements.filter((item) => (item.confidence ?? 0) >= threshold);
@@ -16008,42 +16000,33 @@ function PerformanceAIDashboardView({
     [projects],
   );
   const hasHardSystemBlock = issues.some((issue) => issue.severity === "error") || siteTooLargeForGrading;
-  const existingConditionRows = [
-    {
-      label: "Address / location evidence",
-      value: hasAppliedAddress
-        ? `Applied: ${appliedAddressLabel || "coordinate context"}`
-        : hasLocationEvidence
-          ? "Map/image location context"
-          : "Missing",
-      status: hasLocationEvidence ? "review" : "block",
-      action: "Setup panel -> enter an address, pick a geocode suggestion, then Apply address.",
-    },
-    {
-      label: "Survey / control",
-      value: hasVerifiedSurveyControl ? "Uploaded / verify control" : "Missing verified control",
-      status: hasVerifiedSurveyControl ? "review" : "block",
-      action: "Import & Survey panel -> upload survey/topo/control evidence.",
-    },
-    {
-      label: "Datum / CRS",
-      value: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "Missing",
-      status: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system ? "review" : "block",
-      action: "Data panel -> add coordinate system/datum evidence when available.",
-    },
-    {
-      label: "Terrain",
-      value: hasTerrainSource ? "Available for review" : "Missing survey, DEM, or assumed slope",
-      status: hasTerrainSource ? "review" : "block",
-      action: "Import & Survey panel -> upload terrain, apply geocoded map terrain, or choose assumed slope when prompted.",
-    },
-    {
-      label: "GIS / map context",
-      value: mapAnalysis?.success ? "Analyzed" : uploadedImageApiUrl || uploadedImagePreviewUrl ? "Image uploaded" : onlineSourceLookupLabel,
-      status: mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl || hasAppliedAddress ? "review" : "block",
-      action: "Setup panel -> upload a map snapshot and run Analyze map snapshot.",
-    },
-  ] as const;
+  const existingConditionRows = useMemo(
+    () =>
+      buildDashboardExistingConditionRows({
+        hasAppliedAddress,
+        appliedAddressLabel,
+        hasLocationEvidence,
+        hasVerifiedSurveyControl,
+        coordinateSystem: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "",
+        hasTerrainSource,
+        mapAnalysisSuccess: Boolean(mapAnalysis?.success),
+        uploadedImageApiUrl,
+        uploadedImagePreviewUrl,
+        onlineSourceLookupLabel,
+      }),
+    [
+      appliedAddressLabel,
+      hasAppliedAddress,
+      hasLocationEvidence,
+      hasTerrainSource,
+      hasVerifiedSurveyControl,
+      mapAnalysis?.success,
+      onlineSourceLookupLabel,
+      siteInputs,
+      uploadedImageApiUrl,
+      uploadedImagePreviewUrl,
+    ],
+  );
   const systemBlockerContext = useMemo<DashboardSystemBlockerContext>(() => ({
     missingSite,
     siteScaleLocked,
