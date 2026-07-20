@@ -36,7 +36,7 @@ import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
 import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
 import { PreviewBasePlanGrid } from "./PreviewBasePlanGrid";
 import { PreviewCadMarkers } from "./PreviewCadMarkers";
-import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
+import { PreviewCanvasControlStack } from "./PreviewCanvasControlStack";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
 import { PreviewDraftGeometryOverlay } from "./PreviewDraftGeometryOverlay";
 import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
@@ -49,7 +49,6 @@ import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
 import { PreviewMetricOverlayCard } from "./PreviewMetricOverlayCard";
 import { PreviewObjectHoverCard } from "./PreviewObjectHoverCard";
-import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
 import { PreviewParkingModules } from "./PreviewParkingModules";
 import {
   PreviewFullscreenHeader,
@@ -61,7 +60,6 @@ import { PreviewRectObjects } from "./PreviewRectObjects";
 import { PreviewRectObjectChrome } from "./PreviewRectObjectChrome";
 import { PreviewSelectedObjectQuickToolbar } from "./PreviewSelectedObjectQuickToolbar";
 import { PreviewSelectionAffordances } from "./PreviewSelectionAffordances";
-import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
 import { PreviewSuggestedGeometry } from "./PreviewSuggestedGeometry";
 import { PreviewSvgDefs } from "./PreviewSvgDefs";
 import { PreviewWaterFireFlowOverlay } from "./PreviewWaterFireFlowOverlay";
@@ -185,7 +183,6 @@ import {
   resolvePreviewSelectedDeletableObject,
 } from "../utils/previewViewModel";
 import { buildPreviewInteractionState } from "../utils/previewInteractionState";
-import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import {
   AI_REALISM_WATERMARK,
   BALANCED_CANVAS_SCALE,
@@ -3616,104 +3613,102 @@ export default function PreviewPanel({
   return (
     <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
       <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
-          <div className="relative isolate z-[220] mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
-            <PreviewCanvasHeaderControls
-              previewMode={previewMode}
-              previewQuality={previewQuality}
-              coordinateMode={coordinateMode}
-              canUse3D={canUse3D}
-              mapAvailable={mapAvailable}
-              mapOverlayEnabled={mapOverlayEnabled}
-              mapLocked={mapLocked}
-              showMap={showMap}
-              allowEdits={allowEdits}
-              drawMode={drawMode}
-              siteLocked={siteLocked}
-              canDrawObjects={canDrawObjects}
-              drawObjectsDisabledLabel={drawObjectsDisabledLabel}
-              isHighQuality={isHighQuality}
-              useLightHighQuality={useLightHighQuality}
-              busy={busy}
-              analysisHighlight={analysisHighlight}
-              onSetPreviewQuality={onSetPreviewQuality}
-              onSetPreviewMode={onSetPreviewMode}
-              onSetPreviewInteraction={onSetPreviewInteraction}
-              onSetMapOverlayEnabled={setMapOverlayEnabled}
-              onSetMapLocked={setMapLocked}
-              onActivateDrawTool={activateDrawTool}
-              onPushCadCommandFeedback={pushCadCommandFeedback}
-              onUnlockSite={onUnlockSite}
-              onClearDraftGeometry={clearDraftGeometry}
-              onSetDrawMode={setDrawMode}
-              onSetFocusTransform={setFocusTransform}
-              onResetView={onResetView}
-              onRefreshPreview={onRefreshPreview}
-              onClearHighlights={onClearHighlights}
-            />
-            <div className="pointer-events-none relative z-[220] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
-              {previewMode === "2d" ? (
-                <PreviewObjectManagerOverlay
-                  visible={allowEdits && drawMode === "select" && Boolean(selectedObject)}
-                  selectedObject={selectedObject}
-                  selectedBuildingId={selectedBuildingId}
-                  objectManagerRows={objectManagerRows}
-                  objectManagerCounts={objectManagerCounts}
-                  selectedCadIds={selectedCadIds}
-                  onSetManagedObjectId={setManagedObjectId}
-                  onSelectBuilding={onSelectBuilding}
-                  onSetCadSelectionSet={setCadSelectionSet}
-                  onClearSelectedVertex={() => setSelectedVertex(null)}
-                  onSetCadCommandStatus={setCadCommandStatus}
-                  onUpdatePreviewManagedObject={updatePreviewManagedObject}
-                  onFocusPreviewManagedObject={focusPreviewManagedObject}
-                  onRemoveBuilding={onRemoveBuilding}
-                  onSetLastRectEdit={setLastRectEdit}
-                  getPreviewObjectActionBlocker={getPreviewObjectActionBlocker}
-                  getPreviewObjectDimensionsLabel={getPreviewObjectDimensionsLabel}
-                  getPreviewObjectSourceLabel={getPreviewObjectSourceLabel}
-                  getPreviewObjectStatusLabel={getPreviewObjectStatusLabel}
-                  getCadLayer={getCadLayer}
-                />
-              ) : null}
-            </div>
-            {previewMode === "2d" && allowEdits ? (
-              <PreviewStableDrawToolbar
-                drawMode={drawMode}
-                siteLocked={Boolean(siteLocked)}
-                hasDrawableSiteSize={hasDrawableSiteSize}
-                canDrawObjects={canDrawObjects}
-                drawObjectsDisabledLabel={drawObjectsDisabledLabel}
-                onUnlockSite={onUnlockSite}
-                onLockSite={onLockSite}
-                onClearDraftGeometry={clearDraftGeometry}
-                onSetDrawMode={setDrawMode}
-                onSetPreviewInteraction={onSetPreviewInteraction}
-                onActivateDrawTool={activateDrawTool}
-                onPushCadCommandFeedback={pushCadCommandFeedback}
-              />
-            ) : null}
-            <PreviewActiveDrawHud
-              drawMode={drawMode}
-              activeDrawToolLabel={activeDrawToolLabel}
-              activeDrawToolDetail={activeDrawToolDetail}
-              draftPointCount={draftPoints.length}
-              siteLocked={Boolean(siteLocked)}
-              canDrawObjects={canDrawObjects}
-              drawObjectsDisabledLabel={drawObjectsDisabledLabel}
-              cursorSitePoint={cursorSitePoint}
-              canvasScale={canvasView.scale}
-              lastCommandLabel={cadHistory.at(-1)?.label}
-              canFinishDraftGeometry={canFinishDraftGeometry}
-              finishDraftBlockedReason={finishDraftBlockedReason}
-              onFinishDraftGeometry={finishDraftGeometry}
-              onCancelDraw={() => {
+          <PreviewCanvasControlStack
+            previewMode={previewMode}
+            allowEdits={allowEdits}
+            drawMode={drawMode}
+            selectedObjectPresent={Boolean(selectedObject)}
+            headerProps={{
+              previewMode,
+              previewQuality,
+              coordinateMode,
+              canUse3D,
+              mapAvailable,
+              mapOverlayEnabled,
+              mapLocked,
+              showMap,
+              allowEdits,
+              drawMode,
+              siteLocked,
+              canDrawObjects,
+              drawObjectsDisabledLabel,
+              isHighQuality,
+              useLightHighQuality,
+              busy,
+              analysisHighlight,
+              onSetPreviewQuality,
+              onSetPreviewMode,
+              onSetPreviewInteraction,
+              onSetMapOverlayEnabled: setMapOverlayEnabled,
+              onSetMapLocked: setMapLocked,
+              onActivateDrawTool: activateDrawTool,
+              onPushCadCommandFeedback: pushCadCommandFeedback,
+              onUnlockSite,
+              onClearDraftGeometry: clearDraftGeometry,
+              onSetDrawMode: setDrawMode,
+              onSetFocusTransform: setFocusTransform,
+              onResetView,
+              onRefreshPreview,
+              onClearHighlights,
+            }}
+            objectManagerProps={{
+              visible: allowEdits && drawMode === "select" && Boolean(selectedObject),
+              selectedObject,
+              selectedBuildingId,
+              objectManagerRows,
+              objectManagerCounts,
+              selectedCadIds,
+              onSetManagedObjectId: setManagedObjectId,
+              onSelectBuilding,
+              onSetCadSelectionSet: setCadSelectionSet,
+              onClearSelectedVertex: () => setSelectedVertex(null),
+              onSetCadCommandStatus: setCadCommandStatus,
+              onUpdatePreviewManagedObject: updatePreviewManagedObject,
+              onFocusPreviewManagedObject: focusPreviewManagedObject,
+              onRemoveBuilding,
+              onSetLastRectEdit: setLastRectEdit,
+              getPreviewObjectActionBlocker,
+              getPreviewObjectDimensionsLabel,
+              getPreviewObjectSourceLabel,
+              getPreviewObjectStatusLabel,
+              getCadLayer,
+            }}
+            stableDrawToolbarProps={{
+              drawMode,
+              siteLocked: Boolean(siteLocked),
+              hasDrawableSiteSize,
+              canDrawObjects,
+              drawObjectsDisabledLabel,
+              onUnlockSite,
+              onLockSite,
+              onClearDraftGeometry: clearDraftGeometry,
+              onSetDrawMode: setDrawMode,
+              onSetPreviewInteraction,
+              onActivateDrawTool: activateDrawTool,
+              onPushCadCommandFeedback: pushCadCommandFeedback,
+            }}
+            activeDrawHudProps={{
+              drawMode,
+              activeDrawToolLabel,
+              activeDrawToolDetail,
+              draftPointCount: draftPoints.length,
+              siteLocked: Boolean(siteLocked),
+              canDrawObjects,
+              drawObjectsDisabledLabel,
+              cursorSitePoint,
+              canvasScale: canvasView.scale,
+              lastCommandLabel: cadHistory.at(-1)?.label,
+              canFinishDraftGeometry,
+              finishDraftBlockedReason,
+              onFinishDraftGeometry: finishDraftGeometry,
+              onCancelDraw: () => {
                 clearDraftGeometry();
                 setDrawMode("select");
                 setActiveSnapPoint(null);
                 setCadCommandStatus("Cancelled active drawing tool.");
-              }}
-            />
-          </div>
+              },
+            }}
+          />
           <CadPrecisionDock
             visible={previewMode === "2d" && allowEdits && hasCadCommandActivity}
             selectedCadObject={selectedCadObject}
