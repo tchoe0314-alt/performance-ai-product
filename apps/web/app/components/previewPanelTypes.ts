@@ -5,7 +5,7 @@ import type {
   PreviewResponse,
   PreviewReview,
 } from "../types";
-import type { CadToolRequest } from "../utils/cadToolTypes";
+import type { CadToolRequest, DrawMode } from "../utils/cadToolTypes";
 
 export type EngineeringSystemStatus = "fresh" | "stale" | "not_generated";
 
@@ -32,6 +32,29 @@ export type CadCommandHistoryEntry = {
   status: "applied" | "blocked" | "info";
   message: string;
 };
+
+export type CadActiveCommand =
+  | {
+      kind: "draw";
+      command: "LINE" | "PLINE" | "RECTANGLE";
+      mode: Extract<DrawMode, "polyline" | "rect">;
+      minPoints: number;
+    }
+  | {
+      kind: "offset";
+      command: "OFFSET";
+      distance?: number;
+    }
+  | {
+      kind: "modify";
+      command: "TRIM" | "EXTEND";
+      amount?: number;
+    }
+  | {
+      kind: "transform";
+      command: "MOVE" | "ROTATE" | "SCALE" | "COPY";
+      value?: string;
+    };
 
 export const formatCalmCadStatus = (message: string) =>
   message
