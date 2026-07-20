@@ -48,6 +48,7 @@ import { PreviewParkingModules } from "./PreviewParkingModules";
 import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
 import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
 import { PreviewRectObjects } from "./PreviewRectObjects";
+import { PreviewSelectedObjectQuickToolbar } from "./PreviewSelectedObjectQuickToolbar";
 import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
 import { PreviewSuggestedGeometry } from "./PreviewSuggestedGeometry";
 import { PreviewSvgDefs } from "./PreviewSvgDefs";
@@ -5196,81 +5197,32 @@ export default function PreviewPanel({
                               </>
                             ) : null}
                             {showQuickSelectionActions ? (
-                              <div
-                                data-testid="selected-object-quick-toolbar"
-                                className="pointer-events-auto absolute left-1/2 top-0 z-[95] flex min-w-max -translate-x-1/2 -translate-y-[calc(100%+10px)] flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white/95 p-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-700 shadow-lg backdrop-blur"
-                                onMouseDown={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
+                              <PreviewSelectedObjectQuickToolbar
+                                item={item}
+                                canDelete={Boolean(selectedDeletableObject && selectedDeletableObject.id === item.id)}
+                                statusText={cadCommandStatusDisplay}
+                                onMeasure={() => runCadCommand("DIST")}
+                                onCopy={() => copySelectedCadObjectsByVector([10, 10])}
+                                onRotate={() => transformSelectedCadObjects("rotate")}
+                                onInspect={() => {
+                                  onSelectBuilding(item.id);
+                                  pushCadCommandFeedback("INSPECT", "info", `INSPECT selected ${item.label || "draft object"}. Use Object Manager for full properties.`);
                                 }}
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    data-testid="selected-object-quick-measure"
-                                    className="rounded-md px-2 py-1 hover:bg-slate-100"
-                                    onClick={() => runCadCommand("DIST")}
-                                  >
-                                    Measure
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-testid="selected-object-quick-copy"
-                                    className="rounded-md px-2 py-1 hover:bg-slate-100"
-                                    onClick={() => copySelectedCadObjectsByVector([10, 10])}
-                                  >
-                                    Copy
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-testid="selected-object-quick-rotate"
-                                    className="rounded-md px-2 py-1 hover:bg-slate-100"
-                                    onClick={() => transformSelectedCadObjects("rotate")}
-                                  >
-                                    Rotate
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-testid="selected-object-quick-inspect"
-                                    className="rounded-md px-2 py-1 hover:bg-slate-100"
-                                    onClick={() => {
-                                      onSelectBuilding(item.id);
-                                      pushCadCommandFeedback("INSPECT", "info", `INSPECT selected ${item.label || "draft object"}. Use Object Manager for full properties.`);
-                                    }}
-                                  >
-                                    Inspect
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-testid="selected-object-quick-delete"
-                                    disabled={!selectedDeletableObject || selectedDeletableObject.id !== item.id}
-                                    className="rounded-md px-2 py-1 text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                    onClick={() => {
-                                      if (!selectedDeletableObject || selectedDeletableObject.id !== item.id) {
-                                        pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: selected object is locked or required evidence.");
-                                        return;
-                                      }
-                                      setLastRectEdit({
-                                        id: item.id,
-                                        snapshot: { ...item },
-                                        action: "delete",
-                                        ts: Date.now(),
-                                      });
-                                      onRemoveBuilding(item.id);
-                                      pushCadCommandFeedback("DELETE", "applied", `DELETE removed ${item.label || "selected draft object"}.`);
-                                    }}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                                <p
-                                  data-testid="selected-object-quick-status"
-                                  className="max-w-[22rem] truncate rounded-md bg-slate-50 px-2 py-0.5 normal-case tracking-normal text-slate-500"
-                                >
-                                  {cadCommandStatusDisplay}
-                                </p>
-                              </div>
+                                onDelete={() => {
+                                  if (!selectedDeletableObject || selectedDeletableObject.id !== item.id) {
+                                    pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: selected object is locked or required evidence.");
+                                    return;
+                                  }
+                                  setLastRectEdit({
+                                    id: item.id,
+                                    snapshot: { ...item },
+                                    action: "delete",
+                                    ts: Date.now(),
+                                  });
+                                  onRemoveBuilding(item.id);
+                                  pushCadCommandFeedback("DELETE", "applied", `DELETE removed ${item.label || "selected draft object"}.`);
+                                }}
+                              />
                             ) : null}
                             {showBox && isHighQuality && visualKind === "building" ? (
                               <div className="pointer-events-none absolute inset-x-[16%] top-1/2 h-px -translate-y-1/2 bg-white/35" />
