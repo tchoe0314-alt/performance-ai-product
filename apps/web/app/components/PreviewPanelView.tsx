@@ -111,6 +111,10 @@ import {
   countRenderedCanonicalPreviewObjects,
 } from "../utils/previewOverlayBounds";
 import {
+  previewRectIntersectsViewport,
+  resolvePreviewObjectHitZIndex,
+} from "../utils/previewObjectLayering";
+import {
   buildPreviewMapAnchor,
   mapAnchoredRectPercent as resolveMapAnchoredRectPercent,
   mapLngLatToSitePoint,
@@ -4209,31 +4213,12 @@ export default function PreviewPanel({
       rectPct: { left: number; top: number; width: number; height: number },
       selected = false,
     ) => {
-      if (selected) return 86;
-      if (item.type === "site") return 18;
       const visualKind = resolveVisualKind(item);
-      const sourceState = resolveSourceState(item);
-      const area = Math.max(rectPct.width * rectPct.height, 0.01);
-      const compactShapeBoost = Math.max(0, Math.min(18, 18 - area * 0.9));
-      const pointLike =
-        item.geometryType === "point" ||
-        Boolean(item.meta?.cad_symbol) ||
-        ["hydrant", "inlet", "outfall", "manhole"].includes(String(item.type || ""));
-      const kindBoost =
-        pointLike ? 24 : visualKind === "utility" ? 16 : visualKind === "water" ? 10 : visualKind === "road" ? 8 : 0;
-      const stateBoost = sourceState === "fallback" ? -8 : sourceState === "blocked" ? 4 : 0;
-      return Math.max(22, Math.min(84, Math.round(42 + compactShapeBoost + kindBoost + stateBoost)));
+      return resolvePreviewObjectHitZIndex({ item, rectPct, visualKind, selected });
     },
     [resolveVisualKind],
   );
-  const rectIntersectsPreview = useCallback(
-    (rectPct: { left: number; top: number; width: number; height: number }) =>
-      rectPct.left < 100 &&
-      rectPct.top < 100 &&
-      rectPct.left + Math.max(rectPct.width, 0) > 0 &&
-      rectPct.top + Math.max(rectPct.height, 0) > 0,
-    [],
-  );
+  const rectIntersectsPreview = useCallback(previewRectIntersectsViewport, []);
   const interactiveRectPercent = useCallback(
     (item: BuildingPlacement, targetMap: mapboxgl.Map | null) => {
       const anchored = mapAnchoredRectPercent(item, targetMap);
