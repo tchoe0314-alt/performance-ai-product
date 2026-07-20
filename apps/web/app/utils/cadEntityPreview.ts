@@ -1,7 +1,9 @@
 import type {
   BuildingPlacement,
   CadEntityModelEntityV1,
+  PlanMeta,
   Preview3DItem,
+  SourceConfidenceEntry,
   SiteObjectType,
 } from "../types";
 
@@ -143,3 +145,122 @@ export const cadEntityReviewBlockers = (entity: CadEntityModelEntityV1, modelBlo
       ...(entity.source_confidence ? [`source_confidence:${entity.source_confidence}`] : ["source_confidence:missing"]),
     ]),
   );
+
+export function buildCadEntityPreview(
+  currentPlanMeta: PlanMeta,
+  sourceConfidenceByObjectId: Map<string, SourceConfidenceEntry>,
+): CadEntityPreview {
+  const model = currentPlanMeta.cad_entity_model_v1;
+  const entities = Array.isArray(model?.entities) ? model.entities : [];
+  const layerNames = new Map(
+    (model?.layers ?? []).map((layer) => [
+      String(layer.id || layer.layer_id || ""),
+      String(layer.name || layer.id || layer.layer_id || "C-DRAFT"),
+    ]),
+  );
+  const validationBlockersByEntity = new Map<string, string[]>();
+  (model?.validation?.blockers ?? []).forEach((blocker) => {
+    if (typeof blocker === "string") return;
+    const entityId = String(blocker.entity_id || "");
+    if (!entityId) return;
+    const list = validationBlockersByEntity.get(entityId) ?? [];
+    if (blocker.reason) list.push(String(blocker.reason));
+    validationBlockersByEntity.set(entityId, list);
+  });
+  const objects: BuildingPlacement[] = [];
+  const items3D: Preview3DItem[] = [];
+  const sourceIds = new Set<string>();
+  const linkedIds = new Set<string>();
+
+  entities.forEach((entity, index) => {
+    const entityId = String(entity.id || `cad-entity-${index + 1}`);
+    sourceIds.add(entityId);
+    const entityType = String(entity.type || "unknown").toLowerCase();
+    const layerName = cadLayerName(entity, layerNames);
+    const linkedObjectId = String(entity.linked_object_id || entity.canonical_geometry_handoff?.object_id || "");
+    if (linkedObjectId) linkedIds.add(linkedObjectId);
+    const geometryPreview = cadEntityGeometryPreview(entity);
+    const bboxRaw = entity.bounding_box ?? model?.entity_bounding_boxes?.[entityId];
+    const bbox =
+      bboxRaw && Number.isFinite(Number(bboxRaw.min_x)) && Number.isFinite(Number(bboxRaw.min_y))
+        ? {
+            minX: Number(bboxRaw.min_x),
+            minY: Number(bboxRaw.min_y),
+            maxX: Number(bboxRaw.max_x ?? Number(bboxRaw.min_x) + Number(bboxRaw.width ?? 1)),
+            maxY: Number(bboxRaw.max_y ?? Number(bboxRaw.min_y) + Number(bboxRaw.height ?? 1)),
+          }
+        : boundsFromCadPoints(geometryPreview.points);
+    if (!bbox) return;
+    const unsupported = !CAD_PREVIEW_SUPPORTED_TYPES.has(entityType);
+    const blockers = cadEntityReviewBlockers(entity, validationBlockersByEntity.get(entityId) ?? [], unsupported);
+    const w = Math.max(1, bbox.maxX - bbox.minX);
+    const d = Math.max(1, bbox.maxY - bbox.minY);
+    const label = String(entity.label || entity.name || entity.geometry?.text || entityType.replace(/_/g, " ") || "Draft entity");
+    const siteType = cadLayerToSiteType(layerName, entityType);
+    const previewLayer = cadPreviewLayer(layerName, entityType);
+    const sourceConfidence = String(entity.source_confidence || sourceConfidenceByObjectId.get(linkedObjectId)?.confidence_band || "review required");
+    const sharedMeta = {
+      cad_entity_id: entityId,
+      cad_entity_type: entityType,
+      cad_layer: layerName,
+      cad_source_confidence: sourceConfidence,
+      cad_review_status: entity.review_status || "draft_review_required",
+      cad_validation_status: entity.validation_status,
+      cad_review_blockers: blockers,
+      linked_object_id: linkedObjectId || undefined,
+      source_entity_id: entityId,
+      unsupported_entity_placeholder: unsupported,
+      review_only: true,
+      construction_release_allowed: false,
+      source_note: "Persistent draft entity preview; review/communication only.",
+    };
+    objects.push({
+      id: entityId,
+      label,
+      type: siteType,
+      x: bbox.minX,
+      y: bbox.minY,
+      w,
+      d,
+      source: "manual_drawn",
+      generated: false,
+      confidence: undefined,
+      geometryType:
+        geometryPreview.geometryType === "circle" ? "point" : geometryPreview.geometryType,
+      geometry: geometryPreview.points.map((point) => [point.x, point.y] as [number, number]),
+      capabilities: { movable: false, resizable: false, rotatable: false, deletable: false },
+      meta: {
+        ...sharedMeta,
+        cad_radius: geometryPreview.radius,
+        cad_symbol: entityType === "block_reference" || entityType === "symbol" ? "utility_marker" : undefined,
+        cad_dimension_label: entityType === "dimension" ? label : undefined,
+      },
+      locked: true,
+      placed: true,
+    });
+    items3D.push({
+      id: entityId,
+      x: bbox.minX,
+      y: bbox.minY,
+      w,
+      h: d,
+      height: previewLayer === "BUILDING" ? 18 : previewLayer === "DRAINAGE" ? 2.5 : previewLayer === "UTILITY" ? 1.5 : 0.8,
+      z: previewLayer === "DRAINAGE" ? -0.4 : 0,
+      color: previewLayer === "UTILITY" ? "#e9d5ff" : previewLayer === "DRAINAGE" ? "#bfdbfe" : previewLayer === "ROAD" ? "#cbd5e1" : "#e5e7eb",
+      label,
+      layer: previewLayer,
+      source: String(entity.source || "cad_entity_model_v1"),
+      confidence: sourceConfidence,
+      blockers,
+      geometryType: geometryPreview.geometryType,
+      geometry: geometryPreview.points.map((point) => [point.x, point.y] as [number, number]),
+      radius: geometryPreview.radius,
+      entityType,
+      linkedObjectId: linkedObjectId || undefined,
+      sourceEntityId: entityId,
+      unsupported,
+    });
+  });
+
+  return { objects, items3D, sourceIds, linkedIds };
+}
