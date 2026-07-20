@@ -367,6 +367,7 @@ import useJobPolling from "./hooks/useJobPolling";
 import useAuthState from "./hooks/useAuthState";
 import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
+import { useDashboardSidePanelState } from "./hooks/useDashboardSidePanelState";
 import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { AnalysisPanel } from "./components/AnalysisPanel";
 import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
@@ -392,10 +393,19 @@ function PerformanceAIDashboardView({
   const [mobileViewport, setMobileViewport] = useState(false);
   const [, setChatCollapsed] = useState(false);
   const [commandBarExpanded, setCommandBarExpanded] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelKey | null>(null);
-  const [renderedSidePanel, setRenderedSidePanel] = useState<SidePanelKey | null>(null);
-  const [sidePanelVisible, setSidePanelVisible] = useState(false);
-  const [rightRailCollapsed, setRightRailCollapsed] = useState(true);
+  const {
+    activeSidePanel,
+    setActiveSidePanel,
+    renderedSidePanel,
+    setRenderedSidePanel,
+    sidePanelVisible,
+    setSidePanelVisible,
+    rightRailCollapsed,
+    setRightRailCollapsed,
+    panelOpenProbeRef,
+    panelCloseProbeRef,
+    sidePanelCloseTimeoutRef,
+  } = useDashboardSidePanelState();
   const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(true);
   const [cadToolRequest, setCadToolRequest] = useState<CadToolRequestForPreview | null>(null);
   const [sidebarRendered, setSidebarRendered] = useState(true);
@@ -727,8 +737,6 @@ function PerformanceAIDashboardView({
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const previewAutoRefreshTimeoutRef = useRef<number | null>(null);
-  const panelOpenProbeRef = useRef<{ label: string; panel: SidePanelKey; startedAt: number } | null>(null);
-  const panelCloseProbeRef = useRef<{ label: string; panel: SidePanelKey | null; startedAt: number } | null>(null);
   const previewModeProbeRef = useRef<{ value: "2d" | "3d"; startedAt: number } | null>(null);
   const previewQualityProbeRef = useRef<{ value: "standard" | "high"; startedAt: number } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
@@ -756,7 +764,6 @@ function PerformanceAIDashboardView({
     });
   }, []);
   const applyingSiteRef = useRef(false);
-  const sidePanelCloseTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     lastDraftActionRef.current = lastDraftAction;
@@ -792,38 +799,6 @@ function PerformanceAIDashboardView({
     }
     return () => window.removeEventListener("resize", syncViewport);
   }, []);
-
-  useEffect(() => {
-    let timeout: number | undefined;
-    let frame: number | undefined;
-
-    if (!rightRailCollapsed) {
-      setRenderedSidePanel(activeSidePanel ?? "dashboard");
-      frame = window.requestAnimationFrame(() => {
-        setSidePanelVisible(true);
-        const probe = panelOpenProbeRef.current;
-        if (probe && probe.panel === (activeSidePanel ?? "dashboard")) {
-          measureCivoraInteractionAfterPaint(probe.label, probe.startedAt, { panel: probe.panel });
-          panelOpenProbeRef.current = null;
-        }
-      });
-    } else {
-      setSidePanelVisible(false);
-      timeout = window.setTimeout(() => {
-        setRenderedSidePanel(null);
-        const probe = panelCloseProbeRef.current;
-        if (probe) {
-          measureCivoraInteractionAfterPaint(probe.label, probe.startedAt, { panel: probe.panel ?? "none" });
-          panelCloseProbeRef.current = null;
-        }
-      }, 180);
-    }
-
-    return () => {
-      if (frame !== undefined) window.cancelAnimationFrame(frame);
-      if (timeout !== undefined) window.clearTimeout(timeout);
-    };
-  }, [activeSidePanel, rightRailCollapsed]);
 
   useEffect(() => {
     let timeout: number | undefined;
