@@ -101,10 +101,9 @@ import {
   buildFocusedPreviewCanvasView,
 } from "../utils/previewCanvasViewHelpers";
 import {
+  buildDraftGeometryViewModel,
   buildDraftGeometryFinishBlockedMessage,
-  buildDraftGeometryFinishBlockedReason,
   buildDrawToolLabel,
-  getDraftGeometryEffectivePointCount,
   getDraftGeometryMinPointCount,
   resolveDraftGeometryEffectivePoints,
 } from "../utils/previewDraftGeometryHelpers";
@@ -2950,82 +2949,27 @@ export default function PreviewPanel({
     pushCadCommandFeedback,
   ]);
 
-  const draftPointCount = draftPoints.length;
-  const finishDraftMinPoints = getDraftGeometryMinPointCount(drawMode);
-  const finishDraftCursorPoint = cursorSitePoint ? ([cursorSitePoint.x, cursorSitePoint.y] as [number, number]) : null;
-  const finishDraftPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? finishDraftCursorPoint;
-  const finishDraftEffectivePointCount = getDraftGeometryEffectivePointCount(
-    drawMode,
-    draftPoints,
-    finishDraftPreviewPoint,
+  const {
+    activeDrawToolDetail,
+    activeDrawToolLabel,
+    canFinishDraftGeometry,
+    draftPointCount,
+    draftPrecisionReadout,
+    finishDraftBlockedReason,
+  } = useMemo(
+    () => {
+      const cursorPoint = cursorSitePoint ? ([cursorSitePoint.x, cursorSitePoint.y] as [number, number]) : null;
+      const previewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? cursorPoint;
+      return buildDraftGeometryViewModel({
+        cursorPoint,
+        draftPoints,
+        draftPreviewPoint,
+        drawMode,
+        finishPreviewPoint: previewPoint,
+      });
+    },
+    [cursorSitePoint, draftPoints, draftPreviewPoint, drawMode],
   );
-  const canFinishDraftGeometry =
-    drawMode !== "select" &&
-    drawMode !== "pan" &&
-    drawMode !== "point" &&
-    finishDraftEffectivePointCount >= finishDraftMinPoints;
-  const finishDraftBlockedReason =
-    drawMode !== "select" && drawMode !== "pan" && drawMode !== "point" && finishDraftEffectivePointCount < finishDraftMinPoints
-      ? buildDraftGeometryFinishBlockedReason(drawMode)
-      : null;
-  const activeDrawToolLabel = buildDrawToolLabel(drawMode);
-  const activeDrawToolDetail =
-    drawMode === "site"
-      ? "Pick three or more boundary points, then Finish."
-      : drawMode === "polyline"
-        ? "Pick two or more vertices, then Finish."
-        : drawMode === "polygon"
-          ? "Pick three or more area vertices, then Finish."
-          : drawMode === "rect"
-            ? draftPoints.length
-              ? "Pick the opposite box corner."
-              : "Pick the first box corner."
-            : drawMode === "point"
-              ? "Click once to place a draft point."
-              : drawMode === "pan"
-                ? "Drag the canvas."
-                : "Click an object or use Object Manager.";
-  const draftPrecisionReadout = useMemo(() => {
-    if (drawMode === "select" || drawMode === "pan") return null;
-    const points =
-      draftPreviewPoint && drawMode !== "point"
-        ? [...draftPoints, draftPreviewPoint]
-        : draftPoints;
-    const currentPoint =
-      draftPreviewPoint ??
-      (draftPoints.length ? draftPoints[draftPoints.length - 1] : cursorSitePoint ? [cursorSitePoint.x, cursorSitePoint.y] as [number, number] : null);
-    const segments = points.slice(1).map((point, index) => {
-      const previous = points[index];
-      const dx = point[0] - previous[0];
-      const dy = point[1] - previous[1];
-      return {
-        length: Math.hypot(dx, dy),
-        angle: ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360,
-      };
-    });
-    const lastSegment = segments.at(-1) ?? null;
-    const totalLength = segments.reduce((sum, segment) => sum + segment.length, 0);
-    const polygonArea =
-      (drawMode === "polygon" || drawMode === "site") && points.length >= 3
-        ? Math.abs(
-            points.reduce((sum, point, index) => {
-              const next = points[(index + 1) % points.length];
-              return sum + point[0] * next[1] - next[0] * point[1];
-            }, 0) / 2,
-          )
-        : null;
-    return {
-      currentPoint,
-      lastSegment,
-      totalLength,
-      polygonArea,
-      pointCount: draftPoints.length,
-      finishReady:
-        drawMode === "point" ||
-        drawMode === "rect" ||
-        draftPoints.length >= finishDraftMinPoints,
-    };
-  }, [cursorSitePoint, draftPoints, draftPreviewPoint, drawMode, finishDraftMinPoints]);
 
   const handleDrawPointer = useCallback(
     (

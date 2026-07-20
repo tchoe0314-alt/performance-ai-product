@@ -62,3 +62,119 @@ export function buildDrawToolLabel(mode: DrawMode) {
   if (mode === "pan") return "Pan";
   return "Select";
 }
+
+export function buildDrawToolDetail(drawMode: DrawMode, draftPointCount: number) {
+  if (drawMode === "site") return "Pick three or more boundary points, then Finish.";
+  if (drawMode === "polyline") return "Pick two or more vertices, then Finish.";
+  if (drawMode === "polygon") return "Pick three or more area vertices, then Finish.";
+  if (drawMode === "rect") {
+    return draftPointCount ? "Pick the opposite box corner." : "Pick the first box corner.";
+  }
+  if (drawMode === "point") return "Click once to place a draft point.";
+  if (drawMode === "pan") return "Drag the canvas.";
+  return "Click an object or use Object Manager.";
+}
+
+export function buildDraftPrecisionReadout({
+  cursorPoint,
+  draftPoints,
+  draftPreviewPoint,
+  drawMode,
+  finishDraftMinPoints,
+}: {
+  cursorPoint: DraftPoint | null;
+  draftPoints: DraftPoint[];
+  draftPreviewPoint: DraftPoint | null;
+  drawMode: DrawMode;
+  finishDraftMinPoints: number;
+}) {
+  if (drawMode === "select" || drawMode === "pan") return null;
+  const points =
+    draftPreviewPoint && drawMode !== "point"
+      ? [...draftPoints, draftPreviewPoint]
+      : draftPoints;
+  const currentPoint =
+    draftPreviewPoint ??
+    (draftPoints.length ? draftPoints[draftPoints.length - 1] : cursorPoint);
+  const segments = points.slice(1).map((point, index) => {
+    const previous = points[index];
+    const dx = point[0] - previous[0];
+    const dy = point[1] - previous[1];
+    return {
+      length: Math.hypot(dx, dy),
+      angle: ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360,
+    };
+  });
+  const lastSegment = segments.at(-1) ?? null;
+  const totalLength = segments.reduce((sum, segment) => sum + segment.length, 0);
+  const polygonArea =
+    (drawMode === "polygon" || drawMode === "site") && points.length >= 3
+      ? Math.abs(
+          points.reduce((sum, point, index) => {
+            const next = points[(index + 1) % points.length];
+            return sum + point[0] * next[1] - next[0] * point[1];
+          }, 0) / 2,
+        )
+      : null;
+  return {
+    currentPoint,
+    lastSegment,
+    totalLength,
+    polygonArea,
+    pointCount: draftPoints.length,
+    finishReady:
+      drawMode === "point" ||
+      drawMode === "rect" ||
+      draftPoints.length >= finishDraftMinPoints,
+  };
+}
+
+export function buildDraftGeometryViewModel({
+  cursorPoint,
+  draftPoints,
+  draftPreviewPoint,
+  drawMode,
+  finishPreviewPoint,
+}: {
+  cursorPoint: DraftPoint | null;
+  draftPoints: DraftPoint[];
+  draftPreviewPoint: DraftPoint | null;
+  drawMode: DrawMode;
+  finishPreviewPoint: DraftPoint | null;
+}) {
+  const draftPointCount = draftPoints.length;
+  const finishDraftMinPoints = getDraftGeometryMinPointCount(drawMode);
+  const finishDraftEffectivePointCount = getDraftGeometryEffectivePointCount(
+    drawMode,
+    draftPoints,
+    finishPreviewPoint,
+  );
+  const canFinishDraftGeometry =
+    drawMode !== "select" &&
+    drawMode !== "pan" &&
+    drawMode !== "point" &&
+    finishDraftEffectivePointCount >= finishDraftMinPoints;
+  const finishDraftBlockedReason =
+    drawMode !== "select" &&
+    drawMode !== "pan" &&
+    drawMode !== "point" &&
+    finishDraftEffectivePointCount < finishDraftMinPoints
+      ? buildDraftGeometryFinishBlockedReason(drawMode)
+      : null;
+  return {
+    activeDrawToolDetail: buildDrawToolDetail(drawMode, draftPointCount),
+    activeDrawToolLabel: buildDrawToolLabel(drawMode),
+    canFinishDraftGeometry,
+    draftPointCount,
+    draftPrecisionReadout: buildDraftPrecisionReadout({
+      cursorPoint,
+      draftPoints,
+      draftPreviewPoint,
+      drawMode,
+      finishDraftMinPoints,
+    }),
+    finishDraftBlockedReason,
+    finishDraftEffectivePointCount,
+    finishDraftMinPoints,
+  };
+}
