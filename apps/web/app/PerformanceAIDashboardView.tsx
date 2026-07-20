@@ -98,6 +98,12 @@ import {
   buildDashboardLibraryPanelSections,
   buildDashboardStandardsPanelCriteria,
 } from "./utils/dashboardShellConfig";
+import {
+  runDashboardShortcutOpenDrawCanvas,
+  runDashboardShortcutOpenGenerate,
+  runDashboardShortcutOpenProjects,
+  runDashboardShortcutSaveProject,
+} from "./utils/dashboardShortcutActions";
 import { DASHBOARD_CAD_TOOL_GROUPS } from "./utils/dashboardCadToolGroups";
 import {
   buildGenerateLayoutContext,
@@ -15901,70 +15907,36 @@ function PerformanceAIDashboardView({
 
   const handleShortcutSaveProject = useCallback(() => {
     const effectiveProjectId = resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
-    if (!token) {
-      appendChatMessage("assistant", "Sign in/connect backend to save projects.", "status");
-      updateProjectStatus({
-        state: "blocked",
-        area: "projects",
-        title: "Save needs sign-in",
-        detail: "Sign in/connect backend to save projects.",
-        nextAction: "Sign in or reconnect backend, then press Cmd/Ctrl+S again.",
-      });
-      return;
-    }
-    if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
-      appendChatMessage("assistant", "Demo workspace changes stay local and are not saved to pilot projects.", "status");
-      updateProjectStatus({
-        state: "blocked",
-        area: "projects",
-        title: "Save unavailable in demo",
-        detail: "Demo workspace changes stay local and are not saved to pilot projects.",
-        nextAction: "Start a non-demo project or sign in/connect backend before saving.",
-      });
-      return;
-    }
-    void saveProject().then((project) => {
-      appendChatMessage(
-        "assistant",
-        project
-          ? `Saved project "${project.name || "Untitled Project"}".`
-          : "Sign in/connect backend to save projects.",
-        "status",
-      );
+    runDashboardShortcutSaveProject({
+      effectiveProjectId,
+      token,
+      demoWorkspaceEnabled: effectiveDemoWorkspaceEnabled,
+      isSeededDemoProjectId,
+      saveProject,
+      appendChatMessage,
+      updateProjectStatus,
     });
-  }, [currentProject?.project_id, effectiveDemoWorkspaceEnabled, projectId, saveProject, token, updateProjectStatus]);
+  }, [appendChatMessage, currentProject?.project_id, effectiveDemoWorkspaceEnabled, projectId, saveProject, token, updateProjectStatus]);
 
   const handleShortcutOpenGenerate = useCallback(() => {
-    handleOpenSidePanel("generate");
-    updateProjectStatus({
-      state: "ready",
-      area: "generate",
-      title: "Generate opened",
-      detail: "Generate panel opened.",
-      nextAction: "Choose a focused system or run the unambiguous generate control.",
+    runDashboardShortcutOpenGenerate({
+      openSidePanel: handleOpenSidePanel,
+      updateProjectStatus,
     });
   }, [handleOpenSidePanel, updateProjectStatus]);
 
   const handleShortcutOpenDrawCanvas = useCallback(() => {
-    handleOpenWorkspaceMode("canvas");
-    handleOpenSidePanel("objects");
-    updateProjectStatus({
-      state: "ready",
-      area: "setup",
-      title: "Draw opened",
-      detail: "Draw Canvas mode opened.",
-      nextAction: "Select a draw/object tool or use the command bar.",
+    runDashboardShortcutOpenDrawCanvas({
+      openWorkspaceMode: handleOpenWorkspaceMode,
+      openSidePanel: handleOpenSidePanel,
+      updateProjectStatus,
     });
   }, [handleOpenSidePanel, handleOpenWorkspaceMode, updateProjectStatus]);
 
   const handleShortcutOpenProjects = useCallback(() => {
-    handleOpenSidePanel("projects");
-    updateProjectStatus({
-      state: "ready",
-      area: "projects",
-      title: "Projects opened",
-      detail: "Projects drawer opened.",
-      nextAction: "Save, open, or delete a project from the drawer.",
+    runDashboardShortcutOpenProjects({
+      openSidePanel: handleOpenSidePanel,
+      updateProjectStatus,
     });
   }, [handleOpenSidePanel, updateProjectStatus]);
 
