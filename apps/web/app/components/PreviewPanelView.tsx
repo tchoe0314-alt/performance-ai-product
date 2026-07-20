@@ -155,11 +155,11 @@ import {
   normalizeCadCommandKey,
   parseCadNumber,
   parseCadPointToken,
-  parseCadRelativePointToken,
   parseCadVectorToken,
 } from "../utils/previewCadCommandParsing";
 import {
   finishPreviewCadActiveCommand,
+  handlePreviewActiveCanvasDrawInput,
   handlePreviewCadActiveCommandInput,
 } from "../utils/previewCadActiveCommand";
 import {
@@ -2507,40 +2507,16 @@ export default function PreviewPanel({
       drawMode === "polygon" ||
       drawMode === "rect";
     if (activeCanvasDrawMode && !cadActiveCommand && !isKnownCadCommand(commandKey)) {
-      const basePoint = draftPoints.length ? draftPoints[draftPoints.length - 1] : null;
-      const typedPoint = parseCadPointToken(raw) ?? parseCadRelativePointToken(raw, basePoint);
-      const typedDistance = Number(raw);
-      let nextPoint: [number, number] | null = typedPoint;
-      if (!nextPoint && Number.isFinite(typedDistance) && Math.abs(typedDistance) > 0.001) {
-        if (!basePoint) {
-        pushCadCommandFeedback("DRAW", "blocked", "DRAW distance input needs a first point. Pick a start point or type x,y first.");
-          return;
-        }
-        const guidePoint = draftPreviewPoint ?? [basePoint[0] + 1, basePoint[1]] as [number, number];
-        const dx = guidePoint[0] - basePoint[0];
-        const dy = guidePoint[1] - basePoint[1];
-        const length = Math.hypot(dx, dy);
-        const unit = length > 0.001 ? { x: dx / length, y: dy / length } : { x: 1, y: 0 };
-        nextPoint = [
-          Math.round((basePoint[0] + unit.x * typedDistance) * 1000) / 1000,
-          Math.round((basePoint[1] + unit.y * typedDistance) * 1000) / 1000,
-        ];
-      }
-      if (!nextPoint) {
-        pushCadCommandFeedback("DRAW", "blocked", "DRAW expected 100,50, @20,0, @75<45, or a distance like 75 while a draw tool is active.");
-        return;
-      }
-      const nextPoints = [...draftPoints, nextPoint];
-      setDraftPoints(nextPoints);
-      setDraftPreviewPoint(null);
-      setCadCommandDraft("");
-      const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
-      const readyText = nextPoints.length >= minPoints ? " Press Enter/Finish to complete." : "";
-      pushCadCommandFeedback(
-        "DRAW",
-        "info",
-        `DRAW accepted point ${nextPoints.length} at ${nextPoint[0].toFixed(1)},${nextPoint[1].toFixed(1)}.${readyText}`,
-      );
+      handlePreviewActiveCanvasDrawInput({
+        raw,
+        drawMode,
+        draftPoints,
+        draftPreviewPoint,
+        setDraftPoints,
+        setDraftPreviewPoint,
+        setCadCommandDraft,
+        pushCadCommandFeedback,
+      });
       return;
     }
 
