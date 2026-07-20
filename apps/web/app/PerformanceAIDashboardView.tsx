@@ -234,13 +234,19 @@ import {
   cloneBuildingPlacementWithUpdatesForUndo,
   createDraftArrayCopiesWithTrace,
   createDraftCopyWithTrace as createObjectManagerDraftCopyWithTrace,
+  createObjectManagerLayoutUpdateEntries,
+  createObjectManagerMirrorUpdateEntries,
+  createObjectManagerMoveToCoordinateUpdateEntries,
+  createObjectManagerMoveUpdateEntries,
+  createObjectManagerRotateUpdateEntries,
+  createObjectManagerScaleUpdateEntries,
   createTraceAwareBulkUpdate as createObjectManagerTraceAwareBulkUpdate,
   formatObjectManagerCountMessage,
   formatVisibleDraftSelectionMessage,
-  getObjectManagerBoundsRows,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
   isObjectManagerCopyableDraft,
+  type ObjectManagerLayoutAction,
   partitionObjectManagerTargets,
   summarizeDraftCopyResults,
 } from "./utils/dashboardObjectManagerTrace";
@@ -4811,7 +4817,7 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
-  const handleObjectManagerBulkLayout = useCallback((layout: "align_left" | "align_top" | "distribute_x" | "distribute_y") => {
+  const handleObjectManagerBulkLayout = useCallback((layout: ObjectManagerLayoutAction) => {
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
     if (targets.length < 2) {
       reportObjectActionBlocker("Layout blocked: select at least two editable draft objects first.");
@@ -4823,48 +4829,8 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Layout blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const objectBounds = getObjectManagerBoundsRows(editable);
-    const layoutUpdates = new Map<string, Partial<BuildingPlacement>>();
-    if (layout === "align_left") {
-      const targetX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
-      objectBounds.forEach(({ item, bounds }) => {
-        layoutUpdates.set(item.id, { x: (item.x ?? 0) + (targetX - bounds.minX) });
-      });
-    } else if (layout === "align_top") {
-      const targetY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
-      objectBounds.forEach(({ item, bounds }) => {
-        layoutUpdates.set(item.id, { y: (item.y ?? 0) + (targetY - bounds.minY) });
-      });
-    } else {
-      const axis = layout === "distribute_x" ? "x" : "y";
-      const sorted = [...objectBounds].sort((a, b) => {
-        const aCenter = axis === "x"
-          ? a.bounds.minX + a.bounds.width / 2
-          : a.bounds.minY + a.bounds.depth / 2;
-        const bCenter = axis === "x"
-          ? b.bounds.minX + b.bounds.width / 2
-          : b.bounds.minY + b.bounds.depth / 2;
-        return aCenter - bCenter;
-      });
-      const centers = sorted.map(({ bounds }) =>
-        axis === "x" ? bounds.minX + bounds.width / 2 : bounds.minY + bounds.depth / 2,
-      );
-      const first = centers[0];
-      const last = centers[centers.length - 1];
-      const step = sorted.length > 1 ? (last - first) / (sorted.length - 1) : 0;
-      sorted.forEach(({ item, bounds }, index) => {
-        const targetCenter = first + step * index;
-        if (axis === "x") {
-          const currentCenter = bounds.minX + bounds.width / 2;
-          layoutUpdates.set(item.id, { x: (item.x ?? 0) + (targetCenter - currentCenter) });
-        } else {
-          const currentCenter = bounds.minY + bounds.depth / 2;
-          layoutUpdates.set(item.id, { y: (item.y ?? 0) + (targetCenter - currentCenter) });
-        }
-      });
-    }
     const { undo, afterById } = createTraceAwareBulkUpdate(
-      editable.map((item) => ({ item, updates: layoutUpdates.get(item.id) ?? {} })),
+      createObjectManagerLayoutUpdateEntries(editable, layout),
       `layout ${layout.replace("_", " ")}`,
     );
     setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
@@ -4891,6 +4857,7 @@ function PerformanceAIDashboardView({
   }, [
     appendChatMessage,
     buildingPlacements,
+    createObjectManagerLayoutUpdateEntries,
     createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
@@ -4917,13 +4884,7 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Move blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const updateEntries = editable.map((item) => ({
-      item,
-      updates: {
-        x: (item.x ?? 0) + dx,
-        y: (item.y ?? 0) + dy,
-      },
-    }));
+    const updateEntries = createObjectManagerMoveUpdateEntries(editable, dx, dy);
     const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk move");
     setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
@@ -4945,6 +4906,7 @@ function PerformanceAIDashboardView({
     bulkMoveX,
     bulkMoveY,
     buildingPlacements,
+    createObjectManagerMoveUpdateEntries,
     createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
@@ -4971,22 +4933,11 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Move to coordinate blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const objectBounds = getObjectManagerBoundsRows(editable);
-    const sourceMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
-    const sourceMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
-    const dx = targetX - sourceMinX;
-    const dy = targetY - sourceMinY;
+    const { updateEntries, dx, dy } = createObjectManagerMoveToCoordinateUpdateEntries(editable, targetX, targetY);
     if (dx === 0 && dy === 0) {
       reportObjectActionBlocker("Move to coordinate blocked: selected objects are already at that target coordinate.");
       return;
     }
-    const updateEntries = editable.map((item) => ({
-      item,
-      updates: {
-        x: (item.x ?? 0) + dx,
-        y: (item.y ?? 0) + dy,
-      },
-    }));
     const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk move to coordinate");
     setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
@@ -5008,6 +4959,7 @@ function PerformanceAIDashboardView({
     bulkMoveToX,
     bulkMoveToY,
     buildingPlacements,
+    createObjectManagerMoveToCoordinateUpdateEntries,
     createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
@@ -5033,14 +4985,7 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Scale blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const updateEntries = editable.map((item) => ({
-      item,
-      updates: {
-        w: Math.max(1, item.w * factor),
-        d: Math.max(1, item.d * factor),
-        h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
-      },
-    }));
+    const updateEntries = createObjectManagerScaleUpdateEntries(editable, factor);
     const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk scale");
     setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
@@ -5061,6 +5006,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     bulkScaleFactor,
     buildingPlacements,
+    createObjectManagerScaleUpdateEntries,
     createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
@@ -5086,24 +5032,7 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Rotate blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const radians = (angle * Math.PI) / 180;
-    const getRotateUpdates = (item: BuildingPlacement): Partial<BuildingPlacement> => {
-      const centerX = (item.x ?? 0) + item.w / 2;
-      const centerY = (item.y ?? 0) + item.d / 2;
-      const nextGeometry = item.geometry?.map(([x, y]) => {
-        const dx = x - centerX;
-        const dy = y - centerY;
-        return [
-          centerX + dx * Math.cos(radians) - dy * Math.sin(radians),
-          centerY + dx * Math.sin(radians) + dy * Math.cos(radians),
-        ] as [number, number];
-      });
-      return {
-        rotation: ((item.rotation ?? 0) + angle) % 360,
-        geometry: nextGeometry,
-      };
-    };
-    const updateEntries = editable.map((item) => ({ item, updates: getRotateUpdates(item) }));
+    const updateEntries = createObjectManagerRotateUpdateEntries(editable, angle);
     const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, "bulk rotate");
     setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
     editable.forEach((item) => {
@@ -5124,6 +5053,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     bulkRotateAngle,
     buildingPlacements,
+    createObjectManagerRotateUpdateEntries,
     createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,
@@ -5144,48 +5074,10 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Mirror blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const objectBounds = getObjectManagerBoundsRows(editable);
-    const selectionMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
-    const selectionMaxX = Math.max(...objectBounds.map(({ bounds }) => bounds.maxX));
-    const selectionMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
-    const selectionMaxY = Math.max(...objectBounds.map(({ bounds }) => bounds.maxY));
-    const mirrorX = selectionMinX + (selectionMaxX - selectionMinX) / 2;
-    const mirrorY = selectionMinY + (selectionMaxY - selectionMinY) / 2;
-
-    const getMirrorUpdates = (item: BuildingPlacement, bounds: {
-      minX: number;
-      maxX: number;
-      minY: number;
-      maxY: number;
-      width: number;
-      depth: number;
-    }): Partial<BuildingPlacement> => {
-      const nextGeometry = item.geometry?.map(([x, y]) =>
-        axis === "x"
-          ? ([mirrorX - (x - mirrorX), y] as [number, number])
-          : ([x, mirrorY - (y - mirrorY)] as [number, number]),
-      );
-      const xOffsetFromBounds = (item.x ?? 0) - bounds.minX;
-      const yOffsetFromBounds = (item.y ?? 0) - bounds.minY;
-      const nextX = axis === "x"
-        ? mirrorX - (bounds.maxX - mirrorX) + xOffsetFromBounds
-        : item.x;
-      const nextY = axis === "y"
-        ? mirrorY - (bounds.maxY - mirrorY) + yOffsetFromBounds
-        : item.y;
-      return {
-        x: nextX,
-        y: nextY,
-        geometry: nextGeometry,
-        meta: {
-          [axis === "x" ? "mirrored_x" : "mirrored_y"]: true,
-        },
-      };
-    };
-    const updateEntries = objectBounds.map(({ item, bounds }) => ({ item, updates: getMirrorUpdates(item, bounds) }));
+    const updateEntries = createObjectManagerMirrorUpdateEntries(editable, axis);
     const { undo, afterById } = createTraceAwareBulkUpdate(updateEntries, `bulk mirror ${axis.toUpperCase()}`);
     setBuildingPlacements((prev) => prev.map((item) => afterById.get(item.id) ?? item));
-    objectBounds.forEach(({ item }) => {
+    editable.forEach((item) => {
       markSystemsStale(systemsImpactedByPlacement(item));
     });
     const message = `Mirrored ${axis.toUpperCase()} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
@@ -5202,6 +5094,7 @@ function PerformanceAIDashboardView({
   }, [
     appendChatMessage,
     buildingPlacements,
+    createObjectManagerMirrorUpdateEntries,
     createTraceAwareBulkUpdate,
     markSystemsStale,
     recordRecentChange,

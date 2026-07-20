@@ -11,6 +11,12 @@ export type ObjectManagerBounds = {
   depth: number;
 };
 
+export type ObjectManagerLayoutAction = "align_left" | "align_top" | "distribute_x" | "distribute_y";
+export type ObjectManagerUpdateEntry = {
+  item: BuildingPlacement;
+  updates: Partial<BuildingPlacement>;
+};
+
 export function getVisibleEditableDraftObjectIds(buildingPlacements: BuildingPlacement[]): string[] {
   return buildingPlacements
     .filter((item) => {
@@ -104,6 +110,163 @@ export function getObjectManagerBoundsRows(items: BuildingPlacement[]): Array<{
   bounds: ObjectManagerBounds;
 }> {
   return items.map((item) => ({ item, bounds: getObjectManagerBounds(item) }));
+}
+
+export function createObjectManagerLayoutUpdateEntries(
+  editable: BuildingPlacement[],
+  layout: ObjectManagerLayoutAction,
+): ObjectManagerUpdateEntry[] {
+  const objectBounds = getObjectManagerBoundsRows(editable);
+  const layoutUpdates = new Map<string, Partial<BuildingPlacement>>();
+  if (layout === "align_left") {
+    const targetX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
+    objectBounds.forEach(({ item, bounds }) => {
+      layoutUpdates.set(item.id, { x: (item.x ?? 0) + (targetX - bounds.minX) });
+    });
+  } else if (layout === "align_top") {
+    const targetY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
+    objectBounds.forEach(({ item, bounds }) => {
+      layoutUpdates.set(item.id, { y: (item.y ?? 0) + (targetY - bounds.minY) });
+    });
+  } else {
+    const axis = layout === "distribute_x" ? "x" : "y";
+    const sorted = [...objectBounds].sort((a, b) => {
+      const aCenter = axis === "x"
+        ? a.bounds.minX + a.bounds.width / 2
+        : a.bounds.minY + a.bounds.depth / 2;
+      const bCenter = axis === "x"
+        ? b.bounds.minX + b.bounds.width / 2
+        : b.bounds.minY + b.bounds.depth / 2;
+      return aCenter - bCenter;
+    });
+    const centers = sorted.map(({ bounds }) =>
+      axis === "x" ? bounds.minX + bounds.width / 2 : bounds.minY + bounds.depth / 2,
+    );
+    const first = centers[0];
+    const last = centers[centers.length - 1];
+    const step = sorted.length > 1 ? (last - first) / (sorted.length - 1) : 0;
+    sorted.forEach(({ item, bounds }, index) => {
+      const targetCenter = first + step * index;
+      if (axis === "x") {
+        const currentCenter = bounds.minX + bounds.width / 2;
+        layoutUpdates.set(item.id, { x: (item.x ?? 0) + (targetCenter - currentCenter) });
+      } else {
+        const currentCenter = bounds.minY + bounds.depth / 2;
+        layoutUpdates.set(item.id, { y: (item.y ?? 0) + (targetCenter - currentCenter) });
+      }
+    });
+  }
+  return editable.map((item) => ({ item, updates: layoutUpdates.get(item.id) ?? {} }));
+}
+
+export function createObjectManagerMoveUpdateEntries(
+  editable: BuildingPlacement[],
+  dx: number,
+  dy: number,
+): ObjectManagerUpdateEntry[] {
+  return editable.map((item) => ({
+    item,
+    updates: {
+      x: (item.x ?? 0) + dx,
+      y: (item.y ?? 0) + dy,
+    },
+  }));
+}
+
+export function createObjectManagerMoveToCoordinateUpdateEntries(
+  editable: BuildingPlacement[],
+  targetX: number,
+  targetY: number,
+): { updateEntries: ObjectManagerUpdateEntry[]; dx: number; dy: number } {
+  const objectBounds = getObjectManagerBoundsRows(editable);
+  const sourceMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
+  const sourceMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
+  const dx = targetX - sourceMinX;
+  const dy = targetY - sourceMinY;
+  return {
+    dx,
+    dy,
+    updateEntries: createObjectManagerMoveUpdateEntries(editable, dx, dy),
+  };
+}
+
+export function createObjectManagerScaleUpdateEntries(
+  editable: BuildingPlacement[],
+  factor: number,
+): ObjectManagerUpdateEntry[] {
+  return editable.map((item) => ({
+    item,
+    updates: {
+      w: Math.max(1, item.w * factor),
+      d: Math.max(1, item.d * factor),
+      h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
+    },
+  }));
+}
+
+export function createObjectManagerRotateUpdateEntries(
+  editable: BuildingPlacement[],
+  angle: number,
+): ObjectManagerUpdateEntry[] {
+  const radians = (angle * Math.PI) / 180;
+  return editable.map((item) => {
+    const centerX = (item.x ?? 0) + item.w / 2;
+    const centerY = (item.y ?? 0) + item.d / 2;
+    const nextGeometry = item.geometry?.map(([x, y]) => {
+      const dx = x - centerX;
+      const dy = y - centerY;
+      return [
+        centerX + dx * Math.cos(radians) - dy * Math.sin(radians),
+        centerY + dx * Math.sin(radians) + dy * Math.cos(radians),
+      ] as [number, number];
+    });
+    return {
+      item,
+      updates: {
+        rotation: ((item.rotation ?? 0) + angle) % 360,
+        geometry: nextGeometry,
+      },
+    };
+  });
+}
+
+export function createObjectManagerMirrorUpdateEntries(
+  editable: BuildingPlacement[],
+  axis: "x" | "y",
+): ObjectManagerUpdateEntry[] {
+  const objectBounds = getObjectManagerBoundsRows(editable);
+  const selectionMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
+  const selectionMaxX = Math.max(...objectBounds.map(({ bounds }) => bounds.maxX));
+  const selectionMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
+  const selectionMaxY = Math.max(...objectBounds.map(({ bounds }) => bounds.maxY));
+  const mirrorX = selectionMinX + (selectionMaxX - selectionMinX) / 2;
+  const mirrorY = selectionMinY + (selectionMaxY - selectionMinY) / 2;
+  return objectBounds.map(({ item, bounds }) => {
+    const nextGeometry = item.geometry?.map(([x, y]) =>
+      axis === "x"
+        ? ([mirrorX - (x - mirrorX), y] as [number, number])
+        : ([x, mirrorY - (y - mirrorY)] as [number, number]),
+    );
+    const xOffsetFromBounds = (item.x ?? 0) - bounds.minX;
+    const yOffsetFromBounds = (item.y ?? 0) - bounds.minY;
+    const nextX = axis === "x"
+      ? mirrorX - (bounds.maxX - mirrorX) + xOffsetFromBounds
+      : item.x;
+    const nextY = axis === "y"
+      ? mirrorY - (bounds.maxY - mirrorY) + yOffsetFromBounds
+      : item.y;
+    return {
+      item,
+      updates: {
+        x: nextX,
+        y: nextY,
+        geometry: nextGeometry,
+        meta: {
+          [axis === "x" ? "mirrored_x" : "mirrored_y"]: true,
+        },
+      },
+    };
+  });
 }
 
 export function cloneBuildingPlacementForUndo(item: BuildingPlacement): BuildingPlacement {
