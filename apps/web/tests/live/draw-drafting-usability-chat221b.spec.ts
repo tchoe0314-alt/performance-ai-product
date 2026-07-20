@@ -125,6 +125,20 @@ async function clickExposedSurface(surface: Locator, xRatio: number, yRatio: num
 }
 
 test.describe("Chat 221B draw drafting usability", () => {
+  test("CAD command feedback uses needs-input language for visible user errors", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    await (await revealCadTool(page, "delete")).click();
+    const feedback = page.getByTestId("cad-command-feedback-panel");
+    await expect(feedback).toContainText(/DELETE needs input: select one unlocked draft object first/i);
+    await expect(feedback).not.toContainText(/DELETE blocked/i);
+
+    await (await revealCadTool(page, "offset")).click();
+    await expect(feedback).toContainText(/OFFSET needs input: select one editable draft CAD object first/i);
+    await expect(feedback).not.toContainText(/OFFSET blocked/i);
+  });
+
   test("visible Draw Site Boundary button enables the drawing surface and Finish path", async ({ page }) => {
     await startBlankSite(page);
 
