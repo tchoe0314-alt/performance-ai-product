@@ -1,4 +1,4 @@
-import type { ChatMessage, ProjectRecord } from "../types";
+import type { BuildingPlacement, ChatMessage, ProjectRecord } from "../types";
 import type { ProjectStatusSummary, SidePanelKey, WorkspaceMode } from "./workspaceShell";
 
 type SaveProjectResult = ProjectRecord | null | undefined;
@@ -104,5 +104,192 @@ export function runDashboardShortcutOpenProjects({
     title: "Projects opened",
     detail: "Projects drawer opened.",
     nextAction: "Save, open, or delete a project from the drawer.",
+  });
+}
+
+type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
+type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: ChatMessage["kind"]) => void;
+type ObjectEditAction = "rename" | "style" | "type" | "hide" | "delete" | "copy" | "transform" | "resize";
+
+export function runDashboardShortcutDeleteSelectedObject({
+  selectedObjectIds,
+  activePlacementId,
+  buildingPlacements,
+  bulkDelete,
+  removeBuilding,
+  setObjectManagerStatusMessage,
+  appendChatMessage,
+  updateProjectStatus,
+}: {
+  selectedObjectIds: string[];
+  activePlacementId: string | null;
+  buildingPlacements: BuildingPlacement[];
+  bulkDelete: () => void;
+  removeBuilding: (id: string) => void;
+  setObjectManagerStatusMessage: (message: string) => void;
+  appendChatMessage: AppendChatMessage;
+  updateProjectStatus: UpdateProjectStatus;
+}) {
+  if (selectedObjectIds.length > 1) {
+    bulkDelete();
+    return;
+  }
+  const target = activePlacementId
+    ? buildingPlacements.find((item) => item.id === activePlacementId)
+    : selectedObjectIds[0]
+      ? buildingPlacements.find((item) => item.id === selectedObjectIds[0])
+      : null;
+  if (!target) {
+    const message = "Select an editable object before deleting.";
+    setObjectManagerStatusMessage(message);
+    updateProjectStatus({
+      state: "blocked",
+      area: "chat",
+      title: "Delete needs a selection",
+      detail: "No object is selected.",
+      nextAction: "Select an editable draft object, then press Delete again.",
+    });
+    appendChatMessage("assistant", message, "status");
+    return;
+  }
+  if (target.type === "site" || target.capabilities?.deletable === false) {
+    const message = `${target.label} cannot be deleted from shortcuts.`;
+    setObjectManagerStatusMessage(message);
+    updateProjectStatus({
+      state: "blocked",
+      area: "chat",
+      title: "Open Object Manager",
+      detail: `${target.label} cannot be deleted from shortcuts.`,
+      nextAction: "Open Object Manager to review object locks and capabilities.",
+    });
+    appendChatMessage("assistant", message, "status");
+    return;
+  }
+  if (target.locked) {
+    const message = `Unlock ${target.label} before deleting it.`;
+    setObjectManagerStatusMessage(message);
+    updateProjectStatus({
+      state: "blocked",
+      area: "chat",
+      title: "Delete needs unlock",
+      detail: `Unlock ${target.label} before deleting it.`,
+      nextAction: "Open Object Manager, unlock the object if appropriate, then delete.",
+    });
+    appendChatMessage("assistant", message, "status");
+    return;
+  }
+  removeBuilding(target.id);
+  appendChatMessage("assistant", `Deleted ${target.label}.`, "status");
+  updateProjectStatus({
+    state: "stale",
+    area: "chat",
+    title: "Object deleted",
+    detail: `Deleted ${target.label}. Generated systems may be stale.`,
+    nextAction: "Undo if needed, or rerun affected generated systems.",
+  });
+}
+
+export function runDashboardShortcutCopySelectedObject({
+  selectedObjectIds,
+  activePlacementId,
+  buildingPlacements,
+  getObjectEditBlocker,
+  cloneBuildingPlacementForUndo,
+  setObjectClipboard,
+  setObjectManagerStatusMessage,
+  setStatusMessage,
+  reportObjectActionBlocker,
+  copyObject,
+  updateProjectStatus,
+}: {
+  selectedObjectIds: string[];
+  activePlacementId: string | null;
+  buildingPlacements: BuildingPlacement[];
+  getObjectEditBlocker: (item: BuildingPlacement, action: ObjectEditAction) => string | null;
+  cloneBuildingPlacementForUndo: (item: BuildingPlacement) => BuildingPlacement;
+  setObjectClipboard: (items: BuildingPlacement[]) => void;
+  setObjectManagerStatusMessage: (message: string) => void;
+  setStatusMessage: (message: string) => void;
+  reportObjectActionBlocker: (message: string) => void;
+  copyObject: (item: BuildingPlacement) => void;
+  updateProjectStatus: UpdateProjectStatus;
+}) {
+  if (selectedObjectIds.length > 1) {
+    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
+    const editable = targets.filter((item) => !getObjectEditBlocker(item, "copy"));
+    const blockedCount = targets.length - editable.length;
+    if (!editable.length) {
+      reportObjectActionBlocker("Select editable draft objects before copying.");
+      updateProjectStatus({
+        state: "blocked",
+        area: "chat",
+        title: "Copy needs editable objects",
+        detail: "Selected objects are locked, source-only, or required project evidence.",
+        nextAction: "Select editable draft objects, then press Cmd/Ctrl+C again.",
+      });
+      return;
+    }
+    setObjectClipboard(editable.map(cloneBuildingPlacementForUndo));
+    const message = `Copied ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    setObjectManagerStatusMessage(message);
+    setStatusMessage(message);
+    updateProjectStatus({
+      state: "ready",
+      area: "chat",
+      title: "Objects copied",
+      detail: message,
+      nextAction: "Press Cmd/Ctrl+V or use Paste to place draft duplicates.",
+    });
+    return;
+  }
+  const target = activePlacementId
+    ? buildingPlacements.find((item) => item.id === activePlacementId)
+    : selectedObjectIds[0]
+      ? buildingPlacements.find((item) => item.id === selectedObjectIds[0])
+      : null;
+  if (!target) {
+    reportObjectActionBlocker("Select an editable draft object before copying.");
+    updateProjectStatus({
+      state: "blocked",
+      area: "chat",
+      title: "Copy needs a selection",
+      detail: "No object is selected.",
+      nextAction: "Select an editable draft object, then press Cmd/Ctrl+C again.",
+    });
+    return;
+  }
+  copyObject(target);
+  updateProjectStatus({
+    state: "ready",
+    area: "chat",
+    title: "Object copied",
+    detail: `Copied ${target.label}.`,
+    nextAction: "Press Cmd/Ctrl+V or use Paste to place a draft duplicate.",
+  });
+}
+
+export function runDashboardShortcutPasteSelectedObject({
+  objectClipboard,
+  pasteObject,
+  updateProjectStatus,
+}: {
+  objectClipboard: BuildingPlacement[];
+  pasteObject: () => void;
+  updateProjectStatus: UpdateProjectStatus;
+}) {
+  pasteObject();
+  const clipboardCount = objectClipboard.length;
+  updateProjectStatus({
+    state: clipboardCount ? "stale" : "blocked",
+    area: "chat",
+    title: clipboardCount ? (clipboardCount === 1 ? "Object pasted" : "Objects pasted") : "Paste needs a copied object",
+    detail: clipboardCount
+      ? clipboardCount === 1
+        ? `Pasted ${objectClipboard[0].label} as an editable draft duplicate.`
+        : `Pasted ${clipboardCount} copied draft objects as editable draft duplicates.`
+      : "Copy an editable object before pasting.",
+    nextAction: clipboardCount
+      ? "Move, rename, or regenerate affected systems after review."
+      : "Select an editable draft object, then press Cmd/Ctrl+C.",
   });
 }
