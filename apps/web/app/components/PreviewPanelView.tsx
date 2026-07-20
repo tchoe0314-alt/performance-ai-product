@@ -43,6 +43,7 @@ import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewGradingEarthworkDock } from "./PreviewGradingEarthworkDock";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
+import { PreviewObjectHoverCard } from "./PreviewObjectHoverCard";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
 import { PreviewParkingModules } from "./PreviewParkingModules";
 import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
@@ -5470,21 +5471,7 @@ export default function PreviewPanel({
                                 X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
                               </div>
                             ) : null}
-                            {hoveredObjectId === item.id && objectHoverDetails.length ? (
-                              <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
-                                <div className="space-y-1">
-                                  {objectHoverDetails.map((detail) => (
-                                    <div
-                                      key={detail.label}
-                                      className="flex items-center justify-between gap-2"
-                                    >
-                                      <span className="text-slate-500">{detail.label}</span>
-                                      <span className="font-semibold text-slate-900">{detail.value}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : null}
+                            {hoveredObjectId === item.id ? <PreviewObjectHoverCard details={objectHoverDetails} /> : null}
                           </div>
                         );
                       })}
@@ -5521,21 +5508,7 @@ export default function PreviewPanel({
                             onMouseLeave={() => setHoveredObjectId(null)}
                           >
                             <div className="h-full w-full rounded-[8px] border border-dashed border-amber-400 bg-amber-200/10" />
-                            {hoveredObjectId === item.id && objectHoverDetails.length ? (
-                              <div className="absolute left-1/2 top-full z-10 mt-3 w-48 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow">
-                                <div className="space-y-1">
-                                  {objectHoverDetails.map((detail) => (
-                                    <div
-                                      key={detail.label}
-                                      className="flex items-center justify-between gap-2"
-                                    >
-                                      <span className="text-slate-500">{detail.label}</span>
-                                      <span className="font-semibold text-slate-900">{detail.value}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : null}
+                            {hoveredObjectId === item.id ? <PreviewObjectHoverCard details={objectHoverDetails} /> : null}
                           </div>
                         );
                       })}
