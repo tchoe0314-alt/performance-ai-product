@@ -282,6 +282,7 @@ import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
 import { useDashboardExistingConditionsUpload } from "./hooks/useDashboardExistingConditionsUpload";
 import { useDashboardImageDetectionActions } from "./hooks/useDashboardImageDetectionActions";
 import { useDashboardAutoExistingConditions } from "./hooks/useDashboardAutoExistingConditions";
+import { useDashboardApplySiteAction } from "./hooks/useDashboardApplySiteAction";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -6905,280 +6906,34 @@ function PerformanceAIDashboardView({
     viewportFootprint,
   });
 
-  const handleApplySite = useCallback(async () => {
-    if (applyingSiteRef.current) return;
-    if (siteScaleLocked) {
-      if (hasSiteBoundary()) {
-        updateProjectStatus({
-          state: "ready",
-          area: "setup",
-          title: "Site already locked",
-          detail: "Site boundary is already locked.",
-          nextAction: "Open Generate when you are ready to create review drafts.",
-        });
-        return;
-      }
-      setSiteScaleLocked(false);
-    }
-    applyingSiteRef.current = true;
-    const currentInput = currentProject?.project_input ?? payloadPreview;
-    const visibleWidth = parsePositiveNumber(lotWidth);
-    const visibleHeight = parsePositiveNumber(lotHeight);
-    const width = visibleWidth ?? viewportFootprint?.widthFt;
-    const height = visibleHeight ?? viewportFootprint?.heightFt;
-    if (!width || !height) {
-      updateProjectStatus({
-        state: "blocked",
-        area: "setup",
-        title: "Apply site needs size",
-        detail: "Set the site width and height before applying the site.",
-        nextAction: "Type width/depth or draw a site boundary, then lock the site.",
-      });
-      applyingSiteRef.current = false;
-      return;
-    }
-    const selectedAreaAcres = siteAreaAcresFromSize(width, height);
-    if (selectedAreaAcres > SITE_WARNING_ACRES) {
-      updateProjectStatus({
-        state: "blocked",
-        area: "setup",
-        title: "Apply site needs smaller area",
-        detail: OVERSIZED_SITE_MESSAGE,
-        nextAction: "Reduce the site area or zoom to a smaller review boundary.",
-      });
-      applyingSiteRef.current = false;
-      return;
-    }
-    updateProjectStatus({
-      state: "working",
-      area: "setup",
-      title: "Applying site",
-      detail: "Civora is locking the site boundary and preparing site context checks.",
-      nextAction: "Wait for the boundary to lock, then review source context results.",
-    });
-    const existingSite = buildingPlacements.find((item) => item.type === "site");
-    if (existingSite && !existingSite.locked) {
-      const existingBoundarySource =
-        currentInput?.meta?.site_inputs?.site_boundary_source ?? existingSite.source;
-      const normalizedBoundarySource: SiteInputs["site_boundary_source"] =
-        existingBoundarySource === "manual_drawn" ||
-        existingBoundarySource === "map_viewport" ||
-        existingBoundarySource === "imported"
-          ? existingBoundarySource
-          : "dimensions";
-      const nextSiteInputs: SiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        site_alignment_locked: true,
-        site_boundary_state: "locked_canonical",
-        site_boundary_source: normalizedBoundarySource,
-      };
-      const nextProjectInput: ProjectInput = {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: nextSiteInputs,
-        },
-        manual_fields: {
-          ...(currentInput?.manual_fields ?? {}),
-          lot: {
-            x: existingSite.x ?? 0,
-            y: existingSite.y ?? 0,
-            w: width,
-            h: height,
-          },
-        },
-      };
-      setSiteScaleLocked(true);
-      setShowSiteBounds(false);
-      setSiteSelectionMode(false);
-      setActiveWorkspaceMode("canvas");
-      setActiveSidePanel(null);
-      setRenderedSidePanel(null);
-      setSidePanelVisible(false);
-      setFitToSiteRequest((value) => value + 1);
-      setBuildingPlacements((prevPlacements) =>
-        prevPlacements.map((item) =>
-          item.type === "site"
-            ? {
-                ...item,
-                locked: true,
-                meta: {
-                  ...(item.meta ?? {}),
-                  site_boundary_state: "locked_canonical",
-                  engineering_status: "review_required",
-                  construction_release_allowed: false,
-                },
-                capabilities: {
-                  ...item.capabilities,
-                  movable: false,
-                  resizable: false,
-                  rotatable: false,
-                },
-              }
-            : item,
-        ),
-      );
-      setCurrentProject((project) =>
-        project
-          ? {
-              ...project,
-              project_input: nextProjectInput,
-              has_result: false,
-              latest_result: undefined,
-            }
-          : project,
-      );
-      await saveProject({
-        silent: true,
-        projectInputOverride: nextProjectInput,
-      });
-      lastAppliedSiteRef.current = {
-        w: width,
-        h: height,
-        lat: viewportCenter?.lat,
-        lng: viewportCenter?.lng,
-      };
-      applyingSiteRef.current = false;
-      updateProjectStatus({
-        state: "working",
-        area: "setup",
-        title: "Detecting site context",
-        detail: "Site boundary locked. Checking available existing-condition sources inside the site.",
-        nextAction: "Review found candidates or needs before generating.",
-      });
-      void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
-      return;
-    }
-    const lastApplied = lastAppliedSiteRef.current;
-    if (
-      lastApplied &&
-      Math.abs(lastApplied.w - width) < 1 &&
-      Math.abs(lastApplied.h - height) < 1 &&
-      (!viewportCenter ||
-        (Math.abs((lastApplied.lat ?? 0) - viewportCenter.lat) < 1e-6 &&
-          Math.abs((lastApplied.lng ?? 0) - viewportCenter.lng) < 1e-6))
-    ) {
-      updateProjectStatus({
-        state: "ready",
-        area: "setup",
-        title: "Site already applied",
-        detail: "Site already matches the current viewport.",
-        nextAction: "Open Generate when you are ready to create review drafts.",
-      });
-      applyingSiteRef.current = false;
-      return;
-    }
-    autoFitSite(width, height, "Site Boundary", undefined, false, true);
-    setShowSiteBounds(false);
-    setSiteScaleLocked(true);
-    const nextSiteInputs = {
-      ...(currentInput?.meta?.site_inputs ?? {}),
-      site_alignment_locked: true,
-      ...(viewportFootprint?.bounds
-        ? {
-            viewport_bounds: {
-              north: viewportFootprint.bounds.north,
-              south: viewportFootprint.bounds.south,
-              east: viewportFootprint.bounds.east,
-              west: viewportFootprint.bounds.west,
-              center_lat: viewportFootprint.bounds.centerLat,
-              center_lng: viewportFootprint.bounds.centerLng,
-              width_ft: width,
-              height_ft: height,
-            },
-          }
-        : {}),
-      ...(viewportCenter
-        ? {
-            geocode: {
-              ...(currentInput?.meta?.site_inputs?.geocode ?? {}),
-              lat: viewportCenter.lat,
-              lng: viewportCenter.lng,
-              display_name:
-                currentInput?.meta?.site_inputs?.geocode?.display_name ?? "Map center",
-            },
-          }
-        : {}),
-    };
-    await saveProject({
-      silent: true,
-      projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: nextSiteInputs,
-        },
-        manual_fields: {
-          ...(currentInput?.manual_fields ?? {}),
-          lot: {
-            x: 0,
-            y: 0,
-            w: width,
-            h: height,
-          },
-        },
-      },
-    });
-    setSiteSelectionMode(false);
-    setActiveWorkspaceMode("canvas");
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setSidePanelVisible(false);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setLeftSidebarOpen(false);
-    }
-    updateProjectStatus({
-      state: "working",
-      area: "setup",
-      title: "Detecting site context",
-      detail: "Site applied and locked. Civora is checking source context inside the site.",
-      nextAction: "Review found candidates or needs before generating.",
-    });
-    lastAppliedSiteRef.current = {
-      w: width,
-      h: height,
-      lat: viewportCenter?.lat,
-      lng: viewportCenter?.lng,
-    };
-    applyingSiteRef.current = false;
-    void runAutoExistingConditionsAfterSiteLock({
-      ...currentInput,
-      input_mode: "user",
-      strict_mode: false,
-      allow_ai_fill_for_blanks: false,
-      meta: {
-        ...(currentInput?.meta ?? {}),
-        site_inputs: nextSiteInputs,
-      },
-      manual_fields: {
-        ...(currentInput?.manual_fields ?? {}),
-        lot: {
-          x: 0,
-          y: 0,
-          w: width,
-          h: height,
-        },
-      },
-    });
-  }, [
+  const handleApplySite = useDashboardApplySiteAction({
+    applyingSiteRef,
     autoFitSite,
     buildingPlacements,
     currentProject,
+    hasSiteBoundary,
+    lastAppliedSiteRef,
     lotHeight,
     lotWidth,
     payloadPreview,
     runAutoExistingConditionsAfterSiteLock,
     saveProject,
+    setActiveSidePanel,
+    setActiveWorkspaceMode,
+    setBuildingPlacements,
+    setCurrentProject,
+    setFitToSiteRequest,
+    setLeftSidebarOpen,
+    setRenderedSidePanel,
+    setShowSiteBounds,
+    setSidePanelVisible,
+    setSiteScaleLocked,
+    setSiteSelectionMode,
+    siteScaleLocked,
     updateProjectStatus,
     viewportCenter,
     viewportFootprint,
-  ]);
+  });
 
   const runSelectedDetections = useCallback(async () => {
     if (!siteScaleLocked) {
