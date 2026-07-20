@@ -180,11 +180,6 @@ import {
   progressTimelineStatusClass,
 } from "./utils/dashboardWorkflowProgress";
 import { buildDashboardManualFields } from "./utils/dashboardManualFields";
-import { buildGenerateConceptPlacements } from "./utils/dashboardGenerateConcepts";
-import {
-  buildGradingDrainageReviewContextPlacements,
-  type GradingDrainageReviewContextMode,
-} from "./utils/dashboardReviewContextPlacements";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -263,6 +258,7 @@ import { useDashboardWorkspaceReset } from "./hooks/useDashboardWorkspaceReset";
 import { useDashboardObjectUpdateAction } from "./hooks/useDashboardObjectUpdateAction";
 import { useDashboardObjectRemoveRestoreActions } from "./hooks/useDashboardObjectRemoveRestoreActions";
 import { useDashboardAddObjectAction } from "./hooks/useDashboardAddObjectAction";
+import { useDashboardReviewConceptActions } from "./hooks/useDashboardReviewConceptActions";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -1764,113 +1760,45 @@ function PerformanceAIDashboardView({
     setPreviewMode,
   });
 
-  const addGradingDrainageReviewContext = useCallback(
-    (message: string, mode: GradingDrainageReviewContextMode = "both") => {
-      clearGeneratedPreview();
-      if (!hasSiteBoundary()) {
-        ensureSiteBoundary("Created a default review site so grading/drainage context can be added immediately.");
-      }
-      const lot = resolveLotBounds();
-      const additions = buildGradingDrainageReviewContextPlacements({ lot, mode });
-      setBuildingPlacements((prev) => [...prev, ...additions]);
-      additions.forEach((item) => recordDraftUndoAction({ action: "add", object: item }));
-      markSystemsStale(["grading", "drainage"]);
-      setActivePlacementId(null);
-      setPlacementModeEnabled(false);
-      setPreviewMode("2d");
-      setPreviewInteraction("static");
-      setActiveWorkspaceMode("canvas");
-      setActiveSidePanel(null);
-      setRenderedSidePanel(null);
-      setSidePanelVisible(false);
-      setRightRailCollapsed(true);
-      setFitToSiteRequest((value) => value + 1);
-      recordRecentChange({
-        type: "object_added",
-        label: "Grading/drainage context added",
-        detail: `${additions.map((item) => item.label).join(", ")} added as draft review geometry.`,
-      });
-      const messageLabel = additions.map((item) => item.label).join(" and ");
-      appendChatMessage(
-        "assistant",
-        `${messageLabel} added to the canvas as editable review context. Generate will treat it as draft grading/drainage intent, not survey/control evidence.`,
-        "status",
-      );
-      setStatusMessage(
-        `${messageLabel} added as editable review context. Draft grading/drainage intent only; not survey/control evidence.`,
-      );
-      return true;
-    },
-    [
-      appendChatMessage,
-      clearGeneratedPreview,
-      ensureSiteBoundary,
-      hasSiteBoundary,
-      markSystemsStale,
-      recordDraftUndoAction,
-      recordRecentChange,
-      resolveLotBounds,
-    ],
-  );
-
-  const createGenerateConceptObjects = useCallback(
-    (target: SystemGenerationTarget, notes: string[]) => {
-      const lot = resolveLotBounds();
-      const concept = buildGenerateConceptPlacements({
-        target,
-        notes,
-        lot,
-        siteScaleLocked,
-        buildingPlacements,
-        buildingWidth,
-        buildingDepth,
-        parkingCount,
-        parkingStallWidth,
-        parkingStallDepth,
-        parkingAisleWidth,
-        parkingAdaAisleWidth,
-        parkingAdaCount,
-        parkingCompactCount,
-        parkingCompactWidth,
-        parkingAngle,
-        parkingLoading,
-      });
-      if (!concept.length) return 0;
-      setBuildingPlacements((prev) => [
-        ...prev.filter((item) => !Boolean(item.meta?.generated_review_concept)),
-        ...concept,
-      ]);
-      setPreviewMode("2d");
-      setPreviewInteraction("static");
-      setActiveWorkspaceMode("canvas");
-      recordRecentChange({
-        type: "generate_recorded",
-        label: "Review concept layer updated",
-        detail: `${concept.length} visible review concept object${concept.length === 1 ? "" : "s"} added to the canvas.`,
-        undoBlockedReason: "Use Object Manager to hide/delete generated review concepts, then rerun Generate.",
-      });
-      setStatusMessage(`${concept.length} review concept object${concept.length === 1 ? "" : "s"} added to the canvas. Review required.`);
-      return concept.length;
-    },
-    [
-      buildingDepth,
-      buildingPlacements,
-      buildingWidth,
-      parkingAdaAisleWidth,
-      parkingAdaCount,
-      parkingAisleWidth,
-      parkingAngle,
-      parkingCompactCount,
-      parkingCompactWidth,
-      parkingCount,
-      parkingLoading,
-      parkingStallDepth,
-      parkingStallWidth,
-      recordRecentChange,
-      resolveLotBounds,
-      siteScaleLocked,
-    ],
-  );
+  const {
+    addGradingDrainageReviewContext,
+    createGenerateConceptObjects,
+  } = useDashboardReviewConceptActions({
+    appendChatMessage,
+    buildingDepth,
+    buildingPlacements,
+    buildingWidth,
+    clearGeneratedPreview,
+    ensureSiteBoundary,
+    hasSiteBoundary,
+    markSystemsStale,
+    parkingAdaAisleWidth,
+    parkingAdaCount,
+    parkingAisleWidth,
+    parkingAngle,
+    parkingCompactCount,
+    parkingCompactWidth,
+    parkingCount,
+    parkingLoading,
+    parkingStallDepth,
+    parkingStallWidth,
+    recordDraftUndoAction,
+    recordRecentChange,
+    resolveLotBounds,
+    setActivePlacementId,
+    setActiveSidePanel,
+    setActiveWorkspaceMode,
+    setBuildingPlacements,
+    setFitToSiteRequest,
+    setPlacementModeEnabled,
+    setPreviewInteraction,
+    setPreviewMode,
+    setRenderedSidePanel,
+    setRightRailCollapsed,
+    setSidePanelVisible,
+    setStatusMessage,
+    siteScaleLocked,
+  });
 
   const handleUpdateBuilding = useDashboardObjectUpdateAction({
     buildingPlacements,
