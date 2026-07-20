@@ -173,6 +173,7 @@ import {
   isAiRealismProviderConfigured,
   resolvePreviewSelectedDeletableObject,
 } from "../utils/previewViewModel";
+import { buildPreviewInteractionState } from "../utils/previewInteractionState";
 import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import {
   AI_REALISM_WATERMARK,
@@ -472,55 +473,37 @@ export default function PreviewPanel({
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const mapAvailable =
-    Boolean(mapboxToken) &&
-    Boolean(geocode?.lat && geocode?.lng);
-  const highQualityObjectCount = buildingPlacements.length + suggestedPlacements.length + (surveyPoints?.length ?? 0);
-  const useLightHighQuality =
-    previewQuality === "high" && (compactViewport || highQualityObjectCount > 220);
-  const showMapBase = mapAvailable && mapOverlayEnabled;
-  const showMap = showMapBase && previewMode === "2d";
-  const showMap3D = showMapBase && previewMode === "3d";
-  const mapPitch = showMap3D ? 58 : 0;
+  const previewInteractionState = buildPreviewInteractionState({
+    mapboxToken,
+    geocode,
+    buildingPlacementCount: buildingPlacements.length,
+    suggestedPlacementCount: suggestedPlacements.length,
+    surveyPointCount: surveyPoints?.length ?? 0,
+    previewQuality,
+    compactViewport,
+    mapOverlayEnabled,
+    previewMode,
+    previewInteraction,
+    drawMode,
+    hasGeneratedPlan,
+    placementMode,
+    selectedBuildingId,
+    planPreviewProjectId,
+    currentProjectId,
+    lotWidth,
+    lotHeight,
+    preview3DItemCount: preview3DEffectiveItems.length,
+    planPreviewUrl,
+    siteLocked,
+    canDrawObjects,
+    draggingBuildingActive: Boolean(draggingBuildingId && draggingMode),
+    rotateDragActive: Boolean(rotateDragStart),
+    canvasPanActive: Boolean(canvasPanStart),
+    mapLocked,
+  });
+  const { mapAvailable, useLightHighQuality, showMap, showMap3D, mapPitch, allowMapInteraction, showGeneratedPlan, hasLiveObjects, canUse3D, showHover, allowEdits, showQuickDrawPalette, showMobileDrawToolbar, drawingOwnsCanvasHits, overlayPointerEvents, passiveOverlayPointerEvents } = previewInteractionState;
   const mapBearing = showMap3D ? (typeof siteRotationDeg === "number" ? siteRotationDeg : 0) : 0;
-  const allowMapInteraction =
-    showMap && previewInteraction === "static" && !placementMode && !rotateDragStart && !mapLocked;
-  const showGeneratedPlan =
-    !showMap &&
-    previewInteraction === "static" &&
-    drawMode === "select" &&
-    hasGeneratedPlan &&
-    !placementMode &&
-    !selectedBuildingId &&
-    (!planPreviewProjectId || !currentProjectId || planPreviewProjectId === currentProjectId);
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
-  const hasLiveObjects =
-    buildingPlacements.length > 0 ||
-    suggestedPlacements.length > 0 ||
-    (surveyPoints?.length ?? 0) > 0 ||
-    Boolean(lotWidth && lotHeight);
-  const canUse3D = showMap || hasLiveObjects || preview3DEffectiveItems.length > 0 || Boolean(planPreviewUrl);
-  const showHover = previewInteraction === "static";
-  const allowEdits = previewInteraction === "edit";
-  const showQuickDrawPalette =
-    previewMode === "2d" &&
-    (allowEdits || drawMode !== "select") &&
-    drawMode !== "pan";
-  const showMobileDrawToolbar = showQuickDrawPalette;
-  const activeDrawMode =
-    (drawMode === "site" && !siteLocked) ||
-    ((drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect" || drawMode === "point") && canDrawObjects);
-  const drawingOwnsCanvasHits = activeDrawMode || drawMode === "pan";
-  const drawingSurfaceInteractive =
-    placementMode ||
-    activeDrawMode ||
-    Boolean(draggingBuildingId && draggingMode) ||
-    Boolean(rotateDragStart) ||
-    Boolean(canvasPanStart) ||
-    (allowEdits && drawMode === "select") ||
-    (showMap && previewInteraction === "edit" && !mapLocked);
-  const overlayPointerEvents = drawingSurfaceInteractive ? "pointer-events-auto" : "pointer-events-none";
-  const passiveOverlayPointerEvents = drawingOwnsCanvasHits ? "pointer-events-none" : "pointer-events-auto";
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
