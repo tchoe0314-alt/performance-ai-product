@@ -207,9 +207,9 @@ export function CadPrecisionDock({
       <section className="relative z-[30] min-w-0">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">CAD precision</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Draft precision</p>
             <p className="mt-1 truncate text-sm font-semibold text-slate-900">
-              {selectedCadObject?.label || "No CAD object selected"}
+              {selectedCadObject?.label || "No draft object selected"}
             </p>
           </div>
           <div className="flex gap-1">
@@ -288,7 +288,7 @@ export function CadPrecisionDock({
           </button>
         </div>
         <div className="mt-3">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Command Line</p>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Draft command line</p>
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <input
               aria-label="CAD command input"
@@ -518,7 +518,7 @@ export function CadPrecisionDock({
               </ul>
             </>
           ) : (
-            <p>Topology checks: no visible CAD blockers.</p>
+            <p>Drawing checks: no visible issues.</p>
           )}
         </div>
       </section>

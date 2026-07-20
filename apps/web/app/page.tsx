@@ -13859,7 +13859,7 @@ function PerformanceAIDashboardView({
       setCommandBarExpanded(false);
       appendChatMessage(
         "assistant",
-        `Running CAD command: ${message.trim()}. Results are shown in Draw / Object Manager command feedback. Draft objects remain review-required.`,
+        `Running draft command: ${message.trim()}. Results are shown in Draw / Object Manager command feedback. Draft objects remain review-required.`,
         "status",
       );
       return true;
@@ -21952,8 +21952,8 @@ function PerformanceAIDashboardView({
         { label: "Properties", tool: "properties", hint: "Apply object props" },
         { label: "Snap", tool: "snap", hint: "Toggle snap" },
         { label: "Ortho", tool: "ortho", hint: "Toggle ortho" },
-        { label: "Undo", tool: "undo", hint: "Last CAD edit" },
-        { label: "Redo", tool: "redo", hint: "Redo CAD edit" },
+        { label: "Undo", tool: "undo", hint: "Last draft edit" },
+        { label: "Redo", tool: "redo", hint: "Redo draft edit" },
         { label: "Command", tool: "command", hint: "Typed commands" },
       ],
     },

@@ -1870,7 +1870,7 @@ export default function PreviewPanel({
     return `${width} ft x ${depth} ft`;
   }, []);
   const getPreviewObjectSourceLabel = useCallback((item: BuildingPlacement) => {
-    if (cadEntityPreviewObjects.some((candidate) => candidate.id === item.id)) return "Source-only CAD preview";
+    if (cadEntityPreviewObjects.some((candidate) => candidate.id === item.id)) return "Source-only preview";
     if (item.generated || item.source === "generated") return "Generated";
     if (item.source === "manual_drawn") return "Manual draft";
     if (item.source === "detected_from_image" || item.source === "detected_from_gis") return "Detected source";
@@ -2480,7 +2480,7 @@ export default function PreviewPanel({
     applyCadHistorySnapshot(entry.before);
     setCadHistory((prev) => prev.slice(0, -1));
     setCadRedoStack((prev) => [...prev, entry]);
-    recordUndoFeedback("applied", "UNDO restored the last draft CAD object edit.");
+    recordUndoFeedback("applied", "UNDO restored the last draft object edit.");
   }, [applyCadHistorySnapshot, applyPolylineUndo, applyRectUndo, cadHistory, lastPolylineEdit, lastRectEdit]);
   const redoCadCommand = useCallback(() => {
     const recordRedoFeedback = (status: CadCommandHistoryEntry["status"], message: string) => {
@@ -2503,7 +2503,7 @@ export default function PreviewPanel({
     applyCadHistorySnapshot(entry.after);
     setCadRedoStack((prev) => prev.slice(0, -1));
     setCadHistory((prev) => [...prev, entry]);
-    recordRedoFeedback("applied", "REDO restored the draft CAD object edit.");
+    recordRedoFeedback("applied", "REDO restored the draft object edit.");
   }, [applyCadHistorySnapshot, cadRedoStack]);
   const parseCadNumber = useCallback((value: string, fallback = 0) => {
     const parsed = Number(value);
@@ -2699,7 +2699,7 @@ export default function PreviewPanel({
   const transformSelectedCadObjects = useCallback(
     (kind: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", valueOverride?: string) => {
       if (!selectedCadIds.length) {
-        pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: select one or more editable draft CAD objects first.`);
+        pushCadCommandFeedback(kind, "blocked", `${kind.toUpperCase()} blocked: select one or more editable draft objects first.`);
         return;
       }
       const amount = parseCadNumber(valueOverride ?? cadTransformValue, kind === "scale" ? 1 : 0);
@@ -2808,7 +2808,7 @@ export default function PreviewPanel({
   const moveSelectedCadObjectsByVector = useCallback(
     (dx: number, dy: number) => {
       if (!selectedCadIds.length) {
-        pushCadCommandFeedback("MOVE", "blocked", "MOVE blocked: select one or more editable draft CAD objects first.");
+        pushCadCommandFeedback("MOVE", "blocked", "MOVE blocked: select one or more editable draft objects first.");
         return;
       }
       if (!Number.isFinite(dx) || !Number.isFinite(dy) || (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001)) {
@@ -2844,7 +2844,7 @@ export default function PreviewPanel({
   const copySelectedCadObjectsByVector = useCallback(
     (vectorOverride?: [number, number]) => {
       if (!selectedCadIds.length) {
-        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: select one or more editable draft CAD objects first.");
+        pushCadCommandFeedback("COPY", "blocked", "COPY blocked: select one or more editable draft objects first.");
         return;
       }
       const vector = vectorOverride ?? [10, 10];
@@ -2910,7 +2910,7 @@ export default function PreviewPanel({
         pushCadCommandFeedback(
           command,
           "blocked",
-          `${command} blocked: select at least ${minimum} editable draft CAD objects first.`,
+          `${command} blocked: select at least ${minimum} editable draft objects first.`,
         );
         return;
       }
@@ -3002,7 +3002,7 @@ export default function PreviewPanel({
   const arraySelectedCadObject = useCallback(
     (rowCount: number, columnCount: number, spacing: [number, number]) => {
       if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
-        pushCadCommandFeedback("ARRAY", "blocked", "ARRAY blocked: select one editable draft CAD object with geometry first.");
+        pushCadCommandFeedback("ARRAY", "blocked", "ARRAY blocked: select one editable draft object with geometry first.");
         return;
       }
       const rows = Math.max(1, Math.min(20, Math.floor(rowCount || 1)));
@@ -3373,7 +3373,7 @@ export default function PreviewPanel({
   }, [cadCoordinateDraft.x, cadCoordinateDraft.y, lotHeight, lotWidth, onSetPreviewInteraction, parseCadNumber, selectedCadObject, updateCadObject]);
   const applySelectedCadLayer = useCallback(() => {
     if (!selectedCadIds.length) {
-      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: select one or more editable draft CAD objects first.");
+      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: select one or more editable draft objects first.");
       return;
     }
     let appliedCount = 0;
@@ -3386,7 +3386,7 @@ export default function PreviewPanel({
     if (appliedCount) {
       pushCadCommandFeedback("LAYER", "applied", `LAYER applied to ${appliedCount} draft object${appliedCount === 1 ? "" : "s"}.`);
     } else {
-      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: selected objects are locked or not editable draft CAD objects.");
+      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: selected objects are locked or not editable draft objects.");
     }
   }, [buildingPlacements, cadLayerDraft, pushCadCommandFeedback, selectedCadIds, updateCadObject]);
   const offsetSelectedCadObject = useCallback(() => {
@@ -3424,7 +3424,7 @@ export default function PreviewPanel({
   }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
   const offsetSelectedCadObjectBy = useCallback((valueOverride?: string) => {
     if (!selectedCadObject) {
-      pushCadCommandFeedback("OFFSET", "blocked", "OFFSET blocked: select one editable draft CAD object first.");
+      pushCadCommandFeedback("OFFSET", "blocked", "OFFSET blocked: select one editable draft object first.");
       return;
     }
     const distance = parseCadNumber(valueOverride ?? cadOffsetDistance, 0);
@@ -3563,7 +3563,7 @@ export default function PreviewPanel({
 
   const applyCadProperties = useCallback(() => {
     if (!selectedCadObject) {
-      pushCadCommandFeedback("PROPERTIES", "blocked", "PROPERTIES blocked: select one editable draft CAD object first.");
+      pushCadCommandFeedback("PROPERTIES", "blocked", "PROPERTIES blocked: select one editable draft object first.");
       return;
     }
     const safeName = cadPropertyDraft.name.trim() || selectedCadObject.label || "CAD object";
@@ -4268,7 +4268,7 @@ export default function PreviewPanel({
     }
     if (commandKey === "DELETE" || commandKey === "ERASE") {
       if (!selectedDeletableObject) {
-        pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft CAD object first.");
+        pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft object first.");
         return;
       }
       onRemoveBuilding(selectedDeletableObject.id);
@@ -4347,7 +4347,7 @@ export default function PreviewPanel({
       const layer = (args[1] || "").trim().toUpperCase();
       if (layerAction === "ALL" || layerAction === "SHOWALL") {
         setHiddenCadLayers([]);
-        pushCadCommandFeedback("LAYER", "applied", "LAYER ALL showed every draft CAD layer.");
+        pushCadCommandFeedback("LAYER", "applied", "LAYER ALL showed every draft layer.");
         return;
       }
       if (["HIDE", "OFF", "SHOW", "ON", "ONLY", "ISOLATE"].includes(layerAction)) {

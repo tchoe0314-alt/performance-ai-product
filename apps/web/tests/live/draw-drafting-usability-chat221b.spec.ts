@@ -135,7 +135,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(feedback).not.toContainText(/DELETE blocked/i);
 
     await (await revealCadTool(page, "offset")).click();
-    await expect(feedback).toContainText(/OFFSET needs input: select one editable draft CAD object first/i);
+    await expect(feedback).toContainText(/OFFSET needs input: select one editable draft object first/i);
     await expect(feedback).not.toContainText(/OFFSET blocked/i);
   });
 
