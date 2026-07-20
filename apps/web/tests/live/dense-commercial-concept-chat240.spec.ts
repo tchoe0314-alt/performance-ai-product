@@ -71,3 +71,56 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((message) => !message.includes("401") && !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);
 });
+
+test("understands recreate-the-image wording without a prebuilt site", async ({ page }) => {
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Projects" }).first().click();
+  await page.getByRole("button", { name: "New Project" }).first().click();
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+
+  await runChatCommand(
+    page,
+    "literally recreate the image I sent you as a dense civil site plan with as many real plan elements and stuff as possible",
+  );
+
+  const canvas = page.getByTestId("workspace-canvas-shell");
+  await expect(canvas).toContainText("SITE LOCKED", { timeout: 10_000 });
+  await expect(canvas).toContainText(/1000 FT x 1000 FT/i);
+  await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 84 stalls"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Detention Basin A"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Internal Loop Drive"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Public Sanitary Line"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Hydrant W-1"]').first()).toBeVisible();
+
+  await expect(page.locator("body")).toContainText(/Dense review concept created/i);
+  await expect(page.locator("body")).not.toContainText(/site type or land use|which systems to include/i);
+
+  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  const objectPanel = page.getByTestId("object-manager-panel");
+  await expect(objectPanel).toContainText("Office Building - 28,000 sf");
+  await expect(objectPanel).toContainText("Internal Loop Drive");
+  await expect(objectPanel).toContainText("Public Water Line");
+  await expect(objectPanel).toContainText("Outfall OF-1");
+
+  await canvas.getByTestId("preview-quality-high").click();
+  await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
+  await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
+  await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
+
+  const bodyText = await canvas.innerText();
+  expect(bodyText).not.toMatch(/construction-ready|\bstamp\b|\bseal\b|certify|certified|approved for construction|engineer of record/i);
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors.filter((message) => !message.includes("401") && !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);
+});
