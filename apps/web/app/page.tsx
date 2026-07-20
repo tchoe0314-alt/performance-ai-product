@@ -6561,6 +6561,53 @@ function PerformanceAIDashboardView({
     return ["roads", "parking", "grading", "drainage", "utilities"];
   }, []);
 
+  const currentGenerateLayoutContext = useMemo(() => {
+    const userLayoutContext = buildingPlacements.filter((item) => {
+      if (!item.placed || item.type === "site" || item.meta?.generated_review_concept) return false;
+      const source = String(item.source || item.meta?.source || "").toLowerCase();
+      return Boolean(
+        item.meta?.semantic_object_model ||
+        item.meta?.semantic_geometry_state ||
+        item.meta?.command_created ||
+        ["user", "user_confirmed", "manual_drawn", "generated"].includes(source),
+      );
+    });
+    if (!userLayoutContext.length) return null;
+    const score = (item: BuildingPlacement) => {
+      const source = String(item.source || item.meta?.source || "").toLowerCase();
+      const type = String(item.type || "").toLowerCase();
+      const label = String(item.label || "").toLowerCase();
+      let value = 0;
+      if (/(review grading|review drainage|drainage area|fall line|custom|command).*(line|area|box|point)|^(line|area|box|point)\b/.test(label)) value += 240;
+      if (item.meta?.semantic_object_model || item.meta?.semantic_geometry_state) value += 160;
+      if (Array.isArray(item.meta?.combined_from_object_ids) && item.meta.combined_from_object_ids.length > 0) value += 130;
+      if (item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source)) value += 120;
+      if (["office_building", "building"].includes(type)) value += 100;
+      if (["parking", "basin"].includes(type)) value += 80;
+      if (["road", "driveway", "sidewalk"].includes(type)) value += 50;
+      if (["utility_corridor", "hydrant", "inlet", "outfall", "manhole"].includes(type)) value += 40;
+      if (item.geometry || item.geometryType) value += 20;
+      if (source === "generated") value -= 20;
+      return value;
+    };
+    const rankedUserLayoutContext = [...userLayoutContext].sort((a, b) => score(b) - score(a));
+    const semanticLayoutCount = userLayoutContext.filter((item) => Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state)).length;
+    return {
+      count: userLayoutContext.length,
+      semantic_count: semanticLayoutCount,
+      labels: rankedUserLayoutContext.slice(0, 20).map((item) => String(item.label || item.id || "Draft object")),
+      drawn_labels: rankedUserLayoutContext
+        .filter((item) => {
+          const source = String(item.source || item.meta?.source || "").toLowerCase();
+          return Boolean(item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source));
+        })
+        .slice(0, 12)
+        .map((item) => String(item.label || item.id || "Draft object")),
+      affected_systems: uniqueStrings(userLayoutContext.flatMap((item) => systemsImpactedByPlacement(item))),
+      review_required: true,
+    };
+  }, [buildingPlacements, systemsImpactedByPlacement]);
+
   const markSystemsStale = useCallback((systems?: EngineeringSystemKey[]) => {
     const targets = systems?.length
       ? Array.from(new Set(systems))
@@ -18448,64 +18495,13 @@ function PerformanceAIDashboardView({
       const generateStartedAt = markCivoraInteraction();
       const preflightBlockers = getGeneratePreflightBlockers(target);
       const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
-      const userLayoutContext = buildingPlacements.filter((item) => {
-        if (!item.placed || item.type === "site" || item.meta?.generated_review_concept) return false;
-        const source = String(item.source || item.meta?.source || "").toLowerCase();
-        return Boolean(
-          item.meta?.semantic_object_model ||
-          item.meta?.semantic_geometry_state ||
-          item.meta?.command_created ||
-          ["user", "user_confirmed", "manual_drawn", "generated"].includes(source),
-        );
-      });
-      const rankedUserLayoutContext = [...userLayoutContext].sort((a, b) => {
-        const score = (item: BuildingPlacement) => {
-          const source = String(item.source || item.meta?.source || "").toLowerCase();
-          const type = String(item.type || "").toLowerCase();
-          const label = String(item.label || "").toLowerCase();
-          let value = 0;
-          if (/(custom|command).*(line|area|box|point)|^(line|area|box|point)\b/.test(label)) value += 220;
-          if (item.meta?.semantic_object_model || item.meta?.semantic_geometry_state) value += 160;
-          if (Array.isArray(item.meta?.combined_from_object_ids) && item.meta.combined_from_object_ids.length > 0) value += 130;
-          if (item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source)) value += 120;
-          if (["office_building", "building"].includes(type)) value += 100;
-          if (["parking", "basin"].includes(type)) value += 80;
-          if (["road", "driveway", "sidewalk"].includes(type)) value += 50;
-          if (["utility_corridor", "hydrant", "inlet", "outfall", "manhole"].includes(type)) value += 40;
-          if (item.geometry || item.geometryType) value += 20;
-          if (source === "generated") value -= 20;
-          return value;
-        };
-        return score(b) - score(a);
-      });
-      const semanticLayoutCount = userLayoutContext.filter((item) => Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state)).length;
-      const userLayoutContextSummary = userLayoutContext.length
-        ? {
-            count: userLayoutContext.length,
-            semantic_count: semanticLayoutCount,
-            labels: rankedUserLayoutContext.slice(0, 20).map((item) => item.label),
-            drawn_labels: rankedUserLayoutContext
-              .filter((item) => {
-                const source = String(item.source || item.meta?.source || "").toLowerCase();
-                return Boolean(item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source));
-              })
-              .sort((a, b) => {
-                const commandScore = (item: BuildingPlacement) =>
-                  /(custom|command).*(line|area|box|point)|^(line|area|box|point)\b/i.test(String(item.label || "")) ? 1 : 0;
-                return commandScore(b) - commandScore(a);
-              })
-              .slice(0, 12)
-              .map((item) => item.label),
-            affected_systems: uniqueStrings(userLayoutContext.flatMap((item) => systemsImpactedByPlacement(item))),
-            review_required: true,
-          }
-        : null;
+      const userLayoutContextSummary = currentGenerateLayoutContext;
       const reviewNotes = uniqueStrings([
         ...preflightBlockers.filter((item) => !isHardGenerateBlocker(item.label)).map((item) => item.label),
         userLayoutContextSummary
-          ? `User layout context used by Generate: ${userLayoutContextSummary.labels.join(", ")}${userLayoutContext.length > userLayoutContextSummary.labels.length ? `, plus ${userLayoutContext.length - userLayoutContextSummary.labels.length} more` : ""}`
+          ? `User layout context used by Generate: ${userLayoutContextSummary.labels.join(", ")}${userLayoutContextSummary.count > userLayoutContextSummary.labels.length ? `, plus ${userLayoutContextSummary.count - userLayoutContextSummary.labels.length} more` : ""}`
           : "",
-        semanticLayoutCount ? `${semanticLayoutCount} semantic drafted object${semanticLayoutCount === 1 ? "" : "s"} included as review context` : "",
+        userLayoutContextSummary?.semantic_count ? `${userLayoutContextSummary.semantic_count} semantic drafted object${userLayoutContextSummary.semantic_count === 1 ? "" : "s"} included as review context` : "",
         pendingPlacementObjects.length
           ? `Requested objects still need placement before Generate can use them as layout context: ${pendingPlacementLabels.slice(0, 8).join(", ")}${pendingPlacementObjects.length > 8 ? `, plus ${pendingPlacementObjects.length - 8} more` : ""}`
           : "",
@@ -18835,8 +18831,8 @@ function PerformanceAIDashboardView({
       askClarification,
       assumedTerrainSlopePct,
       buildPayloadFromOverrides,
-      buildingPlacements,
       createGenerateConceptObjects,
+      currentGenerateLayoutContext,
       executePlanAction,
       getGeneratePreflightBlockers,
       hasSiteBoundary,
@@ -24978,6 +24974,7 @@ function PerformanceAIDashboardView({
                     assistedEnabled={assistedEnabled}
                     pendingPlacementCount={pendingPlacementObjects.length}
                     pendingPlacementLabels={pendingPlacementLabels}
+                    currentUserLayoutContext={currentGenerateLayoutContext}
                     autoSiteContextFlowSummary={autoSiteContextFlowSummary}
                     systemReadinessRows={systemReadinessRows}
                     issues={issues}

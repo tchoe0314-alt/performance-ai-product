@@ -89,6 +89,14 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await page.getByRole("button", { name: "Open Civora chat history" }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/not survey\/control evidence/i);
 
+    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await expect(page.getByTestId("generate-current-drawing-context")).toContainText("Review Grading Fall Line");
+    await expect(page.getByTestId("generate-current-drawing-context")).toContainText("Review Drainage Area Cue");
+    await expect(page.getByTestId("generate-current-drawing-context")).toContainText(/grading, drainage|drainage, grading/);
+    await page.getByTestId("generate-drainage").click();
+    await expect(page.getByTestId("generate-flow-summary")).toContainText(/Using from drawing/i);
+    await expect(page.getByTestId("generate-flow-summary")).toContainText("Review Drainage Area Cue");
+
     await openDrawPanel(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Review Grading Fall Line");
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Review Drainage Area Cue");

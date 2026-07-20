@@ -34,6 +34,8 @@ type GenerateFlowSummary = {
   safety_wording: string;
 };
 
+type UserLayoutContextSummary = NonNullable<GenerateFlowSummary["user_layout_context"]>;
+
 type ReactiveValidationState = {
   status: "idle" | "pending" | "ready";
   changedSystems: Array<Exclude<GenerateSystemTarget, "full">>;
@@ -58,6 +60,7 @@ type GeneratePanelProps = {
   assistedEnabled: boolean;
   pendingPlacementCount: number;
   pendingPlacementLabels: string[];
+  currentUserLayoutContext: UserLayoutContextSummary | null;
   autoSiteContextFlowSummary: AutoSiteContextFlowSummary;
   systemReadinessRows: readonly SystemReadinessRow[];
   issues: Issue[];
@@ -83,6 +86,7 @@ export function GeneratePanel({
   assistedEnabled,
   pendingPlacementCount,
   pendingPlacementLabels,
+  currentUserLayoutContext,
   autoSiteContextFlowSummary,
   systemReadinessRows,
   issues,
@@ -169,6 +173,24 @@ export function GeneratePanel({
           Placement: {pendingPlacementCount
             ? `${pendingPlacementCount} requested object${pendingPlacementCount === 1 ? "" : "s"} still need placement: ${pendingPlacementLabels.slice(0, 4).join(", ")}${pendingPlacementCount > 4 ? `, plus ${pendingPlacementCount - 4} more` : ""}.`
             : "All requested workspace objects are placed or no requested objects are waiting."}
+        </div>
+        <div
+          className={`mt-2 rounded-xl border px-3 py-2 text-xs font-medium ${
+            currentUserLayoutContext?.count
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-slate-200 bg-white text-slate-600"
+          }`}
+          data-testid="generate-current-drawing-context"
+        >
+          {currentUserLayoutContext?.count ? (
+            <>
+              Drawing context ready: {currentUserLayoutContext.labels.slice(0, 4).join(", ")}
+              {currentUserLayoutContext.count > 4 ? `, plus ${currentUserLayoutContext.count - 4} more` : ""}.
+              {" "}Affects {currentUserLayoutContext.affected_systems.join(", ") || "general layout"}; review context only.
+            </>
+          ) : (
+            "Drawing context: no editable layout cues have been added yet."
+          )}
         </div>
         {statusMessage ? (
           <div
