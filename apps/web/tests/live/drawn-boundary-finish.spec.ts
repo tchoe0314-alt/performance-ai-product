@@ -482,11 +482,14 @@ test.describe("drawn site boundary Finish workflow", () => {
 
 async function openDrawControls(page: Page) {
   if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) return;
+  if (await page.getByTestId("draw-site-boundary-toolbar-mobile").filter({ visible: true }).first().isVisible().catch(() => false)) return;
   const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
   const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
   const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
   if (await drawStep.isVisible().catch(() => false)) await drawStep.click({ timeout: 5_000 });
-  else if (await drawButton.isVisible().catch(() => false)) await drawButton.click({ timeout: 5_000 });
   else if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
+  else if (await drawButton.isVisible().catch(() => false)) {
+    await drawButton.click({ timeout: 5_000 }).catch(() => page.keyboard.press("D"));
+  }
   else await page.keyboard.press("D");
 }

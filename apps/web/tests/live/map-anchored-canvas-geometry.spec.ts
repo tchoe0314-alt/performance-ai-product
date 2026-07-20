@@ -119,10 +119,19 @@ test.describe("map anchored canvas geometry transforms", () => {
   });
 
   test("high quality and AI visualization copy stays visual-only and avoids restricted wording", () => {
-    const sourcePath = fs.existsSync(path.resolve(process.cwd(), "app/components/PreviewPanel.tsx"))
-      ? path.resolve(process.cwd(), "app/components/PreviewPanel.tsx")
-      : path.resolve(process.cwd(), "apps/web/app/components/PreviewPanel.tsx");
-    const source = fs.readFileSync(sourcePath, "utf8");
+    const sourcePaths = [
+      "app/components/PreviewPanel.tsx",
+      "app/components/PreviewPanelView.tsx",
+      "app/components/previewPanelTypes.ts",
+      "app/utils/previewAiRealism.ts",
+      "apps/web/app/components/PreviewPanel.tsx",
+      "apps/web/app/components/PreviewPanelView.tsx",
+      "apps/web/app/components/previewPanelTypes.ts",
+      "apps/web/app/utils/previewAiRealism.ts",
+    ]
+      .map((sourcePath) => path.resolve(process.cwd(), sourcePath))
+      .filter((sourcePath) => fs.existsSync(sourcePath));
+    const source = sourcePaths.map((sourcePath) => fs.readFileSync(sourcePath, "utf8")).join("\n");
     const aiWatermarkStart = source.indexOf("const AI_REALISM_WATERMARK");
     const aiWatermarkSection = source.slice(aiWatermarkStart, aiWatermarkStart + 1200);
 
