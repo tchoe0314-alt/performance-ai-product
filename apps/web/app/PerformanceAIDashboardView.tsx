@@ -92,21 +92,6 @@ import {
   buildDashboardLibraryPanelSections,
   buildDashboardStandardsPanelCriteria,
 } from "./utils/dashboardShellConfig";
-import {
-  runDashboardShortcutOpenDrawCanvas,
-  runDashboardShortcutOpenGenerate,
-  runDashboardShortcutOpenProjects,
-  runDashboardShortcutCopySelectedObject,
-  runDashboardShortcutDeleteSelectedObject,
-  runDashboardShortcutPasteSelectedObject,
-  runDashboardShortcutSaveProject,
-  runDashboardCancelActiveTool,
-} from "./utils/dashboardShortcutActions";
-import {
-  runDashboardRedoDraftAction,
-  runDashboardUndoDraftAction,
-  runDashboardUndoRecentChange,
-} from "./utils/dashboardRecoveryActions";
 import { DASHBOARD_CAD_TOOL_GROUPS } from "./utils/dashboardCadToolGroups";
 import {
   buildGenerateLayoutContext,
@@ -265,7 +250,6 @@ import {
   buildDashboardSidebarReviewState,
   buildIssueDiagnosticSummary,
 } from "./utils/dashboardSidebarReview";
-import { cloneBuildingPlacementForUndo } from "./utils/dashboardObjectManagerTrace";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -305,14 +289,8 @@ import {
   resolveDashboardReactiveAffectedRunTarget,
   runDashboardReactiveValidation,
 } from "./utils/dashboardReactiveRerunView";
-import {
-  runDashboardCloseSidePanel,
-  runDashboardOpenPanelFromDrawer,
-  runDashboardOpenSidePanel,
-  runDashboardOpenWorkspaceMode,
-  runDashboardTriggerCadTool,
-} from "./utils/dashboardShellActions";
 import { createDashboardExportActions } from "./utils/dashboardExportActions";
+import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -11758,66 +11736,87 @@ function PerformanceAIDashboardView({
     (item) => item.key === "standards_source_registry" || item.key === "candidate_standards_review",
   );
   const isDisciplinePanel = isDashboardDisciplinePanel(sidePanelForRender);
-  const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
-    runDashboardOpenSidePanel({
-      panel,
-      panelOpenProbeRef,
-      sidePanelCloseTimeoutRef,
-      setActiveSidePanel,
-      setActiveWorkspaceMode,
-      setCadToolRequest,
-      setLayerManagerOpen,
-      setPlacementModeEnabled,
-      setPreviewInteraction,
-      setRightRailCollapsed,
-    });
-  }, []);
+  const {
+    handleCancelActiveTool,
+    handleCloseSidePanel,
+    handleCopySelectedObject,
+    handleDeleteSelectedObject,
+    handleOpenPanelFromDrawer,
+    handleOpenSidePanel,
+    handlePasteSelectedObject,
+    handleRedoDraftAction,
+    handleShortcutOpenDrawCanvas,
+    handleShortcutOpenGenerate,
+    handleShortcutOpenProjects,
+    handleShortcutSaveProject,
+    handleUndoDraftAction,
+    handleUndoRecentChange,
+    triggerCadTool,
+  } = useDashboardShellShortcuts({
+    activePlacementId,
+    activeSidePanel,
+    appendChatMessage,
+    buildingPlacements,
+    clearDraftUndoAction,
+    currentProjectId: currentProject?.project_id,
+    effectiveDemoWorkspaceEnabled,
+    handleObjectManagerBulkDelete,
+    handleObjectManagerCopy,
+    handleObjectManagerPaste,
+    handleRemoveBuilding,
+    handleRestoreBuilding,
+    isSeededDemoProjectId,
+    lastDraftAction,
+    lastDraftActionRef,
+    markSystemsStale,
+    objectClipboard,
+    panelCloseProbeRef,
+    panelOpenProbeRef,
+    previewFullscreenOpen,
+    projectId,
+    pushRecoveryMessage,
+    recordDraftRedoAction,
+    recordDraftUndoAction,
+    recordRecentChange,
+    redoDraftAction,
+    redoDraftActionRef,
+    reportObjectActionBlocker,
+    resolvedProjectIdRef,
+    saveProject,
+    selectedObjectIds,
+    setActivePlacementId,
+    setActiveSidePanel,
+    setActiveWorkspaceMode,
+    setBuildingPlacements,
+    setCadToolRequest,
+    setLayerManagerOpen,
+    setLeftSidebarOpen,
+    setObjectClipboard,
+    setObjectManagerStatusMessage,
+    setPendingClarification,
+    setPlacementModeEnabled,
+    setPreviewFullscreenOpen,
+    setPreviewInteraction,
+    setRenderedSidePanel,
+    setRightRailCollapsed,
+    setSelectedObjectIds,
+    setShortcutsOverlayOpen,
+    setSidePanelVisible,
+    setStatusMessage,
+    setWorkspaceChromeMinimized,
+    sidePanelCloseTimeoutRef,
+    shortcutsOverlayOpen,
+    systemsImpactedByPlacement,
+    token,
+    updateProjectStatus,
+  });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const panel = new URLSearchParams(window.location.search).get("debugPanel") as SidePanelKey | null;
     if (!panel || !sidePanelCopy[panel]) return;
     handleOpenSidePanel(panel);
   }, [handleOpenSidePanel]);
-  const handleCloseSidePanel = useCallback(() => {
-    runDashboardCloseSidePanel({
-      activeSidePanel,
-      panelCloseProbeRef,
-      sidePanelCloseTimeoutRef,
-      setActiveSidePanel,
-      setRenderedSidePanel,
-      setRightRailCollapsed,
-      setSidePanelVisible,
-    });
-  }, [activeSidePanel]);
-  const handleOpenPanelFromDrawer = useCallback((panel: SidePanelKey) => {
-    runDashboardOpenPanelFromDrawer({
-      panel,
-      openSidePanel: handleOpenSidePanel,
-      setLeftSidebarOpen,
-    });
-  }, [handleOpenSidePanel]);
-  const triggerCadTool = useCallback((tool: CadToolRequestForPreview["tool"], label: string) => {
-    runDashboardTriggerCadTool({
-      label,
-      setActiveSidePanel,
-      setActiveWorkspaceMode,
-      setCadToolRequest,
-      setPreviewInteraction,
-      setRightRailCollapsed,
-      setStatusMessage,
-      setWorkspaceChromeMinimized,
-      tool,
-    });
-  }, []);
   const cadToolGroups = DASHBOARD_CAD_TOOL_GROUPS;
-  const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
-    runDashboardOpenWorkspaceMode({
-      mode,
-      openSidePanel: handleOpenSidePanel,
-      setActiveWorkspaceMode,
-      setLeftSidebarOpen,
-    });
-  }, [handleOpenSidePanel]);
   const controlsHealthStatus = resolveDashboardControlsHealthStatus(systemStatuses);
   const panelStatus = (target: SidePanelKey): SidebarStatus =>
     resolveDashboardPanelStatus(target, {
@@ -11873,164 +11872,6 @@ function PerformanceAIDashboardView({
     backendResultPresent: Boolean(backendResult),
     exportBlockReason,
   });
-  const handleCancelActiveTool = useCallback(() => {
-    runDashboardCancelActiveTool({
-      shortcutsOverlayOpen,
-      activeSidePanel,
-      previewFullscreenOpen,
-      closeSidePanel: handleCloseSidePanel,
-      setShortcutsOverlayOpen,
-      setPreviewFullscreenOpen,
-      setPlacementModeEnabled,
-      setActivePlacementId,
-      setSelectedObjectIds,
-      setPendingClarification,
-      setPreviewInteraction,
-      setCadToolRequestSelect: () => setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" }),
-      updateProjectStatus,
-    });
-  }, [activeSidePanel, handleCloseSidePanel, previewFullscreenOpen, shortcutsOverlayOpen, updateProjectStatus]);
-
-  const handleDeleteSelectedObject = useCallback(() => {
-    runDashboardShortcutDeleteSelectedObject({
-      selectedObjectIds,
-      activePlacementId,
-      buildingPlacements,
-      bulkDelete: handleObjectManagerBulkDelete,
-      removeBuilding: handleRemoveBuilding,
-      setObjectManagerStatusMessage,
-      appendChatMessage,
-      updateProjectStatus,
-    });
-  }, [
-    activePlacementId,
-    appendChatMessage,
-    buildingPlacements,
-    handleObjectManagerBulkDelete,
-    handleRemoveBuilding,
-    selectedObjectIds,
-    updateProjectStatus,
-  ]);
-
-  const handleCopySelectedObject = useCallback(() => {
-    runDashboardShortcutCopySelectedObject({
-      selectedObjectIds,
-      activePlacementId,
-      buildingPlacements,
-      getObjectEditBlocker,
-      cloneBuildingPlacementForUndo,
-      setObjectClipboard,
-      setObjectManagerStatusMessage,
-      setStatusMessage,
-      reportObjectActionBlocker,
-      copyObject: handleObjectManagerCopy,
-      updateProjectStatus,
-    });
-  }, [
-    activePlacementId,
-    buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    handleObjectManagerCopy,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-    updateProjectStatus,
-  ]);
-
-  const handlePasteSelectedObject = useCallback(() => {
-    runDashboardShortcutPasteSelectedObject({
-      objectClipboard,
-      pasteObject: handleObjectManagerPaste,
-      updateProjectStatus,
-    });
-  }, [handleObjectManagerPaste, objectClipboard, updateProjectStatus]);
-
-  const recoveryActions = useMemo(() => ({
-    setBuildingPlacements,
-    setSelectedObjectIds,
-    setActivePlacementId,
-    setPlacementModeEnabled,
-    setObjectManagerStatusMessage,
-    setStatusMessage,
-    pushRecoveryMessage,
-    appendChatMessage,
-    updateProjectStatus,
-    recordRecentChange,
-    markSystemsStale,
-    systemsImpactedByPlacement,
-    handleRestoreBuilding,
-  }), [
-    appendChatMessage,
-    handleRestoreBuilding,
-    markSystemsStale,
-    pushRecoveryMessage,
-    recordRecentChange,
-    systemsImpactedByPlacement,
-    updateProjectStatus,
-  ]);
-
-  const handleUndoDraftAction = useCallback(() => {
-    runDashboardUndoDraftAction({
-      draftAction: lastDraftActionRef.current ?? lastDraftAction,
-      clearDraftAction: () => {
-        lastDraftActionRef.current = null;
-        clearDraftUndoAction();
-      },
-      recordDraftRedoAction,
-      actions: recoveryActions,
-    });
-  }, [clearDraftUndoAction, lastDraftAction, recordDraftRedoAction, recoveryActions]);
-
-  const handleRedoDraftAction = useCallback(() => {
-    runDashboardRedoDraftAction({
-      redoAction: redoDraftActionRef.current ?? redoDraftAction,
-      recordDraftUndoAction,
-      actions: recoveryActions,
-    });
-  }, [recordDraftUndoAction, recoveryActions, redoDraftAction]);
-
-  const handleUndoRecentChange = useCallback((change: RecentChange) => {
-    runDashboardUndoRecentChange({
-      change,
-      recordDraftRedoAction,
-      actions: recoveryActions,
-    });
-  }, [recordDraftRedoAction, recoveryActions]);
-
-  const handleShortcutSaveProject = useCallback(() => {
-    const effectiveProjectId = resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
-    runDashboardShortcutSaveProject({
-      effectiveProjectId,
-      token,
-      demoWorkspaceEnabled: effectiveDemoWorkspaceEnabled,
-      isSeededDemoProjectId,
-      saveProject,
-      appendChatMessage,
-      updateProjectStatus,
-    });
-  }, [appendChatMessage, currentProject?.project_id, effectiveDemoWorkspaceEnabled, projectId, saveProject, token, updateProjectStatus]);
-
-  const handleShortcutOpenGenerate = useCallback(() => {
-    runDashboardShortcutOpenGenerate({
-      openSidePanel: handleOpenSidePanel,
-      updateProjectStatus,
-    });
-  }, [handleOpenSidePanel, updateProjectStatus]);
-
-  const handleShortcutOpenDrawCanvas = useCallback(() => {
-    runDashboardShortcutOpenDrawCanvas({
-      openWorkspaceMode: handleOpenWorkspaceMode,
-      openSidePanel: handleOpenSidePanel,
-      updateProjectStatus,
-    });
-  }, [handleOpenSidePanel, handleOpenWorkspaceMode, updateProjectStatus]);
-
-  const handleShortcutOpenProjects = useCallback(() => {
-    runDashboardShortcutOpenProjects({
-      openSidePanel: handleOpenSidePanel,
-      updateProjectStatus,
-    });
-  }, [handleOpenSidePanel, updateProjectStatus]);
-
   useWorkspaceShortcuts({
     onCancelActiveTool: handleCancelActiveTool,
     onFocusCommandInput: focusCommandInput,
