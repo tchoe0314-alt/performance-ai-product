@@ -105,6 +105,10 @@ import {
 } from "./utils/workflowConstants";
 import { buildDashboardQuantityRows } from "./utils/dashboardQuantityRows";
 import {
+  buildDashboardGradingBlocker,
+  buildDashboardIssueTargets,
+} from "./utils/dashboardIssueTargets";
+import {
   buildObjectManagerLayerRows,
   buildObjectManagerTypes,
   buildCustomGeometryMeta,
@@ -1780,67 +1784,14 @@ function PerformanceAIDashboardView({
     () => planPreviewAnnotations?.labels ?? [],
     [planPreviewAnnotations],
   );
-  const issueTargets = useMemo(() => {
-    const keywordMap = [
-      { key: "pipe", token: "PIPE" },
-      { key: "drain", token: "DRAIN" },
-      { key: "storm", token: "STORM" },
-      { key: "basin", token: "BASIN" },
-      { key: "parking", token: "PARK" },
-      { key: "ada", token: "ADA" },
-      { key: "road", token: "ROAD" },
-      { key: "utility", token: "UTIL" },
-      { key: "water", token: "WATER" },
-      { key: "sanitary", token: "SAN" },
-    ];
-    if (!issues.length) return [];
-    return issues.map((issue, idx) => {
-      const lowered = issue.message.toLowerCase();
-      const matched = keywordMap.find((item) => lowered.includes(item.key));
-      const labelMatch = matched
-        ? previewLabels.find((label) => label.label.toLowerCase().includes(matched.key))
-        : null;
-      return {
-        id: `${issue.message}-${idx}`,
-        label: labelMatch?.label ?? "",
-      };
-    });
-  }, [issues, previewLabels]);
+  const issueTargets = useMemo(
+    () => buildDashboardIssueTargets(issues, previewLabels),
+    [issues, previewLabels],
+  );
 
   const [debugGradingFixtureLoaded, setDebugGradingFixtureLoaded] = useState(false);
 
-  const gradingBlocker = useMemo(() => {
-    const issue = issues.find(
-      (item) => (item.code ?? "").toUpperCase() === "DRAINAGE_BLOCKED_BY_GRADING",
-    );
-    if (!issue?.context || typeof issue.context !== "object") return null;
-    const ctx = issue.context as Record<string, unknown>;
-    const toPoint = (value: unknown) => {
-      if (!value || typeof value !== "object") return null;
-      const rec = value as Record<string, unknown>;
-      const x = typeof rec.x === "number" ? rec.x : Number(rec.x);
-      const y = typeof rec.y === "number" ? rec.y : Number(rec.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-      return { x, y };
-    };
-    const toZone = (value: unknown) => {
-      if (!value || typeof value !== "object") return null;
-      const rec = value as Record<string, unknown>;
-      const x = typeof rec.x === "number" ? rec.x : Number(rec.x);
-      const y = typeof rec.y === "number" ? rec.y : Number(rec.y);
-      const w = typeof rec.w === "number" ? rec.w : Number(rec.w);
-      const h = typeof rec.h === "number" ? rec.h : Number(rec.h);
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
-      return { x, y, w, h };
-    };
-    return {
-      sourcePoint: toPoint(ctx.source_point),
-      blockedTarget: toPoint(ctx.blocked_target),
-      blockerLocation: toPoint(ctx.blocker_location),
-      suggestedFixZone: toZone(ctx.suggested_fix_zone),
-      approximate: Boolean(ctx.approximate),
-    };
-  }, [issues]);
+  const gradingBlocker = useMemo(() => buildDashboardGradingBlocker(issues), [issues]);
 
   const selectedIssueLabel = issueTargets.find((item) => item.id === selectedIssueId)?.label ?? "";
 
