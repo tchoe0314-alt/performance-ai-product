@@ -9,7 +9,6 @@ import type { BuildingPlacement } from "../types";
 import { CadPrecisionDock } from "./CadPrecisionDock";
 import { CanvasQuickDrawPalette } from "./CanvasQuickDrawPalette";
 import { Preview3DShell } from "./Preview3DShell";
-import { formatMetric } from "../utils/formatting";
 import {
   boundsForSiteGeometry,
   resizeSiteGeometryFromOrigin,
@@ -34,31 +33,21 @@ import type { CadDimensionMode, CadSymbolKind, DrawMode } from "../utils/cadTool
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
 import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
-import { PreviewBasePlanGrid } from "./PreviewBasePlanGrid";
-import { PreviewCadMarkers } from "./PreviewCadMarkers";
 import { PreviewCanvasControlStack } from "./PreviewCanvasControlStack";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
-import { PreviewDraftGeometryOverlay } from "./PreviewDraftGeometryOverlay";
 import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
-import { PreviewGradingEarthworkDock } from "./PreviewGradingEarthworkDock";
 import { PreviewGeneratedPlanFullscreen } from "./PreviewGeneratedPlanFullscreen";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
 import { PreviewObjectHoverCard } from "./PreviewObjectHoverCard";
-import { PreviewParkingModules } from "./PreviewParkingModules";
 import {
   PreviewFullscreenHeader,
   PreviewPlanAnnotationOverlay,
 } from "./PreviewPlanAnnotationOverlay";
-import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
-import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
-import { PreviewRectObjects } from "./PreviewRectObjects";
 import { PreviewRectObjectChrome } from "./PreviewRectObjectChrome";
 import { PreviewSelectedObjectQuickToolbar } from "./PreviewSelectedObjectQuickToolbar";
 import { PreviewSelectionAffordances } from "./PreviewSelectionAffordances";
-import { PreviewSuggestedGeometry } from "./PreviewSuggestedGeometry";
-import { PreviewSvgDefs } from "./PreviewSvgDefs";
-import { PreviewWaterFireFlowOverlay } from "./PreviewWaterFireFlowOverlay";
+import { PreviewPlanCanvasLayers } from "./PreviewPlanCanvasLayers";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import { usePreviewFocusTransform } from "./usePreviewFocusTransform";
 import { usePreviewAnnotationHover } from "./usePreviewAnnotationHover";
@@ -87,7 +76,6 @@ import {
 import {
   buildWaterFireFlowViewModel,
 } from "../utils/previewWaterFireFlow";
-import { buildPreviewParkingMapModules } from "../utils/previewParkingMapModules";
 import {
   buildPlanScaleBar,
   buildScaleTruthLabel,
@@ -4070,105 +4058,45 @@ export default function PreviewPanel({
                   </div>
                 ) : null}
                 {overlayBoundsResolved && previewMode === "2d" ? (
-                  <div
-                    className="pointer-events-none absolute z-10"
-                    style={{
-                      left: overlayBoundsResolved.left,
-                      top: overlayBoundsResolved.top,
-                      width: overlayBoundsResolved.width,
-                      height: overlayBoundsResolved.height,
-                    }}
-                  >
-                    {!siteLocked && (showSiteBounds || drawMode === "site") ? (
-                      <div
-                        className={`absolute inset-0 rounded-[16px] border border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
-                        style={viewportTransformStyle}
-                      />
-                    ) : null}
-                    {(buildingPlacements.length || suggestedPlacements.length || (surveyPoints?.length ?? 0) > 0) ? (
-                      <svg
-                        className="absolute inset-0"
-                        viewBox="0 0 100 100"
-                        preserveAspectRatio="none"
-                        style={viewportTransformStyle}
-                      >
-	                        <PreviewSvgDefs />
-	                        <PreviewBasePlanGrid
-	                          showMap={showMap}
-	                          isHighQuality={isHighQuality}
-	                          siteLocked={Boolean(siteLocked)}
-	                          lotWidth={lotWidth}
-	                          lotHeight={lotHeight}
-	                          planScaleBar={planScaleBar}
-	                        />
-	                        <PreviewPolylineObjects
-	                          objects={visibleCadObjects}
-	                          selectedBuildingId={selectedBuildingId}
-	                          isHighQuality={isHighQuality}
-	                          currentSiteSize={currentSiteSize}
-	                          sitePointToSvgPercent={sitePointToSvgPercent}
-	                        />
-                        <PreviewRectObjects
-                          objects={visibleCadObjects}
-                          selectedBuildingId={selectedBuildingId}
-                          isHighQuality={isHighQuality}
-                          mapAnchoredRectPercent={(item) => mapAnchoredRectPercent(item, mapRef.current)}
-                        />
-                        <PreviewPolygonObjects
-                          objects={visibleCadObjects}
-                          selectedBuildingId={selectedBuildingId}
-                          isHighQuality={isHighQuality}
-                          sitePointToSvgPercent={sitePointToSvgPercent}
-                        />
-                        <PreviewCadMarkers
-                          objects={visibleCadObjects}
-                          selectedBuildingId={selectedBuildingId}
-                          currentSiteSize={currentSiteSize}
-                          sitePointToPreviewPercent={sitePointToPreviewPercent}
-                          mapAnchoredRectPercent={(item) => mapAnchoredRectPercent(item, mapRef.current)}
-                          shouldRevealObjectLabel={shouldRevealObjectLabel}
-                          getObjectGeometryPoints={getObjectGeometryPoints}
-                        />
-                        <PreviewParkingModules
-                          objects={visibleCadObjects}
-                          accessPoints={accessPointsForParking}
-                          showParkingAnalysis={showParkingAnalysis}
-                          buildParkingModules={buildPreviewParkingMapModules}
-                          sitePointToSvgPercent={sitePointToSvgPercent}
-                        />
-                        <PreviewSuggestedGeometry
-                          objects={suggestedPlacements}
-                          selectedBuildingId={selectedBuildingId}
-                          detectedStroke={legendPalette.detectedStroke}
-                          detectedFill={legendPalette.detectedFill}
-                          sitePointToSvgPercent={sitePointToSvgPercent}
-                        />
-                        <PreviewWaterFireFlowOverlay
-                          waterFireFlow={waterFireFlow}
-                          previewQuality={previewQuality}
-                          sitePointToPreviewPercent={sitePointToPreviewPercent}
-                        />
-                        <PreviewDraftGeometryOverlay
-                          activeSnapPoint={activeSnapPoint}
-                          draftPoints={draftPoints}
-                          draftPreviewPoint={draftPreviewPoint}
-                          drawMode={drawMode}
-                          drawingLotWidth={drawingLotWidth}
-                          drawingLotHeight={drawingLotHeight}
-                          lotWidth={lotWidth}
-                          lotHeight={lotHeight}
-                          sitePointToPreviewPercent={sitePointToPreviewPercent}
-                          siteTupleToPercent={siteTupleToPercent}
-                          siteRectToPercent={siteRectToPercent}
-                        />
-                      </svg>
-                    ) : null}
-                    {showEarthworkUx && gradingEarthworkUx ? (
-                      <PreviewGradingEarthworkDock
-                        gradingEarthworkUx={gradingEarthworkUx}
-                        formatMetric={formatMetric}
-                      />
-                    ) : null}
+                  <>
+                    <PreviewPlanCanvasLayers
+                      overlayBoundsResolved={overlayBoundsResolved}
+                      previewMode={previewMode}
+                      siteLocked={Boolean(siteLocked)}
+                      showSiteBounds={showSiteBounds}
+                      drawMode={drawMode}
+                      legendPalette={legendPalette}
+                      viewportTransformStyle={viewportTransformStyle}
+                      buildingPlacements={buildingPlacements}
+                      suggestedPlacements={suggestedPlacements}
+                      surveyPointCount={surveyPoints?.length ?? 0}
+                      showMap={showMap}
+                      isHighQuality={isHighQuality}
+                      lotWidth={lotWidth}
+                      lotHeight={lotHeight}
+                      planScaleBar={planScaleBar}
+                      visibleCadObjects={visibleCadObjects}
+                      selectedBuildingId={selectedBuildingId}
+                      currentSiteSize={currentSiteSize}
+                      sitePointToSvgPercent={sitePointToSvgPercent}
+                      mapAnchoredRectPercent={(item) => mapAnchoredRectPercent(item, mapRef.current)}
+                      shouldRevealObjectLabel={shouldRevealObjectLabel}
+                      getObjectGeometryPoints={getObjectGeometryPoints}
+                      accessPointsForParking={accessPointsForParking}
+                      showParkingAnalysis={showParkingAnalysis}
+                      waterFireFlow={waterFireFlow}
+                      previewQuality={previewQuality}
+                      sitePointToPreviewPercent={sitePointToPreviewPercent}
+                      activeSnapPoint={activeSnapPoint}
+                      draftPoints={draftPoints}
+                      draftPreviewPoint={draftPreviewPoint}
+                      drawingLotWidth={drawingLotWidth}
+                      drawingLotHeight={drawingLotHeight}
+                      siteTupleToPercent={siteTupleToPercent}
+                      siteRectToPercent={siteRectToPercent}
+                      showEarthworkUx={showEarthworkUx}
+                      gradingEarthworkUx={gradingEarthworkUx}
+                    />
               <div
                 data-testid="preview-drawing-surface"
                 data-draw-mode={drawMode}
@@ -4533,7 +4461,7 @@ export default function PreviewPanel({
                       </svg>
                       ) : null}
                     </div>
-                  </div>
+                  </>
                 ) : null}
                 {cadWindowSelect ? (
                   <div
