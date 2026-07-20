@@ -237,6 +237,7 @@ import {
   createTraceAwareBulkUpdate as createObjectManagerTraceAwareBulkUpdate,
   formatObjectManagerCountMessage,
   formatVisibleDraftSelectionMessage,
+  getObjectManagerBoundsRows,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
   isObjectManagerCopyableDraft,
@@ -4822,20 +4823,7 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Layout blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const objectBounds = editable.map((item) => {
-      const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
-      const bounds = geometry?.length
-        ? getGeometryBounds(geometry)
-        : {
-            minX: item.x ?? 0,
-            maxX: (item.x ?? 0) + item.w,
-            minY: item.y ?? 0,
-            maxY: (item.y ?? 0) + item.d,
-            width: item.w,
-            depth: item.d,
-          };
-      return { item, bounds };
-    });
+    const objectBounds = getObjectManagerBoundsRows(editable);
     const layoutUpdates = new Map<string, Partial<BuildingPlacement>>();
     if (layout === "align_left") {
       const targetX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
@@ -4983,20 +4971,7 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Move to coordinate blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const objectBounds = editable.map((item) => {
-      const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
-      const bounds = geometry?.length
-        ? getGeometryBounds(geometry)
-        : {
-            minX: item.x ?? 0,
-            maxX: (item.x ?? 0) + item.w,
-            minY: item.y ?? 0,
-            maxY: (item.y ?? 0) + item.d,
-            width: item.w,
-            depth: item.d,
-          };
-      return { item, bounds };
-    });
+    const objectBounds = getObjectManagerBoundsRows(editable);
     const sourceMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
     const sourceMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));
     const dx = targetX - sourceMinX;
@@ -5169,20 +5144,7 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Mirror blocked: selected objects are locked, source-only, or required project evidence.");
       return;
     }
-    const objectBounds = editable.map((item) => {
-      const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
-      const bounds = geometry?.length
-        ? getGeometryBounds(geometry)
-        : {
-            minX: item.x ?? 0,
-            maxX: (item.x ?? 0) + item.w,
-            minY: item.y ?? 0,
-            maxY: (item.y ?? 0) + item.d,
-            width: item.w,
-            depth: item.d,
-          };
-      return { item, bounds };
-    });
+    const objectBounds = getObjectManagerBoundsRows(editable);
     const selectionMinX = Math.min(...objectBounds.map(({ bounds }) => bounds.minX));
     const selectionMaxX = Math.max(...objectBounds.map(({ bounds }) => bounds.maxX));
     const selectionMinY = Math.min(...objectBounds.map(({ bounds }) => bounds.minY));

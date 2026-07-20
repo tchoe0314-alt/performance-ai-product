@@ -1,5 +1,15 @@
 import type { BuildingPlacement } from "../types";
 import type { DraftUndoAction } from "./dashboardTypes";
+import { getGeometryBounds, normalizeGeometryPoints } from "./objectGeometry";
+
+export type ObjectManagerBounds = {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  depth: number;
+};
 
 export function getVisibleEditableDraftObjectIds(buildingPlacements: BuildingPlacement[]): string[] {
   return buildingPlacements
@@ -74,6 +84,26 @@ export function isObjectManagerCopyableDraft({
   if (item.generated) return false;
   if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
   return true;
+}
+
+export function getObjectManagerBounds(item: BuildingPlacement): ObjectManagerBounds {
+  const geometry = Array.isArray(item.geometry) ? normalizeGeometryPoints(item.geometry) : undefined;
+  if (geometry?.length) return getGeometryBounds(geometry);
+  return {
+    minX: item.x ?? 0,
+    maxX: (item.x ?? 0) + item.w,
+    minY: item.y ?? 0,
+    maxY: (item.y ?? 0) + item.d,
+    width: item.w,
+    depth: item.d,
+  };
+}
+
+export function getObjectManagerBoundsRows(items: BuildingPlacement[]): Array<{
+  item: BuildingPlacement;
+  bounds: ObjectManagerBounds;
+}> {
+  return items.map((item) => ({ item, bounds: getObjectManagerBounds(item) }));
 }
 
 export function cloneBuildingPlacementForUndo(item: BuildingPlacement): BuildingPlacement {
