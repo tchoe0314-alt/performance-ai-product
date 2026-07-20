@@ -1,0 +1,320 @@
+import type { BuildingPlacement } from "../types";
+import {
+  hasParkingGeometryEvidence,
+  resolveSourceState,
+  sourceStateLabel,
+} from "../utils/previewGeometryTruth";
+import {
+  cadHatchPatternForPreviewItem,
+  rectCorridorAxis,
+  resolvePreviewSvgVisualStyle,
+  resolvePreviewVisualKind,
+  roundedSiteShapePath,
+} from "../utils/previewVisualStyles";
+
+type PreviewRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type PreviewRectObjectsProps = {
+  objects: BuildingPlacement[];
+  selectedBuildingId: string | null;
+  isHighQuality: boolean;
+  mapAnchoredRectPercent: (item: BuildingPlacement) => PreviewRect;
+};
+
+export function PreviewRectObjects({
+  objects,
+  selectedBuildingId,
+  isHighQuality,
+  mapAnchoredRectPercent,
+}: PreviewRectObjectsProps) {
+  return (
+    <>
+      {objects
+        .filter((item) => !item.meta?.unsupported_entity_placeholder && (!item.geometryType || item.geometryType === "rect") && item.type !== "site")
+        .map((item) => {
+          const rect = mapAnchoredRectPercent(item);
+          const selected = selectedBuildingId === item.id;
+          const visualKind = resolvePreviewVisualKind(item);
+          const visualStyle = resolvePreviewSvgVisualStyle(item, { selected, highQuality: isHighQuality });
+          const hatchFill = cadHatchPatternForPreviewItem(item);
+          const sourceState = resolveSourceState(item);
+          const isFallbackBounds = sourceState === "fallback";
+          const useShapePath = ["water", "landscape", "sidewalk"].includes(visualKind);
+          const shapePath = useShapePath
+            ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
+            : null;
+          const corridorAxis = visualKind === "road" ? rectCorridorAxis(rect) : null;
+          const cornerRadius =
+            visualKind === "road" || visualKind === "parking" || visualKind === "sidewalk"
+              ? 0.35
+              : visualKind === "building"
+                ? 0.18
+                : 0.7;
+
+          return (
+            <g key={`rect-plan-${item.id}`} data-testid="plan-rect-object">
+              {corridorAxis ? (
+                <>
+                  <polyline
+                    data-testid="plan-road-corridor"
+                    points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                    fill="none"
+                    stroke={visualStyle.fill}
+                    strokeWidth={Math.max(0.32, corridorAxis.width * 0.42)}
+                    strokeLinecap="round"
+                    opacity={Math.min(0.72, visualStyle.opacity)}
+                  >
+                    <title>{sourceStateLabel(sourceState)}</title>
+                  </polyline>
+                  {isHighQuality ? (
+                    <polyline
+                      points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                      fill="none"
+                      stroke="url(#cad-asphalt-light)"
+                      strokeWidth={Math.max(0.12, corridorAxis.width * 0.22)}
+                      strokeLinecap="round"
+                      opacity={sourceState === "fallback" ? 0.28 : 0.75}
+                    />
+                  ) : null}
+                  <polyline
+                    points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                    fill="none"
+                    stroke={visualStyle.stroke}
+                    strokeWidth={Math.max(0.08, visualStyle.strokeWidth)}
+                    strokeLinecap="round"
+                    strokeDasharray={visualStyle.strokeDasharray}
+                    opacity={visualStyle.opacity}
+                  />
+                  {isHighQuality && sourceState !== "fallback" ? (
+                    <polyline
+                      points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                      fill="none"
+                      stroke="rgba(248,250,252,0.7)"
+                      strokeWidth={0.08}
+                      strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
+                      strokeLinecap="round"
+                    />
+                  ) : null}
+                </>
+              ) : shapePath ? (
+                <>
+                  <path
+                    d={shapePath}
+                    fill={isFallbackBounds ? "rgba(248,250,252,0.04)" : visualStyle.fill}
+                    stroke={visualStyle.stroke}
+                    strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
+                    strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
+                    strokeLinejoin="round"
+                  >
+                    <title>{sourceStateLabel(sourceState)}</title>
+                  </path>
+                  {hatchFill ? (
+                    <path
+                      data-testid="cad-hatch-fill"
+                      d={shapePath}
+                      fill={hatchFill}
+                      stroke="none"
+                      opacity={0.72}
+                    >
+                      <title>Draft hatch fill, review required.</title>
+                    </path>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <rect
+                    data-testid={
+                      visualKind === "building"
+                        ? "professional-building-footprint"
+                        : visualKind === "parking"
+                          ? "professional-parking-field"
+                          : undefined
+                    }
+                    x={rect.left}
+                    y={rect.top}
+                    width={rect.width}
+                    height={rect.height}
+                    rx={isFallbackBounds ? 0.18 : cornerRadius}
+                    fill={isFallbackBounds ? "rgba(248,250,252,0.035)" : visualStyle.fill}
+                    stroke={visualStyle.stroke}
+                    strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
+                    strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
+                    strokeLinejoin="round"
+                  >
+                    <title>{sourceStateLabel(sourceState)}</title>
+                  </rect>
+                  {isHighQuality && visualKind === "building" ? (
+                    <rect
+                      x={rect.left}
+                      y={rect.top}
+                      width={rect.width}
+                      height={rect.height}
+                      rx={cornerRadius}
+                      fill="url(#cad-building-poche)"
+                      stroke="none"
+                      opacity={sourceState === "fallback" ? 0.28 : 0.8}
+                    />
+                  ) : null}
+                  {isFallbackBounds ? (
+                    <rect
+                      x={rect.left + rect.width * 0.03}
+                      y={rect.top + rect.height * 0.03}
+                      width={rect.width * 0.94}
+                      height={rect.height * 0.94}
+                      rx={0.14}
+                      fill="none"
+                      stroke="#cbd5e1"
+                      strokeWidth={0.06}
+                      strokeDasharray="0.4 0.9"
+                      opacity={0.5}
+                    />
+                  ) : null}
+                  {hatchFill ? (
+                    <rect
+                      data-testid="cad-hatch-fill"
+                      x={rect.left}
+                      y={rect.top}
+                      width={rect.width}
+                      height={rect.height}
+                      rx={cornerRadius}
+                      fill={hatchFill}
+                      stroke="none"
+                      opacity={0.72}
+                    >
+                      <title>Draft hatch fill, review required.</title>
+                    </rect>
+                  ) : null}
+                </>
+              )}
+              {isHighQuality && visualKind === "water" ? (
+                <g data-testid="plan-basin-shelf-cues">
+                  <path
+                    d={roundedSiteShapePath(
+                      {
+                        left: rect.left + rect.width * 0.1,
+                        top: rect.top + rect.height * 0.14,
+                        width: rect.width * 0.78,
+                        height: rect.height * 0.62,
+                      },
+                      "water",
+                    )}
+                    fill="none"
+                    stroke="rgba(224,242,254,0.72)"
+                    strokeWidth={0.1}
+                  />
+                  <path
+                    data-testid="professional-basin-footprint"
+                    d={roundedSiteShapePath(
+                      {
+                        left: rect.left + rect.width * 0.24,
+                        top: rect.top + rect.height * 0.32,
+                        width: rect.width * 0.5,
+                        height: rect.height * 0.32,
+                      },
+                      "water",
+                    )}
+                    fill="rgba(125,211,252,0.16)"
+                    stroke="rgba(2,132,199,0.36)"
+                    strokeWidth={0.07}
+                  />
+                  <path
+                    d={`M ${rect.left + rect.width * 0.18} ${rect.top + rect.height * 0.55} C ${rect.left + rect.width * 0.35} ${rect.top + rect.height * 0.46} ${rect.left + rect.width * 0.58} ${rect.top + rect.height * 0.64} ${rect.left + rect.width * 0.82} ${rect.top + rect.height * 0.5}`}
+                    fill="none"
+                    stroke="rgba(14,116,144,0.34)"
+                    strokeWidth={0.09}
+                    strokeLinecap="round"
+                  />
+                </g>
+              ) : null}
+              {isHighQuality && visualKind === "building" ? (
+                <g data-testid="professional-building-cues" opacity={sourceState === "fallback" ? 0.42 : 0.86}>
+                  <line x1={rect.left} y1={rect.top + rect.height} x2={rect.left + rect.width} y2={rect.top} stroke="rgba(15,23,42,0.32)" strokeWidth={0.12} />
+                  <line x1={rect.left} y1={rect.top} x2={rect.left + rect.width} y2={rect.top + rect.height} stroke="rgba(15,23,42,0.18)" strokeWidth={0.1} />
+                  <rect
+                    x={rect.left + rect.width * 0.08}
+                    y={rect.top + rect.height * 0.08}
+                    width={rect.width * 0.84}
+                    height={rect.height * 0.84}
+                    rx={0.08}
+                    fill="none"
+                    stroke="rgba(15,23,42,0.14)"
+                    strokeWidth={0.08}
+                  />
+                  <line
+                    x1={rect.left + rect.width * 0.43}
+                    y1={rect.top + rect.height}
+                    x2={rect.left + rect.width * 0.57}
+                    y2={rect.top + rect.height}
+                    stroke="rgba(15,23,42,0.62)"
+                    strokeWidth={0.16}
+                  />
+                  <path
+                    d={`M ${rect.left + rect.width * 0.43} ${rect.top + rect.height * 1.04} Q ${rect.left + rect.width * 0.5} ${rect.top + rect.height * 1.1} ${rect.left + rect.width * 0.57} ${rect.top + rect.height * 1.04}`}
+                    fill="none"
+                    stroke="rgba(15,23,42,0.24)"
+                    strokeWidth={0.1}
+                  />
+                </g>
+              ) : null}
+              {isHighQuality && visualKind === "parking" && hasParkingGeometryEvidence(item) ? (
+                <g data-testid="plan-parking-stall-cues">
+                  <line
+                    x1={rect.left + rect.width * 0.08}
+                    y1={rect.top + rect.height * 0.5}
+                    x2={rect.left + rect.width * 0.92}
+                    y2={rect.top + rect.height * 0.5}
+                    stroke="rgba(71,85,105,0.26)"
+                    strokeWidth={0.035}
+                    strokeDasharray="0.42 0.34"
+                  />
+                  {Array.from({ length: Math.min(10, Math.max(3, Math.round(rect.width / 3.6))) }).map((_, stallIdx, stalls) => {
+                    const x = rect.left + rect.width * (0.12 + (stallIdx / Math.max(stalls.length - 1, 1)) * 0.76);
+                    return (
+                      <line
+                        key={`parking-stall-${item.id}-${stallIdx}`}
+                        x1={x}
+                        y1={rect.top + rect.height * 0.16}
+                        x2={x}
+                        y2={rect.top + rect.height * 0.84}
+                        stroke="rgba(71,85,105,0.22)"
+                        strokeWidth={0.028}
+                      />
+                    );
+                  })}
+                </g>
+              ) : null}
+              {selected ? (
+                corridorAxis ? (
+                  <polyline
+                    points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
+                    fill="none"
+                    stroke="rgba(15,118,110,0.34)"
+                    strokeWidth={Math.max(0.46, corridorAxis.width * 0.7)}
+                    strokeLinecap="round"
+                    opacity={0.48}
+                  />
+                ) : (
+                  <rect
+                    x={rect.left - 0.28}
+                    y={rect.top - 0.28}
+                    width={rect.width + 0.56}
+                    height={rect.height + 0.56}
+                    rx={0.7}
+                    fill="none"
+                    stroke={isHighQuality ? "rgba(15,23,42,0.32)" : "rgba(15,118,110,0.58)"}
+                    strokeWidth={isHighQuality ? 0.12 : 0.22}
+                    strokeDasharray="1.2 0.9"
+                  />
+                )
+              ) : null}
+            </g>
+          );
+        })}
+    </>
+  );
+}
