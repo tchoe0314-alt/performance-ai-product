@@ -40,6 +40,10 @@ import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
 import { PreviewDraftGeometryOverlay } from "./PreviewDraftGeometryOverlay";
 import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
+import {
+  PreviewFullscreenEditableObjectOverlay,
+  PreviewFullscreenSuggestedObjectOverlay,
+} from "./PreviewFullscreenObjectOverlays";
 import { PreviewGradingEarthworkDock } from "./PreviewGradingEarthworkDock";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
@@ -5659,41 +5663,28 @@ export default function PreviewPanel({
                         const borderColor = getPreviewObjectBorderColor(item);
                         const outlineColor = getPreviewObjectOutlineColor(item);
                         return (
-                          <div
+                          <PreviewFullscreenEditableObjectOverlay
                             key={item.id}
-                            data-object-overlay
-                            className={`${allowMapInteraction || !allowItemInteraction ? "pointer-events-none" : "pointer-events-auto"} absolute`}
-                            style={{
-                              left: `${rectPct.left}%`,
-                              top: `${rectPct.top}%`,
-                              width: `${rectPct.width}%`,
-                              height: `${rectPct.height}%`,
-                              zIndex: hitZIndex,
-                              scrollMarginBottom: "10rem",
-                              transform: `rotate(${rotation}deg)`,
-                              transformOrigin: "center",
-                              cursor: placementMode ? "move" : "default",
-                            }}
-                            onMouseDown={(event) => {
+                            rectPct={rectPct}
+                            rotation={rotation}
+                            hitZIndex={hitZIndex}
+                            allowMapInteraction={allowMapInteraction}
+                            allowItemInteraction={allowItemInteraction}
+                            placementMode={Boolean(placementMode)}
+                            borderColor={borderColor}
+                            outlineColor={outlineColor}
+                            onMoveMouseDown={(event) => {
                               if (allowMapInteraction || !allowItemInteraction) return;
                               handleBuildingMouseDown(event, item, "move");
                             }}
-                            onClick={(event) => {
+                            onSelect={(event) => {
                               if (allowMapInteraction || !allowItemInteraction) return;
                               if (!placementMode) return;
                               event.stopPropagation();
                               onSelectBuilding(item.id);
                             }}
-                          >
-                            <div
-                              className={`pointer-events-none h-full w-full rounded-[8px] border bg-slate-900/10 transition ${borderColor}`}
-                              style={outlineColor ? { borderColor: outlineColor } : undefined}
-                            />
-                            <button
-                              type="button"
-                              className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
-                              onClick={(event) => {
+                            onRotateMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
+                            onRotateClick={(event) => {
                                 event.stopPropagation();
                                 setLastRectEdit({
                                   id: item.id,
@@ -5708,20 +5699,8 @@ export default function PreviewPanel({
                                   onUpdateBuilding(item.id, { rotation: nextRotation });
                                 }
                               }}
-                            >
-                              R
-                            </button>
-                            <button
-                              type="button"
-                              className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow"
-                              onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
-                            >
-                              Z
-                            </button>
-                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
-                              Snap 5ft
-                            </div>
-                          </div>
+                            onResizeMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
+                          />
                         );
                       })}
                       {suggestedPlacements
@@ -5733,36 +5712,19 @@ export default function PreviewPanel({
                           const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
                           const borderColor = getPreviewObjectBorderColor(item, { fallback: "border-slate-400" });
                           return (
-                            <div
+                            <PreviewFullscreenSuggestedObjectOverlay
                               key={item.id}
-                              className="pointer-events-auto absolute"
-                              style={{
-                                left: `${rectPct.left}%`,
-                                top: `${rectPct.top}%`,
-                                width: `${rectPct.width}%`,
-                                height: `${rectPct.height}%`,
-                                zIndex: hitZIndex,
-                                scrollMarginBottom: "10rem",
-                                transform: `rotate(${rotation}deg)`,
-                                transformOrigin: "center",
-                                cursor: "pointer",
-                              }}
-                              onMouseEnter={() => {
-                                setHoveredObjectId(item.id);
-                              }}
-                              onMouseLeave={() => setHoveredObjectId(null)}
-                              onClick={(event) => {
+                              item={item}
+                              rectPct={rectPct}
+                              rotation={rotation}
+                              hitZIndex={hitZIndex}
+                              borderColor={borderColor}
+                              onHover={setHoveredObjectId}
+                              onSelect={(event) => {
                                 event.stopPropagation();
                                 onSelectBuilding(item.id);
                               }}
-                            >
-                              <div
-                                className={`h-full w-full rounded-[8px] border border-dashed bg-slate-50/70 transition ${borderColor}`}
-                              />
-                              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
-                                Suggested
-                              </div>
-                            </div>
+                            />
                           );
                         })}
                   </div>
