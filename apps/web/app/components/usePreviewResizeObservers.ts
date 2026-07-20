@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type mapboxgl from "mapbox-gl";
 
@@ -12,24 +12,12 @@ type PreviewResizeObserverOptions = {
   fullscreenImageRef: RefObject<HTMLImageElement | null>;
   mapRef: RefObject<mapboxgl.Map | null>;
   fullscreenMapRef: RefObject<mapboxgl.Map | null>;
-  previewResizeRafRef: RefObject<number | null>;
-  fullscreenResizeRafRef: RefObject<number | null>;
-  previewSizeRef: RefObject<PreviewSize | null>;
-  fullscreenSizeRef: RefObject<PreviewSize | null>;
   lastMapResizeRef: RefObject<number>;
   showMap: boolean;
   showGeneratedPlan: boolean;
   planPreviewUrl: string | null;
   previewMode: "2d" | "3d";
   previewFullscreenOpen: boolean;
-  updateContainerBounds: () => void;
-  updateImageBounds: (
-    containerRef: RefObject<HTMLDivElement | null>,
-    imageRef: RefObject<HTMLImageElement | null>,
-    setBounds: Dispatch<SetStateAction<PreviewBounds | null>>,
-  ) => void;
-  setPreviewImageBounds: Dispatch<SetStateAction<PreviewBounds | null>>;
-  setFullscreenImageBounds: Dispatch<SetStateAction<PreviewBounds | null>>;
 };
 
 export function usePreviewResizeObservers({
@@ -39,21 +27,67 @@ export function usePreviewResizeObservers({
   fullscreenImageRef,
   mapRef,
   fullscreenMapRef,
-  previewResizeRafRef,
-  fullscreenResizeRafRef,
-  previewSizeRef,
-  fullscreenSizeRef,
   lastMapResizeRef,
   showMap,
   showGeneratedPlan,
   planPreviewUrl,
   previewMode,
   previewFullscreenOpen,
-  updateContainerBounds,
-  updateImageBounds,
-  setPreviewImageBounds,
-  setFullscreenImageBounds,
 }: PreviewResizeObserverOptions) {
+  const [previewImageBounds, setPreviewImageBounds] = useState<PreviewBounds | null>(null);
+  const [fullscreenImageBounds, setFullscreenImageBounds] = useState<PreviewBounds | null>(null);
+  const [previewContainerBounds, setPreviewContainerBounds] = useState<PreviewBounds | null>(null);
+  const previewSizeRef = useRef<PreviewSize | null>(null);
+  const fullscreenSizeRef = useRef<PreviewSize | null>(null);
+  const previewResizeRafRef = useRef<number | null>(null);
+  const fullscreenResizeRafRef = useRef<number | null>(null);
+
+  const updateImageBounds = useCallback(
+    (
+      containerRef: RefObject<HTMLDivElement | null>,
+      imageRef: RefObject<HTMLImageElement | null>,
+      setter: Dispatch<SetStateAction<PreviewBounds | null>>,
+    ) => {
+      if (!containerRef.current || !imageRef.current) {
+        setter((current) => (current === null ? current : null));
+        return;
+      }
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const imageRect = imageRef.current.getBoundingClientRect();
+      const width = Math.max(imageRect.width, 1);
+      const height = Math.max(imageRect.height, 1);
+      const nextBounds = {
+        left: imageRect.left - containerRect.left,
+        top: imageRect.top - containerRect.top,
+        width,
+        height,
+      };
+      setter((current) =>
+        current &&
+        Math.abs(current.left - nextBounds.left) < 0.5 &&
+        Math.abs(current.top - nextBounds.top) < 0.5 &&
+        Math.abs(current.width - nextBounds.width) < 0.5 &&
+        Math.abs(current.height - nextBounds.height) < 0.5
+          ? current
+          : nextBounds,
+      );
+    },
+    [],
+  );
+
+  const updateContainerBounds = useCallback(() => {
+    if (!previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const nextBounds = { left: 0, top: 0, width: rect.width, height: rect.height };
+    setPreviewContainerBounds((current) =>
+      current &&
+      Math.abs(current.width - nextBounds.width) < 0.5 &&
+      Math.abs(current.height - nextBounds.height) < 0.5
+        ? current
+        : nextBounds,
+    );
+  }, [previewRef]);
+
   useEffect(() => {
     const handleUpdate = () => {
       if (previewResizeRafRef.current !== null) return;
@@ -173,4 +207,14 @@ export function usePreviewResizeObservers({
     showMap,
     updateImageBounds,
   ]);
+
+  return {
+    previewImageBounds,
+    setPreviewImageBounds,
+    fullscreenImageBounds,
+    setFullscreenImageBounds,
+    previewContainerBounds,
+    updateImageBounds,
+    updateContainerBounds,
+  };
 }

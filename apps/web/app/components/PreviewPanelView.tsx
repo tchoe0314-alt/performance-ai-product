@@ -301,10 +301,7 @@ export default function PreviewPanel({
   }, [previewLabels, selectedIssueLabel]);
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
   const [managedObjectId, setManagedObjectId] = useState<string | null>(null);
-  const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-  const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenContainerReady, setFullscreenContainerReady] = useState(false);
-  const [previewContainerBounds, setPreviewContainerBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [cadSnapEnabled, setCadSnapEnabled] = useState(true);
@@ -456,10 +453,6 @@ export default function PreviewPanel({
   const [mapLocked, setMapLocked] = useState(false);
   const mapDragRef = useRef<{ x: number; y: number } | null>(null);
   const mapDragActiveRef = useRef(false);
-  const previewSizeRef = useRef<{ w: number; h: number } | null>(null);
-  const fullscreenSizeRef = useRef<{ w: number; h: number } | null>(null);
-  const previewResizeRafRef = useRef<number | null>(null);
-  const fullscreenResizeRafRef = useRef<number | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -508,6 +501,28 @@ export default function PreviewPanel({
     labels: previewLabels,
     showHover,
     hasInteractiveLabels,
+  });
+  const {
+    previewImageBounds,
+    setPreviewImageBounds,
+    fullscreenImageBounds,
+    setFullscreenImageBounds,
+    previewContainerBounds,
+    updateImageBounds,
+    updateContainerBounds,
+  } = usePreviewResizeObservers({
+    previewRef,
+    previewImageRef,
+    fullscreenRef,
+    fullscreenImageRef,
+    mapRef,
+    fullscreenMapRef,
+    lastMapResizeRef,
+    showMap,
+    showGeneratedPlan,
+    planPreviewUrl,
+    previewMode,
+    previewFullscreenOpen,
   });
   const normalPalette = {
     building: "#0f172a",
@@ -781,50 +796,6 @@ export default function PreviewPanel({
     },
     [],
   );
-  const updateImageBounds = useCallback(
-    (
-      containerRef: React.RefObject<HTMLDivElement | null>,
-      imageRef: React.RefObject<HTMLImageElement | null>,
-      setter: React.Dispatch<React.SetStateAction<{ left: number; top: number; width: number; height: number } | null>>,
-    ) => {
-      if (!containerRef.current || !imageRef.current) {
-        setter((current) => (current === null ? current : null));
-        return;
-      }
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const imageRect = imageRef.current.getBoundingClientRect();
-      const width = Math.max(imageRect.width, 1);
-      const height = Math.max(imageRect.height, 1);
-      const nextBounds = {
-        left: imageRect.left - containerRect.left,
-        top: imageRect.top - containerRect.top,
-        width,
-        height,
-      };
-      setter((current) =>
-        current &&
-        Math.abs(current.left - nextBounds.left) < 0.5 &&
-        Math.abs(current.top - nextBounds.top) < 0.5 &&
-        Math.abs(current.width - nextBounds.width) < 0.5 &&
-        Math.abs(current.height - nextBounds.height) < 0.5
-          ? current
-          : nextBounds,
-      );
-    },
-    [],
-  );
-  const updateContainerBounds = useCallback(() => {
-    if (!previewRef.current) return;
-    const rect = previewRef.current.getBoundingClientRect();
-    const nextBounds = { left: 0, top: 0, width: rect.width, height: rect.height };
-    setPreviewContainerBounds((current) =>
-      current &&
-      Math.abs(current.width - nextBounds.width) < 0.5 &&
-      Math.abs(current.height - nextBounds.height) < 0.5
-        ? current
-        : nextBounds,
-    );
-  }, []);
   const resolvePlacement = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
@@ -4228,28 +4199,6 @@ export default function PreviewPanel({
     mapRevision,
   });
 
-  usePreviewResizeObservers({
-    previewRef,
-    previewImageRef,
-    fullscreenRef,
-    fullscreenImageRef,
-    mapRef,
-    fullscreenMapRef,
-    previewResizeRafRef,
-    fullscreenResizeRafRef,
-    previewSizeRef,
-    fullscreenSizeRef,
-    lastMapResizeRef,
-    showMap,
-    showGeneratedPlan,
-    planPreviewUrl,
-    previewMode,
-    previewFullscreenOpen,
-    updateContainerBounds,
-    updateImageBounds,
-    setPreviewImageBounds,
-    setFullscreenImageBounds,
-  });
   const { focusTransform, setFocusTransform } = usePreviewFocusTransform({
     focusDetectedId,
     focusObjectId,
