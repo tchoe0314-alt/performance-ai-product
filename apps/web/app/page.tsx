@@ -1754,7 +1754,7 @@ function CustomGeometryHandoffDetails({
       data-handoff-valid={handoff.valid ? "true" : "false"}
     >
       <p>Canonical geometry · Draft review required</p>
-      <p>Handoff: canonical_geometry_handoff_v1 · {handoff.valid ? "valid draft" : "blocked"}</p>
+      <p>Handoff: canonical_geometry_handoff_v1 · {handoff.valid ? "valid draft" : "needs review"}</p>
       <p>Object ID: {handoff.object_id}</p>
       <p>Geometry ID: {handoff.geometry_id}</p>
       <p>Type: {handoff.geometry_type} · Name: {handoff.object_name}</p>
@@ -1763,7 +1763,7 @@ function CustomGeometryHandoffDetails({
       <p>Confidence: user_drawn_review_required</p>
       <p>Engineering status: draft_review_required</p>
       {!handoff.valid ? (
-        <p className="text-amber-600">Handoff blockers: {blockerText}</p>
+        <p className="text-amber-600">Handoff needs review: {blockerText}</p>
       ) : null}
     </div>
   );
@@ -6290,7 +6290,7 @@ function PerformanceAIDashboardView({
 
   const debugLog = useCallback(
     (label: string, payload?: Record<string, unknown>) => {
-      if (!debugPreview) return;
+      if (!debugPreview || process.env.NODE_ENV === "production") return;
       const snapshot = {
         projectId: projectId || currentProject?.project_id || "",
         canonicalCount: buildingPlacements.length,
@@ -6340,7 +6340,7 @@ function PerformanceAIDashboardView({
   }, [buildingPlacements]);
 
   useEffect(() => {
-    if (!debugPreview) return;
+    if (!debugPreview || process.env.NODE_ENV === "production") return;
     if (placedObjectCount > buildingPlacements.length) {
       console.warn("[debug-preview] placed-count-exceeds-canonical", {
         placedObjectCount,
@@ -23082,7 +23082,7 @@ function PerformanceAIDashboardView({
                 if (token) void refreshProjects(token);
                 handleOpenSidePanel("projects");
               }}
-              aria-label="Open projects"
+              aria-label="Projects"
               className={`mb-2 flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center transition ${
                 sidePanelForRender === "projects"
                   ? "border-slate-950 bg-slate-950 text-white"
@@ -23091,8 +23091,8 @@ function PerformanceAIDashboardView({
             >
               <FolderOpen className="mx-auto h-4 w-4" />
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">Projects</span>
-              <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>
             </button>
+            <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>
 	            <div className="rounded-lg border border-transparent bg-transparent" data-testid="primary-workflow-sidebar">
 	              <div className="space-y-1.5">
 	                {primaryWorkflowItems

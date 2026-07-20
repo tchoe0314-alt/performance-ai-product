@@ -5340,7 +5340,7 @@ export default function PreviewPanel({
   }, [overlayBoundsResolved, renderedCanonicalCount, updateContainerBounds]);
 
   useEffect(() => {
-    if (!debugStats?.enabled) return;
+    if (!debugStats?.enabled || process.env.NODE_ENV === "production") return;
     if (renderedCanonicalCount > 0 && !overlayBoundsResolved) {
       console.debug("[debug-preview] overlay-bounds-pending", {
         renderedCanonicalCount,
@@ -6214,7 +6214,7 @@ export default function PreviewPanel({
       (item) => item.type !== "site" && item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
     );
 
-    if (debugStats?.enabled) {
+    if (debugStats?.enabled && process.env.NODE_ENV !== "production") {
       console.debug("[debug-preview] render-layer", {
         canonicalCount: buildingPlacements.length,
         placedCount: placedObjects.length,
