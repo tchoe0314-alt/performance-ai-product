@@ -254,6 +254,7 @@ import { useDashboardViewportState } from "./hooks/useDashboardViewportState";
 import { useDashboardDeliverReportsPanelProps } from "./hooks/useDashboardDeliverReportsPanelProps";
 import { useDashboardSupportPanelProps } from "./hooks/useDashboardSupportPanelProps";
 import { useDashboardReviewUtilityPanelProps } from "./hooks/useDashboardReviewUtilityPanelProps";
+import { useDashboardCanvasAreaProps } from "./hooks/useDashboardCanvasAreaProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -9229,6 +9230,132 @@ function PerformanceAIDashboardView({
     onOpenStandards: () => handleOpenSidePanel("standards"),
     onOpenDeliverables: () => handleOpenSidePanel("deliverables"),
   });
+  const workspaceCanvasAreaProps = useDashboardCanvasAreaProps({
+    siteScaleLocked,
+    workspaceChromeHidden,
+    sidebarVisible,
+    rightRailCollapsed,
+    sidePanelForRender,
+    siteName,
+    currentProject,
+    activeWorkflowKey: activePrimaryWorkflowKey,
+    workflowItems: primaryWorkflowItems,
+    toolbarTools: contextualToolbarTools,
+    previewMode,
+    previewQuality,
+    layerManagerOpen,
+    previewLayers,
+    selectedBuilding,
+    selectedObjectConfidence,
+    moveEditFeedback,
+    previewInteraction,
+    denseConceptActive,
+    sidePanelVisible,
+    denseConceptObjectCount,
+    onOpenPanel: handleOpenPanelFromDrawer,
+    onMinimizeChrome: () => setWorkspaceChromeMinimized(true),
+    onPreviewModeSelect: handleSetPreviewMode,
+    onPreviewQualitySelect: handleSetPreviewQuality,
+    onSetRightRailCollapsed: setRightRailCollapsed,
+    onCloseLayerManager: () => setLayerManagerOpen(false),
+    onApplyLayerPreset: setPreviewLayers,
+    onToggleLayer: (key, visible) => setPreviewLayers((prev) => ({ ...prev, [key]: visible })),
+    onEditSelectedObject: handleEditFloatingSelectedObject,
+    onFocusSelectedObject: handleFocusFloatingSelectedObject,
+    onOpenSelectedObjectDetails: handleOpenFloatingObjectDetails,
+    previewReview,
+    onRefreshPreview: handlePreviewPlan,
+    busy,
+    planPreviewUrl,
+    planPreviewProjectId,
+    projectId,
+    canvasPreviewInteraction,
+    systemStatuses,
+    hasTerrainSource,
+    hasBasinPlaced,
+    siteTooLargeForGrading,
+    hasHardSystemBlock,
+    hasBackendResult: Boolean(backendResult),
+    placedObjectCount,
+    placementModeEnabled,
+    activePlacementId,
+    onViewportCenter: handleViewportCenter,
+    externalRectUndo,
+    onPlaceBuilding: handlePlaceBuilding,
+    onPlaceObject: handlePlaceObject,
+    onCreateCustomGeometry: handleCreateCustomGeometry,
+    onCreateSiteBoundary: handleCreateSiteBoundary,
+    onUnlockSite: handleUnlockSite,
+    buildingPlacements,
+    cadEntityPreviewObjects: cadEntityPreview.objects,
+    suggestedPlacements: filteredDetectedPlacements,
+    selectedObjectIds,
+    focusDetectedId,
+    onFocusDetectedIdChange: setFocusDetectedId,
+    focusObjectId,
+    onFocusObjectIdChange: setFocusObjectId,
+    lotWidth: lotBounds.w,
+    lotHeight: lotBounds.h,
+    onViewportFootprint: handleViewportFootprint,
+    onUpdateBuilding: handleUpdateBuilding,
+    onDetectedPlacementsChange: setDetectedPlacements,
+    onPersistDetectedPlacements: persistDetectedPlacements,
+    analysisPaths,
+    selectedAccessIssue,
+    analysisFocusLocked,
+    onAnalysisSelectedIssueIdChange: setAnalysisSelectedIssueId,
+    onAnalysisFocusLockedChange: setAnalysisFocusLocked,
+    onRemoveBuilding: handleRemoveBuilding,
+    onRestoreBuilding: handleRestoreBuilding,
+    onSelectBuilding: setActivePlacementId,
+    onSelectObjects: setSelectedObjectIds,
+    onSetPreviewMode: handleSetPreviewMode,
+    onSetPreviewInteraction: setPreviewInteraction,
+    onSetPreviewQuality: handleSetPreviewQuality,
+    onRecordRecentChange: recordRecentChange,
+    onPushRecoveryMessage: pushRecoveryMessage,
+    previewRefreshing,
+    previewRefreshNote,
+    preview3DEffectiveItems,
+    usingAnnotation3D,
+    hasGradingSurface,
+    onPreviewFullscreenOpenChange: setPreviewFullscreenOpen,
+    previewFullscreenOpen,
+    planPreviewAnnotations,
+    selectedIssueLabel,
+    showMeasurements,
+    showCalculations,
+    measurementOverlayStats,
+    calculationOverlayStats,
+    gradingEarthworkUx,
+    geocode: siteInputs?.geocode ?? null,
+    mapScaleFtPerPx: detectionScaleFtPerPx,
+    mapScaleSource: detectionScaleSource,
+    siteRotationDeg: siteInputs?.site_rotation_deg ?? 0,
+    showSiteBounds,
+    siteDrawRequest,
+    gradingBlocker,
+    fitToSiteRequest,
+    mapCenterRequest,
+    alignToRoadRequest,
+    onMapCenter: handleMapCenter,
+    siteLocked: siteScaleLocked,
+    onLockSite: () => void handleApplySite(),
+    stormHydrologyOverlay: {
+      inletChecks: stormHydrologyReview.inletChecks,
+      overflowPaths: stormHydrologyReview.overflowPaths,
+    },
+    sourceContextBadges: previewSourceContextBadges,
+    onSiteRotationDegChange: setSiteRotationDeg,
+    onSiteRotationInputChange: setSiteRotationInput,
+    onScheduleRotationSave: scheduleRotationSave,
+    surveyPoints: surveyPreviewPoints,
+    onMapScaleFtPerPxChange: setDetectionScaleFtPerPx,
+    onMapScaleSourceChange: setDetectionScaleSource,
+    onScheduleScaleSave: scheduleScaleSave,
+    mapDebugOverlay,
+    cadToolRequest,
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9610,181 +9737,7 @@ function PerformanceAIDashboardView({
                 ) : null}
             </WorkspaceRightPanel>
           ) : null}
-          <WorkspaceCanvasArea
-            siteScaleLocked={siteScaleLocked}
-            workspaceChromeHidden={workspaceChromeHidden}
-            sidebarVisible={sidebarVisible}
-            rightRailCollapsed={rightRailCollapsed}
-            sidePanelForRender={sidePanelForRender}
-            projectName={siteName || currentProject?.name || "Untitled Project"}
-            activeWorkflowKey={activePrimaryWorkflowKey}
-            workflowItems={primaryWorkflowItems}
-            toolbarTools={contextualToolbarTools}
-            previewMode={previewMode}
-            previewQuality={previewQuality}
-            layerManagerOpen={layerManagerOpen}
-            previewLayers={previewLayers}
-            selectedBuilding={selectedBuilding}
-            selectedObjectConfidence={selectedObjectConfidence}
-            moveEditFeedback={moveEditFeedback}
-            previewInteraction={previewInteraction}
-            denseConceptActive={denseConceptActive}
-            sidePanelVisible={sidePanelVisible}
-            denseConceptObjectCount={denseConceptObjectCount}
-            onOpenPanel={handleOpenPanelFromDrawer}
-            onMinimizeChrome={() => setWorkspaceChromeMinimized(true)}
-            onPreviewModeSelect={handleSetPreviewMode}
-            onPreviewQualitySelect={handleSetPreviewQuality}
-            onSetRightRailCollapsed={setRightRailCollapsed}
-            onCloseLayerManager={() => setLayerManagerOpen(false)}
-            onApplyLayerPreset={setPreviewLayers}
-            onToggleLayer={(key, visible) => setPreviewLayers((prev) => ({ ...prev, [key]: visible }))}
-            onEditSelectedObject={handleEditFloatingSelectedObject}
-            onFocusSelectedObject={handleFocusFloatingSelectedObject}
-            onOpenSelectedObjectDetails={handleOpenFloatingObjectDetails}
-            previewPanelProps={{
-              previewReview,
-              onRefreshPreview: handlePreviewPlan,
-              busy,
-              planPreviewUrl,
-              planPreviewProjectId,
-              currentProjectId: projectId || currentProject?.project_id || null,
-              previewMode,
-              previewInteraction: canvasPreviewInteraction,
-              previewQuality,
-              systemStatuses,
-              hasTerrainSource,
-              hasBasinPlaced,
-              siteTooLargeForGrading,
-              hasHardSystemBlock,
-              hasGeneratedPlan: Boolean(planPreviewUrl && backendResult),
-              placementMode: placementModeEnabled || Boolean(activePlacementId),
-              onViewportCenter: handleViewportCenter,
-              externalRectUndo,
-              onPlaceBuilding: handlePlaceBuilding,
-              onPlaceObject: handlePlaceObject,
-              onCreateCustomGeometry: handleCreateCustomGeometry,
-              onCreateSiteBoundary: handleCreateSiteBoundary,
-              onUnlockSite: handleUnlockSite,
-              buildingPlacements,
-              cadEntityPreviewObjects: cadEntityPreview.objects,
-              suggestedPlacements: filteredDetectedPlacements,
-              selectedBuildingId: activePlacementId,
-              selectedObjectIds,
-              focusDetectedId,
-              onClearFocusDetected: () => setFocusDetectedId(null),
-              focusObjectId,
-              onClearFocusObject: () => setFocusObjectId(null),
-              lotWidth: lotBounds.w,
-              lotHeight: lotBounds.h,
-              onViewportFootprint: handleViewportFootprint,
-              onUpdateBuilding: handleUpdateBuilding,
-              onUpdateSuggested: (id, updates) => {
-                setDetectedPlacements((prev) => {
-                  const nextDetected = prev.map((item) =>
-                    item.id === id ? { ...item, ...updates } : item,
-                  );
-                  persistDetectedPlacements(nextDetected);
-                  return nextDetected;
-                });
-              },
-              analysisPaths,
-              analysisHighlight: selectedAccessIssue
-                ? {
-                    buildingId: selectedAccessIssue.buildingId,
-                    accessId: selectedAccessIssue.accessId,
-                    pathId: selectedAccessIssue.pathId,
-                  }
-                : null,
-              analysisFocusLocked,
-              onClearHighlights: () => {
-                setAnalysisSelectedIssueId(null);
-                setAnalysisFocusLocked(false);
-              },
-              onResetView: () => {
-                setAnalysisSelectedIssueId(null);
-                setFocusDetectedId(null);
-                setAnalysisFocusLocked(false);
-              },
-              onRemoveBuilding: handleRemoveBuilding,
-              onRestoreBuilding: handleRestoreBuilding,
-              onSelectBuilding: setActivePlacementId,
-              onSelectObjects: setSelectedObjectIds,
-              onSetPreviewMode: handleSetPreviewMode,
-              onSetPreviewInteraction: setPreviewInteraction,
-              onSetPreviewQuality: handleSetPreviewQuality,
-              onAiRealismChange: (event) => {
-                recordRecentChange({
-                  type: "ai_realism_recorded",
-                  label:
-                    event.type === "generated"
-                      ? "AI realism regenerated"
-                      : event.type === "stale"
-                        ? "AI realism stale"
-                        : "AI realism blocked",
-                  detail: event.detail,
-                  undoBlockedReason: "AI realism is a visual preview record. Regenerate from the current review layout instead of undoing it.",
-                });
-                pushRecoveryMessage(`${event.detail} AI realism remains visual preview only.`);
-              },
-              previewRefreshing,
-              previewRefreshNote,
-              preview3DEffectiveItems,
-              usingAnnotation3D,
-              hasGradingSurface,
-              onOpenFullscreen: () => setPreviewFullscreenOpen(true),
-              previewFullscreenOpen,
-              onCloseFullscreen: () => setPreviewFullscreenOpen(false),
-              planPreviewAnnotations,
-              selectedIssueLabel,
-              showMeasurements,
-              showCalculations,
-              measurementOverlayStats,
-              calculationOverlayStats,
-              gradingEarthworkUx,
-              geocode: siteInputs?.geocode ?? null,
-              mapScaleFtPerPx: detectionScaleFtPerPx,
-              mapScaleSource: detectionScaleSource,
-              siteRotationDeg: siteInputs?.site_rotation_deg ?? 0,
-              showSiteBounds,
-              siteDrawRequest,
-              gradingBlocker,
-              fitToSiteRequest,
-              mapCenterRequest,
-              alignToRoadRequest,
-              onMapCenter: handleMapCenter,
-              siteLocked: siteScaleLocked,
-              onLockSite: () => void handleApplySite(),
-              stormHydrologyOverlay: {
-                inletChecks: stormHydrologyReview.inletChecks,
-                overflowPaths: stormHydrologyReview.overflowPaths,
-              },
-              sourceContextBadges: previewSourceContextBadges,
-              onSetSiteRotationDeg: (value) => {
-                setSiteRotationDeg(value);
-                setSiteRotationInput(String(value));
-                scheduleRotationSave(value);
-              },
-              surveyPoints: surveyPreviewPoints,
-              onMapScaleUpdate: ({ ftPerPx, source }) => {
-                if (siteScaleLocked) return;
-                if (!Number.isFinite(ftPerPx) || ftPerPx <= 0) return;
-                setDetectionScaleFtPerPx(ftPerPx);
-                setDetectionScaleSource(source);
-                scheduleScaleSave(ftPerPx, source);
-              },
-              debugStats: {
-                enabled: mapDebugOverlay,
-                projectId: projectId || currentProject?.project_id || "",
-                canonicalCount: buildingPlacements.length,
-                placedCount: placedObjectCount,
-                previewImageActive: Boolean(planPreviewUrl),
-                placementMode: placementModeEnabled || Boolean(activePlacementId),
-                selectedId: activePlacementId,
-              },
-              cadToolRequest,
-            }}
-          />
+          <WorkspaceCanvasArea {...workspaceCanvasAreaProps} />
           {shortcutsOverlayOpen ? (
             <WorkspaceShortcutsOverlay
               shortcuts={supportedShortcuts}
