@@ -228,6 +228,7 @@ import {
   buildCanonicalWorkspaceBlockers,
   buildGeneratePreflightBlockers,
 } from "./utils/dashboardWorkspaceBlockers";
+import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
   measureCivoraInteractionAfterPaint,
@@ -18464,38 +18465,15 @@ function PerformanceAIDashboardView({
     uploadedImagePreviewUrl,
   ]);
   const systemHealthItems = useMemo(
-    () => [
-      {
-        key: "data",
-        label: "Data",
-        state: canonicalWorkspaceBlockers.some((item) => /source|standards|survey|terrain|address/i.test(item)) ? "blocked" : siteScaleLocked || hasTerrainSource ? "complete" : "not_configured",
-        detail: canonicalWorkspaceBlockers.find((item) => /source|standards|survey|terrain|address/i.test(item)) || (siteScaleLocked ? "Site locked" : "Needs site setup"),
-      },
-      {
-        key: "roadway",
-        label: "Roadway",
-        state: systemStatuses.roads === "fresh" && systemStatuses.parking === "fresh" ? "complete" : "not_configured",
-        detail: systemStatuses.roads === "fresh" ? "Complete" : "Not configured / not rendered",
-      },
-      {
-        key: "grading",
-        label: "Grading",
-        state: canonicalWorkspaceBlockers.some((item) => /terrain|survey|grading|site too large/i.test(item)) ? "blocked" : siteTooLargeForGrading ? "blocked" : systemStatuses.grading === "fresh" ? "complete" : "not_configured",
-        detail: canonicalWorkspaceBlockers.find((item) => /terrain|survey|grading|site too large/i.test(item)) || (siteTooLargeForGrading ? "Site too large" : systemStatuses.grading === "fresh" ? "Complete" : "Needs terrain/run"),
-      },
-      {
-        key: "drainage",
-        label: "Drainage",
-        state: canonicalWorkspaceBlockers.some((item) => /outfall|basin|drainage|terrain|survey/i.test(item)) || hasHardSystemBlock ? "blocked" : systemStatuses.drainage === "fresh" ? "complete" : "not_configured",
-        detail: canonicalWorkspaceBlockers.find((item) => /outfall|basin|drainage|terrain|survey/i.test(item)) || (hasHardSystemBlock ? "Review blockers" : systemStatuses.drainage === "fresh" ? "Complete" : "Needs basin/run"),
-      },
-      {
-        key: "utilities",
-        label: "Utilities",
-        state: canonicalWorkspaceBlockers.some((item) => /utility|standards|source/i.test(item)) || hasHardSystemBlock ? "blocked" : systemStatuses.utilities === "fresh" ? "complete" : "not_configured",
-        detail: canonicalWorkspaceBlockers.find((item) => /utility|standards|source/i.test(item)) || (hasHardSystemBlock ? "Needs input / review" : systemStatuses.utilities === "fresh" ? "Complete" : "Not configured / not rendered"),
-      },
-    ],
+    () =>
+      buildDashboardSystemHealthItems({
+        canonicalWorkspaceBlockers,
+        hasHardSystemBlock,
+        hasTerrainSource,
+        siteScaleLocked,
+        siteTooLargeForGrading,
+        systemStatuses,
+      }),
     [canonicalWorkspaceBlockers, hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
   );
   const selectedBuilding = useMemo(() => {
