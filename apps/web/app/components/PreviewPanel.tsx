@@ -1609,6 +1609,10 @@ export default function PreviewPanel({
         });
       const next = matches[0] ?? null;
       setHoveredAnnotation((current) => (current?.label === next?.label ? current : next));
+      if (!next) {
+        setPoint((current) => (current === null ? current : null));
+        return;
+      }
       const nextPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top };
       setPoint((current) =>
         current &&
