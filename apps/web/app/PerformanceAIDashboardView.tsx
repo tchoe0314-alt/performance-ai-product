@@ -289,6 +289,7 @@ import {
 import { useDashboardProjectActions } from "./hooks/useDashboardProjectActions";
 import { useDashboardProjectLoad } from "./hooks/useDashboardProjectLoad";
 import { useDashboardPlanPdfActions } from "./hooks/useDashboardPlanPdfActions";
+import { useDashboardMapAnalysisActions } from "./hooks/useDashboardMapAnalysisActions";
 import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
@@ -6608,44 +6609,15 @@ function PerformanceAIDashboardView({
     }
   }, [activePlacementId, buildingPlacements]);
 
-  const analyzeMapSnapshot = async () => {
-    if (!token || !mapSnapshotPath) return;
-    try {
-      const data = await postJson<MapAnalysis>(
-        "/api/image/analyze",
-        {
-          image_path: mapSnapshotPath,
-          source_name: "map_snapshot",
-          source_type: "map",
-        },
-        { token },
-      );
-      setMapAnalysis(data);
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        map_analysis: data,
-      };
-      await saveProject({
-        silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-          },
-        },
-      });
-      setStatusMessage("Map snapshot analyzed.");
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Map snapshot analysis failed.",
-      );
-    }
-  };
+  const analyzeMapSnapshot = useDashboardMapAnalysisActions({
+    currentProject,
+    mapSnapshotPath,
+    payloadPreview,
+    saveProject,
+    setMapAnalysis,
+    setStatusMessage,
+    token,
+  });
 
   const autoFitSite = useCallback(
     (
