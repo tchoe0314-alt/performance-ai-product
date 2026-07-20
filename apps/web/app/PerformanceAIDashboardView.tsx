@@ -230,6 +230,10 @@ import {
   type GradingDrainageReviewContextMode,
 } from "./utils/dashboardReviewContextPlacements";
 import {
+  buildReviewGateItems,
+  buildSidebarTruthItems,
+} from "./utils/dashboardSidebarReview";
+import {
   cloneBuildingPlacementForUndo,
   cloneBuildingPlacementWithUpdatesForUndo,
   createDraftArrayCopiesWithTrace,
@@ -18244,91 +18248,23 @@ function PerformanceAIDashboardView({
   const sidebarAssumptions = Array.isArray(previewReview?.assumption_categories)
     ? previewReview.assumption_categories.filter(Boolean)
     : [];
-  const sidebarTruthItems: Array<{ label: string; value: string; status: SidebarStatus }> = [
-    {
-      label: "Engineer review",
-      value: !sidebarHasTruthEvidence
-        ? "not evaluated"
-        : sidebarReleaseStatus === "ready"
-          ? "ready_for_engineer_review"
-          : sidebarReleaseStatus === "blocked"
-            ? "needs input"
-            : "review required",
-      status: !sidebarHasTruthEvidence ? "idle" : "review",
-    },
-    {
-      label: "Professional review",
-      value: sidebarHasTruthEvidence ? "independent review required" : "not evaluated",
-      status: sidebarHasTruthEvidence ? "review" : "idle",
-    },
-    {
-      label: "Low confidence",
-      value: !sidebarHasTruthEvidence
-        ? "not evaluated"
-        : typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80
-          ? "none flagged"
-          : sidebarTrustScore,
-      status: !sidebarHasTruthEvidence
-        ? "idle"
-        : typeof previewReview?.trust_score === "number" && previewReview.trust_score >= 80
-          ? "ok"
-          : "review",
-    },
-    {
-      label: "Assumptions",
-      value: !backendResult
-        ? "not evaluated"
-        : sidebarAssumptions.length
-          ? `${sidebarAssumptions.length} need acceptance`
-          : "none reported",
-      status: !backendResult ? "idle" : sidebarAssumptions.length ? "review" : "ok",
-    },
-    {
-      label: "Stale outputs",
-      value: !backendResult
-        ? "not evaluated"
-        : sidebarStaleSystems.length
-          ? sidebarStaleSystems.slice(0, 2).join(", ")
-          : "none",
-      status: !backendResult ? "idle" : sidebarStaleSystems.length ? "review" : "ok",
-    },
-    {
-      label: "Needs input",
-      value: !sidebarHasTruthEvidence
-        ? "not evaluated"
-        : hasHardSystemBlock || previewBlockedReasons.length
-          ? "review inputs"
-          : "none recorded",
-      status: !sidebarHasTruthEvidence ? "idle" : hasHardSystemBlock || previewBlockedReasons.length ? "block" : "ok",
-    },
-  ] as const;
-  const reviewGateItems = [
-    {
-      label: "Standards",
-      value: panelStatus("standards") === "ok" ? "engineer/user acceptance" : "sources or criteria needed",
-      status: panelStatus("standards") === "ok" ? "review" : "block",
-    },
-    {
-      label: "Survey / control",
-      value: hasTerrainSource ? "verification required" : "missing",
-      status: hasTerrainSource ? "review" : "block",
-    },
-    {
-      label: "Calculations",
-      value: backendResult ? "engineer review required" : "not generated",
-      status: backendResult ? "review" : "block",
-    },
-    {
-      label: "Exports",
-      value: sidebarReleaseStatus === "ready" ? "review package ready" : sidebarReleaseStatus === "blocked" ? "blocked" : "review package",
-      status: sidebarReleaseStatus === "blocked" ? "block" : "review",
-    },
-    {
-      label: "Independent review",
-      value: "required outside Civora",
-      status: "review",
-    },
-  ] as const;
+  const sidebarTruthItems = buildSidebarTruthItems({
+    hasTruthEvidence: sidebarHasTruthEvidence,
+    releaseStatus: sidebarReleaseStatus,
+    trustScore: typeof previewReview?.trust_score === "number" ? previewReview.trust_score : null,
+    trustScoreLabel: sidebarTrustScore,
+    assumptionCount: sidebarAssumptions.length,
+    hasBackendResult: Boolean(backendResult),
+    staleSystems: sidebarStaleSystems,
+    hasHardSystemBlock,
+    previewBlockedReasonCount: previewBlockedReasons.length,
+  });
+  const reviewGateItems = buildReviewGateItems({
+    standardsOk: panelStatus("standards") === "ok",
+    hasTerrainSource,
+    hasBackendResult: Boolean(backendResult),
+    releaseStatus: sidebarReleaseStatus,
+  });
   const derivedSetupWizardSteps: SetupWizardStep[] = [
     {
       id: "address_location",
