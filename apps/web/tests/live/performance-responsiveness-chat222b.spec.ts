@@ -180,6 +180,10 @@ test.describe("Chat 222B performance and responsiveness", () => {
       await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible({ timeout: 3_000 });
     }
 
+    const backgroundRefreshesBeforeQuality = await page.evaluate(() => {
+      const perf = (window as typeof window & { __civoraPerf?: { entries?: Array<{ label: string }> } }).__civoraPerf;
+      return perf?.entries?.filter((entry) => entry.label === "preview.background_refresh.debounced").length ?? 0;
+    });
     await measureVisible(
       page,
       "quality high visible",
@@ -193,6 +197,13 @@ test.describe("Chat 222B performance and responsiveness", () => {
       () => canvas.getByTestId("preview-quality-standard").click(),
       canvas.getByTestId("preview-quality-standard"),
     );
+    await expect.poll(async () => {
+      const perf = await page.evaluate(() => {
+        const store = (window as typeof window & { __civoraPerf?: { entries?: Array<{ label: string }> } }).__civoraPerf;
+        return store?.entries?.filter((entry) => entry.label === "preview.background_refresh.debounced").length ?? 0;
+      });
+      return perf;
+    }, { timeout: 1_000 }).toBe(backgroundRefreshesBeforeQuality);
     await measureVisible(
       page,
       "mode 3d visible",

@@ -16,7 +16,6 @@ type PreviewFloatingToolbarProps = {
   drawMode: DrawMode;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewQuality: (value: PreviewQualityValue) => void;
-  onQueuePreviewRefresh: (message: string) => void;
   onSetAiVisualizationOff: () => void;
   onSetAiVisualizationOn: () => void;
   onSetPreviewInteraction: (value: "static" | "edit") => void;
@@ -40,7 +39,6 @@ export function PreviewFloatingToolbar({
   drawMode,
   onSetPreviewMode,
   onSetPreviewQuality,
-  onQueuePreviewRefresh,
   onSetAiVisualizationOff,
   onSetAiVisualizationOn,
   onSetPreviewInteraction,
@@ -80,7 +78,6 @@ export function PreviewFloatingToolbar({
       <PreviewQualityToggle
         value={previewQuality}
         onChange={onSetPreviewQuality}
-        onQueuePreviewRefresh={onQueuePreviewRefresh}
         standardTestId="preview-quality-standard"
         highTestId="preview-quality-high"
         buttonClassName="h-8 rounded-md border px-2.5 text-xs font-semibold"

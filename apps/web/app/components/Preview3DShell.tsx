@@ -19,7 +19,6 @@ type Preview3DShellProps = {
   aiRealismEnabled: boolean;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
-  onQueuePreviewRefresh: (reason: string) => void;
   onSelectItem: (id: string | null) => void;
   onOpenFullscreen: () => void;
   onSetAiVisualizationOff: () => void;
@@ -38,7 +37,6 @@ export function Preview3DShell({
   aiRealismEnabled,
   onSetPreviewMode,
   onSetPreviewQuality,
-  onQueuePreviewRefresh,
   onSelectItem,
   onOpenFullscreen,
   onSetAiVisualizationOff,
@@ -78,7 +76,6 @@ export function Preview3DShell({
         <PreviewQualityToggle
           value={previewQuality}
           onChange={onSetPreviewQuality}
-          onQueuePreviewRefresh={onQueuePreviewRefresh}
           standardTestId="preview-quality-standard"
           highTestId="preview-quality-high"
           buttonClassName="h-8 rounded-md border px-2.5 text-xs font-semibold"

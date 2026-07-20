@@ -27,7 +27,6 @@ type PreviewCanvasHeaderControlsProps = {
   busy: boolean;
   analysisHighlight: unknown;
   onSetPreviewQuality: (value: "standard" | "high") => void;
-  onQueuePreviewRefresh: (reason: string) => void;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "edit") => void;
   onSetMapOverlayEnabled: (updater: (value: boolean) => boolean) => void;
@@ -62,7 +61,6 @@ export function PreviewCanvasHeaderControls({
   busy,
   analysisHighlight,
   onSetPreviewQuality,
-  onQueuePreviewRefresh,
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetMapOverlayEnabled,
@@ -91,7 +89,6 @@ export function PreviewCanvasHeaderControls({
           <PreviewQualityToggle
             value={previewQuality}
             onChange={onSetPreviewQuality}
-            onQueuePreviewRefresh={onQueuePreviewRefresh}
             standardTestId="preview-inner-quality-standard"
             highTestId="preview-inner-quality-high"
           />

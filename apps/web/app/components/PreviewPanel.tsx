@@ -231,7 +231,6 @@ type PreviewPanelProps = {
   onSetPreviewInteraction: (value: "static" | "edit") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onAiRealismChange?: (event: { type: "generated" | "stale" | "blocked"; detail: string }) => void;
-  onQueuePreviewRefresh: (reason: string) => void;
   previewRefreshing: boolean;
   previewRefreshNote: string | null;
   preview3DEffectiveItems: Preview3DItem[];
@@ -355,7 +354,6 @@ export default function PreviewPanel({
   onSetPreviewInteraction,
   onSetPreviewQuality,
   onAiRealismChange,
-  onQueuePreviewRefresh,
   preview3DEffectiveItems,
   usingAnnotation3D,
   hasGradingSurface,
@@ -7126,7 +7124,6 @@ export default function PreviewPanel({
               busy={busy}
               analysisHighlight={analysisHighlight}
               onSetPreviewQuality={onSetPreviewQuality}
-              onQueuePreviewRefresh={onQueuePreviewRefresh}
               onSetPreviewMode={onSetPreviewMode}
               onSetPreviewInteraction={onSetPreviewInteraction}
               onSetMapOverlayEnabled={setMapOverlayEnabled}
@@ -7276,7 +7273,6 @@ export default function PreviewPanel({
               aiRealismEnabled={aiRealismEnabled}
               onSetPreviewMode={onSetPreviewMode}
               onSetPreviewQuality={onSetPreviewQuality}
-              onQueuePreviewRefresh={onQueuePreviewRefresh}
               onSelectItem={onSelectBuilding}
               onOpenFullscreen={onOpenFullscreen}
               onSetAiVisualizationOff={setAiVisualizationOff}
@@ -7497,7 +7493,6 @@ export default function PreviewPanel({
                 drawMode={drawMode}
                 onSetPreviewMode={onSetPreviewMode}
                 onSetPreviewQuality={onSetPreviewQuality}
-                onQueuePreviewRefresh={onQueuePreviewRefresh}
                 onSetAiVisualizationOff={setAiVisualizationOff}
                 onSetAiVisualizationOn={setAiVisualizationOn}
                 onSetPreviewInteraction={onSetPreviewInteraction}

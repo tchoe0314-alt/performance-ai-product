@@ -3,14 +3,12 @@ export type PreviewQualityValue = "standard" | "high";
 export function PreviewQualityToggle({
   value,
   onChange,
-  onQueuePreviewRefresh,
   standardTestId,
   highTestId,
   buttonClassName = "inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold",
 }: {
   value: PreviewQualityValue;
   onChange: (value: PreviewQualityValue) => void;
-  onQueuePreviewRefresh: (message: string) => void;
   standardTestId?: string;
   highTestId?: string;
   buttonClassName?: string;
@@ -19,11 +17,6 @@ export function PreviewQualityToggle({
   const activeClass = "border-slate-900 bg-slate-950 text-white";
   const setQuality = (next: PreviewQualityValue) => {
     if (value === next) return;
-    onQueuePreviewRefresh(
-      next === "standard"
-        ? "Requesting standard-quality preview..."
-        : "Requesting high-quality preview...",
-    );
     onChange(next);
   };
 

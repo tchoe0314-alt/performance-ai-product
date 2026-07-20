@@ -27493,7 +27493,6 @@ function PerformanceAIDashboardView({
                   });
                   pushRecoveryMessage(`${event.detail} AI realism remains visual preview only.`);
                 }}
-                onQueuePreviewRefresh={queuePreviewRefresh}
                 previewRefreshing={previewRefreshing}
                 previewRefreshNote={previewRefreshNote}
                 preview3DEffectiveItems={preview3DEffectiveItems}
