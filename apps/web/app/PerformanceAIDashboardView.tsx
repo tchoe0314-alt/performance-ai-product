@@ -121,6 +121,11 @@ import {
   systemsImpactedByPlacement,
 } from "./utils/dashboardGenerateLayoutContext";
 import {
+  buildDashboardSystemReadinessRows,
+  getDashboardSystemBlockers,
+  type DashboardSystemBlockerContext,
+} from "./utils/dashboardSystemReadiness";
+import {
   buildObjectManagerLayerRows,
   buildObjectManagerTypes,
   buildCustomGeometryMeta,
@@ -16054,57 +16059,52 @@ function PerformanceAIDashboardView({
       action: "Setup panel -> upload a map snapshot and run Analyze map snapshot.",
     },
   ] as const;
-  const getSystemBlockers = (target: "grading" | "drainage" | "storm" | "sanitary" | "water" | "utilities" | "roadway") => {
-    const blockers: string[] = [];
-    if (missingSite) blockers.push("Set site width and depth.");
-    if (!siteScaleLocked) blockers.push("Lock the site boundary.");
-    if (siteTooLargeForGrading && (target === "grading" || target === "drainage" || target === "storm")) {
-      blockers.push(OVERSIZED_SITE_MESSAGE);
-    }
-    if ((target === "grading" || target === "drainage" || target === "storm") && !hasTerrainSource) {
-      blockers.push("missing terrain/source: add survey, DEM/geocoded terrain, or explicitly accept an assumed slope.");
-    }
-    if (!hasStandardsEvidence) {
-      blockers.push("missing standards");
-    }
-    if (hasAppliedAddress && onlineSourceLookupUnavailable) {
-      blockers.push("Address applied; online source lookup not configured/available.");
-    }
-    if (hasAssumedTerrainSlope && !hasVerifiedSurveyControl) {
-      blockers.push("assumed terrain slope / survey-control still needed");
-    }
-    if ((target === "drainage" || target === "storm") && !hasBasinPlaced) {
-      blockers.push(hasBasinObject ? "detention basin exists but needs placement." : "missing detention basin.");
-    }
-    if ((target === "drainage" || target === "storm") && !buildingPlacements.some((item) => item.type === "outfall" && item.placed)) {
-      blockers.push(buildingPlacements.some((item) => item.type === "outfall") ? "outfall exists but is not placed" : "missing outfall");
-    }
-    if (target === "roadway" && confirmedObjectCounts.buildings === 0 && confirmedObjectCounts.access === 0) {
-      blockers.push("Add at least one building, entrance, driveway, road, or parking object.");
-    }
-    if ((target === "sanitary" || target === "water" || target === "utilities") && !utilities) {
-      blockers.push("Enable utility generation.");
-    }
-    if ((target === "sanitary" || target === "water") && confirmedObjectCounts.buildings === 0) {
-      blockers.push("Add buildings or service/demand targets.");
-    }
-    if ((target === "sanitary" || target === "water" || target === "utilities") && !hasUtilityConnectionPlaced) {
-      blockers.push(hasUtilityConnectionObject ? "utility connection exists but is not placed." : "missing utility connection.");
-    }
-    if (hasHardSystemBlock && target !== "roadway") {
-      blockers.push("Resolve active hard model blockers.");
-    }
-    return blockers;
-  };
-  const systemReadinessRows = [
-    { key: "grading", label: "Grading", panel: "grading" as SidePanelKey, runTarget: "grading" as SystemGenerationTarget, status: systemStatuses.grading, blockers: getSystemBlockers("grading") },
-    { key: "drainage", label: "Drainage", panel: "drainage" as SidePanelKey, runTarget: "drainage" as SystemGenerationTarget, status: systemStatuses.drainage, blockers: getSystemBlockers("drainage") },
-    { key: "storm", label: "Storm", panel: "drainage" as SidePanelKey, runTarget: "drainage" as SystemGenerationTarget, status: systemStatuses.drainage, blockers: getSystemBlockers("storm") },
-    { key: "sanitary", label: "Sanitary", panel: "sanitary" as SidePanelKey, runTarget: "utilities" as SystemGenerationTarget, status: systemStatuses.utilities, blockers: getSystemBlockers("sanitary") },
-    { key: "water", label: "Water", panel: "water" as SidePanelKey, runTarget: "utilities" as SystemGenerationTarget, status: systemStatuses.utilities, blockers: getSystemBlockers("water") },
-    { key: "utilities", label: "Utilities", panel: "utilities" as SidePanelKey, runTarget: "utilities" as SystemGenerationTarget, status: systemStatuses.utilities, blockers: getSystemBlockers("utilities") },
-    { key: "roadway", label: "Roadway", panel: "roadway" as SidePanelKey, runTarget: "roads" as SystemGenerationTarget, status: systemStatuses.roads, blockers: getSystemBlockers("roadway") },
-  ] as const;
+  const systemBlockerContext = useMemo<DashboardSystemBlockerContext>(() => ({
+    missingSite,
+    siteScaleLocked,
+    siteTooLargeForGrading,
+    hasTerrainSource,
+    hasStandardsEvidence,
+    hasAppliedAddress,
+    onlineSourceLookupUnavailable,
+    hasAssumedTerrainSlope,
+    hasVerifiedSurveyControl,
+    hasBasinPlaced,
+    hasBasinObject,
+    buildingPlacements,
+    confirmedObjectCounts,
+    utilities,
+    hasUtilityConnectionPlaced,
+    hasUtilityConnectionObject,
+    hasHardSystemBlock,
+  }), [
+    buildingPlacements,
+    confirmedObjectCounts,
+    hasAppliedAddress,
+    hasAssumedTerrainSlope,
+    hasBasinObject,
+    hasBasinPlaced,
+    hasHardSystemBlock,
+    hasStandardsEvidence,
+    hasTerrainSource,
+    hasUtilityConnectionObject,
+    hasUtilityConnectionPlaced,
+    hasVerifiedSurveyControl,
+    missingSite,
+    onlineSourceLookupUnavailable,
+    siteScaleLocked,
+    siteTooLargeForGrading,
+    utilities,
+  ]);
+  const getSystemBlockers = useCallback(
+    (target: Parameters<typeof getDashboardSystemBlockers>[0]) =>
+      getDashboardSystemBlockers(target, systemBlockerContext),
+    [systemBlockerContext],
+  );
+  const systemReadinessRows = useMemo(
+    () => buildDashboardSystemReadinessRows({ systemStatuses, blockerContext: systemBlockerContext }),
+    [systemBlockerContext, systemStatuses],
+  );
   const civil3DWorkflowBlockers = useMemo(() => {
     const blockers = [
       ...getSystemBlockers("roadway"),
