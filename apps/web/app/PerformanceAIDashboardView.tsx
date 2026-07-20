@@ -281,7 +281,7 @@ import { DeliverPanel } from "./components/DeliverPanel";
 import { DenseConceptActionStrip } from "./components/DenseConceptActionStrip";
 import { DesignAlternativesPanel } from "./components/DesignAlternativesPanel";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
-import { DrawCadToolsPanel, type DrawCadToolGroup } from "./components/DrawCadToolsPanel";
+import { type DrawCadToolGroup } from "./components/DrawCadToolsPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { FloatingObjectInspector } from "./components/FloatingObjectInspector";
 import { GeneratePanel } from "./components/GeneratePanel";
@@ -289,21 +289,14 @@ import { ImportSurveyPanel } from "./components/ImportSurveyPanel";
 import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
-import { NeedsPlacementTray } from "./components/NeedsPlacementTray";
-import { ObjectManagerHiddenState } from "./components/ObjectManagerHiddenState";
-import { ObjectManagerLayerControls } from "./components/ObjectManagerLayerControls";
-import { ObjectManagerListPanel } from "./components/ObjectManagerListPanel";
-import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
-import { ObjectManagerSelectedToolsPanel } from "./components/ObjectManagerSelectedToolsPanel";
+import { ObjectManagerPanel } from "./components/ObjectManagerPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import { PlanPdfWorkflowPanel } from "./components/PlanPdfWorkflowPanel";
 import PreviewPanel from "./components/PreviewPanel";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
 import { QuantitiesPanel } from "./components/QuantitiesPanel";
-import { RecentChangesPanel } from "./components/RecentChangesPanel";
 import { ReportGateListPanel } from "./components/ReportGateListPanel";
 import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
-import { SelectedObjectCard } from "./components/SelectedObjectCard";
 import { SelectedObjectInspectorPanel } from "./components/SelectedObjectInspectorPanel";
 import { SetupAddressSection } from "./components/SetupAddressSection";
 import { SetupAutoSiteContextSection } from "./components/SetupAutoSiteContextSection";
@@ -22222,53 +22215,50 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "objects" ? (
-                  <div className="space-y-4">
-                    <DrawCadToolsPanel groups={cadToolGroups} onSelectTool={triggerCadTool} />
-                    <NeedsPlacementTray
-                      items={pendingPlacementObjects.map((item) => ({
+                  <ObjectManagerPanel
+                    cadTools={{ groups: cadToolGroups, onSelectTool: triggerCadTool }}
+                    needsPlacement={{
+                      items: pendingPlacementObjects.map((item) => ({
                         id: item.id,
                         label: item.label,
                         typeLabel: SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object",
                         widthFt: item.w,
                         depthFt: item.d,
-                      }))}
-                      onPlace={handleSelectPlacementTarget}
-                    />
-
-                    <SelectedObjectCard
-                      selectedObject={selectedBuilding}
-                      displayType={selectedBuilding ? getObjectDisplayType(selectedBuilding) : ""}
-                      dimensionsLabel={selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : ""}
-                      onMove={(item) => {
+                      })),
+                      onPlace: handleSelectPlacementTarget,
+                    }}
+                    selectedObject={{
+                      selectedObject: selectedBuilding,
+                      displayType: selectedBuilding ? getObjectDisplayType(selectedBuilding) : "",
+                      dimensionsLabel: selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : "",
+                      onMove: (item) => {
                         handleObjectManagerSelect(item.id);
                         setPlacementModeEnabled(true);
-                      }}
-                      onFocus={(item) => {
+                      },
+                      onFocus: (item) => {
                         setFocusObjectId(item.id);
                         setRightRailCollapsed(true);
-                      }}
-                      onCopy={handleObjectManagerCopy}
-                      onRotate={(item) => handleObjectManagerTransform(item, "rotate")}
-                      onFlipHorizontal={(item) => handleObjectManagerTransform(item, "flip_horizontal")}
-                      onDelete={handleObjectManagerDelete}
-                    />
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
-                      <ObjectManagerOverview
-                        totalCount={buildingPlacements.length}
-                        placedCount={placedObjects.length}
-                        pendingCount={pendingPlacementObjects.length}
-                        selectedCount={selectedObjectIds.length}
-                        hiddenCount={hiddenObjectCount}
-                        typeLabels={objectManagerTypes}
-                        clipboardLabels={objectClipboard.map((item) => item.label)}
-                        onSelectVisibleDraft={handleObjectManagerSelectVisibleDraft}
-                        onInvertSelection={handleObjectManagerInvertSelection}
-                        onPaste={handleObjectManagerPaste}
-                      />
-                      <ObjectManagerHiddenState
-                        hiddenCount={hiddenObjectCount}
-                        onShowAll={() => {
+                      },
+                      onCopy: handleObjectManagerCopy,
+                      onRotate: (item) => handleObjectManagerTransform(item, "rotate"),
+                      onFlipHorizontal: (item) => handleObjectManagerTransform(item, "flip_horizontal"),
+                      onDelete: handleObjectManagerDelete,
+                    }}
+                    overview={{
+                      totalCount: buildingPlacements.length,
+                      placedCount: placedObjects.length,
+                      pendingCount: pendingPlacementObjects.length,
+                      selectedCount: selectedObjectIds.length,
+                      hiddenCount: hiddenObjectCount,
+                      typeLabels: objectManagerTypes,
+                      clipboardLabels: objectClipboard.map((item) => item.label),
+                      onSelectVisibleDraft: handleObjectManagerSelectVisibleDraft,
+                      onInvertSelection: handleObjectManagerInvertSelection,
+                      onPaste: handleObjectManagerPaste,
+                    }}
+                    hiddenState={{
+                      hiddenCount: hiddenObjectCount,
+                      onShowAll: () => {
                           const hiddenObjects = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden));
                           const restorableHiddenObjects = hiddenObjects.filter((item) => !item.meta?.combined_into_object_id);
                           const preservedTraceCount = hiddenObjects.length - restorableHiddenObjects.length;
@@ -22292,55 +22282,50 @@ function PerformanceAIDashboardView({
                           pushRecoveryMessage(preservedTraceCount
                             ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown. ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden until you explode the combined object.`
                             : "All hidden objects are visible again.");
-                        }}
-                      />
-                      <ObjectManagerLayerControls
-                        rows={objectManagerLayerRows}
-                        onSelectLayer={handleObjectManagerLayerSelect}
-                        onIsolateLayer={handleObjectManagerLayerIsolate}
-                        onSetLayerHidden={handleObjectManagerLayerVisibility}
-                        onSetLayerLocked={handleObjectManagerLayerLock}
-                      />
-                      {objectManagerStatusMessage ? (
-                        <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="object-manager-status">
-                          {objectManagerStatusMessage}
-                        </p>
-                      ) : null}
-                      <RecentChangesPanel
-                        changes={recentChanges.map((change) => ({
+                        },
+                    }}
+                    layerControls={{
+                      rows: objectManagerLayerRows,
+                      onSelectLayer: handleObjectManagerLayerSelect,
+                      onIsolateLayer: handleObjectManagerLayerIsolate,
+                      onSetLayerHidden: handleObjectManagerLayerVisibility,
+                      onSetLayerLocked: handleObjectManagerLayerLock,
+                    }}
+                    statusMessage={objectManagerStatusMessage}
+                    recentChanges={{
+                      changes: recentChanges.map((change) => ({
                           id: change.id,
                           label: change.label,
                           detail: change.detail,
                           createdAt: change.createdAt,
                           canUndo: Boolean(change.undo),
                           onAction: () => handleUndoRecentChange(change),
-                        }))}
-                        open={recentChangesOpen}
-                        canUndoDraft={Boolean(lastDraftAction)}
-                        canRedoDraft={Boolean(redoDraftAction)}
-                        onToggleOpen={() => setRecentChangesOpen((value) => !value)}
-                        onUndoDraft={handleUndoDraftAction}
-                        onRedoDraft={handleRedoDraftAction}
-                      />
-                      {selectedObjectIds.length > 0 ? (
-                        <ObjectManagerSelectedToolsPanel
-                          selectedCount={selectedObjectRows.length}
-                          measurementSummary={selectedObjectMeasurementSummary}
-                          measurements={selectedObjectMeasurements}
-                          arrayRows={arrayRows}
-                          arrayColumns={arrayColumns}
-                          arraySpacingX={arraySpacingX}
-                          arraySpacingY={arraySpacingY}
-                          bulkMoveX={bulkMoveX}
-                          bulkMoveY={bulkMoveY}
-                          bulkMoveToX={bulkMoveToX}
-                          bulkMoveToY={bulkMoveToY}
-                          bulkScaleFactor={bulkScaleFactor}
-                          bulkRotateAngle={bulkRotateAngle}
-                          combineObjectName={combineObjectName}
-                          combineObjectType={combineObjectType}
-                          draftBlockName={draftBlockName}
-                          blocks={draftBlockLibrary.map((block) => ({
+                        })),
+                      open: recentChangesOpen,
+                      canUndoDraft: Boolean(lastDraftAction),
+                      canRedoDraft: Boolean(redoDraftAction),
+                      onToggleOpen: () => setRecentChangesOpen((value) => !value),
+                      onUndoDraft: handleUndoDraftAction,
+                      onRedoDraft: handleRedoDraftAction,
+                    }}
+                    selectedTools={selectedObjectIds.length > 0 ? {
+                      selectedCount: selectedObjectRows.length,
+                      measurementSummary: selectedObjectMeasurementSummary,
+                      measurements: selectedObjectMeasurements,
+                      arrayRows,
+                      arrayColumns,
+                      arraySpacingX,
+                      arraySpacingY,
+                      bulkMoveX,
+                      bulkMoveY,
+                      bulkMoveToX,
+                      bulkMoveToY,
+                      bulkScaleFactor,
+                      bulkRotateAngle,
+                      combineObjectName,
+                      combineObjectType,
+                      draftBlockName,
+                      blocks: draftBlockLibrary.map((block) => ({
                             id: block.id,
                             name: block.name,
                             type: block.type,
@@ -22348,83 +22333,81 @@ function PerformanceAIDashboardView({
                             createdAt: block.createdAt,
                             updatedAt: block.updatedAt,
                             revision: block.revision,
-                          }))}
-                          onClearSelection={() => setSelectedObjectIds([])}
-                          onHideSelected={() => handleObjectManagerBulkVisibility(true)}
-                          onShowSelected={() => handleObjectManagerBulkVisibility(false)}
-                          onIsolateSelected={handleObjectManagerIsolateSelected}
-                          onLockSelected={() => handleObjectManagerBulkLock(true)}
-                          onUnlockSelected={() => handleObjectManagerBulkLock(false)}
-                          onColorSelected={handleObjectManagerBulkColor}
-                          onTypeSelected={handleObjectManagerBulkType}
-                          onDuplicateSelected={handleObjectManagerBulkDuplicate}
-                          onLayoutSelected={handleObjectManagerBulkLayout}
-                          onDeleteSelected={handleObjectManagerBulkDelete}
-                          onArrayRowsChange={setArrayRows}
-                          onArrayColumnsChange={setArrayColumns}
-                          onArraySpacingXChange={setArraySpacingX}
-                          onArraySpacingYChange={setArraySpacingY}
-                          onCreateArray={handleObjectManagerArraySelected}
-                          onBulkMoveXChange={setBulkMoveX}
-                          onBulkMoveYChange={setBulkMoveY}
-                          onMoveSelected={handleObjectManagerBulkMove}
-                          onCopyByOffset={handleObjectManagerBulkCopyByOffset}
-                          onBulkMoveToXChange={setBulkMoveToX}
-                          onBulkMoveToYChange={setBulkMoveToY}
-                          onMoveToCoordinate={handleObjectManagerBulkMoveTo}
-                          onBulkScaleFactorChange={setBulkScaleFactor}
-                          onScaleSelected={handleObjectManagerBulkScale}
-                          onBulkRotateAngleChange={setBulkRotateAngle}
-                          onRotateSelected={handleObjectManagerBulkRotate}
-                          onMirrorSelected={handleObjectManagerBulkMirror}
-                          onCombineObjectNameChange={setCombineObjectName}
-                          onCombineObjectTypeChange={setCombineObjectType}
-                          onCombineSelected={handleObjectManagerCombineSelected}
-                          onDraftBlockNameChange={setDraftBlockName}
-                          onSaveBlock={handleObjectManagerSaveBlock}
-                          onRenameBlock={(blockId, value) => {
+                          })),
+                      onClearSelection: () => setSelectedObjectIds([]),
+                      onHideSelected: () => handleObjectManagerBulkVisibility(true),
+                      onShowSelected: () => handleObjectManagerBulkVisibility(false),
+                      onIsolateSelected: handleObjectManagerIsolateSelected,
+                      onLockSelected: () => handleObjectManagerBulkLock(true),
+                      onUnlockSelected: () => handleObjectManagerBulkLock(false),
+                      onColorSelected: handleObjectManagerBulkColor,
+                      onTypeSelected: handleObjectManagerBulkType,
+                      onDuplicateSelected: handleObjectManagerBulkDuplicate,
+                      onLayoutSelected: handleObjectManagerBulkLayout,
+                      onDeleteSelected: handleObjectManagerBulkDelete,
+                      onArrayRowsChange: setArrayRows,
+                      onArrayColumnsChange: setArrayColumns,
+                      onArraySpacingXChange: setArraySpacingX,
+                      onArraySpacingYChange: setArraySpacingY,
+                      onCreateArray: handleObjectManagerArraySelected,
+                      onBulkMoveXChange: setBulkMoveX,
+                      onBulkMoveYChange: setBulkMoveY,
+                      onMoveSelected: handleObjectManagerBulkMove,
+                      onCopyByOffset: handleObjectManagerBulkCopyByOffset,
+                      onBulkMoveToXChange: setBulkMoveToX,
+                      onBulkMoveToYChange: setBulkMoveToY,
+                      onMoveToCoordinate: handleObjectManagerBulkMoveTo,
+                      onBulkScaleFactorChange: setBulkScaleFactor,
+                      onScaleSelected: handleObjectManagerBulkScale,
+                      onBulkRotateAngleChange: setBulkRotateAngle,
+                      onRotateSelected: handleObjectManagerBulkRotate,
+                      onMirrorSelected: handleObjectManagerBulkMirror,
+                      onCombineObjectNameChange: setCombineObjectName,
+                      onCombineObjectTypeChange: setCombineObjectType,
+                      onCombineSelected: handleObjectManagerCombineSelected,
+                      onDraftBlockNameChange: setDraftBlockName,
+                      onSaveBlock: handleObjectManagerSaveBlock,
+                      onRenameBlock: (blockId, value) => {
                             const block = draftBlockLibrary.find((item) => item.id === blockId);
                             if (block) handleObjectManagerRenameBlock(block, value);
-                          }}
-                          onUpdateBlock={(blockId) => {
+                          },
+                      onUpdateBlock: (blockId) => {
                             const block = draftBlockLibrary.find((item) => item.id === blockId);
                             if (block) handleObjectManagerUpdateBlock(block);
-                          }}
-                          onInsertBlock={(blockId) => {
+                          },
+                      onInsertBlock: (blockId) => {
                             const block = draftBlockLibrary.find((item) => item.id === blockId);
                             if (block) handleObjectManagerInsertBlock(block);
-                          }}
-                          onDeleteBlock={(blockId) => {
+                          },
+                      onDeleteBlock: (blockId) => {
                             const block = draftBlockLibrary.find((item) => item.id === blockId);
                             if (block) handleObjectManagerDeleteBlock(block);
-                          }}
-                        />
-                      ) : null}
-                      <ObjectManagerListPanel
-                        objects={buildingPlacements}
-                        units={units}
-                        activeObjectId={activePlacementId}
-                        selectedObjectSet={selectedObjectSet}
-                        sourceConfidenceByObjectId={sourceConfidenceByObjectId}
-                        objectOutlineColor={objectOutlineColor || "#64748b"}
-                        onSetPlacementModeEnabled={setPlacementModeEnabled}
-                        onSelect={handleObjectManagerSelect}
-                        onToggleMultiSelect={handleObjectManagerToggleMultiSelect}
-                        onDelete={handleObjectManagerDelete}
-                        onUpdate={handleUpdateBuilding}
-                        onReportBlocker={reportObjectActionBlocker}
-                        onToggleLock={handleToggleBuildingLock}
-                        onFocus={(objectId) => {
+                          },
+                    } : null}
+                    objectList={{
+                      objects: buildingPlacements,
+                      units,
+                      activeObjectId: activePlacementId,
+                      selectedObjectSet,
+                      sourceConfidenceByObjectId,
+                      objectOutlineColor: objectOutlineColor || "#64748b",
+                      onSetPlacementModeEnabled: setPlacementModeEnabled,
+                      onSelect: handleObjectManagerSelect,
+                      onToggleMultiSelect: handleObjectManagerToggleMultiSelect,
+                      onDelete: handleObjectManagerDelete,
+                      onUpdate: handleUpdateBuilding,
+                      onReportBlocker: reportObjectActionBlocker,
+                      onToggleLock: handleToggleBuildingLock,
+                      onFocus: (objectId) => {
                           setFocusObjectId(objectId);
                           setRightRailCollapsed(true);
-                        }}
-                        onInspect={() => handleOpenPanelFromDrawer("details")}
-                        onCopy={handleObjectManagerCopy}
-                        onTransform={handleObjectManagerTransform}
-                        onExplodeCombined={handleObjectManagerExplodeCombined}
-                      />
-                    </div>
-                  </div>
+                        },
+                      onInspect: () => handleOpenPanelFromDrawer("details"),
+                      onCopy: handleObjectManagerCopy,
+                      onTransform: handleObjectManagerTransform,
+                      onExplodeCombined: handleObjectManagerExplodeCombined,
+                    }}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "deliverables" ? (
