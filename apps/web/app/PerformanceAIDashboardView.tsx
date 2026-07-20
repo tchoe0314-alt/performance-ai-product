@@ -368,6 +368,7 @@ import useAuthState from "./hooks/useAuthState";
 import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
 import { useDashboardLeftSidebarState } from "./hooks/useDashboardLeftSidebarState";
+import { useDashboardPreviewModeState } from "./hooks/useDashboardPreviewModeState";
 import { useDashboardSidePanelState } from "./hooks/useDashboardSidePanelState";
 import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { AnalysisPanel } from "./components/AnalysisPanel";
@@ -662,9 +663,7 @@ function PerformanceAIDashboardView({
     useState<PreviewResponse["summary"] | null>(null);
   const [planPreviewAnnotations, setPlanPreviewAnnotations] =
     useState<PreviewResponse["preview_annotations"] | null>(null);
-  const [previewMode, setPreviewMode] = useState<"2d" | "3d">("2d");
   const [previewInteraction, setPreviewInteraction] = useState<"static" | "edit">("static");
-  const [previewQuality, setPreviewQuality] = useState<"standard" | "high">("standard");
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [layerManagerOpen, setLayerManagerOpen] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
@@ -742,8 +741,6 @@ function PerformanceAIDashboardView({
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const previewAutoRefreshTimeoutRef = useRef<number | null>(null);
-  const previewModeProbeRef = useRef<{ value: "2d" | "3d"; startedAt: number } | null>(null);
-  const previewQualityProbeRef = useRef<{ value: "standard" | "high"; startedAt: number } | null>(null);
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
   const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget, options?: { slopeEstimateOverride?: SurveySlopeResponse | null }) => Promise<void>) | null>(null);
@@ -1837,6 +1834,14 @@ function PerformanceAIDashboardView({
     },
     [],
   );
+  const {
+    previewMode,
+    setPreviewMode,
+    previewQuality,
+    setPreviewQuality,
+    handleSetPreviewMode,
+    handleSetPreviewQuality,
+  } = useDashboardPreviewModeState({ updateProjectStatus });
 
   const recordRecentChange = useCallback((change: Omit<RecentChange, "id" | "createdAt">) => {
     const nextChange: RecentChange = {
@@ -14239,59 +14244,6 @@ function PerformanceAIDashboardView({
     }
     previewRefreshIntentRef.current = { reason, track: true };
   };
-
-  const handleSetPreviewMode = useCallback(
-    (value: "2d" | "3d") => {
-      if (value !== previewMode) {
-        previewModeProbeRef.current = { value, startedAt: markCivoraInteraction() };
-      }
-      setPreviewMode(value);
-    },
-    [previewMode],
-  );
-
-  const handleSetPreviewQuality = useCallback(
-    (value: "standard" | "high") => {
-      if (value !== previewQuality) {
-        previewQualityProbeRef.current = { value, startedAt: markCivoraInteraction() };
-      }
-      if (value === "high") {
-        updateProjectStatus({
-          state: "working",
-          area: "ai realism",
-          title: "Creating AI realism",
-          detail: "Civora is switching to high-quality visual preview mode.",
-          nextAction: "Review the preview panel for provider, object, or layout blockers.",
-        });
-      } else {
-        updateProjectStatus({
-          state: "ready",
-          area: "ai realism",
-          title: "AI realism off",
-          detail: "Returned to Standard preview quality.",
-          nextAction: "Continue drafting or open Generate when ready.",
-        });
-      }
-      setPreviewQuality(value);
-    },
-    [previewQuality, updateProjectStatus],
-  );
-
-  useEffect(() => {
-    const probe = previewModeProbeRef.current;
-    if (!probe || probe.value !== previewMode) return;
-    measureCivoraInteractionAfterPaint(`preview.mode.${previewMode}`, probe.startedAt, { mode: previewMode });
-    previewModeProbeRef.current = null;
-  }, [previewMode]);
-
-  useEffect(() => {
-    const probe = previewQualityProbeRef.current;
-    if (!probe || probe.value !== previewQuality) return;
-    measureCivoraInteractionAfterPaint(`preview.quality.${previewQuality}`, probe.startedAt, {
-      quality: previewQuality,
-    });
-    previewQualityProbeRef.current = null;
-  }, [previewQuality]);
 
   const handlePreviewPlan = async () => {
     if (!token) return;
