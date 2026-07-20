@@ -3340,97 +3340,30 @@ function PerformanceAIDashboardView({
     }
     const offset = 24;
     const stamp = Date.now();
-    const visiblePastedObjects: BuildingPlacement[] = [];
-    const createdObjects: BuildingPlacement[] = [];
-    editable.forEach((item, index) => {
-      const nextType = item.type ?? "custom";
-      const nextId = `${nextType}-copy-${stamp}-${index}-${Math.random().toString(36).slice(2, 8)}`;
-      const sourceIds = Array.isArray(item.meta?.combined_from_object_ids)
-        ? item.meta.combined_from_object_ids.map((id) => String(id)).filter(Boolean)
-        : [];
-      const sourceItems = sourceIds.length
-        ? sourceIds
-            .map((sourceId) => buildingPlacements.find((candidate) => candidate.id === sourceId))
-            .filter((candidate): candidate is BuildingPlacement => Boolean(candidate))
-        : [];
-      const copiedSourceItems = sourceItems.map((source, sourceIndex): BuildingPlacement => {
-        const copiedSourceId = `${source.type ?? "custom"}-copy-source-${stamp}-${index}-${sourceIndex}-${Math.random().toString(36).slice(2, 8)}`;
-        return {
-          ...source,
-          id: copiedSourceId,
-          label: `${source.label} Copy Source`,
-          x: (source.x ?? 0) + offset,
-          y: (source.y ?? 0) + offset,
-          source: "manual_drawn",
-          generated: false,
-          locked: false,
-          placed: true,
-          geometry: source.geometry?.map(([x, y]) => [x + offset, y + offset]),
-          capabilities: {
-            movable: true,
-            resizable: source.capabilities?.resizable ?? true,
-            rotatable: source.capabilities?.rotatable ?? true,
-            deletable: true,
-          },
-          meta: {
-            ...(source.meta ?? {}),
-            ui_hidden: true,
-            source: "manual_drawn_copy_source",
-            copied_from_object_id: source.id,
-            copied_from_label: source.label,
-            copied_set_size: sourceItems.length,
-            combined_into_object_id: nextId,
-            combined_into_label: `${item.label} Copy`,
-            review_status: "engineer_review_required",
-            engineering_status: "draft_review_required",
-            handoff_status: "draft_review_required",
-            construction_release_allowed: false,
-          },
-        };
-      });
-      const nextObject: BuildingPlacement = {
-        ...item,
-        id: nextId,
-        label: `${item.label} Copy`,
-        x: (item.x ?? 0) + offset,
-        y: (item.y ?? 0) + offset,
-        source: "manual_drawn",
-        generated: false,
-        locked: false,
-        placed: true,
-        geometry: item.geometry?.map(([x, y]) => [x + offset, y + offset]),
-        capabilities: {
-          movable: true,
-          resizable: item.capabilities?.resizable ?? true,
-          rotatable: item.capabilities?.rotatable ?? true,
-          deletable: true,
-        },
-        meta: {
-          ...(item.meta ?? {}),
-          ui_hidden: false,
+    const {
+      visibleDuplicates: visiblePastedObjects,
+      createdObjects,
+      hiddenTraceCount,
+    } = summarizeDraftCopyResults(
+      editable.map((item, index) =>
+        createObjectManagerDraftCopyWithTrace({
+          item,
+          buildingPlacements,
+          idPrefix: `copy-${stamp}-${index}`,
+          label: `${item.label} Copy`,
+          dx: offset,
+          dy: offset,
           source: "manual_drawn_copy",
-          copied_from_object_id: item.id,
-          copied_from_label: item.label,
-          copied_set_size: editable.length,
-          copied_combined_from_object_ids: sourceIds,
-          copied_combined_from_labels: sourceItems.map((source) => source.label),
-          combined_from_object_ids: copiedSourceItems.map((source) => source.id),
-          combined_from_labels: copiedSourceItems.map((source) => source.label),
-          combined_source_count: copiedSourceItems.length || undefined,
-          review_status: "engineer_review_required",
-          engineering_status: "draft_review_required",
-          handoff_status: "draft_review_required",
-          construction_release_allowed: false,
-        },
-      };
-      createdObjects.push(...copiedSourceItems, nextObject);
-      visiblePastedObjects.push(nextObject);
-    });
+          extraMeta: {
+            copied_set_size: editable.length,
+          },
+        }),
+      ),
+    );
     setBuildingPlacements((prev) => [...prev, ...createdObjects]);
     setActivePlacementId(visiblePastedObjects[0]?.id ?? null);
     setSelectedObjectIds(visiblePastedObjects.map((item) => item.id));
     createdObjects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
-    const hiddenTraceCount = createdObjects.length - visiblePastedObjects.length;
     const pasteUndoLabel = hiddenTraceCount ? "group paste" : "multi-object paste";
     const undoAction: DraftUndoAction = createdObjects.length === 1
       ? { action: "add", object: createdObjects[0] }
