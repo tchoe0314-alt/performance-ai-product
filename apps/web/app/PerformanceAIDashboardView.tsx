@@ -105,6 +105,10 @@ import {
   normalizeGeometryPoints,
   type CustomGeometryMode,
 } from "./utils/objectGeometry";
+import {
+  buildDashboardObjectPlacement,
+  buildDashboardSitePlacement,
+} from "./utils/dashboardObjectPlacementBuilder";
 
 
 
@@ -1758,28 +1762,7 @@ function PerformanceAIDashboardView({
         if (!parsePositiveNumber(lotHeight)) setLotHeight(String(height));
         setBuildingPlacements((prev) => {
           const filtered = prev.filter((item) => item.type !== "site");
-          const sitePlacement: BuildingPlacement = {
-            id: `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            label: catalog.label,
-            type: "site",
-            w: width,
-            d: height,
-            x: 0,
-            y: 0,
-            rotation: 0,
-            locked: true,
-            placed: true,
-            source: "user",
-            generated: false,
-            capabilities: {
-              movable: false,
-              resizable: false,
-              rotatable: false,
-              deletable: false,
-            },
-            systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-            meta: { category: catalog.category },
-          };
+          const sitePlacement = buildDashboardSitePlacement({ width, height });
           return [sitePlacement, ...filtered];
         });
         return;
@@ -1791,193 +1774,29 @@ function PerformanceAIDashboardView({
       const lot = resolveLotBounds();
       const existingCount =
         buildingPlacements.filter((item) => item.type === type).length + 1;
-      const defaults = {
-        ...(type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD }),
-        ...(options?.width ? { w: options.width } : {}),
-        ...(options?.depth ? { d: options.depth } : {}),
-      };
-      const defaultHeight = catalog.defaultH ?? 0;
       const autoPlaced = Boolean(options?.placed);
-      const clampPlacement = (value: number, size: number, total: number) =>
-        Math.min(Math.max(value, 24), Math.max(24, total - size - 24));
-      const smartPlacement = (() => {
-        const typeKey = type === "office_building" ? "building" : type;
-        const offset = Math.max(0, existingCount - 1);
-        if (typeKey === "building") {
-          return {
-            x: clampPlacement(lot.w * 0.36 + offset * 18, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.16 + offset * 14, defaults.d, lot.h),
-          };
-        }
-        if (typeKey === "parking") {
-          return {
-            x: clampPlacement(lot.w * 0.18 + offset * 18, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.40 + offset * 10, defaults.d, lot.h),
-          };
-        }
-        if (typeKey === "basin") {
-          return {
-            x: clampPlacement(lot.w * 0.66, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.50, defaults.d, lot.h),
-          };
-        }
-        if (typeKey === "outfall") {
-          return {
-            x: clampPlacement(lot.w * 0.86, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.62, defaults.d, lot.h),
-          };
-        }
-        if (typeKey === "inlet" || typeKey === "manhole" || typeKey === "hydrant") {
-          const defaultX =
-            typeKey === "inlet" ? 0.58 : typeKey === "manhole" ? 0.72 : 0.30 + Math.min(offset, 3) * 0.10;
-          return {
-            x: clampPlacement(lot.w * defaultX, defaults.w, lot.w),
-            y: clampPlacement(lot.h * (typeKey === "hydrant" ? 0.30 : 0.46), defaults.d, lot.h),
-          };
-        }
-        if (typeKey === "driveway" || typeKey === "road" || typeKey === "entrance") {
-          return {
-            x: clampPlacement(lot.w * 0.04, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.42, defaults.d, lot.h),
-          };
-        }
-        if (typeKey === "sidewalk") {
-          return {
-            x: clampPlacement(lot.w * 0.18, defaults.w, lot.w),
-            y: clampPlacement(lot.h * 0.40, defaults.d, lot.h),
-          };
-        }
-        if (typeKey === "utility_corridor") {
-          const network = String(options?.meta?.network || "").toLowerCase();
-          const yFactor = network === "water" ? 0.28 : network === "sanitary" ? 0.78 : network === "storm" ? 0.58 : 0.68;
-          return {
-            x: clampPlacement(lot.w * 0.08, defaults.w, lot.w),
-            y: clampPlacement(lot.h * yFactor, defaults.d, lot.h),
-          };
-        }
-        return {
-          x: Math.min(Math.max(24, existingCount * 24), Math.max(24, lot.w - defaults.w - 24)),
-          y: Math.min(Math.max(24, existingCount * 18), Math.max(24, lot.h - defaults.d - 24)),
-        };
-      })();
-      const autoX = smartPlacement.x;
-      const autoY = smartPlacement.y;
-      const parkingStalls =
-        type === "parking" ? parsePositiveNumber(parkingCount) ?? 0 : undefined;
-      const parkingParams =
-        type === "parking"
-          ? {
-              stallWidth: parsePositiveNumber(parkingStallWidth) ?? 9,
-              stallDepth: parsePositiveNumber(parkingStallDepth) ?? 18,
-              aisleWidth: parsePositiveNumber(parkingAisleWidth) ?? 24,
-              adaAisleWidth: parsePositiveNumber(parkingAdaAisleWidth) ?? 8,
-              adaCount: parsePositiveNumber(parkingAdaCount) ?? 0,
-              compactCount: parsePositiveNumber(parkingCompactCount) ?? 0,
-              compactWidth: parsePositiveNumber(parkingCompactWidth) ?? 8,
-              angleDeg: parsePositiveNumber(parkingAngle) ?? 90,
-              loading: parkingLoading,
-              autoResizeToFitCount: false,
-              useMixedAngles: false,
-              compactZone: true,
-            }
-          : null;
-      const nextPlacement: BuildingPlacement = {
-        id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        label: options?.label ?? formatObjectLabel(type, existingCount),
+      const nextPlacement = buildDashboardObjectPlacement({
         type,
-        use: catalog.use,
-        w: defaults.w,
-        d: defaults.d,
-        h: defaultHeight,
-        x: autoPlaced ? autoX : undefined,
-        y: autoPlaced ? autoY : undefined,
-        rotation: 0,
-        stallCount: parkingStalls,
-        locked: false,
-        placed: autoPlaced,
-        source: "user",
-        generated: false,
-        capabilities: {
-          movable: true,
-          resizable: true,
-          rotatable: true,
-          deletable: true,
+        options,
+        lot,
+        existingCount,
+        defaultDimensions:
+          type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD },
+        fallbackLabel: formatObjectLabel(type, existingCount),
+        parkingControls: {
+          parkingCount,
+          parkingStallWidth,
+          parkingStallDepth,
+          parkingAisleWidth,
+          parkingAdaAisleWidth,
+          parkingAdaCount,
+          parkingCompactCount,
+          parkingCompactWidth,
+          parkingAngle,
+          parkingLoading,
         },
-        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-        meta: {
-          category: catalog.category,
-          ...(parkingParams ? { parkingParams } : {}),
-          ...(options?.style ? { style: options.style } : {}),
-          ...(options?.meta ?? {}),
-        },
-      };
-      if (type === "parking" && parkingParams) {
-        const totalStalls = Math.max(
-          parkingStalls ?? 0,
-          parkingParams.adaCount + parkingParams.compactCount,
-        );
-        const footprint = computeParkingFootprint(
-          nextPlacement,
-          parkingParams,
-          totalStalls,
-        );
-        nextPlacement.meta = {
-          ...nextPlacement.meta,
-          parkingCapacity: footprint.maxStalls,
-          parkingModuleCols: footprint.moduleCols,
-          parkingModuleRows: footprint.moduleRows,
-        };
-      }
-      if (["road", "driveway", "sidewalk"].includes(type)) {
-        nextPlacement.geometryType = "polyline";
-        const yFactor = type === "sidewalk" ? 0.42 : 0.72;
-        const endXFactor = type === "sidewalk" ? 0.64 : 0.54;
-        nextPlacement.geometry = [
-          [lot.w * 0.04, lot.h * yFactor],
-          [lot.w * 0.24, lot.h * yFactor],
-          [lot.w * endXFactor, lot.h * (type === "sidewalk" ? 0.42 : 0.54)],
-        ];
-        nextPlacement.capabilities = {
-          movable: true,
-          resizable: false,
-          rotatable: false,
-          deletable: true,
-        };
-      }
-      if (options?.geometryType === "polyline") {
-        nextPlacement.geometryType = "polyline";
-        const network = String(options?.meta?.network || "").toLowerCase();
-        const yFactor = network === "water" ? 0.28 : network === "sanitary" ? 0.78 : network === "storm" ? 0.58 : 0.68;
-        const startX = network === "water" ? 0.08 : network === "sanitary" ? 0.10 : 0.52;
-        const endX = network === "water" ? 0.88 : network === "sanitary" ? 0.86 : 0.86;
-        const rightSideRun =
-          network === "storm"
-            ? ([
-                [lot.w * endX, lot.h * yFactor],
-                [lot.w * endX, lot.h * 0.62],
-              ] as Array<[number, number]>)
-            : [];
-        nextPlacement.geometry = [
-          [lot.w * startX, lot.h * yFactor],
-          [lot.w * ((startX + endX) / 2), lot.h * yFactor],
-          [lot.w * endX, lot.h * yFactor],
-          ...rightSideRun,
-        ];
-        nextPlacement.capabilities = {
-          movable: true,
-          resizable: false,
-          rotatable: false,
-          deletable: true,
-        };
-      } else if (options?.geometryType === "polygon") {
-        nextPlacement.geometryType = "polygon";
-        nextPlacement.geometry = [
-          [0, 0],
-          [nextPlacement.w, 0],
-          [nextPlacement.w * 0.82, nextPlacement.d],
-          [nextPlacement.w * 0.18, nextPlacement.d],
-        ];
-      }
+        computeParkingFootprint,
+      });
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
       markSystemsStale(systemsImpactedByPlacement(nextPlacement));
       setActivePlacementId(autoPlaced ? null : nextPlacement.id);
