@@ -32,6 +32,7 @@ import {
 import type { CadDimensionMode, CadSymbolKind, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
+import { PreviewAnalysisPathsOverlay } from "./PreviewAnalysisPathsOverlay";
 import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
 import { PreviewCanvasControlStack } from "./PreviewCanvasControlStack";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
@@ -48,6 +49,8 @@ import { PreviewRectObjectChrome } from "./PreviewRectObjectChrome";
 import { PreviewSelectedObjectQuickToolbar } from "./PreviewSelectedObjectQuickToolbar";
 import { PreviewSelectionAffordances } from "./PreviewSelectionAffordances";
 import { PreviewPlanCanvasLayers } from "./PreviewPlanCanvasLayers";
+import { PreviewSuggestedObjectHitTargets } from "./PreviewSuggestedObjectHitTargets";
+import { PreviewWaterFireFlowHitTargets } from "./PreviewWaterFireFlowHitTargets";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import { usePreviewFocusTransform } from "./usePreviewFocusTransform";
 import { usePreviewAnnotationHover } from "./usePreviewAnnotationHover";
@@ -55,10 +58,7 @@ import { usePreviewMapLayerSync } from "./usePreviewMapLayerSync";
 import { usePreviewMapRuntime } from "./usePreviewMapRuntime";
 import { usePreviewResizeObservers } from "./usePreviewResizeObservers";
 import { WaterFireFlowEvidenceDock } from "./WaterFireFlowEvidenceDock";
-import {
-  formatFlowValue,
-  resolveSourceState,
-} from "../utils/previewGeometryTruth";
+import { resolveSourceState } from "../utils/previewGeometryTruth";
 import {
   clampValue,
   getPreviewCadLayer,
@@ -4141,30 +4141,12 @@ export default function PreviewPanel({
                         onClearHighlights?.();
                       }}
                     >
-                      {waterFireFlow.hydrants.map((hydrant) => {
-                        const [left, top] = sitePointToPreviewPercent([hydrant.x, hydrant.y]);
-                        const scenario = waterFireFlow.scenarios.find((item) => item.hydrantId === hydrant.id);
-                        const selected = waterFireFlow.selectedHydrant?.id === hydrant.id;
-                        return (
-                          <button
-                            key={`hydrant-hit-${hydrant.id}`}
-                            type="button"
-                            data-object-overlay
-                            aria-label={`Select ${hydrant.label} fire-flow scenario`}
-                            title={`${hydrant.label}: ${formatFlowValue(hydrant.availableFlowGpm, "gpm")}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (scenario) setSelectedFireScenarioId(scenario.id);
-                            }}
-                            className={`${passiveOverlayPointerEvents} absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white/20 transition ${
-                              selected
-                                ? "border-slate-950 shadow-[0_0_0_4px_rgba(14,165,233,0.18)]"
-                                : "border-white/80 hover:border-slate-950"
-                            }`}
-                            style={{ left: `${left}%`, top: `${top}%` }}
-                          />
-                        );
-                      })}
+                      <PreviewWaterFireFlowHitTargets
+                        waterFireFlow={waterFireFlow}
+                        passiveOverlayPointerEvents={passiveOverlayPointerEvents}
+                        sitePointToPreviewPercent={sitePointToPreviewPercent}
+                        setSelectedFireScenarioId={setSelectedFireScenarioId}
+                      />
                       {visibleCadObjects
                       .filter(
                         (item) => {
@@ -4385,81 +4367,25 @@ export default function PreviewPanel({
                           </div>
                         );
                       })}
-                      {suggestedPlacements
-                      .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
-                      .map((item) => {
-                        const rectPct = interactiveRectPercent(item, mapRef.current);
-                        if (!rectIntersectsPreview(rectPct)) return null;
-                        const rotation = showMap ? 0 : (item.rotation ?? 0);
-                        const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
-                        return (
-                          <div
-                            key={item.id}
-                            className={`${passiveOverlayPointerEvents} absolute`}
-                            style={{
-                              left: `${rectPct.left}%`,
-                              top: `${rectPct.top}%`,
-                              width: `${rectPct.width}%`,
-                              height: `${rectPct.height}%`,
-                              zIndex: hitZIndex,
-                              scrollMarginBottom: "10rem",
-                              transform: `rotate(${rotation}deg)`,
-                              transformOrigin: "center",
-                              cursor: "move",
-                            }}
-                            onMouseDown={(event) => {
-                              if (drawingOwnsCanvasHits) return;
-                              handleBuildingMouseDown(event, item, "move");
-                            }}
-                            onMouseEnter={() => {
-                              if (drawingOwnsCanvasHits) return;
-                              setHoveredObjectId(item.id);
-                            }}
-                            onMouseLeave={() => setHoveredObjectId(null)}
-                          >
-                            <div className="h-full w-full rounded-[8px] border border-dashed border-amber-400 bg-amber-200/10" />
-                            {hoveredObjectId === item.id ? <PreviewObjectHoverCard details={objectHoverDetails} /> : null}
-                          </div>
-                        );
-                      })}
-                      {analysisPaths && analysisPaths.length ? (
-                      <svg className="absolute inset-0" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        {analysisPaths.map((path) => {
-                          const isSelected = analysisHighlight?.pathId === path.id;
-                          const points = path.points?.length
-                            ? path.points
-                            : [path.from, path.to];
-                          const coords = points
-                            .map((pt) => {
-                              const [x, y] = sitePointToPreviewPercent([pt.x, pt.y]);
-                              return `${x},${y}`;
-                            })
-                            .join(" ");
-                          const labelPoint = points[Math.floor(points.length / 2)] ?? path.from;
-                          const [labelX, labelY] = sitePointToPreviewPercent([labelPoint.x, labelPoint.y]);
-                          return (
-                            <g key={path.id}>
-                              <polyline
-                                points={coords}
-                                fill="none"
-                                stroke={isSelected ? "#ef4444" : "#f97316"}
-                                strokeWidth={isSelected ? "0.75" : "0.4"}
-                                strokeDasharray="2 2"
-                              />
-                              <text
-                                x={labelX}
-                                y={labelY}
-                                fontSize="3"
-                                fill={isSelected ? "#dc2626" : "#ea580c"}
-                                textAnchor="middle"
-                              >
-                                {path.label}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </svg>
-                      ) : null}
+                      <PreviewSuggestedObjectHitTargets
+                        suggestedPlacements={suggestedPlacements}
+                        passiveOverlayPointerEvents={passiveOverlayPointerEvents}
+                        drawingOwnsCanvasHits={drawingOwnsCanvasHits}
+                        hoveredObjectId={hoveredObjectId}
+                        objectHoverDetails={objectHoverDetails}
+                        mapAnchoredRectPercent={(item) => interactiveRectPercent(item, mapRef.current)}
+                        rectIntersectsPreview={rectIntersectsPreview}
+                        resolveObjectHitZIndex={resolveObjectHitZIndex}
+                        selectedBuildingId={selectedBuildingId}
+                        showMap={showMap}
+                        handleBuildingMouseDown={handleBuildingMouseDown}
+                        setHoveredObjectId={setHoveredObjectId}
+                      />
+                      <PreviewAnalysisPathsOverlay
+                        analysisPaths={analysisPaths}
+                        analysisHighlight={analysisHighlight}
+                        sitePointToPreviewPercent={sitePointToPreviewPercent}
+                      />
                     </div>
                   </>
                 ) : null}
