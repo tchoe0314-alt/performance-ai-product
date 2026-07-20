@@ -78,6 +78,24 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
   });
 
+  test("chat explains preview marks like a human instead of leaving mystery geometry", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add detention basin");
+    await runCommand(page, "add water line");
+    await runCommand(page, "what are these random circles and lines?");
+
+    await expect(page.getByText("Civora: The preview is a review canvas", { exact: false })).toBeVisible({ timeout: 5_000 });
+    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    const panel = page.getByTestId("workspace-right-panel");
+    await expect(panel).toContainText("The preview is a review canvas", { timeout: 5_000 });
+    await expect(panel).toContainText("Lines are usually roads, driveways, sidewalks, utilities, or draft linework");
+    await expect(panel).toContainText("Circles/points are usually hydrants, inlets, outfalls, manholes, or point markers");
+    await expect(panel).toContainText("Object Manager");
+    await expect(panel).not.toContainText(/construction-ready|approved for construction/i);
+  });
+
   test("natural language address and site size setup bypasses generic design clarification", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
 

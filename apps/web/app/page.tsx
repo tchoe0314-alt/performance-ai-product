@@ -12271,6 +12271,47 @@ function PerformanceAIDashboardView({
       return true;
     }
 
+    if (/(what.*(random|weird|messy).*(circle|line|shape|stuff)|what.*(circle|line|shape).*mean|why.*(circle|line|shape|preview).*look|explain.*(preview|drawing|canvas|map))/i.test(normalized)) {
+      const visibleObjects = placed.filter((item) => !item.meta?.ui_hidden);
+      const byKind = (matcher: (item: BuildingPlacement) => boolean) => visibleObjects.filter(matcher).length;
+      const lineCount = byKind((item) =>
+        ["road", "driveway", "sidewalk", "utility_corridor"].includes(String(item.type)) ||
+        ["line", "polyline"].includes(String(item.geometryType)),
+      );
+      const pointCount = byKind((item) =>
+        ["hydrant", "inlet", "outfall", "manhole", "point"].includes(String(item.type)) ||
+        String(item.geometryType) === "point",
+      );
+      const areaCount = byKind((item) =>
+        ["site", "building", "office_building", "parking", "basin"].includes(String(item.type)) ||
+        ["box", "rectangle", "polygon"].includes(String(item.geometryType)),
+      );
+      const sourcePreviewCount = visibleObjects.filter((item) =>
+        ["detected_from_gis", "detected_from_image", "inferred"].includes(String(item.source)),
+      ).length;
+      const draftCount = visibleObjects.filter((item) =>
+        ["user", "user_confirmed", "manual_drawn"].includes(String(item.source)) || item.meta?.command_created,
+      ).length;
+      const selectedLine = selected
+        ? `Selected now: ${formatPlacement(selected)}.`
+        : "Nothing is selected; click a shape or open Object Manager to inspect one.";
+      appendChatMessage(
+        "assistant",
+        [
+          "The preview is a review canvas, so every mark should have a job:",
+          `- Lines are usually roads, driveways, sidewalks, utilities, or draft linework (${lineCount} visible).`,
+          `- Circles/points are usually hydrants, inlets, outfalls, manholes, or point markers (${pointCount} visible).`,
+          `- Filled/outlined areas are the site, buildings, parking, basins, or drawn areas (${areaCount} visible).`,
+          sourcePreviewCount ? `- ${sourcePreviewCount} item(s) came from source/context detection and are shown as review candidates.` : "",
+          draftCount ? `- ${draftCount} item(s) are user/draft objects you can select, rename, hide, recolor, or delete in Object Manager.` : "",
+          selectedLine,
+          "If something looks wrong, select it and use Object Manager to rename, change type/color, hide it, or delete it. Civora should not leave unexplained marks on the canvas.",
+        ].filter(Boolean).join("\n"),
+        "status",
+      );
+      return true;
+    }
+
     if (/(what did.*use|what.*used.*draw|use.*my (drawing|objects|layout)|what.*from.*(drawing|objects|layout)|did.*use.*(drawing|objects|layout))/i.test(normalized)) {
       const userLayoutObjects = placed.filter((item) => {
         if (item.type === "site" || item.meta?.generated_review_concept) return false;
