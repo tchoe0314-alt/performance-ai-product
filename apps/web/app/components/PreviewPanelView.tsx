@@ -160,6 +160,7 @@ import {
   finishPreviewCadActiveCommand,
   handlePreviewActiveCanvasDrawInput,
   handlePreviewCadActiveCommandInput,
+  handlePreviewCadGeometryCommand,
   handlePreviewCadTransformCommand,
 } from "../utils/previewCadActiveCommand";
 import {
@@ -2601,83 +2602,18 @@ export default function PreviewPanel({
       return;
     }
 
-    if (commandKey === "LINE") {
-      if (pointArgs.length >= 2) {
-        createCadCommandGeometry("LINE", "polyline", pointArgs, { label: "Command Line", minPoints: 2 });
-      } else {
-        setDraftPoints([]);
-        setDraftPreviewPoint(null);
-        setCadActiveCommand({ command: "LINE", kind: "draw", mode: "polyline", minPoints: 2 });
-        setDrawMode("polyline");
-        onSetPreviewInteraction("edit");
-        pushCadCommandFeedback("LINE", "info", "LINE active. Type the first point like 0,0, then the next point like 100,0. Press Enter/Run empty to finish.");
-      }
-      return;
-    }
-    if (commandKey === "PLINE") {
-      if (pointArgs.length >= 2) {
-        createCadCommandGeometry("PLINE", "polyline", pointArgs, { label: "Command Polyline", minPoints: 2 });
-      } else {
-        setDraftPoints([]);
-        setDraftPreviewPoint(null);
-        setCadActiveCommand({ command: "PLINE", kind: "draw", mode: "polyline", minPoints: 2 });
-        setDrawMode("polyline");
-        onSetPreviewInteraction("edit");
-        pushCadCommandFeedback("PLINE", "info", "PLINE active. Type points one at a time, then press Enter/Run empty to finish.");
-      }
-      return;
-    }
-    if (commandKey === "RECTANGLE" || commandKey === "BOX") {
-      if (pointArgs.length >= 2) {
-        createCadCommandGeometry("RECTANGLE", "rect", pointArgs.slice(0, 2), { label: "Command Rectangle", minPoints: 2 });
-      } else {
-        setDraftPoints([]);
-        setDraftPreviewPoint(null);
-        setCadActiveCommand({ command: "RECTANGLE", kind: "draw", mode: "rect", minPoints: 2 });
-        setDrawMode("rect");
-        onSetPreviewInteraction("edit");
-        pushCadCommandFeedback("RECTANGLE", "info", "RECTANGLE active. Type first corner like 0,0, then opposite corner like 100,60.");
-      }
-      return;
-    }
-    if (commandKey === "CIRCLE") {
-      const radius = parseCadNumber(args[1] ?? args[0] ?? "", NaN);
-      const center = pointArgs[0];
-      if (!center || !Number.isFinite(radius) || radius <= 0) {
-        pushCadCommandFeedback("CIRCLE", "blocked", "CIRCLE blocked: use CIRCLE centerX,centerY radius.");
-        return;
-      }
-      const points = Array.from({ length: 32 }, (_, index) => {
-        const radians = (index / 32) * Math.PI * 2;
-        return [center[0] + Math.cos(radians) * radius, center[1] + Math.sin(radians) * radius] as [number, number];
-      });
-      createCadCommandGeometry("CIRCLE", "polygon", points, {
-        label: "Command Circle",
-        meta: { cad_curve_storage: "32_segment_chord_polygon", cad_radius_ft: radius },
-        minPoints: 3,
-      });
-      return;
-    }
-    if (commandKey === "ARC") {
-      const center = pointArgs[0];
-      const radius = parseCadNumber(args[1] ?? "", NaN);
-      const startDeg = parseCadNumber(args[2] ?? "", NaN);
-      const endDeg = parseCadNumber(args[3] ?? "", NaN);
-      if (!center || !Number.isFinite(radius) || radius <= 0 || !Number.isFinite(startDeg) || !Number.isFinite(endDeg)) {
-        pushCadCommandFeedback("ARC", "blocked", "ARC blocked: use ARC centerX,centerY radius startDeg endDeg.");
-        return;
-      }
-      const sweep = endDeg >= startDeg ? endDeg - startDeg : endDeg + 360 - startDeg;
-      const steps = Math.max(4, Math.ceil(sweep / 12));
-      const points = Array.from({ length: steps + 1 }, (_, index) => {
-        const radians = ((startDeg + (sweep * index) / steps) * Math.PI) / 180;
-        return [center[0] + Math.cos(radians) * radius, center[1] + Math.sin(radians) * radius] as [number, number];
-      });
-      createCadCommandGeometry("ARC", "polyline", points, {
-        label: "Command Arc",
-        meta: { cad_curve_storage: "sampled_chord_polyline", cad_radius_ft: radius, cad_start_deg: startDeg, cad_end_deg: endDeg },
-        minPoints: 2,
-      });
+    if (handlePreviewCadGeometryCommand({
+      commandKey,
+      args,
+      pointArgs,
+      setDraftPoints,
+      setDraftPreviewPoint,
+      setCadActiveCommand,
+      setDrawMode,
+      onSetPreviewInteraction,
+      createCadCommandGeometry,
+      pushCadCommandFeedback,
+    })) {
       return;
     }
     if (commandKey === "ARRAY") {
