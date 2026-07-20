@@ -225,6 +225,10 @@ import {
   buildPreviewSourceContextBadges,
 } from "./utils/dashboardAutoSiteContext";
 import {
+  buildCanonicalWorkspaceBlockers,
+  buildGeneratePreflightBlockers,
+} from "./utils/dashboardWorkspaceBlockers";
+import {
   markCivoraInteraction,
   measureCivoraInteractionAfterPaint,
 } from "./utils/performanceProbes";
@@ -9262,31 +9266,19 @@ function PerformanceAIDashboardView({
     [assumedTerrainSlopePct, autoSiteContextFlowSummary, hasAssumedTerrainSlope],
   );
   const getGeneratePreflightBlockers = useCallback(
-    (target: SystemGenerationTarget) => {
-      const lot = resolveLotBounds();
-      const missingBoundary = !(lot.w && lot.h);
-      const areaAcres = siteAreaAcresFromSize(lot.w, lot.h);
-      const needsAll = target === "full";
-      const needsGrading = needsAll || target === "grading" || target === "drainage";
-      const blockers: Array<{ label: string; action: SidePanelKey }> = [];
-
-      if (missingBoundary) blockers.push({ label: "missing site boundary dimensions", action: "site_existing" });
-      if (!siteScaleLocked) blockers.push({ label: "site boundary exists but is not locked", action: "site_existing" });
-      if (needsGrading && !hasTerrainSource) blockers.push({ label: "missing terrain/source", action: "import_survey" });
-      if (!hasStandardsEvidence) blockers.push({ label: "missing standards", action: "standards" });
-      if (needsAll && hasAppliedAddress && onlineSourceLookupUnavailable) {
-        blockers.push({ label: "Address applied; online source lookup not configured/available.", action: "data" });
-      }
-      if (needsAll && !hasVerifiedSurveyControl && hasAssumedTerrainSlope) {
-        blockers.push({ label: "assumed terrain slope / survey-control still needed", action: "import_survey" });
-      }
-      if (areaAcres > SITE_GRADING_HARD_BLOCK_ACRES && needsGrading) {
-        blockers.push({ label: OVERSIZED_SITE_MESSAGE, action: "site_existing" });
-      }
-      return Array.from(new Map(blockers.map((item) => [item.label, item])).values());
-    },
+    (target: SystemGenerationTarget) =>
+      buildGeneratePreflightBlockers({
+        target,
+        lot: resolveLotBounds(),
+        siteScaleLocked,
+        hasTerrainSource,
+        hasStandardsEvidence,
+        hasAppliedAddress,
+        onlineSourceLookupUnavailable,
+        hasVerifiedSurveyControl,
+        hasAssumedTerrainSlope,
+      }),
     [
-      buildingPlacements,
       hasAppliedAddress,
       hasAssumedTerrainSlope,
       hasStandardsEvidence,
@@ -9300,17 +9292,13 @@ function PerformanceAIDashboardView({
   const fullGeneratePreflightBlockers = getGeneratePreflightBlockers("full");
   const canonicalWorkspaceBlockers = useMemo(
     () =>
-      uniqueStrings([
-        ...fullGeneratePreflightBlockers.map((item) => item.label),
-        ...issues.map((issue) => issue.message),
-        ...analysisIssues.map((issue) => issue.message),
-        siteScaleLocked && siteInputs?.site_boundary_state === "draft_editable"
-          ? "site locked state contradicts draft boundary source"
-          : "",
-        !siteScaleLocked && siteInputs?.site_boundary_state === "locked_canonical"
-          ? "site unlocked state contradicts locked boundary source"
-          : "",
-      ]).filter(Boolean),
+      buildCanonicalWorkspaceBlockers({
+        fullGeneratePreflightBlockers,
+        issues,
+        analysisIssues,
+        siteBoundaryState: siteInputs?.site_boundary_state,
+        siteScaleLocked,
+      }),
     [
       analysisIssues,
       fullGeneratePreflightBlockers,
