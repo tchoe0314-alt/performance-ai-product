@@ -16,12 +16,11 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
   await expect(page.locator("#operations")).toBeVisible();
   await expect(page.locator("#responsibility")).toBeVisible();
 
-  await page.goto(`${baseURL}/?demo=1`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseURL}/demo/workspace?debugPreview=1&debugPanel=dashboard`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
-  await page.getByRole("banner").getByRole("button", { name: "Recent changes" }).click();
   const rightPanel = page.getByTestId("workspace-right-panel");
   await expect(rightPanel.getByText("Onboarding checklist")).toBeVisible();
-  await expect(rightPanel.getByText("What do statuses mean?")).toBeVisible();
+  await expect(rightPanel.getByText("What do statuses mean?")).toHaveCount(0);
   await expect(rightPanel.getByText("Report issue")).toBeVisible();
   await rightPanel.getByText("Report issue", { exact: true }).click();
   await expect(rightPanel.getByText("Diagnostic summary", { exact: true })).toBeVisible();

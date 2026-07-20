@@ -14,17 +14,6 @@ type DashboardGuidancePanelProps = {
   onOpenPanel: (panel: SidePanelKey) => void;
 };
 
-const statusMeanings = [
-  ["Ready", "Enough current, traceable evidence exists for review."],
-  ["Needs Review", "A user or licensed engineer must check the output, source, or assumption."],
-  ["Needs input", "Something important is missing before the next review step can continue."],
-  ["Missing input", "Helpful information is absent, such as a locked site, survey/control, outlet, tie-in, datum, or accepted standards."],
-  ["Draft/review-required", "A draft value or geometry item is carried forward only so review can continue."],
-  ["Visual preview only", "The view is a visual aid and is not evidence by itself."],
-  ["Engineer review required", "A qualified user or licensed engineer must review before reliance."],
-  ["Field use", "Remains outside Civora and requires independent licensed-professional review."],
-];
-
 export function DashboardGuidancePanel({ stats, checklistItems, onOpenPanel }: DashboardGuidancePanelProps) {
   return (
     <>
@@ -63,19 +52,6 @@ export function DashboardGuidancePanel({ stats, checklistItems, onOpenPanel }: D
               <p className="mt-1 text-xs text-slate-500">{item.action}</p>
               <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{item.detail}</p>
             </button>
-          ))}
-        </div>
-      </details>
-      <details className="rounded-2xl border border-slate-200 bg-white p-4">
-        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-          What do statuses mean?
-        </summary>
-        <div className="mt-3 space-y-2 text-sm text-slate-600">
-          {statusMeanings.map(([label, desc]) => (
-            <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="font-semibold text-slate-800">{label}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">{desc}</p>
-            </div>
           ))}
         </div>
       </details>
