@@ -234,6 +234,9 @@ import {
   cloneBuildingPlacementWithUpdatesForUndo,
   createDraftCopyWithTrace as createObjectManagerDraftCopyWithTrace,
   createTraceAwareBulkUpdate as createObjectManagerTraceAwareBulkUpdate,
+  formatVisibleDraftSelectionMessage,
+  getVisibleEditableDraftObjectIds,
+  invertVisibleDraftSelection,
 } from "./utils/dashboardObjectManagerTrace";
 import { buildProjectInputPlacements } from "./utils/projectInputRestore";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
@@ -3967,47 +3970,27 @@ function PerformanceAIDashboardView({
   }, []);
 
   const handleObjectManagerSelectVisibleDraft = useCallback(() => {
-    const visibleDraftIds = buildingPlacements
-      .filter((item) => {
-        if (item.type === "site") return false;
-        if (item.meta?.ui_hidden) return false;
-        if (item.meta?.ai_realism_artifact) return false;
-        if (item.capabilities?.deletable === false) return false;
-        return true;
-      })
-      .map((item) => item.id);
+    const visibleDraftIds = getVisibleEditableDraftObjectIds(buildingPlacements);
     if (!visibleDraftIds.length) {
       reportObjectActionBlocker("Select visible blocked: no visible editable draft objects are available.");
       return;
     }
     setSelectedObjectIds(visibleDraftIds);
     setActivePlacementId(visibleDraftIds[0] ?? null);
-    const message = `Selected ${visibleDraftIds.length} visible draft object${visibleDraftIds.length === 1 ? "" : "s"}.`;
+    const message = formatVisibleDraftSelectionMessage(visibleDraftIds.length);
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
   }, [buildingPlacements, reportObjectActionBlocker]);
 
   const handleObjectManagerInvertSelection = useCallback(() => {
-    const visibleDraftIds = buildingPlacements
-      .filter((item) => {
-        if (item.type === "site") return false;
-        if (item.meta?.ui_hidden) return false;
-        if (item.meta?.ai_realism_artifact) return false;
-        if (item.capabilities?.deletable === false) return false;
-        return true;
-      })
-      .map((item) => item.id);
+    const visibleDraftIds = getVisibleEditableDraftObjectIds(buildingPlacements);
     if (!visibleDraftIds.length) {
       reportObjectActionBlocker("Invert selection blocked: no visible editable draft objects are available.");
       return;
     }
-    const selectedIdSet = new Set(selectedObjectIds);
-    const nextSelection = visibleDraftIds.filter((id) => !selectedIdSet.has(id));
+    const { nextSelection, message } = invertVisibleDraftSelection({ visibleDraftIds, selectedObjectIds });
     setSelectedObjectIds(nextSelection);
     setActivePlacementId(nextSelection[0] ?? null);
-    const message = nextSelection.length
-      ? `Inverted selection to ${nextSelection.length} visible draft object${nextSelection.length === 1 ? "" : "s"}.`
-      : "Inverted selection: no visible draft objects remain selected.";
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
   }, [buildingPlacements, reportObjectActionBlocker, selectedObjectIds]);

@@ -1,6 +1,39 @@
 import type { BuildingPlacement } from "../types";
 import type { DraftUndoAction } from "./dashboardTypes";
 
+export function getVisibleEditableDraftObjectIds(buildingPlacements: BuildingPlacement[]): string[] {
+  return buildingPlacements
+    .filter((item) => {
+      if (item.type === "site") return false;
+      if (item.meta?.ui_hidden) return false;
+      if (item.meta?.ai_realism_artifact) return false;
+      if (item.capabilities?.deletable === false) return false;
+      return true;
+    })
+    .map((item) => item.id);
+}
+
+export function formatVisibleDraftSelectionMessage(count: number): string {
+  return `Selected ${count} visible draft object${count === 1 ? "" : "s"}.`;
+}
+
+export function invertVisibleDraftSelection({
+  visibleDraftIds,
+  selectedObjectIds,
+}: {
+  visibleDraftIds: string[];
+  selectedObjectIds: string[];
+}): { nextSelection: string[]; message: string } {
+  const selectedIdSet = new Set(selectedObjectIds);
+  const nextSelection = visibleDraftIds.filter((id) => !selectedIdSet.has(id));
+  return {
+    nextSelection,
+    message: nextSelection.length
+      ? `Inverted selection to ${nextSelection.length} visible draft object${nextSelection.length === 1 ? "" : "s"}.`
+      : "Inverted selection: no visible draft objects remain selected.",
+  };
+}
+
 export function cloneBuildingPlacementForUndo(item: BuildingPlacement): BuildingPlacement {
   return {
     ...item,
