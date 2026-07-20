@@ -9,7 +9,7 @@ import type { BuildingPlacement } from "../types";
 import { CadPrecisionDock } from "./CadPrecisionDock";
 import { CanvasQuickDrawPalette } from "./CanvasQuickDrawPalette";
 import { Preview3DShell } from "./Preview3DShell";
-import { formatCount, formatMetric } from "../utils/formatting";
+import { formatMetric } from "../utils/formatting";
 import {
   boundsForSiteGeometry,
   resizeSiteGeometryFromOrigin,
@@ -40,14 +40,10 @@ import { PreviewCanvasControlStack } from "./PreviewCanvasControlStack";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
 import { PreviewDraftGeometryOverlay } from "./PreviewDraftGeometryOverlay";
 import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
-import {
-  PreviewFullscreenEditableObjectOverlay,
-  PreviewFullscreenSuggestedObjectOverlay,
-} from "./PreviewFullscreenObjectOverlays";
 import { PreviewGradingEarthworkDock } from "./PreviewGradingEarthworkDock";
+import { PreviewGeneratedPlanFullscreen } from "./PreviewGeneratedPlanFullscreen";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
-import { PreviewMetricOverlayCard } from "./PreviewMetricOverlayCard";
 import { PreviewObjectHoverCard } from "./PreviewObjectHoverCard";
 import { PreviewParkingModules } from "./PreviewParkingModules";
 import {
@@ -304,7 +300,7 @@ export default function PreviewPanel({
   }, [previewLabels, selectedIssueLabel]);
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
   const [managedObjectId, setManagedObjectId] = useState<string | null>(null);
-  const [fullscreenContainerReady, setFullscreenContainerReady] = useState(false);
+  const fullscreenContainerReady = false;
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [cadSnapEnabled, setCadSnapEnabled] = useState(true);
@@ -4593,206 +4589,58 @@ export default function PreviewPanel({
           )}
         </div>
 
-      {previewFullscreenOpen && planPreviewUrl && !showMap ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/92 backdrop-blur-sm">
-          <div className="flex h-full w-full flex-col bg-slate-950">
-            <PreviewFullscreenHeader
-              description="Inspect the latest engineered plan without the sidebar chrome."
-              onClose={onCloseFullscreen}
-            />
-            <div className="flex min-h-0 flex-1 items-center justify-center p-0">
-              <div
-                ref={fullscreenRef}
-                className="relative h-full w-full"
-                onDragOver={(event) => {
-                  event.preventDefault();
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const payload = event.dataTransfer?.getData("civora-object-id");
-                  if (!payload) return;
-                  onPlaceObject(payload, {
-                    x: Math.min(Math.max((event.clientX - (fullscreenImageBounds?.left ?? 0)) / Math.max(fullscreenImageBounds?.width ?? 1, 1), 0), 1),
-                    y: Math.min(Math.max((event.clientY - (fullscreenImageBounds?.top ?? 0)) / Math.max(fullscreenImageBounds?.height ?? 1, 1), 0), 1),
-                  });
-                }}
-                onMouseMove={(event) => {
-                  if (allowMapInteraction) return;
-                  if (fullscreenImageBounds) {
-                    updateDraggedBuilding(event, fullscreenImageBounds);
-                  }
-                  resolveHover(event, fullscreenRef, fullscreenImageBounds, setFullscreenHoverPoint);
-                }}
-                onMouseLeave={() => {
-                  clearScheduledHoverAnnotationState(setFullscreenHoverPoint);
-                  setDraggingBuildingId(null);
-                  setDraggingMode(null);
-                }}
-                onMouseUp={() => {
-                  setDraggingBuildingId(null);
-                  setDraggingMode(null);
-                  setDraggingVertex(null);
-                }}
-                onClick={(event) => {
-                  if (allowMapInteraction) return;
-                  if (placementMode) {
-                    resolvePlacement(event, fullscreenRef, fullscreenImageBounds);
-                    return;
-                  }
-                  if (!showHover || !hoveredAnnotation) return;
-                  setPinnedAnnotation((prev) =>
-                    prev?.label === hoveredAnnotation.label ? null : hoveredAnnotation,
-                  );
-                }}
-              >
-                {showMap ? (
-                  <div
-                    ref={(node) => {
-                      fullscreenMapContainerRef.current = node;
-                      setFullscreenContainerReady(Boolean(node));
-                    }}
-                    className="absolute inset-0 overflow-hidden"
-                    style={{ width: "100%", height: "100%" }}
-                  />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    ref={fullscreenImageRef}
-                    src={planPreviewUrl}
-                    alt="Generated plan preview fullscreen"
-                    className="h-full w-full bg-white object-contain"
-                    onLoad={() =>
-                      updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds)
-                    }
-                  />
-                )}
-                {showHover && !planPreviewAnnotations?.labels?.length ? (
-                  <div className="pointer-events-none absolute right-6 top-6 rounded-2xl border border-white/20 bg-slate-900/80 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                    No hover labels yet. Refresh the preview to generate them.
-                  </div>
-                ) : null}
-                {planPreviewAnnotations?.labels?.length && fullscreenImageBounds ? (
-                  <>
-                    <PreviewPlanAnnotationOverlay
-                      imageBounds={fullscreenImageBounds}
-                      labels={planPreviewAnnotations.labels}
-                      selectedIssueLabel={selectedIssueLabel}
-                      showHover={showHover}
-                      activeHighlightBounds={activeHighlightBounds}
-                      issueHighlightBounds={issueHighlightBounds}
-                      showUnlockedSiteFrame={!siteLocked && lotWidth > 0 && lotHeight > 0}
-                    />
-                    {visibleCadObjects
-                      .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
-                      .map((item) => {
-                        const rectPct = interactiveRectPercent(item, fullscreenMapRef.current);
-                        if (!rectIntersectsPreview(rectPct)) return null;
-                        const rotation = showMap ? 0 : (item.rotation ?? 0);
-                        const isSite = item.type === "site";
-                        const allowItemInteraction =
-                          drawMode === "select" &&
-                          (!isSite || (previewInteraction === "edit" && !siteLocked));
-                        const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
-                        const borderColor = getPreviewObjectBorderColor(item);
-                        const outlineColor = getPreviewObjectOutlineColor(item);
-                        return (
-                          <PreviewFullscreenEditableObjectOverlay
-                            key={item.id}
-                            rectPct={rectPct}
-                            rotation={rotation}
-                            hitZIndex={hitZIndex}
-                            allowMapInteraction={allowMapInteraction}
-                            allowItemInteraction={allowItemInteraction}
-                            placementMode={Boolean(placementMode)}
-                            borderColor={borderColor}
-                            outlineColor={outlineColor}
-                            onMoveMouseDown={(event) => {
-                              if (allowMapInteraction || !allowItemInteraction) return;
-                              handleBuildingMouseDown(event, item, "move");
-                            }}
-                            onSelect={(event) => {
-                              if (allowMapInteraction || !allowItemInteraction) return;
-                              if (!placementMode) return;
-                              event.stopPropagation();
-                              onSelectBuilding(item.id);
-                            }}
-                            onRotateMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
-                            onRotateClick={(event) => {
-                                event.stopPropagation();
-                                setLastRectEdit({
-                                  id: item.id,
-                                  snapshot: { ...item },
-                                  action: "update",
-                                  ts: Date.now(),
-                                });
-                                const nextRotation = (((item.rotation ?? 0) + 15) % 360 + 360) % 360;
-                                if (item.source === "detected_from_image") {
-                                  onUpdateSuggested(item.id, { rotation: nextRotation });
-                                } else {
-                                  onUpdateBuilding(item.id, { rotation: nextRotation });
-                                }
-                              }}
-                            onResizeMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
-                          />
-                        );
-                      })}
-                      {suggestedPlacements
-                        .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
-                        .map((item) => {
-                          const rectPct = interactiveRectPercent(item, fullscreenMapRef.current);
-                          if (!rectIntersectsPreview(rectPct)) return null;
-                          const rotation = showMap ? 0 : (item.rotation ?? 0);
-                          const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
-                          const borderColor = getPreviewObjectBorderColor(item, { fallback: "border-slate-400" });
-                          return (
-                            <PreviewFullscreenSuggestedObjectOverlay
-                              key={item.id}
-                              item={item}
-                              rectPct={rectPct}
-                              rotation={rotation}
-                              hitZIndex={hitZIndex}
-                              borderColor={borderColor}
-                              onHover={setHoveredObjectId}
-                              onSelect={(event) => {
-                                event.stopPropagation();
-                                onSelectBuilding(item.id);
-                              }}
-                            />
-                          );
-                        })}
-                  </>
-                ) : null}
-                {showHover && activeAnnotation && fullscreenHoverPoint ? (
-                  <PreviewAnnotationHoverCard
-                    annotation={activeAnnotation}
-                    details={hoverDetails}
-                    point={fullscreenHoverPoint}
-                    maxLeft={620}
-                    maxTop={520}
-                  />
-              ) : null}
-                {allowEdits && showMeasurements ? (
-                  <PreviewMetricOverlayCard
-                    title="Measurements"
-                    position="top-left"
-                    stats={measurementOverlayStats}
-                    formatMetric={formatMetric}
-                    formatCount={formatCount}
-                  />
-                ) : null}
-                {allowEdits && showCalculations ? (
-                  <PreviewMetricOverlayCard
-                    title="Calculations"
-                    position="bottom-left"
-                    stats={calculationOverlayStats}
-                    formatMetric={formatMetric}
-                  />
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <PreviewGeneratedPlanFullscreen
+        open={previewFullscreenOpen && !showMap}
+        planPreviewUrl={planPreviewUrl}
+        fullscreenRef={fullscreenRef}
+        fullscreenImageRef={fullscreenImageRef}
+        fullscreenImageBounds={fullscreenImageBounds}
+        setFullscreenImageBounds={setFullscreenImageBounds}
+        updateImageBounds={updateImageBounds}
+        onCloseFullscreen={onCloseFullscreen}
+        onPlaceObject={onPlaceObject}
+        updateDraggedBuilding={updateDraggedBuilding}
+        resolveHover={resolveHover}
+        clearScheduledHoverAnnotationState={clearScheduledHoverAnnotationState}
+        setFullscreenHoverPoint={setFullscreenHoverPoint}
+        setDraggingBuildingId={setDraggingBuildingId}
+        setDraggingMode={setDraggingMode}
+        setDraggingVertex={setDraggingVertex}
+        resolvePlacement={resolvePlacement}
+        placementMode={placementMode}
+        showHover={showHover}
+        hoveredAnnotation={hoveredAnnotation}
+        setPinnedAnnotation={setPinnedAnnotation}
+        planPreviewAnnotations={planPreviewAnnotations}
+        selectedIssueLabel={selectedIssueLabel}
+        activeHighlightBounds={activeHighlightBounds}
+        issueHighlightBounds={issueHighlightBounds}
+        siteLocked={Boolean(siteLocked)}
+        lotWidth={lotWidth}
+        lotHeight={lotHeight}
+        visibleCadObjects={visibleCadObjects}
+        suggestedPlacements={suggestedPlacements}
+        interactiveRectPercent={(item) => interactiveRectPercent(item, null)}
+        rectIntersectsPreview={rectIntersectsPreview}
+        resolveObjectHitZIndex={resolveObjectHitZIndex}
+        selectedBuildingId={selectedBuildingId}
+        drawMode={drawMode}
+        previewInteraction={previewInteraction}
+        handleBuildingMouseDown={handleBuildingMouseDown}
+        onSelectBuilding={onSelectBuilding}
+        setLastRectEdit={setLastRectEdit}
+        onUpdateSuggested={onUpdateSuggested}
+        onUpdateBuilding={onUpdateBuilding}
+        setHoveredObjectId={setHoveredObjectId}
+        activeAnnotation={activeAnnotation}
+        hoverDetails={hoverDetails}
+        fullscreenHoverPoint={fullscreenHoverPoint}
+        allowEdits={allowEdits}
+        showMeasurements={showMeasurements}
+        showCalculations={showCalculations}
+        measurementOverlayStats={measurementOverlayStats}
+        calculationOverlayStats={calculationOverlayStats}
+      />
     </div>
   );
 }
