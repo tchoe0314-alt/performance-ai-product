@@ -78,7 +78,6 @@ import {
   clampValue,
   getPreviewCadLayer,
   getPreviewEditCapabilities,
-  getPreviewObjectActionBlocker as resolvePreviewObjectActionBlocker,
   getPreviewObjectDimensionsLabel as resolvePreviewObjectDimensionsLabel,
   getPreviewObjectGeometryPoints,
   getPreviewObjectSourceLabel as resolvePreviewObjectSourceLabel,
@@ -109,10 +108,7 @@ import {
   getDraftGeometryMinPointCount,
   resolveDraftGeometryEffectivePoints,
 } from "../utils/previewDraftGeometryHelpers";
-import {
-  buildPreviewObjectManagerCounts,
-  buildPreviewObjectManagerRows,
-} from "../utils/previewObjectManager";
+import { usePreviewObjectManagerModel } from "../utils/previewObjectManager";
 import {
   buildPreviewAnnotationHoverDetails,
   buildPreviewObjectHoverDetails,
@@ -818,19 +814,18 @@ export default function PreviewPanel({
 
   const getCadLayer = useCallback(getPreviewCadLayer, []);
 
-  const cadLayerOptions = useMemo(() => {
-    const layers = new Set(["C-DRAFT", "C-SITE", "C-ROAD", "C-UTIL", "C-DRAIN", "C-BLDG", "C-SYMB", "C-ANNO"]);
-    [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach((item) => layers.add(getCadLayer(item)));
-    return Array.from(layers).sort();
-  }, [buildingPlacements, cadEntityPreviewObjects, getCadLayer, suggestedPlacements]);
-  const objectManagerRows = useMemo(
-    () => buildPreviewObjectManagerRows([...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]),
-    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements],
-  );
-  const objectManagerCounts = useMemo(
-    () => buildPreviewObjectManagerCounts({ rows: objectManagerRows, hiddenCadLayers, getCadLayer }),
-    [getCadLayer, hiddenCadLayers, objectManagerRows],
-  );
+  const {
+    cadLayerOptions,
+    getPreviewObjectActionBlocker,
+    objectManagerCounts,
+    objectManagerRows,
+    previewObjectEditableSource,
+  } = usePreviewObjectManagerModel({
+    buildingPlacements,
+    cadEntityPreviewObjects,
+    hiddenCadLayers,
+    suggestedPlacements,
+  });
   const getPreviewObjectDimensionsLabel = useCallback(resolvePreviewObjectDimensionsLabel, []);
   const getPreviewObjectSourceLabel = useCallback(
     (item: BuildingPlacement) =>
@@ -843,22 +838,6 @@ export default function PreviewPanel({
   const getPreviewObjectStatusLabel = useCallback(
     (item: BuildingPlacement) => resolvePreviewObjectStatusLabel(item, siteLocked),
     [siteLocked],
-  );
-  const previewObjectEditableSource = useCallback(
-    (item: BuildingPlacement) =>
-      buildingPlacements.some((candidate) => candidate.id === item.id) ||
-      suggestedPlacements.some((candidate) => candidate.id === item.id),
-    [buildingPlacements, suggestedPlacements],
-  );
-  const getPreviewObjectActionBlocker = useCallback(
-    (item: BuildingPlacement | null, action: "rename" | "style" | "type" | "hide" | "delete" | "focus") =>
-      resolvePreviewObjectActionBlocker({
-        item,
-        action,
-        isEditableSource: item ? previewObjectEditableSource(item) : false,
-        isCanonicalBuilding: item ? buildingPlacements.some((candidate) => candidate.id === item.id) : false,
-      }),
-    [buildingPlacements, previewObjectEditableSource],
   );
   const updatePreviewManagedObject = useCallback(
     (item: BuildingPlacement, updates: Partial<BuildingPlacement>) => {

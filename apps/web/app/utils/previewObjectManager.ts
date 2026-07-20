@@ -1,4 +1,7 @@
 import type { BuildingPlacement } from "../types";
+import { useCallback, useMemo } from "react";
+import { getPreviewCadLayer } from "./previewCadObjectHelpers";
+import { getPreviewObjectActionBlocker as resolvePreviewObjectActionBlocker } from "./previewCadObjectHelpers";
 
 export type PreviewObjectManagerCounts = {
   total: number;
@@ -41,3 +44,108 @@ export const buildPreviewObjectManagerCounts = ({
   ).length,
   generated: rows.filter((item) => item.generated || item.source === "generated").length,
 });
+
+export function buildPreviewCadLayerOptions({
+  buildingPlacements,
+  cadEntityPreviewObjects,
+  suggestedPlacements,
+}: {
+  buildingPlacements: BuildingPlacement[];
+  cadEntityPreviewObjects: BuildingPlacement[];
+  suggestedPlacements: BuildingPlacement[];
+}) {
+  const layers = new Set(["C-DRAFT", "C-SITE", "C-ROAD", "C-UTIL", "C-DRAIN", "C-BLDG", "C-SYMB", "C-ANNO"]);
+  [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach((item) => {
+    layers.add(getPreviewCadLayer(item));
+  });
+  return Array.from(layers).sort();
+}
+
+export function isPreviewObjectEditableSource({
+  buildingPlacements,
+  item,
+  suggestedPlacements,
+}: {
+  buildingPlacements: BuildingPlacement[];
+  item: BuildingPlacement;
+  suggestedPlacements: BuildingPlacement[];
+}) {
+  return (
+    buildingPlacements.some((candidate) => candidate.id === item.id) ||
+    suggestedPlacements.some((candidate) => candidate.id === item.id)
+  );
+}
+
+export function isPreviewCanonicalBuildingObject({
+  buildingPlacements,
+  item,
+}: {
+  buildingPlacements: BuildingPlacement[];
+  item: BuildingPlacement;
+}) {
+  return buildingPlacements.some((candidate) => candidate.id === item.id);
+}
+
+export function usePreviewObjectManagerModel({
+  buildingPlacements,
+  cadEntityPreviewObjects,
+  hiddenCadLayers,
+  suggestedPlacements,
+}: {
+  buildingPlacements: BuildingPlacement[];
+  cadEntityPreviewObjects: BuildingPlacement[];
+  hiddenCadLayers: string[];
+  suggestedPlacements: BuildingPlacement[];
+}) {
+  const cadLayerOptions = useMemo(
+    () =>
+      buildPreviewCadLayerOptions({
+        buildingPlacements,
+        cadEntityPreviewObjects,
+        suggestedPlacements,
+      }),
+    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements],
+  );
+  const objectManagerRows = useMemo(
+    () => buildPreviewObjectManagerRows([...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]),
+    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements],
+  );
+  const objectManagerCounts = useMemo(
+    () =>
+      buildPreviewObjectManagerCounts({
+        rows: objectManagerRows,
+        hiddenCadLayers,
+        getCadLayer: getPreviewCadLayer,
+      }),
+    [hiddenCadLayers, objectManagerRows],
+  );
+  const previewObjectEditableSource = useCallback(
+    (item: BuildingPlacement) =>
+      isPreviewObjectEditableSource({
+        buildingPlacements,
+        item,
+        suggestedPlacements,
+      }),
+    [buildingPlacements, suggestedPlacements],
+  );
+  const getPreviewObjectActionBlocker = useCallback(
+    (item: BuildingPlacement | null, action: "rename" | "style" | "type" | "hide" | "delete" | "focus") =>
+      resolvePreviewObjectActionBlocker({
+        item,
+        action,
+        isEditableSource: item ? previewObjectEditableSource(item) : false,
+        isCanonicalBuilding: item
+          ? isPreviewCanonicalBuildingObject({ buildingPlacements, item })
+          : false,
+      }),
+    [buildingPlacements, previewObjectEditableSource],
+  );
+
+  return {
+    cadLayerOptions,
+    getPreviewObjectActionBlocker,
+    objectManagerCounts,
+    objectManagerRows,
+    previewObjectEditableSource,
+  };
+}
