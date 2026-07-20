@@ -291,6 +291,7 @@ import { createDashboardExportActions } from "./utils/dashboardExportActions";
 import { useDashboardFloatingObjectActions } from "./hooks/useDashboardFloatingObjectActions";
 import { useDashboardJobActions } from "./hooks/useDashboardJobActions";
 import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
+import { useDashboardProjectLoad } from "./hooks/useDashboardProjectLoad";
 import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
@@ -732,6 +733,9 @@ function PerformanceAIDashboardView({
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
   const ensureProjectDraftRef = useRef<() => Promise<string | null>>(() => Promise.resolve(null));
+  const loadJobRef = useRef<((id: string) => Promise<void> | void) | null>(null);
+  const loadProjectResultInBackgroundRef = useRef<((project: ProjectRecord) => void) | null>(null);
+  const resetWorkspaceStateRef = useRef<(() => void) | null>(null);
   const setupWizardStateRef = useRef<unknown>(null);
   const saveProjectRef = useRef<
     (options?: {
@@ -6458,92 +6462,35 @@ function PerformanceAIDashboardView({
     setMapAnalysis(mapAnalysisResult || null);
   }, [currentProject, mapSurveyPointsToSite, token]);
 
-  const loadProject = async (id: string) => {
-    if (!token) return;
-    const loadStartedAt = markCivoraInteraction();
-    autosaveSuspendRef.current = true;
-    if (chatAutosaveTimeoutRef.current !== null) {
-      window.clearTimeout(chatAutosaveTimeoutRef.current);
-      chatAutosaveTimeoutRef.current = null;
-    }
-    if (controlAutosaveTimeoutRef.current !== null) {
-      window.clearTimeout(controlAutosaveTimeoutRef.current);
-      controlAutosaveTimeoutRef.current = null;
-    }
-    const requestId = projectLoadRequestRef.current + 1;
-    projectLoadRequestRef.current = requestId;
-    try {
-      resetWorkspaceState();
-      updateProjectStatus({
-        state: "working",
-        area: "projects",
-        title: "Opening project",
-        detail: "Loading the saved project workspace from the backend.",
-        nextAction: "Wait for the project drawer to restore the workspace or show a blocker.",
-      });
-      const data = await getJson<{ project: ProjectRecord }>(
-        `/api/projects/${id}`,
-        { token },
-      );
-      if (projectLoadRequestRef.current !== requestId) {
-        return;
-      }
-      const project = data.project;
-      resolvedProjectIdRef.current = project.project_id;
-      setCurrentProject(project);
-      setProjectId(project.project_id);
-      setSiteName(project.name ?? "");
-      applyProjectInput(project.project_input ?? {});
-      setBackendResult(null);
-      setIssues([]);
-      setPlanPreviewUrl("");
-      setPlanPreviewSummary(null);
-      updateProjectStatus({
-        state: "ready",
-        area: "projects",
-        title: "Project opened",
-        detail: `Loaded project "${project.name || "Untitled Project"}".`,
-        nextAction: "Review the restored setup, objects, and generated outputs before continuing.",
-      });
-      setProjectDrawerNotice(`Restored "${project.name || "Untitled Project"}".`);
-      setWorkspaceRestoreState("restored");
-      measureCivoraInteractionAfterPaint("projects.drawer.open_project", loadStartedAt, {
-        projectId: project.project_id,
-      });
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
-      }
-      loadProjectResultInBackground(project);
-      if (activeJobId && (!projectId || currentProjectActiveJob?.project_id === id || activeJob?.project_id === id)) {
-        void loadJob(activeJobId);
-      }
-    } catch (error) {
-      setWorkspaceRestoreState("failed");
-      const message =
-        error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.";
-      setProjectDrawerNotice(message);
-      updateProjectStatus({
-        state: "blocked",
-        area: "projects",
-        title: "Open needs attention",
-        detail: message,
-        nextAction: "Check auth/backend connectivity, then open the project again.",
-      });
-      measureCivoraInteractionAfterPaint("projects.drawer.open_project.failed", loadStartedAt, { projectId: id });
-    } finally {
-      autosaveSuspendRef.current = false;
-    }
-  };
-
-  useEffect(() => {
-    if (!token || effectiveDemoWorkspaceEnabled || restoredActiveProjectRef.current) return;
-    if (currentProject?.project_id || projectId) return;
-    if (typeof window === "undefined") return;
-    const savedProjectId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-    if (!savedProjectId) return;
-    restoredActiveProjectRef.current = true;
-    void loadProject(savedProjectId);
-  }, [token, effectiveDemoWorkspaceEnabled, currentProject?.project_id, projectId]);
+  const { loadProject } = useDashboardProjectLoad({
+    activeJob,
+    activeJobId,
+    applyProjectInput,
+    autosaveSuspendRef,
+    chatAutosaveTimeoutRef,
+    controlAutosaveTimeoutRef,
+    currentProject,
+    currentProjectActiveJob,
+    effectiveDemoWorkspaceEnabled,
+    loadJobRef,
+    loadProjectResultInBackgroundRef,
+    projectId,
+    projectLoadRequestRef,
+    resetWorkspaceStateRef,
+    resolvedProjectIdRef,
+    restoredActiveProjectRef,
+    setBackendResult,
+    setCurrentProject,
+    setIssues,
+    setPlanPreviewSummary,
+    setPlanPreviewUrl,
+    setProjectDrawerNotice,
+    setProjectId,
+    setSiteName,
+    setWorkspaceRestoreState,
+    token,
+    updateProjectStatus,
+  });
 
   const ensureProjectDraft = async (): Promise<string | null> => {
     if (!token) return null;
@@ -9282,6 +9229,7 @@ function PerformanceAIDashboardView({
     token,
     visibleActiveJob,
   });
+  loadProjectResultInBackgroundRef.current = loadProjectResultInBackground;
 
   useEffect(() => {
     if (!token) return;
@@ -10341,6 +10289,7 @@ function PerformanceAIDashboardView({
     setViewportFootprint,
     setWorkspaceRestoreState,
   });
+  resetWorkspaceStateRef.current = resetWorkspaceState;
 
   const handleNewProject = async () => {
     const newProjectStartedAt = markCivoraInteraction();
@@ -10626,6 +10575,7 @@ function PerformanceAIDashboardView({
     token,
     upsertProjectSummary,
   });
+  loadJobRef.current = loadJob;
 
   const handleSmartFixAction = (recommendation: SmartFixRecommendation) => {
     const action = recommendation.ui_action ?? {};
