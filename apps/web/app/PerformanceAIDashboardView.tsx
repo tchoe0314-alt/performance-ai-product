@@ -53,7 +53,6 @@ import type {
   SourceConfidenceEntry,
   SourceConfidenceMap,
   SmartFixRecommendation,
-  SmartFixRecommendationsV1,
   EngineDepthDashboard,
   GradingEarthworkUx,
   PlanPdfAnalysis,
@@ -229,6 +228,10 @@ import {
 } from "./utils/dashboardWorkspaceBlockers";
 import { buildProjectTruthLabels } from "./utils/dashboardProjectTruth";
 import { buildDashboardSetupTruth } from "./utils/dashboardSetupTruth";
+import {
+  buildSmartFixBlockedReasons,
+  buildSmartFixRecommendations,
+} from "./utils/dashboardSmartFix";
 import {
   buildDashboardProgressTimelineState,
   buildDashboardSetupWizardState,
@@ -1298,70 +1301,11 @@ function PerformanceAIDashboardView({
     useSurveyForGrading,
     standardsEvidenceValues: [minSlopePct, pipeMinSlopePct, maxParkingSlopePct, maxRoadGradePct, maxAdaCrossSlopePct, currentPlanMetaRecord.standards_package, currentPlanMetaRecord.standards_source_registry, currentPlanMetaRecord.standards_acceptance_report],
   });
-  const smartFixBlockedReasons = useMemo(() => {
-    const releaseReview = currentPlanMeta.release_review && typeof currentPlanMeta.release_review === "object"
-      ? currentPlanMeta.release_review as Record<string, unknown>
-      : {};
-    const exportAudit = currentPlanMeta.export_audit && typeof currentPlanMeta.export_audit === "object"
-      ? currentPlanMeta.export_audit as Record<string, unknown>
-      : {};
-    const manualFailures = Array.isArray(currentPlanMeta.manual_validation?.failures)
-      ? currentPlanMeta.manual_validation.failures
-      : [];
-    const values = [
-      ...(Array.isArray(releaseReview.blocked_reasons) ? releaseReview.blocked_reasons : []),
-      ...(Array.isArray(releaseReview.blocked_exports) ? releaseReview.blocked_exports : []),
-      ...(currentPlanMeta.convergence_summary?.blocked_reasons ?? []),
-      ...(currentPlanMeta.convergence_summary?.blocked_exports ?? []),
-      ...(Array.isArray(exportAudit.blocked_reasons) ? exportAudit.blocked_reasons : []),
-      ...(manualFailures.map((failure) => failure.message || failure.reason || failure.code || "manual validation failure")),
-    ];
-    return Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean)));
-  }, [currentPlanMeta]);
-  const smartFixRecommendations = useMemo<SmartFixRecommendationsV1>(() => {
-    const stored = currentPlanMeta.smart_fix_recommendations_v1;
-    if (stored?.recommendations?.length) return stored;
-    const fallbackReasons = smartFixBlockedReasons;
-    const recommendations: SmartFixRecommendation[] = fallbackReasons.slice(0, 6).map((reason, index) => ({
-      id: `ui_smart_fix_${index + 1}`,
-      blocker_code: reason.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "ui_blocker",
-      category: reason.toLowerCase().includes("export")
-        ? "exports"
-        : reason.toLowerCase().includes("boundary") || reason.toLowerCase().includes("setup")
-          ? "setup_site_boundary"
-          : "general",
-      what_is_wrong: reason,
-      why_it_matters: "Civora keeps unresolved needs visible so review outputs do not overstate the current state.",
-      can_civora_fix: !reason.toLowerCase().includes("survey") && !reason.toLowerCase().includes("standards"),
-      fix_mode: !reason.toLowerCase().includes("survey") && !reason.toLowerCase().includes("standards") ? "auto_supported" : "manual_input_required",
-      one_action_needed_next: reason.toLowerCase().includes("export")
-        ? "Open Deliver and rebuild the review report after needs are resolved."
-        : reason.toLowerCase().includes("boundary")
-          ? "Open Setup and lock the site boundary."
-          : "Run a fix pass.",
-      missing_user_input_or_source: reason.toLowerCase().includes("survey")
-        ? "survey/control source"
-        : reason.toLowerCase().includes("standards")
-          ? "accepted standards source"
-          : "",
-      what_happens_after_fix: "Civora will refresh needs and keep remaining review gates visible.",
-      ui_action: reason.toLowerCase().includes("export")
-        ? { type: "open_panel", panel: "deliverables" }
-        : reason.toLowerCase().includes("boundary") || reason.toLowerCase().includes("setup")
-          ? { type: "open_panel", panel: "site_existing" }
-          : { type: "run_fix" },
-      engineer_review_required: true,
-    }));
-    return {
-      version: "smart_fix_recommendations_v1",
-      recommendation_count: recommendations.length,
-      auto_fix_action_count: recommendations.filter((item) => item.can_civora_fix).length,
-      manual_action_count: recommendations.filter((item) => !item.can_civora_fix).length,
-      recommendations,
-      next_best_recommendation: recommendations[0],
-      truth_label: "Smart Fix explains needs and only runs supported actions.",
-    };
-  }, [currentPlanMeta.smart_fix_recommendations_v1, smartFixBlockedReasons]);
+  const smartFixBlockedReasons = useMemo(() => buildSmartFixBlockedReasons(currentPlanMeta), [currentPlanMeta]);
+  const smartFixRecommendations = useMemo(
+    () => buildSmartFixRecommendations(currentPlanMeta, smartFixBlockedReasons),
+    [currentPlanMeta, smartFixBlockedReasons],
+  );
   const smartFixItems = smartFixRecommendations.recommendations ?? [];
   const topSmartFix = smartFixRecommendations.next_best_recommendation ?? smartFixItems[0];
   const candidateReviewInbox = useMemo<CandidateReviewInbox>(
