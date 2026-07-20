@@ -118,6 +118,7 @@ import {
   buildDashboardGradingEarthworkUx,
   buildDashboardGradingSourceSummary,
 } from "./utils/dashboardGradingEarthworkView";
+import { buildDashboardSiteDerivedView } from "./utils/dashboardSiteDerivedView";
 import {
   buildCustomGeometryMeta,
   clampValue,
@@ -15125,26 +15126,53 @@ function PerformanceAIDashboardView({
   const usingAnnotation3D =
     preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
   const lotBounds = resolveLotBounds();
-  const siteAreaAcres = siteAreaAcresFromSize(lotBounds.w, lotBounds.h);
-  const siteTooLargeForWarning = siteAreaAcres > SITE_WARNING_ACRES;
-  const siteTooLargeForGrading = siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES;
-  const missingSite = !(lotBounds.w && lotBounds.h);
-  const missingImage = !mapSnapshotPath;
-  const placedObjects = buildingPlacements.filter((item) => item.placed && item.type !== "site");
-  const pendingPlacementObjects = buildingPlacements.filter((item) => !item.placed && item.type !== "site");
-  const pendingPlacementLabels = pendingPlacementObjects.map((item) => item.label);
-  const hasBasinObject = buildingPlacements.some((item) => item.type === "basin");
-  const hasBasinPlaced = buildingPlacements.some((item) => item.type === "basin" && item.placed);
-  const hasUtilityConnectionObject = buildingPlacements.some((item) =>
-    ["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
-    ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || "")),
+  const siteDerivedView = useMemo(
+    () =>
+      buildDashboardSiteDerivedView({
+        lotBounds,
+        lotWidth,
+        lotHeight,
+        mapSnapshotPath,
+        buildingPlacements,
+        drainageSummary,
+        mapAnalysis,
+        detectedPlacements,
+        detectionConfidenceFilter,
+        projects,
+        siteWarningAcres: SITE_WARNING_ACRES,
+        siteGradingHardBlockAcres: SITE_GRADING_HARD_BLOCK_ACRES,
+      }),
+    [
+      buildingPlacements,
+      detectedPlacements,
+      detectionConfidenceFilter,
+      drainageSummary,
+      lotBounds,
+      lotHeight,
+      lotWidth,
+      mapAnalysis,
+      mapSnapshotPath,
+      projects,
+    ],
   );
-  const hasUtilityConnectionPlaced = buildingPlacements.some((item) =>
-    item.placed &&
-    (["utility_corridor", "hydrant", "manhole", "inlet"].includes(item.type ?? "") ||
-      ["public_water", "public_sanitary", "storm_sewer"].includes(String(item.meta?.utilityKind || ""))),
-  );
-  const siteSizeSet = Boolean(parsePositiveNumber(lotWidth) && parsePositiveNumber(lotHeight));
+  const {
+    siteTooLargeForWarning,
+    siteTooLargeForGrading,
+    missingSite,
+    missingImage,
+    placedObjects,
+    pendingPlacementObjects,
+    pendingPlacementLabels,
+    hasBasinObject,
+    hasBasinPlaced,
+    hasUtilityConnectionObject,
+    hasUtilityConnectionPlaced,
+    siteSizeSet,
+    drainageSurfaceSummary,
+    mapAnalysisCounts,
+    filteredDetectedPlacements,
+    sortedProjects,
+  } = siteDerivedView;
   const gradingSourceSummary = useMemo(
     () => buildDashboardGradingSourceSummary(siteInputs),
     [siteInputs],
@@ -15225,31 +15253,6 @@ function PerformanceAIDashboardView({
     });
     setDebugGradingFixtureLoaded(true);
   }, [debugGradingFixtureLoaded, lotBounds.h, lotBounds.w, lotBounds.x, lotBounds.y]);
-  const drainageSurfaceSummary = useMemo(() => {
-    if (!drainageSummary || typeof drainageSummary !== "object") {
-      return {
-        surfaceSource: "unknown",
-        surfaceQuality: "",
-        surfaceDetail: "",
-        surfaceFromGrading: false,
-      };
-    }
-    const guidance = (drainageSummary as { surface_guidance?: Record<string, unknown> }).surface_guidance ?? {};
-    const surfaceSource = String(guidance.surface_source || "unknown");
-    const surfaceQuality = String(guidance.surface_source_quality || "");
-    const surfaceDetail = String(guidance.surface_source_detail || "");
-    const surfaceFromGrading = Boolean(guidance.surface_from_grading);
-    return { surfaceSource, surfaceQuality, surfaceDetail, surfaceFromGrading };
-  }, [drainageSummary]);
-  const mapAnalysisCounts = useMemo(() => {
-    if (!mapAnalysis || typeof mapAnalysis !== "object") return { zones: 0, objects: 0, centerlines: 0 };
-    const record = mapAnalysis as { counts?: { zones?: number; objects?: number; centerlines?: number } };
-    return {
-      zones: record.counts?.zones ?? 0,
-      objects: record.counts?.objects ?? 0,
-      centerlines: record.counts?.centerlines ?? 0,
-    };
-  }, [mapAnalysis]);
   const selectedAccessIssue = useMemo(
     () => analysisIssues.find((issue) => issue.id === analysisSelectedIssueId) ?? null,
     [analysisIssues, analysisSelectedIssueId],
@@ -15257,14 +15260,6 @@ function PerformanceAIDashboardView({
   const confirmedObjectCounts = useMemo(
     () => buildDashboardConfirmedObjectCounts(buildingPlacements),
     [buildingPlacements],
-  );
-  const filteredDetectedPlacements = useMemo(() => {
-    const threshold = detectionConfidenceFilter === "high" ? 0.6 : detectionConfidenceFilter === "medium" ? 0.3 : 0.0;
-    return detectedPlacements.filter((item) => (item.confidence ?? 0) >= threshold);
-  }, [detectedPlacements, detectionConfidenceFilter]);
-  const sortedProjects = useMemo(
-    () => [...projects].sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0)),
-    [projects],
   );
   const hasHardSystemBlock = issues.some((issue) => issue.severity === "error") || siteTooLargeForGrading;
   const existingConditionRows = useMemo(
