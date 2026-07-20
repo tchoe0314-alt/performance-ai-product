@@ -367,6 +367,7 @@ import useJobPolling from "./hooks/useJobPolling";
 import useAuthState from "./hooks/useAuthState";
 import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
+import { useDashboardLeftSidebarState } from "./hooks/useDashboardLeftSidebarState";
 import { useDashboardSidePanelState } from "./hooks/useDashboardSidePanelState";
 import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { AnalysisPanel } from "./components/AnalysisPanel";
@@ -389,7 +390,13 @@ function PerformanceAIDashboardView({
   const seededDemoWorkspaceEnabled = clientMounted && isSeededDemoWorkspaceQuery();
   const effectiveDemoWorkspaceEnabled =
     forceDemoWorkspace || routeDemoWorkspaceEnabled || demoWorkspaceEnabled || queryDemoWorkspaceEnabled;
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const {
+    leftSidebarOpen,
+    setLeftSidebarOpen,
+    sidebarRendered,
+    sidebarVisible,
+    setSidebarVisible,
+  } = useDashboardLeftSidebarState();
   const [mobileViewport, setMobileViewport] = useState(false);
   const [, setChatCollapsed] = useState(false);
   const [commandBarExpanded, setCommandBarExpanded] = useState(false);
@@ -408,8 +415,6 @@ function PerformanceAIDashboardView({
   } = useDashboardSidePanelState();
   const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(true);
   const [cadToolRequest, setCadToolRequest] = useState<CadToolRequestForPreview | null>(null);
-  const [sidebarRendered, setSidebarRendered] = useState(true);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [issueReportMessage, setIssueReportMessage] = useState("");
   const [issueReportCopied, setIssueReportCopied] = useState(false);
@@ -799,24 +804,6 @@ function PerformanceAIDashboardView({
     }
     return () => window.removeEventListener("resize", syncViewport);
   }, []);
-
-  useEffect(() => {
-    let timeout: number | undefined;
-    let frame: number | undefined;
-
-    if (leftSidebarOpen) {
-      setSidebarRendered(true);
-      frame = window.requestAnimationFrame(() => setSidebarVisible(true));
-    } else {
-      setSidebarVisible(false);
-      timeout = window.setTimeout(() => setSidebarRendered(false), 180);
-    }
-
-    return () => {
-      if (frame !== undefined) window.cancelAnimationFrame(frame);
-      if (timeout !== undefined) window.clearTimeout(timeout);
-    };
-  }, [leftSidebarOpen]);
 
   const {
     projects,
