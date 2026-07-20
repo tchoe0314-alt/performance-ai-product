@@ -6,6 +6,7 @@ import {
   formatObjectManagerCountMessage,
   partitionObjectManagerTargets,
 } from "./dashboardObjectManagerTrace";
+import { toReadableLabel } from "./formatting";
 import type { EngineeringSystemKey } from "./workflowConstants";
 import { getObjectEditBlocker } from "./objectGeometry";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
@@ -20,6 +21,7 @@ export type ObjectManagerBulkActions = {
   setBuildingPlacements: StateSetter<BuildingPlacement[]>;
   setSelectedObjectIds: StateSetter<string[]>;
   setActivePlacementId: StateSetter<string | null>;
+  setPreviewInteraction: (value: "static" | "edit") => void;
   setObjectManagerStatusMessage: (message: string) => void;
   setStatusMessage: (message: string) => void;
   appendChatMessage: AppendChatMessage;
@@ -383,4 +385,164 @@ export function runObjectManagerBulkDelete({
   actions.setStatusMessage(message);
   actions.appendChatMessage("assistant", message, "status");
   actions.persistDraftRefresh("Refreshing preview after bulk delete...");
+}
+
+export function runObjectManagerLayerVisibility({
+  layerType,
+  hidden,
+  buildingPlacements,
+  actions,
+}: {
+  layerType: SiteObjectType;
+  hidden: boolean;
+  buildingPlacements: BuildingPlacement[];
+  actions: ObjectManagerBulkActions;
+}) {
+  const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+  if (!targets.length) {
+    actions.reportObjectActionBlocker("Layer visibility blocked: no objects exist on that layer.");
+    return;
+  }
+  const undo: DraftUndoAction = {
+    action: "bulk_update",
+    before: targets.map(cloneBuildingPlacementForUndo),
+    after: targets.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+      meta: { ui_hidden: hidden },
+    })),
+    label: `${toReadableLabel(layerType)} layer visibility`,
+  };
+  targets.forEach((item) => {
+    actions.handleUpdateBuilding(item.id, {
+      meta: {
+        ...(item.meta ?? {}),
+        ui_hidden: hidden,
+      },
+    });
+  });
+  const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+  const message = `${hidden ? "Hidden" : "Shown"} ${targets.length} ${label} layer object${targets.length === 1 ? "" : "s"}.`;
+  actions.setObjectManagerStatusMessage(message);
+  actions.setStatusMessage(message);
+  actions.appendChatMessage("assistant", message, "status");
+  actions.recordRecentChange({
+    type: "object_visibility_changed",
+    label: `${label} layer ${hidden ? "hidden" : "shown"}`,
+    detail: message,
+    undo,
+  });
+  actions.recordDraftUndoAction(undo);
+}
+
+export function runObjectManagerLayerLock({
+  layerType,
+  locked,
+  buildingPlacements,
+  actions,
+}: {
+  layerType: SiteObjectType;
+  locked: boolean;
+  buildingPlacements: BuildingPlacement[];
+  actions: ObjectManagerBulkActions;
+}) {
+  const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+  if (!targets.length) {
+    actions.reportObjectActionBlocker("Layer lock blocked: no editable objects exist on that layer.");
+    return;
+  }
+  const editable = targets.filter((item) => !item.meta?.ai_realism_artifact && item.capabilities?.deletable !== false);
+  if (!editable.length) {
+    actions.reportObjectActionBlocker("Layer lock blocked: this layer only contains source-only or required evidence objects.");
+    return;
+  }
+  const undo: DraftUndoAction = {
+    action: "bulk_update",
+    before: editable.map(cloneBuildingPlacementForUndo),
+    after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, { locked })),
+    label: `${toReadableLabel(layerType)} layer lock`,
+  };
+  editable.forEach((item) => actions.handleUpdateBuilding(item.id, { locked }));
+  const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+  const unchangedCount = targets.length - editable.length;
+  const message = `${locked ? "Locked" : "Unlocked"} ${editable.length} ${label} layer object${editable.length === 1 ? "" : "s"}${unchangedCount ? `; ${unchangedCount} source-only object${unchangedCount === 1 ? "" : "s"} unchanged.` : "."}`;
+  actions.setObjectManagerStatusMessage(message);
+  actions.setStatusMessage(message);
+  actions.appendChatMessage("assistant", message, "status");
+  actions.recordRecentChange({
+    type: "object_style_changed",
+    label: `${label} layer ${locked ? "locked" : "unlocked"}`,
+    detail: message,
+    undo,
+  });
+  actions.recordDraftUndoAction(undo);
+}
+
+export function runObjectManagerLayerSelect({
+  layerType,
+  buildingPlacements,
+  actions,
+}: {
+  layerType: SiteObjectType;
+  buildingPlacements: BuildingPlacement[];
+  actions: ObjectManagerBulkActions;
+}) {
+  const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+  if (!targets.length) {
+    actions.reportObjectActionBlocker("Layer select blocked: no objects exist on that layer.");
+    return;
+  }
+  const ids = targets.map((item) => item.id);
+  actions.setSelectedObjectIds(ids);
+  actions.setActivePlacementId(ids[0] ?? null);
+  actions.setPreviewInteraction("edit");
+  const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+  const message = `Selected ${targets.length} ${label} layer object${targets.length === 1 ? "" : "s"}.`;
+  actions.setObjectManagerStatusMessage(message);
+  actions.setStatusMessage(message);
+  actions.appendChatMessage("assistant", message, "status");
+}
+
+export function runObjectManagerLayerIsolate({
+  layerType,
+  buildingPlacements,
+  actions,
+}: {
+  layerType: SiteObjectType;
+  buildingPlacements: BuildingPlacement[];
+  actions: ObjectManagerBulkActions;
+}) {
+  const targets = buildingPlacements.filter((item) => item.type === layerType && item.type !== "site");
+  if (!targets.length) {
+    actions.reportObjectActionBlocker("Layer isolate blocked: no objects exist on that layer.");
+    return;
+  }
+  const editableAffected = buildingPlacements.filter((item) => item.type !== "site" && !getObjectEditBlocker(item, "hide"));
+  const undo: DraftUndoAction = {
+    action: "bulk_update",
+    before: editableAffected.map(cloneBuildingPlacementForUndo),
+    after: editableAffected.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
+      meta: { ui_hidden: item.type !== layerType },
+    })),
+    label: `${toReadableLabel(layerType)} layer isolate`,
+  };
+  editableAffected.forEach((item) => {
+    actions.handleUpdateBuilding(item.id, {
+      meta: {
+        ...(item.meta ?? {}),
+        ui_hidden: item.type !== layerType,
+      },
+    });
+  });
+  const label = SITE_OBJECT_CATALOG[layerType]?.label ?? toReadableLabel(layerType);
+  const hiddenCount = buildingPlacements.filter((item) => item.type !== "site" && item.type !== layerType).length;
+  const message = `Showing only ${targets.length} ${label} layer object${targets.length === 1 ? "" : "s"}; ${hiddenCount} other object${hiddenCount === 1 ? "" : "s"} hidden.`;
+  actions.setObjectManagerStatusMessage(message);
+  actions.setStatusMessage(message);
+  actions.appendChatMessage("assistant", message, "status");
+  actions.recordRecentChange({
+    type: "object_visibility_changed",
+    label: `${label} layer isolated`,
+    detail: message,
+    undo,
+  });
+  actions.recordDraftUndoAction(undo);
 }
