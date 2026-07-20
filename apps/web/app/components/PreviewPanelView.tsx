@@ -95,6 +95,15 @@ import {
   buildPreviewObjectManagerCounts,
   buildPreviewObjectManagerRows,
 } from "../utils/previewObjectManager";
+import {
+  buildDraftGeometryCreatedMessage,
+  buildReviewRequiredCommandMeta,
+  parseCadNumber,
+  parseCadPointToken,
+  parseCadPointTokens,
+  parseCadRelativePointToken,
+  parseCadVectorToken,
+} from "../utils/previewCadCommandParsing";
 import { resolvePreviewVisualKind } from "../utils/previewVisualStyles";
 import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import {
@@ -1557,10 +1566,6 @@ export default function PreviewPanel({
     setCadHistory((prev) => [...prev, entry]);
     recordRedoFeedback("applied", "REDO restored the draft object edit.");
   }, [applyCadHistorySnapshot, cadRedoStack]);
-  const parseCadNumber = useCallback((value: string, fallback = 0) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }, []);
   const pushCadCommandFeedback = useCallback((command: string, status: CadCommandHistoryEntry["status"], message: string) => {
     setCadCommandStatus(message);
     setCadCommandHistory((prev) => [
@@ -1667,60 +1672,6 @@ export default function PreviewPanel({
     };
   }, [cadWindowSelect, finishCadWindowSelect]);
 
-  const parseCadPointToken = useCallback((token: string): [number, number] | null => {
-    const match = token.trim().match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
-    if (!match) return null;
-    const x = Number(match[1]);
-    const y = Number(match[2]);
-    return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
-  }, []);
-  const parseCadRelativePointToken = useCallback((token: string, basePoint: [number, number] | null): [number, number] | null => {
-    if (!basePoint) return null;
-    const trimmed = token.trim();
-    const relativeMatch = trimmed.match(/^@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
-    if (relativeMatch) {
-      const dx = Number(relativeMatch[1]);
-      const dy = Number(relativeMatch[2]);
-      return Number.isFinite(dx) && Number.isFinite(dy)
-        ? [Math.round((basePoint[0] + dx) * 1000) / 1000, Math.round((basePoint[1] + dy) * 1000) / 1000]
-        : null;
-    }
-    const polarMatch = trimmed.match(/^@(-?\d+(?:\.\d+)?)<(-?\d+(?:\.\d+)?)$/);
-    if (polarMatch) {
-      const distance = Number(polarMatch[1]);
-      const angleDeg = Number(polarMatch[2]);
-      if (!Number.isFinite(distance) || !Number.isFinite(angleDeg)) return null;
-      const radians = (angleDeg * Math.PI) / 180;
-      return [
-        Math.round((basePoint[0] + Math.cos(radians) * distance) * 1000) / 1000,
-        Math.round((basePoint[1] + Math.sin(radians) * distance) * 1000) / 1000,
-      ];
-    }
-    return null;
-  }, []);
-  const parseCadVectorToken = useCallback(
-    (token: string): [number, number] | null => parseCadPointToken(token) ?? parseCadRelativePointToken(token, [0, 0]),
-    [parseCadPointToken, parseCadRelativePointToken],
-  );
-  const parseCadPointTokens = useCallback(
-    (tokens: string[]) => tokens.map((token) => parseCadPointToken(token)).filter((point): point is [number, number] => Boolean(point)),
-    [parseCadPointToken],
-  );
-  const reviewRequiredCommandMeta = useCallback((command: string, extra: Record<string, unknown> = {}) => ({
-    cad_command: command.toUpperCase(),
-    cad_command_source: "typed_command_line",
-    source: "manual_drawn",
-    engineering_status: "draft_review_required",
-    review_status: "engineer_review_required",
-    handoff_status: "draft_review_required",
-    construction_release_allowed: false,
-    ...extra,
-  }), []);
-  const draftGeometryCreatedMessage = useCallback(
-    (command: string) =>
-      `${command.toUpperCase()} created editable draft geometry for review. Rerun affected systems before relying on it.`,
-    [],
-  );
   const createCadCommandGeometry = useCallback(
     (
       command: string,
@@ -1741,12 +1692,12 @@ export default function PreviewPanel({
         mode,
         points,
         label: options.label,
-        meta: reviewRequiredCommandMeta(command, options.meta),
+        meta: buildReviewRequiredCommandMeta(command, options.meta),
       });
-      pushCadCommandFeedback(command, "applied", draftGeometryCreatedMessage(command));
+      pushCadCommandFeedback(command, "applied", buildDraftGeometryCreatedMessage(command));
       return true;
     },
-    [canDrawObjects, draftGeometryCreatedMessage, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta],
+    [canDrawObjects, onCreateCustomGeometry, pushCadCommandFeedback],
   );
   const transformSelectedCadObjects = useCallback(
     (kind: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", valueOverride?: string) => {
@@ -1855,7 +1806,7 @@ export default function PreviewPanel({
         );
       }
     },
-    [buildingPlacements, cadTransformValue, parseCadNumber, pushCadCommandFeedback, selectedCadIds, updateCadObject],
+    [buildingPlacements, cadTransformValue, pushCadCommandFeedback, selectedCadIds, updateCadObject],
   );
   const moveSelectedCadObjectsByVector = useCallback(
     (dx: number, dy: number) => {
@@ -1928,7 +1879,7 @@ export default function PreviewPanel({
           mode,
           points: copiedGeometry,
           label: `${target.label || "Draft object"} Copy`,
-          meta: reviewRequiredCommandMeta("COPY", {
+          meta: buildReviewRequiredCommandMeta("COPY", {
             copied_from_object_id: target.id,
             copied_object_type: target.type,
             copy_vector: vector,
@@ -1947,7 +1898,7 @@ export default function PreviewPanel({
           : "COPY blocked: selected objects are locked or have no editable draft geometry.",
       );
     },
-    [buildingPlacements, getCadLayer, getObjectGeometryPoints, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta, selectedCadIds],
+    [buildingPlacements, getCadLayer, getObjectGeometryPoints, onCreateCustomGeometry, pushCadCommandFeedback, selectedCadIds],
   );
   const alignOrDistributeSelectedCadObjects = useCallback(
     (
@@ -2170,7 +2121,7 @@ export default function PreviewPanel({
       mode: "polyline",
       points: joinedGeometry,
       label: joinedLabel,
-      meta: reviewRequiredCommandMeta("JOIN", {
+      meta: buildReviewRequiredCommandMeta("JOIN", {
         joined_from_object_ids: selectedTargets.map((item) => item.id),
         joined_from_labels: selectedTargets.map((item) => item.label),
         joined_source_count: selectedTargets.length,
@@ -2188,7 +2139,6 @@ export default function PreviewPanel({
     onSelectObjects,
     onUpdateBuilding,
     pushCadCommandFeedback,
-    reviewRequiredCommandMeta,
     selectedCadIds,
   ]);
   const splitSelectedJoinedObject = useCallback(() => {
@@ -2422,7 +2372,7 @@ export default function PreviewPanel({
     setDraftPoints((prev) => [...prev, [clampValue(x, 0, lotWidth), clampValue(y, 0, lotHeight)]]);
     setDrawMode((prev) => prev === "select" ? "polyline" : prev);
     onSetPreviewInteraction("edit");
-  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, lotHeight, lotWidth, onSetPreviewInteraction, parseCadNumber, selectedCadObject, updateCadObject]);
+  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, lotHeight, lotWidth, onSetPreviewInteraction, selectedCadObject, updateCadObject]);
   const applySelectedCadLayer = useCallback(() => {
     if (!selectedCadIds.length) {
       pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: select one or more editable draft objects first.");
@@ -2473,7 +2423,7 @@ export default function PreviewPanel({
     };
     updateCadObject(selectedCadObject, updates, "Offset");
     setCadCommandStatus(`OFFSET applied ${distance} ft as draft review geometry.`);
-  }, [cadOffsetDistance, parseCadNumber, selectedCadObject, updateCadObject]);
+  }, [cadOffsetDistance, selectedCadObject, updateCadObject]);
   const offsetSelectedCadObjectBy = useCallback((valueOverride?: string) => {
     if (!selectedCadObject) {
       pushCadCommandFeedback("OFFSET", "blocked", "OFFSET blocked: select one editable draft object first.");
@@ -2512,7 +2462,7 @@ export default function PreviewPanel({
     };
     updateCadObject(selectedCadObject, updates, "Offset");
     pushCadCommandFeedback("OFFSET", "applied", `OFFSET applied ${distance} ft as draft review geometry.`);
-  }, [cadOffsetDistance, parseCadNumber, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
+  }, [cadOffsetDistance, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
   const trimExtendSelectedCadObject = useCallback(
     (kind: "trim" | "extend", amountOverride?: string) => {
       if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
@@ -2549,7 +2499,7 @@ export default function PreviewPanel({
       );
       pushCadCommandFeedback(kind, "applied", `${kind.toUpperCase()} applied to terminal segment as draft review geometry.`);
     },
-    [cadSegments, cadTransformValue, lotHeight, lotWidth, parseCadNumber, pushCadCommandFeedback, selectedCadObject, updateCadObject],
+    [cadSegments, cadTransformValue, lotHeight, lotWidth, pushCadCommandFeedback, selectedCadObject, updateCadObject],
   );
   const filletSelectedCadObject = useCallback(() => {
     if (!selectedCadObject || !Array.isArray(selectedCadObject.geometry)) {
@@ -2588,7 +2538,7 @@ export default function PreviewPanel({
       "Fillet",
     );
     pushCadCommandFeedback("FILLET", "applied", "FILLET applied as tangent chord draft geometry.");
-  }, [cadFilletRadius, parseCadNumber, pushCadCommandFeedback, selectedCadObject, selectedVertex, updateCadObject]);
+  }, [cadFilletRadius, pushCadCommandFeedback, selectedCadObject, selectedVertex, updateCadObject]);
 
   const applySelectedCadDimension = useCallback(() => {
     if (!selectedCadObject || selectedCadMetrics === null) {
@@ -2692,7 +2642,7 @@ export default function PreviewPanel({
     });
     setCadCommandStatus(`${labels[cadSymbolDraft]} symbol inserted for draft review.`);
     pushCadCommandFeedback("SYMBOL", "applied", `SYMBOL inserted: ${labels[cadSymbolDraft]} remains draft/review-required.`);
-  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, cadSymbolDraft, lotHeight, lotWidth, onCreateCustomGeometry, parseCadNumber, pushCadCommandFeedback]);
+  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, cadSymbolDraft, lotHeight, lotWidth, onCreateCustomGeometry, pushCadCommandFeedback]);
 
   const toggleCadLayerVisibility = useCallback((layer: string) => {
     setHiddenCadLayers((prev) => prev.includes(layer) ? prev.filter((item) => item !== layer) : [...prev, layer]);
@@ -3480,11 +3430,6 @@ export default function PreviewPanel({
     onSelectObjects,
     onSetPreviewInteraction,
     onRemoveBuilding,
-    parseCadNumber,
-    parseCadPointToken,
-    parseCadPointTokens,
-    parseCadRelativePointToken,
-    parseCadVectorToken,
     pushCadCommandFeedback,
     selectedCadIds,
     selectedCadMetrics,
@@ -3863,7 +3808,7 @@ export default function PreviewPanel({
         "applied",
         drawMode === "site"
           ? "Site boundary captured from drawn points."
-          : draftGeometryCreatedMessage("AREA"),
+          : buildDraftGeometryCreatedMessage("AREA"),
       );
       setDraftPoints([]);
       setDraftPreviewPoint(null);
@@ -3876,7 +3821,7 @@ export default function PreviewPanel({
     pushCadCommandFeedback(
       drawMode === "rect" ? "BOX" : "LINE",
       "applied",
-      draftGeometryCreatedMessage(drawMode === "rect" ? "BOX" : "LINE"),
+      buildDraftGeometryCreatedMessage(drawMode === "rect" ? "BOX" : "LINE"),
     );
     clearDraftGeometry();
     setDrawMode("select");
@@ -3888,7 +3833,6 @@ export default function PreviewPanel({
 	    drawMode,
     onCreateCustomGeometry,
     onCreateSiteBoundary,
-    draftGeometryCreatedMessage,
     pushCadCommandFeedback,
   ]);
 
@@ -4039,7 +3983,7 @@ export default function PreviewPanel({
           return true;
         }
         onCreateCustomGeometry({ mode: "rect", points: [currentDraftPoints[0], point] });
-        pushCadCommandFeedback("BOX", "applied", draftGeometryCreatedMessage("BOX"));
+        pushCadCommandFeedback("BOX", "applied", buildDraftGeometryCreatedMessage("BOX"));
         setDrawMode("select");
         setDraftPreviewPoint(null);
         draftPointsRef.current = [];
@@ -4100,10 +4044,10 @@ export default function PreviewPanel({
               polygon_holes_blocked_reason: "Canvas polygon editor supports one exterior ring only.",
             },
           });
-          pushCadCommandFeedback("AREA", "applied", draftGeometryCreatedMessage("AREA"));
+          pushCadCommandFeedback("AREA", "applied", buildDraftGeometryCreatedMessage("AREA"));
         } else {
           onCreateCustomGeometry({ mode: "polyline", points: nextPoints });
-          pushCadCommandFeedback("LINE", "applied", draftGeometryCreatedMessage("LINE"));
+          pushCadCommandFeedback("LINE", "applied", buildDraftGeometryCreatedMessage("LINE"));
         }
         setDrawMode("select");
         setDraftPreviewPoint(null);
@@ -4124,7 +4068,6 @@ export default function PreviewPanel({
       clearDraftGeometry,
       drawAutoFinishPointCount,
       draftPoints,
-      draftGeometryCreatedMessage,
       drawMode,
       onCreateCustomGeometry,
       onCreateSiteBoundary,
