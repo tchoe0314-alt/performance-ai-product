@@ -13,7 +13,6 @@ import { Preview3DShell } from "./Preview3DShell";
 import { formatCount, formatMetric } from "../utils/formatting";
 import {
   boundsForSiteGeometry,
-  mapLngLatToSite,
   resizeSiteGeometryFromOrigin,
   resolveCoordinateMode,
   screenToSitePoint as transformScreenToSitePoint,
@@ -111,6 +110,13 @@ import {
   buildPreviewOverlayBounds,
   countRenderedCanonicalPreviewObjects,
 } from "../utils/previewOverlayBounds";
+import {
+  buildPreviewMapAnchor,
+  mapAnchoredRectPercent as resolveMapAnchoredRectPercent,
+  mapLngLatToSitePoint,
+  sitePointToPreviewPercent as resolveSitePointToPreviewPercent,
+  siteRectPercent as resolveSiteRectPercent,
+} from "../utils/previewMapProjection";
 import {
   buildCadSegments,
   buildCanvasCompositionSignature,
@@ -4150,20 +4156,9 @@ export default function PreviewPanel({
     }
   }, [debugStats?.enabled, lotHeight, lotWidth, overlayBoundsResolved, renderedCanonicalCount]);
 
-  const geocodeLat = geocode?.lat;
-  const geocodeLng = geocode?.lng;
   const mapAnchor = useMemo(
-    () =>
-      geocodeLat && geocodeLng && lotWidth > 0 && lotHeight > 0
-        ? {
-            lat: geocodeLat,
-            lng: geocodeLng,
-            siteWidth: lotWidth,
-            siteHeight: lotHeight,
-            rotationDeg: siteRotationDeg,
-          }
-        : null,
-    [geocodeLat, geocodeLng, lotHeight, lotWidth, siteRotationDeg],
+    () => buildPreviewMapAnchor({ geocode, lotWidth, lotHeight, siteRotationDeg }),
+    [geocode, lotHeight, lotWidth, siteRotationDeg],
   );
   const coordinateMode = resolveCoordinateMode(mapAnchor);
 
@@ -4176,23 +4171,14 @@ export default function PreviewPanel({
 
   const latLngToSite = useCallback(
     (lat: number, lng: number) => {
-      return mapAnchor ? mapLngLatToSite({ lat, lng }, mapAnchor) : null;
+      return mapLngLatToSitePoint(lat, lng, mapAnchor);
     },
     [mapAnchor],
   );
 
   const sitePointToPreviewPercent = useCallback(
     (point: [number, number], targetMap: mapboxgl.Map | null = mapRef.current): [number, number] => {
-      if (showMap && mapAnchor && targetMap) {
-        const container = targetMap.getContainer();
-        const containerWidth = Math.max(container.clientWidth, 1);
-        const containerHeight = Math.max(container.clientHeight, 1);
-        const lngLat = siteToMapLngLat({ x: point[0], y: point[1] }, mapAnchor);
-        if (!lngLat) return siteTupleToPercent(point, currentSiteSize);
-        const projected = targetMap.project(lngLat);
-        return [(projected.x / containerWidth) * 100, (projected.y / containerHeight) * 100];
-      }
-      return siteTupleToPercent(point, currentSiteSize);
+      return resolveSitePointToPreviewPercent({ point, targetMap, showMap, mapAnchor, currentSiteSize });
     },
     [currentSiteSize, mapAnchor, showMap],
   );
@@ -4207,64 +4193,15 @@ export default function PreviewPanel({
 
   const siteRectPercent = useCallback(
     (item: BuildingPlacement) => {
-      const rotated = (item.rotation ?? 0) % 180 !== 0;
-      const displayW = rotated ? item.d : item.w;
-      const displayD = rotated ? item.w : item.d;
-      return siteRectToPercent(
-        {
-          x: item.x ?? 0,
-          y: item.y ?? 0,
-          width: displayW,
-          height: displayD,
-        },
-        currentSiteSize,
-      );
+      return resolveSiteRectPercent(item, currentSiteSize);
     },
     [currentSiteSize],
   );
   const mapAnchoredRectPercent = useCallback(
     (item: BuildingPlacement, targetMap: mapboxgl.Map | null) => {
-      if (!showMap || !targetMap || !mapAnchor) return siteRectPercent(item);
-      const container = targetMap.getContainer();
-      const containerWidth = Math.max(container.clientWidth, 1);
-      const containerHeight = Math.max(container.clientHeight, 1);
-      const sitePoints =
-        (item.geometryType === "polygon" || item.geometryType === "rect" || item.geometryType === "polyline") &&
-        Array.isArray(item.geometry) &&
-        item.geometry.length
-          ? item.geometry
-          : (() => {
-              const x = item.x ?? 0;
-              const y = item.y ?? 0;
-              const rotated = (item.rotation ?? 0) % 180 !== 0;
-              const w = rotated ? item.d : item.w;
-              const d = rotated ? item.w : item.d;
-              return [
-                [x, y],
-                [x + w, y],
-                [x + w, y + d],
-                [x, y + d],
-              ] as Array<[number, number]>;
-            })();
-      const projected = sitePoints
-        .map(([x, y]) => siteToMapLngLat({ x, y }, mapAnchor))
-        .filter(Boolean)
-        .map((coord) => targetMap.project(coord as [number, number]));
-      if (!projected.length) return siteRectPercent(item);
-      const xs = projected.map((pt) => pt.x);
-      const ys = projected.map((pt) => pt.y);
-      const minX = Math.min(...xs);
-      const maxX = Math.max(...xs);
-      const minY = Math.min(...ys);
-      const maxY = Math.max(...ys);
-      return {
-        left: (minX / containerWidth) * 100,
-        top: (minY / containerHeight) * 100,
-        width: (Math.max(maxX - minX, 8) / containerWidth) * 100,
-        height: (Math.max(maxY - minY, 8) / containerHeight) * 100,
-      };
+      return resolveMapAnchoredRectPercent({ item, targetMap, showMap, mapAnchor, currentSiteSize });
     },
-    [mapAnchor, showMap, siteRectPercent],
+    [currentSiteSize, mapAnchor, showMap],
   );
   const resolveObjectHitZIndex = useCallback(
     (
@@ -4393,8 +4330,8 @@ export default function PreviewPanel({
     fullscreenMapRef,
     showMap,
     mapLoaded,
-    geocodeLat,
-    geocodeLng,
+    geocodeLat: geocode?.lat,
+    geocodeLng: geocode?.lng,
     lotWidth,
     lotHeight,
     buildingPlacements,
