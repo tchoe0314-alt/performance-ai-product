@@ -95,14 +95,7 @@ import {
 import {
   buildCustomGeometryMeta,
   formatCalmActionMessage,
-  getObjectDimensionsLabel,
-  getObjectDisplayType,
-  getObjectEditBlocker,
-  getObjectLayerLabel,
-  getObjectReviewLabel,
-  getObjectSourceLabel,
   isCustomGeometryMode,
-  normalizeGeometryPoints,
   type CustomGeometryMode,
 } from "./utils/objectGeometry";
 import {
@@ -260,6 +253,7 @@ import { useDashboardDraftHistoryState } from "./hooks/useDashboardDraftHistoryS
 import { useDashboardViewportState } from "./hooks/useDashboardViewportState";
 import { useDashboardDeliverReportsPanelProps } from "./hooks/useDashboardDeliverReportsPanelProps";
 import { useDashboardSupportPanelProps } from "./hooks/useDashboardSupportPanelProps";
+import { useDashboardReviewUtilityPanelProps } from "./hooks/useDashboardReviewUtilityPanelProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -329,7 +323,6 @@ import { DashboardReportsQuantitiesPanel } from "./components/DashboardReportsQu
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
 import { RoadwayWorkbenchPanel } from "./components/RoadwayWorkbenchPanel";
-import { SelectedObjectInspectorPanel } from "./components/SelectedObjectInspectorPanel";
 import { SanitaryWorkbenchPanel } from "./components/SanitaryWorkbenchPanel";
 import { SiteSetupPanel } from "./components/SiteSetupPanel";
 import { StandardsPanel } from "./components/StandardsPanel";
@@ -9179,6 +9172,63 @@ function PerformanceAIDashboardView({
     libraryPanelSections,
     onAddObject: handleAddObject,
   });
+  const {
+    analysisPanelProps,
+    detailsPanelProps,
+    layersPanelProps,
+    modelReviewPanelProps,
+    workspaceSettingsPanelProps,
+  } = useDashboardReviewUtilityPanelProps({
+    previewMode,
+    previewQuality,
+    hasGradingSurface,
+    hasHardSystemBlock,
+    placedObjectCount,
+    issues,
+    analysisIssues,
+    roads,
+    utilities,
+    hasBasinPlaced,
+    buildingPlacements,
+    selectedBuilding,
+    sourceConfidenceByObjectId,
+    objectManagerStatusMessage,
+    objectClipboardCount: objectClipboard.length,
+    activePlacementId,
+    onActivePlacementIdChange: setActivePlacementId,
+    onReportObjectActionBlocker: reportObjectActionBlocker,
+    onUpdateBuilding: handleUpdateBuilding,
+    onToggleBuildingLock: handleToggleBuildingLock,
+    onUpdateObjectVertex: handleUpdateObjectVertex,
+    onInsertObjectVertex: handleInsertObjectVertex,
+    onDeleteObjectVertex: handleDeleteObjectVertex,
+    onSnapObjectVertexToNearestEndpoint: handleSnapObjectVertexToNearestEndpoint,
+    onAlignObjectVertexToPrevious: handleAlignObjectVertexToPrevious,
+    onObjectManagerSelect: handleObjectManagerSelect,
+    onPlacementModeEnabledChange: setPlacementModeEnabled,
+    onFocusObjectIdChange: setFocusObjectId,
+    onActiveSidePanelChange: setActiveSidePanel,
+    onObjectManagerCopy: handleObjectManagerCopy,
+    onObjectManagerPaste: handleObjectManagerPaste,
+    onObjectManagerTransform: handleObjectManagerTransform,
+    onObjectManagerDelete: handleObjectManagerDelete,
+    previewLayers,
+    onPreviewLayersChange: (updater) => setPreviewLayers((previous) => updater(previous) as typeof previous),
+    systemCompleteCount: systemHealthItems.filter((item) => item.state === "complete").length,
+    blockedSystemCount: systemHealthItems.filter((item) => item.state === "blocked").length,
+    drainageIssueApplyLabel,
+    canApplyDrainageIssue,
+    onApplyDrainageIssue: handleApplyDrainageIssue,
+    onAnalyzeSiteAccess: handleAnalyzeSiteAccess,
+    onOpenDashboard: () => handleOpenSidePanel("dashboard"),
+    leftSidebarOpen,
+    assistedEnabled,
+    sidebarReleaseStatus,
+    standardsStatus: panelStatus("standards"),
+    disciplineToggles,
+    onOpenStandards: () => handleOpenSidePanel("standards"),
+    onOpenDeliverables: () => handleOpenSidePanel("deliverables"),
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9332,14 +9382,7 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "model" ? (
-                  <ModelReviewPanel
-                    previewMode={previewMode}
-                    previewQuality={previewQuality}
-                    hasGradingSurface={hasGradingSurface}
-                    hasHardSystemBlock={hasHardSystemBlock}
-                    placedObjectCount={placedObjectCount}
-                    issueCount={issues.length + analysisIssues.length}
-                  />
+                  <ModelReviewPanel {...modelReviewPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "generate" ? (
@@ -9377,107 +9420,15 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "details" ? (
-                  <DashboardDetailsPanel
-                    profileRows={[
-                      { label: "Road profiles", value: roads ? "Review" : "No generated roads" },
-                      { label: "Pipe profiles", value: utilities ? "Review" : "No generated pipes" },
-                      { label: "Basin sections", value: hasBasinPlaced ? "Available" : "Needs basin" },
-                      {
-                        label: "ADA paths",
-                        value: buildingPlacements.some((item) => item.type === "sidewalk") ? "Review" : "Needs paths",
-                      },
-                    ]}
-                    selectedInspector={
-                      <SelectedObjectInspectorPanel
-                        selectedBuilding={selectedBuilding}
-                        confidenceEntry={selectedBuilding ? sourceConfidenceByObjectId.get(selectedBuilding.id) : null}
-                        objectManagerStatusMessage={objectManagerStatusMessage}
-                        objectClipboardCount={objectClipboard.length}
-                        displayType={selectedBuilding ? getObjectDisplayType(selectedBuilding) : ""}
-                        reviewLabel={selectedBuilding ? getObjectReviewLabel(selectedBuilding) : ""}
-                        sourceLabel={selectedBuilding ? getObjectSourceLabel(selectedBuilding) : ""}
-                        layerLabel={selectedBuilding ? getObjectLayerLabel(selectedBuilding) : ""}
-                        dimensionsLabel={selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : ""}
-                        editableGeometry={selectedBuilding ? normalizeGeometryPoints(selectedBuilding.geometry) : undefined}
-                        editBlocked={selectedBuilding ? Boolean(getObjectEditBlocker(selectedBuilding, "resize")) : false}
-                        onRename={(item, value) => {
-                          const blocker = getObjectEditBlocker(item, "rename");
-                          if (blocker) {
-                            reportObjectActionBlocker(blocker);
-                            return;
-                          }
-                          handleUpdateBuilding(item.id, { label: value });
-                        }}
-                        onToggleLock={(item) => handleToggleBuildingLock(item.id)}
-                        onToggleHidden={(item) =>
-                          handleUpdateBuilding(item.id, {
-                            meta: {
-                              ...(item.meta ?? {}),
-                              ui_hidden: !Boolean(item.meta?.ui_hidden),
-                            },
-                          })
-                        }
-                        onUpdateObject={(item, updates) => handleUpdateBuilding(item.id, updates)}
-                        onUpdateVertex={handleUpdateObjectVertex}
-                        onInsertVertex={handleInsertObjectVertex}
-                        onDeleteVertex={handleDeleteObjectVertex}
-                        onSnapVertex={handleSnapObjectVertexToNearestEndpoint}
-                        onAlignVertex={handleAlignObjectVertexToPrevious}
-                        onMove={(item) => {
-                          handleObjectManagerSelect(item.id);
-                          setPlacementModeEnabled(true);
-                        }}
-                        onFocus={(item) => {
-                          setFocusObjectId(item.id);
-                          setActiveSidePanel(null);
-                        }}
-                        onCopy={handleObjectManagerCopy}
-                        onPaste={handleObjectManagerPaste}
-                        onTransform={handleObjectManagerTransform}
-                        onDelete={handleObjectManagerDelete}
-                      />
-                    }
-                    objects={buildingPlacements}
-                    activePlacementId={activePlacementId}
-                    onSelectObject={setActivePlacementId}
-                  />
+                  <DashboardDetailsPanel {...detailsPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "layers" ? (
-                  <LayersPanel
-                    layers={previewLayers}
-                    onLayersChange={(updater) => setPreviewLayers((previous) => updater(previous) as typeof previous)}
-                  />
+                  <LayersPanel {...layersPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "analysis" ? (
-                  <AnalysisPanel
-                    modelIssueCount={issues.length}
-                    accessIssueCount={analysisIssues.length}
-                    systemsCompleteCount={systemHealthItems.filter((item) => item.state === "complete").length}
-                    blockedSystemCount={systemHealthItems.filter((item) => item.state === "blocked").length}
-                    issues={[
-                      ...issues.map((issue, index) => {
-                        const applyLabel = drainageIssueApplyLabel(issue) ?? undefined;
-                        return {
-                          id: `issue-${index}`,
-                          severity: issue.severity,
-                          message: issue.message,
-                          code: issue.code,
-                          applyLabel,
-                          canApply: applyLabel ? canApplyDrainageIssue(issue) : false,
-                          onApply: applyLabel ? () => handleApplyDrainageIssue(issue) : undefined,
-                        };
-                      }),
-                      ...analysisIssues.map((issue) => ({
-                        id: issue.id,
-                        message: issue.message,
-                        severity: "warning" as const,
-                      })),
-                    ]}
-                    onRunAccessAnalysis={handleAnalyzeSiteAccess}
-                    onOpenDashboard={() => handleOpenSidePanel("dashboard")}
-                  />
+                  <AnalysisPanel {...analysisPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "files" ? (
@@ -9505,16 +9456,7 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "settings" ? (
-                  <WorkspaceSettingsPanel
-                    previewQuality={previewQuality}
-                    leftSidebarOpen={leftSidebarOpen}
-                    assistedEnabled={assistedEnabled}
-                    releaseStatus={sidebarReleaseStatus}
-                    standardsStatus={panelStatus("standards")}
-                    disciplineToggles={disciplineToggles}
-                    onOpenStandards={() => handleOpenSidePanel("standards")}
-                    onOpenDeliverables={() => handleOpenSidePanel("deliverables")}
-                  />
+                  <WorkspaceSettingsPanel {...workspaceSettingsPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "objects" ? (
