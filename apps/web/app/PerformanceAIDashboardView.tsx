@@ -290,13 +290,11 @@ import { JobsPanel } from "./components/JobsPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import { NeedsPlacementTray } from "./components/NeedsPlacementTray";
-import { ObjectManagerBulkToolsPanel } from "./components/ObjectManagerBulkToolsPanel";
-import { ObjectManagerCombineBlocksPanel } from "./components/ObjectManagerCombineBlocksPanel";
 import { ObjectManagerHiddenState } from "./components/ObjectManagerHiddenState";
 import { ObjectManagerLayerControls } from "./components/ObjectManagerLayerControls";
 import { ObjectManagerListPanel } from "./components/ObjectManagerListPanel";
-import { ObjectManagerMeasurementsPanel } from "./components/ObjectManagerMeasurementsPanel";
 import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
+import { ObjectManagerSelectedToolsPanel } from "./components/ObjectManagerSelectedToolsPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import { PlanPdfWorkflowPanel } from "./components/PlanPdfWorkflowPanel";
 import PreviewPanel from "./components/PreviewPanel";
@@ -22325,105 +22323,82 @@ function PerformanceAIDashboardView({
                         onRedoDraft={handleRedoDraftAction}
                       />
                       {selectedObjectIds.length > 0 ? (
-                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="object-manager-multi-select">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs font-semibold text-slate-700">
-                              {selectedObjectRows.length} object{selectedObjectRows.length === 1 ? "" : "s"} selected
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedObjectIds([])}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
-                            >
-                              Clear
-                            </button>
-                          </div>
-                          <ObjectManagerMeasurementsPanel
-                            summary={selectedObjectMeasurementSummary}
-                            measurements={selectedObjectMeasurements}
-                          />
-                          <ObjectManagerBulkToolsPanel
-                            objectTypeOptions={Object.entries(SITE_OBJECT_CATALOG)
-                              .filter(([type]) => type !== "site")
-                              .map(([type, catalog]) => ({ type: type as SiteObjectType, label: catalog.label }))}
-                            arrayRows={arrayRows}
-                            arrayColumns={arrayColumns}
-                            arraySpacingX={arraySpacingX}
-                            arraySpacingY={arraySpacingY}
-                            bulkMoveX={bulkMoveX}
-                            bulkMoveY={bulkMoveY}
-                            bulkMoveToX={bulkMoveToX}
-                            bulkMoveToY={bulkMoveToY}
-                            bulkScaleFactor={bulkScaleFactor}
-                            bulkRotateAngle={bulkRotateAngle}
-                            onHideSelected={() => handleObjectManagerBulkVisibility(true)}
-                            onShowSelected={() => handleObjectManagerBulkVisibility(false)}
-                            onIsolateSelected={handleObjectManagerIsolateSelected}
-                            onLockSelected={() => handleObjectManagerBulkLock(true)}
-                            onUnlockSelected={() => handleObjectManagerBulkLock(false)}
-                            onColorSelected={handleObjectManagerBulkColor}
-                            onTypeSelected={handleObjectManagerBulkType}
-                            onDuplicateSelected={handleObjectManagerBulkDuplicate}
-                            onLayoutSelected={handleObjectManagerBulkLayout}
-                            onDeleteSelected={handleObjectManagerBulkDelete}
-                            onArrayRowsChange={setArrayRows}
-                            onArrayColumnsChange={setArrayColumns}
-                            onArraySpacingXChange={setArraySpacingX}
-                            onArraySpacingYChange={setArraySpacingY}
-                            onCreateArray={handleObjectManagerArraySelected}
-                            onBulkMoveXChange={setBulkMoveX}
-                            onBulkMoveYChange={setBulkMoveY}
-                            onMoveSelected={handleObjectManagerBulkMove}
-                            onCopyByOffset={handleObjectManagerBulkCopyByOffset}
-                            onBulkMoveToXChange={setBulkMoveToX}
-                            onBulkMoveToYChange={setBulkMoveToY}
-                            onMoveToCoordinate={handleObjectManagerBulkMoveTo}
-                            onBulkScaleFactorChange={setBulkScaleFactor}
-                            onScaleSelected={handleObjectManagerBulkScale}
-                            onBulkRotateAngleChange={setBulkRotateAngle}
-                            onRotateSelected={handleObjectManagerBulkRotate}
-                            onMirrorSelected={handleObjectManagerBulkMirror}
-                          />
-                          <ObjectManagerCombineBlocksPanel
-                            objectTypeOptions={Object.entries(SITE_OBJECT_CATALOG)
-                              .filter(([type]) => type !== "site")
-                              .map(([type, catalog]) => ({ type: type as SiteObjectType, label: catalog.label }))}
-                            combineObjectName={combineObjectName}
-                            combineObjectType={combineObjectType}
-                            draftBlockName={draftBlockName}
-                            blocks={draftBlockLibrary.map((block) => ({
-                              id: block.id,
-                              name: block.name,
-                              type: block.type,
-                              typeLabel: SITE_OBJECT_CATALOG[block.type]?.label ?? block.type,
-                              objectCount: block.objects.length,
-                              createdAt: block.createdAt,
-                              updatedAt: block.updatedAt,
-                              revision: block.revision,
-                            }))}
-                            onCombineObjectNameChange={setCombineObjectName}
-                            onCombineObjectTypeChange={setCombineObjectType}
-                            onCombineSelected={handleObjectManagerCombineSelected}
-                            onDraftBlockNameChange={setDraftBlockName}
-                            onSaveBlock={handleObjectManagerSaveBlock}
-                            onRenameBlock={(blockId, value) => {
-                              const block = draftBlockLibrary.find((item) => item.id === blockId);
-                              if (block) handleObjectManagerRenameBlock(block, value);
-                            }}
-                            onUpdateBlock={(blockId) => {
-                              const block = draftBlockLibrary.find((item) => item.id === blockId);
-                              if (block) handleObjectManagerUpdateBlock(block);
-                            }}
-                            onInsertBlock={(blockId) => {
-                              const block = draftBlockLibrary.find((item) => item.id === blockId);
-                              if (block) handleObjectManagerInsertBlock(block);
-                            }}
-                            onDeleteBlock={(blockId) => {
-                              const block = draftBlockLibrary.find((item) => item.id === blockId);
-                              if (block) handleObjectManagerDeleteBlock(block);
-                            }}
-                          />
-                        </div>
+                        <ObjectManagerSelectedToolsPanel
+                          selectedCount={selectedObjectRows.length}
+                          measurementSummary={selectedObjectMeasurementSummary}
+                          measurements={selectedObjectMeasurements}
+                          arrayRows={arrayRows}
+                          arrayColumns={arrayColumns}
+                          arraySpacingX={arraySpacingX}
+                          arraySpacingY={arraySpacingY}
+                          bulkMoveX={bulkMoveX}
+                          bulkMoveY={bulkMoveY}
+                          bulkMoveToX={bulkMoveToX}
+                          bulkMoveToY={bulkMoveToY}
+                          bulkScaleFactor={bulkScaleFactor}
+                          bulkRotateAngle={bulkRotateAngle}
+                          combineObjectName={combineObjectName}
+                          combineObjectType={combineObjectType}
+                          draftBlockName={draftBlockName}
+                          blocks={draftBlockLibrary.map((block) => ({
+                            id: block.id,
+                            name: block.name,
+                            type: block.type,
+                            objectCount: block.objects.length,
+                            createdAt: block.createdAt,
+                            updatedAt: block.updatedAt,
+                            revision: block.revision,
+                          }))}
+                          onClearSelection={() => setSelectedObjectIds([])}
+                          onHideSelected={() => handleObjectManagerBulkVisibility(true)}
+                          onShowSelected={() => handleObjectManagerBulkVisibility(false)}
+                          onIsolateSelected={handleObjectManagerIsolateSelected}
+                          onLockSelected={() => handleObjectManagerBulkLock(true)}
+                          onUnlockSelected={() => handleObjectManagerBulkLock(false)}
+                          onColorSelected={handleObjectManagerBulkColor}
+                          onTypeSelected={handleObjectManagerBulkType}
+                          onDuplicateSelected={handleObjectManagerBulkDuplicate}
+                          onLayoutSelected={handleObjectManagerBulkLayout}
+                          onDeleteSelected={handleObjectManagerBulkDelete}
+                          onArrayRowsChange={setArrayRows}
+                          onArrayColumnsChange={setArrayColumns}
+                          onArraySpacingXChange={setArraySpacingX}
+                          onArraySpacingYChange={setArraySpacingY}
+                          onCreateArray={handleObjectManagerArraySelected}
+                          onBulkMoveXChange={setBulkMoveX}
+                          onBulkMoveYChange={setBulkMoveY}
+                          onMoveSelected={handleObjectManagerBulkMove}
+                          onCopyByOffset={handleObjectManagerBulkCopyByOffset}
+                          onBulkMoveToXChange={setBulkMoveToX}
+                          onBulkMoveToYChange={setBulkMoveToY}
+                          onMoveToCoordinate={handleObjectManagerBulkMoveTo}
+                          onBulkScaleFactorChange={setBulkScaleFactor}
+                          onScaleSelected={handleObjectManagerBulkScale}
+                          onBulkRotateAngleChange={setBulkRotateAngle}
+                          onRotateSelected={handleObjectManagerBulkRotate}
+                          onMirrorSelected={handleObjectManagerBulkMirror}
+                          onCombineObjectNameChange={setCombineObjectName}
+                          onCombineObjectTypeChange={setCombineObjectType}
+                          onCombineSelected={handleObjectManagerCombineSelected}
+                          onDraftBlockNameChange={setDraftBlockName}
+                          onSaveBlock={handleObjectManagerSaveBlock}
+                          onRenameBlock={(blockId, value) => {
+                            const block = draftBlockLibrary.find((item) => item.id === blockId);
+                            if (block) handleObjectManagerRenameBlock(block, value);
+                          }}
+                          onUpdateBlock={(blockId) => {
+                            const block = draftBlockLibrary.find((item) => item.id === blockId);
+                            if (block) handleObjectManagerUpdateBlock(block);
+                          }}
+                          onInsertBlock={(blockId) => {
+                            const block = draftBlockLibrary.find((item) => item.id === blockId);
+                            if (block) handleObjectManagerInsertBlock(block);
+                          }}
+                          onDeleteBlock={(blockId) => {
+                            const block = draftBlockLibrary.find((item) => item.id === blockId);
+                            if (block) handleObjectManagerDeleteBlock(block);
+                          }}
+                        />
                       ) : null}
                       <ObjectManagerListPanel
                         objects={buildingPlacements}
