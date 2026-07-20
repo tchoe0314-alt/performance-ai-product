@@ -312,3 +312,81 @@ export function handlePreviewActiveCanvasDrawInput({
   );
   return true;
 }
+
+type HandlePreviewCadTransformCommandContext = {
+  commandKey: string;
+  args: string[];
+  firstValue: string;
+  selectedRequested: boolean;
+  setCadActiveCommand: (command: CadActiveCommand | null) => void;
+  setCadCommandDraft: (command: string) => void;
+  setCadTransformValue: (value: string) => void;
+  moveSelectedCadObjectsByVector: (dx: number, dy: number) => void;
+  copySelectedCadObjectsByVector: (vectorOverride?: [number, number]) => void;
+  transformSelectedCadObjects: (operation: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", value: string) => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+export function handlePreviewCadTransformCommand({
+  commandKey,
+  args,
+  firstValue,
+  selectedRequested,
+  setCadActiveCommand,
+  setCadCommandDraft,
+  setCadTransformValue,
+  moveSelectedCadObjectsByVector,
+  copySelectedCadObjectsByVector,
+  transformSelectedCadObjects,
+  pushCadCommandFeedback,
+}: HandlePreviewCadTransformCommandContext) {
+  if (commandKey === "MOVE") {
+    const vectorArg = args.find((arg) => arg.toLowerCase() !== "selected");
+    const vector = vectorArg ? parseCadVectorToken(vectorArg) : null;
+    if (!args.length) {
+      setCadActiveCommand({ command: "MOVE", kind: "transform" });
+      setCadCommandDraft("");
+      pushCadCommandFeedback("MOVE", "info", "MOVE active. Type a vector like 20,0, @20,0, @75<45, or a distance like 5 for a diagonal move.");
+    } else if (selectedRequested && vector) {
+      moveSelectedCadObjectsByVector(vector[0], vector[1]);
+    } else {
+      setCadTransformValue(firstValue);
+      transformSelectedCadObjects("move", firstValue);
+    }
+    return true;
+  }
+  if (commandKey === "ROTATE" || commandKey === "SCALE") {
+    if (!args.length) {
+      setCadActiveCommand({ command: commandKey as "ROTATE" | "SCALE", kind: "transform" });
+      setCadCommandDraft("");
+      pushCadCommandFeedback(commandKey, "info", `${commandKey} active. Type ${commandKey === "ROTATE" ? "an angle like 45" : "a factor like 1.2"}.`);
+    } else {
+      setCadTransformValue(firstValue);
+      transformSelectedCadObjects(commandKey.toLowerCase() as "rotate" | "scale", firstValue);
+    }
+    return true;
+  }
+  if (commandKey === "COPY") {
+    if (!args.length) {
+      setCadActiveCommand({ command: "COPY", kind: "transform" });
+      setCadCommandDraft("");
+      pushCadCommandFeedback("COPY", "info", "COPY active. Type a vector like 10,10, @20,0, @75<45, or run empty to use the default offset.");
+    } else {
+      const vectorArg = args.find((arg) => arg.toLowerCase() !== "selected");
+      copySelectedCadObjectsByVector((vectorArg ? parseCadVectorToken(vectorArg) : null) ?? [10, 10]);
+    }
+    return true;
+  }
+  if (commandKey === "MIRROR" || commandKey === "FLIP") {
+    const axisArg = (args[0] || "").trim().toLowerCase();
+    const horizontal = ["h", "x", "horizontal"].includes(axisArg);
+    const vertical = ["v", "y", "vertical"].includes(axisArg);
+    if (!horizontal && !vertical) {
+      pushCadCommandFeedback(commandKey, "blocked", `${commandKey} blocked: use ${commandKey} H or ${commandKey} V after selecting editable draft objects.`);
+      return true;
+    }
+    transformSelectedCadObjects(horizontal ? "flip_horizontal" : "flip_vertical", "0");
+    return true;
+  }
+  return false;
+}
