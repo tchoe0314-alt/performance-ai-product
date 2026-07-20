@@ -96,6 +96,14 @@ import {
   buildFocusedPreviewCanvasView,
 } from "../utils/previewCanvasViewHelpers";
 import {
+  buildDraftGeometryFinishBlockedMessage,
+  buildDraftGeometryFinishBlockedReason,
+  buildDrawToolLabel,
+  getDraftGeometryEffectivePointCount,
+  getDraftGeometryMinPointCount,
+  resolveDraftGeometryEffectivePoints,
+} from "../utils/previewDraftGeometryHelpers";
+import {
   buildPreviewObjectManagerCounts,
   buildPreviewObjectManagerRows,
 } from "../utils/previewObjectManager";
@@ -3652,21 +3660,10 @@ export default function PreviewPanel({
     const cursorFinishPoint = cursorSitePoint ? ([cursorSitePoint.x, cursorSitePoint.y] as [number, number]) : null;
     const rectFinishPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? cursorFinishPoint;
     const currentDraftPoints = draftPointsRef.current.length ? draftPointsRef.current : draftPoints;
-    const effectivePoints =
-      drawMode === "rect" && currentDraftPoints.length === 1 && rectFinishPreviewPoint
-        ? [currentDraftPoints[0], rectFinishPreviewPoint]
-        : currentDraftPoints;
-    const minPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
+    const effectivePoints = resolveDraftGeometryEffectivePoints(drawMode, currentDraftPoints, rectFinishPreviewPoint);
+    const minPoints = getDraftGeometryMinPointCount(drawMode);
     if (effectivePoints.length < minPoints) {
-      const message =
-        drawMode === "site"
-          ? `FINISH blocked: site boundary needs at least three points; ${effectivePoints.length} selected.`
-          : drawMode === "polygon"
-            ? `FINISH blocked: Add Area needs at least three points; ${effectivePoints.length} selected.`
-            : drawMode === "rect"
-              ? `FINISH blocked: Add Box needs two opposite corners; ${effectivePoints.length} selected.`
-              : `FINISH blocked: Add Line needs at least two points; ${effectivePoints.length} selected.`;
-      pushCadCommandFeedback("FINISH", "blocked", message);
+      pushCadCommandFeedback("FINISH", "blocked", buildDraftGeometryFinishBlockedMessage(drawMode, effectivePoints.length));
       return;
     }
     if (drawMode === "site" || drawMode === "polygon") {
@@ -3738,19 +3735,14 @@ export default function PreviewPanel({
   ]);
 
   const draftPointCount = draftPoints.length;
-  const finishDraftMinPoints = drawMode === "site" || drawMode === "polygon" ? 3 : 2;
+  const finishDraftMinPoints = getDraftGeometryMinPointCount(drawMode);
   const finishDraftCursorPoint = cursorSitePoint ? ([cursorSitePoint.x, cursorSitePoint.y] as [number, number]) : null;
   const finishDraftPreviewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? finishDraftCursorPoint;
-  const finishDraftEffectivePointCount =
-    drawMode === "rect" && draftPointCount === 1 && finishDraftPreviewPoint
-      ? 2
-      : (drawMode === "site" || drawMode === "polygon") &&
-          draftPointCount >= 2 &&
-          finishDraftPreviewPoint &&
-          (draftPoints[draftPoints.length - 1][0] !== finishDraftPreviewPoint[0] ||
-            draftPoints[draftPoints.length - 1][1] !== finishDraftPreviewPoint[1])
-        ? draftPointCount + 1
-        : draftPointCount;
+  const finishDraftEffectivePointCount = getDraftGeometryEffectivePointCount(
+    drawMode,
+    draftPoints,
+    finishDraftPreviewPoint,
+  );
   const canFinishDraftGeometry =
     drawMode !== "select" &&
     drawMode !== "pan" &&
@@ -3758,26 +3750,9 @@ export default function PreviewPanel({
     finishDraftEffectivePointCount >= finishDraftMinPoints;
   const finishDraftBlockedReason =
     drawMode !== "select" && drawMode !== "pan" && drawMode !== "point" && finishDraftEffectivePointCount < finishDraftMinPoints
-      ? drawMode === "site"
-        ? "Draw at least three boundary points before Finish."
-        : drawMode === "polygon"
-          ? "Draw at least three area points before Finish."
-          : "Draw at least two line points before Finish."
+      ? buildDraftGeometryFinishBlockedReason(drawMode)
       : null;
-  const activeDrawToolLabel =
-    drawMode === "site"
-      ? "Draw Site Boundary"
-      : drawMode === "polyline"
-        ? "Add Line"
-        : drawMode === "polygon"
-          ? "Add Area"
-          : drawMode === "rect"
-            ? "Add Box"
-            : drawMode === "point"
-              ? "Add Point"
-              : drawMode === "pan"
-                ? "Pan"
-                : "Select";
+  const activeDrawToolLabel = buildDrawToolLabel(drawMode);
   const activeDrawToolDetail =
     drawMode === "site"
       ? "Pick three or more boundary points, then Finish."
@@ -3996,20 +3971,7 @@ export default function PreviewPanel({
         setSelectedVertex(null);
         setCadSelectionSet([]);
       }
-      const label =
-        mode === "polyline"
-          ? "Add Line"
-          : mode === "polygon"
-            ? "Add Area"
-            : mode === "rect"
-              ? "Add Box"
-              : mode === "point"
-                ? "Add Point"
-                : mode === "site"
-                  ? "Draw Site Boundary"
-                  : mode === "pan"
-                    ? "Pan"
-                    : "Select";
+      const label = buildDrawToolLabel(mode);
       pushCadCommandFeedback(
         "TOOL",
         "info",
