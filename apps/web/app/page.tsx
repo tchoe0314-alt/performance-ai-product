@@ -12719,7 +12719,7 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(what did you find here|what did.*find|what.*detected|what sources.*available|what.*site context|auto site context|found context|roads.*buildings.*terrain)/i.test(normalized)) {
+    if (/(what did you find here|what did.*find|what.*detected|what sources.*available|what.*site context|auto site context|found context|roads.*buildings.*terrain|why.*(didn.t|did not|didn't).*(detect|find)|why.*(roads|buildings|grading|terrain|utilities).*(missing|not found|not detected|unavailable))/i.test(normalized)) {
       const foundRows = autoSiteContextRows.filter((row) => row.status === "found");
       const missingRows = autoSiteContextRows.filter((row) => row.status === "missing");
       const assumedRows = autoSiteContextRows.filter((row) => row.status === "assumed");

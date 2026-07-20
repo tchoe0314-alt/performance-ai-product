@@ -200,6 +200,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("workspace-right-panel")).toContainText("Utilities");
   await expect(page.getByTestId("workspace-right-panel")).toContainText("not survey/control");
 
+  await composer.fill("why didn't it detect utilities and grading?");
+  await composer.press("Enter");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("Missing or unavailable");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("Utilities");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("Terrain / elevation");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText("not survey/control");
+
   expect(fetchOnlineCalled).toBeTruthy();
   expect(JSON.stringify(savedProjectInput)).toContain("online_existing_conditions_discovery_v1");
   expect(JSON.stringify(savedProjectInput)).toContain("site_intelligence_summary_v1");
