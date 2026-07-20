@@ -93,10 +93,6 @@ import {
   buildDashboardIssuesFromPlanResult,
 } from "./utils/dashboardPlanResultView";
 import { formatCalmActionMessage } from "./utils/objectGeometry";
-import {
-  buildDashboardObjectPlacement,
-  buildDashboardSitePlacement,
-} from "./utils/dashboardObjectPlacementBuilder";
 
 
 
@@ -266,6 +262,7 @@ import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
 import { useDashboardWorkspaceReset } from "./hooks/useDashboardWorkspaceReset";
 import { useDashboardObjectUpdateAction } from "./hooks/useDashboardObjectUpdateAction";
 import { useDashboardObjectRemoveRestoreActions } from "./hooks/useDashboardObjectRemoveRestoreActions";
+import { useDashboardAddObjectAction } from "./hooks/useDashboardAddObjectAction";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -1732,107 +1729,40 @@ function PerformanceAIDashboardView({
     [],
   );
 
-  const handleAddObject = useCallback(
-    (
-      type: SiteObjectType,
-      options?: {
-        label?: string;
-        style?: Record<string, string>;
-        geometryType?: "polygon" | "polyline" | "rect";
-        placed?: boolean;
-        width?: number;
-        depth?: number;
-        meta?: Record<string, unknown>;
-      },
-    ) => {
-      const catalog = SITE_OBJECT_CATALOG[type];
-      if (!catalog) return;
-      clearGeneratedPreview();
-      if (type === "site") {
-        const width = parsePositiveNumber(lotWidth) ?? catalog.defaultW;
-        const height = parsePositiveNumber(lotHeight) ?? catalog.defaultD;
-        if (!parsePositiveNumber(lotWidth)) setLotWidth(String(width));
-        if (!parsePositiveNumber(lotHeight)) setLotHeight(String(height));
-        setBuildingPlacements((prev) => {
-          const filtered = prev.filter((item) => item.type !== "site");
-          const sitePlacement = buildDashboardSitePlacement({ width, height });
-          return [sitePlacement, ...filtered];
-        });
-        return;
-      }
-      if (!hasSiteBoundary()) {
-        const ok = ensureSiteBoundary("You can adjust the site size anytime.");
-        if (!ok) return;
-      }
-      const lot = resolveLotBounds();
-      const existingCount =
-        buildingPlacements.filter((item) => item.type === type).length + 1;
-      const autoPlaced = Boolean(options?.placed);
-      const nextPlacement = buildDashboardObjectPlacement({
-        type,
-        options,
-        lot,
-        existingCount,
-        defaultDimensions:
-          type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD },
-        fallbackLabel: formatObjectLabel(type, existingCount),
-        parkingControls: {
-          parkingCount,
-          parkingStallWidth,
-          parkingStallDepth,
-          parkingAisleWidth,
-          parkingAdaAisleWidth,
-          parkingAdaCount,
-          parkingCompactCount,
-          parkingCompactWidth,
-          parkingAngle,
-          parkingLoading,
-        },
-        computeParkingFootprint,
-      });
-      setBuildingPlacements((prev) => [...prev, nextPlacement]);
-      markSystemsStale(systemsImpactedByPlacement(nextPlacement));
-      setActivePlacementId(autoPlaced ? null : nextPlacement.id);
-      setPlacementModeEnabled(!autoPlaced);
-      setPreviewMode("2d");
-      setPreviewInteraction(autoPlaced ? "static" : "edit");
-      recordDraftUndoAction({ action: "add", object: nextPlacement });
-      recordRecentChange({
-        type: "object_added",
-        label: "Object added",
-        detail: `${nextPlacement.label} was added as draft geometry.`,
-        undo: { action: "add", object: nextPlacement },
-      });
-      pushRecoveryMessage(`Added ${nextPlacement.label}. Undo can remove this draft object.`);
-      debugLog("add-object", {
-        id: nextPlacement.id,
-        type: nextPlacement.type,
-      });
-    },
-    [
-      buildingPlacements,
-      clearGeneratedPreview,
-      formatObjectLabel,
-      hasSiteBoundary,
-      askClarification,
-      lotHeight,
-      lotWidth,
-      parkingAisleWidth,
-      parkingAngle,
-      parkingCount,
-      parkingLoading,
-      parkingStallDepth,
-      parkingStallWidth,
-      resolveDefaultBuildingDims,
-      resolveLotBounds,
-      buildDefaultPolyline,
-      computeParkingFootprint,
-      markSystemsStale,
-      pushRecoveryMessage,
-      recordRecentChange,
-      systemsImpactedByPlacement,
-    ],
-  );
+  const handleAddObject = useDashboardAddObjectAction({
+    buildingPlacements,
+    clearGeneratedPreview,
+    computeParkingFootprint,
+    debugLog,
+    ensureSiteBoundary,
+    formatObjectLabel,
+    hasSiteBoundary,
+    lotHeight,
+    lotWidth,
+    markSystemsStale,
+    parkingAdaAisleWidth,
+    parkingAdaCount,
+    parkingAisleWidth,
+    parkingAngle,
+    parkingCompactCount,
+    parkingCompactWidth,
+    parkingCount,
+    parkingLoading,
+    parkingStallDepth,
+    parkingStallWidth,
+    pushRecoveryMessage,
+    recordDraftUndoAction,
+    recordRecentChange,
+    resolveDefaultBuildingDims,
+    resolveLotBounds,
+    setActivePlacementId,
+    setBuildingPlacements,
+    setLotHeight,
+    setLotWidth,
+    setPlacementModeEnabled,
+    setPreviewInteraction,
+    setPreviewMode,
+  });
 
   const addGradingDrainageReviewContext = useCallback(
     (message: string, mode: GradingDrainageReviewContextMode = "both") => {
