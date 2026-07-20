@@ -120,6 +120,10 @@ import {
 } from "./utils/dashboardGradingEarthworkView";
 import { buildDashboardSiteDerivedView } from "./utils/dashboardSiteDerivedView";
 import {
+  parseDashboardDirectSiteSetupCommand,
+  parseDashboardObjectCommandIntent,
+} from "./utils/dashboardChatCommandParsing";
+import {
   buildCustomGeometryMeta,
   clampValue,
   formatCalmActionMessage,
@@ -6652,102 +6656,77 @@ function PerformanceAIDashboardView({
   };
 
   const tryHandleObjectIntent = (message: string): boolean => {
-    const lower = message.toLowerCase();
+    const intent = parseDashboardObjectCommandIntent(message);
+    if (!intent) return false;
     const lot = resolveLotBounds();
-    const parkingCountCommandMatch = lower.match(/\badd\s+(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls)\b/);
-    const officeAreaCommandMatch = lower.match(/\badd\s+(\d{3,8})\s*(?:sf|sq\s*ft|square\s*feet)\s+office\s+building\b/);
-    const addBuildingMatch = lower.match(
-      /(add|create|place)\s+(a\s+)?building[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
-    );
-    const addObjectMatch = lower.match(
-      /(add|create|place)\s+(a\s+)?(retail building|multifamily building|industrial building|office building|pad|pool|amenity area|open space|entrance|access point|driveway|road|drive aisle|parking field|parking|sidewalk|path|basin|detention pond|outfall|inlet|manhole|hydrant|setback zone|no-build zone|utility corridor|lot block|subdivision block|bridge)\s*(\d+(\.\d+)?)?\s*(ft|feet|')?\s*(x|by)?\s*(\d+(\.\d+)?)?/,
-    );
-    const plotDimsMatch = lower.match(
-      /(add|create|set)\s+(a\s+)?(lot|plot|site)[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
-    );
-    const plotAcreMatch = lower.match(/(add|create|set)\s+(a\s+)?(\d+(\.\d+)?)\s*acre/);
 
-    if (
-      /\b(add|create|place|show|draw|make)\b/.test(lower) &&
-      /\b(grading|grade|fall line|slope direction|drainage area|drainage context|flow path)\b/.test(lower)
-    ) {
-      const wantsGrading = /\b(grading|grade|fall line|slope direction)\b/.test(lower);
-      const wantsDrainage = /\b(drainage|flow path|drainage area)\b/.test(lower);
+    if (intent.kind === "grading_context") {
       appendChatMessage("user", message);
       addGradingDrainageReviewContext(
         message,
-        wantsGrading && wantsDrainage ? "both" : wantsGrading ? "grading" : "drainage",
+        intent.mode,
       );
       return true;
     }
 
-    if (parkingCountCommandMatch) {
+    if (intent.kind === "parking_count") {
       if (!lot.w || !lot.h) {
         ensureSiteBoundary("Created a default review site so the parking field can be added immediately.");
       }
-      const stalls = Number(parkingCountCommandMatch[1]);
-      if (!Number.isFinite(stalls) || stalls <= 0) return false;
       appendChatMessage("user", message);
-      setParkingCount(String(Math.round(stalls)));
+      setParkingCount(String(Math.round(intent.stalls)));
       handleAddObject("parking", {
-        label: `Parking Field - ${Math.round(stalls)} stalls`,
+        label: `Parking Field - ${Math.round(intent.stalls)} stalls`,
         placed: true,
-        meta: { command_created: true, requested_stalls: Math.round(stalls) },
+        meta: { command_created: true, requested_stalls: Math.round(intent.stalls) },
       });
       appendChatMessage(
         "assistant",
-        `Added and placed a ${Math.round(stalls)} stall parking field as draft layout geometry. It still needs review.`,
+        `Added and placed a ${Math.round(intent.stalls)} stall parking field as draft layout geometry. It still needs review.`,
         "status",
       );
-      setStatusMessage(`Added and placed ${Math.round(stalls)} parking stalls as draft review geometry.`);
+      setStatusMessage(`Added and placed ${Math.round(intent.stalls)} parking stalls as draft review geometry.`);
       return true;
     }
 
-    if (officeAreaCommandMatch) {
+    if (intent.kind === "office_area") {
       if (!lot.w || !lot.h) {
         ensureSiteBoundary("Created a default review site so the office building can be added immediately.");
       }
-      const areaSf = Number(officeAreaCommandMatch[1]);
-      if (!Number.isFinite(areaSf) || areaSf <= 0) return false;
       appendChatMessage("user", message);
-      const depth = Math.round(Math.sqrt(areaSf / 1.8));
-      const width = Math.round(areaSf / Math.max(depth, 1));
+      const depth = Math.round(Math.sqrt(intent.areaSf / 1.8));
+      const width = Math.round(intent.areaSf / Math.max(depth, 1));
       handleAddObject("office_building", {
-        label: `Office Building - ${Math.round(areaSf).toLocaleString()} sf`,
+        label: `Office Building - ${Math.round(intent.areaSf).toLocaleString()} sf`,
         placed: true,
         width,
         depth,
         meta: {
           command_created: true,
-          requested_area_sf: Math.round(areaSf),
+          requested_area_sf: Math.round(intent.areaSf),
           sizing_method: "command_area_to_review_footprint",
         },
       });
       appendChatMessage(
         "assistant",
-        `Added and placed a ${Math.round(areaSf).toLocaleString()} sf office building as a draft ${width} ft by ${depth} ft footprint.`,
+        `Added and placed a ${Math.round(intent.areaSf).toLocaleString()} sf office building as a draft ${width} ft by ${depth} ft footprint.`,
         "status",
       );
       setStatusMessage("Office building added and placed as draft review geometry.");
       return true;
     }
 
-    if (addBuildingMatch) {
+    if (intent.kind === "building_dims") {
       if (!lot.w || !lot.h) {
         ensureSiteBoundary("Created a default review site so the building can be added immediately.");
-      }
-      const width = Number(addBuildingMatch[3]);
-      const depth = Number(addBuildingMatch[7]);
-      if (!Number.isFinite(width) || !Number.isFinite(depth)) {
-        return false;
       }
       appendChatMessage("user", message);
       const nextPlacement: BuildingPlacement = {
         id: `building-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         label: `Building ${buildingPlacements.length + 1}`,
         type: "building",
-        w: width,
-        d: depth,
+        w: intent.width,
+        d: intent.depth,
         rotation: 0,
         locked: false,
         placed: false,
@@ -6756,52 +6735,16 @@ function PerformanceAIDashboardView({
       recordDraftUndoAction({ action: "add", object: nextPlacement });
       appendChatMessage(
         "assistant",
-        `Added a ${width} ft by ${depth} ft building to the placement tray. Use placement mode to drop it on the site or auto-place it.`,
+        `Added a ${intent.width} ft by ${intent.depth} ft building to the placement tray. Use placement mode to drop it on the site or auto-place it.`,
         "status",
       );
       return true;
     }
-    if (addObjectMatch) {
-      const rawType = addObjectMatch[3];
-      if (!rawType) return false;
-      const typeMap: Record<string, SiteObjectType> = {
-        "retail building": "retail_building",
-        "multifamily building": "multifamily_building",
-        "industrial building": "industrial_building",
-        "office building": "office_building",
-        pad: "pad",
-        pool: "pool",
-        "amenity area": "amenity",
-        "open space": "open_space",
-        entrance: "entrance",
-        "access point": "entrance",
-        driveway: "driveway",
-        road: "road",
-        "drive aisle": "road",
-        "parking field": "parking",
-        parking: "parking",
-        sidewalk: "sidewalk",
-        path: "sidewalk",
-        basin: "basin",
-        "detention pond": "basin",
-        outfall: "outfall",
-        inlet: "inlet",
-        manhole: "manhole",
-        hydrant: "hydrant",
-        "setback zone": "setback_zone",
-        "no-build zone": "no_build_zone",
-        "utility corridor": "utility_corridor",
-        "lot block": "lot_block",
-        "subdivision block": "lot_block",
-        bridge: "bridge",
-      };
-      const typeKey = typeMap[rawType];
-      if (!typeKey) return false;
+    if (intent.kind === "object") {
+      const typeKey = intent.type;
       if (!lot.w || !lot.h) {
         ensureSiteBoundary("Created a default review site so the object can be added immediately.");
       }
-      const width = addObjectMatch[4] ? Number(addObjectMatch[4]) : null;
-      const depth = addObjectMatch[8] ? Number(addObjectMatch[8]) : null;
       appendChatMessage("user", message);
       const catalog = SITE_OBJECT_CATALOG[typeKey];
       const nextLabel = formatObjectLabel(
@@ -6814,8 +6757,8 @@ function PerformanceAIDashboardView({
           buildingPlacements.filter((item) => item.type === typeKey).length + 1,
         ),
         placed: true,
-        width: width && Number.isFinite(width) ? width : catalog?.defaultW,
-        depth: depth && Number.isFinite(depth) ? depth : catalog?.defaultD,
+        width: intent.width ?? catalog?.defaultW,
+        depth: intent.depth ?? catalog?.defaultD,
         meta: { command_created: true },
       });
       appendChatMessage(
@@ -6825,19 +6768,14 @@ function PerformanceAIDashboardView({
       );
       return true;
     }
-    const addBasinMatch = lower.match(
-      /(add|create|place)\s+(a\s+)?(basin|detention)\s*(\d+(\.\d+)?)?\s*(ft|feet|')?\s*(x|by)?\s*(\d+(\.\d+)?)?/,
-    );
-    if (addBasinMatch) {
+    if (intent.kind === "basin") {
       if (!lot.w || !lot.h) {
         ensureSiteBoundary("Created a default review site so the basin can be added immediately.");
       }
-      const width = addBasinMatch[4] ? Number(addBasinMatch[4]) : 80;
-      const depth = addBasinMatch[8] ? Number(addBasinMatch[8]) : 60;
       appendChatMessage("user", message);
       handleAddObject("basin", {
-        width: Number.isFinite(width) ? width : 80,
-        depth: Number.isFinite(depth) ? depth : 60,
+        width: intent.width,
+        depth: intent.depth,
         placed: true,
         meta: { command_created: true },
       });
@@ -6848,8 +6786,7 @@ function PerformanceAIDashboardView({
       );
       return true;
     }
-    const addEntranceMatch = lower.match(/(add|create|place)\s+(an?\s+)?entrance/);
-    if (addEntranceMatch) {
+    if (intent.kind === "entrance") {
       if (!lot.w || !lot.h) {
         appendChatMessage("user", message);
         appendChatMessage(
@@ -6879,30 +6816,21 @@ function PerformanceAIDashboardView({
       );
       return true;
     }
-    if (plotDimsMatch) {
-      const width = Number(plotDimsMatch[4]);
-      const height = Number(plotDimsMatch[8]);
-      if (!Number.isFinite(width) || !Number.isFinite(height)) {
-        return false;
-      }
+    if (intent.kind === "plot_dims") {
       appendChatMessage("user", message);
-      setLotWidth(String(width));
-      setLotHeight(String(height));
+      setLotWidth(String(intent.width));
+      setLotHeight(String(intent.height));
       appendChatMessage(
         "assistant",
-        `Set the site boundary to ${width} ft by ${height} ft.`,
+        `Set the site boundary to ${intent.width} ft by ${intent.height} ft.`,
         "status",
       );
       return true;
     }
 
-    if (plotAcreMatch) {
-      const acres = Number(plotAcreMatch[3]);
-      if (!Number.isFinite(acres)) {
-        return false;
-      }
+    if (intent.kind === "plot_acres") {
       appendChatMessage("user", message);
-      const area = acres * 43560;
+      const area = intent.acres * 43560;
       const side = Math.sqrt(area);
       const width = Math.round(side);
       const height = Math.round(side);
@@ -6910,7 +6838,7 @@ function PerformanceAIDashboardView({
       setLotHeight(String(height));
       appendChatMessage(
         "assistant",
-        `Set the site boundary to about ${width} ft by ${height} ft to match ${acres} acres.`,
+        `Set the site boundary to about ${width} ft by ${height} ft to match ${intent.acres} acres.`,
         "status",
       );
       return true;
@@ -8131,71 +8059,6 @@ function PerformanceAIDashboardView({
     return true;
   };
 
-  const parseDirectSiteSetupCommand = (
-    message: string,
-  ): { address: string; width: number; height: number } | null => {
-    const compact = message.trim().replace(/\s+/g, " ");
-    if (!compact) return null;
-    const sizeMatch = compact.match(
-      /(\d{2,5}(?:,\d{3})?(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:by|x|×)\s*(\d{2,5}(?:,\d{3})?(?:\.\d+)?)\s*(?:ft|feet|foot|')?/i,
-    );
-    if (!sizeMatch || sizeMatch.index === undefined) return null;
-    const width = Number(sizeMatch[1].replace(/,/g, ""));
-    const height = Number(sizeMatch[2].replace(/,/g, ""));
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
-    const beforeSize = compact.slice(0, sizeMatch.index).trim();
-    const afterSize = compact.slice(sizeMatch.index + sizeMatch[0].length).trim();
-    const looksLikeStreetAddress = (value: string) =>
-      value.length >= 6 &&
-      /\d/.test(value) &&
-      /\b(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ln|lane|ct|court|way|pkwy|parkway|hwy|highway|ne|nw|se|sw|tx|ga|co|az|nc|nebraska|texas|georgia|colorado|arizona|carolina)\b/i.test(
-        value,
-      );
-    const cleanAddressCandidate = (value: string) =>
-      value
-        .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
-        .replace(/^\b(?:with|using|at|centered\s+(?:at|on)|centred\s+(?:at|on))\b\s*/i, "")
-        .replace(/^(?:is|it'?s|it is|gonna|going to be|will be|should be)\b\s*/i, "")
-        .replace(/\b(?:as|for|with)?\s*(?:the\s+)?(?:center|centre)(?:\s+point)?\b.*$/i, "")
-        .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
-        .replace(/[.,;:]+$/g, "")
-        .trim();
-    const explicitAddressMatch =
-      compact.match(
-        /\baddress\b\s*(?:is|as|to be|to|=|:)?\s+(.+?)(?=\s+(?:and\s+)?(?:it'?s|it is|its|site|lot|gonna|going to be|will be|should be|with\s+(?:a\s+)?\d|make\s+it|set\s+it|center(?:ed)?|as\s+the\s+center)|$)/i,
-      ) ||
-      compact.match(
-        /\b(?:at|use|around|center(?:ed)?\s+(?:at|on))\s+(.+?)(?=\s+(?:and\s+)?(?:make|set|it'?s|it is|its|site|lot|with\s+(?:a\s+)?\d|center(?:ed)?|as\s+the\s+center)|$)/i,
-      );
-    const beforeStreetCandidate = beforeSize
-      .replace(/\b(?:i want|make|set|create|start|the|site|lot|address|with|use|at|around|center point|centered|center|as|to be)\b/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const afterStreetCandidate = afterSize
-      .replace(/\b(?:with|as|the|center|centre|point|address|is|to be|it'?s|it is|gonna|going|will|should|site|lot)\b/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const afterAddressLead = explicitAddressMatch ? cleanAddressCandidate(explicitAddressMatch[1]) : cleanAddressCandidate(beforeSize);
-    const addressAfterSize = cleanAddressCandidate(afterSize);
-    const currentAddress = siteAddress.trim();
-    const addressCandidates = [afterAddressLead, addressAfterSize, beforeStreetCandidate, afterStreetCandidate, currentAddress]
-      .map((candidate) => candidate.replace(/[.,;:]+$/g, "").trim())
-      .filter(Boolean);
-    let address =
-      addressCandidates.find(looksLikeStreetAddress) ||
-      addressCandidates.find((candidate) => candidate.length >= 6 && /\d/.test(candidate)) ||
-      addressCandidates[0] ||
-      "";
-    if (/^(?:the\s+)?address$/i.test(address) && currentAddress) {
-      address = currentAddress;
-    }
-    if (!address && currentAddress && /\baddress\b/i.test(afterSize)) {
-      address = currentAddress;
-    }
-    if (address.length < 6 || !/\d/.test(address)) return null;
-    return { address, width, height };
-  };
-
   const handleCreateDenseCommercialConcept = useCallback((message: string) => {
     appendChatMessage("user", message);
     const createdConceptSite = !hasSiteBoundary();
@@ -8400,7 +8263,7 @@ function PerformanceAIDashboardView({
     if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
       return refuseUnsafeConstructionCommand(message);
     }
-    const directSiteSetup = parseDirectSiteSetupCommand(message);
+    const directSiteSetup = parseDashboardDirectSiteSetupCommand(message, siteAddress.trim());
     if (directSiteSetup) {
       appendChatMessage("user", message);
       clearGeneratedPreview();
