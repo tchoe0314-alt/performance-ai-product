@@ -162,6 +162,7 @@ import {
   handlePreviewCadActiveCommandInput,
   handlePreviewCadAnnotationSettingsCommand,
   handlePreviewCadGeometryCommand,
+  handlePreviewCadModifyCommand,
   handlePreviewCadTransformCommand,
 } from "../utils/previewCadActiveCommand";
 import {
@@ -2646,70 +2647,27 @@ export default function PreviewPanel({
     })) {
       return;
     }
-    if (commandKey === "DELETE" || commandKey === "ERASE") {
-      if (!selectedDeletableObject) {
-        pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft object first.");
-        return;
-      }
-      onRemoveBuilding(selectedDeletableObject.id);
-      pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected draft object. Downstream systems remain review-required until rerun.");
-      return;
-    }
-    if (commandKey === "OFFSET") {
-      if (args.length) {
-        setCadOffsetDistance(firstValue);
-        offsetSelectedCadObjectBy(firstValue);
-        setCadActiveCommand(null);
-      } else {
-        setCadActiveCommand({ command: "OFFSET", kind: "offset" });
-        setCadCommandDraft("");
-        pushCadCommandFeedback("OFFSET", "info", "OFFSET active. Type a non-zero distance like 10. Select one draft object first for immediate offset.");
-      }
-      return;
-    }
-    if (commandKey === "TRIM" || commandKey === "EXTEND") {
-      if (args.length) {
-        setCadTransformValue(firstValue);
-        trimExtendSelectedCadObject(commandKey.toLowerCase() as "trim" | "extend", firstValue);
-        setCadActiveCommand(null);
-      } else {
-        setCadActiveCommand({ command: commandKey as "TRIM" | "EXTEND", kind: "modify" });
-        setCadCommandDraft("");
-        pushCadCommandFeedback(commandKey, "info", `${commandKey} active. Type an amount like 8. Select one line/polyline draft object first for immediate ${commandKey.toLowerCase()}.`);
-      }
-      return;
-    }
-    if (commandKey === "FILLET") {
-      setCadFilletRadius(firstValue);
-      filletSelectedCadObject();
-      return;
-    }
-    if (commandKey === "JOIN") {
-      joinSelectedCadObjects();
-      return;
-    }
-    if (commandKey === "SPLIT" || commandKey === "BREAK") {
-      splitSelectedJoinedObject();
-      return;
-    }
-    if (commandKey === "CLOSE") {
-      changeSelectedPolylineState("close");
-      return;
-    }
-    if (commandKey === "OPEN") {
-      changeSelectedPolylineState("open");
-      return;
-    }
-    if (commandKey === "REVERSE") {
-      changeSelectedPolylineState("reverse");
-      return;
-    }
-    if (commandKey === "HATCH") {
-      toggleSelectedCadHatch();
-      return;
-    }
-    if (commandKey === "DIM") {
-      applySelectedCadDimension();
+    if (handlePreviewCadModifyCommand({
+      commandKey,
+      args,
+      firstValue,
+      selectedDeletableObject,
+      setCadOffsetDistance,
+      setCadTransformValue,
+      setCadFilletRadius,
+      setCadActiveCommand,
+      setCadCommandDraft,
+      onRemoveBuilding,
+      offsetSelectedCadObjectBy,
+      trimExtendSelectedCadObject,
+      filletSelectedCadObject,
+      joinSelectedCadObjects,
+      splitSelectedJoinedObject,
+      changeSelectedPolylineState,
+      toggleSelectedCadHatch,
+      applySelectedCadDimension,
+      pushCadCommandFeedback,
+    })) {
       return;
     }
     if (handlePreviewCadAnnotationSettingsCommand({

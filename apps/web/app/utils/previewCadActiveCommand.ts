@@ -627,6 +627,118 @@ export function handlePreviewCadArrangeMeasureCommand({
   return false;
 }
 
+type HandlePreviewCadModifyCommandContext = {
+  commandKey: string;
+  args: string[];
+  firstValue: string;
+  selectedDeletableObject: BuildingPlacement | null;
+  setCadOffsetDistance: (value: string) => void;
+  setCadTransformValue: (value: string) => void;
+  setCadFilletRadius: (value: string) => void;
+  setCadActiveCommand: (command: CadActiveCommand | null) => void;
+  setCadCommandDraft: (command: string) => void;
+  onRemoveBuilding: (id: string) => void;
+  offsetSelectedCadObjectBy: (valueOverride?: string) => void;
+  trimExtendSelectedCadObject: (operationOverride: "trim" | "extend", amountOverride?: string) => void;
+  filletSelectedCadObject: () => void;
+  joinSelectedCadObjects: () => void;
+  splitSelectedJoinedObject: () => void;
+  changeSelectedPolylineState: (operation: "close" | "open" | "reverse") => void;
+  toggleSelectedCadHatch: () => void;
+  applySelectedCadDimension: () => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+export function handlePreviewCadModifyCommand({
+  commandKey,
+  args,
+  firstValue,
+  selectedDeletableObject,
+  setCadOffsetDistance,
+  setCadTransformValue,
+  setCadFilletRadius,
+  setCadActiveCommand,
+  setCadCommandDraft,
+  onRemoveBuilding,
+  offsetSelectedCadObjectBy,
+  trimExtendSelectedCadObject,
+  filletSelectedCadObject,
+  joinSelectedCadObjects,
+  splitSelectedJoinedObject,
+  changeSelectedPolylineState,
+  toggleSelectedCadHatch,
+  applySelectedCadDimension,
+  pushCadCommandFeedback,
+}: HandlePreviewCadModifyCommandContext) {
+  if (commandKey === "DELETE" || commandKey === "ERASE") {
+    if (!selectedDeletableObject) {
+      pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft object first.");
+      return true;
+    }
+    onRemoveBuilding(selectedDeletableObject.id);
+    pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected draft object. Downstream systems remain review-required until rerun.");
+    return true;
+  }
+  if (commandKey === "OFFSET") {
+    if (args.length) {
+      setCadOffsetDistance(firstValue);
+      offsetSelectedCadObjectBy(firstValue);
+      setCadActiveCommand(null);
+    } else {
+      setCadActiveCommand({ command: "OFFSET", kind: "offset" });
+      setCadCommandDraft("");
+      pushCadCommandFeedback("OFFSET", "info", "OFFSET active. Type a non-zero distance like 10. Select one draft object first for immediate offset.");
+    }
+    return true;
+  }
+  if (commandKey === "TRIM" || commandKey === "EXTEND") {
+    if (args.length) {
+      setCadTransformValue(firstValue);
+      trimExtendSelectedCadObject(commandKey.toLowerCase() as "trim" | "extend", firstValue);
+      setCadActiveCommand(null);
+    } else {
+      setCadActiveCommand({ command: commandKey as "TRIM" | "EXTEND", kind: "modify" });
+      setCadCommandDraft("");
+      pushCadCommandFeedback(commandKey, "info", `${commandKey} active. Type an amount like 8. Select one line/polyline draft object first for immediate ${commandKey.toLowerCase()}.`);
+    }
+    return true;
+  }
+  if (commandKey === "FILLET") {
+    setCadFilletRadius(firstValue);
+    filletSelectedCadObject();
+    return true;
+  }
+  if (commandKey === "JOIN") {
+    joinSelectedCadObjects();
+    return true;
+  }
+  if (commandKey === "SPLIT" || commandKey === "BREAK") {
+    splitSelectedJoinedObject();
+    return true;
+  }
+  if (commandKey === "CLOSE") {
+    changeSelectedPolylineState("close");
+    return true;
+  }
+  if (commandKey === "OPEN") {
+    changeSelectedPolylineState("open");
+    return true;
+  }
+  if (commandKey === "REVERSE") {
+    changeSelectedPolylineState("reverse");
+    return true;
+  }
+  if (commandKey === "HATCH") {
+    toggleSelectedCadHatch();
+    return true;
+  }
+  if (commandKey === "DIM") {
+    applySelectedCadDimension();
+    return true;
+  }
+  return false;
+}
+
 type HandlePreviewCadAnnotationSettingsCommandContext = {
   commandKey: string;
   args: string[];
