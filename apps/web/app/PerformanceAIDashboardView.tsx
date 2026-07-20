@@ -295,10 +295,7 @@ import { ReportsPanel } from "./components/ReportsPanel";
 import { RoadwayWorkbenchPanel } from "./components/RoadwayWorkbenchPanel";
 import { SelectedObjectInspectorPanel } from "./components/SelectedObjectInspectorPanel";
 import { SanitaryWorkbenchPanel } from "./components/SanitaryWorkbenchPanel";
-import { SetupAddressSection } from "./components/SetupAddressSection";
-import { SetupAutoSiteContextSection } from "./components/SetupAutoSiteContextSection";
-import { SetupSiteBoundarySection } from "./components/SetupSiteBoundarySection";
-import { SetupSurveyTerrainSection } from "./components/SetupSurveyTerrainSection";
+import { SiteSetupPanel } from "./components/SiteSetupPanel";
 import { StandardsPanel } from "./components/StandardsPanel";
 import { SystemReadinessPanel } from "./components/SystemReadinessPanel";
 import { TemplatesPanel } from "./components/TemplatesPanel";
@@ -20449,82 +20446,79 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "site_existing" ? (
-                  <div className="space-y-3" data-testid="clean-setup-panel">
-                    <SetupAddressSection
-                      pendingAddressEdit={pendingAddressEdit}
-                      siteAddress={siteAddress}
-                      appliedAddress={siteInputs?.address || ""}
-                      addressNeedsApply={addressNeedsApply}
-                      hasAppliedAddress={hasAppliedAddress}
-                      localAddressLocked={localAddressLocked}
-                      siteScaleLocked={siteScaleLocked}
-                      onlineDiscoveryBusy={onlineDiscoveryBusy}
-                      addressSuggestions={addressSuggestions}
-                      autoExistingConditionsStatus={autoExistingConditionsStatus}
-                      siteAddressInputRef={siteAddressInputRef}
-                      onSiteAddressChange={setSiteAddress}
-                      onSelectedAddressSuggestionChange={setSelectedAddressSuggestion}
-                      onAddressSuggestionsChange={setAddressSuggestions}
-                      onSaveSiteAddress={() => void saveSiteAddress()}
-                      onCreateCenteredSite={() => void handleCreateCenteredSiteFromSetup()}
-                      onStartBlankSite={handleStartBlankSite}
-                    />
-
-                    <SetupSiteBoundarySection
-                      lotBounds={lotBounds}
-                      lotWidth={lotWidth}
-                      lotHeight={lotHeight}
-                      siteScaleLocked={siteScaleLocked}
-                      siteTooLargeForWarning={siteTooLargeForWarning}
-                      oversizedSiteMessage={OVERSIZED_SITE_MESSAGE}
-                      siteAddress={siteAddress}
-                      onlineDiscoveryBusy={onlineDiscoveryBusy}
-                      onLotWidthChange={setLotWidth}
-                      onLotHeightChange={setLotHeight}
-                      onStartSiteBoundaryDraw={handleStartSiteBoundaryDraw}
-                      onApplySite={() => void handleApplySite()}
-                      onUnlockSite={handleUnlockSite}
-                      onCreateCenteredSite={() => void handleCreateCenteredSiteFromSetup()}
-                    />
-
-                    <SetupSurveyTerrainSection
-                      hasTerrainSource={hasTerrainSource}
-                      surveyFileName={surveyFileName}
-                      uploadedImagePreviewUrl={uploadedImagePreviewUrl}
-                      uploadedImageApiUrl={uploadedImageApiUrl}
-                      surveyPreviewPointCount={surveyPreviewPoints.length}
-                      surveyUploadMessage={surveyUploadMessage}
-                      imageUploadState={imageUploadState}
-                      imageUploadNote={imageUploadNote}
-                      mapSnapshotPath={mapSnapshotPath}
-                      mapSnapshotInputRef={mapSnapshotInputRef}
-                      surveyInputRef={surveyInputRef}
-                      onOpenImport={() => handleOpenSidePanel("import_survey")}
-                      onAnalyzeMapSnapshot={analyzeMapSnapshot}
-                      onUploadImage={uploadImage}
-                      onUploadExistingConditions={uploadExistingConditions}
-                    />
-
-                    <SetupAutoSiteContextSection
-                      autoSiteContextFlowSummary={autoSiteContextFlowSummary}
-                      autoExistingConditionsStatus={autoExistingConditionsStatus}
-                      siteIntelligenceSummary={siteIntelligenceSummary}
-                      siteIntelligenceFoundCount={siteIntelligenceFound.length}
-                      siteIntelligenceMissingCount={siteIntelligenceMissing.length}
-                      siteIntelligenceAssumedCount={siteIntelligenceAssumed.length}
-                      siteIntelligenceOutsideCount={siteIntelligenceOutside.length}
-                      roadFrontageMessage={String(roadFrontageHint.message || "")}
-                      drivewaySuggestionMessage={String(drivewaySuggestion.message || "")}
-                      gradingContextMessage={String(gradingContextHint.message || "")}
-                      autoSiteContextRows={autoSiteContextRows}
-                      onlineFoundSources={onlineFoundSources}
-                      candidateReviewItemCount={candidateReviewItems.length}
-                      hasAppliedAddress={hasAppliedAddress}
-                      onlineDiscoveryBusy={onlineDiscoveryBusy}
-                      onReviewFoundContext={() => handleOpenSidePanel("data")}
-                      onRerunSiteContext={() => void saveSiteAddress()}
-                    />
-                  </div>
+                  <SiteSetupPanel
+                    address={{
+                      pendingAddressEdit,
+                      siteAddress,
+                      appliedAddress: siteInputs?.address || "",
+                      addressNeedsApply,
+                      hasAppliedAddress,
+                      localAddressLocked,
+                      siteScaleLocked,
+                      onlineDiscoveryBusy,
+                      addressSuggestions,
+                      autoExistingConditionsStatus,
+                      siteAddressInputRef,
+                      onSiteAddressChange: setSiteAddress,
+                      onSelectedAddressSuggestionChange: setSelectedAddressSuggestion,
+                      onAddressSuggestionsChange: setAddressSuggestions,
+                      onSaveSiteAddress: () => void saveSiteAddress(),
+                      onCreateCenteredSite: () => void handleCreateCenteredSiteFromSetup(),
+                      onStartBlankSite: handleStartBlankSite,
+                    }}
+                    boundary={{
+                      lotBounds,
+                      lotWidth,
+                      lotHeight,
+                      siteScaleLocked,
+                      siteTooLargeForWarning,
+                      oversizedSiteMessage: OVERSIZED_SITE_MESSAGE,
+                      siteAddress,
+                      onlineDiscoveryBusy,
+                      onLotWidthChange: setLotWidth,
+                      onLotHeightChange: setLotHeight,
+                      onStartSiteBoundaryDraw: handleStartSiteBoundaryDraw,
+                      onApplySite: () => void handleApplySite(),
+                      onUnlockSite: handleUnlockSite,
+                      onCreateCenteredSite: () => void handleCreateCenteredSiteFromSetup(),
+                    }}
+                    surveyTerrain={{
+                      hasTerrainSource,
+                      surveyFileName,
+                      uploadedImagePreviewUrl,
+                      uploadedImageApiUrl,
+                      surveyPreviewPointCount: surveyPreviewPoints.length,
+                      surveyUploadMessage,
+                      imageUploadState,
+                      imageUploadNote,
+                      mapSnapshotPath,
+                      mapSnapshotInputRef,
+                      surveyInputRef,
+                      onOpenImport: () => handleOpenSidePanel("import_survey"),
+                      onAnalyzeMapSnapshot: analyzeMapSnapshot,
+                      onUploadImage: uploadImage,
+                      onUploadExistingConditions: uploadExistingConditions,
+                    }}
+                    autoSiteContext={{
+                      autoSiteContextFlowSummary,
+                      autoExistingConditionsStatus,
+                      siteIntelligenceSummary,
+                      siteIntelligenceFoundCount: siteIntelligenceFound.length,
+                      siteIntelligenceMissingCount: siteIntelligenceMissing.length,
+                      siteIntelligenceAssumedCount: siteIntelligenceAssumed.length,
+                      siteIntelligenceOutsideCount: siteIntelligenceOutside.length,
+                      roadFrontageMessage: String(roadFrontageHint.message || ""),
+                      drivewaySuggestionMessage: String(drivewaySuggestion.message || ""),
+                      gradingContextMessage: String(gradingContextHint.message || ""),
+                      autoSiteContextRows,
+                      onlineFoundSources,
+                      candidateReviewItemCount: candidateReviewItems.length,
+                      hasAppliedAddress,
+                      onlineDiscoveryBusy,
+                      onReviewFoundContext: () => handleOpenSidePanel("data"),
+                      onRerunSiteContext: () => void saveSiteAddress(),
+                    }}
+                  />
                 ) : null}
 
 
