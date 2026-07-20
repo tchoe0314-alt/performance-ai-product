@@ -1,0 +1,292 @@
+import { useEffect, useRef } from "react";
+import type { Dispatch, SetStateAction } from "react";
+
+import type { BuildingPlacement } from "../types";
+import type { CadToolRequest, DrawMode } from "../utils/cadToolTypes";
+import { handlePreviewCadToolRequest } from "../utils/previewCadActiveCommand";
+import type { CadActiveCommand } from "./previewPanelTypes";
+
+type CadCommandFeedbackStatus = "applied" | "blocked" | "info";
+type SelectionIndex = { id: string; index: number } | null;
+
+type PreviewCadToolRequestEffectArgs = {
+  cadToolRequest?: CadToolRequest | null;
+  lotWidth: number;
+  lotHeight: number;
+  cadOffsetDistance: string;
+  selectedDeletableObject: BuildingPlacement | null;
+  setDraftPoints: (points: Array<[number, number]>) => void;
+  setDraftPreviewPoint: (point: [number, number] | null) => void;
+  setDrawAutoFinishPointCount: (count: number | null) => void;
+  setCadActiveCommand: (command: CadActiveCommand | null) => void;
+  setCadCommandDraft: (command: string | ((value: string) => string)) => void;
+  setDrawMode: (mode: DrawMode) => void;
+  setManagedObjectId: (id: string | null) => void;
+  setHoveredObjectId: (id: string | null) => void;
+  setSelectedVertex: Dispatch<SetStateAction<SelectionIndex>>;
+  setCadSelectionSet: (ids: string[]) => void;
+  setCadSnapEnabled: Dispatch<SetStateAction<boolean>>;
+  setCadOrthoEnabled: Dispatch<SetStateAction<boolean>>;
+  onSelectBuilding: (id: string | null) => void;
+  onSetPreviewMode: (value: "2d" | "3d") => void;
+  onSetPreviewInteraction: (value: "static" | "edit") => void;
+  onRemoveBuilding: (id: string) => void;
+  transformSelectedCadObjects: (operation: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", value?: string) => void;
+  offsetSelectedCadObjectBy: (valueOverride?: string) => void;
+  trimExtendSelectedCadObject: (operationOverride: "trim" | "extend", amountOverride?: string) => void;
+  filletSelectedCadObject: () => void;
+  joinSelectedCadObjects: () => void;
+  splitSelectedJoinedObject: () => void;
+  changeSelectedPolylineState: (operation: "close" | "open" | "reverse") => void;
+  toggleSelectedCadHatch: () => void;
+  applySelectedCadDimension: () => void;
+  insertCadSymbol: () => void;
+  applySelectedCadLayer: () => void;
+  applyCadProperties: () => void;
+  undoCadCommand: () => void;
+  redoCadCommand: () => void;
+  runCadCommand: (commandOverride?: string) => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+type PreviewCadShortcutEffectArgs = {
+  canDrawObjects: boolean;
+  selectedCadCount: number;
+  setDraftPoints: (points: Array<[number, number]>) => void;
+  setDraftPreviewPoint: (point: [number, number] | null) => void;
+  setDrawMode: (mode: DrawMode) => void;
+  setCadSnapEnabled: Dispatch<SetStateAction<boolean>>;
+  setCadOrthoEnabled: Dispatch<SetStateAction<boolean>>;
+  onSetPreviewInteraction: (value: "static" | "edit") => void;
+  moveSelectedCadObjectsByVector: (dx: number, dy: number) => void;
+  transformSelectedCadObjects: (operation: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", value?: string) => void;
+  undoCadCommand: () => void;
+  redoCadCommand: () => void;
+};
+
+export function usePreviewCadToolRequestEffect({
+  cadToolRequest,
+  lotWidth,
+  lotHeight,
+  cadOffsetDistance,
+  selectedDeletableObject,
+  setDraftPoints,
+  setDraftPreviewPoint,
+  setDrawAutoFinishPointCount,
+  setCadActiveCommand,
+  setCadCommandDraft,
+  setDrawMode,
+  setManagedObjectId,
+  setHoveredObjectId,
+  setSelectedVertex,
+  setCadSelectionSet,
+  setCadSnapEnabled,
+  setCadOrthoEnabled,
+  onSelectBuilding,
+  onSetPreviewMode,
+  onSetPreviewInteraction,
+  onRemoveBuilding,
+  transformSelectedCadObjects,
+  offsetSelectedCadObjectBy,
+  trimExtendSelectedCadObject,
+  filletSelectedCadObject,
+  joinSelectedCadObjects,
+  splitSelectedJoinedObject,
+  changeSelectedPolylineState,
+  toggleSelectedCadHatch,
+  applySelectedCadDimension,
+  insertCadSymbol,
+  applySelectedCadLayer,
+  applyCadProperties,
+  undoCadCommand,
+  redoCadCommand,
+  runCadCommand,
+  pushCadCommandFeedback,
+}: PreviewCadToolRequestEffectArgs) {
+  const lastCadToolRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!cadToolRequest || cadToolRequest.id === lastCadToolRequestIdRef.current) return;
+    lastCadToolRequestIdRef.current = cadToolRequest.id;
+    handlePreviewCadToolRequest({
+      cadToolRequest,
+      lotWidth,
+      lotHeight,
+      cadOffsetDistance,
+      selectedDeletableObject,
+      setDraftPoints,
+      setDraftPreviewPoint,
+      setDrawAutoFinishPointCount,
+      setCadActiveCommand,
+      setCadCommandDraft,
+      setDrawMode,
+      setManagedObjectId,
+      setHoveredObjectId,
+      setSelectedVertex,
+      setCadSelectionSet,
+      setCadSnapEnabled,
+      setCadOrthoEnabled,
+      onSelectBuilding,
+      onSetPreviewMode,
+      onSetPreviewInteraction,
+      onRemoveBuilding,
+      transformSelectedCadObjects,
+      offsetSelectedCadObjectBy,
+      trimExtendSelectedCadObject,
+      filletSelectedCadObject,
+      joinSelectedCadObjects,
+      splitSelectedJoinedObject,
+      changeSelectedPolylineState,
+      toggleSelectedCadHatch,
+      applySelectedCadDimension,
+      insertCadSymbol,
+      applySelectedCadLayer,
+      applyCadProperties,
+      undoCadCommand,
+      redoCadCommand,
+      runCadCommand,
+      pushCadCommandFeedback,
+    });
+  }, [
+    applyCadProperties,
+    applySelectedCadDimension,
+    applySelectedCadLayer,
+    cadOffsetDistance,
+    cadToolRequest,
+    changeSelectedPolylineState,
+    filletSelectedCadObject,
+    insertCadSymbol,
+    joinSelectedCadObjects,
+    lotHeight,
+    lotWidth,
+    offsetSelectedCadObjectBy,
+    onRemoveBuilding,
+    onSelectBuilding,
+    onSetPreviewInteraction,
+    onSetPreviewMode,
+    pushCadCommandFeedback,
+    redoCadCommand,
+    runCadCommand,
+    selectedDeletableObject,
+    setCadActiveCommand,
+    setCadCommandDraft,
+    setCadOrthoEnabled,
+    setCadSelectionSet,
+    setCadSnapEnabled,
+    setDraftPoints,
+    setDraftPreviewPoint,
+    setDrawAutoFinishPointCount,
+    setDrawMode,
+    setHoveredObjectId,
+    setManagedObjectId,
+    setSelectedVertex,
+    splitSelectedJoinedObject,
+    toggleSelectedCadHatch,
+    transformSelectedCadObjects,
+    trimExtendSelectedCadObject,
+    undoCadCommand,
+  ]);
+}
+
+export function usePreviewCadShortcutEffect({
+  canDrawObjects,
+  selectedCadCount,
+  setDraftPoints,
+  setDraftPreviewPoint,
+  setDrawMode,
+  setCadSnapEnabled,
+  setCadOrthoEnabled,
+  onSetPreviewInteraction,
+  moveSelectedCadObjectsByVector,
+  transformSelectedCadObjects,
+  undoCadCommand,
+  redoCadCommand,
+}: PreviewCadShortcutEffectArgs) {
+  useEffect(() => {
+    const handleCadShortcuts = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      const key = event.key.toLowerCase();
+      const command = event.metaKey || event.ctrlKey;
+      if (command && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoCadCommand();
+        else undoCadCommand();
+        return;
+      }
+      if (command && key === "y") {
+        event.preventDefault();
+        redoCadCommand();
+        return;
+      }
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+        if (!selectedCadCount) return;
+        event.preventDefault();
+        const step = event.altKey ? 1 : event.shiftKey ? 25 : 5;
+        const dx = key === "arrowleft" ? -step : key === "arrowright" ? step : 0;
+        const dy = key === "arrowup" ? -step : key === "arrowdown" ? step : 0;
+        moveSelectedCadObjectsByVector(dx, dy);
+        return;
+      }
+      if (key === "v") {
+        event.preventDefault();
+        setDrawMode("select");
+        return;
+      }
+      if (key === "l") {
+        event.preventDefault();
+        if (canDrawObjects) {
+          setDraftPoints([]);
+          setDraftPreviewPoint(null);
+          setDrawMode("polyline");
+          onSetPreviewInteraction("edit");
+        }
+        return;
+      }
+      if (key === "a") {
+        event.preventDefault();
+        if (canDrawObjects) {
+          setDraftPoints([]);
+          setDraftPreviewPoint(null);
+          setDrawMode("polygon");
+          onSetPreviewInteraction("edit");
+        }
+        return;
+      }
+      if (key === "o") {
+        event.preventDefault();
+        setCadOrthoEnabled((value) => !value);
+        return;
+      }
+      if (key === "s") {
+        event.preventDefault();
+        setCadSnapEnabled((value) => !value);
+        return;
+      }
+      if (key === "m") {
+        event.preventDefault();
+        transformSelectedCadObjects("move");
+        return;
+      }
+      if (key === "r") {
+        event.preventDefault();
+        transformSelectedCadObjects("rotate");
+      }
+    };
+    window.addEventListener("keydown", handleCadShortcuts);
+    return () => window.removeEventListener("keydown", handleCadShortcuts);
+  }, [
+    canDrawObjects,
+    moveSelectedCadObjectsByVector,
+    onSetPreviewInteraction,
+    redoCadCommand,
+    selectedCadCount,
+    setCadOrthoEnabled,
+    setCadSnapEnabled,
+    setDraftPoints,
+    setDraftPreviewPoint,
+    setDrawMode,
+    transformSelectedCadObjects,
+    undoCadCommand,
+  ]);
+}
