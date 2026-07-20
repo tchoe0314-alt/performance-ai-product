@@ -184,6 +184,10 @@ import {
 } from "./utils/dashboardStatus";
 import { buildDashboardWorkflowState } from "./utils/dashboardWorkflowState";
 import {
+  buildDashboardArtifactPayload,
+  buildDashboardPayloadPreview,
+} from "./utils/dashboardPayloads";
+import {
   hasAddressCoordinates,
   type AddressSuggestion,
   type AutoExistingConditionsUiStatus,
@@ -966,23 +970,17 @@ function PerformanceAIDashboardView({
   );
 
   const payloadPreview = useMemo(
-    () => ({
-      project_id: projectId || null,
-      full_design_mode: true,
-      input_mode: assistedEnabled ? "assisted" : "user",
-      strict_mode: false,
-      prompt_text: prompt || null,
-      image_path: imageName || null,
-      meta: {
-        chat_thread: chatMessagesRef.current,
-        site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
-        requested_site_program_v1: currentProject?.project_input?.meta?.requested_site_program_v1,
-        system_dirty_state: systemStatuses,
-        reactive_edit_policy_preference: REACTIVE_EDIT_POLICY_PREFERENCE,
-        site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
-        assisted_enabled: assistedEnabled,
-      },
-      manual_fields: buildManualFields({
+    () => buildDashboardPayloadPreview({
+      projectId,
+      assistedEnabled,
+      prompt,
+      imageName,
+      chatMessages: chatMessagesRef.current,
+      currentProject,
+      systemStatuses,
+      reactiveEditPolicyPreference: REACTIVE_EDIT_POLICY_PREFERENCE,
+      siteObjectId: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
+      manualFields: buildManualFields({
         nextSiteName: siteName,
         nextFileName: fileName,
         nextUnits: units,
@@ -1004,7 +1002,6 @@ function PerformanceAIDashboardView({
         nextDrainage: drainage,
         nextUtilities: utilities,
       }),
-      allow_ai_fill_for_blanks: assistedEnabled,
     }),
     [
       buildingPlacements,
@@ -1038,24 +1035,10 @@ function PerformanceAIDashboardView({
     ],
   );
 
-  const artifactPayload = useMemo(() => {
-    if (
-      backendResult &&
-      typeof backendResult === "object" &&
-      Object.keys(backendResult).length
-    ) {
-      return {
-        project_id: projectId || currentProject?.project_id || null,
-        result: backendResult,
-        filename_stem: fileName || siteName,
-      };
-    }
-
-    return {
-      project_id: projectId || currentProject?.project_id || null,
-      filename_stem: fileName || siteName,
-    };
-  }, [backendResult, currentProject?.project_id, fileName, projectId, siteName]);
+  const artifactPayload = useMemo(
+    () => buildDashboardArtifactPayload({ backendResult, projectId, currentProject, fileName, siteName }),
+    [backendResult, currentProject, fileName, projectId, siteName],
+  );
 
   const workflowState = useMemo(
     () =>
