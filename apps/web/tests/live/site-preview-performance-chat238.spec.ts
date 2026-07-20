@@ -81,7 +81,26 @@ test.describe("Chat 238 site preview performance", () => {
 
     const canvas = page.getByTestId("workspace-canvas-shell");
     await expect(canvas.getByTestId("preview-quality-standard").first()).toBeVisible();
-    await expect(canvas.getByTestId("preview-panel-map-toggle").first()).toContainText(/Map Off|Map/i);
+    await expect(canvas).toContainText(/Local site coordinates/i);
+    const coordinateReadout = canvas.getByTestId("canvas-coordinate-readout");
+    await expect(coordinateReadout).toContainText("SITE 1000 ft x 1000 ft");
+    await expect(coordinateReadout).toContainText("LOCAL SITE · VIEW ONLY");
+    const zoomBeforeText = await coordinateReadout.textContent();
+    const zoomBefore = Number(zoomBeforeText?.match(/ZOOM\s+(\d+)%/)?.[1] ?? NaN);
+    expect(Number.isFinite(zoomBefore)).toBeTruthy();
+
+    const surface = canvas.getByTestId("preview-drawing-surface");
+    const surfaceBox = await surface.boundingBox();
+    expect(surfaceBox).not.toBeNull();
+    await page.mouse.move(surfaceBox!.x + surfaceBox!.width / 2, surfaceBox!.y + surfaceBox!.height / 2);
+    await page.mouse.wheel(0, -360);
+    await expect
+      .poll(async () => {
+        const text = await coordinateReadout.textContent();
+        return Number(text?.match(/ZOOM\s+(\d+)%/)?.[1] ?? NaN);
+      })
+      .toBeGreaterThan(zoomBefore);
+    await expect(coordinateReadout).toContainText("SITE 1000 ft x 1000 ft");
 
     await timed("high quality from new project", async () => {
       await canvas.getByTestId("preview-quality-high").first().click();

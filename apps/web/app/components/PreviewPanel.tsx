@@ -7382,8 +7382,7 @@ export default function PreviewPanel({
                 finishDraftGeometry();
               }}
 	              onWheel={(event) => {
-	                if (!allowEdits || !overlayBoundsResolved || showMap) return;
-	                event.preventDefault();
+	                if (previewMode !== "2d" || !overlayBoundsResolved || showMap) return;
 	                userAdjustedCanvasViewRef.current = true;
                 const nextScale = Math.min(
                   Math.max(canvasView.scale + (event.deltaY < 0 ? 0.12 : -0.12), 0.55),
@@ -7644,6 +7643,12 @@ export default function PreviewPanel({
                       className="civora-preview-coordinate-readout pointer-events-none absolute bottom-4 left-4 z-[45] rounded-lg border border-slate-300 bg-white/92 px-3 py-2 font-mono text-[11px] text-slate-700 shadow-sm backdrop-blur"
                     >
                       <div>ZOOM {Math.round(canvasView.scale * 100)}%</div>
+                      <div>
+                        SITE {Math.round(lotWidth)} ft x {Math.round(lotHeight)} ft
+                      </div>
+                      <div>
+                        {geocode?.lat && geocode?.lng ? "MAP ANCHORED" : "LOCAL SITE"} · VIEW ONLY
+                      </div>
                       <div>
                         X {cursorSitePoint ? cursorSitePoint.x.toFixed(1) : "--"} ft / Y{" "}
                         {cursorSitePoint ? cursorSitePoint.y.toFixed(1) : "--"} ft

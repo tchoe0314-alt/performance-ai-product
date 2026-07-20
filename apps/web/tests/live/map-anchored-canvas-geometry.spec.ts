@@ -118,20 +118,20 @@ test.describe("map anchored canvas geometry transforms", () => {
     }
   });
 
-  test("high quality panel copy stays visual-only and avoids restricted wording", () => {
+  test("high quality and AI visualization copy stays visual-only and avoids restricted wording", () => {
     const sourcePath = fs.existsSync(path.resolve(process.cwd(), "app/components/PreviewPanel.tsx"))
       ? path.resolve(process.cwd(), "app/components/PreviewPanel.tsx")
       : path.resolve(process.cwd(), "apps/web/app/components/PreviewPanel.tsx");
     const source = fs.readFileSync(sourcePath, "utf8");
-    const highQualityStart = source.indexOf('data-testid="high-quality-preview-only-label"');
-    const highQualityEnd = source.indexOf('data-testid="high-quality-lite-label"', highQualityStart);
-    const highQualitySection = source.slice(highQualityStart, highQualityEnd + 2500);
+    const aiWatermarkStart = source.indexOf("const AI_REALISM_WATERMARK");
+    const aiWatermarkSection = source.slice(aiWatermarkStart, aiWatermarkStart + 1200);
 
-    expect(highQualitySection).toContain("Visual preview only");
-    expect(highQualitySection).toContain("Canonical geometry unchanged");
-    expect(highQualitySection).toContain("not source-confidence");
-    expect(highQualitySection).toContain("high-quality-lite-label");
-    expect(highQualitySection).not.toMatch(/construction-ready|stamp|seal|sign|certify|approval/i);
+    expect(aiWatermarkSection).toContain("AI visualization from current review layout");
+    expect(aiWatermarkSection).toContain("visual concept only");
+    expect(aiWatermarkSection).toContain("not engineering evidence");
+    expect(source).toContain("not_site_evidence: true");
+    expect(source).toContain("construction_release_allowed: false");
+    expect(aiWatermarkSection).not.toMatch(/construction-ready|stamp|seal|sign|certify|approval/i);
   });
 
   test("coordinate mode labels distinguish map anchored from local site fallback", () => {
