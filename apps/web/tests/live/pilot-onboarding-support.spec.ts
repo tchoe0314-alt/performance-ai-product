@@ -27,5 +27,5 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
 
   await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Deliver\b/i }).click();
   await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/Make a review package/i);
-  await expect(page.getByTestId("deliver-review-package-flow")).toContainText("Review-only and engineer-review-required");
+  await expect(page.getByTestId("deliver-review-package-flow").getByText("Review-only and engineer-review-required.")).toHaveCount(0);
 });

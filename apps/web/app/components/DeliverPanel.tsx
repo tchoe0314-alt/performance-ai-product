@@ -135,9 +135,6 @@ export function DeliverPanel({
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Deliver</p>
             <p className="mt-1 text-sm font-semibold text-slate-950">Package your current project for review.</p>
-            <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
-              Review-only and engineer-review-required.
-            </p>
           </div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
             reviewPackageFlowSummary?.blocked ? "bg-amber-50 text-amber-700" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"

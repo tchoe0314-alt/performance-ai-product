@@ -61,7 +61,7 @@ test.describe("Chat 232 naming and trust copy", () => {
     await expectNoOverflow(page);
   });
 
-  test("AI Visualization remains visual-only and review package stays review-only", async ({ page }) => {
+  test("AI Visualization remains visual-only and review package avoids repeated boundary copy", async ({ page }) => {
     await openDemoWorkspace(page);
 
     const canvas = page.getByTestId("workspace-canvas-shell");
@@ -73,7 +73,10 @@ test.describe("Chat 232 naming and trust copy", () => {
 
     await page.getByRole("button", { name: /^Deliver$/ }).first().click();
     await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/review package/i);
-    await expect(page.getByTestId("deliver-review-package-flow")).toContainText("Review-only and engineer-review-required");
+    await expect(page.getByTestId("deliver-review-package-flow").getByText("Review-only and engineer-review-required.")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Help" }).click();
+    await expect(page.getByTestId("civora-trust-panel")).toContainText("Outputs are planning and review aids.");
 
     const unsafeClaimPattern = /construction-ready|approved for construction|certified for construction|Civora (stamps|seals|certifies|approves|submits)|Civora acts as engineer of record/i;
     const pageText = await page.locator("body").innerText();
