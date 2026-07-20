@@ -9,7 +9,7 @@ import { ObjectManagerSelectedToolsPanel } from "./ObjectManagerSelectedToolsPan
 import { RecentChangesPanel } from "./RecentChangesPanel";
 import { SelectedObjectCard } from "./SelectedObjectCard";
 
-type ObjectManagerPanelProps = {
+export type ObjectManagerPanelProps = {
   cadTools: ComponentProps<typeof DrawCadToolsPanel>;
   needsPlacement: ComponentProps<typeof NeedsPlacementTray>;
   selectedObject: ComponentProps<typeof SelectedObjectCard>;

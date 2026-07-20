@@ -353,7 +353,7 @@ import { LandscapeWorkbenchPanel } from "./components/LandscapeWorkbenchPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import { ModelReviewPanel } from "./components/ModelReviewPanel";
-import { ObjectManagerPanel } from "./components/ObjectManagerPanel";
+import { DashboardObjectManagerPanel } from "./components/DashboardObjectManagerPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PreviewPanel from "./components/PreviewPanel";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
@@ -17073,198 +17073,108 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "objects" ? (
-                  <ObjectManagerPanel
-                    cadTools={{ groups: cadToolGroups, onSelectTool: triggerCadTool }}
-                    needsPlacement={{
-                      items: pendingPlacementObjects.map((item) => ({
-                        id: item.id,
-                        label: item.label,
-                        typeLabel: SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object",
-                        widthFt: item.w,
-                        depthFt: item.d,
-                      })),
-                      onPlace: handleSelectPlacementTarget,
-                    }}
-                    selectedObject={{
-                      selectedObject: selectedBuilding,
-                      displayType: selectedBuilding ? getObjectDisplayType(selectedBuilding) : "",
-                      dimensionsLabel: selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : "",
-                      onMove: (item) => {
-                        handleObjectManagerSelect(item.id);
-                        setPlacementModeEnabled(true);
-                      },
-                      onFocus: (item) => {
-                        setFocusObjectId(item.id);
-                        setRightRailCollapsed(true);
-                      },
-                      onCopy: handleObjectManagerCopy,
-                      onRotate: (item) => handleObjectManagerTransform(item, "rotate"),
-                      onFlipHorizontal: (item) => handleObjectManagerTransform(item, "flip_horizontal"),
-                      onDelete: handleObjectManagerDelete,
-                    }}
-                    overview={{
-                      totalCount: buildingPlacements.length,
-                      placedCount: placedObjects.length,
-                      pendingCount: pendingPlacementObjects.length,
-                      selectedCount: selectedObjectIds.length,
-                      hiddenCount: hiddenObjectCount,
-                      typeLabels: objectManagerTypes,
-                      clipboardLabels: objectClipboard.map((item) => item.label),
-                      onSelectVisibleDraft: handleObjectManagerSelectVisibleDraft,
-                      onInvertSelection: handleObjectManagerInvertSelection,
-                      onPaste: handleObjectManagerPaste,
-                    }}
-                    hiddenState={{
-                      hiddenCount: hiddenObjectCount,
-                      onShowAll: () => {
-                          const hiddenObjects = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden));
-                          const restorableHiddenObjects = hiddenObjects.filter((item) => !item.meta?.combined_into_object_id);
-                          const preservedTraceCount = hiddenObjects.length - restorableHiddenObjects.length;
-                          restorableHiddenObjects
-                            .forEach((item) => {
-                              handleUpdateBuilding(item.id, {
-                                meta: {
-                                  ...(item.meta ?? {}),
-                                  ui_hidden: false,
-                                },
-                              });
-                            });
-                          recordRecentChange({
-                            type: "object_visibility_changed",
-                            label: "Objects shown",
-                            detail: preservedTraceCount
-                              ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown; ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden.`
-                              : "All hidden objects are visible again.",
-                            undoBlockedReason: "Hide specific objects again from Object Manager if needed.",
-                          });
-                          pushRecoveryMessage(preservedTraceCount
-                            ? `${restorableHiddenObjects.length} hidden object${restorableHiddenObjects.length === 1 ? "" : "s"} shown. ${preservedTraceCount} combined source trace piece${preservedTraceCount === 1 ? "" : "s"} stayed hidden until you explode the combined object.`
-                            : "All hidden objects are visible again.");
-                        },
-                    }}
-                    layerControls={{
-                      rows: objectManagerLayerRows,
-                      onSelectLayer: handleObjectManagerLayerSelect,
-                      onIsolateLayer: handleObjectManagerLayerIsolate,
-                      onSetLayerHidden: handleObjectManagerLayerVisibility,
-                      onSetLayerLocked: handleObjectManagerLayerLock,
-                    }}
-                    statusMessage={objectManagerStatusMessage}
-                    recentChanges={{
-                      changes: recentChanges.map((change) => ({
-                          id: change.id,
-                          label: change.label,
-                          detail: change.detail,
-                          createdAt: change.createdAt,
-                          canUndo: Boolean(change.undo),
-                          onAction: () => handleUndoRecentChange(change),
-                        })),
-                      open: recentChangesOpen,
-                      canUndoDraft: Boolean(lastDraftAction),
-                      canRedoDraft: Boolean(redoDraftAction),
-                      onToggleOpen: () => setRecentChangesOpen((value) => !value),
-                      onUndoDraft: handleUndoDraftAction,
-                      onRedoDraft: handleRedoDraftAction,
-                    }}
-                    selectedTools={selectedObjectIds.length > 0 ? {
-                      selectedCount: selectedObjectRows.length,
-                      measurementSummary: selectedObjectMeasurementSummary,
-                      measurements: selectedObjectMeasurements,
-                      arrayRows,
-                      arrayColumns,
-                      arraySpacingX,
-                      arraySpacingY,
-                      bulkMoveX,
-                      bulkMoveY,
-                      bulkMoveToX,
-                      bulkMoveToY,
-                      bulkScaleFactor,
-                      bulkRotateAngle,
-                      combineObjectName,
-                      combineObjectType,
-                      draftBlockName,
-                      blocks: draftBlockLibrary.map((block) => ({
-                            id: block.id,
-                            name: block.name,
-                            type: block.type,
-                            objectCount: block.objects.length,
-                            createdAt: block.createdAt,
-                            updatedAt: block.updatedAt,
-                            revision: block.revision,
-                          })),
-                      onClearSelection: () => setSelectedObjectIds([]),
-                      onHideSelected: () => handleObjectManagerBulkVisibility(true),
-                      onShowSelected: () => handleObjectManagerBulkVisibility(false),
-                      onIsolateSelected: handleObjectManagerIsolateSelected,
-                      onLockSelected: () => handleObjectManagerBulkLock(true),
-                      onUnlockSelected: () => handleObjectManagerBulkLock(false),
-                      onColorSelected: handleObjectManagerBulkColor,
-                      onTypeSelected: handleObjectManagerBulkType,
-                      onDuplicateSelected: handleObjectManagerBulkDuplicate,
-                      onLayoutSelected: handleObjectManagerBulkLayout,
-                      onDeleteSelected: handleObjectManagerBulkDelete,
-                      onArrayRowsChange: setArrayRows,
-                      onArrayColumnsChange: setArrayColumns,
-                      onArraySpacingXChange: setArraySpacingX,
-                      onArraySpacingYChange: setArraySpacingY,
-                      onCreateArray: handleObjectManagerArraySelected,
-                      onBulkMoveXChange: setBulkMoveX,
-                      onBulkMoveYChange: setBulkMoveY,
-                      onMoveSelected: handleObjectManagerBulkMove,
-                      onCopyByOffset: handleObjectManagerBulkCopyByOffset,
-                      onBulkMoveToXChange: setBulkMoveToX,
-                      onBulkMoveToYChange: setBulkMoveToY,
-                      onMoveToCoordinate: handleObjectManagerBulkMoveTo,
-                      onBulkScaleFactorChange: setBulkScaleFactor,
-                      onScaleSelected: handleObjectManagerBulkScale,
-                      onBulkRotateAngleChange: setBulkRotateAngle,
-                      onRotateSelected: handleObjectManagerBulkRotate,
-                      onMirrorSelected: handleObjectManagerBulkMirror,
-                      onCombineObjectNameChange: setCombineObjectName,
-                      onCombineObjectTypeChange: setCombineObjectType,
-                      onCombineSelected: handleObjectManagerCombineSelected,
-                      onDraftBlockNameChange: setDraftBlockName,
-                      onSaveBlock: handleObjectManagerSaveBlock,
-                      onRenameBlock: (blockId, value) => {
-                            const block = draftBlockLibrary.find((item) => item.id === blockId);
-                            if (block) handleObjectManagerRenameBlock(block, value);
-                          },
-                      onUpdateBlock: (blockId) => {
-                            const block = draftBlockLibrary.find((item) => item.id === blockId);
-                            if (block) handleObjectManagerUpdateBlock(block);
-                          },
-                      onInsertBlock: (blockId) => {
-                            const block = draftBlockLibrary.find((item) => item.id === blockId);
-                            if (block) handleObjectManagerInsertBlock(block);
-                          },
-                      onDeleteBlock: (blockId) => {
-                            const block = draftBlockLibrary.find((item) => item.id === blockId);
-                            if (block) handleObjectManagerDeleteBlock(block);
-                          },
-                    } : null}
-                    objectList={{
-                      objects: buildingPlacements,
-                      units,
-                      activeObjectId: activePlacementId,
-                      selectedObjectSet,
-                      sourceConfidenceByObjectId,
-                      objectOutlineColor: objectOutlineColor || "#64748b",
-                      onSetPlacementModeEnabled: setPlacementModeEnabled,
-                      onSelect: handleObjectManagerSelect,
-                      onToggleMultiSelect: handleObjectManagerToggleMultiSelect,
-                      onDelete: handleObjectManagerDelete,
-                      onUpdate: handleUpdateBuilding,
-                      onReportBlocker: reportObjectActionBlocker,
-                      onToggleLock: handleToggleBuildingLock,
-                      onFocus: (objectId) => {
-                          setFocusObjectId(objectId);
-                          setRightRailCollapsed(true);
-                        },
-                      onInspect: () => handleOpenPanelFromDrawer("details"),
-                      onCopy: handleObjectManagerCopy,
-                      onTransform: handleObjectManagerTransform,
-                      onExplodeCombined: handleObjectManagerExplodeCombined,
-                    }}
+                  <DashboardObjectManagerPanel
+                    cadToolGroups={cadToolGroups}
+                    triggerCadTool={triggerCadTool}
+                    pendingPlacementObjects={pendingPlacementObjects}
+                    handleSelectPlacementTarget={handleSelectPlacementTarget}
+                    selectedBuilding={selectedBuilding}
+                    handleObjectManagerSelect={handleObjectManagerSelect}
+                    setPlacementModeEnabled={setPlacementModeEnabled}
+                    setFocusObjectId={setFocusObjectId}
+                    setRightRailCollapsed={setRightRailCollapsed}
+                    handleObjectManagerCopy={handleObjectManagerCopy}
+                    handleObjectManagerTransform={handleObjectManagerTransform}
+                    handleObjectManagerDelete={handleObjectManagerDelete}
+                    buildingPlacements={buildingPlacements}
+                    placedObjects={placedObjects}
+                    pendingPlacementCount={pendingPlacementObjects.length}
+                    selectedObjectIds={selectedObjectIds}
+                    hiddenObjectCount={hiddenObjectCount}
+                    objectManagerTypes={objectManagerTypes}
+                    objectClipboard={objectClipboard}
+                    handleObjectManagerSelectVisibleDraft={handleObjectManagerSelectVisibleDraft}
+                    handleObjectManagerInvertSelection={handleObjectManagerInvertSelection}
+                    handleObjectManagerPaste={handleObjectManagerPaste}
+                    handleUpdateBuilding={handleUpdateBuilding}
+                    recordRecentChange={recordRecentChange}
+                    pushRecoveryMessage={pushRecoveryMessage}
+                    objectManagerLayerRows={objectManagerLayerRows}
+                    handleObjectManagerLayerSelect={handleObjectManagerLayerSelect}
+                    handleObjectManagerLayerIsolate={handleObjectManagerLayerIsolate}
+                    handleObjectManagerLayerVisibility={handleObjectManagerLayerVisibility}
+                    handleObjectManagerLayerLock={handleObjectManagerLayerLock}
+                    objectManagerStatusMessage={objectManagerStatusMessage}
+                    recentChanges={recentChanges}
+                    handleUndoRecentChange={handleUndoRecentChange}
+                    recentChangesOpen={recentChangesOpen}
+                    lastDraftAction={lastDraftAction}
+                    redoDraftAction={redoDraftAction}
+                    setRecentChangesOpen={setRecentChangesOpen}
+                    handleUndoDraftAction={handleUndoDraftAction}
+                    handleRedoDraftAction={handleRedoDraftAction}
+                    selectedObjectRows={selectedObjectRows}
+                    selectedObjectMeasurementSummary={selectedObjectMeasurementSummary}
+                    selectedObjectMeasurements={selectedObjectMeasurements}
+                    arrayRows={arrayRows}
+                    arrayColumns={arrayColumns}
+                    arraySpacingX={arraySpacingX}
+                    arraySpacingY={arraySpacingY}
+                    bulkMoveX={bulkMoveX}
+                    bulkMoveY={bulkMoveY}
+                    bulkMoveToX={bulkMoveToX}
+                    bulkMoveToY={bulkMoveToY}
+                    bulkScaleFactor={bulkScaleFactor}
+                    bulkRotateAngle={bulkRotateAngle}
+                    combineObjectName={combineObjectName}
+                    combineObjectType={combineObjectType}
+                    draftBlockName={draftBlockName}
+                    draftBlockLibrary={draftBlockLibrary}
+                    setSelectedObjectIds={setSelectedObjectIds}
+                    handleObjectManagerBulkVisibility={handleObjectManagerBulkVisibility}
+                    handleObjectManagerIsolateSelected={handleObjectManagerIsolateSelected}
+                    handleObjectManagerBulkLock={handleObjectManagerBulkLock}
+                    handleObjectManagerBulkColor={handleObjectManagerBulkColor}
+                    handleObjectManagerBulkType={handleObjectManagerBulkType}
+                    handleObjectManagerBulkDuplicate={handleObjectManagerBulkDuplicate}
+                    handleObjectManagerBulkLayout={handleObjectManagerBulkLayout}
+                    handleObjectManagerBulkDelete={handleObjectManagerBulkDelete}
+                    setArrayRows={setArrayRows}
+                    setArrayColumns={setArrayColumns}
+                    setArraySpacingX={setArraySpacingX}
+                    setArraySpacingY={setArraySpacingY}
+                    handleObjectManagerArraySelected={handleObjectManagerArraySelected}
+                    setBulkMoveX={setBulkMoveX}
+                    setBulkMoveY={setBulkMoveY}
+                    handleObjectManagerBulkMove={handleObjectManagerBulkMove}
+                    handleObjectManagerBulkCopyByOffset={handleObjectManagerBulkCopyByOffset}
+                    setBulkMoveToX={setBulkMoveToX}
+                    setBulkMoveToY={setBulkMoveToY}
+                    handleObjectManagerBulkMoveTo={handleObjectManagerBulkMoveTo}
+                    setBulkScaleFactor={setBulkScaleFactor}
+                    handleObjectManagerBulkScale={handleObjectManagerBulkScale}
+                    setBulkRotateAngle={setBulkRotateAngle}
+                    handleObjectManagerBulkRotate={handleObjectManagerBulkRotate}
+                    handleObjectManagerBulkMirror={handleObjectManagerBulkMirror}
+                    setCombineObjectName={setCombineObjectName}
+                    setCombineObjectType={setCombineObjectType}
+                    handleObjectManagerCombineSelected={handleObjectManagerCombineSelected}
+                    setDraftBlockName={setDraftBlockName}
+                    handleObjectManagerSaveBlock={handleObjectManagerSaveBlock}
+                    handleObjectManagerRenameBlock={handleObjectManagerRenameBlock}
+                    handleObjectManagerUpdateBlock={handleObjectManagerUpdateBlock}
+                    handleObjectManagerInsertBlock={handleObjectManagerInsertBlock}
+                    handleObjectManagerDeleteBlock={handleObjectManagerDeleteBlock}
+                    units={units}
+                    activePlacementId={activePlacementId}
+                    selectedObjectSet={selectedObjectSet}
+                    sourceConfidenceByObjectId={sourceConfidenceByObjectId}
+                    objectOutlineColor={objectOutlineColor || "#64748b"}
+                    handleObjectManagerToggleMultiSelect={handleObjectManagerToggleMultiSelect}
+                    reportObjectActionBlocker={reportObjectActionBlocker}
+                    handleToggleBuildingLock={handleToggleBuildingLock}
+                    handleOpenDetailsPanel={() => handleOpenPanelFromDrawer("details")}
+                    handleObjectManagerExplodeCombined={handleObjectManagerExplodeCombined}
                   />
                 ) : null}
 
