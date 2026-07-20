@@ -96,30 +96,6 @@ import type {
   PlanPdfElement,
 } from "./types";
 
-
-type CapabilityExposure = {
-  key: string;
-  label: string;
-  exposed: "yes" | "no";
-  surfaces: string[];
-  status: SidebarStatus;
-  value: string;
-  missingWiring: string;
-  exactFix: string;
-};
-type PrimaryWorkflowKey = "setup" | "draw" | "objects" | "design" | "analyze" | "deliver";
-type CadToolRequestForPreview = CadToolRequest;
-type PrimaryWorkflowItem = {
-  key: PrimaryWorkflowKey;
-  label: string;
-  caption: string;
-  panel: SidePanelKey;
-  icon: typeof Gauge;
-  status: SidebarStatus;
-  metric: string;
-};
-
-
 import {
   ACTIVE_PROJECT_STORAGE_KEY,
   DEFAULT_BLANK_SITE_DEPTH_FT,
@@ -232,12 +208,22 @@ import {
   type ReviewPackageFlowSummary,
   type UtilityCatalogResponse,
 } from "./utils/dashboardDataTypes";
-import type { CadToolRequest } from "./utils/cadToolTypes";
 import {
   markCivoraInteraction,
   measureCivoraInteractionAfterPaint,
 } from "./utils/performanceProbes";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
+import type {
+  ApprovalState,
+  CadToolRequestForPreview,
+  CapabilityExposure,
+  DraftBlockDefinition,
+  DraftUndoAction,
+  PerformanceAIDashboardProps,
+  PrimaryWorkflowItem,
+  PrimaryWorkflowKey,
+  RecentChange,
+} from "./utils/dashboardTypes";
 import {
   CAD_PREVIEW_SUPPORTED_TYPES,
   boundsFromCadPoints,
@@ -334,85 +320,6 @@ import useAuthState from "./hooks/useAuthState";
 import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
 import { AnalysisPanel } from "./components/AnalysisPanel";
-
-type ApprovalState = "idle" | "approving" | "starting";
-
-type RecentChangeType =
-  | "object_added"
-  | "object_deleted"
-  | "object_renamed"
-  | "object_style_changed"
-  | "object_type_changed"
-  | "object_visibility_changed"
-  | "site_boundary_unlocked"
-  | "site_boundary_relocked"
-  | "generate_recorded"
-  | "review_package_recorded"
-  | "ai_realism_recorded";
-
-type DraftUndoAction =
-  | { action: "add"; object: BuildingPlacement }
-  | {
-      action: "add_many";
-      objects: BuildingPlacement[];
-      label: string;
-    }
-  | { action: "delete"; object: BuildingPlacement }
-  | {
-      action: "delete_many";
-      objects: BuildingPlacement[];
-      label: string;
-    }
-  | {
-      action: "update";
-      objectId: string;
-      before: BuildingPlacement;
-      after: BuildingPlacement;
-      label: string;
-    }
-  | {
-      action: "combine";
-      object: BuildingPlacement;
-      hiddenSources: BuildingPlacement[];
-      label: string;
-    }
-  | {
-      action: "explode";
-      object: BuildingPlacement;
-      beforeSources: BuildingPlacement[];
-      afterSources: BuildingPlacement[];
-      label: string;
-    }
-  | {
-      action: "bulk_update";
-      before: BuildingPlacement[];
-      after?: BuildingPlacement[];
-      label: string;
-    };
-
-type DraftBlockDefinition = {
-  id: string;
-  name: string;
-  type: SiteObjectType;
-  objects: BuildingPlacement[];
-  createdAt: number;
-  updatedAt?: number;
-  revision?: number;
-};
-
-type RecentChange = {
-  id: string;
-  type: RecentChangeType;
-  label: string;
-  detail: string;
-  createdAt: number;
-  undo?: DraftUndoAction;
-  undoBlockedReason?: string;
-};
-
-type PerformanceAIDashboardProps = {
-  forceDemoWorkspace?: boolean;
-};
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
