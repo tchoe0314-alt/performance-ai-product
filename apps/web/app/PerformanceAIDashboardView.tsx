@@ -250,6 +250,7 @@ import { useDashboardAutoSiteContextState } from "./hooks/useDashboardAutoSiteCo
 import { useDashboardShellReviewState } from "./hooks/useDashboardShellReviewState";
 import { useDashboardStartPanelProps } from "./hooks/useDashboardStartPanelProps";
 import { useDashboardDataSourcesPanelProps } from "./hooks/useDashboardDataSourcesPanelProps";
+import { useDashboardGenerationPanelProps } from "./hooks/useDashboardGenerationPanelProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -9229,6 +9230,112 @@ function PerformanceAIDashboardView({
     onSaveProject: saveProject,
     onUploadImage: uploadImage,
   });
+  const {
+    drainageWorkbenchPanelProps,
+    generatePanelProps,
+    gradingWorkbenchPanelProps,
+    landscapeWorkbenchPanelProps,
+    roadwayWorkbenchPanelProps,
+    sanitaryWorkbenchPanelProps,
+    systemReadinessPanelProps,
+    utilitiesWorkbenchPanelProps,
+    waterFireFlowWorkbenchPanelProps,
+  } = useDashboardGenerationPanelProps({
+    missingSite,
+    busy,
+    hasVisibleActiveJob: Boolean(visibleActiveJob),
+    statusMessage,
+    assistedEnabled,
+    pendingPlacementCount: pendingPlacementObjects.length,
+    pendingPlacementLabels,
+    currentUserLayoutContext: currentGenerateLayoutContext,
+    autoSiteContextFlowSummary,
+    systemReadinessRows,
+    issues,
+    generateFlowSummary,
+    reactiveValidation,
+    reactiveAffectedRunTarget,
+    onAssistedEnabledChange: setAssistedEnabled,
+    onStatusMessageChange: setStatusMessage,
+    onGenerateFlowSummaryChange: setGenerateFlowSummary,
+    onGenerateSystem: handleGenerateSystem,
+    drainageIssueApplyLabel,
+    canApplyDrainageIssue,
+    getIssueGuidance,
+    onApplyDrainageIssue: handleApplyDrainageIssue,
+    formatStageLabel,
+    hasTerrainSource,
+    hasGradingSurface,
+    siteTooLargeForGrading,
+    systemStatuses,
+    useSurveyForGrading,
+    onUseSurveyForGradingChange: setUseSurveyForGrading,
+    minSlopePct,
+    maxParkingSlopePct,
+    maxRoadGradePct,
+    maxAdaCrossSlopePct,
+    onMinSlopePctChange: setMinSlopePct,
+    onMaxParkingSlopePctChange: setMaxParkingSlopePct,
+    onMaxRoadGradePctChange: setMaxRoadGradePct,
+    onMaxAdaCrossSlopePctChange: setMaxAdaCrossSlopePct,
+    drainageAllowSlopeAdjust,
+    onDrainageAllowSlopeAdjustChange: setDrainageAllowSlopeAdjust,
+    gradingEarthworkUx,
+    onOpenPanel: handleOpenSidePanel,
+    hasBasinPlaced,
+    hasHardSystemBlock,
+    drainageSourceOverride,
+    onDrainageSourceOverrideChange: setDrainageSourceOverride,
+    drainageConnectOrphans,
+    onDrainageConnectOrphansChange: setDrainageConnectOrphans,
+    drainageMaxSlopeAdjust,
+    onDrainageMaxSlopeAdjustChange: setDrainageMaxSlopeAdjust,
+    onAddObject: handleAddObject,
+    drainage,
+    utilities,
+    pipeMinSlopePct,
+    onUtilitiesChange: setUtilities,
+    onPipeMinSlopePctChange: setPipeMinSlopePct,
+    buildingPlacements,
+    confirmedBuildingCount: confirmedObjectCounts.buildings,
+    waterFireFlowReview,
+    roads,
+    stormHydrologyReview,
+    systemReadinessPanelKey: sidePanelForRender as Extract<SidePanelKey, "system_grading" | "system_storm" | "system_sanitary" | "system_water" | "system_roadway" | "system_utilities" | "system_landscape">,
+    siteScaleLocked,
+    activeCivil3DWorkflowTab,
+    onCivil3DWorkflowTabChange: setActiveCivil3DWorkflowTab,
+    roadwayWorkbenchData,
+    sourceConfidenceRows,
+    civil3DWorkflowBlockers,
+    gradingSourceSummary,
+    hasVerifiedSurveyControl,
+    onShowProfileControls: () => {
+      setActiveRoadwayWorkbenchTab("profile");
+    },
+    parkingAngle,
+    onParkingAngleChange: setParkingAngle,
+    onRoadsChange: setRoads,
+    parkingLoading,
+    onParkingLoadingChange: setParkingLoading,
+    parkingStallWidth,
+    onParkingStallWidthChange: setParkingStallWidth,
+    parkingAisleWidth,
+    onParkingAisleWidthChange: setParkingAisleWidth,
+    parkingStallDepth,
+    onParkingStallDepthChange: setParkingStallDepth,
+    parkingAdaCount,
+    onParkingAdaCountChange: setParkingAdaCount,
+    parkingCompactCount,
+    onParkingCompactCountChange: setParkingCompactCount,
+    parkingAdaAisleWidth,
+    onParkingAdaAisleWidthChange: setParkingAdaAisleWidth,
+    parkingCompactWidth,
+    onParkingCompactWidthChange: setParkingCompactWidth,
+    activeRoadwayWorkbenchTab,
+    onRoadwayWorkbenchTabChange: setActiveRoadwayWorkbenchTab,
+    hasBackendResult: Boolean(backendResult),
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9393,191 +9500,37 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "generate" ? (
-                  <GeneratePanel
-                    missingSite={missingSite}
-                    busy={busy}
-                    hasVisibleActiveJob={Boolean(visibleActiveJob)}
-                    statusMessage={statusMessage}
-                    assistedEnabled={assistedEnabled}
-                    pendingPlacementCount={pendingPlacementObjects.length}
-                    pendingPlacementLabels={pendingPlacementLabels}
-                    currentUserLayoutContext={currentGenerateLayoutContext}
-                    autoSiteContextFlowSummary={autoSiteContextFlowSummary}
-                    systemReadinessRows={systemReadinessRows}
-                    issues={issues}
-                    generateFlowSummary={generateFlowSummary}
-                    reactiveValidation={reactiveValidation}
-                    reactiveAffectedRunTarget={reactiveAffectedRunTarget}
-                    onAssistedEnabledChange={setAssistedEnabled}
-                    onStatusMessageChange={setStatusMessage}
-                    onGenerateFlowSummaryChange={setGenerateFlowSummary}
-                    onGenerateSystem={(target) => void handleGenerateSystem(target)}
-                    drainageIssueApplyLabel={drainageIssueApplyLabel}
-                    canApplyDrainageIssue={canApplyDrainageIssue}
-                    getIssueGuidance={getIssueGuidance}
-                    onApplyDrainageIssue={handleApplyDrainageIssue}
-                    formatStageLabel={formatStageLabel}
-                  />
+                  <GeneratePanel {...generatePanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "grading" ? (
-                  <GradingWorkbenchPanel
-                    hasTerrainSource={hasTerrainSource}
-                    hasGradingSurface={hasGradingSurface}
-                    siteTooLargeForGrading={siteTooLargeForGrading}
-                    gradingStatus={systemStatuses.grading}
-                    useSurveyForGrading={useSurveyForGrading}
-                    onUseSurveyForGradingChange={setUseSurveyForGrading}
-                    minSlopePct={minSlopePct}
-                    maxParkingSlopePct={maxParkingSlopePct}
-                    maxRoadGradePct={maxRoadGradePct}
-                    maxAdaCrossSlopePct={maxAdaCrossSlopePct}
-                    onMinSlopePctChange={setMinSlopePct}
-                    onMaxParkingSlopePctChange={setMaxParkingSlopePct}
-                    onMaxRoadGradePctChange={setMaxRoadGradePct}
-                    onMaxAdaCrossSlopePctChange={setMaxAdaCrossSlopePct}
-                    drainageAllowSlopeAdjust={drainageAllowSlopeAdjust}
-                    onDrainageAllowSlopeAdjustChange={setDrainageAllowSlopeAdjust}
-                    gradingEarthworkUx={gradingEarthworkUx}
-                    missingSite={missingSite}
-                    onOpenAnalysis={() => handleOpenSidePanel("analysis")}
-                    onGenerateGrading={() => handleGenerateSystem("grading")}
-                  />
+                  <GradingWorkbenchPanel {...gradingWorkbenchPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "drainage" ? (
-                  <DrainageWorkbenchPanel
-                    hasBasinPlaced={hasBasinPlaced}
-                    hasTerrainSource={hasTerrainSource}
-                    hasHardSystemBlock={hasHardSystemBlock}
-                    drainageStatus={systemStatuses.drainage}
-                    drainageSourceOverride={drainageSourceOverride}
-                    onDrainageSourceOverrideChange={setDrainageSourceOverride}
-                    drainageConnectOrphans={drainageConnectOrphans}
-                    onDrainageConnectOrphansChange={setDrainageConnectOrphans}
-                    drainageAllowSlopeAdjust={drainageAllowSlopeAdjust}
-                    onDrainageAllowSlopeAdjustChange={setDrainageAllowSlopeAdjust}
-                    drainageMaxSlopeAdjust={drainageMaxSlopeAdjust}
-                    onDrainageMaxSlopeAdjustChange={setDrainageMaxSlopeAdjust}
-                    missingSite={missingSite}
-                    onAddObject={handleAddObject}
-                    onGenerateDrainage={() => handleGenerateSystem("drainage")}
-                  />
+                  <DrainageWorkbenchPanel {...drainageWorkbenchPanelProps} />
                 ) : null}
                 {sidePanelForRender === "utilities" ? (
-                  <UtilitiesWorkbenchPanel
-                    hasHardSystemBlock={hasHardSystemBlock}
-                    utilitiesStatus={systemStatuses.utilities}
-                    drainageEnabled={drainage}
-                    utilitiesEnabled={utilities}
-                    pipeMinSlopePct={pipeMinSlopePct}
-                    onUtilitiesChange={setUtilities}
-                    onPipeMinSlopePctChange={setPipeMinSlopePct}
-                    onOpenSanitary={() => handleOpenSidePanel("sanitary")}
-                    onOpenWater={() => handleOpenSidePanel("water")}
-                    onAddObject={handleAddObject}
-                    onGenerateUtilities={() => handleGenerateSystem("utilities")}
-                  />
+                  <UtilitiesWorkbenchPanel {...utilitiesWorkbenchPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "sanitary" ? (
-                  <SanitaryWorkbenchPanel
-                    hasHardSystemBlock={hasHardSystemBlock}
-                    utilitiesStatus={systemStatuses.utilities}
-                    utilitiesEnabled={utilities}
-                    pipeMinSlopePct={pipeMinSlopePct}
-                    buildingCoverageLabel={buildingPlacements.length ? `${confirmedObjectCounts.buildings} buildings` : "No buildings"}
-                    onUtilitiesChange={setUtilities}
-                    onPipeMinSlopePctChange={setPipeMinSlopePct}
-                    onAddObject={handleAddObject}
-                    onGenerateUtilities={() => handleGenerateSystem("utilities")}
-                  />
+                  <SanitaryWorkbenchPanel {...sanitaryWorkbenchPanelProps} />
                 ) : null}
                 {sidePanelForRender === "water" ? (
-                  <WaterFireFlowWorkbenchPanel
-                    hasHardSystemBlock={hasHardSystemBlock}
-                    systemUtilitiesStatus={systemStatuses.utilities}
-                    waterFireFlowReview={waterFireFlowReview}
-                    buildingPlacements={buildingPlacements}
-                    utilities={utilities}
-                    onUtilitiesChange={setUtilities}
-                    onAddObject={handleAddObject}
-                    onGenerateUtilities={() => handleGenerateSystem("utilities")}
-                  />
+                  <WaterFireFlowWorkbenchPanel {...waterFireFlowWorkbenchPanelProps} />
                 ) : null}
 
                 {sidePanelForRender.startsWith("system_") ? (
-                  <SystemReadinessPanel
-                    sidePanelForRender={sidePanelForRender as Extract<SidePanelKey, "system_grading" | "system_storm" | "system_sanitary" | "system_water" | "system_roadway" | "system_utilities" | "system_landscape">}
-                    siteTooLargeForGrading={siteTooLargeForGrading}
-                    systemStatuses={systemStatuses}
-                    siteScaleLocked={siteScaleLocked}
-                    hasTerrainSource={hasTerrainSource}
-                    hasBasinPlaced={hasBasinPlaced}
-                    hasHardSystemBlock={hasHardSystemBlock}
-                    buildingPlacements={buildingPlacements}
-                    utilities={utilities}
-                    pipeMinSlopePct={pipeMinSlopePct}
-                    roads={roads}
-                    maxRoadGradePct={maxRoadGradePct}
-                    stormHydrologyReview={stormHydrologyReview}
-                    onOpenPanel={handleOpenSidePanel}
-                  />
+                  <SystemReadinessPanel {...systemReadinessPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "roadway" ? (
-                  <RoadwayWorkbenchPanel
-                    activeCivil3DWorkflowTab={activeCivil3DWorkflowTab}
-                    onCivil3DWorkflowTabChange={setActiveCivil3DWorkflowTab}
-                    roadwayWorkbenchData={roadwayWorkbenchData}
-                    gradingEarthworkUx={gradingEarthworkUx}
-                    sourceConfidenceRows={sourceConfidenceRows}
-                    civil3DWorkflowBlockers={civil3DWorkflowBlockers}
-                    gradingSourceSummary={gradingSourceSummary}
-                    hasTerrainSource={hasTerrainSource}
-                    hasVerifiedSurveyControl={hasVerifiedSurveyControl}
-                    onShowProfileControls={() => {
-                      setActiveRoadwayWorkbenchTab("profile");
-                    }}
-                    roadsStatus={systemStatuses.roads}
-                    parkingStatus={systemStatuses.parking}
-                    maxRoadGradePct={maxRoadGradePct}
-                    onMaxRoadGradePctChange={setMaxRoadGradePct}
-                    parkingAngle={parkingAngle}
-                    onParkingAngleChange={setParkingAngle}
-                    roads={roads}
-                    onRoadsChange={setRoads}
-                    parkingLoading={parkingLoading}
-                    onParkingLoadingChange={setParkingLoading}
-                    parkingStallWidth={parkingStallWidth}
-                    onParkingStallWidthChange={setParkingStallWidth}
-                    parkingAisleWidth={parkingAisleWidth}
-                    onParkingAisleWidthChange={setParkingAisleWidth}
-                    parkingStallDepth={parkingStallDepth}
-                    onParkingStallDepthChange={setParkingStallDepth}
-                    parkingAdaCount={parkingAdaCount}
-                    onParkingAdaCountChange={setParkingAdaCount}
-                    parkingCompactCount={parkingCompactCount}
-                    onParkingCompactCountChange={setParkingCompactCount}
-                    parkingAdaAisleWidth={parkingAdaAisleWidth}
-                    onParkingAdaAisleWidthChange={setParkingAdaAisleWidth}
-                    parkingCompactWidth={parkingCompactWidth}
-                    onParkingCompactWidthChange={setParkingCompactWidth}
-                    activeRoadwayWorkbenchTab={activeRoadwayWorkbenchTab}
-                    onRoadwayWorkbenchTabChange={setActiveRoadwayWorkbenchTab}
-                    maxAdaCrossSlopePct={maxAdaCrossSlopePct}
-                    onMaxAdaCrossSlopePctChange={setMaxAdaCrossSlopePct}
-                    onAddObject={handleAddObject}
-                    onGenerateSystem={handleGenerateSystem}
-                  />
+                  <RoadwayWorkbenchPanel {...roadwayWorkbenchPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "landscape" ? (
-                  <LandscapeWorkbenchPanel
-                    buildingPlacements={buildingPlacements}
-                    hasBackendResult={Boolean(backendResult)}
-                    onAddObject={handleAddObject}
-                  />
+                  <LandscapeWorkbenchPanel {...landscapeWorkbenchPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "details" ? (
