@@ -283,6 +283,7 @@ import { useDashboardImageDetectionActions } from "./hooks/useDashboardImageDete
 import { useDashboardAutoExistingConditions } from "./hooks/useDashboardAutoExistingConditions";
 import { useDashboardApplySiteAction } from "./hooks/useDashboardApplySiteAction";
 import { useDashboardSiteAddressAction } from "./hooks/useDashboardSiteAddressAction";
+import { useDashboardSiteSetupUtilityActions } from "./hooks/useDashboardSiteSetupUtilityActions";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -7013,102 +7014,36 @@ function PerformanceAIDashboardView({
     updateProjectStatus,
   });
 
-  const handleCreateCenteredSiteFromSetup = useCallback(async () => {
-    const address = siteAddress.trim();
-    const width = parsePositiveNumber(lotWidth) ?? 1000;
-    const height = parsePositiveNumber(lotHeight) ?? 1000;
-    if (!address) {
-      updateProjectStatus({
-        state: "needs review",
-        area: "setup",
-        title: "Address needed",
-        detail: "Type the site address first.",
-        nextAction: "Enter an address, then create the centered site.",
-      });
-      siteAddressInputRef.current?.focus();
-      return;
-    }
-    setLotWidth(String(Math.round(width)));
-    setLotHeight(String(Math.round(height)));
-    clearGeneratedPreview();
-    autoFitSite(width, height, "Site Boundary", undefined, true, true, true);
-    setShowSiteBounds(false);
-    setSiteSelectionMode(false);
-    setPreviewMode("2d");
-    setPreviewQuality("high");
-    setPreviewInteraction("static");
-    setActiveWorkspaceMode("canvas");
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setSidePanelVisible(false);
-    setRightRailCollapsed(true);
-    setFitToSiteRequest((value) => value + 1);
-    updateProjectStatus({
-      state: "working",
-      area: "setup",
-      title: "Creating centered site",
-      detail: `${address} is being applied with a ${Math.round(width)} ft by ${Math.round(height)} ft site box centered on the address.`,
-      nextAction: "Review the detected source context, then draw or generate inside the locked site.",
-    });
-    setAutoExistingConditionsStatus({
-      status: "running",
-      message: `Creating a ${Math.round(width)} ft by ${Math.round(height)} ft site centered on ${address}, then checking available source context.`,
-      candidateCount: 0,
-      missing: [],
-    });
-    lastAppliedSiteRef.current = {
-      w: width,
-      h: height,
-      lat: viewportCenter?.lat,
-      lng: viewportCenter?.lng,
-    };
-    await saveSiteAddress(address, {
-      preserveLockedSite: true,
-      siteWidth: width,
-      siteHeight: height,
-    });
-  }, [
+  const { handleCreateCenteredSiteFromSetup, handleMapCenter } = useDashboardSiteSetupUtilityActions({
     autoFitSite,
     clearGeneratedPreview,
+    currentProject,
+    lastAppliedSiteRef,
     lotHeight,
     lotWidth,
+    payloadPreview,
+    saveProject,
     saveSiteAddress,
+    setActiveSidePanel,
+    setActiveWorkspaceMode,
+    setAutoExistingConditionsStatus,
+    setFitToSiteRequest,
+    setLotHeight,
+    setLotWidth,
+    setPreviewInteraction,
+    setPreviewMode,
+    setPreviewQuality,
+    setRenderedSidePanel,
+    setRightRailCollapsed,
+    setShowSiteBounds,
+    setSidePanelVisible,
+    setSiteSelectionMode,
+    setStatusMessage,
     siteAddress,
+    siteAddressInputRef,
     updateProjectStatus,
-    viewportCenter?.lat,
-    viewportCenter?.lng,
-  ]);
-
-  const handleMapCenter = useCallback(
-    async (payload: { lat: number; lng: number }) => {
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        geocode: {
-          ...(currentInput?.meta?.site_inputs?.geocode ?? {}),
-          lat: payload.lat,
-          lng: payload.lng,
-          display_name: currentInput?.meta?.site_inputs?.geocode?.display_name ?? "Map center",
-        },
-      };
-      await saveProject({
-        silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-          },
-        },
-      });
-      setFitToSiteRequest((value) => value + 1);
-      setStatusMessage("Site centered on the map view.");
-    },
-    [currentProject, payloadPreview, saveProject],
-  );
+    viewportCenter,
+  });
 
   const requestPreview = async (
     payload: PreviewRequestPayload,
