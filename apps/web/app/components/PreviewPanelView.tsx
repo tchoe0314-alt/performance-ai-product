@@ -49,6 +49,7 @@ import { PreviewParkingModules } from "./PreviewParkingModules";
 import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
 import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
 import { PreviewRectObjects } from "./PreviewRectObjects";
+import { PreviewRectObjectChrome } from "./PreviewRectObjectChrome";
 import { PreviewSelectedObjectQuickToolbar } from "./PreviewSelectedObjectQuickToolbar";
 import { PreviewSelectionAffordances } from "./PreviewSelectionAffordances";
 import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
@@ -117,6 +118,10 @@ import {
   previewRectIntersectsViewport,
   resolvePreviewObjectHitZIndex,
 } from "../utils/previewObjectLayering";
+import {
+  getPreviewObjectBorderColor,
+  getPreviewObjectOutlineColor,
+} from "../utils/previewObjectBorderStyles";
 import { resolvePreviewPointerSitePoint } from "../utils/previewPointerGeometry";
 import {
   buildPreviewMapAnchor,
@@ -5086,24 +5091,8 @@ export default function PreviewPanel({
                         const isSelected = selectedBuildingId === item.id;
                         const rectPct = interactiveRectPercent(item, mapRef.current);
                         const rotation = showMap ? 0 : (item.rotation ?? 0);
-                        const borderColorMap: Record<string, string> = {
-                          site: previewQuality === "high" ? "border-white/70" : "border-slate-400",
-                          setback_zone: "border-slate-300",
-                          no_build_zone: "border-rose-400",
-                          basin: previewQuality === "high" ? "border-sky-300" : "border-emerald-500",
-                          entrance: "border-amber-500",
-                          driveway: "border-orange-400",
-                          road: "border-blue-500",
-                          parking: "border-violet-500",
-                          sidewalk: "border-teal-500",
-                          pool: "border-cyan-500",
-                          pad: "border-stone-400",
-                        };
-                        const borderColor =
-                          (item.type && borderColorMap[item.type]) || "border-slate-900/70";
-                        const outlineColor =
-                          (item.meta as { style?: { outline_color?: string } } | undefined)?.style
-                            ?.outline_color;
+                        const borderColor = getPreviewObjectBorderColor(item, { highQuality: previewQuality === "high" });
+                        const outlineColor = getPreviewObjectOutlineColor(item);
                         const isAccessHighlight =
                           analysisHighlight &&
                           (analysisHighlight.buildingId === item.id || analysisHighlight.accessId === item.id);
@@ -5171,33 +5160,16 @@ export default function PreviewPanel({
                               onSelectBuilding(item.id);
                             }}
                           >
-                            <div
-                              className={`pointer-events-none h-full w-full rounded-[8px] shadow-sm transition ${
-                                showBoxChrome ? `border ${borderColor}` : ""
-                              } ${
-                                showBoxChrome && isSelected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-white/80 shadow-[0_0_0_6px_rgba(251,191,36,0.14)]" : ""
-                              } ${showBoxChrome && isAccessHighlight ? "ring-2 ring-rose-300" : ""}`}
-                              style={{
-                                backgroundColor: "transparent",
-                                borderColor: showBoxChrome ? outlineColor || undefined : "transparent",
-                              }}
+                            <PreviewRectObjectChrome
+                              showBox={showBox}
+                              showBoxChrome={showBoxChrome}
+                              selected={isSelected}
+                              accessHighlighted={Boolean(isAccessHighlight)}
+                              highQuality={isHighQuality}
+                              visualKind={visualKind}
+                              borderColor={borderColor}
+                              outlineColor={outlineColor}
                             />
-                            {isSelected && showBox ? (
-                              <>
-                                <div className="pointer-events-none absolute inset-0 rounded-[8px] border border-amber-500/80" />
-                                {[
-                                  "left-0 top-0 -translate-x-1/2 -translate-y-1/2",
-                                  "right-0 top-0 translate-x-1/2 -translate-y-1/2",
-                                  "bottom-0 right-0 translate-x-1/2 translate-y-1/2",
-                                  "bottom-0 left-0 -translate-x-1/2 translate-y-1/2",
-                                ].map((position) => (
-                                  <span
-                                    key={`box-grip-${item.id}-${position}`}
-                                    className={`pointer-events-none absolute h-2.5 w-2.5 rounded-sm border border-white bg-amber-400 shadow ${position}`}
-                                  />
-                                ))}
-                              </>
-                            ) : null}
                             {showQuickSelectionActions ? (
                               <PreviewSelectedObjectQuickToolbar
                                 item={item}
@@ -5225,15 +5197,6 @@ export default function PreviewPanel({
                                   pushCadCommandFeedback("DELETE", "applied", `DELETE removed ${item.label || "selected draft object"}.`);
                                 }}
                               />
-                            ) : null}
-                            {showBox && isHighQuality && visualKind === "building" ? (
-                              <div className="pointer-events-none absolute inset-x-[16%] top-1/2 h-px -translate-y-1/2 bg-white/35" />
-                            ) : null}
-                            {showBox && isHighQuality && visualKind === "water" ? (
-                              <div className="pointer-events-none absolute inset-x-[14%] top-1/2 h-px -translate-y-1/2 bg-sky-100/60 shadow-[0_5px_0_rgba(224,242,254,0.34),0_-5px_0_rgba(224,242,254,0.24)]" />
-                            ) : null}
-                            {showBox && isHighQuality && visualKind === "utility" ? (
-                              <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-violet-500/80" />
                             ) : null}
                             <PreviewSelectionAffordances
                               item={item}
@@ -5693,24 +5656,8 @@ export default function PreviewPanel({
                           drawMode === "select" &&
                           (!isSite || (previewInteraction === "edit" && !siteLocked));
                         const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
-                        const borderColorMap: Record<string, string> = {
-                          site: "border-slate-400",
-                          setback_zone: "border-slate-300",
-                          no_build_zone: "border-rose-400",
-                          basin: "border-emerald-500",
-                          entrance: "border-amber-500",
-                          driveway: "border-orange-400",
-                          road: "border-blue-500",
-                          parking: "border-violet-500",
-                          sidewalk: "border-teal-500",
-                          pool: "border-cyan-500",
-                          pad: "border-stone-400",
-                        };
-                        const borderColor =
-                          (item.type && borderColorMap[item.type]) || "border-slate-900/70";
-                        const outlineColor =
-                          (item.meta as { style?: { outline_color?: string } } | undefined)?.style
-                            ?.outline_color;
+                        const borderColor = getPreviewObjectBorderColor(item);
+                        const outlineColor = getPreviewObjectOutlineColor(item);
                         return (
                           <div
                             key={item.id}
@@ -5784,21 +5731,7 @@ export default function PreviewPanel({
                           if (!rectIntersectsPreview(rectPct)) return null;
                           const rotation = showMap ? 0 : (item.rotation ?? 0);
                           const hitZIndex = resolveObjectHitZIndex(item, rectPct, selectedBuildingId === item.id);
-                          const borderColorMap: Record<string, string> = {
-                            site: "border-slate-400",
-                            setback_zone: "border-slate-300",
-                            no_build_zone: "border-rose-400",
-                            basin: "border-emerald-500",
-                            entrance: "border-amber-500",
-                            driveway: "border-orange-400",
-                            road: "border-blue-500",
-                            parking: "border-violet-500",
-                            sidewalk: "border-teal-500",
-                            pool: "border-cyan-500",
-                            pad: "border-stone-400",
-                          };
-                          const borderColor =
-                            (item.type && borderColorMap[item.type]) || "border-slate-400";
+                          const borderColor = getPreviewObjectBorderColor(item, { fallback: "border-slate-400" });
                           return (
                             <div
                               key={item.id}
