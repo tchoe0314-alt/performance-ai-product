@@ -251,6 +251,7 @@ import { useDashboardShellReviewState } from "./hooks/useDashboardShellReviewSta
 import { useDashboardStartPanelProps } from "./hooks/useDashboardStartPanelProps";
 import { useDashboardDataSourcesPanelProps } from "./hooks/useDashboardDataSourcesPanelProps";
 import { useDashboardGenerationPanelProps } from "./hooks/useDashboardGenerationPanelProps";
+import { useDashboardDraftHistoryState } from "./hooks/useDashboardDraftHistoryState";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -663,12 +664,19 @@ function PerformanceAIDashboardView({
   const [busy, setBusy] = useState(false);
   const [activePlanTool, setActivePlanTool] = useState<PlanToolMode>("run");
   const [shortcutsOverlayOpen, setShortcutsOverlayOpen] = useState(false);
-  const [lastDraftAction, setLastDraftAction] = useState<DraftUndoAction | null>(null);
-  const lastDraftActionRef = useRef<DraftUndoAction | null>(null);
-  const [redoDraftAction, setRedoDraftAction] = useState<DraftUndoAction | null>(null);
-  const redoDraftActionRef = useRef<DraftUndoAction | null>(null);
-  const [recentChanges, setRecentChanges] = useState<RecentChange[]>([]);
-  const [recentChangesOpen, setRecentChangesOpen] = useState(false);
+  const {
+    clearDraftUndoAction,
+    lastDraftAction,
+    lastDraftActionRef,
+    recentChanges,
+    recentChangesOpen,
+    recordDraftRedoAction,
+    recordDraftUndoAction,
+    redoDraftAction,
+    redoDraftActionRef,
+    setRecentChanges,
+    setRecentChangesOpen,
+  } = useDashboardDraftHistoryState();
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const commandInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -730,31 +738,6 @@ function PerformanceAIDashboardView({
     });
   }, []);
   const applyingSiteRef = useRef(false);
-
-  useEffect(() => {
-    lastDraftActionRef.current = lastDraftAction;
-  }, [lastDraftAction]);
-
-  useEffect(() => {
-    redoDraftActionRef.current = redoDraftAction;
-  }, [redoDraftAction]);
-
-  const recordDraftUndoAction = useCallback((action: DraftUndoAction) => {
-    lastDraftActionRef.current = action;
-    setLastDraftAction(action);
-    redoDraftActionRef.current = null;
-    setRedoDraftAction(null);
-  }, []);
-
-  const recordDraftRedoAction = useCallback((action: DraftUndoAction) => {
-    redoDraftActionRef.current = action;
-    setRedoDraftAction(action);
-  }, []);
-
-  const clearDraftUndoAction = useCallback(() => {
-    lastDraftActionRef.current = null;
-    setLastDraftAction(null);
-  }, []);
 
   useEffect(() => {
     const syncViewport = () => setMobileViewport(window.innerWidth < 1024);
@@ -2500,7 +2483,7 @@ function PerformanceAIDashboardView({
     setBuildingPlacements(nextPlacements);
     markSystemsStale(systemsImpactedByPlacement(target));
     if (recentChange?.undo) {
-      setLastDraftAction(recentChange.undo);
+      recordDraftUndoAction(recentChange.undo);
       recordRecentChange(recentChange);
       pushRecoveryMessage(`${recentChange.detail} Undo can restore the previous draft object state.`);
     } else {
