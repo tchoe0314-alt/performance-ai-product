@@ -262,10 +262,6 @@ import {
   runDashboardPreviewPlan,
   runDashboardQueuePreviewRefresh,
 } from "./utils/dashboardPlanActionHelpers";
-import {
-  runDashboardCandidateReviewDecision,
-  runDashboardDesignAlternativesAction,
-} from "./utils/dashboardReviewWorkflowActions";
 import { runDashboardSetMessageFeedback } from "./utils/dashboardChatFeedbackActions";
 import {
   buildDashboardReactiveChangedSystems,
@@ -285,6 +281,7 @@ import { useDashboardApplySiteAction } from "./hooks/useDashboardApplySiteAction
 import { useDashboardSiteAddressAction } from "./hooks/useDashboardSiteAddressAction";
 import { useDashboardSiteSetupUtilityActions } from "./hooks/useDashboardSiteSetupUtilityActions";
 import { useDashboardSelectedDetectionActions } from "./hooks/useDashboardSelectedDetectionActions";
+import { useDashboardReviewWorkflowActions } from "./hooks/useDashboardReviewWorkflowActions";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -1235,39 +1232,18 @@ function PerformanceAIDashboardView({
     () => buildCadEntityPreview(currentPlanMeta, sourceConfidenceByObjectId),
     [currentPlanMeta, sourceConfidenceByObjectId],
   );
-  const handleCandidateReviewDecision = useCallback(
-    async (candidateId: string, action: "accept" | "reject" | "pending") => {
-      await runDashboardCandidateReviewDecision({
-        action,
-        candidateId,
-        currentProjectId: currentProject?.project_id,
-        projectId,
-        setBackendResult,
-        setCurrentProject,
-        setStatusMessage,
-        token,
-      });
-    },
-    [currentProject?.project_id, projectId, token],
-  );
-  const handleDesignAlternativesAction = useCallback(
-    async (action: "generate" | "compare" | "choose" | "merge" | "revise", optionNumber?: number) => {
-      await runDashboardDesignAlternativesAction({
-        action,
-        currentProjectId: currentProject?.project_id,
-        designAlternativeCount: designAlternativeItems.length,
-        optionNumber,
-        projectId,
-        setActiveSidePanel,
-        setActiveWorkspaceMode,
-        setBackendResult,
-        setCurrentProject,
-        setStatusMessage,
-        token,
-      });
-    },
-    [currentProject?.project_id, designAlternativeItems.length, projectId, token],
-  );
+  const { handleCandidateReviewDecision, handleDesignAlternativesAction } =
+    useDashboardReviewWorkflowActions({
+      currentProjectId: currentProject?.project_id,
+      designAlternativeCount: designAlternativeItems.length,
+      projectId,
+      setActiveSidePanel,
+      setActiveWorkspaceMode,
+      setBackendResult,
+      setCurrentProject,
+      setStatusMessage,
+      token,
+    });
   const reactiveChangedSystems = useMemo<EngineeringSystemKey[]>(
     () => buildDashboardReactiveChangedSystems(systemStatuses),
     [systemStatuses],
