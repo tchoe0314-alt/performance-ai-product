@@ -47,7 +47,6 @@ import type {
   OnlineExistingConditionsDiscovery,
   LocalGisProviderRegistry,
   CandidateReviewInbox,
-  DesignAlternative,
   DesignAlternativesV1,
   ReviewIssueTrackerV1,
   SourceConfidenceEntry,
@@ -232,6 +231,10 @@ import {
   buildSmartFixBlockedReasons,
   buildSmartFixRecommendations,
 } from "./utils/dashboardSmartFix";
+import {
+  buildDesignAlternativeSummary,
+  buildReviewIssueCollections,
+} from "./utils/dashboardReviewCollections";
 import {
   buildDashboardProgressTimelineState,
   buildDashboardSetupWizardState,
@@ -1316,29 +1319,19 @@ function PerformanceAIDashboardView({
     () => buildDesignAlternatives(currentPlanMeta),
     [currentPlanMeta],
   );
-  const designAlternativeItems = designAlternatives.alternatives ?? [];
-  const topDesignAlternative = useMemo<DesignAlternative | null>(
-    () =>
-      designAlternativeItems
-        .slice()
-        .sort((a, b) => Number(b.scoring?.review_score ?? 0) - Number(a.scoring?.review_score ?? 0))[0] ?? null,
-    [designAlternativeItems],
-  );
-  const selectedDesignAlternativeId = designAlternatives.selected_alternative_id || designAlternatives.selected_alternative?.alternative_id || "";
-  const designAlternativeQuantityAvailable = Boolean(designAlternatives.quantity_basis?.available);
+  const designAlternativeSummary = useMemo(() => buildDesignAlternativeSummary(designAlternatives), [designAlternatives]);
+  const designAlternativeItems = designAlternativeSummary.items;
+  const topDesignAlternative = designAlternativeSummary.top;
+  const selectedDesignAlternativeId = designAlternativeSummary.selectedId;
+  const designAlternativeQuantityAvailable = designAlternativeSummary.quantityAvailable;
   const reviewIssueTracker = useMemo<ReviewIssueTrackerV1>(
     () => buildReviewIssueTracker(currentPlanMeta, issues, analysisIssues),
     [analysisIssues, currentPlanMeta, issues],
   );
-  const reviewIssueItems = reviewIssueTracker.issues ?? [];
-  const openReviewIssueItems = reviewIssueTracker.open_issues ?? reviewIssueItems.filter((item) =>
-    ["open", "in_review", "reopened"].includes(String(item.status ?? "open")),
-  );
-  const drainageReviewIssueItems = openReviewIssueItems.filter((item) =>
-    String(item.discipline ?? "").toLowerCase() === "drainage" ||
-    String(item.title ?? item.description ?? "").toLowerCase().includes("drainage") ||
-    String(item.title ?? item.description ?? "").toLowerCase().includes("storm"),
-  );
+  const reviewIssueCollections = useMemo(() => buildReviewIssueCollections(reviewIssueTracker), [reviewIssueTracker]);
+  const reviewIssueItems = reviewIssueCollections.items;
+  const openReviewIssueItems = reviewIssueCollections.openItems;
+  const drainageReviewIssueItems = reviewIssueCollections.drainageItems;
   const candidateReviewItems = candidateReviewInbox.candidates ?? [];
   const candidateReviewCounts = candidateReviewInbox.counts ?? { accepted: 0, rejected: 0, pending: 0 };
   const sourceConfidenceMap = useMemo<SourceConfidenceMap>(
