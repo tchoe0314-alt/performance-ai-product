@@ -11,6 +11,109 @@ import type { BuildingPlacement } from "../types";
 
 type CadCommandFeedbackStatus = "applied" | "blocked" | "info";
 
+type HandlePreviewCadSelectionCommandContext = {
+  commandKey: string;
+  args: string[];
+  buildingPlacements: BuildingPlacement[];
+  selectedCadIds: string[];
+  setCadSelectionSet: (ids: string[]) => void;
+  onSelectObjects?: (ids: string[]) => void;
+  onSelectBuilding: (id: string | null) => void;
+  setSelectedVertex: (vertex: { id: string; index: number } | null) => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+export function handlePreviewCadSelectionCommand({
+  commandKey,
+  args,
+  buildingPlacements,
+  selectedCadIds,
+  setCadSelectionSet,
+  onSelectObjects,
+  onSelectBuilding,
+  setSelectedVertex,
+  pushCadCommandFeedback,
+}: HandlePreviewCadSelectionCommandContext) {
+  if (commandKey !== "SELECT") return false;
+  const mode = (args[0] || "").trim().toUpperCase();
+  if (mode === "NONE" || mode === "CLEAR") {
+    setCadSelectionSet([]);
+    onSelectObjects?.([]);
+    onSelectBuilding(null);
+    setSelectedVertex(null);
+    pushCadCommandFeedback("SELECT", "info", "SELECT NONE cleared the draft object selection.");
+    return true;
+  }
+  const selectableObjects = buildingPlacements.filter((item) => item.type !== "site" && !item.locked);
+  if (mode === "ALL") {
+    const ids = selectableObjects.map((item) => item.id);
+    setCadSelectionSet(ids);
+    onSelectObjects?.(ids);
+    onSelectBuilding(ids[0] ?? null);
+    setSelectedVertex(null);
+    pushCadCommandFeedback("SELECT", ids.length ? "applied" : "blocked", ids.length ? `SELECT ALL selected ${ids.length} editable draft object${ids.length === 1 ? "" : "s"}.` : "SELECT ALL found no editable draft objects.");
+    return true;
+  }
+  if (mode === "LAYER") {
+    const layer = (args[1] || "").trim().toUpperCase();
+    if (!layer) {
+      pushCadCommandFeedback("SELECT", "blocked", "SELECT LAYER blocked: provide a layer like SELECT LAYER C-UTIL.");
+      return true;
+    }
+    const ids = selectableObjects
+      .filter((item) => String(item.meta?.cad_layer || item.type || "").toUpperCase() === layer)
+      .map((item) => item.id);
+    setCadSelectionSet(ids);
+    onSelectObjects?.(ids);
+    onSelectBuilding(ids[0] ?? null);
+    setSelectedVertex(null);
+    pushCadCommandFeedback("SELECT", ids.length ? "applied" : "blocked", ids.length ? `SELECT LAYER ${layer} selected ${ids.length} editable draft object${ids.length === 1 ? "" : "s"}.` : `SELECT LAYER ${layer} found no editable draft objects.`);
+    return true;
+  }
+  pushCadCommandFeedback("SELECT", "info", `SELECT supports ALL, NONE, CLEAR, or LAYER. Current selection: ${selectedCadIds.length}.`);
+  return true;
+}
+
+type HandlePreviewCadActiveCommandControlContext = {
+  commandKey: string;
+  cadActiveCommand: CadActiveCommand | null;
+  finishCadActiveCommand: () => void;
+  setDraftPoints: (points: Array<[number, number]>) => void;
+  setDraftPreviewPoint: (point: [number, number] | null) => void;
+  setCadActiveCommand: (command: CadActiveCommand | null) => void;
+  setDrawMode: (mode: DrawMode) => void;
+  setCadCommandDraft: (command: string) => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+export function handlePreviewCadActiveCommandControl({
+  commandKey,
+  cadActiveCommand,
+  finishCadActiveCommand,
+  setDraftPoints,
+  setDraftPreviewPoint,
+  setCadActiveCommand,
+  setDrawMode,
+  setCadCommandDraft,
+  pushCadCommandFeedback,
+}: HandlePreviewCadActiveCommandControlContext) {
+  if (!cadActiveCommand) return false;
+  if (commandKey === "FINISH" || commandKey === "DONE") {
+    finishCadActiveCommand();
+    return true;
+  }
+  if (commandKey === "CANCEL" || commandKey === "ESC") {
+    setDraftPoints([]);
+    setDraftPreviewPoint(null);
+    setCadActiveCommand(null);
+    setDrawMode("select");
+    pushCadCommandFeedback(cadActiveCommand.command, "info", `${cadActiveCommand.command} cancelled.`);
+    setCadCommandDraft("");
+    return true;
+  }
+  return false;
+}
+
 type FinishPreviewCadActiveCommandContext = {
   cadActiveCommand: CadActiveCommand | null;
   draftPoints: Array<[number, number]>;
