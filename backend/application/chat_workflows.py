@@ -100,6 +100,109 @@ def _safe_list(value: Any) -> List[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _extract_requested_program_from_message(message: str) -> Dict[str, Any]:
+    normalized = re.sub(r"\s+", " ", message.strip().lower())
+    if not normalized:
+        return {}
+
+    program: Dict[str, Any] = {
+        "schema_version": "requested_site_program_v1",
+        "source": "chat_natural_language",
+        "review_required": True,
+        "engineer_review_required": True,
+        "construction_release_allowed": False,
+        "requested_objects": [],
+        "requested_systems": [],
+    }
+    requested_objects: List[Dict[str, Any]] = []
+    requested_systems: List[str] = []
+
+    office_match = re.search(
+        r"(\d[\d,]*(?:\.\d+)?)\s*(?:sf|sq\s*ft|square\s*feet|square\s*foot)\s+(?:office|building)|(?:office|building)\s+(?:building\s+)?(?:of\s+)?(\d[\d,]*(?:\.\d+)?)\s*(?:sf|sq\s*ft|square\s*feet|square\s*foot)",
+        normalized,
+    )
+    if office_match:
+        value = office_match.group(1) or office_match.group(2)
+        requested_objects.append(
+            {
+                "type": "office_building",
+                "label": "office building",
+                "area_sf": safe_float(str(value).replace(",", "")),
+                "status": "requested_not_placed",
+            }
+        )
+    elif "office" in normalized and "building" in normalized:
+        requested_objects.append({"type": "office_building", "label": "office building", "status": "requested_not_placed"})
+
+    parking_match = re.search(r"(\d[\d,]*)\s*(?:parking\s+spaces|parking\s+stalls|stalls|spaces)", normalized)
+    if parking_match or "parking" in normalized:
+        requested_objects.append(
+            {
+                "type": "parking",
+                "label": "parking",
+                "stall_count": int(parking_match.group(1).replace(",", "")) if parking_match else None,
+                "status": "requested_not_placed",
+            }
+        )
+
+    object_phrases = [
+        ("detention_basin", "detention basin", ("detention basin", "basin", "pond")),
+        ("driveway", "driveway connection", ("driveway", "drive connection", "access drive")),
+        ("sidewalk", "sidewalks", ("sidewalk", "sidewalks")),
+        ("ada_route", "ADA routes", ("ada route", "ada routes", "accessible route", "accessible routes")),
+    ]
+    for object_type, label, phrases in object_phrases:
+        if any(phrase in normalized for phrase in phrases):
+            requested_objects.append({"type": object_type, "label": label, "status": "requested_not_placed"})
+
+    system_phrases = [
+        ("water", ("public water", "water line", "water main", "water")),
+        ("sanitary", ("public sanitary", "sanitary sewer", "sanitary", "sewer")),
+        ("storm", ("storm sewer", "storm pipe", "stormwater", "storm sewer")),
+        ("drainage", ("drainage", "detention", "outfall")),
+        ("grading", ("grading", "slope", "terrain")),
+        ("roadway", ("driveway", "road", "roadway", "access drive")),
+    ]
+    for system, phrases in system_phrases:
+        if any(phrase in normalized for phrase in phrases):
+            requested_systems.append(system)
+
+    deduped_objects: List[Dict[str, Any]] = []
+    seen_objects = set()
+    for item in requested_objects:
+        key = str(item.get("type") or "")
+        if not key or key in seen_objects:
+            continue
+        seen_objects.add(key)
+        deduped_objects.append({key: value for key, value in item.items() if value is not None})
+
+    program["requested_objects"] = deduped_objects
+    program["requested_systems"] = list(dict.fromkeys(requested_systems))
+    if not program["requested_objects"] and not program["requested_systems"]:
+        return {}
+    program["summary"] = _requested_program_summary(program)
+    return program
+
+
+def _requested_program_summary(program: Dict[str, Any]) -> str:
+    object_labels: List[str] = []
+    for item in _safe_list(program.get("requested_objects")):
+        data = _safe_dict(item)
+        if data.get("type") == "office_building" and data.get("area_sf"):
+            object_labels.append(f"{int(float(data['area_sf'])):,} sf office building")
+        elif data.get("type") == "parking" and data.get("stall_count"):
+            object_labels.append(f"{int(data['stall_count'])} parking spaces")
+        elif data.get("label"):
+            object_labels.append(str(data["label"]))
+    systems = [str(item) for item in _safe_list(program.get("requested_systems")) if str(item)]
+    parts = []
+    if object_labels:
+        parts.append(", ".join(object_labels))
+    if systems:
+        parts.append("systems: " + ", ".join(systems))
+    return "; ".join(parts)
+
+
 def _customer_template_chat_response(message: str) -> Optional[Dict[str, Any]]:
     normalized = _normalized_text(message)
     mentions_template = "template" in normalized and any(
@@ -2598,6 +2701,7 @@ def _apply_chat_command_execution(
         area = command_payload.get("site_area_acres")
         address = str(command_payload.get("address") or "").strip()
         address_anchor = str(command_payload.get("address_anchor") or "").strip()
+        requested_program = _extract_requested_program_from_message(message)
         if not (width or height or address):
             ask = "I understood the site setup, but I need a site size, acreage, or address before changing canonical state."
             return _truthful_decision_update(
@@ -2655,6 +2759,23 @@ def _apply_chat_command_execution(
             project_input["meta"] = project_meta
         if manual_fields:
             project_input["manual_fields"] = manual_fields
+        if requested_program:
+            project_meta = _safe_dict(project_input.get("meta"))
+            project_meta["requested_site_program_v1"] = requested_program
+            project_input["meta"] = project_meta
+            meta["requested_site_program_v1"] = requested_program
+            site_plan = _safe_dict(manual_fields.get("site_plan"))
+            for item in _safe_list(requested_program.get("requested_objects")):
+                object_request = _safe_dict(item)
+                if object_request.get("type") == "parking" and object_request.get("stall_count"):
+                    site_plan["parking_count"] = object_request.get("stall_count")
+                if object_request.get("type") == "office_building" and object_request.get("area_sf"):
+                    site_plan["building_program_sf"] = object_request.get("area_sf")
+                    site_plan["building_type"] = "office"
+            if site_plan:
+                manual_fields["site_plan"] = site_plan
+                project_input["manual_fields"] = manual_fields
+            changed_fields.extend(["project_input.meta.requested_site_program_v1", "final_plan.meta.requested_site_program_v1"])
         meta["canonical_site_state"] = {
             "site_area_acres": area,
             "lot_width": width,
@@ -2681,19 +2802,22 @@ def _apply_chat_command_execution(
         _save_project_record(project_store, record, project_input=project_input, latest_result=latest_result)
         if width and height and address:
             anchor_phrase = " centered on that address" if address_anchor == "center_point" else " at this address"
+            program_phrase = f" I also saved the requested program: {requested_program['summary']}." if requested_program.get("summary") else ""
             assistant = (
                 f"I set the draft site size to {float(width):g} ft x {float(height):g} ft and recorded {address} as location evidence only. "
-                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary{anchor_phrase}?"
+                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary{anchor_phrase}?{program_phrase}"
             )
         elif width and height:
+            program_phrase = f" I also saved the requested program: {requested_program['summary']}." if requested_program.get("summary") else ""
             assistant = (
                 f"I set the draft site size to {float(width):g} ft x {float(height):g} ft. "
-                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary?"
+                f"Do you want to lock this {float(width):g} ft x {float(height):g} ft site boundary?{program_phrase}"
             )
         else:
+            program_phrase = f" I also saved the requested program: {requested_program['summary']}." if requested_program.get("summary") else ""
             assistant = (
                 f"I recorded {address} as address/location evidence only. Address evidence is not a trusted site boundary. "
-                "What site size should I use, or do you want to draw the boundary?"
+                f"What site size should I use, or do you want to draw the boundary?{program_phrase}"
             )
         return _truthful_decision_update(
             decision,
@@ -2704,10 +2828,15 @@ def _apply_chat_command_execution(
             needs_clarification=not bool(width and height),
             action_taken="updated_site_dimensions_and_location_evidence",
             action_blocked_reason="",
-            affected_systems=["site"],
+            affected_systems=list(dict.fromkeys(["site", *list(metadata.get("affected_systems") or [])])),
             assumptions=[],
             next_best_action="Lock the site boundary or draw/confirm the boundary before generation.",
-            command_payload_updates={"persisted": True, "changed_fields": changed_fields, "ready_language": "ready_for_engineer_review"},
+            command_payload_updates={
+                "persisted": True,
+                "changed_fields": changed_fields,
+                "ready_language": "ready_for_engineer_review",
+                "requested_site_program_v1": requested_program,
+            },
             outcome="understood_and_answered",
             state_changed=True,
         )

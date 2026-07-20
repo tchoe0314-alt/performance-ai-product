@@ -1006,6 +1006,40 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(saved_input["manual_fields"]["lot"]["h"], 1000.0)
         self.assertEqual(saved_input["meta"]["site_inputs"]["address"], "20525 Margo St, Gretna, NE")
 
+    def test_site_setup_with_full_program_terms_persists_requested_scope(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": (
+                    "20525 Margo St Gretna NE should be the center point, make it 1000 ft by 1000 ft "
+                    "with a 28000 sf office building, 140 parking spaces, detention basin, driveway, "
+                    "sidewalks, ADA routes, public water, sanitary, and storm sewer"
+                ),
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertFalse(result["needs_clarification"])
+        self.assertIn("I also saved the requested program", result["assistant_message"])
+        self.assertIn("28,000 sf office building", result["assistant_message"])
+        self.assertIn("140 parking spaces", result["assistant_message"])
+        self.assertNotIn("site type or land use", result["assistant_message"])
+        self.assertNotIn("which systems", result["assistant_message"])
+        saved_input = store.saved[-1]["project_input"]
+        saved_meta = store.saved[-1]["latest_result"]["final_plan"]["meta"]
+        program = saved_meta["requested_site_program_v1"]
+        object_types = {item["type"] for item in program["requested_objects"]}
+        self.assertTrue({"office_building", "parking", "detention_basin", "driveway", "sidewalk", "ada_route"}.issubset(object_types))
+        self.assertTrue({"water", "sanitary", "storm", "drainage", "roadway"}.issubset(set(program["requested_systems"])))
+        self.assertEqual(saved_input["manual_fields"]["site_plan"]["parking_count"], 140)
+        self.assertEqual(saved_input["manual_fields"]["site_plan"]["building_program_sf"], 28000.0)
+        self.assertFalse(program["construction_release_allowed"])
+
     def test_site_setup_dimensions_only_changes_site_state(self):
         store = RecordingProjectStore()
 
