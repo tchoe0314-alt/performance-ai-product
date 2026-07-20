@@ -45,7 +45,7 @@ test.describe("Generate and Deliver product flow", () => {
 
     await openWorkspacePanel(page, "Generate", /Generate systems/i);
     await expect(page.getByTestId("generate-auto-site-context")).toContainText(/review-required source candidate/i);
-    await expect(page.getByTestId("generate-auto-site-context")).toContainText(/Missing sources/i);
+    await expect(page.getByTestId("generate-auto-site-context")).toContainText(/Sources still needed/i);
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:/i, { timeout: 5_000 });
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Needs review:/i);

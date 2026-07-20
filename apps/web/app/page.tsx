@@ -12315,7 +12315,7 @@ function PerformanceAIDashboardView({
       candidateCount > 0
         ? `Apply Address found ${candidateCount} review-required source candidate${candidateCount === 1 ? "" : "s"} that Generate can use as context.`
         : missingLabels.length
-          ? `Apply Address did not find accepted source candidates; missing sources carry as notes: ${missingLabels.slice(0, 3).join(", ")}.`
+          ? `Apply Address found no usable source candidates yet. Sources still needed: ${missingLabels.slice(0, 3).join(", ")}.`
           : autoExistingConditionsStatus.message || "Auto Site Context has not produced review candidates yet.";
     return {
       candidateCount,

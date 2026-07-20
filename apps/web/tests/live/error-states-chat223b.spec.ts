@@ -174,7 +174,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
       });
     });
     await page.getByRole("button", { name: "Apply address" }).click();
-    await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/No review required source candidates/i, { timeout: 30_000 });
+    await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/No source candidates found yet/i, { timeout: 30_000 });
     await expect(page.getByTestId("auto-site-context-found")).toContainText(/No usable features/i);
   });
 

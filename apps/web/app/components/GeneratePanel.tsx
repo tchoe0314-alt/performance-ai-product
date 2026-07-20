@@ -162,7 +162,7 @@ export function GeneratePanel({
           data-testid="generate-auto-site-context"
         >
           Auto Site Context: {autoSiteContextFlowSummary.candidateCount} review-required source candidate{autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available.
-          {" "}Missing sources: {autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.
+          {" "}Sources still needed: {autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.
         </div>
         <div
           className={`mt-2 rounded-xl border px-3 py-2 text-xs font-medium ${

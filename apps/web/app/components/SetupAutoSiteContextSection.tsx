@@ -62,6 +62,12 @@ function rowStatusClass(status: string): string {
   return "bg-slate-100 text-slate-500";
 }
 
+function rowStatusLabel(status: string): string {
+  if (status === "missing") return "needs source";
+  if (status === "not_checked") return "not checked";
+  return status.replace("_", " ");
+}
+
 function formatSourceGuidance(message: string): string {
   return message
     .replace(/\bblocked:/gi, "needs source:")
@@ -126,8 +132,8 @@ export function SetupAutoSiteContextSection({
           {autoExistingConditionsStatus.status === "blocked"
             ? sourceGuidanceMessage
             : autoSiteContextFlowSummary.candidateCount
-              ? `${autoSiteContextFlowSummary.candidateCount} review required source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
-              : `No review required source candidates yet. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}
+              ? `${autoSiteContextFlowSummary.candidateCount} source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available for review. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
+              : `No source candidates found yet. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}
         </p>
         <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-xs text-emerald-900" data-testid="auto-site-context-plain-summary">
           <p className="font-semibold">Detected inside site: {detectedSummary}{detectedLabels.length > 5 ? `, plus ${detectedLabels.length - 5} more` : ""}.</p>
@@ -172,7 +178,7 @@ export function SetupAutoSiteContextSection({
         ) : null}
         <div className="grid grid-cols-4 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500" data-testid="auto-site-context-counts">
           <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-found-count">Found {foundCount}</span>
-          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-missing-count">Missing {missingCount}</span>
+          <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-missing-count">Need source {missingCount}</span>
           <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-assumed-count">Assumed {assumedCount}</span>
           <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" data-testid="auto-site-context-outside-count">Outside {outsideCount}</span>
         </div>
@@ -193,7 +199,7 @@ export function SetupAutoSiteContextSection({
                 </p>
               </div>
               <span className={`h-fit rounded-full px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] ${rowStatusClass(row.status)}`} data-testid={`auto-site-context-status-${row.key}`}>
-                {row.status.replace("_", " ")}
+                {rowStatusLabel(row.status)}
               </span>
             </div>
           ))}

@@ -169,7 +169,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary");
   await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");
   await expect(page.getByTestId("auto-site-context-missing")).toContainText("public utility layers");
-  await expect(page.getByTestId("auto-site-context-candidates")).toContainText("review required");
+  await expect(page.getByTestId("auto-site-context-candidates")).toContainText("available for review");
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/Detected inside site/i);
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/parcel\/site boundary|building footprints/i);
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/missing public utility layers/i);
@@ -179,7 +179,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-buildings")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-terrain")).toContainText("found");
-  await expect(page.getByTestId("auto-site-context-status-utilities")).toContainText("missing");
+  await expect(page.getByTestId("auto-site-context-status-utilities")).toContainText("needs source");
   await expect(page.getByTestId("auto-site-context-detail-utilities")).toContainText("No existing utilities GIS source is configured");
   await expect(page.getByTestId("site-intelligence-summary")).toBeVisible();
   await expect(page.getByTestId("site-intelligence-one-sentence")).toContainText("Found road/ROW");
