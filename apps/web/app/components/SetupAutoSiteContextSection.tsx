@@ -95,6 +95,15 @@ export function SetupAutoSiteContextSection({
   const assumedCount = autoSiteContextRows.filter((row) => row.status === "assumed").length;
   const outsideCount = autoSiteContextRows.filter((row) => row.status === "outside").length;
   const sourceGuidanceMessage = formatSourceGuidance(autoExistingConditionsStatus.message);
+  const detectedLabels = autoSiteContextFlowSummary.candidateLabels.length
+    ? autoSiteContextFlowSummary.candidateLabels
+    : autoSiteContextRows.filter((row) => row.status === "found").map((row) => row.title);
+  const detectedSummary = detectedLabels.length
+    ? detectedLabels.slice(0, 5).join(", ")
+    : "nothing usable yet";
+  const missingSummary = autoSiteContextFlowSummary.missingLabels.length
+    ? autoSiteContextFlowSummary.missingLabels.slice(0, 4).join(", ")
+    : "none reported";
 
   return (
     <DisclosurePanel
@@ -120,6 +129,12 @@ export function SetupAutoSiteContextSection({
               ? `${autoSiteContextFlowSummary.candidateCount} review required source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
               : `No review required source candidates yet. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}
         </p>
+        <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-xs text-emerald-900" data-testid="auto-site-context-plain-summary">
+          <p className="font-semibold">Detected inside site: {detectedSummary}{detectedLabels.length > 5 ? `, plus ${detectedLabels.length - 5} more` : ""}.</p>
+          <p className="mt-1 text-emerald-800">
+            Source notes: missing {missingSummary}. Use these as review context for Generate; they are not survey/control.
+          </p>
+        </div>
         {siteIntelligenceSummary.version ? (
           <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3" data-testid="site-intelligence-summary">
             <div className="flex items-start justify-between gap-3">

@@ -170,6 +170,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");
   await expect(page.getByTestId("auto-site-context-missing")).toContainText("public utility layers");
   await expect(page.getByTestId("auto-site-context-candidates")).toContainText("review required");
+  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/Detected inside site/i);
+  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/parcel\/site boundary|building footprints/i);
+  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/missing public utility layers/i);
+  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/not survey\/control/i);
   await expect(page.getByTestId("auto-site-context-source-table")).toBeVisible();
   await expect(page.getByTestId("auto-site-context-status-parcel")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
