@@ -13,6 +13,7 @@ import type { ObjectManagerBulkActions } from "./dashboardObjectManagerBulkActio
 import { getObjectEditBlocker } from "./objectGeometry";
 
 type TransformEditableAction = "transform" | "resize";
+export type ObjectManagerSingleTransform = "rotate" | "flip_horizontal" | "flip_vertical";
 
 function editableTransformTargets({
   buildingPlacements,
@@ -122,6 +123,51 @@ export function runObjectManagerBulkLayout({
     chatSuffix: "Layout changes remain draft review geometry.",
     actions,
   });
+}
+
+export function runObjectManagerTransform({
+  item,
+  transform,
+  actions,
+}: {
+  item: BuildingPlacement;
+  transform: ObjectManagerSingleTransform;
+  actions: ObjectManagerBulkActions;
+}) {
+  const blocker = getObjectEditBlocker(item, "transform");
+  if (blocker) {
+    actions.reportObjectActionBlocker(blocker);
+    return;
+  }
+  const centerX = (item.x ?? 0) + item.w / 2;
+  const centerY = (item.y ?? 0) + item.d / 2;
+  const transformPoint = ([x, y]: [number, number]): [number, number] => {
+    if (transform === "flip_horizontal") return [centerX - (x - centerX), y];
+    if (transform === "flip_vertical") return [x, centerY - (y - centerY)];
+    return [centerX - (y - centerY), centerY + (x - centerX)];
+  };
+  const nextGeometry = item.geometry?.map(transformPoint);
+  const nextUpdates: Partial<BuildingPlacement> = transform === "rotate"
+    ? {
+        x: centerX - item.d / 2,
+        y: centerY - item.w / 2,
+        rotation: ((item.rotation ?? 0) + 90) % 360,
+        w: item.d,
+        d: item.w,
+        geometry: nextGeometry,
+      }
+    : {
+        geometry: nextGeometry,
+        meta: {
+          ...(item.meta ?? {}),
+          [transform === "flip_horizontal" ? "flipped_horizontal" : "flipped_vertical"]: true,
+        },
+      };
+  actions.handleUpdateBuilding(item.id, nextUpdates);
+  const label = transform === "rotate" ? "Rotated" : transform === "flip_horizontal" ? "Flipped horizontal" : "Flipped vertical";
+  const message = `${label} ${item.label}. Generated systems may be stale until rerun.`;
+  actions.setObjectManagerStatusMessage(message);
+  actions.setStatusMessage(message);
 }
 
 export function runObjectManagerBulkMove({

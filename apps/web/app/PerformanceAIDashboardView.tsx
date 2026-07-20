@@ -284,17 +284,16 @@ import {
 } from "./utils/dashboardSidebarReview";
 import {
   cloneBuildingPlacementForUndo,
-  createDraftCopyWithTrace as createObjectManagerDraftCopyWithTrace,
   formatVisibleDraftSelectionMessage,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
   type ObjectManagerLayoutAction,
-  summarizeDraftCopyResults,
 } from "./utils/dashboardObjectManagerTrace";
 import {
   runObjectManagerArraySelected,
   runObjectManagerBulkCopyByOffset,
   runObjectManagerBulkDuplicate,
+  runObjectManagerPaste,
 } from "./utils/dashboardObjectManagerCopyActions";
 import {
   runObjectManagerBulkColor,
@@ -315,6 +314,8 @@ import {
   runObjectManagerBulkMoveTo,
   runObjectManagerBulkRotate,
   runObjectManagerBulkScale,
+  runObjectManagerTransform,
+  type ObjectManagerSingleTransform,
 } from "./utils/dashboardObjectManagerTransformActions";
 import {
   runObjectManagerCombineSelected,
@@ -3189,125 +3190,6 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [cloneBuildingPlacementForUndo, reportObjectActionBlocker]);
 
-  const handleObjectManagerPaste = useCallback(() => {
-    clearGeneratedPreview();
-    if (!objectClipboard.length) {
-      reportObjectActionBlocker("Paste blocked: copy an editable object first.");
-      return;
-    }
-    const blocked = objectClipboard
-      .map((item) => getObjectEditBlocker(item, "copy"))
-      .filter(Boolean) as string[];
-    const editable = objectClipboard.filter((item) => !getObjectEditBlocker(item, "copy"));
-    if (!editable.length) {
-      const blocker = blocked[0] ?? "Paste blocked: copied objects are source-only or cannot be copied.";
-      reportObjectActionBlocker(blocker);
-      return;
-    }
-    const offset = 24;
-    const stamp = Date.now();
-    const {
-      visibleDuplicates: visiblePastedObjects,
-      createdObjects,
-      hiddenTraceCount,
-    } = summarizeDraftCopyResults(
-      editable.map((item, index) =>
-        createObjectManagerDraftCopyWithTrace({
-          item,
-          buildingPlacements,
-          idPrefix: `copy-${stamp}-${index}`,
-          label: `${item.label} Copy`,
-          dx: offset,
-          dy: offset,
-          source: "manual_drawn_copy",
-          extraMeta: {
-            copied_set_size: editable.length,
-          },
-        }),
-      ),
-    );
-    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
-    setActivePlacementId(visiblePastedObjects[0]?.id ?? null);
-    setSelectedObjectIds(visiblePastedObjects.map((item) => item.id));
-    createdObjects.forEach((item) => markSystemsStale(systemsImpactedByPlacement(item)));
-    const pasteUndoLabel = hiddenTraceCount ? "group paste" : "multi-object paste";
-    const undoAction: DraftUndoAction = createdObjects.length === 1
-      ? { action: "add", object: createdObjects[0] }
-      : { action: "add_many", objects: createdObjects, label: pasteUndoLabel };
-    recordDraftUndoAction(undoAction);
-    recordRecentChange({
-      type: "object_added",
-      label: visiblePastedObjects.length === 1 ? "Object pasted" : "Objects pasted",
-      detail: visiblePastedObjects.length === 1
-        ? `${visiblePastedObjects[0].label} was pasted as an editable draft duplicate.`
-        : `${visiblePastedObjects.length} copied draft objects were pasted as editable draft duplicates.`,
-      undo: undoAction,
-    });
-    const message = visiblePastedObjects.length === 1
-      ? `Pasted ${visiblePastedObjects[0].label}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}. It remains review-required draft geometry.`
-      : `Pasted ${visiblePastedObjects.length} copied draft objects${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blocked.length ? `; ${blocked.length} blocked.` : "."} They remain review-required draft geometry.`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", message, "status");
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
-        previewRefreshIntentRef.current = {
-          reason: "Refreshing preview after paste...",
-          track: true,
-        };
-      });
-  }, [
-    appendChatMessage,
-    clearGeneratedPreview,
-    buildingPlacements,
-    ensureProjectDraftRef,
-    markSystemsStale,
-    objectClipboard,
-    recordRecentChange,
-    recordDraftUndoAction,
-    reportObjectActionBlocker,
-    saveProjectRef,
-    systemsImpactedByPlacement,
-  ]);
-
-  const handleObjectManagerTransform = useCallback((item: BuildingPlacement, transform: "rotate" | "flip_horizontal" | "flip_vertical") => {
-    const blocker = getObjectEditBlocker(item, "transform");
-    if (blocker) {
-      reportObjectActionBlocker(blocker);
-      return;
-    }
-    const centerX = (item.x ?? 0) + item.w / 2;
-    const centerY = (item.y ?? 0) + item.d / 2;
-    const transformPoint = ([x, y]: [number, number]): [number, number] => {
-      if (transform === "flip_horizontal") return [centerX - (x - centerX), y];
-      if (transform === "flip_vertical") return [x, centerY - (y - centerY)];
-      return [centerX - (y - centerY), centerY + (x - centerX)];
-    };
-    const nextGeometry = item.geometry?.map(transformPoint);
-    const nextUpdates: Partial<BuildingPlacement> = transform === "rotate"
-      ? {
-          x: centerX - item.d / 2,
-          y: centerY - item.w / 2,
-          rotation: ((item.rotation ?? 0) + 90) % 360,
-          w: item.d,
-          d: item.w,
-          geometry: nextGeometry,
-        }
-      : {
-          geometry: nextGeometry,
-          meta: {
-            ...(item.meta ?? {}),
-            [transform === "flip_horizontal" ? "flipped_horizontal" : "flipped_vertical"]: true,
-          },
-        };
-    handleUpdateBuilding(item.id, nextUpdates);
-    const label = transform === "rotate" ? "Rotated" : transform === "flip_horizontal" ? "Flipped horizontal" : "Flipped vertical";
-    const message = `${label} ${item.label}. Generated systems may be stale until rerun.`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-  }, [handleUpdateBuilding, reportObjectActionBlocker]);
-
   const persistDraftRefresh = useCallback((reason: string) => {
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
@@ -3431,6 +3313,22 @@ function PerformanceAIDashboardView({
     reportObjectActionBlocker,
     systemsImpactedByPlacement,
   ]);
+
+  const handleObjectManagerPaste = useCallback(() => {
+    runObjectManagerPaste({
+      objectClipboard,
+      buildingPlacements,
+      actions: objectManagerCopyActions,
+    });
+  }, [buildingPlacements, objectClipboard, objectManagerCopyActions]);
+
+  const handleObjectManagerTransform = useCallback((item: BuildingPlacement, transform: ObjectManagerSingleTransform) => {
+    runObjectManagerTransform({
+      item,
+      transform,
+      actions: objectManagerBulkActions,
+    });
+  }, [objectManagerBulkActions]);
 
   const handleObjectManagerBulkDuplicate = useCallback(() => {
     runObjectManagerBulkDuplicate({

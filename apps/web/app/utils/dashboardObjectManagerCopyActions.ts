@@ -174,6 +174,77 @@ export function runObjectManagerBulkDuplicate({
   });
 }
 
+export function runObjectManagerPaste({
+  objectClipboard,
+  buildingPlacements,
+  actions,
+}: {
+  objectClipboard: BuildingPlacement[];
+  buildingPlacements: BuildingPlacement[];
+  actions: ObjectManagerCopyActions;
+}) {
+  actions.clearGeneratedPreview();
+  if (!objectClipboard.length) {
+    actions.reportObjectActionBlocker("Paste blocked: copy an editable object first.");
+    return;
+  }
+  const blocked = objectClipboard
+    .map((item) => getObjectEditBlocker(item, "copy"))
+    .filter(Boolean) as string[];
+  const editable = objectClipboard.filter((item) => !getObjectEditBlocker(item, "copy"));
+  if (!editable.length) {
+    const blocker = blocked[0] ?? "Paste blocked: copied objects are source-only or cannot be copied.";
+    actions.reportObjectActionBlocker(blocker);
+    return;
+  }
+  const offset = 24;
+  const stamp = Date.now();
+  const {
+    visibleDuplicates: visiblePastedObjects,
+    createdObjects,
+    hiddenTraceCount,
+  } = summarizeDraftCopyResults(
+    editable.map((item, index) =>
+      createDraftCopyWithTrace({
+        item,
+        buildingPlacements,
+        idPrefix: `copy-${stamp}-${index}`,
+        label: `${item.label} Copy`,
+        dx: offset,
+        dy: offset,
+        source: "manual_drawn_copy",
+        extraMeta: {
+          copied_set_size: editable.length,
+        },
+      }),
+    ),
+  );
+  actions.setBuildingPlacements((prev) => [...prev, ...createdObjects]);
+  actions.setActivePlacementId(visiblePastedObjects[0]?.id ?? null);
+  actions.setSelectedObjectIds(visiblePastedObjects.map((item) => item.id));
+  createdObjects.forEach((item) => actions.markSystemsStale(actions.systemsImpactedByPlacement(item)));
+  const pasteUndoLabel = hiddenTraceCount ? "group paste" : "multi-object paste";
+  const undoAction: DraftUndoAction = createdObjects.length === 1
+    ? { action: "add", object: createdObjects[0] }
+    : { action: "add_many", objects: createdObjects, label: pasteUndoLabel };
+  actions.recordDraftUndoAction(undoAction);
+  actions.recordRecentChange({
+    type: "object_added",
+    label: visiblePastedObjects.length === 1 ? "Object pasted" : "Objects pasted",
+    detail: visiblePastedObjects.length === 1
+      ? `${visiblePastedObjects[0].label} was pasted as an editable draft duplicate.`
+      : `${visiblePastedObjects.length} copied draft objects were pasted as editable draft duplicates.`,
+    undo: undoAction,
+  });
+  const message = visiblePastedObjects.length === 1
+    ? `Pasted ${visiblePastedObjects[0].label}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}. It remains review-required draft geometry.`
+    : `Pasted ${visiblePastedObjects.length} copied draft objects${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blocked.length ? `; ${blocked.length} blocked.` : "."} They remain review-required draft geometry.`;
+  actions.setObjectManagerStatusMessage(message);
+  actions.setStatusMessage(message);
+  actions.appendChatMessage("assistant", message, "status");
+  actions.persistDraftRefresh("Refreshing preview after paste...");
+}
+
 export function runObjectManagerBulkCopyByOffset({
   buildingPlacements,
   selectedObjectIds,
