@@ -65,6 +65,7 @@ import { PreviewSvgDefs } from "./PreviewSvgDefs";
 import { PreviewWaterFireFlowOverlay } from "./PreviewWaterFireFlowOverlay";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import { usePreviewFocusTransform } from "./usePreviewFocusTransform";
+import { usePreviewAnnotationHover } from "./usePreviewAnnotationHover";
 import { usePreviewMapLayerSync } from "./usePreviewMapLayerSync";
 import { usePreviewMapRuntime } from "./usePreviewMapRuntime";
 import { usePreviewResizeObservers } from "./usePreviewResizeObservers";
@@ -298,18 +299,8 @@ export default function PreviewPanel({
     );
     return target?.bounds ?? null;
   }, [previewLabels, selectedIssueLabel]);
-  const [hoveredAnnotation, setHoveredAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
   const [managedObjectId, setManagedObjectId] = useState<string | null>(null);
-  const [pinnedAnnotation, setPinnedAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
-  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
-  const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
-  const hoverAnnotationRafRef = useRef<number | null>(null);
-  const pendingHoverAnnotationRef = useRef<{
-    annotation: (typeof previewLabels)[number] | null;
-    point: { x: number; y: number } | null;
-    setter: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
-  } | null>(null);
   const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenContainerReady, setFullscreenContainerReady] = useState(false);
@@ -471,7 +462,6 @@ export default function PreviewPanel({
   const fullscreenResizeRafRef = useRef<number | null>(null);
   const [rotateDragActive, setRotateDragActive] = useState(false);
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
-  const activeAnnotation = pinnedAnnotation ?? hoveredAnnotation;
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const previewInteractionState = buildPreviewInteractionState({
     mapboxToken,
@@ -504,6 +494,21 @@ export default function PreviewPanel({
   const { mapAvailable, useLightHighQuality, showMap, showMap3D, mapPitch, allowMapInteraction, showGeneratedPlan, hasLiveObjects, canUse3D, showHover, allowEdits, showQuickDrawPalette, showMobileDrawToolbar, drawingOwnsCanvasHits, overlayPointerEvents, passiveOverlayPointerEvents } = previewInteractionState;
   const mapBearing = showMap3D ? (typeof siteRotationDeg === "number" ? siteRotationDeg : 0) : 0;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
+  const {
+    hoveredAnnotation,
+    setPinnedAnnotation,
+    hoverPoint,
+    setHoverPoint,
+    fullscreenHoverPoint,
+    setFullscreenHoverPoint,
+    activeAnnotation,
+    clearScheduledHoverAnnotationState,
+    resolveHover,
+  } = usePreviewAnnotationHover({
+    labels: previewLabels,
+    showHover,
+    hasInteractiveLabels,
+  });
   const normalPalette = {
     building: "#0f172a",
     buildingFill: "rgba(15, 23, 42, 0.12)",
@@ -773,9 +778,6 @@ export default function PreviewPanel({
       if (canvasPanRafRef.current !== null) {
         window.cancelAnimationFrame(canvasPanRafRef.current);
       }
-      if (hoverAnnotationRafRef.current !== null) {
-        window.cancelAnimationFrame(hoverAnnotationRafRef.current);
-      }
     },
     [],
   );
@@ -823,95 +825,6 @@ export default function PreviewPanel({
         : nextBounds,
     );
   }, []);
-  const scheduleHoverAnnotationState = useCallback(
-    (
-      annotation: (typeof previewLabels)[number] | null,
-      point: { x: number; y: number } | null,
-      setter: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>,
-    ) => {
-      pendingHoverAnnotationRef.current = { annotation, point, setter };
-      if (hoverAnnotationRafRef.current !== null) return;
-      hoverAnnotationRafRef.current = window.requestAnimationFrame(() => {
-        hoverAnnotationRafRef.current = null;
-        const pending = pendingHoverAnnotationRef.current;
-        pendingHoverAnnotationRef.current = null;
-        if (!pending) return;
-        setHoveredAnnotation((current) =>
-          current?.label === pending.annotation?.label ? current : pending.annotation,
-        );
-        pending.setter((current) => {
-          if (!pending.point) return current === null ? current : null;
-          return current &&
-            Math.abs(current.x - pending.point.x) < 6 &&
-            Math.abs(current.y - pending.point.y) < 6
-            ? current
-            : pending.point;
-        });
-      });
-    },
-    [],
-  );
-  const clearScheduledHoverAnnotationState = useCallback(
-    (setter: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>) => {
-      if (hoverAnnotationRafRef.current !== null) {
-        window.cancelAnimationFrame(hoverAnnotationRafRef.current);
-        hoverAnnotationRafRef.current = null;
-      }
-      pendingHoverAnnotationRef.current = null;
-      setHoveredAnnotation(null);
-      setter((current) => (current === null ? current : null));
-    },
-    [],
-  );
-  const resolveHover = useCallback(
-    (
-      event: React.MouseEvent<HTMLDivElement>,
-      containerRef: React.RefObject<HTMLDivElement | null>,
-      imageBounds: { left: number; top: number; width: number; height: number } | null,
-      setPoint: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>,
-    ) => {
-      if (!showHover || !containerRef.current || !hasInteractiveLabels) {
-        clearScheduledHoverAnnotationState(setPoint);
-        return;
-      }
-      const rect = containerRef.current.getBoundingClientRect();
-      const bounds = imageBounds || { left: 0, top: 0, width: rect.width, height: rect.height };
-      const relativeX = (event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1);
-      const relativeY = (event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1);
-      if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) {
-        clearScheduledHoverAnnotationState(setPoint);
-        return;
-      }
-      const matches = previewLabels
-        .filter((label) => {
-          const bounds = label.bounds;
-          if (!bounds) return false;
-          return (
-            relativeX >= bounds.x1 &&
-            relativeX <= bounds.x2 &&
-            relativeY >= bounds.y1 &&
-            relativeY <= bounds.y2
-          );
-        })
-        .sort((a, b) => {
-          const aBounds = a.bounds;
-          const bBounds = b.bounds;
-          if (!aBounds || !bBounds) return 0;
-          const aArea = Math.max(0, aBounds.x2 - aBounds.x1) * Math.max(0, aBounds.y2 - aBounds.y1);
-          const bArea = Math.max(0, bBounds.x2 - bBounds.x1) * Math.max(0, bBounds.y2 - bBounds.y1);
-          return aArea - bArea;
-        });
-      const next = matches[0] ?? null;
-      if (!next) {
-        clearScheduledHoverAnnotationState(setPoint);
-        return;
-      }
-      const nextPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      scheduleHoverAnnotationState(next, nextPoint, setPoint);
-    },
-    [clearScheduledHoverAnnotationState, hasInteractiveLabels, previewLabels, scheduleHoverAnnotationState, showHover],
-  );
-
   const resolvePlacement = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
@@ -4109,7 +4022,7 @@ export default function PreviewPanel({
       setHoveredSegment(null);
     });
     return () => window.cancelAnimationFrame(handle);
-  }, [clearScheduledHoverAnnotationState, showHover]);
+  }, [clearScheduledHoverAnnotationState, setHoverPoint, showHover]);
 
   useEffect(() => {
     if (previewInteraction !== "static") return;
