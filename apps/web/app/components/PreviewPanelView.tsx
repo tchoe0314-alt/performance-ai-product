@@ -51,6 +51,7 @@ import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
 import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
 import { PreviewRectObjects } from "./PreviewRectObjects";
 import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
+import { PreviewSuggestedGeometry } from "./PreviewSuggestedGeometry";
 import { PreviewSvgDefs } from "./PreviewSvgDefs";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import { WaterFireFlowEvidenceDock } from "./WaterFireFlowEvidenceDock";
@@ -83,10 +84,7 @@ import {
   buildPreviewObjectManagerCounts,
   buildPreviewObjectManagerRows,
 } from "../utils/previewObjectManager";
-import {
-  resolvePreviewSvgVisualStyle,
-  resolvePreviewVisualKind,
-} from "../utils/previewVisualStyles";
+import { resolvePreviewVisualKind } from "../utils/previewVisualStyles";
 import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import {
   AI_REALISM_WATERMARK,
@@ -504,11 +502,6 @@ export default function PreviewPanel({
     [geocode, mapScaleFtPerPx, mapScaleSource],
   );
   const resolveVisualKind = useCallback(resolvePreviewVisualKind, []);
-  const resolveSvgVisualStyle = useCallback(
-    (item: BuildingPlacement, selected = false) =>
-      resolvePreviewSvgVisualStyle(item, { selected, highQuality: isHighQuality }),
-    [isHighQuality],
-  );
   const hoveredObject = useMemo(
     () =>
       [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
@@ -7016,35 +7009,13 @@ export default function PreviewPanel({
                           buildParkingModules={buildParkingModules}
                           sitePointToSvgPercent={sitePointToSvgPercent}
                         />
-                        {suggestedPlacements
-                          .filter((item) => item.geometryType && Array.isArray(item.geometry))
-                          .map((item) => {
-                            const points = (item.geometry || []).map(sitePointToSvgPercent);
-                            if (!points.length) return null;
-                            const isLine = item.geometryType === "polyline";
-                            const visualStyle = resolveSvgVisualStyle(item, selectedBuildingId === item.id);
-                            const stroke = item.source === "detected_from_image" ? legendPalette.detectedStroke : visualStyle.stroke;
-                            const fill = item.source === "detected_from_image" ? legendPalette.detectedFill : visualStyle.fill;
-                            return isLine ? (
-                              <polyline
-                                key={`geom-${item.id}`}
-                                points={points.join(" ")}
-                                fill="none"
-                                stroke={stroke}
-                                strokeWidth={visualStyle.strokeWidth}
-                                strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
-                              />
-                            ) : (
-                              <polygon
-                                key={`geom-${item.id}`}
-                                points={points.join(" ")}
-                                fill={fill}
-                                stroke={stroke}
-                                strokeWidth={visualStyle.strokeWidth}
-                                strokeDasharray={item.source === "detected_from_image" ? "2 2" : undefined}
-                              />
-                            );
-                          })}
+                        <PreviewSuggestedGeometry
+                          objects={suggestedPlacements}
+                          selectedBuildingId={selectedBuildingId}
+                          detectedStroke={legendPalette.detectedStroke}
+                          detectedFill={legendPalette.detectedFill}
+                          sitePointToSvgPercent={sitePointToSvgPercent}
+                        />
                         {waterFireFlow.hasData ? (
                           <g>
                             {waterFireFlow.pressureZones.map((zone) => {
