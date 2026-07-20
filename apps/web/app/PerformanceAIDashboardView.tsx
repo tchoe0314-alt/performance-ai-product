@@ -106,6 +106,12 @@ import {
   buildDashboardSourceHubMetrics,
 } from "./utils/dashboardEvidenceSummaries";
 import {
+  DASHBOARD_SOURCE_HUB_LINKS,
+  DASHBOARD_SUPPORTED_SHORTCUTS,
+  buildDashboardLibraryPanelSections,
+  buildDashboardStandardsPanelCriteria,
+} from "./utils/dashboardShellConfig";
+import {
   buildGenerateLayoutContext,
   systemsImpactedByPlacement,
 } from "./utils/dashboardGenerateLayoutContext";
@@ -363,7 +369,7 @@ import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
 import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { AnalysisPanel } from "./components/AnalysisPanel";
-import { WorkspaceShortcutsOverlay, type WorkspaceShortcutRow } from "./components/WorkspaceShortcutsOverlay";
+import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
@@ -1463,18 +1469,7 @@ function PerformanceAIDashboardView({
   const sourceConfidenceEntries = sourceConfidenceMap.entries ?? [];
   const sourceConfidenceSummary = sourceConfidenceMap.summary ?? {};
   const sourceConfidenceRows = sourceConfidenceEntries.slice(0, 10);
-  const sourceHubLinks = useMemo<Array<[SidePanelKey, string]>>(
-    () => [
-      ["site_existing", "Existing Conditions"],
-      ["import_survey", "Survey / Terrain"],
-      ["files", "Files"],
-      ["standards", "Standards Sources"],
-      ["templates", "Templates"],
-      ["catalogs", "Utility Catalogs"],
-      ["libraries", "Libraries"],
-    ],
-    [],
-  );
+  const sourceHubLinks = DASHBOARD_SOURCE_HUB_LINKS;
   const sourceHubMetrics = useMemo<Array<[string, string | number]>>(
     () =>
       buildDashboardSourceHubMetrics({
@@ -16185,22 +16180,18 @@ function PerformanceAIDashboardView({
   const customerTemplateSummaries = customerTemplates?.summaries ?? [];
   const activeCustomerTemplate = customerTemplates?.behavior?.active_template ?? null;
   const customerTemplateBlockerCount = Number(customerTemplates?.behavior?.blockers?.length ?? 0);
-  const libraryPanelSections = ADD_MENU_SECTIONS.map((group) => ({
-    key: group.key,
-    title: group.title,
-    items: group.items.map((type) => ({
-      type,
-      label: SITE_OBJECT_CATALOG[type].label,
-    })),
-  }));
-  const standardsPanelCriteria = [
-    { label: "Min slope", value: minSlopePct || "Auto" },
-    { label: "Parking max", value: maxParkingSlopePct || "Auto" },
-    { label: "Road max", value: maxRoadGradePct || "Auto" },
-    { label: "ADA cross", value: maxAdaCrossSlopePct || "Auto" },
-    { label: "Pipe slope", value: pipeMinSlopePct || "Auto" },
-    { label: "Parking angle", value: `${parkingAngle} deg` },
-  ];
+  const libraryPanelSections = buildDashboardLibraryPanelSections({
+    addMenuSections: ADD_MENU_SECTIONS,
+    siteObjectCatalog: SITE_OBJECT_CATALOG,
+  });
+  const standardsPanelCriteria = buildDashboardStandardsPanelCriteria({
+    minSlopePct,
+    maxParkingSlopePct,
+    maxRoadGradePct,
+    maxAdaCrossSlopePct,
+    pipeMinSlopePct,
+    parkingAngle,
+  });
   const standardsPanelRows = capabilityAuditRows.filter(
     (item) => item.key === "standards_source_registry" || item.key === "candidate_standards_review",
   );
@@ -17117,20 +17108,7 @@ function PerformanceAIDashboardView({
     onOpenProjects: handleShortcutOpenProjects,
   });
 
-  const supportedShortcuts: WorkspaceShortcutRow[] = [
-    ["Esc", "Cancel active tool or close help"],
-    ["Delete", "Delete selected draft object"],
-    ["Cmd/Ctrl C", "Copy selected draft object"],
-    ["Cmd/Ctrl V", "Paste copied draft object"],
-    ["Cmd/Ctrl Z", "Undo supported draft action"],
-    ["Cmd/Ctrl Y", "Redo supported draft action"],
-    ["Cmd/Ctrl S", "Save project"],
-    ["/ or Cmd/Ctrl K", "Focus command"],
-    ["G", "Open Generate"],
-    ["D", "Open Draw Canvas"],
-    ["P", "Open Projects"],
-    ["?", "Show shortcuts"],
-  ];
+  const supportedShortcuts = DASHBOARD_SUPPORTED_SHORTCUTS;
 
   const contextualToolbarTools = useMemo(
     () =>
