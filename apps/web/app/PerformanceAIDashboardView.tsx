@@ -49,7 +49,6 @@ import type {
   CandidateReviewInbox,
   DesignAlternativesV1,
   ReviewIssueTrackerV1,
-  SourceConfidenceEntry,
   SourceConfidenceMap,
   SmartFixRecommendation,
   EngineDepthDashboard,
@@ -101,7 +100,6 @@ import { buildDashboardPrimaryWorkflowItems } from "./utils/dashboardPrimaryWork
 import {
   buildDashboardConfirmedObjectCounts,
   buildDashboardExistingConditionRows,
-  buildDashboardSourceHubMetrics,
 } from "./utils/dashboardEvidenceSummaries";
 import {
   DASHBOARD_SOURCE_HUB_LINKS,
@@ -235,6 +233,7 @@ import {
   buildDesignAlternativeSummary,
   buildReviewIssueCollections,
 } from "./utils/dashboardReviewCollections";
+import { buildDashboardSourceConfidenceView } from "./utils/dashboardSourceConfidenceView";
 import {
   buildDashboardProgressTimelineState,
   buildDashboardSetupWizardState,
@@ -1344,38 +1343,22 @@ function PerformanceAIDashboardView({
       }),
     [buildingPlacements, candidateReviewItems, currentPlanMeta, hasVerifiedSurveyControl],
   );
-  const sourceConfidenceEntries = sourceConfidenceMap.entries ?? [];
-  const sourceConfidenceSummary = sourceConfidenceMap.summary ?? {};
-  const sourceConfidenceRows = sourceConfidenceEntries.slice(0, 10);
-  const sourceHubLinks = DASHBOARD_SOURCE_HUB_LINKS;
-  const sourceHubMetrics = useMemo<Array<[string, string | number]>>(
+  const sourceConfidenceView = useMemo(
     () =>
-      buildDashboardSourceHubMetrics({
-        coordinateSystem: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "",
+      buildDashboardSourceConfidenceView({
+        sourceConfidenceMap,
+        siteInputs,
         hasTerrainSource,
         mapAnalysisSuccess: Boolean(mapAnalysis?.success),
-        lowConfidenceCount: Number(sourceConfidenceSummary.low_confidence_count ?? 0),
-        needsSurveyControlCount: Number(sourceConfidenceSummary.needs_survey_control_count ?? 0),
-        staleOrMissingCount: Number(sourceConfidenceSummary.stale_or_missing_count ?? 0),
       }),
-    [
-      hasTerrainSource,
-      mapAnalysis?.success,
-      siteInputs,
-      sourceConfidenceSummary.low_confidence_count,
-      sourceConfidenceSummary.needs_survey_control_count,
-      sourceConfidenceSummary.stale_or_missing_count,
-    ],
+    [hasTerrainSource, mapAnalysis?.success, siteInputs, sourceConfidenceMap],
   );
-  const sourceConfidenceByObjectId = useMemo(() => {
-    const byId = new Map<string, SourceConfidenceEntry>();
-    sourceConfidenceEntries.forEach((entry) => {
-      if (entry.object_id && !byId.has(entry.object_id)) {
-        byId.set(entry.object_id, entry);
-      }
-    });
-    return byId;
-  }, [sourceConfidenceEntries]);
+  const sourceConfidenceEntries = sourceConfidenceView.entries;
+  const sourceConfidenceSummary = sourceConfidenceView.summary;
+  const sourceConfidenceRows = sourceConfidenceView.rows;
+  const sourceHubLinks = DASHBOARD_SOURCE_HUB_LINKS;
+  const sourceHubMetrics = sourceConfidenceView.hubMetrics;
+  const sourceConfidenceByObjectId = sourceConfidenceView.byObjectId;
   const cadEntityPreview = useMemo<CadEntityPreview>(
     () => buildCadEntityPreview(currentPlanMeta, sourceConfidenceByObjectId),
     [currentPlanMeta, sourceConfidenceByObjectId],
