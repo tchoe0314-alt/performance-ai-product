@@ -331,7 +331,9 @@ import useJobPolling from "./hooks/useJobPolling";
 import useAuthState from "./hooks/useAuthState";
 import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
+import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { AnalysisPanel } from "./components/AnalysisPanel";
+import { WorkspaceShortcutsOverlay, type WorkspaceShortcutRow } from "./components/WorkspaceShortcutsOverlay";
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
@@ -19492,149 +19494,56 @@ function PerformanceAIDashboardView({
     });
   }, [currentProject?.project_id, effectiveDemoWorkspaceEnabled, projectId, saveProject, token, updateProjectStatus]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      const consumeShortcut = () => {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-      };
-      const target = event.target as HTMLElement | null;
-      const inputTarget = target instanceof HTMLInputElement ? target : null;
-      const isTextInput =
-        inputTarget &&
-        !["button", "checkbox", "color", "file", "radio", "range", "reset", "submit"].includes(inputTarget.type);
-      const isTyping =
-        target &&
-        (isTextInput ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
-      const meta = event.metaKey || event.ctrlKey;
-      const key = event.key.toLowerCase();
+  const handleShortcutOpenGenerate = useCallback(() => {
+    handleOpenSidePanel("generate");
+    updateProjectStatus({
+      state: "ready",
+      area: "generate",
+      title: "Generate opened",
+      detail: "Generate panel opened.",
+      nextAction: "Choose a focused system or run the unambiguous generate control.",
+    });
+  }, [handleOpenSidePanel, updateProjectStatus]);
 
-      if (event.key === "Escape") {
-        consumeShortcut();
-        handleCancelActiveTool();
-        return;
-      }
-      if (meta && key === "k") {
-        consumeShortcut();
-        focusCommandInput();
-        return;
-      }
-      if (!meta && event.key === "/" && !isTyping) {
-        consumeShortcut();
-        focusCommandInput();
-        return;
-      }
-      if ((event.key === "?" || (event.shiftKey && event.key === "?")) && !isTyping) {
-        consumeShortcut();
-        setShortcutsOverlayOpen(true);
-        return;
-      }
-      if (meta && key === "s") {
-        consumeShortcut();
-        handleShortcutSaveProject();
-        return;
-      }
-      if (meta && key === "c" && !isTyping) {
-        consumeShortcut();
-        handleCopySelectedObject();
-        return;
-      }
-      if (meta && key === "v" && !isTyping) {
-        consumeShortcut();
-        handlePasteSelectedObject();
-        return;
-      }
-      if (meta && (key === "y" || (key === "z" && event.shiftKey))) {
-        consumeShortcut();
-        handleRedoDraftAction();
-        return;
-      }
-      if (meta && key === "z") {
-        consumeShortcut();
-        handleUndoDraftAction();
-        return;
-      }
-      if (isTyping || meta || event.altKey) return;
-      if (event.key === "Delete" || event.key === "Backspace") {
-        consumeShortcut();
-        handleDeleteSelectedObject();
-        return;
-      }
-      if (key === "g") {
-        consumeShortcut();
-        handleOpenSidePanel("generate");
-        updateProjectStatus({
-          state: "ready",
-          area: "generate",
-          title: "Generate opened",
-          detail: "Generate panel opened.",
-          nextAction: "Choose a focused system or run the unambiguous generate control.",
-        });
-        return;
-      }
-      if (key === "d") {
-        consumeShortcut();
-        handleOpenWorkspaceMode("canvas");
-        handleOpenSidePanel("objects");
-        updateProjectStatus({
-          state: "ready",
-          area: "setup",
-          title: "Draw opened",
-          detail: "Draw Canvas mode opened.",
-          nextAction: "Select a draw/object tool or use the command bar.",
-        });
-        return;
-      }
-      if (key === "p") {
-        consumeShortcut();
-        handleOpenSidePanel("projects");
-        updateProjectStatus({
-          state: "ready",
-          area: "projects",
-          title: "Projects opened",
-          detail: "Projects drawer opened.",
-          nextAction: "Save, open, or delete a project from the drawer.",
-        });
-      }
-    };
+  const handleShortcutOpenDrawCanvas = useCallback(() => {
+    handleOpenWorkspaceMode("canvas");
+    handleOpenSidePanel("objects");
+    updateProjectStatus({
+      state: "ready",
+      area: "setup",
+      title: "Draw opened",
+      detail: "Draw Canvas mode opened.",
+      nextAction: "Select a draw/object tool or use the command bar.",
+    });
+  }, [handleOpenSidePanel, handleOpenWorkspaceMode, updateProjectStatus]);
 
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      handleCancelActiveTool();
-    };
-    window.addEventListener("keydown", onKeyDown, { capture: true });
-    document.addEventListener("keydown", onKeyDown, { capture: true });
-    window.addEventListener("keyup", onKeyUp, { capture: true });
-    document.addEventListener("keyup", onKeyUp, { capture: true });
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, { capture: true });
-      document.removeEventListener("keydown", onKeyDown, { capture: true });
-      window.removeEventListener("keyup", onKeyUp, { capture: true });
-      document.removeEventListener("keyup", onKeyUp, { capture: true });
-    };
-  }, [
-    focusCommandInput,
-    handleCancelActiveTool,
-    handleCopySelectedObject,
-    handleDeleteSelectedObject,
-    handleOpenSidePanel,
-    handleOpenWorkspaceMode,
-    handlePasteSelectedObject,
-    handleRedoDraftAction,
-    handleShortcutSaveProject,
-    handleUndoDraftAction,
-    updateProjectStatus,
-  ]);
+  const handleShortcutOpenProjects = useCallback(() => {
+    handleOpenSidePanel("projects");
+    updateProjectStatus({
+      state: "ready",
+      area: "projects",
+      title: "Projects opened",
+      detail: "Projects drawer opened.",
+      nextAction: "Save, open, or delete a project from the drawer.",
+    });
+  }, [handleOpenSidePanel, updateProjectStatus]);
 
-  const supportedShortcuts = [
+  useWorkspaceShortcuts({
+    onCancelActiveTool: handleCancelActiveTool,
+    onFocusCommandInput: focusCommandInput,
+    onOpenShortcuts: () => setShortcutsOverlayOpen(true),
+    onSaveProject: handleShortcutSaveProject,
+    onCopySelectedObject: handleCopySelectedObject,
+    onPasteSelectedObject: handlePasteSelectedObject,
+    onRedoDraftAction: handleRedoDraftAction,
+    onUndoDraftAction: handleUndoDraftAction,
+    onDeleteSelectedObject: handleDeleteSelectedObject,
+    onOpenGenerate: handleShortcutOpenGenerate,
+    onOpenDrawCanvas: handleShortcutOpenDrawCanvas,
+    onOpenProjects: handleShortcutOpenProjects,
+  });
+
+  const supportedShortcuts: WorkspaceShortcutRow[] = [
     ["Esc", "Cancel active tool or close help"],
     ["Delete", "Delete selected draft object"],
     ["Cmd/Ctrl C", "Copy selected draft object"],
@@ -24378,39 +24287,10 @@ function PerformanceAIDashboardView({
 	            </div>
 		          </main>
           {shortcutsOverlayOpen ? (
-            <div
-              data-testid="shortcuts-help-overlay"
-              className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-950/18 px-4 pt-[12vh] backdrop-blur-[2px]"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Keyboard shortcuts"
-            >
-              <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white/96 p-4 shadow-[0_28px_90px_-44px_rgba(15,23,42,0.72)] backdrop-blur-xl">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Shortcuts</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-950">Active workspace commands</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShortcutsOverlayOpen(false)}
-                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50"
-                  >
-                    Close
-                  </button>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {supportedShortcuts.map(([keys, label]) => (
-                    <div key={keys} className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                      <span className="text-sm font-semibold text-slate-700">{label}</span>
-                      <span className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">
-                        {keys}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <WorkspaceShortcutsOverlay
+              shortcuts={supportedShortcuts}
+              onClose={() => setShortcutsOverlayOpen(false)}
+            />
           ) : null}
           {commandBarVisible ? (
             <PinnedCommandBar
