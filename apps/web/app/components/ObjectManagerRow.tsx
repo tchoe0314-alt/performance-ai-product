@@ -221,6 +221,7 @@ export function ObjectManagerRow({
           <button
             type="button"
             onClick={onMove}
+            aria-label={`${item.placed ? "Move" : "Place"} on canvas: ${item.label}`}
             data-testid="object-manager-move"
             className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
           >

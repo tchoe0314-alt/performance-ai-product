@@ -12602,7 +12602,13 @@ function PerformanceAIDashboardView({
 
     if (/(what do i need next|what should i do next|what next|next step|where should i start|what do i do next)/i.test(normalized)) {
       const firstBlocker = fullGeneratePreflightBlockers[0];
-      const visibleAction = firstBlocker
+      const activePlacementObject =
+        activePlacementId && placementModeEnabled
+          ? buildingPlacements.find((item) => item.id === activePlacementId)
+          : null;
+      const visibleAction = activePlacementObject
+        ? `Click the canvas to place ${activePlacementObject.label}.`
+        : firstBlocker
         ? `Open ${sidePanelCopy[firstBlocker.action].title} and fix: ${firstBlocker.label}.`
         : reviewPackageFlowSummary?.missing.length
           ? reviewPackageFlowSummary.next_action
@@ -13707,7 +13713,15 @@ function PerformanceAIDashboardView({
     }
     if (/^what should i do next\??$/.test(normalized)) {
       appendChatMessage("user", message);
-      const next = projectStatusSummary.nextAction || workflowActionHints[0] || progressTimelineState.next_action || (siteScaleLocked ? "Open Generate and run a review draft." : "Open Setup and lock a site boundary.");
+      const activePlacementObject =
+        activePlacementId && placementModeEnabled
+          ? buildingPlacements.find((item) => item.id === activePlacementId)
+          : null;
+      const next = activePlacementObject
+        ? `Click the canvas to place ${activePlacementObject.label}.`
+        : pendingPlacementObjects.length
+          ? `Open Objects and place ${pendingPlacementObjects[0].label}.`
+          : projectStatusSummary.nextAction || workflowActionHints[0] || progressTimelineState.next_action || (siteScaleLocked ? "Open Generate and run a review draft." : "Open Setup and lock a site boundary.");
       appendChatMessage("assistant", `Next action: ${next} Current status: ${projectStatusSummary.state}.`, "status");
       return true;
     }
