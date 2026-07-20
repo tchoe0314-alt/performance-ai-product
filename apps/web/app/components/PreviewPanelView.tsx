@@ -98,6 +98,11 @@ import {
 import {
   buildDraftGeometryCreatedMessage,
   buildReviewRequiredCommandMeta,
+  getCadCommandFirstValue,
+  getCadCommandPointArgs,
+  hasSelectedCadCommandArg,
+  isKnownCadCommand,
+  normalizeCadCommandKey,
   parseCadNumber,
   parseCadPointToken,
   parseCadPointTokens,
@@ -2709,95 +2714,16 @@ export default function PreviewPanel({
     const tokens = raw.split(/\s+/);
     const [commandRaw, ...args] = tokens;
     const command = commandRaw.toUpperCase();
-    const commandAliases: Record<string, string> = {
-      L: "LINE",
-      PL: "PLINE",
-      REC: "RECTANGLE",
-      RECT: "RECTANGLE",
-      B: "BOX",
-      C: "CIRCLE",
-      A: "ARC",
-      AR: "ARRAY",
-      AL: "ALIGN",
-      DALIGN: "DISTRIBUTE",
-      DISTRIB: "DISTRIBUTE",
-      M: "MOVE",
-      RO: "ROTATE",
-      SC: "SCALE",
-      CO: "COPY",
-      O: "OFFSET",
-      TR: "TRIM",
-      EX: "EXTEND",
-      F: "FILLET",
-      J: "JOIN",
-      BR: "SPLIT",
-      BREAK: "SPLIT",
-      CL: "CLOSE",
-      H: "HATCH",
-      BH: "HATCH",
-      REV: "REVERSE",
-      MI: "MIRROR",
-      E: "ERASE",
-      D: "DIM",
-      DI: "DIST",
-      T: "TEXT",
-      LA: "LAYER",
-      SEL: "SELECT",
-    };
-    const commandKey = commandAliases[command] ?? command;
-    const knownCommands = new Set([
-      "LINE",
-      "PLINE",
-      "RECTANGLE",
-      "RECT",
-      "BOX",
-      "CIRCLE",
-      "ARC",
-      "ARRAY",
-      "ALIGN",
-      "DISTRIBUTE",
-      "DIST",
-      "MEASURE",
-      "MOVE",
-      "ROTATE",
-      "SCALE",
-      "COPY",
-      "DELETE",
-      "ERASE",
-      "OFFSET",
-      "TRIM",
-      "EXTEND",
-      "FILLET",
-      "JOIN",
-      "SPLIT",
-      "BREAK",
-      "CLOSE",
-      "OPEN",
-      "REVERSE",
-      "HATCH",
-      "MIRROR",
-      "FLIP",
-      "DIM",
-      "TEXT",
-      "LAYER",
-      "SELECT",
-      "SEL",
-      "SNAP",
-      "ORTHO",
-      "FINISH",
-      "DONE",
-      "CANCEL",
-      "ESC",
-    ]);
-    const pointArgs = parseCadPointTokens(args.filter((arg) => arg.toLowerCase() !== "selected"));
-    const firstValue = args.find((arg) => arg.toLowerCase() !== "selected") ?? cadTransformValue;
-    const selectedRequested = args.some((arg) => arg.toLowerCase() === "selected");
+    const commandKey = normalizeCadCommandKey(command);
+    const pointArgs = getCadCommandPointArgs(args);
+    const firstValue = getCadCommandFirstValue(args, cadTransformValue);
+    const selectedRequested = hasSelectedCadCommandArg(args);
     const activeCanvasDrawMode =
       drawMode === "site" ||
       drawMode === "polyline" ||
       drawMode === "polygon" ||
       drawMode === "rect";
-    if (activeCanvasDrawMode && !cadActiveCommand && !knownCommands.has(commandKey)) {
+    if (activeCanvasDrawMode && !cadActiveCommand && !isKnownCadCommand(commandKey)) {
       const basePoint = draftPoints.length ? draftPoints[draftPoints.length - 1] : null;
       const typedPoint = parseCadPointToken(raw) ?? parseCadRelativePointToken(raw, basePoint);
       const typedDistance = Number(raw);
@@ -2875,7 +2801,7 @@ export default function PreviewPanel({
       return;
     }
 
-    if (cadActiveCommand && !knownCommands.has(command)) {
+    if (cadActiveCommand && !isKnownCadCommand(commandKey)) {
       if (cadActiveCommand.kind === "offset") {
         const distance = Number(raw);
         if (!Number.isFinite(distance) || Math.abs(distance) < 0.001) {

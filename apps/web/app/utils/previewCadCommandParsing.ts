@@ -1,6 +1,100 @@
 export type CadCommandPoint = [number, number];
 
+const CAD_COMMAND_ALIASES: Record<string, string> = {
+  L: "LINE",
+  PL: "PLINE",
+  REC: "RECTANGLE",
+  RECT: "RECTANGLE",
+  B: "BOX",
+  C: "CIRCLE",
+  A: "ARC",
+  AR: "ARRAY",
+  AL: "ALIGN",
+  DALIGN: "DISTRIBUTE",
+  DISTRIB: "DISTRIBUTE",
+  M: "MOVE",
+  RO: "ROTATE",
+  SC: "SCALE",
+  CO: "COPY",
+  O: "OFFSET",
+  TR: "TRIM",
+  EX: "EXTEND",
+  F: "FILLET",
+  J: "JOIN",
+  BR: "SPLIT",
+  BREAK: "SPLIT",
+  CL: "CLOSE",
+  H: "HATCH",
+  BH: "HATCH",
+  REV: "REVERSE",
+  MI: "MIRROR",
+  E: "ERASE",
+  D: "DIM",
+  DI: "DIST",
+  T: "TEXT",
+  LA: "LAYER",
+  SEL: "SELECT",
+};
+
+const KNOWN_CAD_COMMANDS = new Set([
+  "LINE",
+  "PLINE",
+  "RECTANGLE",
+  "RECT",
+  "BOX",
+  "CIRCLE",
+  "ARC",
+  "ARRAY",
+  "ALIGN",
+  "DISTRIBUTE",
+  "DIST",
+  "MEASURE",
+  "MOVE",
+  "ROTATE",
+  "SCALE",
+  "COPY",
+  "DELETE",
+  "ERASE",
+  "OFFSET",
+  "TRIM",
+  "EXTEND",
+  "FILLET",
+  "JOIN",
+  "SPLIT",
+  "BREAK",
+  "CLOSE",
+  "OPEN",
+  "REVERSE",
+  "HATCH",
+  "MIRROR",
+  "FLIP",
+  "DIM",
+  "TEXT",
+  "LAYER",
+  "SELECT",
+  "SEL",
+  "SNAP",
+  "ORTHO",
+  "FINISH",
+  "DONE",
+  "CANCEL",
+  "ESC",
+]);
+
 const roundCadCoordinate = (value: number) => Math.round(value * 1000) / 1000;
+
+export function normalizeCadCommandKey(command: string) {
+  const normalized = command.toUpperCase();
+  return CAD_COMMAND_ALIASES[normalized] ?? normalized;
+}
+
+export function isKnownCadCommand(command: string) {
+  return KNOWN_CAD_COMMANDS.has(command);
+}
+
+export function isSelectedCadCommandArg(arg: string) {
+  return arg.toLowerCase() === "selected";
+}
 
 export function parseCadNumber(value: string, fallback = 0) {
   const parsed = Number(value);
@@ -51,6 +145,18 @@ export function parseCadPointTokens(tokens: string[]) {
   return tokens
     .map((token) => parseCadPointToken(token))
     .filter((point): point is CadCommandPoint => Boolean(point));
+}
+
+export function getCadCommandPointArgs(args: string[]) {
+  return parseCadPointTokens(args.filter((arg) => !isSelectedCadCommandArg(arg)));
+}
+
+export function getCadCommandFirstValue(args: string[], fallback: string) {
+  return args.find((arg) => !isSelectedCadCommandArg(arg)) ?? fallback;
+}
+
+export function hasSelectedCadCommandArg(args: string[]) {
+  return args.some(isSelectedCadCommandArg);
 }
 
 export function buildReviewRequiredCommandMeta(command: string, extra: Record<string, unknown> = {}) {
