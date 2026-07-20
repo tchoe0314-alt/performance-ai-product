@@ -24233,8 +24233,8 @@ function PerformanceAIDashboardView({
                           Apply address
                         </button>
                         {autoExistingConditionsStatus.status === "blocked" ? (
-                          <p data-testid="apply-address-status" className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                            {autoExistingConditionsStatus.message}
+                          <p data-testid="apply-address-status" className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                            {formatCalmActionMessage(autoExistingConditionsStatus.message)}
                           </p>
                         ) : null}
                       </div>

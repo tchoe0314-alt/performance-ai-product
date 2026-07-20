@@ -62,6 +62,15 @@ function rowStatusClass(status: string): string {
   return "bg-slate-100 text-slate-500";
 }
 
+function formatSourceGuidance(message: string): string {
+  return message
+    .replace(/\bblocked:/gi, "needs source:")
+    .replace(/\bblocked\b/gi, "needs source")
+    .replace(/\bBlocked\b/g, "Needs source")
+    .replace(/\bfailed\b/gi, "could not complete")
+    .replace(/\bfailure\b/gi, "source issue");
+}
+
 export function SetupAutoSiteContextSection({
   autoSiteContextFlowSummary,
   autoExistingConditionsStatus,
@@ -85,6 +94,7 @@ export function SetupAutoSiteContextSection({
   const missingCount = autoSiteContextRows.filter((row) => row.status === "missing").length;
   const assumedCount = autoSiteContextRows.filter((row) => row.status === "assumed").length;
   const outsideCount = autoSiteContextRows.filter((row) => row.status === "outside").length;
+  const sourceGuidanceMessage = formatSourceGuidance(autoExistingConditionsStatus.message);
 
   return (
     <DisclosurePanel
@@ -105,7 +115,7 @@ export function SetupAutoSiteContextSection({
       <div data-testid="auto-site-context-summary">
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-testid="auto-site-context-candidates">
           {autoExistingConditionsStatus.status === "blocked"
-            ? autoExistingConditionsStatus.message
+            ? sourceGuidanceMessage
             : autoSiteContextFlowSummary.candidateCount
               ? `${autoSiteContextFlowSummary.candidateCount} review required source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
               : `No review required source candidates yet. Missing sources: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}

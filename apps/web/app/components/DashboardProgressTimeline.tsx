@@ -86,8 +86,8 @@ export function DashboardProgressTimeline({
                       <p className="mt-1 text-xs text-slate-500">{item.summary}</p>
                     ) : null}
                     {blockers.length ? (
-                      <p className="mt-1 text-xs font-semibold text-red-600">
-                        {blockers.slice(0, 2).join("; ")}
+                      <p className="mt-1 text-xs font-semibold text-amber-700">
+                        Needs input: {blockers.slice(0, 2).join("; ")}
                       </p>
                     ) : null}
                   </div>
@@ -98,7 +98,7 @@ export function DashboardProgressTimeline({
         </div>
       </details>
       {progressTimelineState.export_blockers?.length ? (
-        <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+        <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
           Export needs input: {progressTimelineState.export_blockers.slice(0, 3).join("; ")}
         </div>
       ) : null}

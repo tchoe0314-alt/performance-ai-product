@@ -2,7 +2,7 @@ const civoraDoes = [
   "Supports site planning and review workflows.",
   "Organizes source-backed context from project inputs, GIS-style sources, PDFs, imagery, and uploaded survey/topo files.",
   "Helps with layout and drafting, including objects, boundaries, drawings, and system drafts.",
-  "Builds review package materials such as sheets, reports, quantities, blockers, and source notes.",
+  "Builds review package materials such as sheets, reports, quantities, missing items, and source notes.",
   "Creates AI visualization for presentation and review from the current layout; it is not evidence.",
 ];
 
@@ -55,7 +55,7 @@ export function TrustPanel() {
           Review package boundary
         </p>
         <p className="mt-2 text-sm leading-6 text-slate-700">
-          Deliver creates review-only packages with visible missing items, source notes, and blockers so a project team can hand off clearer material for professional review.
+          Deliver creates review-only packages with visible missing items, source notes, and review notes so a project team can hand off clearer material for professional review.
         </p>
       </div>
     </div>
