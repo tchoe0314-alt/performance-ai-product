@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
+import { getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
 
 import type {
   Assumption,
@@ -52,7 +52,6 @@ import type {
 } from "./types";
 
 import {
-  ACTIVE_PROJECT_STORAGE_KEY,
   DEFAULT_SYSTEM_STATUS,
   EMPTY_REACTIVE_VALIDATION,
   OVERSIZED_SITE_MESSAGE,
@@ -150,7 +149,6 @@ import {
   createChatMessage,
   createWelcomeMessage,
   extractDesignMemory,
-  getChatThreadStorageKey,
 } from "./utils/chat";
 import {
   createDenseCommercialConceptPlacements,
@@ -291,6 +289,7 @@ import { createDashboardExportActions } from "./utils/dashboardExportActions";
 import { useDashboardFloatingObjectActions } from "./hooks/useDashboardFloatingObjectActions";
 import { useDashboardJobActions } from "./hooks/useDashboardJobActions";
 import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
+import { useDashboardProjectActions } from "./hooks/useDashboardProjectActions";
 import { useDashboardProjectLoad } from "./hooks/useDashboardProjectLoad";
 import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
@@ -10291,178 +10290,86 @@ function PerformanceAIDashboardView({
   });
   resetWorkspaceStateRef.current = resetWorkspaceState;
 
-  const handleNewProject = async () => {
-    const newProjectStartedAt = markCivoraInteraction();
-    debugLog("new-project-start");
-    projectLoadRequestRef.current += 1;
-    suppressProjectAutoLoadRef.current = true;
-    autosaveSuspendRef.current = true;
-    if (chatAutosaveTimeoutRef.current !== null) {
-      window.clearTimeout(chatAutosaveTimeoutRef.current);
-      chatAutosaveTimeoutRef.current = null;
-    }
-    if (controlAutosaveTimeoutRef.current !== null) {
-      window.clearTimeout(controlAutosaveTimeoutRef.current);
-      controlAutosaveTimeoutRef.current = null;
-    }
-    draftProjectPromiseRef.current = null;
-    resolvedProjectIdRef.current = "";
-    setProjectId("");
-    setCurrentProject(null);
-    setSelectedRunId("");
-    setActiveJobId("");
-    setPrompt("");
-    setImageName("");
-    setPlanSheetSet(createDefaultPlanSheetSet("Untitled Project"));
-    setUploadedImageApiUrl("");
-    setUploadedImagePreviewUrl("");
-    setSurveyFileName("");
-    setSurveySlopeEstimate(null);
-    setSurveyPoints([]);
-    setSurveyPreviewPoints([]);
-    setSurveyDiagnostics(null);
-    setUseSurveyForGrading(true);
-    setMapSnapshotPath("");
-    setMapAnalysis(null);
-    resetWorkspaceState();
-    setSystemStatuses(DEFAULT_SYSTEM_STATUS);
-    setAssumptions(defaultAssumptions);
-    setIssues([]);
-    setSiteName("");
-    setFileName("");
-    setSiteNameAuto(false);
-    setFileNameAuto(false);
-    setProjectType("");
-    setUnits("ft");
-    setLotWidth("");
-    setLotHeight("");
-    setBuildingWidth("");
-    setBuildingDepth("");
-    setBuildingCount("");
-    setSetback("");
-    setParkingCount("");
-    setParkingStallWidth("9");
-    setParkingStallDepth("18");
-    setParkingAisleWidth("24");
-    setParkingAdaAisleWidth("8");
-    setParkingAdaCount("0");
-    setParkingCompactCount("0");
-    setParkingCompactWidth("8");
-    setParkingAngle("90");
-    setParkingLoading("double");
-    setMinSlopePct("");
-    setPipeMinSlopePct("");
-    setMaxParkingSlopePct("");
-    setMaxRoadGradePct("");
-    setMaxAdaCrossSlopePct("");
-    setRoads(true);
-    setGrading(true);
-    setDrainage(true);
-    setUtilities(true);
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setSidePanelVisible(false);
-    setRightRailCollapsed(true);
-    setWorkspaceChromeMinimized(true);
-    setLeftSidebarOpen(true);
-    const nextThread = [createWelcomeMessage()];
-    chatMessagesRef.current = nextThread;
-    setChatMessages(nextThread);
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
-        window.localStorage.removeItem(getChatThreadStorageKey("draft"));
-      } catch {
-        // Ignore local storage failures.
-      }
-    }
-    setWorkspaceRestoreState("idle");
-    setProjectDrawerNotice("Unsaved draft. Save Project will persist this clean workspace.");
-    setStatusMessage("Started a new project.");
-    measureCivoraInteractionAfterPaint("projects.drawer.new_project", newProjectStartedAt);
-    draftProjectPromiseRef.current = null;
-    suppressProjectAutoLoadRef.current = false;
-    window.setTimeout(() => {
-      autosaveSuspendRef.current = false;
-    }, 0);
-  };
-
-  const handleDeleteProject = async (projectIdToDelete: string) => {
-    const deleteStartedAt = markCivoraInteraction();
-    if (!token) {
-      const message = "Sign in and reconnect to the backend before deleting saved projects.";
-      setProjectDrawerNotice(message);
-      updateProjectStatus({
-        state: "blocked",
-        area: "projects",
-        title: "Delete needs sign-in",
-        detail: "Sign in and reconnect to the backend before deleting saved projects.",
-        nextAction: "Sign in or reconnect backend, then retry delete from Projects.",
-      });
-      measureCivoraInteractionAfterPaint("projects.drawer.delete_project.blocked", deleteStartedAt, {
-        projectId: projectIdToDelete,
-      });
-      return;
-    }
-    const target = projects.find((item) => item.project_id === projectIdToDelete);
-    const confirmed = window.confirm(
-      `Delete "${target?.name || "Untitled Project"}"? This cannot be undone.`,
-    );
-    if (!confirmed) return;
-    try {
-      updateProjectStatus({
-        state: "working",
-        area: "projects",
-        title: "Deleting project",
-        detail: `Deleting "${target?.name || "Untitled Project"}" from saved projects.`,
-        nextAction: "Wait for the backend to confirm deletion or show a blocker.",
-      });
-      const response = await deleteJson<{ success: boolean }>(`/api/projects/${projectIdToDelete}`, {
-        token,
-      });
-      if (!response.success) {
-        throw new Error("the backend did not confirm deletion.");
-      }
-      if (typeof window !== "undefined") {
-        try {
-          window.localStorage.removeItem(getChatThreadStorageKey(projectIdToDelete));
-        } catch {
-          // Ignore local storage failures.
-        }
-      }
-      removeProjectSummary(projectIdToDelete);
-      if (currentProject?.project_id === projectIdToDelete || projectId === projectIdToDelete) {
-        await handleNewProject();
-      } else {
-        await refreshProjects(token);
-      }
-      setProjectDrawerNotice("Project deleted.");
-      updateProjectStatus({
-        state: "ready",
-        area: "projects",
-        title: "Project deleted",
-        detail: "The saved project was deleted.",
-        nextAction: "Start or open another project before continuing.",
-      });
-      measureCivoraInteractionAfterPaint("projects.drawer.delete_project", deleteStartedAt, {
-        projectId: projectIdToDelete,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? `Delete could not finish: ${error.message}` : "Delete could not finish.";
-      setProjectDrawerNotice(message);
-      updateProjectStatus({
-        state: "blocked",
-        area: "projects",
-        title: "Delete could not finish",
-        detail: message,
-        nextAction: "Check auth/backend connectivity, then retry delete from Projects.",
-      });
-      measureCivoraInteractionAfterPaint("projects.drawer.delete_project.failed", deleteStartedAt, {
-        projectId: projectIdToDelete,
-      });
-    }
-  };
+  const { handleDeleteProject, handleNewProject } = useDashboardProjectActions({
+    autosaveSuspendRef,
+    chatAutosaveTimeoutRef,
+    chatMessagesRef,
+    controlAutosaveTimeoutRef,
+    currentProject,
+    debugLog,
+    draftProjectPromiseRef,
+    projectId,
+    projectLoadRequestRef,
+    projects,
+    refreshProjects,
+    removeProjectSummary,
+    resetWorkspaceState,
+    resolvedProjectIdRef,
+    setActiveJobId,
+    setActiveSidePanel,
+    setAssumptions,
+    setBuildingCount,
+    setBuildingDepth,
+    setBuildingWidth,
+    setChatMessages,
+    setCurrentProject,
+    setDrainage,
+    setFileName,
+    setFileNameAuto,
+    setGrading,
+    setImageName,
+    setIssues,
+    setLeftSidebarOpen,
+    setLotHeight,
+    setLotWidth,
+    setMapAnalysis,
+    setMapSnapshotPath,
+    setMaxAdaCrossSlopePct,
+    setMaxParkingSlopePct,
+    setMaxRoadGradePct,
+    setMinSlopePct,
+    setParkingAdaAisleWidth,
+    setParkingAdaCount,
+    setParkingAisleWidth,
+    setParkingAngle,
+    setParkingCompactCount,
+    setParkingCompactWidth,
+    setParkingCount,
+    setParkingLoading,
+    setParkingStallDepth,
+    setParkingStallWidth,
+    setPipeMinSlopePct,
+    setPlanSheetSet,
+    setProjectDrawerNotice,
+    setProjectId,
+    setProjectType,
+    setPrompt,
+    setRenderedSidePanel,
+    setRightRailCollapsed,
+    setRoads,
+    setSelectedRunId,
+    setSetback,
+    setSidePanelVisible,
+    setSiteName,
+    setSiteNameAuto,
+    setStatusMessage,
+    setSurveyDiagnostics,
+    setSurveyFileName,
+    setSurveyPoints,
+    setSurveyPreviewPoints,
+    setSurveySlopeEstimate,
+    setSystemStatuses,
+    setUnits,
+    setUploadedImageApiUrl,
+    setUploadedImagePreviewUrl,
+    setUseSurveyForGrading,
+    setUtilities,
+    setWorkspaceChromeMinimized,
+    setWorkspaceRestoreState,
+    suppressProjectAutoLoadRef,
+    token,
+    updateProjectStatus,
+  });
 
   const {
     downloadBlob,
