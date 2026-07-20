@@ -9561,9 +9561,10 @@ function PerformanceAIDashboardView({
       hiddenSources: editable.map(cloneBuildingPlacementForUndo),
       label: "combine objects",
     };
-    setBuildingPlacements((prev) => [
-      ...prev.map((item) =>
-        editable.some((target) => target.id === item.id)
+    const editableIds = new Set(editable.map((item) => item.id));
+    const nextPlacements = [
+      ...buildingPlacementsRef.current.map((item) =>
+        editableIds.has(item.id)
           ? {
               ...item,
               meta: {
@@ -9576,7 +9577,9 @@ function PerformanceAIDashboardView({
           : item,
       ),
       combinedObject,
-    ]);
+    ];
+    buildingPlacementsRef.current = nextPlacements;
+    setBuildingPlacements(nextPlacements);
     setSelectedObjectIds([nextId]);
     setActivePlacementId(nextId);
     setCombineObjectName("");

@@ -146,10 +146,7 @@ async function askChat(page: Page, question: string, expected: RegExp) {
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
-test("Generate queues drawn and placed objects as engineering context", async ({ page }) => {
-  const captured: { queuedRequest: Record<string, unknown> | null } = { queuedRequest: null };
-  await installHostedMocks(page, captured);
-
+async function openFreshMargoProject(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
@@ -164,19 +161,30 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 5_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Basin"], [data-cad-object-id][aria-label*="Detention"]').first()).toBeVisible({ timeout: 5_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"], [data-cad-object-id][aria-label*="water-line"]').first()).toBeVisible({ timeout: 5_000 });
+}
+
+async function runGenerateAndCapture(page: Page, captured: { queuedRequest: Record<string, unknown> | null }) {
+  captured.queuedRequest = null;
+  await page.getByRole("button", { name: /^Generate$/ }).first().click();
+  await page.getByTestId("generate-main-action").click();
+  await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:/i, { timeout: 8_000 });
+  await expect.poll(() => captured.queuedRequest, { timeout: 8_000 }).not.toBeNull();
+  const queued = captured.queuedRequest!;
+  return queued.request as Record<string, unknown>;
+}
+
+test("Generate queues drawn and placed objects as engineering context", async ({ page }) => {
+  const captured: { queuedRequest: Record<string, unknown> | null } = { queuedRequest: null };
+  await installHostedMocks(page, captured);
+
+  await openFreshMargoProject(page);
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   await page.getByLabel("CAD command input").fill("LINE 20,20 220,20");
   await page.getByLabel("CAD command input").press("Enter");
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
 
-  await page.getByRole("button", { name: /^Generate$/ }).first().click();
-  await page.getByTestId("generate-main-action").click();
-  await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:/i, { timeout: 8_000 });
-  await expect.poll(() => captured.queuedRequest, { timeout: 8_000 }).not.toBeNull();
-
-  const queued = captured.queuedRequest!;
-  const request = queued.request as Record<string, unknown>;
+  const request = await runGenerateAndCapture(page, captured);
   const manualFields = request.manual_fields as Record<string, unknown>;
   const siteObjects = manualFields.site_objects as Array<Record<string, unknown>>;
   const buildings = manualFields.buildings as Array<Record<string, unknown>>;
@@ -208,4 +216,38 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Office Building - 28,000 sf/i);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Custom Line|Command Line/i);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/editable draft\/review context/i);
+});
+
+test("Generate immediately sees newly combined semantic objects", async ({ page }) => {
+  const captured: { queuedRequest: Record<string, unknown> | null } = { queuedRequest: null };
+  await installHostedMocks(page, captured);
+
+  await openFreshMargoProject(page);
+  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+
+  const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+  const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field" }).first();
+  await officeRow.getByTestId("object-manager-bulk-select").check();
+  await parkingRow.getByTestId("object-manager-bulk-select").check();
+  await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");
+  await page.getByTestId("object-manager-combine-type").selectOption("office_building");
+  await page.getByTestId("object-manager-combine-action").click();
+  await expect(page.getByTestId("object-manager-status")).toContainText("Combined", { timeout: 5_000 });
+
+  const request = await runGenerateAndCapture(page, captured);
+  const manualFields = request.manual_fields as Record<string, unknown>;
+  const siteObjects = manualFields.site_objects as Array<Record<string, unknown>>;
+  const buildings = manualFields.buildings as Array<Record<string, unknown>>;
+  const combined = siteObjects.find((item) => String(item.label) === "Combined Site Program");
+
+  expect(combined).toBeTruthy();
+  expect(combined?.type).toBe("office_building");
+  expect(combined?.placed).toBe(true);
+  expect(JSON.stringify(combined?.meta ?? {})).toContain("semantic_object_model");
+  expect(JSON.stringify(combined?.meta ?? {})).toContain("combined_from_object_ids");
+  expect(buildings.some((item) => String(item.label) === "Combined Site Program")).toBeTruthy();
+  expect(JSON.stringify(request.meta ?? {})).toContain("Combined Site Program");
+
+  await askChat(page, "what did you use from my drawing?", /Combined Site Program/i);
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/semantic object/i);
 });
