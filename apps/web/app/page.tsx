@@ -1702,22 +1702,22 @@ const getObjectDimensionsLabel = (item: BuildingPlacement) => {
 
 const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy" | "transform" | "resize") => {
   if (item.type === "site") {
-    return `${action} blocked: locked site boundary is controlled from Setup.`;
+    return `${action} needs input: locked site boundary is controlled from Setup.`;
   }
   if (item.meta?.ai_realism_artifact) {
-    return `${action} blocked: AI realism artifacts are visualization only, not editable site evidence.`;
+    return `${action} needs input: AI realism artifacts are visualization only, not editable site evidence.`;
   }
   if (action === "delete" && item.capabilities?.deletable === false) {
     return `Delete needs input: ${item.label} is source-only or required project evidence.`;
   }
   if ((action === "rename" || action === "style" || action === "type") && item.locked) {
-    return `${action} blocked: unlock ${item.label} before editing metadata.`;
+    return `${action} needs input: unlock ${item.label} before editing metadata.`;
   }
   if (action === "delete" && item.locked) {
     return `Delete needs input: unlock ${item.label} before deleting it.`;
   }
   if ((action === "copy" || action === "transform" || action === "resize") && item.locked) {
-    return `${action} blocked: unlock ${item.label} before changing draft geometry.`;
+    return `${action} needs input: unlock ${item.label} before changing draft geometry.`;
   }
   return null;
 };
