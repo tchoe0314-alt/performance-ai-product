@@ -50,6 +50,7 @@ import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
 import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
 import { PreviewRectObjects } from "./PreviewRectObjects";
 import { PreviewSelectedObjectQuickToolbar } from "./PreviewSelectedObjectQuickToolbar";
+import { PreviewSelectionAffordances } from "./PreviewSelectionAffordances";
 import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
 import { PreviewSuggestedGeometry } from "./PreviewSuggestedGeometry";
 import { PreviewSvgDefs } from "./PreviewSvgDefs";
@@ -5234,243 +5235,97 @@ export default function PreviewPanel({
                             {showBox && isHighQuality && visualKind === "utility" ? (
                               <div className="pointer-events-none absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 bg-violet-500/80" />
                             ) : null}
-                            {showSelectionAffordances && isEditableVertexGeometry && Array.isArray(item.geometry)
-                              ? item.geometry.map((pt, idx) => {
-                                  const handleLeft = ((pt[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
-                                  const handleTop = ((pt[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
-                                  const isDragging =
-                                    draggingMode === "vertex" &&
-                                    draggingVertex?.id === item.id &&
-                                    draggingVertex?.index === idx;
-                                  const isHovered =
-                                    hoveredVertex?.id === item.id && hoveredVertex?.index === idx;
-                                  const isSelectedVertex =
-                                    selectedVertex?.id === item.id && selectedVertex?.index === idx;
-                                  return (
-                                    <button
-                                      key={`vertex-${item.id}-${idx}`}
-                                      type="button"
-                                      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border shadow transition ${
-                                        isDragging
-                                          ? "h-4 w-4 border-amber-600 bg-amber-500 ring-4 ring-amber-200 cursor-grabbing"
-                                          : isHovered
-                                            ? "h-4 w-4 border-amber-500 bg-amber-400 ring-2 ring-amber-200 cursor-grab"
-                                            : isSelectedVertex
-                                              ? "h-4 w-4 border-amber-600 bg-amber-500 ring-2 ring-amber-200"
-                                              : "h-3.5 w-3.5 border-white bg-amber-300 cursor-grab"
-                                      }`}
-                                      style={{ left: `${handleLeft}%`, top: `${handleTop}%` }}
-                                      onMouseEnter={() => setHoveredVertex({ id: item.id, index: idx })}
-                                      onMouseLeave={() => setHoveredVertex(null)}
-                                      onMouseDown={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        if (Array.isArray(item.geometry)) {
-                                          setLastPolylineEdit({
-                                            id: item.id,
-                                            geometry: (item.geometry as Array<[number, number]>).map((pt) => [
-                                              pt[0],
-                                              pt[1],
-                                            ]),
-                                            x: item.x ?? 0,
-                                            y: item.y ?? 0,
-                                            w: item.w,
-                                            d: item.d,
-                                            ts: Date.now(),
-                                          });
-                                        }
-                                        setDraggingBuildingId(item.id);
-                                        setDraggingMode("vertex");
-                                        setDraggingVertex({ id: item.id, index: idx });
-                                        setSelectedVertex({ id: item.id, index: idx });
-                                        onSelectBuilding(item.id);
-                                      }}
-                                    />
-                                  );
-                                })
-                              : null}
-                            {showSelectionAffordances &&
-                            isEditableVertexGeometry &&
-                            Array.isArray(item.geometry) &&
-                            item.geometry.length > 1 &&
-                            (isPolygon || item.type === "custom" || item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
-                              <svg
-                                ref={polylineSegmentRef}
-                                className="absolute inset-0"
-                                viewBox="0 0 100 100"
-                                preserveAspectRatio="none"
-                              >
-                                {(item.geometry ?? []).map((pt, idx, arr) => {
-                                  if (idx === arr.length - 1 && !isPolygon) return null;
-                                  const next = idx === arr.length - 1 ? arr[0] : arr[idx + 1];
-                                  const x1 = ((pt[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
-                                  const y1 = ((pt[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
-                                  const x2 = ((next[0] - (item.x ?? 0)) / Math.max(item.w, 1)) * 100;
-                                  const y2 = ((next[1] - (item.y ?? 0)) / Math.max(item.d, 1)) * 100;
-                                  const isHoveredSeg =
-                                    hoveredSegment?.id === item.id && hoveredSegment?.index === idx;
-                                  return (
-                                    <g key={`seg-${item.id}-${idx}`}>
-                                      {isHoveredSeg ? (
-                                        <line
-                                          x1={x1}
-                                          y1={y1}
-                                          x2={x2}
-                                          y2={y2}
-                                          stroke="rgba(245,158,11,0.6)"
-                                          strokeWidth={1.3}
-                                          strokeLinecap="round"
-                                        />
-                                      ) : null}
-                                      <line
-                                        x1={x1}
-                                        y1={y1}
-                                        x2={x2}
-                                        y2={y2}
-                                        stroke="transparent"
-                                        strokeWidth={8}
-                                        strokeLinecap="round"
-                                        pointerEvents="stroke"
-                                        onMouseEnter={() => setHoveredSegment({ id: item.id, index: idx })}
-                                        onMouseLeave={() => setHoveredSegment(null)}
-                                        onMouseDown={(event) => event.stopPropagation()}
-                                        onClick={(event) => {
-                                          event.preventDefault();
-                                          event.stopPropagation();
-                                          insertVertexOnSegment(event, item, idx);
-                                        }}
-                                      />
-                                    </g>
-                                  );
-                                })}
-                              </svg>
-                            ) : null}
-                            {showSelectionAffordances && isEditableVertexGeometry ? (
-                              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
-                                Vertex edit
-                              </div>
-                            ) : null}
-                            {showSelectionAffordances &&
-                            isEditableVertexGeometry &&
-                            lastPolylineEdit?.id === item.id ? (
-                              <button
-                                type="button"
-                                className="absolute -bottom-10 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  applyPolylineUndo();
-                                }}
-                              >
-                                Undo
-                              </button>
-                            ) : null}
-                            {showSelectionAffordances && isEditableVertexGeometry && selectedVertex?.id === item.id ? (
-                              <button
-                                type="button"
-                                className="absolute -bottom-16 left-1/2 -translate-x-1/2 rounded-full border border-rose-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-rose-600 shadow"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  deleteSelectedVertex();
-                                }}
-                              >
-                                Delete vertex
-                              </button>
-                            ) : null}
-                            {showSelectionAffordances &&
-                            !isPolyline &&
-                            lastRectEdit?.id === item.id ? (
-                              <button
-                                type="button"
-                                className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  applyRectUndo();
-                                }}
-                              >
-                                Undo
-                              </button>
-                            ) : null}
-                            {showSelectionAffordances &&
-                            isEditableVertexGeometry &&
-                            !polylineInsertHintDismissed &&
-                            (isPolygon || item.type === "custom" || item.type === "road" || item.type === "driveway" || item.type === "sidewalk") ? (
-                              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
-                                Click a segment to add a vertex
-                              </div>
-                            ) : null}
-                            {showSelectionAffordances && caps.rotatable ? (
-                              <button
-                                type="button"
-                                title="Rotate selected object"
-                                aria-label="Rotate selected object"
-                                data-testid="selected-object-rotate-handle"
-                                className="absolute -right-3 -top-3 h-7 w-7 rounded-full border border-slate-300 bg-white text-[10px] font-semibold text-slate-700 shadow-lg hover:bg-slate-50"
-                                onMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setLastRectEdit({
-                                    id: item.id,
-                                    snapshot: { ...item },
-                                    action: "update",
+                            <PreviewSelectionAffordances
+                              item={item}
+                              caps={caps}
+                              show={showSelectionAffordances}
+                              isEditableVertexGeometry={isEditableVertexGeometry}
+                              isPolyline={isPolyline}
+                              isPolygon={isPolygon}
+                              showObjectLabel={shouldRevealObjectLabel(item)}
+                              draggingMode={draggingMode}
+                              draggingVertex={draggingVertex}
+                              hoveredVertex={hoveredVertex}
+                              selectedVertex={selectedVertex}
+                              hoveredSegment={hoveredSegment}
+                              lastPolylineEditId={lastPolylineEdit?.id ?? null}
+                              lastRectEditId={lastRectEdit?.id ?? null}
+                              polylineInsertHintDismissed={polylineInsertHintDismissed}
+                              segmentRef={polylineSegmentRef}
+                              onVertexHover={setHoveredVertex}
+                              onSegmentHover={setHoveredSegment}
+                              onVertexMouseDown={(event, target, idx) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (Array.isArray(target.geometry)) {
+                                  setLastPolylineEdit({
+                                    id: target.id,
+                                    geometry: (target.geometry as Array<[number, number]>).map((pt) => [
+                                      pt[0],
+                                      pt[1],
+                                    ]),
+                                    x: target.x ?? 0,
+                                    y: target.y ?? 0,
+                                    w: target.w,
+                                    d: target.d,
                                     ts: Date.now(),
                                   });
-                                  const nextRotation = (((item.rotation ?? 0) + 15) % 360 + 360) % 360;
-                                  if (item.source === "detected_from_image") {
-                                    onUpdateSuggested(item.id, { rotation: nextRotation });
-                                  } else {
-                                    onUpdateBuilding(item.id, { rotation: nextRotation });
-                                  }
-                                }}
-                              >
-                                R
-                              </button>
-                            ) : null}
-                            {showSelectionAffordances && caps.resizable ? (
-                              <button
-                                type="button"
-                                title="Resize selected object"
-                                aria-label="Resize selected object"
-                                data-testid="selected-object-resize-handle"
-                                className="absolute -right-3 -bottom-3 h-7 w-7 rounded-full border border-slate-300 bg-white text-[10px] font-semibold text-slate-700 shadow-lg hover:bg-slate-50"
-                                onMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
-                              >
-                                Z
-                              </button>
-                            ) : null}
-                            {showSelectionAffordances && caps.deletable ? (
-                              <button
-                                type="button"
-                                title="Delete selected object"
-                                aria-label="Delete selected object"
-                                data-testid="selected-object-delete-handle"
-                                className="absolute -left-3 -top-3 h-7 w-7 rounded-full border border-rose-200 bg-white text-[10px] font-semibold text-rose-600 shadow-lg hover:bg-rose-50"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setLastRectEdit({
-                                    id: item.id,
-                                    snapshot: { ...item },
-                                    action: "delete",
-                                    ts: Date.now(),
-                                  });
-                                  onRemoveBuilding(item.id);
-                                }}
-                              >
-                                ×
-                              </button>
-                            ) : null}
-                            {showSelectionAffordances && shouldRevealObjectLabel(item) && caps.movable && !isPolyline ? (
-                              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
-                                Snap 5ft
-                              </div>
-                            ) : null}
-                            {showSelectionAffordances && shouldRevealObjectLabel(item) && typeof item.x === "number" && typeof item.y === "number" ? (
-                              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
-                                X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
-                              </div>
-                            ) : null}
+                                }
+                                setDraggingBuildingId(target.id);
+                                setDraggingMode("vertex");
+                                setDraggingVertex({ id: target.id, index: idx });
+                                setSelectedVertex({ id: target.id, index: idx });
+                                onSelectBuilding(target.id);
+                              }}
+                              onSegmentMouseDown={(event) => event.stopPropagation()}
+                              onSegmentClick={(event, target, idx) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                insertVertexOnSegment(event, target, idx);
+                              }}
+                              onPolylineUndo={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                applyPolylineUndo();
+                              }}
+                              onDeleteVertex={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                deleteSelectedVertex();
+                              }}
+                              onRectUndo={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                applyRectUndo();
+                              }}
+                              onRotateMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
+                              onRotateClick={(event) => {
+                                event.stopPropagation();
+                                setLastRectEdit({
+                                  id: item.id,
+                                  snapshot: { ...item },
+                                  action: "update",
+                                  ts: Date.now(),
+                                });
+                                const nextRotation = (((item.rotation ?? 0) + 15) % 360 + 360) % 360;
+                                if (item.source === "detected_from_image") {
+                                  onUpdateSuggested(item.id, { rotation: nextRotation });
+                                } else {
+                                  onUpdateBuilding(item.id, { rotation: nextRotation });
+                                }
+                              }}
+                              onResizeMouseDown={(event) => handleBuildingMouseDown(event, item, "resize")}
+                              onDeleteClick={(event) => {
+                                event.stopPropagation();
+                                setLastRectEdit({
+                                  id: item.id,
+                                  snapshot: { ...item },
+                                  action: "delete",
+                                  ts: Date.now(),
+                                });
+                                onRemoveBuilding(item.id);
+                              }}
+                            />
                             {hoveredObjectId === item.id ? <PreviewObjectHoverCard details={objectHoverDetails} /> : null}
                           </div>
                         );
