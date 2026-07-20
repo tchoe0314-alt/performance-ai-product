@@ -284,9 +284,6 @@ import {
 } from "./utils/dashboardSidebarReview";
 import {
   cloneBuildingPlacementForUndo,
-  formatVisibleDraftSelectionMessage,
-  getVisibleEditableDraftObjectIds,
-  invertVisibleDraftSelection,
   type ObjectManagerLayoutAction,
 } from "./utils/dashboardObjectManagerTrace";
 import {
@@ -333,6 +330,14 @@ import {
   runObjectVertexInsert,
   runObjectVertexSnapToNearestEndpoint,
 } from "./utils/dashboardObjectManagerVertexActions";
+import {
+  runObjectManagerCopy,
+  runObjectManagerDelete,
+  runObjectManagerInvertSelection,
+  runObjectManagerSelect,
+  runObjectManagerSelectVisibleDraft,
+  runObjectManagerToggleMultiSelect,
+} from "./utils/dashboardObjectManagerSelectionActions";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -3065,6 +3070,18 @@ function PerformanceAIDashboardView({
     appendChatMessage("assistant", calmMessage, "status");
   }, []);
 
+  const objectManagerSelectionActions = useMemo(() => ({
+    appendStatusMessage: (message: string) => appendChatMessage("assistant", message, "status"),
+    handleRemoveBuilding,
+    reportObjectActionBlocker,
+    setActivePlacementId,
+    setObjectClipboard,
+    setObjectManagerStatusMessage,
+    setPreviewInteraction,
+    setSelectedObjectIds,
+    setStatusMessage,
+  }), [appendChatMessage, handleRemoveBuilding, reportObjectActionBlocker]);
+
   const objectManagerVertexActions = useMemo(() => ({
     handleUpdateBuilding,
     reportObjectActionBlocker,
@@ -3127,68 +3144,32 @@ function PerformanceAIDashboardView({
   }, [objectManagerVertexActions]);
 
   const handleObjectManagerSelect = useCallback((id: string) => {
-    setActivePlacementId(id);
-    setSelectedObjectIds([id]);
-    setPreviewInteraction("edit");
-  }, []);
+    runObjectManagerSelect({ id, actions: objectManagerSelectionActions });
+  }, [objectManagerSelectionActions]);
 
   const handleObjectManagerToggleMultiSelect = useCallback((id: string, checked: boolean) => {
-    setSelectedObjectIds((prev) => {
-      const next = checked
-        ? Array.from(new Set([...prev, id]))
-        : prev.filter((itemId) => itemId !== id);
-      if (checked) setActivePlacementId(id);
-      return next;
-    });
-  }, []);
+    runObjectManagerToggleMultiSelect({ id, checked, actions: objectManagerSelectionActions });
+  }, [objectManagerSelectionActions]);
 
   const handleObjectManagerSelectVisibleDraft = useCallback(() => {
-    const visibleDraftIds = getVisibleEditableDraftObjectIds(buildingPlacements);
-    if (!visibleDraftIds.length) {
-      reportObjectActionBlocker("Select visible blocked: no visible editable draft objects are available.");
-      return;
-    }
-    setSelectedObjectIds(visibleDraftIds);
-    setActivePlacementId(visibleDraftIds[0] ?? null);
-    const message = formatVisibleDraftSelectionMessage(visibleDraftIds.length);
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-  }, [buildingPlacements, reportObjectActionBlocker]);
+    runObjectManagerSelectVisibleDraft({ buildingPlacements, actions: objectManagerSelectionActions });
+  }, [buildingPlacements, objectManagerSelectionActions]);
 
   const handleObjectManagerInvertSelection = useCallback(() => {
-    const visibleDraftIds = getVisibleEditableDraftObjectIds(buildingPlacements);
-    if (!visibleDraftIds.length) {
-      reportObjectActionBlocker("Invert selection blocked: no visible editable draft objects are available.");
-      return;
-    }
-    const { nextSelection, message } = invertVisibleDraftSelection({ visibleDraftIds, selectedObjectIds });
-    setSelectedObjectIds(nextSelection);
-    setActivePlacementId(nextSelection[0] ?? null);
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-  }, [buildingPlacements, reportObjectActionBlocker, selectedObjectIds]);
+    runObjectManagerInvertSelection({
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerSelectionActions,
+    });
+  }, [buildingPlacements, objectManagerSelectionActions, selectedObjectIds]);
 
   const handleObjectManagerDelete = useCallback((item: BuildingPlacement) => {
-    const blocker = getObjectEditBlocker(item, "delete");
-    if (blocker) {
-      reportObjectActionBlocker(blocker);
-      return;
-    }
-    handleRemoveBuilding(item.id);
-    appendChatMessage("assistant", `Deleted ${item.label}.`, "status");
-  }, [handleRemoveBuilding, reportObjectActionBlocker]);
+    runObjectManagerDelete({ item, actions: objectManagerSelectionActions });
+  }, [objectManagerSelectionActions]);
 
   const handleObjectManagerCopy = useCallback((item: BuildingPlacement) => {
-    const blocker = getObjectEditBlocker(item, "copy");
-    if (blocker) {
-      reportObjectActionBlocker(blocker);
-      return;
-    }
-    setObjectClipboard([cloneBuildingPlacementForUndo(item)]);
-    const message = `Copied ${item.label}. Use Paste to place an editable draft duplicate.`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-  }, [cloneBuildingPlacementForUndo, reportObjectActionBlocker]);
+    runObjectManagerCopy({ item, actions: objectManagerSelectionActions });
+  }, [objectManagerSelectionActions]);
 
   const persistDraftRefresh = useCallback((reason: string) => {
     void ensureProjectDraftRef.current()
