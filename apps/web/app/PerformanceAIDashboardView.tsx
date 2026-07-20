@@ -228,6 +228,7 @@ import {
   buildGeneratePreflightBlockers,
 } from "./utils/dashboardWorkspaceBlockers";
 import { buildProjectTruthLabels } from "./utils/dashboardProjectTruth";
+import { buildDashboardSetupTruth } from "./utils/dashboardSetupTruth";
 import {
   buildDashboardProgressTimelineState,
   buildDashboardSetupWizardState,
@@ -1283,40 +1284,20 @@ function PerformanceAIDashboardView({
     if (audit?.engine_depth_dashboard_v1?.version) return audit.engine_depth_dashboard_v1;
     return null;
   }, [currentPlanMeta, siteInputs]);
-  const appliedAddressLabel = String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim();
-  const hasAppliedAddress = Boolean(appliedAddressLabel || (siteInputs?.geocode?.lat && siteInputs?.geocode?.lng));
-  const hasLocationEvidence =
-    hasAppliedAddress ||
-    Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
-    Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl);
-  const hasVerifiedSurveyControl = Boolean(surveyFileName && surveyPreviewPoints.length);
-  const hasAssumedTerrainSlope =
-    Boolean(surveySlopeEstimate?.slope_percent) &&
-    Number(surveySlopeEstimate?.point_count ?? 0) === 0;
-  const hasTerrainSource =
-    !debugNoTerrain &&
-    ((Boolean(surveyFileName) && useSurveyForGrading) ||
-      Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
-      Boolean(surveySlopeEstimate?.slope_percent));
   const currentPlanMetaRecord = currentPlanMeta as Record<string, unknown>;
-  const hasStandardsEvidence = Boolean(
-    minSlopePct ||
-      pipeMinSlopePct ||
-      maxParkingSlopePct ||
-      maxRoadGradePct ||
-      maxAdaCrossSlopePct ||
-      currentPlanMetaRecord.standards_package ||
-      currentPlanMetaRecord.standards_source_registry ||
-      currentPlanMetaRecord.standards_acceptance_report,
-  );
-  const pendingAddressEdit = Boolean(
-    siteAddress.trim() &&
-      siteAddress.trim() !== String(siteInputs?.address || siteInputs?.geocode?.display_name || "").trim(),
-  );
-  const localAddressLocked = Boolean(!hasAppliedAddress && siteScaleLocked && siteAddress.trim());
-  const addressNeedsApply = Boolean(
-    !localAddressLocked && (pendingAddressEdit || (siteAddress.trim() && !hasAppliedAddress)),
-  );
+  const { appliedAddressLabel, hasAppliedAddress, hasLocationEvidence, hasVerifiedSurveyControl, hasAssumedTerrainSlope, hasTerrainSource, hasStandardsEvidence, pendingAddressEdit, localAddressLocked, addressNeedsApply } = buildDashboardSetupTruth({
+    siteInputs,
+    siteAddress,
+    siteScaleLocked,
+    uploadedImageApiUrl,
+    uploadedImagePreviewUrl,
+    surveyFileName,
+    surveyPreviewPointCount: surveyPreviewPoints.length,
+    surveySlopeEstimate,
+    debugNoTerrain,
+    useSurveyForGrading,
+    standardsEvidenceValues: [minSlopePct, pipeMinSlopePct, maxParkingSlopePct, maxRoadGradePct, maxAdaCrossSlopePct, currentPlanMetaRecord.standards_package, currentPlanMetaRecord.standards_source_registry, currentPlanMetaRecord.standards_acceptance_report],
+  });
   const smartFixBlockedReasons = useMemo(() => {
     const releaseReview = currentPlanMeta.release_review && typeof currentPlanMeta.release_review === "object"
       ? currentPlanMeta.release_review as Record<string, unknown>
