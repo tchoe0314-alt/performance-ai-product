@@ -74,9 +74,10 @@ test.describe("hosted authenticated smoke", () => {
     await seedAuth(page, token);
     await openWorkspace(page);
 
-    await expect(page.getByRole("banner").getByRole("button", { name: "Recent changes" })).toBeVisible();
+    await expect(page.getByRole("banner").getByRole("button", { name: "Open workspace controls" })).toBeVisible();
     await expect(page.getByRole("banner").getByRole("button", { name: "Open projects from header" })).toBeVisible();
     await expect(page.getByRole("banner").getByRole("button", { name: "Open chat from header" })).toBeVisible();
+    await expect(page.getByRole("banner").getByRole("button", { name: "Help" })).toBeVisible();
 
     await page.getByRole("button", { name: "Open projects from header" }).click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();

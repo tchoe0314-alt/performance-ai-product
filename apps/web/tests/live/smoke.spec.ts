@@ -154,9 +154,10 @@ test("live civora flow", async ({ page, request, baseURL }) => {
   });
 
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
-  await expect(page.getByRole("banner").getByRole("button", { name: "Recent changes" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "Open workspace controls" })).toBeVisible();
   await expect(page.getByRole("banner").getByRole("button", { name: "Open projects from header" })).toBeVisible();
-  await expect(page.getByRole("banner").getByRole("button", { name: "Chat" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "Open chat from header" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "Help" })).toBeVisible();
 
   if (prompt.trim()) {
     await ensureNewProject(page);
