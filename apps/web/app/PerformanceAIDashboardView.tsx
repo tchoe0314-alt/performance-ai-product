@@ -114,6 +114,7 @@ import {
   buildDashboardMeasurementOverlayStats,
 } from "./utils/dashboardEngineeringMetrics";
 import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
+import { resolveActivePrimaryWorkflowKey } from "./utils/dashboardPrimaryWorkflows";
 import {
   buildObjectManagerLayerRows,
   buildObjectManagerTypes,
@@ -16698,43 +16699,10 @@ function PerformanceAIDashboardView({
     if (mode === "settings") return panelStatus("settings");
     return "idle";
   };
-	  const primaryWorkflowGroups: Record<PrimaryWorkflowKey, SidePanelKey[]> = {
-	    setup: ["site_existing", "import_survey", "data", "standards"],
-	    draw: ["model", "layers", "files"],
-	    objects: ["objects", "model", "details"],
-	    design: [
-	      "generate",
-	      "grading",
-	      "drainage",
-	      "sanitary",
-	      "water",
-	      "utilities",
-	      "roadway",
-	      "landscape",
-	      "system_grading",
-	      "system_storm",
-	      "system_sanitary",
-	      "system_water",
-	      "system_roadway",
-	      "system_utilities",
-	      "system_landscape",
-	    ],
-	    analyze: ["analysis", "quantities", "jobs", "catalogs"],
-    deliver: ["deliverables", "reports", "settings", "chat"],
-	  };
-	  const activePrimaryWorkflowKey =
-	    (Object.entries(primaryWorkflowGroups).find(([, panels]) =>
-	      sidePanelForRender ? panels.includes(sidePanelForRender) : false,
-	    )?.[0] as PrimaryWorkflowKey | undefined) ??
-	    (activeWorkspaceMode === "setup"
-	      ? "setup"
-	      : activeWorkspaceMode === "canvas" || activeWorkspaceMode === "layers"
-	        ? "draw"
-        : activeWorkspaceMode === "deliver"
-	            ? "deliver"
-	            : activeWorkspaceMode === "data"
-	              ? "setup"
-	              : "analyze");
+	  const activePrimaryWorkflowKey = resolveActivePrimaryWorkflowKey({
+	    sidePanelForRender,
+	    activeWorkspaceMode,
+	  });
 	  const primaryWorkflowItems: PrimaryWorkflowItem[] = [
 	    {
 	      key: "setup",
