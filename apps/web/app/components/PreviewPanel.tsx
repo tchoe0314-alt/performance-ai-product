@@ -559,6 +559,12 @@ export default function PreviewPanel({
   const [pinnedAnnotation, setPinnedAnnotation] = useState<(typeof previewLabels)[number] | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
   const [fullscreenHoverPoint, setFullscreenHoverPoint] = useState<{ x: number; y: number } | null>(null);
+  const hoverAnnotationRafRef = useRef<number | null>(null);
+  const pendingHoverAnnotationRef = useRef<{
+    annotation: (typeof previewLabels)[number] | null;
+    point: { x: number; y: number } | null;
+    setter: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
+  } | null>(null);
   const [previewImageBounds, setPreviewImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenImageBounds, setFullscreenImageBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [fullscreenContainerReady, setFullscreenContainerReady] = useState(false);
@@ -1570,6 +1576,9 @@ export default function PreviewPanel({
       if (canvasPanRafRef.current !== null) {
         window.cancelAnimationFrame(canvasPanRafRef.current);
       }
+      if (hoverAnnotationRafRef.current !== null) {
+        window.cancelAnimationFrame(hoverAnnotationRafRef.current);
+      }
     },
     [],
   );
@@ -1617,6 +1626,46 @@ export default function PreviewPanel({
         : nextBounds,
     );
   }, []);
+  const scheduleHoverAnnotationState = useCallback(
+    (
+      annotation: (typeof previewLabels)[number] | null,
+      point: { x: number; y: number } | null,
+      setter: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>,
+    ) => {
+      pendingHoverAnnotationRef.current = { annotation, point, setter };
+      if (hoverAnnotationRafRef.current !== null) return;
+      hoverAnnotationRafRef.current = window.requestAnimationFrame(() => {
+        hoverAnnotationRafRef.current = null;
+        const pending = pendingHoverAnnotationRef.current;
+        pendingHoverAnnotationRef.current = null;
+        if (!pending) return;
+        setHoveredAnnotation((current) =>
+          current?.label === pending.annotation?.label ? current : pending.annotation,
+        );
+        pending.setter((current) => {
+          if (!pending.point) return current === null ? current : null;
+          return current &&
+            Math.abs(current.x - pending.point.x) < 6 &&
+            Math.abs(current.y - pending.point.y) < 6
+            ? current
+            : pending.point;
+        });
+      });
+    },
+    [],
+  );
+  const clearScheduledHoverAnnotationState = useCallback(
+    (setter: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>) => {
+      if (hoverAnnotationRafRef.current !== null) {
+        window.cancelAnimationFrame(hoverAnnotationRafRef.current);
+        hoverAnnotationRafRef.current = null;
+      }
+      pendingHoverAnnotationRef.current = null;
+      setHoveredAnnotation(null);
+      setter((current) => (current === null ? current : null));
+    },
+    [],
+  );
   const resolveHover = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
@@ -1625,8 +1674,7 @@ export default function PreviewPanel({
       setPoint: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>,
     ) => {
       if (!showHover || !containerRef.current || !hasInteractiveLabels) {
-        setHoveredAnnotation(null);
-        setPoint(null);
+        clearScheduledHoverAnnotationState(setPoint);
         return;
       }
       const rect = containerRef.current.getBoundingClientRect();
@@ -1634,8 +1682,7 @@ export default function PreviewPanel({
       const relativeX = (event.clientX - rect.left - bounds.left) / Math.max(bounds.width, 1);
       const relativeY = (event.clientY - rect.top - bounds.top) / Math.max(bounds.height, 1);
       if (relativeX < 0 || relativeX > 1 || relativeY < 0 || relativeY > 1) {
-        setHoveredAnnotation(null);
-        setPoint(null);
+        clearScheduledHoverAnnotationState(setPoint);
         return;
       }
       const matches = previewLabels
@@ -1658,21 +1705,14 @@ export default function PreviewPanel({
           return aArea - bArea;
         });
       const next = matches[0] ?? null;
-      setHoveredAnnotation((current) => (current?.label === next?.label ? current : next));
       if (!next) {
-        setPoint((current) => (current === null ? current : null));
+        clearScheduledHoverAnnotationState(setPoint);
         return;
       }
       const nextPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      setPoint((current) =>
-        current &&
-        Math.abs(current.x - nextPoint.x) < 6 &&
-        Math.abs(current.y - nextPoint.y) < 6
-          ? current
-          : nextPoint,
-      );
+      scheduleHoverAnnotationState(next, nextPoint, setPoint);
     },
-    [hasInteractiveLabels, previewLabels, showHover],
+    [clearScheduledHoverAnnotationState, hasInteractiveLabels, previewLabels, scheduleHoverAnnotationState, showHover],
   );
 
   const resolvePlacement = useCallback(
@@ -5362,13 +5402,12 @@ export default function PreviewPanel({
     if (showHover) return;
     const handle = window.requestAnimationFrame(() => {
       setHoveredObjectId(null);
-      setHoveredAnnotation(null);
-      setHoverPoint(null);
+      clearScheduledHoverAnnotationState(setHoverPoint);
       setHoveredVertex(null);
       setHoveredSegment(null);
     });
     return () => window.cancelAnimationFrame(handle);
-  }, [showHover]);
+  }, [clearScheduledHoverAnnotationState, showHover]);
 
   useEffect(() => {
     if (previewInteraction !== "static") return;
@@ -7366,9 +7405,8 @@ export default function PreviewPanel({
                 if (showHover) {
                   resolveHover(event, previewRef, overlayBoundsResolved, setHoverPoint);
                 } else {
-                  if (hoverPoint) setHoverPoint(null);
+                  if (hoverPoint || hoveredAnnotation) clearScheduledHoverAnnotationState(setHoverPoint);
                   if (hoveredObjectId) setHoveredObjectId(null);
-                  if (hoveredAnnotation) setHoveredAnnotation(null);
                 }
                 if (showHover && overlayBoundsResolved && lotWidth > 0 && lotHeight > 0 && previewRef.current) {
                   const sitePoint = screenToSitePoint(event.clientX, event.clientY, previewRef, overlayBoundsResolved);
@@ -7380,9 +7418,8 @@ export default function PreviewPanel({
                 }
               }}
               onMouseLeave={() => {
-                setHoveredAnnotation(null);
+                clearScheduledHoverAnnotationState(setHoverPoint);
                 setHoveredObjectId(null);
-                setHoverPoint(null);
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
                 finishCanvasPanInteraction();
@@ -9971,8 +10008,7 @@ export default function PreviewPanel({
                   resolveHover(event, fullscreenRef, fullscreenImageBounds, setFullscreenHoverPoint);
                 }}
                 onMouseLeave={() => {
-                  setHoveredAnnotation(null);
-                  setFullscreenHoverPoint(null);
+                  clearScheduledHoverAnnotationState(setFullscreenHoverPoint);
                   setDraggingBuildingId(null);
                   setDraggingMode(null);
                 }}
