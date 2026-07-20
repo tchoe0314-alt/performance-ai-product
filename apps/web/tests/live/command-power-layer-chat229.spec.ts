@@ -141,6 +141,41 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(panel).not.toContainText(/Before I move forward, I still need|site type or land use/i);
   });
 
+  test("chat explains recent UI performance timings instead of guessing about lag", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await page.evaluate(() => {
+      (window as typeof window & {
+        __civoraPerf?: {
+          entries: Array<{ label: string; durationMs: number; startedAt?: number; endedAt?: number }>;
+          last: Record<string, { label: string; durationMs: number; startedAt?: number; endedAt?: number }>;
+        };
+      }).__civoraPerf = {
+        entries: [
+          { label: "preview.quality.high", durationMs: 64 },
+          { label: "preview.mode.3d", durationMs: 1240 },
+          { label: "projects.new_project", durationMs: 180 },
+        ],
+        last: {
+          "preview.quality.high": { label: "preview.quality.high", durationMs: 64 },
+          "preview.mode.3d": { label: "preview.mode.3d", durationMs: 1240 },
+          "projects.new_project": { label: "projects.new_project", durationMs: 180 },
+        },
+      };
+    });
+
+    await runCommand(page, "why is the website laggy?");
+
+    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    const panel = page.getByTestId("workspace-right-panel");
+    await expect(panel).toContainText("Recent UI timings from this browser", { timeout: 5_000 });
+    await expect(panel).toContainText("Preview mode 3d");
+    await expect(panel).toContainText("slow, worth checking");
+    await expect(panel).toContainText("Preview quality high");
+    await expect(panel).toContainText("instant");
+    await expect(panel).not.toContainText(/Before I move forward, I still need|site type or land use/i);
+  });
+
   test("natural language address and site size setup bypasses generic design clarification", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
 

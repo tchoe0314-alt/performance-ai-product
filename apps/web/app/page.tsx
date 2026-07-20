@@ -12632,6 +12632,84 @@ function PerformanceAIDashboardView({
       return true;
     }
 
+    if (/(why.*(slow|lag|laggy|stuck|glitch|glitchy)|what.*(slow|lag|laggy|stuck|glitch|glitchy)|is.*(slow|laggy|stuck|glitchy)|performance|taking.*long|debug.*(speed|performance|lag))/i.test(normalized)) {
+      type ChatPerfEntry = { label: string; durationMs: number };
+      const perfStore =
+        typeof window !== "undefined"
+          ? (window as typeof window & {
+              __civoraPerf?: {
+                entries?: ChatPerfEntry[];
+                last?: Record<string, ChatPerfEntry>;
+              };
+            }).__civoraPerf
+          : null;
+      const entries = [
+        ...Object.values(perfStore?.last ?? {}),
+        ...(perfStore?.entries ?? []).slice(-8),
+      ].filter((entry, index, list) =>
+        entry && list.findIndex((other) => other.label === entry.label) === index,
+      );
+      const priorityLabels = [
+        "preview.mode.3d",
+        "preview.mode.2d",
+        "preview.quality.high",
+        "preview.quality.standard",
+        "preview.ai_visualization.on",
+        "preview.ai_visualization.off",
+        "projects.new_project",
+        "projects.open_saved_project",
+        "generate.panel.response.visible",
+        "panel.open.generate",
+        "panel.open.deliver",
+        "draw.tool.add_line",
+        "draw.tool.add_area",
+        "preview.pan.drag",
+      ];
+      const sortedEntries = entries
+        .sort((a, b) => {
+          const aPriority = priorityLabels.indexOf(a.label);
+          const bPriority = priorityLabels.indexOf(b.label);
+          const normalizedA = aPriority === -1 ? 999 : aPriority;
+          const normalizedB = bPriority === -1 ? 999 : bPriority;
+          if (normalizedA !== normalizedB) return normalizedA - normalizedB;
+          return b.durationMs - a.durationMs;
+        })
+        .slice(0, 8);
+      const humanLabel = (label: string) =>
+        label
+          .replace(/^preview\./, "Preview ")
+          .replace(/^projects\./, "Projects ")
+          .replace(/^generate\./, "Generate ")
+          .replace(/^panel\./, "Panel ")
+          .replace(/^draw\./, "Draw ")
+          .replace(/\./g, " ")
+          .replace(/_/g, " ");
+      const statusFor = (durationMs: number) => {
+        if (durationMs <= 250) return "instant";
+        if (durationMs <= 1000) return "normal";
+        return "slow, worth checking";
+      };
+
+      appendChatMessage(
+        "assistant",
+        sortedEntries.length
+          ? [
+              "Recent UI timings from this browser:",
+              ...sortedEntries.map(
+                (entry) =>
+                  `- ${humanLabel(entry.label)}: ${Math.round(entry.durationMs)} ms (${statusFor(entry.durationMs)})`,
+              ),
+              "If something feels laggy, try that action again and ask me this question again. I will compare the newest timings instead of guessing.",
+            ].join("\n")
+          : [
+              "I do not have recent UI timing samples yet in this browser.",
+              "Try opening a panel, switching 2D/3D, toggling Standard/High, drawing, or running Generate, then ask me again. I will summarize the measured timings instead of giving a generic answer.",
+            ].join("\n"),
+        "status",
+      );
+      return true;
+    }
+
     if (/(what.*(random|weird|messy).*(circle|line|shape|stuff)|what.*(circle|line|shape).*mean|why.*(circle|line|shape|preview).*look|explain.*(preview|drawing|canvas|map)|what\s+am\s+i\s+looking\s+at|what.*on.*(canvas|preview|map|plan))/i.test(normalized)) {
       const visibleObjects = placed.filter((item) => !item.meta?.ui_hidden);
       const byKind = (matcher: (item: BuildingPlacement) => boolean) => visibleObjects.filter(matcher).length;
