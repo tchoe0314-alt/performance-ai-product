@@ -358,6 +358,13 @@ import {
   type DashboardSiteSetupActions,
 } from "./utils/dashboardSiteSetupActions";
 import { createDashboardPlanSheetActions } from "./utils/dashboardPlanSheetActions";
+import {
+  runDashboardCloseSidePanel,
+  runDashboardOpenPanelFromDrawer,
+  runDashboardOpenSidePanel,
+  runDashboardOpenWorkspaceMode,
+  runDashboardTriggerCadTool,
+} from "./utils/dashboardShellActions";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -380,8 +387,6 @@ import {
   resolveDashboardSidebarModeStatus,
   resolveSidePanelForRender,
   sidePanelCopy,
-  workspaceModeByPanel,
-  workspacePanelByMode,
   type ProjectStatusSummary,
   type SidebarStatus,
   type SidePanelKey,
@@ -12599,30 +12604,18 @@ function PerformanceAIDashboardView({
   );
   const isDisciplinePanel = isDashboardDisciplinePanel(sidePanelForRender);
   const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
-    if (sidePanelCloseTimeoutRef.current !== null) {
-      window.clearTimeout(sidePanelCloseTimeoutRef.current);
-      sidePanelCloseTimeoutRef.current = null;
-    }
-    if (panel) {
-      panelOpenProbeRef.current = {
-        label: panel === "projects" ? "projects.drawer.open" : "panel.open",
-        panel,
-        startedAt: markCivoraInteraction(),
-      };
-    }
-    setLayerManagerOpen(false);
-    if (panel) {
-      setRightRailCollapsed(false);
-    }
-    const drawAdjacentPanels: SidePanelKey[] = ["objects", "details", "layers", "model"];
-    if (panel && !drawAdjacentPanels.includes(panel)) {
-      setPlacementModeEnabled(false);
-      setPreviewInteraction("static");
-      setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
-    }
-    setActiveSidePanel(panel);
-    if (!panel) return;
-    setActiveWorkspaceMode(workspaceModeByPanel[panel]);
+    runDashboardOpenSidePanel({
+      panel,
+      panelOpenProbeRef,
+      sidePanelCloseTimeoutRef,
+      setActiveSidePanel,
+      setActiveWorkspaceMode,
+      setCadToolRequest,
+      setLayerManagerOpen,
+      setPlacementModeEnabled,
+      setPreviewInteraction,
+      setRightRailCollapsed,
+    });
   }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -12631,57 +12624,44 @@ function PerformanceAIDashboardView({
     handleOpenSidePanel(panel);
   }, [handleOpenSidePanel]);
   const handleCloseSidePanel = useCallback(() => {
-    if (sidePanelCloseTimeoutRef.current !== null) {
-      window.clearTimeout(sidePanelCloseTimeoutRef.current);
-    }
-    setRightRailCollapsed(false);
-    panelCloseProbeRef.current = {
-      label: activeSidePanel === "projects" ? "projects.drawer.close" : "panel.close",
-      panel: activeSidePanel,
-      startedAt: markCivoraInteraction(),
-    };
-    setSidePanelVisible(false);
-    sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
-      setRightRailCollapsed(true);
-      setActiveSidePanel(null);
-      setRenderedSidePanel(null);
-      const probe = panelCloseProbeRef.current;
-      if (probe) {
-        measureCivoraInteractionAfterPaint(probe.label, probe.startedAt, { panel: probe.panel ?? "none" });
-        panelCloseProbeRef.current = null;
-      }
-      sidePanelCloseTimeoutRef.current = null;
-    }, 180);
+    runDashboardCloseSidePanel({
+      activeSidePanel,
+      panelCloseProbeRef,
+      sidePanelCloseTimeoutRef,
+      setActiveSidePanel,
+      setRenderedSidePanel,
+      setRightRailCollapsed,
+      setSidePanelVisible,
+    });
   }, [activeSidePanel]);
   const handleOpenPanelFromDrawer = useCallback((panel: SidePanelKey) => {
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setLeftSidebarOpen(false);
-      window.requestAnimationFrame(() => handleOpenSidePanel(panel));
-      return;
-    }
-    handleOpenSidePanel(panel);
+    runDashboardOpenPanelFromDrawer({
+      panel,
+      openSidePanel: handleOpenSidePanel,
+      setLeftSidebarOpen,
+    });
   }, [handleOpenSidePanel]);
   const triggerCadTool = useCallback((tool: CadToolRequestForPreview["tool"], label: string) => {
-    const startedAt = markCivoraInteraction();
-    setActiveWorkspaceMode("canvas");
-    setPreviewInteraction("edit");
-    setWorkspaceChromeMinimized(true);
-    setRightRailCollapsed(false);
-    setActiveSidePanel("objects");
-    setCadToolRequest({ id: Date.now() + Math.random(), tool });
-    setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
-    measureCivoraInteractionAfterPaint("draw.canvas.tool.click", startedAt, { tool, label });
+    runDashboardTriggerCadTool({
+      label,
+      setActiveSidePanel,
+      setActiveWorkspaceMode,
+      setCadToolRequest,
+      setPreviewInteraction,
+      setRightRailCollapsed,
+      setStatusMessage,
+      setWorkspaceChromeMinimized,
+      tool,
+    });
   }, []);
   const cadToolGroups = DASHBOARD_CAD_TOOL_GROUPS;
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
-    const nextPanel = workspacePanelByMode[mode];
-    setActiveWorkspaceMode(mode);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setLeftSidebarOpen(false);
-      window.requestAnimationFrame(() => handleOpenSidePanel(nextPanel));
-      return;
-    }
-    handleOpenSidePanel(nextPanel);
+    runDashboardOpenWorkspaceMode({
+      mode,
+      openSidePanel: handleOpenSidePanel,
+      setActiveWorkspaceMode,
+      setLeftSidebarOpen,
+    });
   }, [handleOpenSidePanel]);
   const controlsHealthStatus = resolveDashboardControlsHealthStatus(systemStatuses);
   const panelStatus = (target: SidePanelKey): SidebarStatus =>
