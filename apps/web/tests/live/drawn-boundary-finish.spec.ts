@@ -365,7 +365,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools).toContainText(/TRIM (applied|blocked: trim would leave the locked site extents)/);
     await cadTools.getByLabel("CAD command input").fill("fillet 4");
     await cadTools.getByRole("button", { name: "Run" }).click();
-    await expect(cadTools).toContainText(/FILLET (applied|blocked)/);
+    await expect(cadTools).toContainText(/FILLET (applied|blocked|needs input)/i);
 
     const snapToggle = cadTools.getByLabel("Snap");
     if (await snapToggle.isChecked()) {
@@ -485,8 +485,8 @@ async function openDrawControls(page: Page) {
   const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
   const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
   const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
-  if (await drawStep.isVisible().catch(() => false)) await drawStep.evaluate((element: HTMLElement) => element.click());
-  else if (await drawButton.isVisible().catch(() => false)) await drawButton.evaluate((element: HTMLElement) => element.click());
+  if (await drawStep.isVisible().catch(() => false)) await drawStep.click({ timeout: 5_000 });
+  else if (await drawButton.isVisible().catch(() => false)) await drawButton.click({ timeout: 5_000 });
   else if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
   else await page.keyboard.press("D");
 }

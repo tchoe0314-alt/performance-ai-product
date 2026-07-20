@@ -1640,11 +1640,6 @@ export default function PreviewPanel({
       if (!sitePoint) return;
       const relativeX = sitePoint.relX;
       const relativeY = sitePoint.relY;
-      console.debug("[placement] canvas-click", {
-        source: "overlay",
-        relativeX,
-        relativeY,
-      });
       const fallback = buildingPlacements.find((item) => !item.placed && item.type !== "site");
       const targetId = selectedBuildingId ?? fallback?.id ?? null;
       if (targetId) {
@@ -5725,12 +5720,6 @@ export default function PreviewPanel({
         const relative = siteToRelativePoint(sitePoint, currentSiteSize);
         const relativeX = relative.x;
         const relativeY = relative.y;
-        console.debug("[placement] map-click", {
-          sitePoint,
-          relativeX,
-          relativeY,
-          activeId: selectedBuildingId ?? null,
-        });
         if (selectedBuildingId) {
           onPlaceObject(selectedBuildingId, { x: relativeX, y: relativeY });
         } else {
