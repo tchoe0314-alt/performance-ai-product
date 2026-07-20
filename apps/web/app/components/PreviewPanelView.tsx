@@ -108,6 +108,10 @@ import {
   buildPreviewObjectHoverDetails,
 } from "../utils/previewHoverDetails";
 import {
+  buildPreviewOverlayBounds,
+  countRenderedCanonicalPreviewObjects,
+} from "../utils/previewOverlayBounds";
+import {
   buildCadSegments,
   buildCanvasCompositionSignature,
   buildPreviewTopologyIssues,
@@ -4094,29 +4098,15 @@ export default function PreviewPanel({
     () => buildPreviewObjectHoverDetails({ hoveredObject, lotHeight, lotWidth }),
     [hoveredObject, lotHeight, lotWidth],
   );
-  const overlayBounds = useMemo(() => {
-    if (!previewContainerBounds) return null;
-    return {
-      left: 0,
-      top: 0,
-      width: previewContainerBounds.width,
-      height: previewContainerBounds.height,
-    };
-  }, [previewContainerBounds]);
-
   const renderedCanonicalCount = useMemo(
-    () =>
-      buildingPlacements.filter(
-        (item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y),
-      ).length,
+    () => countRenderedCanonicalPreviewObjects(buildingPlacements),
     [buildingPlacements],
   );
 
-  const overlayBoundsResolved = useMemo(() => {
-    if (overlayBounds) return overlayBounds;
-    if (!previewContainerBounds) return null;
-    return previewContainerBounds;
-  }, [overlayBounds, previewContainerBounds]);
+  const overlayBoundsResolved = useMemo(
+    () => buildPreviewOverlayBounds(previewContainerBounds),
+    [previewContainerBounds],
+  );
 
   useEffect(() => {
     if (showHover) return;
