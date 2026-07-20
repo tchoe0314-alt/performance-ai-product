@@ -23,8 +23,6 @@ import type {
   MapAnalysis,
   PreviewResponse,
   UploadImageResponse,
-  UploadExistingConditionsResponse,
-  UploadSurveyResponse,
   UserRecord,
   PlanToolMode,
   ControlOverrides,
@@ -285,6 +283,7 @@ import { createDashboardExportActions } from "./utils/dashboardExportActions";
 import { useDashboardFloatingObjectActions } from "./hooks/useDashboardFloatingObjectActions";
 import { useDashboardJobActions } from "./hooks/useDashboardJobActions";
 import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
+import { useDashboardExistingConditionsUpload } from "./hooks/useDashboardExistingConditionsUpload";
 import { useDashboardProjectActions } from "./hooks/useDashboardProjectActions";
 import { useDashboardProjectLoad } from "./hooks/useDashboardProjectLoad";
 import { useDashboardPlanPdfActions } from "./hooks/useDashboardPlanPdfActions";
@@ -380,6 +379,7 @@ import { useDashboardObjectManagerActions } from "./hooks/useDashboardObjectMana
 import { useDashboardPreviewModeState } from "./hooks/useDashboardPreviewModeState";
 import { useDashboardSidePanelState } from "./hooks/useDashboardSidePanelState";
 import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
+import { mapSurveyPointsToSite } from "./utils/dashboardExistingConditionsUpload";
 import { AnalysisPanel } from "./components/AnalysisPanel";
 import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
 
@@ -6402,7 +6402,13 @@ function PerformanceAIDashboardView({
     setSurveySlopeEstimate(slopeEstimate || null);
     setUseSurveyForGrading(useSurvey !== undefined ? Boolean(useSurvey) : true);
     setSurveyPoints(storedPoints as number[][]);
-    setSurveyPreviewPoints(mapSurveyPointsToSite(storedPoints as number[][]));
+    setSurveyPreviewPoints(
+      mapSurveyPointsToSite(
+        storedPoints as number[][],
+        parsePositiveNumber(lotWidth),
+        parsePositiveNumber(lotHeight),
+      ),
+    );
     setDrainageSourceOverride(
       siteInputs?.drainage_source_override === "user" ? "user" : "civora",
     );
@@ -6456,7 +6462,7 @@ function PerformanceAIDashboardView({
     }
     setMapSnapshotPath(String(mapSnapshot?.image_path || ""));
     setMapAnalysis(mapAnalysisResult || null);
-  }, [currentProject, mapSurveyPointsToSite, token]);
+  }, [currentProject, lotHeight, lotWidth, token]);
 
   const { loadProject } = useDashboardProjectLoad({
     activeJob,
@@ -6650,167 +6656,22 @@ function PerformanceAIDashboardView({
     token,
   });
 
-  function mapSurveyPointsToSite(points: number[][]) {
-    const width = parsePositiveNumber(lotWidth);
-    const height = parsePositiveNumber(lotHeight);
-    if (!points.length || !width || !height) return [];
-    const xs = points.map((p) => p[0]);
-    const ys = points.map((p) => p[1]);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const spanX = Math.max(maxX - minX, 1e-6);
-    const spanY = Math.max(maxY - minY, 1e-6);
-    const withinLot = minX >= 0 && minY >= 0 && maxX <= width * 1.2 && maxY <= height * 1.2;
-    const mapPoint = (p: number[]) => {
-      const x = withinLot ? p[0] : ((p[0] - minX) / spanX) * width;
-      const y = withinLot ? p[1] : ((p[1] - minY) / spanY) * height;
-      const z = typeof p[2] === "number" ? p[2] : undefined;
-      return { x, y, z };
-    };
-    const mapped = points.map(mapPoint);
-    const step = Math.max(1, Math.ceil(mapped.length / 2000));
-    return mapped.filter((_, idx) => idx % step === 0);
-  }
-
-  const summarizeExistingConditionsUpload = (data: UploadExistingConditionsResponse) => {
-    const matrix = data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [];
-    const countByStatus = (status: string) => matrix.filter((item) => item.status === status).length;
-    const canonical = countByStatus("canonical");
-    const reviewRequired = countByStatus("review_required");
-    const metadataOnly = countByStatus("metadata_only");
-    const blocked = countByStatus("blocked");
-    const confidence = String(
-      data.import_validation?.terrain_source_confidence?.label ??
-        ((data.existing_conditions_package?.terrain_source_confidence as Record<string, unknown> | undefined)?.label) ??
-        "missing",
-    );
-    const blockerMessages = matrix
-      .flatMap((item) => item.blocker_messages ?? [])
-      .concat((data.blockers ?? []).map((item) => String(item.reason || item.message || item.field || "")))
-      .filter((item, index, items) => item && items.indexOf(item) === index)
-      .slice(0, 5);
-    const targets = matrix
-      .flatMap((item) => item.canonical_targets ?? [])
-      .filter((item, index, items) => item && items.indexOf(item) === index);
-    return [
-      `Existing-condition import: ${data.filename ?? "file"} (${data.file_type ?? "unknown"}).`,
-      `Matrix: canonical ${canonical}, review-required ${reviewRequired}, metadata-only ${metadataOnly}, blocked ${blocked}.`,
-      `Terrain confidence: ${confidence}. Canonical targets: ${targets.length ? targets.join(", ") : "none"}.`,
-      blockerMessages.length ? `Exact blockers:\n${blockerMessages.map((item) => `- ${item}`).join("\n")}` : "Exact blockers: none recorded.",
-    ].join("\n");
-  };
-
-  const uploadExistingConditions = async (file: File) => {
-    const supportedSurveyPattern = /\.(csv|geojson|json|dxf|shp|zip|gpkg|tif|tiff|las|laz|xml|landxml)$/i;
-    if (!supportedSurveyPattern.test(file.name)) {
-      const message = "Survey/topo upload failed: Unsupported file. Use CSV, DXF, LAS/LAZ, GeoTIFF, GeoJSON, SHP/ZIP, GPKG, XML, or LandXML.";
-      setSurveyFileName(file.name);
-      setSurveyUploadMessage(message);
-      setStatusMessage(message);
-      return;
-    }
-    if (!token) {
-      const message = "Survey/topo upload failed: Sign in/connect backend to upload existing-condition files.";
-      setSurveyFileName(file.name);
-      setSurveyUploadMessage(message);
-      setStatusMessage(message);
-      return;
-    }
-    setSurveyUploadMessage(`Uploading ${file.name} for source review...`);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const data = await postForm<UploadExistingConditionsResponse>("/api/upload-existing-conditions", formData, {
-        token,
-      });
-      const storedFilename = data.stored_filename || file.name;
-      const canonical = data.canonical_existing_conditions ?? {};
-      const survey = canonical.survey && typeof canonical.survey === "object" ? canonical.survey as Record<string, unknown> : {};
-      const surveyPoints = Array.isArray(survey.points)
-        ? (survey.points as Array<Record<string, unknown>>)
-            .map((point) => [Number(point.x), Number(point.y), Number(point.z)])
-            .filter((point) => point.every((value) => Number.isFinite(value)))
-        : [];
-      setSurveyFileName(storedFilename);
-      setSurveyPoints(surveyPoints);
-      setSurveyPreviewPoints(mapSurveyPointsToSite(surveyPoints));
-      setSurveyDiagnostics({
-        fileType: data.file_type,
-        parseSuccess: Boolean(data.success && surveyPoints.length),
-        pointCount: Number(survey.point_count ?? surveyPoints.length ?? 0),
-        contourCount: Number(survey.breakline_count ?? 0),
-        recognizedColumns: {},
-        invalidRows: 0,
-        bounds: survey.bounds as UploadSurveyResponse["bounds"],
-        elevationRange: survey.elevation_range as UploadSurveyResponse["elevation_range"],
-        warnings: data.warnings,
-      });
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        survey_file: {
-          filename: data.filename || file.name,
-          stored_filename: storedFilename,
-          survey_url: data.file_url || "",
-        },
-        survey_file_type: data.file_type,
-        survey_parse_success: Boolean(data.success && surveyPoints.length),
-        survey_point_count: Number(survey.point_count ?? surveyPoints.length ?? 0),
-        survey_point_warnings: data.warnings ?? [],
-        survey_points: surveyPoints,
-        survey_bounds: (survey.bounds as SiteInputs["survey_bounds"]) ?? null,
-        survey_elevation_range: (survey.elevation_range as SiteInputs["survey_elevation_range"]) ?? null,
-        use_survey_for_grading: useSurveyForGrading,
-        existing_conditions_import: {
-          filename: data.filename || file.name,
-          stored_filename: storedFilename,
-          file_type: data.file_type,
-          import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [],
-          canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only ?? {},
-          blockers: data.blockers ?? data.import_validation?.blockers ?? [],
-          package_status: String(data.existing_conditions_package?.status ?? "unknown"),
-        },
-      };
-      await saveProject({
-        silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-            existing_conditions_package: data.existing_conditions_package,
-            existing_conditions_import_validation: data.import_validation,
-            existing_conditions_summary: data.existing_conditions_summary,
-            canonical_existing_conditions: data.canonical_existing_conditions,
-            canonical_existing_conditions_model: data.canonical_existing_conditions?.canonical_existing_conditions_model,
-            import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix,
-            canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only,
-          },
-        },
-      });
-      appendChatMessage("assistant", summarizeExistingConditionsUpload(data), "status");
-      setSurveyUploadMessage(
-        data.existing_conditions_package?.status === "ready"
-          ? "Survey/topo imported and ready for review."
-          : "Survey/topo imported; exact review needs are recorded.",
-      );
-      setStatusMessage(
-        data.existing_conditions_package?.status === "ready"
-          ? "Existing conditions imported and ready."
-          : "Existing conditions imported; review needs are recorded.",
-      );
-    } catch (error) {
-      setSurveyFileName(file.name);
-      const message = uploadStatusMessage("survey", error);
-      setSurveyUploadMessage(message);
-      setStatusMessage(message);
-    }
-  };
+  const { uploadExistingConditions } = useDashboardExistingConditionsUpload({
+    appendChatMessage,
+    currentProject,
+    lotHeightValue: parsePositiveNumber(lotHeight),
+    lotWidthValue: parsePositiveNumber(lotWidth),
+    payloadPreview,
+    saveProject,
+    setStatusMessage,
+    setSurveyDiagnostics,
+    setSurveyFileName,
+    setSurveyPoints,
+    setSurveyPreviewPoints,
+    setSurveyUploadMessage,
+    token,
+    useSurveyForGrading,
+  });
 
   const mapDetectionToPlacement = useCallback(
     (
