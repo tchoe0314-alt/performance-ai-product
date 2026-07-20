@@ -150,6 +150,14 @@ import {
 } from "../utils/previewCadWindowSelection";
 import { resolvePreviewVisualKind } from "../utils/previewVisualStyles";
 import { buildPreviewDrawModeButtons } from "../utils/previewDrawModeButtons";
+import {
+  buildPreviewCurrentSiteSize,
+  buildPreviewParkingAccessPoints,
+  findPreviewHoveredObject,
+  findPreviewSelectedObject,
+  isAiRealismProviderConfigured,
+  resolvePreviewSelectedDeletableObject,
+} from "../utils/previewViewModel";
 import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import {
   AI_REALISM_WATERMARK,
@@ -536,17 +544,11 @@ export default function PreviewPanel({
     return () => query.removeEventListener("change", update);
   }, []);
   const currentSiteSize = useMemo(
-    () => ({ width: Math.max(lotWidth, 1), height: Math.max(lotHeight, 1) }),
+    () => buildPreviewCurrentSiteSize(lotWidth, lotHeight),
     [lotHeight, lotWidth],
   );
   const isHighQuality = previewQuality === "high";
-  const aiRealismProviderConfigured = useMemo(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("aiRealismProvider") === "mock") return true;
-    }
-    return Boolean(process.env.NEXT_PUBLIC_CIVORA_AI_REALISM_PROVIDER?.trim());
-  }, []);
+  const aiRealismProviderConfigured = useMemo(() => isAiRealismProviderConfigured(), []);
   const planScaleBar = useMemo(() => buildPlanScaleBar(currentSiteSize), [currentSiteSize]);
   const scaleTruthLabel = useMemo(
     () => buildScaleTruthLabel({ geocode, mapScaleFtPerPx, mapScaleSource }),
@@ -554,10 +556,7 @@ export default function PreviewPanel({
   );
   const resolveVisualKind = useCallback(resolvePreviewVisualKind, []);
   const hoveredObject = useMemo(
-    () =>
-      [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
-        (item) => item.id === hoveredObjectId && item.type !== "site",
-      ) ?? null,
+    () => findPreviewHoveredObject({ hoveredObjectId, buildingPlacements, cadEntityPreviewObjects, suggestedPlacements }),
     [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements, hoveredObjectId],
   );
   const shouldRevealObjectLabel = useCallback(
@@ -574,14 +573,20 @@ export default function PreviewPanel({
     debugWindow.__civoraPreviewQuality = previewQuality;
     debugWindow.__civoraMapLoaded = mapLoaded;
   }, [geocode, mapLoaded, mapOverlayEnabled, showMap, previewQuality]);
-  const selectedObject = useMemo(() => {
-    const selectedIds = [selectedBuildingId, managedObjectId, hoveredObjectId, ...selectedObjectIds, ...cadSelectionSet].filter(Boolean);
-    return (
-      [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].find(
-        (item) => selectedIds.includes(item.id) && item.type !== "site",
-      ) ?? null
-    );
-  }, [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, hoveredObjectId, managedObjectId, selectedBuildingId, selectedObjectIds, suggestedPlacements]);
+  const selectedObject = useMemo(
+    () =>
+      findPreviewSelectedObject({
+        selectedBuildingId,
+        managedObjectId,
+        hoveredObjectId,
+        selectedObjectIds,
+        cadSelectionSet,
+        buildingPlacements,
+        cadEntityPreviewObjects,
+        suggestedPlacements,
+      }),
+    [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, hoveredObjectId, managedObjectId, selectedBuildingId, selectedObjectIds, suggestedPlacements],
+  );
   const {
     aiRealismEnabled,
     aiRealismBlocker,
@@ -603,22 +608,13 @@ export default function PreviewPanel({
     aiRealismProviderConfigured,
     onAiRealismChange,
   });
-  const selectedDeletableObject =
-    selectedObject &&
-    !selectedObject.locked &&
-    selectedObject.type !== "site" &&
-    buildingPlacements.some((item) => item.id === selectedObject.id)
-      ? selectedObject
-      : null;
+  const selectedDeletableObject = resolvePreviewSelectedDeletableObject({ selectedObject, buildingPlacements });
   const showEarthworkUx =
     previewMode === "2d" &&
     Boolean(gradingEarthworkUx) &&
     (hasGradingSurface || systemStatuses.grading === "fresh");
   const accessPointsForParking = useMemo(
-    () =>
-      buildingPlacements
-        .filter((item) => item.type === "entrance" || item.type === "road" || item.type === "driveway")
-        .map((item) => ({ x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 })),
+    () => buildPreviewParkingAccessPoints(buildingPlacements),
     [buildingPlacements],
   );
   const waterFireFlow = useMemo(
