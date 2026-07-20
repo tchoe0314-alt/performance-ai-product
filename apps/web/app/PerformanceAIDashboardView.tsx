@@ -53,8 +53,6 @@ import type {
 
 import {
   ACTIVE_PROJECT_STORAGE_KEY,
-  DEFAULT_BLANK_SITE_DEPTH_FT,
-  DEFAULT_BLANK_SITE_WIDTH_FT,
   DEFAULT_SYSTEM_STATUS,
   EMPTY_REACTIVE_VALIDATION,
   OVERSIZED_SITE_MESSAGE,
@@ -352,6 +350,13 @@ import {
   runDashboardCreateCustomGeometry,
   type DashboardCustomGeometryPayload,
 } from "./utils/dashboardCustomGeometryActions";
+import {
+  runDashboardStartBlankSite,
+  runDashboardStartSiteBoundaryDraw,
+  runDashboardToggleSiteLock,
+  runDashboardUnlockSite,
+  type DashboardSiteSetupActions,
+} from "./utils/dashboardSiteSetupActions";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -9020,254 +9025,92 @@ function PerformanceAIDashboardView({
     [],
   );
 
+  const siteSetupActions = useMemo<DashboardSiteSetupActions>(
+    () => ({
+      autoExistingRunKeyRef,
+      autoFitSite,
+      clearGeneratedPreview,
+      currentProject,
+      defaultAssumptions,
+      lastAppliedSiteRef,
+      lastViewportSyncRef,
+      payloadPreview,
+      pushRecoveryMessage,
+      recordRecentChange,
+      saveProject,
+      scrollToDrawingSurface,
+      setActiveSidePanel,
+      setActiveWorkspaceMode,
+      setAddressSuggestions,
+      setAnalysisIssues,
+      setAnalysisPaths,
+      setAnalysisSelectedIssueId,
+      setAssumptions,
+      setAutoExistingConditionsStatus,
+      setBuildingPlacements,
+      setCurrentProject,
+      setDetectedPlacements,
+      setFileName,
+      setFileNameAuto,
+      setFitToSiteRequest,
+      setFocusDetectedId,
+      setFocusObjectId,
+      setIssues,
+      setLeftSidebarOpen,
+      setMapAnalysis,
+      setMapSnapshotPath,
+      setPreviewInteraction,
+      setRenderedSidePanel,
+      setRightRailCollapsed,
+      setSelectedAddressSuggestion,
+      setSelectedIssueId,
+      setShowSiteBounds,
+      setSidePanelVisible,
+      setSiteAddress,
+      setSiteDrawRequest,
+      setSiteName,
+      setSiteNameAuto,
+      setSiteScaleLocked,
+      setSiteSelectionMode,
+      setStatusMessage,
+      setSystemStatuses,
+      setUploadedImageApiUrl,
+      setUploadedImagePreviewUrl,
+      systemStatusesDefault: DEFAULT_SYSTEM_STATUS,
+    }),
+    [
+      autoFitSite,
+      clearGeneratedPreview,
+      currentProject,
+      payloadPreview,
+      pushRecoveryMessage,
+      recordRecentChange,
+      saveProject,
+      scrollToDrawingSurface,
+    ],
+  );
+
   const handleToggleSiteLock = useCallback(() => {
-    if (siteScaleLocked) return;
-    const lastApplied = lastAppliedSiteRef.current;
-    if (lastApplied?.w && lastApplied?.h) {
-      autoFitSite(lastApplied.w, lastApplied.h, "Site Boundary", undefined, false, true);
-    }
-    setSiteScaleLocked(true);
-    setShowSiteBounds(false);
-    setFitToSiteRequest((value) => value + 1);
-    const currentInput = currentProject?.project_input ?? payloadPreview;
-    void saveProject({
-      silent: true,
-      projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: {
-            ...(currentInput?.meta?.site_inputs ?? {}),
-            site_alignment_locked: true,
-          },
-        },
-      },
-    });
-    setBuildingPlacements((prevPlacements) =>
-      prevPlacements.map((item) =>
-        item.type === "site"
-          ? {
-              ...item,
-              locked: true,
-              meta: {
-                ...(item.meta ?? {}),
-                site_boundary_state: "locked_canonical",
-                engineering_status: "review_required",
-                construction_release_allowed: false,
-              },
-              capabilities: {
-                ...item.capabilities,
-                movable: false,
-                resizable: false,
-                rotatable: false,
-              },
-            }
-          : item,
-      ),
-    );
-    recordRecentChange({
-      type: "site_boundary_relocked",
-      label: "Site boundary relocked",
-      detail: "Site boundary was locked for review drafting.",
-      undoBlockedReason: "Use Change Site / Unlock to edit the boundary again.",
-    });
-    pushRecoveryMessage("Site alignment locked. Unlock is available from Setup if you need to revise the draft boundary.");
-  }, [autoFitSite, currentProject, payloadPreview, pushRecoveryMessage, recordRecentChange, saveProject, siteScaleLocked]);
+    runDashboardToggleSiteLock({ actions: siteSetupActions, siteScaleLocked });
+  }, [siteSetupActions, siteScaleLocked]);
 
   const handleUnlockSite = useCallback(() => {
-    if (!siteScaleLocked) return;
-    setSiteScaleLocked(false);
-    setShowSiteBounds(true);
-    setSiteSelectionMode(true);
-    lastViewportSyncRef.current = null;
-    const currentInput = currentProject?.project_input ?? payloadPreview;
-    void saveProject({
-      silent: true,
-      projectInputOverride: {
-        ...currentInput,
-        input_mode: "user",
-        strict_mode: false,
-        allow_ai_fill_for_blanks: false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: {
-            ...(currentInput?.meta?.site_inputs ?? {}),
-            site_alignment_locked: false,
-          },
-        },
-      },
-    });
-    setBuildingPlacements((prevPlacements) =>
-      prevPlacements.map((item) =>
-        item.type === "site"
-          ? {
-              ...item,
-              locked: false,
-              meta: {
-                ...(item.meta ?? {}),
-                site_boundary_state: "draft_editable",
-                engineering_status: "review_required",
-                construction_release_allowed: false,
-              },
-              capabilities: {
-                ...item.capabilities,
-                movable: true,
-                resizable: true,
-                rotatable: true,
-              },
-            }
-          : item,
-      ),
-    );
-    recordRecentChange({
-      type: "site_boundary_unlocked",
-      label: "Site boundary unlocked",
-      detail: "Site boundary is editable again; generated systems may be stale.",
-      undoBlockedReason: "Relock the site boundary from Setup after review.",
-    });
-    pushRecoveryMessage("Site unlocked for editing. Relock the boundary before running Generate.");
-  }, [currentProject, payloadPreview, pushRecoveryMessage, recordRecentChange, saveProject, siteScaleLocked]);
+    runDashboardUnlockSite({ actions: siteSetupActions, siteScaleLocked });
+  }, [siteSetupActions, siteScaleLocked]);
 
   const handleStartBlankSite = useCallback(() => {
-    const width = DEFAULT_BLANK_SITE_WIDTH_FT;
-    const height = DEFAULT_BLANK_SITE_DEPTH_FT;
-    const blankSiteName = "Blank Site";
-    const blankFileName = "blank-site";
-    clearGeneratedPreview();
-    setSiteName(blankSiteName);
-    setFileName(blankFileName);
-    setSiteNameAuto(false);
-    setFileNameAuto(false);
-    setSiteAddress("");
-    setSelectedAddressSuggestion(null);
-    setAddressSuggestions([]);
-    setUploadedImagePreviewUrl("");
-    setUploadedImageApiUrl("");
-    setMapSnapshotPath("");
-    setMapAnalysis(null);
-    setDetectedPlacements([]);
-    setAnalysisIssues([]);
-    setAnalysisPaths([]);
-    setAnalysisSelectedIssueId(null);
-    setIssues([]);
-    setSelectedIssueId(null);
-    autoExistingRunKeyRef.current = "";
-    setAutoExistingConditionsStatus({
-      status: "waiting",
-      message: "Blank site started. Add an address later if you want Civora to auto-check public source context.",
-      candidateCount: 0,
-      missing: [],
-    });
-    setAssumptions(defaultAssumptions);
-    setFocusDetectedId(null);
-    setFocusObjectId(null);
-    setSystemStatuses(DEFAULT_SYSTEM_STATUS);
-    setSiteSelectionMode(true);
-    setShowSiteBounds(true);
-    setPreviewInteraction("edit");
-    autoFitSite(width, height, "Blank Site Boundary", undefined, true, false, false);
-    lastAppliedSiteRef.current = null;
-    const currentInput = currentProject?.project_input ?? payloadPreview;
-    const nextSiteInputs: Record<string, unknown> = {
-      ...(currentInput?.meta?.site_inputs ?? {}),
-      site_alignment_locked: false,
-      site_boundary_source: "blank_user_defined",
-      site_boundary_state: "draft_editable",
-    };
-    delete nextSiteInputs.address;
-    delete nextSiteInputs.geocode;
-    delete nextSiteInputs.map_analysis;
-    delete nextSiteInputs.viewport_bounds;
-    const nextProjectInput: ProjectInput = {
-      ...currentInput,
-      input_mode: "user",
-      strict_mode: false,
-      allow_ai_fill_for_blanks: false,
-      meta: {
-        ...(currentInput?.meta ?? {}),
-        site_inputs: nextSiteInputs,
-      },
-      manual_fields: {
-        ...(currentInput?.manual_fields ?? {}),
-        project_name: blankSiteName,
-        lot: {
-          x: 0,
-          y: 0,
-          w: width,
-          h: height,
-        },
-      },
-    };
-    setCurrentProject((project) =>
-      project
-        ? {
-            ...project,
-            name: blankSiteName,
-            description: "Blank user-defined site.",
-            project_input: nextProjectInput,
-            latest_result: undefined,
-            has_result: false,
-          }
-        : project,
-    );
-    void saveProject({
-      silent: true,
-      nameOverride: blankSiteName,
-      fileNameOverride: blankFileName,
-      autoNamedOverride: false,
-      autoFileNamedOverride: false,
-      projectInputOverride: {
-        ...nextProjectInput,
-      },
-    });
-    setActiveWorkspaceMode("canvas");
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setSidePanelVisible(false);
-    setRightRailCollapsed(true);
-    setSiteDrawRequest((value) => value + 1);
-    if (typeof window !== "undefined") {
-      setLeftSidebarOpen(false);
-    }
-    scrollToDrawingSurface();
-    setStatusMessage("Blank site started. Set dimensions, draw the boundary, then lock it for review.");
-  }, [
-    autoFitSite,
-    clearGeneratedPreview,
-    currentProject,
-    payloadPreview,
-    saveProject,
-    scrollToDrawingSurface,
-  ]);
+    runDashboardStartBlankSite({ actions: siteSetupActions });
+  }, [siteSetupActions]);
 
   const handleStartSiteBoundaryDraw = useCallback(() => {
-    const width = parsePositiveNumber(lotWidth);
-    const height = parsePositiveNumber(lotHeight);
-    if (!width || !height) {
-      setStatusMessage("Set site width and depth before drawing the boundary.");
-      return;
-    }
-    if (siteScaleLocked) {
-      handleUnlockSite();
-    }
-    setActiveWorkspaceMode("canvas");
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setSidePanelVisible(false);
-    setRightRailCollapsed(true);
-    if (typeof window !== "undefined") {
-      setLeftSidebarOpen(false);
-    }
-    setShowSiteBounds(true);
-    setSiteSelectionMode(true);
-    setPreviewInteraction("edit");
-    setSiteDrawRequest((value) => value + 1);
-    scrollToDrawingSurface();
-    setStatusMessage("Draw the site boundary on the canvas. Double-click or use Finish to lock it.");
-  }, [handleUnlockSite, lotHeight, lotWidth, scrollToDrawingSurface, siteScaleLocked]);
+    runDashboardStartSiteBoundaryDraw({
+      actions: siteSetupActions,
+      height: parsePositiveNumber(lotHeight),
+      unlockSite: handleUnlockSite,
+      width: parsePositiveNumber(lotWidth),
+      siteScaleLocked,
+    });
+  }, [handleUnlockSite, lotHeight, lotWidth, siteScaleLocked, siteSetupActions]);
 
   useEffect(() => {
     if (siteScaleLocked) return;
