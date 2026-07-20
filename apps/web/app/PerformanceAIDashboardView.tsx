@@ -122,6 +122,13 @@ import {
   parseDashboardObjectCommandIntent,
 } from "./utils/dashboardChatCommandParsing";
 import {
+  buildDashboardAutoSiteContextMessage,
+  buildDashboardPreviewExplanationMessage,
+  buildDashboardUsedLayoutMessage,
+  buildDashboardWhatChangedMessage,
+  formatDashboardChatPlacement,
+} from "./utils/dashboardChatResponseView";
+import {
   applyDashboardReactiveSystemStatusFromPlanResult,
   buildDashboardAssumptionsFromPlanResult,
   buildDashboardIssuesFromPlanResult,
@@ -7038,16 +7045,6 @@ function PerformanceAIDashboardView({
       ? buildingPlacements.find((item) => item.id === activePlacementId)
       : null;
 
-    const formatPlacement = (item: BuildingPlacement) => {
-      const dims = `${item.w} ft x ${item.d} ft`;
-      const position =
-        item.placed && typeof item.x === "number" && typeof item.y === "number"
-          ? `@ ${Math.round(item.x)} ft, ${Math.round(item.y)} ft`
-          : "unplaced";
-      const lockTag = item.locked ? "locked" : "unlocked";
-      return `${item.label} (${item.type ?? "building"}, ${dims}, ${position}, ${lockTag})`;
-    };
-
     if (/^(hi|hello|hey|yo|good\s+(morning|afternoon|evening))[\s.!?]*$/i.test(normalized)) {
       appendChatMessage(
         "assistant",
@@ -7064,7 +7061,7 @@ function PerformanceAIDashboardView({
       }
       appendChatMessage(
         "assistant",
-        `Placed objects:\n${placed.map(formatPlacement).join("\n")}`,
+        `Placed objects:\n${placed.map(formatDashboardChatPlacement).join("\n")}`,
         "status",
       );
       return true;
@@ -7077,7 +7074,7 @@ function PerformanceAIDashboardView({
       }
       appendChatMessage(
         "assistant",
-        `Unplaced objects:\n${unplaced.map(formatPlacement).join("\n")}`,
+        `Unplaced objects:\n${unplaced.map(formatDashboardChatPlacement).join("\n")}`,
         "status",
       );
       return true;
@@ -7090,7 +7087,7 @@ function PerformanceAIDashboardView({
       }
       appendChatMessage(
         "assistant",
-        `Selected object: ${formatPlacement(selected)}`,
+        `Selected object: ${formatDashboardChatPlacement(selected)}`,
         "status",
       );
       return true;
@@ -7192,55 +7189,13 @@ function PerformanceAIDashboardView({
     }
 
     if (/(what.*(random|weird|messy).*(circle|line|shape|stuff)|what.*(circle|line|shape).*mean|why.*(circle|line|shape|preview).*look|explain.*(preview|drawing|canvas|map)|what\s+am\s+i\s+looking\s+at|what.*on.*(canvas|preview|map|plan))/i.test(normalized)) {
-      const visibleObjects = placed.filter((item) => !item.meta?.ui_hidden);
-      const byKind = (matcher: (item: BuildingPlacement) => boolean) => visibleObjects.filter(matcher).length;
-      const lineCount = byKind((item) =>
-        ["road", "driveway", "sidewalk", "utility_corridor"].includes(String(item.type)) ||
-        ["line", "polyline"].includes(String(item.geometryType)),
-      );
-      const pointCount = byKind((item) =>
-        ["hydrant", "inlet", "outfall", "manhole", "point"].includes(String(item.type)) ||
-        String(item.geometryType) === "point",
-      );
-      const areaCount = byKind((item) =>
-        ["site", "building", "office_building", "parking", "basin"].includes(String(item.type)) ||
-        ["box", "rectangle", "polygon"].includes(String(item.geometryType)),
-      );
-      const sourcePreviewCount = visibleObjects.filter((item) =>
-        ["detected_from_gis", "detected_from_image", "inferred"].includes(String(item.source)),
-      ).length;
-      const draftCount = visibleObjects.filter((item) =>
-        ["user", "user_confirmed", "manual_drawn"].includes(String(item.source)) || item.meta?.command_created,
-      ).length;
-      const semanticCount = visibleObjects.filter((item) =>
-        Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state),
-      ).length;
-      const fallbackCount = visibleObjects.filter((item) =>
-        Boolean(item.meta?.fallback_bounds_only || item.meta?.bounds_only || item.meta?.generated_review_concept),
-      ).length;
-      const hiddenTraceCount = buildingPlacements.filter((item) => item.meta?.combined_into_object_id || item.meta?.ui_hidden).length;
-      const combinedCount = visibleObjects.filter((item) =>
-        Array.isArray(item.meta?.combined_from_object_ids) && item.meta.combined_from_object_ids.length > 0,
-      ).length;
-      const selectedLine = selected
-        ? `Selected now: ${formatPlacement(selected)}.`
-        : "Nothing is selected; click a shape or open Object Manager to inspect one.";
       appendChatMessage(
         "assistant",
-        [
-          "The preview is a review canvas, so every mark should have a job:",
-          `- Lines are usually roads, driveways, sidewalks, utilities, or draft linework (${lineCount} visible).`,
-          `- Circles/points are usually hydrants, inlets, outfalls, manholes, or point markers (${pointCount} visible).`,
-          `- Filled/outlined areas are the site, buildings, parking, basins, or drawn areas (${areaCount} visible).`,
-          sourcePreviewCount ? `- ${sourcePreviewCount} item(s) came from source/context detection and are shown as review candidates.` : "",
-          draftCount ? `- ${draftCount} item(s) are user/draft objects you can select, rename, hide, recolor, or delete in Object Manager.` : "",
-          semanticCount ? `- ${semanticCount} item(s) are semantic objects, so Generate can understand them as buildings, parking, basins, roads, or utilities instead of anonymous lines.` : "",
-          combinedCount ? `- ${combinedCount} combined object(s) are shown as one clean item; their original source pieces stay hidden until you choose Explode combined.` : "",
-          fallbackCount ? `- ${fallbackCount} item(s) are fallback/bounds previews, so they are planning placeholders until better source or drawn geometry exists.` : "",
-          hiddenTraceCount ? `- ${hiddenTraceCount} hidden/trace piece(s) are intentionally tucked away to keep the plan clean; Object Manager can show or explode them when needed.` : "",
-          selectedLine,
-          "If something looks wrong, select it and use Object Manager to rename, change type/color, combine/explode, hide it, or delete it. Civora should not leave unexplained marks on the canvas.",
-        ].filter(Boolean).join("\n"),
+        buildDashboardPreviewExplanationMessage({
+          placed,
+          buildingPlacements,
+          selected: selected ?? null,
+        }),
         "status",
       );
       return true;
@@ -7257,103 +7212,47 @@ function PerformanceAIDashboardView({
           ["user", "user_confirmed", "manual_drawn", "generated"].includes(source),
         );
       });
-      const semanticCount = userLayoutObjects.filter((item) =>
-        Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state),
-      ).length;
-      const geometryCount = userLayoutObjects.filter((item) => Boolean(item.geometry || item.geometryType)).length;
-      const generateNotes = generateFlowSummary?.notes ?? [];
-      const generateUsedLayout = generateNotes.some((note) => /User layout context used by Generate/i.test(note));
-
-      if (!userLayoutObjects.length) {
-        appendChatMessage(
-          "assistant",
-          "I do not have placed user layout objects to use yet. Draw or add objects, place them inside the site, then run Generate. I will keep those objects as review context instead of treating them as final professional evidence.",
-          "status",
-        );
-        return true;
-      }
-
-      const listedObjects = userLayoutObjects.slice(0, 12).map((item) => {
-        const systemText = systemsImpactedByPlacement(item);
-        return `- ${formatPlacement(item)}${systemText.length ? `; affects ${systemText.join(", ")}` : ""}`;
-      });
       appendChatMessage(
         "assistant",
-        [
-          generateUsedLayout
-            ? "Generate used these placed/drawn objects as review context:"
-            : "These placed/drawn objects are ready to be used as Generate review context:",
-          listedObjects.join("\n"),
-          userLayoutObjects.length > listedObjects.length
-            ? `- plus ${userLayoutObjects.length - listedObjects.length} more placed object(s).`
-            : "",
-          `${semanticCount} semantic object(s), ${geometryCount} geometry-backed object(s).`,
-          "They remain editable draft/review context; they do not become survey/control or final professional evidence.",
-        ].filter(Boolean).join("\n"),
+        buildDashboardUsedLayoutMessage({
+          userLayoutObjects,
+          generateFlowSummary,
+          systemsImpactedByPlacement,
+        }),
         "status",
       );
       return true;
     }
 
     if (/(what did you find here|what did.*find|what.*detected|what sources.*available|what.*site context|auto site context|found context|roads.*buildings.*terrain|why.*(didn.t|did not|didn't).*(detect|find)|why.*(roads|buildings|grading|terrain|utilities).*(missing|not found|not detected|unavailable))/i.test(normalized)) {
-      const foundRows = autoSiteContextRows.filter((row) => row.status === "found");
-      const missingRows = autoSiteContextRows.filter((row) => row.status === "missing");
-      const assumedRows = autoSiteContextRows.filter((row) => row.status === "assumed");
-      const outsideRows = autoSiteContextRows.filter((row) => row.status === "outside");
-      const lines = [
-        foundRows.length
-          ? `Found inside the site: ${foundRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
-          : "Found inside the site: no usable source candidates yet.",
-        missingRows.length
-          ? `Missing or unavailable: ${missingRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
-          : "Missing or unavailable: none reported by the current source check.",
-        assumedRows.length
-          ? `Assumed/inferred: ${assumedRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
-          : "",
-        outsideRows.length
-          ? `Outside active site: ${outsideRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
-          : "",
-        "These are source-context candidates for review, not survey/control or final professional evidence.",
-      ].filter(Boolean);
-      appendChatMessage("assistant", lines.join("\n"), "status");
+      appendChatMessage("assistant", buildDashboardAutoSiteContextMessage(autoSiteContextRows), "status");
       return true;
     }
 
     if (/(what changed|what has changed|changes|revision state|revision status)/i.test(normalized)) {
-      const staleSystems = Object.entries(systemStatuses)
-        .filter(([, status]) => status === "stale")
-        .map(([system]) => system);
-      const freshSystems = Object.entries(systemStatuses)
-        .filter(([, status]) => status === "fresh")
-        .map(([system]) => system);
-      const lines = [
-        `Project status: ${projectStatusSummary.state}. ${projectStatusSummary.detail} Next: ${projectStatusSummary.nextAction}`,
-        `Workspace persistence: ${restoreTruthLabel}${currentProject?.updated_at ? `, last saved ${new Date(currentProject.updated_at * 1000).toLocaleString()}` : ""}.`,
-        hasAppliedAddress
-          ? `Address state: applied (${appliedAddressLabel || "coordinate context"}). ${onlineSourceLookupUnavailable ? "Address applied; online source lookup not configured/available." : onlineSourceLookupLabel}`
-          : siteAddress.trim()
-            ? "Address state: entered but not applied."
-            : "Address state: missing.",
-        `${placedObjects.length} placed object${placedObjects.length === 1 ? "" : "s"} and ${pendingPlacementObjects.length} pending placement object${pendingPlacementObjects.length === 1 ? "" : "s"}.`,
-        hasAssumedTerrainSlope
-          ? "Terrain slope is assumed; survey/control still needed."
-          : hasVerifiedSurveyControl
-            ? "Survey/control is uploaded for review."
-            : "Survey/control still needed.",
-        staleSystems.length ? `Changed systems needing rerun: ${staleSystems.join(", ")}.` : "No stale systems are marked from object/control edits.",
-        freshSystems.length ? `Current generated systems: ${freshSystems.join(", ")}.` : "No generated systems are marked current yet.",
-        generateFlowSummary
-          ? `Last Generate: ran ${generateFlowSummary.ran.join(", ") || "none"}; skipped ${generateFlowSummary.skipped.join(", ") || "none"}; needs review ${generateFlowSummary.needs_review.slice(0, 3).join("; ") || "standard engineer review"}.`
-          : "Generate has not recorded a run summary yet.",
-        reviewPackageFlowSummary
-          ? `Last Review Package: created ${reviewPackageFlowSummary.outputs_created.join(", ")}; missing ${reviewPackageFlowSummary.missing.slice(0, 3).join("; ") || "none recorded"}.`
-          : "No review package summary has been made yet.",
-        autoSiteContextFlowSummary.candidateCount > 0 || autoSiteContextFlowSummary.missingLabels.length
-          ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review candidate(s); missing ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
-          : "Auto Site Context has no recorded candidates yet.",
-        planSheetSet.revisions.length ? `Sheet revisions: ${planSheetSet.revisions.length}.` : "No sheet revision entries recorded yet.",
-      ];
-      appendChatMessage("assistant", lines.join("\n"), "status");
+      appendChatMessage(
+        "assistant",
+        buildDashboardWhatChangedMessage({
+          systemStatuses,
+          projectStatusSummary,
+          restoreTruthLabel,
+          currentProjectUpdatedAt: currentProject?.updated_at,
+          hasAppliedAddress,
+          appliedAddressLabel,
+          onlineSourceLookupUnavailable,
+          onlineSourceLookupLabel,
+          siteAddress,
+          placedCount: placedObjects.length,
+          pendingPlacementCount: pendingPlacementObjects.length,
+          hasAssumedTerrainSlope,
+          hasVerifiedSurveyControl,
+          generateFlowSummary,
+          reviewPackageFlowSummary,
+          autoSiteContextFlowSummary,
+          planSheetRevisionCount: planSheetSet.revisions.length,
+        }),
+        "status",
+      );
       return true;
     }
 
