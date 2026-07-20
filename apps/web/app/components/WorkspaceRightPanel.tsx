@@ -32,10 +32,10 @@ export default function WorkspaceRightPanel({
         wide ? "lg:w-[680px] xl:w-[760px]" : "lg:w-[360px] xl:w-[390px]"
       }`}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3 sm:py-4">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--civora-border)] px-4 py-3">
         <div className="min-w-0">
-          <p className="civora-muted-label">{title}</p>
-          <p className="mt-1 line-clamp-2 text-sm text-[var(--civora-text-muted)]">
+          <p className="text-sm font-semibold text-[var(--civora-text)]">{title}</p>
+          <p className="sr-only">
             {description}
           </p>
         </div>
