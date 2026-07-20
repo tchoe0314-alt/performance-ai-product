@@ -3197,7 +3197,7 @@ function PerformanceAIDashboardView({
   const [detectionScaleFeet, setDetectionScaleFeet] = useState("");
   const [detectionScalePixels, setDetectionScalePixels] = useState("");
   const [detectionScaleFtPerPx, setDetectionScaleFtPerPx] = useState<number | null>(null);
-  const [, setDetectionScaleSource] = useState<"mapbox" | "manual" | "approximate">("approximate");
+  const [detectionScaleSource, setDetectionScaleSource] = useState<"mapbox" | "manual" | "approximate">("approximate");
   const [siteScaleLocked, setSiteScaleLocked] = useState(false);
   const [drainageSourceOverride, setDrainageSourceOverride] = useState<"civora" | "user">(
     "civora",
@@ -27338,6 +27338,8 @@ function PerformanceAIDashboardView({
                 calculationOverlayStats={calculationOverlayStats}
                 gradingEarthworkUx={gradingEarthworkUx}
                 geocode={siteInputs?.geocode ?? null}
+                mapScaleFtPerPx={detectionScaleFtPerPx}
+                mapScaleSource={detectionScaleSource}
                 siteRotationDeg={siteInputs?.site_rotation_deg ?? 0}
                 showSiteBounds={showSiteBounds}
                 siteDrawRequest={siteDrawRequest}

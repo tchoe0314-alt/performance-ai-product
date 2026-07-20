@@ -291,6 +291,8 @@ type PreviewPanelProps = {
   calculationOverlayStats: Array<{ label: string; value: number | null; unit: string }>;
   gradingEarthworkUx?: GradingEarthworkUx | null;
   geocode?: { lat?: number; lng?: number } | null;
+  mapScaleFtPerPx?: number | null;
+  mapScaleSource?: "mapbox" | "manual" | "approximate" | null;
   siteRotationDeg?: number | null;
   showSiteBounds?: boolean;
   siteDrawRequest?: number;
@@ -398,6 +400,8 @@ export default function PreviewPanel({
   calculationOverlayStats,
   gradingEarthworkUx,
   geocode,
+  mapScaleFtPerPx,
+  mapScaleSource,
   siteRotationDeg,
   showSiteBounds = false,
   siteDrawRequest = 0,
@@ -840,6 +844,16 @@ export default function PreviewPanel({
     const widthPct = Math.min(36, Math.max(12, (lengthFt / currentSiteSize.width) * 100));
     return { lengthFt, widthPct };
   }, [currentSiteSize.height, currentSiteSize.width]);
+  const scaleTruthLabel = useMemo(() => {
+    const hasLiveMapScale =
+      mapScaleSource === "mapbox" &&
+      typeof mapScaleFtPerPx === "number" &&
+      Number.isFinite(mapScaleFtPerPx) &&
+      mapScaleFtPerPx > 0;
+    if (hasLiveMapScale) return `LIVE MAP SCALE · ${mapScaleFtPerPx.toFixed(2)} FT/PX`;
+    if (geocode?.lat && geocode?.lng) return "ADDRESS APPLIED · LOCAL DRAWING SCALE";
+    return "LOCAL SITE SCALE";
+  }, [geocode?.lat, geocode?.lng, mapScaleFtPerPx, mapScaleSource]);
   const surveySheetSpotElevations = useMemo(
     () => [
       { x: 12, y: 18, label: "x 952.4" },
@@ -7687,7 +7701,7 @@ export default function PreviewPanel({
                         SITE {Math.round(lotWidth)} ft x {Math.round(lotHeight)} ft
                       </div>
                       <div>
-                        {geocode?.lat && geocode?.lng ? "MAP ANCHORED" : "LOCAL SITE"} · VIEW ONLY
+                        <span data-testid="canvas-scale-source">{scaleTruthLabel}</span>
                       </div>
                       <div>
                         X {cursorSitePoint ? cursorSitePoint.x.toFixed(1) : "--"} ft / Y{" "}

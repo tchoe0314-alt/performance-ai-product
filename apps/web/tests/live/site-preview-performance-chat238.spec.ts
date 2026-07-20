@@ -84,7 +84,7 @@ test.describe("Chat 238 site preview performance", () => {
     await expect(canvas).toContainText(/Local site coordinates/i);
     const coordinateReadout = canvas.getByTestId("canvas-coordinate-readout");
     await expect(coordinateReadout).toContainText("SITE 1000 ft x 1000 ft");
-    await expect(coordinateReadout).toContainText("LOCAL SITE · VIEW ONLY");
+    await expect(coordinateReadout.getByTestId("canvas-scale-source")).toContainText("LOCAL SITE SCALE");
     const zoomBeforeText = await coordinateReadout.textContent();
     const zoomBefore = Number(zoomBeforeText?.match(/ZOOM\s+(\d+)%/)?.[1] ?? NaN);
     expect(Number.isFinite(zoomBefore)).toBeTruthy();
