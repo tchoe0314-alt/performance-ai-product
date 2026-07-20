@@ -42,6 +42,7 @@ import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
 import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
+import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
 import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
@@ -6898,30 +6899,21 @@ export default function PreviewPanel({
                   }`}
                   style={{ width: "100%", height: "100%" }}
                 />
-                {debugStats?.enabled ? (
-                  <div className="pointer-events-none absolute left-5 top-5 z-30 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] text-slate-700 shadow-sm">
-                    <div className="font-semibold">Map Debug</div>
-                    <div>geocode: {geocode?.lat && geocode?.lng ? `${geocode.lat.toFixed(6)}, ${geocode.lng.toFixed(6)}` : "null"}</div>
-                    <div>showMap: {showMap ? "true" : "false"}</div>
-                    <div>quality: {previewQuality}</div>
-                    <div>dimension: {previewMode}</div>
-                    <div>mapLoaded: {mapLoaded ? "true" : "false"}</div>
-                    <div>mapbox requests: {mapboxRequestCount}</div>
-                    <div>mapbox tiles: {mapboxTileCount}</div>
-                    <div>
-                      container: {mapContainerSize ? `${mapContainerSize.w}×${mapContainerSize.h}` : "null"}
-                    </div>
-                    <div>
-                      canvas: {mapCanvasSize ? `${mapCanvasSize.w}×${mapCanvasSize.h}` : "null"}
-                    </div>
-                    {mapError ? <div className="text-rose-600">error: {mapError}</div> : null}
-                  </div>
-                ) : null}
-                {showMap ? (
-                  <div className="pointer-events-none absolute right-5 top-5 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
-                    {showMap3D ? "3D Map" : "2D Map"} · N ↑ {typeof siteRotationDeg === "number" ? `${siteRotationDeg.toFixed(1)}°` : "0°"}
-                  </div>
-                ) : null}
+	                <PreviewMapStatusOverlay
+	                  debugEnabled={Boolean(debugStats?.enabled)}
+	                  geocode={geocode}
+	                  showMap={showMap}
+	                  previewQuality={previewQuality}
+	                  previewMode={previewMode}
+	                  mapLoaded={mapLoaded}
+	                  mapboxRequestCount={mapboxRequestCount}
+	                  mapboxTileCount={mapboxTileCount}
+	                  mapContainerSize={mapContainerSize}
+	                  mapCanvasSize={mapCanvasSize}
+	                  mapError={mapError}
+	                  showMap3D={showMap3D}
+	                  siteRotationDeg={siteRotationDeg}
+	                />
                 {previewMode === "2d" ? (
                   <PreviewCanvasHud
                     scaleLengthFt={planScaleBar.lengthFt}
