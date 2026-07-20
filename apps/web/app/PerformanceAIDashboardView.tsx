@@ -3,15 +3,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import {
-  Box,
-  FileText,
-  Gauge,
-  Layers,
-  MapPinned,
-  SlidersHorizontal,
-} from "lucide-react";
-
 import { deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "../lib/api";
 
 import type {
@@ -108,6 +99,7 @@ import {
 } from "./utils/dashboardEngineeringMetrics";
 import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
 import { resolveActivePrimaryWorkflowKey } from "./utils/dashboardPrimaryWorkflows";
+import { buildDashboardPrimaryWorkflowItems } from "./utils/dashboardPrimaryWorkflowItems";
 import {
   buildGenerateLayoutContext,
   systemsImpactedByPlacement,
@@ -16411,62 +16403,19 @@ function PerformanceAIDashboardView({
 	    sidePanelForRender,
 	    activeWorkspaceMode,
 	  });
-	  const primaryWorkflowItems: PrimaryWorkflowItem[] = [
-	    {
-	      key: "setup",
-	      label: "Setup",
-	      caption: "Address, boundary, sources",
-	      panel: "site_existing",
-	      icon: MapPinned,
-	      status: sidebarModeStatus("setup"),
-	      metric: siteScaleLocked ? "Site locked" : "Needs boundary",
-	    },
-	    {
-	      key: "draw",
-	      label: "Draw",
-	      caption: "Canvas and drafting",
-	      panel: "objects",
-	      icon: Box,
-	      status: siteScaleLocked ? panelStatus("objects") : "review",
-	      metric: `${placedObjects.length} objects`,
-	    },
-	    {
-	      key: "objects",
-	      label: "Object Manager",
-	      caption: "Objects, layers, tools",
-	      panel: "objects",
-	      icon: Layers,
-	      status: panelStatus("objects"),
-	      metric: `${placedObjects.length} placed / ${pendingPlacementObjects.length} pending`,
-	    },
-	    {
-	      key: "design",
-	      label: "Generate",
-	      caption: "Grading, storm, utilities",
-	      panel: "generate",
-	      icon: SlidersHorizontal,
-	      status: hasHardSystemBlock ? "block" : controlsHealthStatus,
-	      metric: `${Object.values(systemStatuses).filter((status) => status === "fresh").length} fresh`,
-	    },
-	    {
-	      key: "analyze",
-	      label: "Project Health",
-	      caption: "Issues, quantities, jobs",
-	      panel: "analysis",
-	      icon: Gauge,
-	      status: issues.length || analysisIssues.length ? "review" : backendResult ? "ok" : "idle",
-	      metric: `${issues.length + analysisIssues.length} issue${issues.length + analysisIssues.length === 1 ? "" : "s"}`,
-	    },
-	    {
-	      key: "deliver",
-	      label: "Deliver",
-	      caption: "Sheets and exports",
-	      panel: "deliverables",
-	      icon: FileText,
-	      status: sidebarModeStatus("deliver"),
-	      metric: getExportBlockReason() ? "Export needs input" : "Review package",
-	    },
-	  ];
+	  const primaryWorkflowItems: PrimaryWorkflowItem[] = buildDashboardPrimaryWorkflowItems({
+	    sidebarModeStatus,
+	    panelStatus,
+	    siteScaleLocked,
+	    placedObjectCount: placedObjects.length,
+	    pendingPlacementCount: pendingPlacementObjects.length,
+	    hasHardSystemBlock,
+	    controlsHealthStatus,
+	    systemStatuses,
+	    issueCount: issues.length + analysisIssues.length,
+	    backendResultPresent: Boolean(backendResult),
+	    exportBlockReason,
+	  });
   const handleCancelActiveTool = useCallback(() => {
     if (shortcutsOverlayOpen) {
       setShortcutsOverlayOpen(false);
