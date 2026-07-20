@@ -109,6 +109,7 @@ import {
   buildDashboardObjectPlacement,
   buildDashboardSitePlacement,
 } from "./utils/dashboardObjectPlacementBuilder";
+import { buildDashboardObjectUpdateRecentChange } from "./utils/dashboardObjectChangeMessages";
 
 
 
@@ -2184,64 +2185,7 @@ function PerformanceAIDashboardView({
         label: target.label,
       };
       const changeUndo = bulkUpdateUndo ?? undo;
-      if (typeof updates.label === "string" && updates.label !== target.label) {
-        recentChange = {
-          type: "object_renamed",
-          label: "Object renamed",
-          detail: `${target.label} renamed to ${updates.label || "Unnamed object"}.`,
-          undo: changeUndo,
-        };
-      } else if (updates.type && updates.type !== target.type) {
-        recentChange = {
-          type: "object_type_changed",
-          label: "Object type changed",
-          detail: `${target.label} changed from ${getObjectDisplayType(target)} to ${SITE_OBJECT_CATALOG[updates.type]?.label ?? updates.type}.`,
-          undo: changeUndo,
-        };
-      } else if (
-        updates.meta &&
-        "ui_hidden" in updates.meta &&
-        Boolean(updates.meta.ui_hidden) !== Boolean(target.meta?.ui_hidden)
-      ) {
-        recentChange = {
-          type: "object_visibility_changed",
-          label: Boolean(updates.meta.ui_hidden) ? "Object hidden" : "Object shown",
-          detail: `${target.label} is now ${Boolean(updates.meta.ui_hidden) ? "hidden from" : "visible in"} the preview.`,
-          undo: changeUndo,
-        };
-      } else if (
-        updates.meta &&
-        ("ui_color" in updates.meta || "color" in updates.meta || "style" in updates.meta)
-      ) {
-        recentChange = {
-          type: "object_style_changed",
-          label: "Object style changed",
-          detail: `${target.label} style changed.`,
-          undo: changeUndo,
-        };
-      } else if (typeof updates.locked === "boolean" && updates.locked !== Boolean(target.locked)) {
-        recentChange = {
-          type: "object_style_changed",
-          label: updates.locked ? "Object locked" : "Object unlocked",
-          detail: `${target.label} was ${updates.locked ? "locked" : "unlocked"}.`,
-          undo: changeUndo,
-        };
-      } else if (
-        typeof updates.x === "number" ||
-        typeof updates.y === "number" ||
-        typeof updates.w === "number" ||
-        typeof updates.d === "number" ||
-        typeof updates.h === "number" ||
-        typeof updates.rotation === "number" ||
-        Array.isArray(updates.geometry)
-      ) {
-        recentChange = {
-          type: "object_style_changed",
-          label: "Object geometry changed",
-          detail: `${target.label} geometry changed.`,
-          undo: changeUndo,
-        };
-      }
+      recentChange = buildDashboardObjectUpdateRecentChange({ target, updates, undo: changeUndo });
     }
     const nextPlacements = bulkUpdateUndo?.after
       ? (() => {
