@@ -8,8 +8,6 @@ import { deleteJson, getJson, patchJson, postForm, postJson, toApiUrl } from "..
 import type {
   Assumption,
   Issue,
-  BackendAssumption,
-  BackendIssue,
   ProjectRecord,
   ProjectInput,
   JobSummary,
@@ -123,6 +121,12 @@ import {
   parseDashboardDirectSiteSetupCommand,
   parseDashboardObjectCommandIntent,
 } from "./utils/dashboardChatCommandParsing";
+import {
+  applyDashboardReactiveSystemStatusFromPlanResult,
+  buildDashboardAssumptionsFromPlanResult,
+  buildDashboardIssuesFromPlanResult,
+  buildDashboardSuggestedImproveGoal,
+} from "./utils/dashboardPlanResultView";
 import {
   buildCustomGeometryMeta,
   clampValue,
@@ -1579,36 +1583,10 @@ function PerformanceAIDashboardView({
     () => currentPlanMeta?.explanation ?? {},
     [currentPlanMeta],
   );
-  const suggestedImproveGoal = useMemo(() => {
-    const failureBlob = [
-      ...currentManualFailures.map((failure) =>
-        [failure.code, failure.message, failure.system, failure.rule]
-          .filter(Boolean)
-          .join(" "),
-      ),
-      ...issues.map((issue) => issue.message),
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    if (failureBlob.includes("drain") || failureBlob.includes("inlet")) {
-      return "improve_drainage";
-    }
-    if (failureBlob.includes("pipe")) {
-      return "reduce_pipe_length";
-    }
-    if (
-      failureBlob.includes("grade") ||
-      failureBlob.includes("earthwork") ||
-      failureBlob.includes("slope")
-    ) {
-      return "reduce_grading";
-    }
-    if (failureBlob.includes("parking")) {
-      return "maximize_parking";
-    }
-    return undefined;
-  }, [currentManualFailures, issues]);
+  const suggestedImproveGoal = useMemo(
+    () => buildDashboardSuggestedImproveGoal({ currentManualFailures, issues }),
+    [currentManualFailures, issues],
+  );
 
   const updateProjectStatus = useCallback(
     (summary: Omit<ProjectStatusSummary, "updatedAt">) => {
@@ -1648,63 +1626,9 @@ function PerformanceAIDashboardView({
 
   const applyBackendResult = (data: PlanResponse) => {
     setBackendResult(data);
-    if (Array.isArray(data?.assumptions)) {
-      setAssumptions(
-        data.assumptions.map((item: BackendAssumption) => ({
-          field: item.field_name ?? "unknown",
-          value:
-            typeof item.assumed_value === "string"
-              ? item.assumed_value
-              : JSON.stringify(item.assumed_value),
-          reason: item.reason ?? "",
-        })),
-      );
-    } else {
-      setAssumptions(defaultAssumptions);
-    }
-
-    if (Array.isArray(data?.issues)) {
-      setIssues(
-        data.issues.map((item: BackendIssue) => ({
-          severity: item.severity === "error" ? "error" : "warning",
-          message: item.message ?? "Unknown issue",
-          code: typeof item.code === "string" ? item.code : undefined,
-          context: item.context && typeof item.context === "object" ? item.context : undefined,
-        })),
-      );
-    } else {
-      setIssues([]);
-    }
-
-    const report = data?.final_plan?.meta?.reactive_update_report;
-    if (report?.partial_rerun_executed) {
-      const completedStages = new Set(
-        [
-          ...(report.post_rerun_completed_stages ?? []),
-          ...(report.post_rerun_stage_status ?? [])
-            .filter((row) => row.completed)
-            .map((row) => row.stage ?? ""),
-        ].filter(Boolean),
-      );
-      const staleAfter = new Set(report.post_rerun_stale_outputs ?? []);
-      const impacted = new Set(report.impacted_stages ?? []);
-      setSystemStatuses((prev) => {
-        const next = { ...prev };
-        (Object.entries(REACTIVE_SYSTEM_STAGE_MAP) as Array<[EngineeringSystemKey, string[]]>).forEach(
-          ([system, stages]) => {
-            const touchedStages = stages.filter((stage) => impacted.has(stage));
-            if (!touchedStages.length) return;
-            const cleared = touchedStages.every(
-              (stage) => completedStages.has(stage) && !staleAfter.has(stage),
-            );
-            if (cleared) {
-              next[system] = "fresh";
-            }
-          },
-        );
-        return next;
-      });
-    }
+    setAssumptions(buildDashboardAssumptionsFromPlanResult(data));
+    setIssues(buildDashboardIssuesFromPlanResult(data));
+    setSystemStatuses((prev) => applyDashboardReactiveSystemStatusFromPlanResult(data, prev));
   };
 
   const appendChatMessage = (
