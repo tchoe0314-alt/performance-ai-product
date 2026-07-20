@@ -116,13 +116,10 @@ import {
   type DashboardSystemBlockerContext,
 } from "./utils/dashboardSystemReadiness";
 import {
-  buildObjectManagerLayerRows,
-  buildObjectManagerTypes,
   buildCustomGeometryMeta,
   clampValue,
   formatCalmActionMessage,
   formatDraftMeasure,
-  getDraftObjectMeasurement,
   getGeometryBounds,
   getObjectDimensionsLabel,
   getObjectDisplayType,
@@ -134,7 +131,6 @@ import {
   isCustomGeometryMode,
   normalizeGeometryPoints,
   selectedObjectsToSemanticArea,
-  summarizeDraftObjectMeasurements,
   type CustomGeometryMode,
 } from "./utils/objectGeometry";
 
@@ -187,6 +183,7 @@ import {
   buildDashboardArtifactPayload,
   buildDashboardPayloadPreview,
 } from "./utils/dashboardPayloads";
+import { buildDashboardObjectSelectionView } from "./utils/dashboardObjectSelectionView";
 import {
   hasAddressCoordinates,
   type AddressSuggestion,
@@ -15823,32 +15820,11 @@ function PerformanceAIDashboardView({
       }),
     [canonicalWorkspaceBlockers, hasHardSystemBlock, hasTerrainSource, siteScaleLocked, siteTooLargeForGrading, systemStatuses],
   );
-  const selectedBuilding = useMemo(() => {
-    const selectedIds = [activePlacementId, ...selectedObjectIds].filter(Boolean);
-    return buildingPlacements.find((item) => selectedIds.includes(item.id)) ?? null;
-  }, [activePlacementId, buildingPlacements, selectedObjectIds]);
-  const selectedObjectSet = useMemo(() => new Set(selectedObjectIds), [selectedObjectIds]);
-  const selectedObjectRows = useMemo(
-    () => buildingPlacements.filter((item) => selectedObjectSet.has(item.id)),
-    [buildingPlacements, selectedObjectSet],
+  const objectSelectionView = useMemo(
+    () => buildDashboardObjectSelectionView({ buildingPlacements, activePlacementId, selectedObjectIds }),
+    [activePlacementId, buildingPlacements, selectedObjectIds],
   );
-  const selectedObjectMeasurements = useMemo(
-    () => selectedObjectRows.map(getDraftObjectMeasurement),
-    [selectedObjectRows],
-  );
-  const selectedObjectMeasurementSummary = useMemo(
-    () => summarizeDraftObjectMeasurements(selectedObjectMeasurements),
-    [selectedObjectMeasurements],
-  );
-  const hiddenObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden)).length;
-  const objectManagerTypes = useMemo(
-    () => buildObjectManagerTypes(buildingPlacements),
-    [buildingPlacements],
-  );
-  const objectManagerLayerRows = useMemo(
-    () => buildObjectManagerLayerRows(buildingPlacements),
-    [buildingPlacements],
-  );
+  const { selectedBuilding, selectedObjectSet, selectedObjectRows, selectedObjectMeasurements, selectedObjectMeasurementSummary, hiddenObjectCount, objectManagerTypes, objectManagerLayerRows } = objectSelectionView;
   const sidePanelForRender = rightRailCollapsed
     ? null
     : activeSidePanel ?? renderedSidePanel ?? "dashboard";
