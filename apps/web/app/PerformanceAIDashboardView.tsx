@@ -259,6 +259,7 @@ import { useDashboardGenerationPanelProps } from "./hooks/useDashboardGeneration
 import { useDashboardDraftHistoryState } from "./hooks/useDashboardDraftHistoryState";
 import { useDashboardViewportState } from "./hooks/useDashboardViewportState";
 import { useDashboardDeliverReportsPanelProps } from "./hooks/useDashboardDeliverReportsPanelProps";
+import { useDashboardSupportPanelProps } from "./hooks/useDashboardSupportPanelProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -9120,6 +9121,64 @@ function PerformanceAIDashboardView({
     formatMetric,
     statusLabelForQuantityReview,
   });
+  const {
+    filesPanelProps,
+    jobsPanelProps,
+    librariesPanelProps,
+    standardsPanelProps,
+    templatesPanelProps,
+    utilityCatalogPanelProps,
+  } = useDashboardSupportPanelProps({
+    token,
+    uploadedImageApiUrl,
+    uploadedImagePreviewUrl,
+    surveyFileName,
+    projectRecordLabel: currentProject?.project_id || projectId || "Draft",
+    surveyUploadMessage,
+    planPreviewUrl,
+    hasBackendResult: Boolean(backendResult),
+    dxfStatus: getExportBlockReason() || (backendResult ? "Review export" : "Needs run"),
+    exportBlockReason: getExportBlockReason(),
+    onOpenPanel: handleOpenSidePanel,
+    mapSnapshotInputRef,
+    surveyInputRef,
+    onExportDxf: handleExportDxf,
+    onExportReport: handleExportReport,
+    activeJob: visibleActiveJob,
+    selectedJob,
+    jobHistory,
+    jobStatusCounts,
+    artifactHistory,
+    activeJobStale: visibleActiveJobStale,
+    selectedJobStale,
+    jobsPanelStatusMessage,
+    onJobsPanelStatusMessageChange: setJobsPanelStatusMessage,
+    onStatusMessageChange: setStatusMessage,
+    formatTimestamp,
+    toReadableLabel,
+    jobDetailMessage,
+    refreshJobs,
+    onSelectJob: handleSelectJob,
+    onCancelJobById: (jobId) => void handleCancelJobById(jobId),
+    onRetryJob: (jobId) => void handleRetryJob(jobId),
+    onResumeJob: (jobId) => void handleResumeJob(jobId),
+    onArtifactDownload: (downloadPath, filename) => void handleArtifactDownload(downloadPath, filename),
+    customerTemplates,
+    customerTemplateStatus,
+    customerTemplateSummaries,
+    activeCustomerTemplate,
+    customerTemplateBlockerCount,
+    onCustomerTemplatesChange: setCustomerTemplates,
+    onCustomerTemplateStatusChange: setCustomerTemplateStatus,
+    utilityCatalog,
+    utilityCatalogStatus,
+    utilityCatalogNetworkFilter,
+    onUtilityCatalogNetworkFilterChange: setUtilityCatalogNetworkFilter,
+    standardsPanelCriteria,
+    standardsPanelRows,
+    libraryPanelSections,
+    onAddObject: handleAddObject,
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9422,118 +9481,27 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "files" ? (
-                  <FilesPanel
-                    mapSnapshotReady={Boolean(uploadedImageApiUrl || uploadedImagePreviewUrl)}
-                    surveyFileName={surveyFileName}
-                    projectRecordLabel={currentProject?.project_id || projectId || "Draft"}
-                    surveyUploadMessage={surveyUploadMessage}
-                    previewReady={Boolean(planPreviewUrl)}
-                    reportReady={Boolean(backendResult)}
-                    dxfStatus={getExportBlockReason() || (backendResult ? "Review export" : "Needs run")}
-                    onOpenImportFiles={() => handleOpenSidePanel("import_survey")}
-                    onSelectMapImage={() => mapSnapshotInputRef.current?.click()}
-                    onSelectSurveyFile={() => surveyInputRef.current?.click()}
-                    onOpenPlanPdf={() => handleOpenSidePanel("data")}
-                    onExportDxf={handleExportDxf}
-                    onExportReport={handleExportReport}
-                    exportBlockReason={getExportBlockReason()}
-                  />
+                  <FilesPanel {...filesPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "jobs" ? (
-                  <JobsPanel
-                    activeJob={visibleActiveJob}
-                    selectedJob={selectedJob}
-                    jobHistory={jobHistory}
-                    jobStatusCounts={jobStatusCounts}
-                    artifactHistory={artifactHistory}
-                    activeJobStale={visibleActiveJobStale}
-                    selectedJobStale={selectedJobStale}
-                    statusMessage={jobsPanelStatusMessage}
-                    formatTimestamp={formatTimestamp}
-                    toReadableLabel={toReadableLabel}
-                    jobDetailMessage={jobDetailMessage}
-                    onRefresh={() => {
-                      if (!token) {
-                        setJobsPanelStatusMessage("Sign in/connect backend to refresh jobs.");
-                        return;
-                      }
-                      void refreshJobs(token, { force: true })
-                        .then(() => setJobsPanelStatusMessage("Jobs refreshed."))
-                        .catch((error) => {
-                          const message = `Job refresh failed: ${panelErrorMessage(error, "Could not refresh job history.")}`;
-                          setJobsPanelStatusMessage(message);
-                          setStatusMessage(message);
-                        });
-                    }}
-                    onSelectJob={handleSelectJob}
-                    onCancelJob={(jobId) => void handleCancelJobById(jobId)}
-                    onRetryJob={(jobId) => void handleRetryJob(jobId)}
-                    onResumeJob={(jobId) => void handleResumeJob(jobId)}
-                    onDownloadArtifact={(downloadPath, filename) => void handleArtifactDownload(downloadPath, filename)}
-                  />
+                  <JobsPanel {...jobsPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "templates" ? (
-                  <TemplatesPanel
-                    registry={customerTemplates}
-                    status={customerTemplateStatus}
-                    summaries={customerTemplateSummaries}
-                    activeTemplate={activeCustomerTemplate}
-                    blockerCount={customerTemplateBlockerCount}
-                    toReadableLabel={toReadableLabel}
-                    onUseCompanyTemplate={() => {
-                      if (!token) return;
-                      void postJson<Record<string, unknown>>("/api/customer-templates/activate", { template_id: "" }, { token })
-                        .then((result) => {
-                          const registry = result.registry as CustomerTemplateRegistryResponse | undefined;
-                          if (registry) setCustomerTemplates(registry);
-                          setCustomerTemplateStatus("Company template activated");
-                        })
-                        .catch((error) => setCustomerTemplateStatus(error instanceof Error ? error.message : "Template activation failed"));
-                    }}
-                    onExportJson={() => {
-                      if (!token) return;
-                      void getJson<Record<string, unknown>>("/api/customer-templates/export", { token })
-                        .then(() => setCustomerTemplateStatus("Template JSON export prepared"))
-                        .catch((error) => setCustomerTemplateStatus(error instanceof Error ? error.message : "Template export failed"));
-                    }}
-                    onActivateTemplate={(item) => {
-                      if (!token || !item.template_id) return;
-                      void postJson<Record<string, unknown>>("/api/customer-templates/activate", { template_id: item.template_id }, { token })
-                        .then((result) => {
-                          const registry = result.registry as CustomerTemplateRegistryResponse | undefined;
-                          if (registry) setCustomerTemplates(registry);
-                          setCustomerTemplateStatus(`${item.name || "Template"} activated`);
-                        })
-                        .catch((error) => setCustomerTemplateStatus(error instanceof Error ? error.message : "Template activation failed"));
-                    }}
-                  />
+                  <TemplatesPanel {...templatesPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "catalogs" ? (
-                  <UtilityCatalogPanel
-                    catalog={utilityCatalog}
-                    status={utilityCatalogStatus}
-                    networkFilter={utilityCatalogNetworkFilter}
-                    onNetworkFilterChange={setUtilityCatalogNetworkFilter}
-                  />
+                  <UtilityCatalogPanel {...utilityCatalogPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "standards" ? (
-                  <StandardsPanel
-                    criteria={standardsPanelCriteria}
-                    rows={standardsPanelRows}
-                    onOpenSourceData={() => handleOpenSidePanel("data")}
-                    onOpenReviewGates={() => handleOpenSidePanel("reports")}
-                  />
+                  <StandardsPanel {...standardsPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "libraries" ? (
-                  <LibrariesPanel
-                    sections={libraryPanelSections}
-                    onAddObject={(type) => handleAddObject(type as SiteObjectType)}
-                  />
+                  <LibrariesPanel {...librariesPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "settings" ? (
