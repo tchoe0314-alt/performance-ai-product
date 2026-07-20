@@ -625,6 +625,9 @@ export default function PreviewPanel({
   const pendingCursorSitePointRef = useRef<CadPoint | null>(null);
   const draftPointerRafRef = useRef<number | null>(null);
   const pendingDraftPointerRef = useRef<(CadPoint & { kind: CadSnapKind }) | null>(null);
+  const canvasPanRafRef = useRef<number | null>(null);
+  const pendingCanvasPanViewRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
+  const canvasPanStartedAtRef = useRef<number | null>(null);
   const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
   const draftPointsRef = useRef<Array<[number, number]>>([]);
@@ -1498,6 +1501,38 @@ export default function PreviewPanel({
     setDraftPreviewPoint(null);
     setActiveSnapPoint(null);
   }, []);
+  const scheduleCanvasPanView = useCallback((nextView: { offsetX: number; offsetY: number }) => {
+    pendingCanvasPanViewRef.current = nextView;
+    if (canvasPanRafRef.current !== null) return;
+    canvasPanRafRef.current = window.requestAnimationFrame(() => {
+      canvasPanRafRef.current = null;
+      const pending = pendingCanvasPanViewRef.current;
+      pendingCanvasPanViewRef.current = null;
+      if (!pending) return;
+      setCanvasView((prev) =>
+        Math.abs(prev.offsetX - pending.offsetX) < 0.5 && Math.abs(prev.offsetY - pending.offsetY) < 0.5
+          ? prev
+          : { ...prev, offsetX: pending.offsetX, offsetY: pending.offsetY },
+      );
+    });
+  }, []);
+  const clearScheduledCanvasPan = useCallback(() => {
+    if (canvasPanRafRef.current !== null) {
+      window.cancelAnimationFrame(canvasPanRafRef.current);
+      canvasPanRafRef.current = null;
+    }
+    pendingCanvasPanViewRef.current = null;
+  }, []);
+  const finishCanvasPanInteraction = useCallback(() => {
+    if (canvasPanStartedAtRef.current !== null) {
+      measureCivoraInteractionAfterPaint("preview.pan.drag", canvasPanStartedAtRef.current, {
+        mode: previewMode,
+        quality: previewQuality,
+      });
+      canvasPanStartedAtRef.current = null;
+    }
+    clearScheduledCanvasPan();
+  }, [clearScheduledCanvasPan, previewMode, previewQuality]);
   const scheduleDraftPointerState = useCallback(
     (sitePoint: (CadPoint & { kind: CadSnapKind }) | null) => {
       pendingDraftPointerRef.current = sitePoint;
@@ -1519,6 +1554,9 @@ export default function PreviewPanel({
       }
       if (draftPointerRafRef.current !== null) {
         window.cancelAnimationFrame(draftPointerRafRef.current);
+      }
+      if (canvasPanRafRef.current !== null) {
+        window.cancelAnimationFrame(canvasPanRafRef.current);
       }
     },
     [],
@@ -4853,6 +4891,7 @@ export default function PreviewPanel({
       if (drawMode === "pan") {
         event.preventDefault();
         userAdjustedCanvasViewRef.current = true;
+        canvasPanStartedAtRef.current = markCivoraInteraction();
         setCanvasPanStart({
           x: event.clientX,
           y: event.clientY,
@@ -7296,11 +7335,10 @@ export default function PreviewPanel({
                   return;
                 }
                 if (canvasPanStart) {
-                  setCanvasView((prev) => ({
-                    ...prev,
+                  scheduleCanvasPanView({
                     offsetX: canvasPanStart.offsetX + event.clientX - canvasPanStart.x,
                     offsetY: canvasPanStart.offsetY + event.clientY - canvasPanStart.y,
-                  }));
+                  });
                   return;
                 }
                 if (drawMode !== "select" && drawMode !== "pan" && overlayBoundsResolved) {
@@ -7337,6 +7375,7 @@ export default function PreviewPanel({
                 setHoverPoint(null);
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
+                finishCanvasPanInteraction();
                 setCanvasPanStart(null);
                 clearScheduledPointerState();
                 if (!cadWindowSelect) setCadWindowSelect(null);
@@ -7350,6 +7389,7 @@ export default function PreviewPanel({
                 setDraggingBuildingId(null);
                 setDraggingMode(null);
                 setRotateDragStart(null);
+                finishCanvasPanInteraction();
                 setCanvasPanStart(null);
               }}
               onClick={(event) => {

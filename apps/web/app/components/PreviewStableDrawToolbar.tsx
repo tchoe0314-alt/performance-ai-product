@@ -93,6 +93,7 @@ export function PreviewStableDrawToolbar({
         onActivate={onActivateDrawTool}
         inactiveClassName="border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
         itemKeyPrefix="canvas-stable-draw"
+        includePan
       />
     </div>
   );

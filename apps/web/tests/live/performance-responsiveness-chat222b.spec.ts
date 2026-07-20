@@ -214,6 +214,23 @@ test.describe("Chat 222B performance and responsiveness", () => {
       canvas.getByRole("button", { name: "Add Line" }),
     );
     await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
+    await page.getByRole("button", { name: "Pan" }).filter({ visible: true }).first().click();
+    const canvasBox = await canvas.boundingBox();
+    expect(canvasBox).toBeTruthy();
+    if (canvasBox) {
+      await page.mouse.move(canvasBox.x + canvasBox.width * 0.52, canvasBox.y + canvasBox.height * 0.52);
+      await page.mouse.down();
+      await page.mouse.move(canvasBox.x + canvasBox.width * 0.62, canvasBox.y + canvasBox.height * 0.58, { steps: 12 });
+      await page.mouse.up();
+    }
+    await expect.poll(
+      async () =>
+        page.evaluate(() => {
+          const perf = (window as typeof window & { __civoraPerf?: { last?: Record<string, { durationMs: number }> } }).__civoraPerf;
+          return perf?.last?.["preview.pan.drag"]?.durationMs ?? null;
+        }),
+      { timeout: 3_000 },
+    ).not.toBeNull();
 
     await expectNoHorizontalOverflow(page);
     expect(failures.pageErrors).toEqual([]);

@@ -6,6 +6,7 @@ const DRAW_OBJECT_TOOLS: Array<{ mode: DrawMode; label: string }> = [
   { mode: "rect", label: "Add Box" },
   { mode: "point", label: "Add Point" },
 ];
+const PAN_TOOL: { mode: DrawMode; label: string } = { mode: "pan", label: "Pan" };
 
 export function PreviewDrawToolButtons({
   drawMode,
@@ -17,6 +18,7 @@ export function PreviewDrawToolButtons({
   disabledClassName = "border-amber-200 bg-amber-50 text-amber-800",
   inactiveClassName = "border-slate-200 bg-white text-slate-600",
   itemKeyPrefix = "preview-draw-tool",
+  includePan = false,
 }: {
   drawMode: DrawMode;
   disabled: boolean;
@@ -27,21 +29,24 @@ export function PreviewDrawToolButtons({
   disabledClassName?: string;
   inactiveClassName?: string;
   itemKeyPrefix?: string;
+  includePan?: boolean;
 }) {
+  const tools = includePan ? [PAN_TOOL, ...DRAW_OBJECT_TOOLS] : DRAW_OBJECT_TOOLS;
   return (
     <>
-      {DRAW_OBJECT_TOOLS.map((item) => {
+      {tools.map((item) => {
         const active = drawMode === item.mode;
+        const itemDisabled = item.mode === "pan" ? false : disabled;
         return (
           <button
             key={`${itemKeyPrefix}-${item.mode}`}
             type="button"
             aria-pressed={active}
-            title={disabled ? disabledLabel : item.label}
-            data-blocked={disabled ? "true" : undefined}
-            onClick={() => onActivate(item.mode, disabled ? disabledLabel : undefined)}
+            title={itemDisabled ? disabledLabel : item.label}
+            data-blocked={itemDisabled ? "true" : undefined}
+            onClick={() => onActivate(item.mode, itemDisabled ? disabledLabel : undefined)}
             className={`${buttonClassName} ${
-              active ? activeClassName : disabled ? disabledClassName : inactiveClassName
+              active ? activeClassName : itemDisabled ? disabledClassName : inactiveClassName
             }`}
           >
             {item.label}

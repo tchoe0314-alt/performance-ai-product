@@ -193,6 +193,7 @@ export function PreviewCanvasHeaderControls({
               disabledLabel={drawObjectsDisabledLabel}
               onActivate={onActivateDrawTool}
               itemKeyPrefix="canvas-primary-draw"
+              includePan
             />
           ) : null}
         </div>
