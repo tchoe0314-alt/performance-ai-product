@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -119,11 +118,6 @@ import {
   handlePreviewCadSelectionCommand,
   handlePreviewCadTransformCommand,
 } from "../utils/previewCadActiveCommand";
-import {
-  isCadCrossingSelection,
-  isCadWindowSelectionTooSmall,
-  resolveCadWindowSelectedObjectIds,
-} from "../utils/previewCadWindowSelection";
 import { resolvePreviewVisualKind } from "../utils/previewVisualStyles";
 import {
   buildPreviewCurrentSiteSize,
@@ -146,6 +140,7 @@ import {
   type UtilityCoordinationRow,
 } from "./previewPanelTypes";
 import { useAiRealismPreview } from "./useAiRealismPreview";
+import { usePreviewCadWindowSelection } from "./usePreviewCadWindowSelection";
 import { usePreviewDraftGeometry } from "./usePreviewDraftGeometry";
 
 export default function PreviewPanel({
@@ -1345,82 +1340,22 @@ export default function PreviewPanel({
       },
     ]);
   }, []);
-  const finishCadWindowSelect = useCallback(
-    (windowRect: { startX: number; startY: number; currentX: number; currentY: number }) => {
-      if (!previewRef.current) return;
-      const crossingSelect = isCadCrossingSelection(windowRect);
-      if (isCadWindowSelectionTooSmall(windowRect)) return;
-      const candidates = Array.from(
-        previewRef.current.querySelectorAll<HTMLElement>("[data-cad-object-id]"),
-      );
-      const selectableIds = resolveCadWindowSelectedObjectIds(windowRect, candidates, visibleCadObjects);
-      setCadSelectionSet(selectableIds);
-      onSelectObjects?.(selectableIds);
-      onSelectBuilding(selectableIds[0] ?? null);
-      setSelectedVertex(null);
-      pushCadCommandFeedback(
-        "SELECT",
-        selectableIds.length ? "applied" : "blocked",
-        selectableIds.length
-          ? `${crossingSelect ? "Crossing" : "Window"} selected ${selectableIds.length} editable draft object${selectableIds.length === 1 ? "" : "s"}.`
-          : `${crossingSelect ? "Crossing" : "Window"} select found no editable draft objects.`,
-      );
-    },
-    [onSelectBuilding, onSelectObjects, pushCadCommandFeedback, visibleCadObjects],
-  );
-  const beginCadWindowSelect = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (!allowEdits || drawMode !== "select" || placementMode || event.button !== 0) return false;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest?.("button,input,textarea,select,[role='button'],[data-no-window-select]")) {
-        return false;
-      }
-      const objectOverlay = target?.closest?.("[data-object-overlay]") as HTMLElement | null;
-      if (objectOverlay) {
-        const item = visibleCadObjects.find((candidate) => candidate.id === objectOverlay.dataset.cadObjectId);
-        if (item?.type !== "site") return false;
-      }
-      const rect = previewRef.current?.getBoundingClientRect();
-      event.preventDefault();
-      event.stopPropagation();
-      suppressNextObjectClickRef.current = true;
-      setCadWindowSelect({
-        startX: event.clientX,
-        startY: event.clientY,
-        currentX: event.clientX,
-        currentY: event.clientY,
-        containerLeft: rect?.left ?? 0,
-        containerTop: rect?.top ?? 0,
-      });
-      return true;
-    },
-    [allowEdits, drawMode, placementMode, visibleCadObjects],
-  );
-
-  useEffect(() => {
-    cadWindowSelectRef.current = cadWindowSelect;
-  }, [cadWindowSelect]);
-
-  useEffect(() => {
-    if (!cadWindowSelect) return;
-    const handleMove = (event: MouseEvent) => {
-      setCadWindowSelect((current) =>
-        current ? { ...current, currentX: event.clientX, currentY: event.clientY } : current,
-      );
-    };
-    const handleUp = () => {
-      const selection = cadWindowSelectRef.current;
-      if (selection) finishCadWindowSelect(selection);
-      cadWindowSelectRef.current = null;
-      setCadWindowSelect(null);
-    };
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp, { once: true });
-    return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-  }, [cadWindowSelect, finishCadWindowSelect]);
+  const { beginCadWindowSelect, finishCadWindowSelect } = usePreviewCadWindowSelection({
+    previewRef,
+    cadWindowSelect,
+    cadWindowSelectRef,
+    setCadWindowSelect,
+    visibleCadObjects,
+    allowEdits,
+    drawMode,
+    placementMode,
+    suppressNextObjectClickRef,
+    onSelectBuilding,
+    onSelectObjects,
+    setCadSelectionSet,
+    setSelectedVertex,
+    pushCadCommandFeedback,
+  });
 
   const createCadCommandGeometry = useCallback(
     (
