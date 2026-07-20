@@ -11,11 +11,6 @@ import type {
   ProjectRecord,
   ProjectInput,
   JobSummary,
-  ManualFailure,
-  ManagerMetrics,
-  QuantityTotals,
-  StormSummary,
-  PlanExplanation,
   PlanMeta,
   PlanResponse,
   SurveySlopeResponse,
@@ -61,17 +56,7 @@ import {
   type ReactiveValidationState,
   type SystemGenerationTarget,
 } from "./utils/workflowConstants";
-import { buildDashboardQuantityRows } from "./utils/dashboardQuantityRows";
-import {
-  buildDashboardGradingBlocker,
-  buildDashboardIssueTargets,
-} from "./utils/dashboardIssueTargets";
 import { buildDashboardCapabilityAuditRows } from "./utils/dashboardCapabilityAuditRows";
-import {
-  buildDashboardCalculationOverlayStats,
-  buildDashboardEngineeringMetrics,
-  buildDashboardMeasurementOverlayStats,
-} from "./utils/dashboardEngineeringMetrics";
 import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
 import { resolveActivePrimaryWorkflowKey } from "./utils/dashboardPrimaryWorkflows";
 import { buildDashboardPrimaryWorkflowItems } from "./utils/dashboardPrimaryWorkflowItems";
@@ -108,7 +93,6 @@ import {
   applyDashboardReactiveSystemStatusFromPlanResult,
   buildDashboardAssumptionsFromPlanResult,
   buildDashboardIssuesFromPlanResult,
-  buildDashboardSuggestedImproveGoal,
 } from "./utils/dashboardPlanResultView";
 import {
   buildCustomGeometryMeta,
@@ -217,13 +201,6 @@ import {
   progressTimelineDotClass,
   progressTimelineStatusClass,
 } from "./utils/dashboardWorkflowProgress";
-import {
-  buildDrainageLowPoints,
-  buildGradingResultSummary,
-  buildStormHydrologyReview,
-  buildStormPipeSegments,
-  buildWaterFireFlowReview,
-} from "./utils/dashboardReviewSummaries";
 import { buildDashboardManualFields } from "./utils/dashboardManualFields";
 import { buildGenerateConceptPlacements } from "./utils/dashboardGenerateConcepts";
 import {
@@ -282,6 +259,7 @@ import { useDashboardSiteSetupUtilityActions } from "./hooks/useDashboardSiteSet
 import { useDashboardSelectedDetectionActions } from "./hooks/useDashboardSelectedDetectionActions";
 import { useDashboardReviewWorkflowActions } from "./hooks/useDashboardReviewWorkflowActions";
 import { useDashboardPlanPdfDerivedState } from "./hooks/useDashboardPlanPdfDerivedState";
+import { useDashboardEngineeringReviewState } from "./hooks/useDashboardEngineeringReviewState";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -327,7 +305,6 @@ import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import ChatPanel from "./components/ChatPanel";
 import {
-  buildRoadwayWorkbenchData,
   type Civil3DWorkflowTab,
   type RoadwayWorkbenchTab,
 } from "./components/CivilRoadwayWorkbench";
@@ -1232,104 +1209,41 @@ function PerformanceAIDashboardView({
       setReactiveValidation,
     });
   }, [backendResult?.final_plan, reactiveChangedSystems, reactiveChangedTargets]);
-  const managerMetrics = useMemo<ManagerMetrics>(
-    () => currentPlanMeta?.manager_export?.metrics ?? {},
-    [currentPlanMeta],
-  );
-  const quantityTotals = useMemo<QuantityTotals>(
-    () => currentPlanMeta?.quantities?.totals ?? {},
-    [currentPlanMeta],
-  );
-  const quantityExplain = useMemo(
-    () => currentPlanMeta?.quantities?.explain ?? {},
-    [currentPlanMeta],
-  );
-  const costEstimate = useMemo(
-    () => currentPlanMeta?.cost_estimate ?? {},
-    [currentPlanMeta],
-  );
-  const stormSummary = useMemo<StormSummary>(() => currentPlanMeta?.storm_pipes ?? {}, [currentPlanMeta]);
-  const pipeSegments = useMemo(() => buildStormPipeSegments(stormSummary), [stormSummary]);
-  const drainageSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.drainage ?? {}, [currentPlanMeta]);
-  const gradingSummary = useMemo<Record<string, unknown>>(() => currentPlanMeta?.grading ?? {}, [currentPlanMeta]);
-  const roadwayWorkbenchData = useMemo(
-    () => buildRoadwayWorkbenchData(currentPlanMeta),
-    [currentPlanMeta],
-  );
-  const drainageLowPoints = useMemo(
-    () => buildDrainageLowPoints({ drainageSummary, gradingSummary }),
-    [drainageSummary, gradingSummary],
-  );
-  const stormHydrologyReview = useMemo(
-    () => buildStormHydrologyReview({ stormSummary, drainageSummary, pipeSegments, smartFixItems }),
-    [drainageSummary, pipeSegments, smartFixItems, stormSummary],
-  );
-  const waterFireFlowReview = useMemo(
-    () => buildWaterFireFlowReview(planPreviewAnnotations),
-    [planPreviewAnnotations],
-  );
-  const gradingResultSummary = useMemo(
-    () => buildGradingResultSummary(gradingSummary),
-    [gradingSummary],
-  );
-
-  const previewLabels = useMemo(
-    () => planPreviewAnnotations?.labels ?? [],
-    [planPreviewAnnotations],
-  );
-  const issueTargets = useMemo(
-    () => buildDashboardIssueTargets(issues, previewLabels),
-    [issues, previewLabels],
-  );
-
   const [debugGradingFixtureLoaded, setDebugGradingFixtureLoaded] = useState(false);
 
-  const gradingBlocker = useMemo(() => buildDashboardGradingBlocker(issues), [issues]);
-
-  const selectedIssueLabel = issueTargets.find((item) => item.id === selectedIssueId)?.label ?? "";
-
-  const engineeringMetrics = useMemo(
-    () => buildDashboardEngineeringMetrics({
-      managerMetrics,
-      pipeSegments,
-      stormSummary,
-      gradingSummary,
-      drainageSummary,
-    }),
-    [drainageSummary, gradingSummary, managerMetrics, pipeSegments, stormSummary],
-  );
-  const { totalPipeLength, maxSlope, minSlope, flowCfs, cutFillNet, basinSize } = engineeringMetrics;
-  const quantityRows = useMemo(
-    () => buildDashboardQuantityRows({ costEstimate, quantityExplain, quantityTotals }),
-    [costEstimate, quantityExplain, quantityTotals],
-  );
-  const measurementOverlayStats = useMemo(
-    () => buildDashboardMeasurementOverlayStats(quantityTotals),
-    [quantityTotals],
-  );
-  const calculationOverlayStats = useMemo(
-    () => buildDashboardCalculationOverlayStats(engineeringMetrics),
-    [engineeringMetrics],
-  );
-  const currentTruthAudit = useMemo(
-    () => currentPlanMeta?.truth_audit ?? {},
-    [currentPlanMeta],
-  );
-  const currentManualFailures = useMemo<ManualFailure[]>(
-    () =>
-      Array.isArray(currentPlanMeta?.manual_validation?.failures)
-        ? currentPlanMeta.manual_validation.failures
-        : [],
-    [currentPlanMeta],
-  );
-  const currentExplanation = useMemo<PlanExplanation>(
-    () => currentPlanMeta?.explanation ?? {},
-    [currentPlanMeta],
-  );
-  const suggestedImproveGoal = useMemo(
-    () => buildDashboardSuggestedImproveGoal({ currentManualFailures, issues }),
-    [currentManualFailures, issues],
-  );
+  const {
+    basinSize,
+    calculationOverlayStats,
+    costEstimate,
+    currentExplanation,
+    currentManualFailures,
+    currentTruthAudit,
+    cutFillNet,
+    drainageLowPoints,
+    drainageSummary,
+    flowCfs,
+    gradingBlocker,
+    gradingResultSummary,
+    gradingSummary,
+    managerMetrics,
+    maxSlope,
+    measurementOverlayStats,
+    minSlope,
+    quantityExplain,
+    quantityRows,
+    roadwayWorkbenchData,
+    selectedIssueLabel,
+    stormHydrologyReview,
+    suggestedImproveGoal,
+    totalPipeLength,
+    waterFireFlowReview,
+  } = useDashboardEngineeringReviewState({
+    currentPlanMeta,
+    issues,
+    planPreviewAnnotations,
+    selectedIssueId,
+    smartFixItems,
+  });
 
   const updateProjectStatus = useCallback(
     (summary: Omit<ProjectStatusSummary, "updatedAt">) => {
