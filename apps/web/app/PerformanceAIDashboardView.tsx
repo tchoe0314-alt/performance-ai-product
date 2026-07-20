@@ -111,6 +111,7 @@ import {
   buildDashboardLibraryPanelSections,
   buildDashboardStandardsPanelCriteria,
 } from "./utils/dashboardShellConfig";
+import { DASHBOARD_CAD_TOOL_GROUPS } from "./utils/dashboardCadToolGroups";
 import {
   buildGenerateLayoutContext,
   systemsImpactedByPlacement,
@@ -318,7 +319,6 @@ import { DeliverPanel } from "./components/DeliverPanel";
 import { DenseConceptActionStrip } from "./components/DenseConceptActionStrip";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
 import { DrainageWorkbenchPanel } from "./components/DrainageWorkbenchPanel";
-import { type DrawCadToolGroup } from "./components/DrawCadToolsPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { FloatingObjectInspector } from "./components/FloatingObjectInspector";
 import { FloatingLayerManager, type PreviewLayerVisibility } from "./components/FloatingLayerManager";
@@ -16270,57 +16270,7 @@ function PerformanceAIDashboardView({
     setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
     measureCivoraInteractionAfterPaint("draw.canvas.tool.click", startedAt, { tool, label });
   }, []);
-  const cadToolGroups: DrawCadToolGroup[] = [
-    {
-      title: "Draw",
-      tools: [
-        { label: "Select", tool: "select", hint: "Pick objects" },
-        { label: "Line", tool: "line", hint: "2+ points" },
-        { label: "Polyline", tool: "polyline", hint: "Connected line" },
-        { label: "Area", tool: "area", hint: "Closed polygon" },
-        { label: "Box", tool: "box", hint: "Rectangle" },
-        { label: "Point", tool: "point", hint: "Marker" },
-        { label: "Circle", tool: "circle", hint: "Command loaded" },
-        { label: "Arc", tool: "arc", hint: "Command loaded" },
-        { label: "Text", tool: "text", hint: "Command loaded" },
-      ],
-    },
-    {
-      title: "Modify",
-      tools: [
-        { label: "Move", tool: "move", hint: "Selected objects" },
-        { label: "Copy", tool: "copy", hint: "Selected + vector" },
-        { label: "Rotate", tool: "rotate", hint: "Selected objects" },
-        { label: "Scale", tool: "scale", hint: "Selected objects" },
-        { label: "Offset", tool: "offset", hint: "Selected geometry" },
-        { label: "Trim", tool: "trim", hint: "Selected line" },
-        { label: "Extend", tool: "extend", hint: "Selected line" },
-        { label: "Fillet", tool: "fillet", hint: "Selected vertex" },
-        { label: "Join", tool: "join", hint: "Selected linework" },
-        { label: "Split", tool: "split", hint: "Joined object" },
-        { label: "Close", tool: "close", hint: "Polyline area" },
-        { label: "Open", tool: "open", hint: "Closed linework" },
-        { label: "Reverse", tool: "reverse", hint: "Vertex order" },
-        { label: "Delete", tool: "delete", hint: "Selected object" },
-      ],
-    },
-    {
-      title: "Annotate / Organize",
-      tools: [
-        { label: "Dimension", tool: "dimension", hint: "Selected geometry" },
-        { label: "Measure", tool: "measure", hint: "Selected distance" },
-        { label: "Hatch", tool: "hatch", hint: "Closed fill" },
-        { label: "Symbol", tool: "symbol", hint: "Insert current symbol" },
-        { label: "Layer", tool: "layer", hint: "Apply layer" },
-        { label: "Properties", tool: "properties", hint: "Apply object props" },
-        { label: "Snap", tool: "snap", hint: "Toggle snap" },
-        { label: "Ortho", tool: "ortho", hint: "Toggle ortho" },
-        { label: "Undo", tool: "undo", hint: "Last draft edit" },
-        { label: "Redo", tool: "redo", hint: "Redo draft edit" },
-        { label: "Command", tool: "command", hint: "Typed commands" },
-      ],
-    },
-  ];
+  const cadToolGroups = DASHBOARD_CAD_TOOL_GROUPS;
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
     const nextPanel = workspacePanelByMode[mode];
     setActiveWorkspaceMode(mode);
