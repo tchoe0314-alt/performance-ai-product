@@ -255,6 +255,7 @@ import { useDashboardDeliverReportsPanelProps } from "./hooks/useDashboardDelive
 import { useDashboardSupportPanelProps } from "./hooks/useDashboardSupportPanelProps";
 import { useDashboardReviewUtilityPanelProps } from "./hooks/useDashboardReviewUtilityPanelProps";
 import { useDashboardCanvasAreaProps } from "./hooks/useDashboardCanvasAreaProps";
+import { useDashboardChatCommandProps } from "./hooks/useDashboardChatCommandProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -9356,6 +9357,50 @@ function PerformanceAIDashboardView({
     mapDebugOverlay,
     cadToolRequest,
   });
+  const {
+    chatPanelProps,
+    pinnedCommandBarProps,
+  } = useDashboardChatCommandProps({
+    chatMessages,
+    chatScrollRef,
+    onSetMessageFeedback: setMessageFeedback,
+    thinkingState,
+    busy,
+    activePlanTool,
+    visibleActiveJobStatus: visibleActiveJob?.status ?? "",
+    hasDirectRunInFlight: Boolean(directRunAbortRef.current),
+    onCancelJob: handleCancelActiveJob,
+    onContinueJob: handleContinueActiveJob,
+    pendingClarificationQuestion: pendingClarification?.question || null,
+    onContinuePendingClarification: handleContinuePendingClarification,
+    prompt,
+    imageName,
+    onPromptChange: setPrompt,
+    onPromptKeyDown: handlePromptKeyDown,
+    commandInputRef,
+    onSendMessage: handleSendMessage,
+    onUploadImage: uploadImage,
+    onExplainPlan: () => void handleExplainPlan(),
+    onRunFix: () => void handleRunFix(),
+    onRunImprove: () => void handleRunImprove(),
+    onSaveProject: () => void saveProject(),
+    canExplain: Boolean(planPreviewUrl),
+    statusMessage,
+    hasVisibleActiveJob: Boolean(visibleActiveJob),
+    approvalState: approvalStatus.state,
+    approvalPhaseLabel: approvalStatus.label,
+    approvalError,
+    onToggleChatCollapsed: handleCloseSidePanel,
+    summaryText: chatSummary,
+    onOpenHistory: () => handleOpenSidePanel("chat"),
+    chatBlockingActiveJob,
+    projectStatusSummary,
+    activePrimaryWorkflowKey,
+    previewInteraction,
+    activePlacementId,
+    previewMode,
+    previewQuality,
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9701,39 +9746,7 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "chat" ? (
-                  <ChatPanel
-                    chatMessages={chatMessages}
-                    chatScrollRef={chatScrollRef}
-                    onSetMessageFeedback={setMessageFeedback}
-                    thinkingState={thinkingState}
-                    busy={busy}
-                    activePlanTool={activePlanTool}
-                    visibleActiveJobStatus={visibleActiveJob?.status ?? ""}
-                    hasDirectRunInFlight={Boolean(directRunAbortRef.current)}
-                    onCancelJob={handleCancelActiveJob}
-                    onContinueJob={handleContinueActiveJob}
-                    pendingClarification={pendingClarification?.question || null}
-                    onContinuePendingClarification={handleContinuePendingClarification}
-                    prompt={prompt}
-                    imageName={imageName}
-                    onPromptChange={setPrompt}
-                    onPromptKeyDown={handlePromptKeyDown}
-                    onSendMessage={handleSendMessage}
-                    onUploadImage={uploadImage}
-                    onExplainPlan={() => void handleExplainPlan()}
-                    onRunFix={() => void handleRunFix()}
-                    onRunImprove={() => void handleRunImprove()}
-                    onSaveProject={() => void saveProject()}
-                    canExplain={Boolean(planPreviewUrl)}
-                    statusMessage={statusMessage}
-                    hasVisibleActiveJob={Boolean(visibleActiveJob)}
-                    approvalState={approvalStatus.state}
-                    approvalPhaseLabel={approvalStatus.label}
-                    approvalError={approvalError}
-                    collapsed={false}
-                    onToggleCollapsed={handleCloseSidePanel}
-                    summaryText={chatSummary}
-                  />
+                  <ChatPanel {...chatPanelProps} />
                 ) : null}
             </WorkspaceRightPanel>
           ) : null}
@@ -9745,28 +9758,7 @@ function PerformanceAIDashboardView({
             />
           ) : null}
           {commandBarVisible ? (
-            <PinnedCommandBar
-              prompt={prompt}
-              imageName={imageName}
-              onPromptChange={setPrompt}
-              onPromptKeyDown={handlePromptKeyDown}
-              commandInputRef={commandInputRef}
-              onSendMessage={handleSendMessage}
-              onOpenHistory={() => handleOpenSidePanel("chat")}
-              busy={busy}
-              hasVisibleActiveJob={chatBlockingActiveJob}
-              activePlanTool={activePlanTool}
-              thinkingState={thinkingState}
-              statusText={chatSummary || formatProjectStatusText(projectStatusSummary) || statusMessage}
-              commandContext={{
-                mode: activePrimaryWorkflowKey,
-                interaction: previewInteraction,
-                layer: activePlacementId ? "selected" : "C-DRAFT",
-                selectedCount: activePlacementId ? 1 : 0,
-                snap: "ready",
-                view: `${previewMode.toUpperCase()} / ${previewQuality}`,
-              }}
-            />
+            <PinnedCommandBar {...pinnedCommandBarProps} />
           ) : null}
         </div>
       </div>
