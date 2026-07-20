@@ -127,6 +127,8 @@ import {
 } from "./utils/workflowConstants";
 import {
   CustomGeometryHandoffDetails,
+  buildObjectManagerLayerRows,
+  buildObjectManagerTypes,
   buildCanonicalGeometryHandoffV1,
   buildCustomGeometryMeta,
   clampValue,
@@ -144,6 +146,7 @@ import {
   isCustomGeometryMode,
   normalizeGeometryPoints,
   selectedObjectsToSemanticArea,
+  summarizeDraftObjectMeasurements,
   type CustomGeometryMode,
 } from "./utils/objectGeometry";
 
@@ -278,7 +281,7 @@ import { NeedsPlacementTray } from "./components/NeedsPlacementTray";
 import { ObjectManagerBulkToolsPanel } from "./components/ObjectManagerBulkToolsPanel";
 import { ObjectManagerCombineBlocksPanel } from "./components/ObjectManagerCombineBlocksPanel";
 import { ObjectManagerHiddenState } from "./components/ObjectManagerHiddenState";
-import { ObjectManagerLayerControls, type ObjectManagerLayerRow } from "./components/ObjectManagerLayerControls";
+import { ObjectManagerLayerControls } from "./components/ObjectManagerLayerControls";
 import { ObjectManagerMeasurementsPanel } from "./components/ObjectManagerMeasurementsPanel";
 import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
 import { ObjectManagerRow } from "./components/ObjectManagerRow";
@@ -18645,54 +18648,17 @@ function PerformanceAIDashboardView({
     () => selectedObjectRows.map(getDraftObjectMeasurement),
     [selectedObjectRows],
   );
-  const selectedObjectMeasurementSummary = useMemo(() => {
-    if (!selectedObjectMeasurements.length) return null;
-    const minX = Math.min(...selectedObjectMeasurements.map((item) => item.minX));
-    const minY = Math.min(...selectedObjectMeasurements.map((item) => item.minY));
-    const maxX = Math.max(...selectedObjectMeasurements.map((item) => item.maxX));
-    const maxY = Math.max(...selectedObjectMeasurements.map((item) => item.maxY));
-    return {
-      count: selectedObjectMeasurements.length,
-      totalLengthFt: selectedObjectMeasurements.reduce((sum, item) => sum + item.lengthFt, 0),
-      totalAreaSf: selectedObjectMeasurements.reduce((sum, item) => sum + item.areaSf, 0),
-      widthFt: Math.max(0, maxX - minX),
-      depthFt: Math.max(0, maxY - minY),
-      minX,
-      minY,
-      maxX,
-      maxY,
-    };
-  }, [selectedObjectMeasurements]);
+  const selectedObjectMeasurementSummary = useMemo(
+    () => summarizeDraftObjectMeasurements(selectedObjectMeasurements),
+    [selectedObjectMeasurements],
+  );
   const hiddenObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.ui_hidden)).length;
   const objectManagerTypes = useMemo(
-    () => Array.from(new Set(buildingPlacements.map((item) => getObjectDisplayType(item)))).sort(),
+    () => buildObjectManagerTypes(buildingPlacements),
     [buildingPlacements],
   );
-  const objectManagerLayerRows = useMemo<ObjectManagerLayerRow[]>(
-    () =>
-      Object.entries(
-        buildingPlacements
-          .filter((item) => item.type && item.type !== "site")
-          .reduce<Record<string, BuildingPlacement[]>>((acc, item) => {
-            const key = item.type ?? "custom";
-            acc[key] = [...(acc[key] ?? []), item];
-            return acc;
-          }, {}),
-      )
-        .map(([type, objects]) => {
-          const hiddenCount = objects.filter((item) => Boolean(item.meta?.ui_hidden)).length;
-          const lockedCount = objects.filter((item) => Boolean(item.locked)).length;
-          return {
-            type: type as SiteObjectType,
-            label: SITE_OBJECT_CATALOG[type as SiteObjectType]?.label ?? toReadableLabel(type),
-            count: objects.length,
-            hiddenCount,
-            lockedCount,
-            allHidden: hiddenCount === objects.length,
-            allLocked: lockedCount === objects.length,
-          };
-        })
-        .sort((a, b) => a.label.localeCompare(b.label)),
+  const objectManagerLayerRows = useMemo(
+    () => buildObjectManagerLayerRows(buildingPlacements),
     [buildingPlacements],
   );
   const sidePanelForRender = rightRailCollapsed

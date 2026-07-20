@@ -67,6 +67,16 @@ import {
 } from "../utils/previewAiRealism";
 import { buildWaterFireFlowViewModel } from "../utils/previewWaterFireFlow";
 import {
+  SURVEY_SHEET_SPOT_ELEVATIONS,
+  buildPlanScaleBar,
+  buildPreviewBoundsStyle,
+  buildScaleTruthLabel,
+} from "../utils/previewLayoutHelpers";
+import {
+  buildPreviewObjectManagerCounts,
+  buildPreviewObjectManagerRows,
+} from "../utils/previewObjectManager";
+import {
   cadHatchPatternForPreviewItem,
   rectCorridorAxis as resolveRectCorridorAxis,
   resolvePreviewSvgVisualStyle,
@@ -484,35 +494,10 @@ export default function PreviewPanel({
     }
     return Boolean(process.env.NEXT_PUBLIC_CIVORA_AI_REALISM_PROVIDER?.trim());
   }, []);
-  const planScaleBar = useMemo(() => {
-    const span = Math.max(currentSiteSize.width, currentSiteSize.height, 1);
-    const target = span / 5;
-    const candidates = [10, 20, 25, 40, 50, 100, 200, 400, 500, 1000];
-    const lengthFt = candidates.find((candidate) => candidate >= target) ?? candidates[candidates.length - 1];
-    const widthPct = Math.min(36, Math.max(12, (lengthFt / currentSiteSize.width) * 100));
-    return { lengthFt, widthPct };
-  }, [currentSiteSize.height, currentSiteSize.width]);
-  const scaleTruthLabel = useMemo(() => {
-    const hasLiveMapScale =
-      mapScaleSource === "mapbox" &&
-      typeof mapScaleFtPerPx === "number" &&
-      Number.isFinite(mapScaleFtPerPx) &&
-      mapScaleFtPerPx > 0;
-    if (hasLiveMapScale) return `LIVE MAP SCALE · ${mapScaleFtPerPx.toFixed(2)} FT/PX`;
-    if (geocode?.lat && geocode?.lng) return "ADDRESS APPLIED · LOCAL DRAWING SCALE";
-    return "LOCAL SITE SCALE";
-  }, [geocode?.lat, geocode?.lng, mapScaleFtPerPx, mapScaleSource]);
-  const surveySheetSpotElevations = useMemo(
-    () => [
-      { x: 12, y: 18, label: "x 952.4" },
-      { x: 35, y: 26, label: "x 953.1" },
-      { x: 63, y: 20, label: "x 954.6" },
-      { x: 78, y: 38, label: "x 951.8" },
-      { x: 20, y: 58, label: "x 950.2" },
-      { x: 45, y: 70, label: "x 949.7" },
-      { x: 68, y: 78, label: "x 948.9" },
-    ],
-    [],
+  const planScaleBar = useMemo(() => buildPlanScaleBar(currentSiteSize), [currentSiteSize]);
+  const scaleTruthLabel = useMemo(
+    () => buildScaleTruthLabel({ geocode, mapScaleFtPerPx, mapScaleSource }),
+    [geocode, mapScaleFtPerPx, mapScaleSource],
   );
   const resolveVisualKind = useCallback(resolvePreviewVisualKind, []);
   const resolveSvgVisualStyle = useCallback(
@@ -749,19 +734,6 @@ export default function PreviewPanel({
     }
   }, [activeAnnotation, buildingPlacements, suggestedPlacements]);
   const activeHighlightBounds = activeAnnotation?.bounds ?? null;
-  const clampPercent = (value: number) => Math.min(Math.max(value * 100, 0), 100);
-  const buildBoundsStyle = (bounds: { x1: number; y1: number; x2: number; y2: number }) => {
-    const left = clampPercent(bounds.x1);
-    const right = clampPercent(bounds.x2);
-    const top = clampPercent(bounds.y1);
-    const bottom = clampPercent(bounds.y2);
-    return {
-      left: `${left}%`,
-      top: `${top}%`,
-      width: `${Math.max(right - left, 1)}%`,
-      height: `${Math.max(bottom - top, 1)}%`,
-    };
-  };
   const viewportTransformStyle = useMemo(
     () => ({
       transform: `translate(${canvasView.offsetX}px, ${canvasView.offsetY}px) scale(${canvasView.scale})`,
@@ -1170,27 +1142,12 @@ export default function PreviewPanel({
     [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach((item) => layers.add(getCadLayer(item)));
     return Array.from(layers).sort();
   }, [buildingPlacements, cadEntityPreviewObjects, getCadLayer, suggestedPlacements]);
-  const objectManagerRows = useMemo(() => {
-    const rows = new Map<string, BuildingPlacement>();
-    [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach((item) => {
-      if (!rows.has(item.id)) rows.set(item.id, item);
-    });
-    return Array.from(rows.values()).sort((a, b) => {
-      const aHidden = a.meta?.ui_hidden ? 1 : 0;
-      const bHidden = b.meta?.ui_hidden ? 1 : 0;
-      if (aHidden !== bHidden) return aHidden - bHidden;
-      if (a.type === "site" && b.type !== "site") return -1;
-      if (b.type === "site" && a.type !== "site") return 1;
-      return (a.label || a.id).localeCompare(b.label || b.id);
-    });
-  }, [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements]);
+  const objectManagerRows = useMemo(
+    () => buildPreviewObjectManagerRows([...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements]),
+    [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements],
+  );
   const objectManagerCounts = useMemo(
-    () => ({
-      total: objectManagerRows.length,
-      visible: objectManagerRows.filter((item) => !item.meta?.ui_hidden && !hiddenCadLayers.includes(getCadLayer(item))).length,
-      draft: objectManagerRows.filter((item) => item.source === "manual_drawn" || item.type === "custom" || item.meta?.engineering_status === "draft_review_required").length,
-      generated: objectManagerRows.filter((item) => item.generated || item.source === "generated").length,
-    }),
+    () => buildPreviewObjectManagerCounts({ rows: objectManagerRows, hiddenCadLayers, getCadLayer }),
     [getCadLayer, hiddenCadLayers, objectManagerRows],
   );
   const getPreviewObjectDimensionsLabel = useCallback((item: BuildingPlacement) => {
@@ -7310,7 +7267,7 @@ export default function PreviewPanel({
                                 </path>
                               );
                             })}
-                            {surveySheetSpotElevations.map((spot) => (
+                            {SURVEY_SHEET_SPOT_ELEVATIONS.map((spot) => (
                               <g key={`spot-${spot.label}-${spot.x}-${spot.y}`} data-testid="survey-spot-elevation">
                                 <text x={spot.x} y={spot.y} fontSize="0.86" fill="#64748b">{spot.label}</text>
                                 <line x1={spot.x - 0.32} y1={spot.y - 0.32} x2={spot.x + 0.32} y2={spot.y + 0.32} stroke="#64748b" strokeWidth={0.08} />
@@ -9063,13 +9020,13 @@ export default function PreviewPanel({
                     {activeHighlightBounds ? (
                       <div
                         className="absolute rounded-[14px] border border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_4px_rgba(56,189,248,0.14)]"
-                        style={buildBoundsStyle(activeHighlightBounds)}
+                        style={buildPreviewBoundsStyle(activeHighlightBounds)}
                       />
                     ) : null}
                     {issueHighlightBounds ? (
                       <div
                         className="absolute rounded-[12px] border border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_4px_rgba(244,63,94,0.1)]"
-                        style={buildBoundsStyle(issueHighlightBounds)}
+                        style={buildPreviewBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
                     {showHover
@@ -9408,13 +9365,13 @@ export default function PreviewPanel({
                     {activeHighlightBounds ? (
                       <div
                         className="absolute rounded-[14px] border border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_4px_rgba(56,189,248,0.14)]"
-                        style={buildBoundsStyle(activeHighlightBounds)}
+                        style={buildPreviewBoundsStyle(activeHighlightBounds)}
                       />
                     ) : null}
                     {issueHighlightBounds ? (
                       <div
                         className="absolute rounded-[12px] border border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_4px_rgba(244,63,94,0.1)]"
-                        style={buildBoundsStyle(issueHighlightBounds)}
+                        style={buildPreviewBoundsStyle(issueHighlightBounds)}
                       />
                     ) : null}
                     {showHover

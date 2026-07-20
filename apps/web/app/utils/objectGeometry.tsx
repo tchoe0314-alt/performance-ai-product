@@ -1,4 +1,4 @@
-import type { BuildingPlacement, CanonicalGeometryHandoffV1 } from "../types";
+import type { BuildingPlacement, CanonicalGeometryHandoffV1, SiteObjectType } from "../types";
 
 import { toReadableLabel } from "./formatting";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
@@ -236,6 +236,79 @@ export const getDraftObjectMeasurement = (item: BuildingPlacement) => {
     rotationDeg: item.rotation ?? 0,
   };
 };
+
+export type DraftObjectMeasurement = ReturnType<typeof getDraftObjectMeasurement>;
+
+export type DraftObjectMeasurementSummary = {
+  count: number;
+  totalLengthFt: number;
+  totalAreaSf: number;
+  widthFt: number;
+  depthFt: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+export type DraftObjectLayerSummary = {
+  type: SiteObjectType;
+  label: string;
+  count: number;
+  hiddenCount: number;
+  lockedCount: number;
+  allHidden: boolean;
+  allLocked: boolean;
+};
+
+export const summarizeDraftObjectMeasurements = (
+  measurements: DraftObjectMeasurement[],
+): DraftObjectMeasurementSummary | null => {
+  if (!measurements.length) return null;
+  const minX = Math.min(...measurements.map((item) => item.minX));
+  const minY = Math.min(...measurements.map((item) => item.minY));
+  const maxX = Math.max(...measurements.map((item) => item.maxX));
+  const maxY = Math.max(...measurements.map((item) => item.maxY));
+  return {
+    count: measurements.length,
+    totalLengthFt: measurements.reduce((sum, item) => sum + item.lengthFt, 0),
+    totalAreaSf: measurements.reduce((sum, item) => sum + item.areaSf, 0),
+    widthFt: Math.max(0, maxX - minX),
+    depthFt: Math.max(0, maxY - minY),
+    minX,
+    minY,
+    maxX,
+    maxY,
+  };
+};
+
+export const buildObjectManagerTypes = (placements: BuildingPlacement[]) =>
+  Array.from(new Set(placements.map((item) => getObjectDisplayType(item)))).sort();
+
+export const buildObjectManagerLayerRows = (placements: BuildingPlacement[]): DraftObjectLayerSummary[] =>
+  Object.entries(
+    placements
+      .filter((item) => item.type && item.type !== "site")
+      .reduce<Record<string, BuildingPlacement[]>>((acc, item) => {
+        const key = item.type ?? "custom";
+        acc[key] = [...(acc[key] ?? []), item];
+        return acc;
+      }, {}),
+  )
+    .map(([type, objects]) => {
+      const hiddenCount = objects.filter((item) => Boolean(item.meta?.ui_hidden)).length;
+      const lockedCount = objects.filter((item) => Boolean(item.locked)).length;
+      return {
+        type: type as SiteObjectType,
+        label: SITE_OBJECT_CATALOG[type as SiteObjectType]?.label ?? toReadableLabel(type),
+        count: objects.length,
+        hiddenCount,
+        lockedCount,
+        allHidden: hiddenCount === objects.length,
+        allLocked: lockedCount === objects.length,
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
 
 export const buildCustomGeometryMeta = (
   id: string,
