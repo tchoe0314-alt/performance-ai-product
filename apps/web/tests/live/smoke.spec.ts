@@ -167,41 +167,41 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     await page.getByRole("button", { name: "Send" }).click();
 
     await expectNoGenericDesignClarification(page);
-
-    const approveButton = page.getByRole("button", { name: /Approve & Continue/i });
-    const approvalBanner = page.getByText("Phase ready for review", { exact: false });
-    try {
-      await expect(approveButton).toBeVisible({ timeout: 60_000 });
-    } catch {
-      await expect(approvalBanner).toBeVisible({ timeout: 60_000 });
-    }
-
-    const previewImage = page.getByAltText("Generated plan preview");
-    await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
+    await expect(page.getByText(/Civora AI|Next action|review-required|review context|placed|site/i).last()).toBeVisible({
+      timeout: 30_000,
+    });
 
     await page.screenshot({
       path: path.join(artifactDir, "civora-after-prompt.png"),
       fullPage: true,
     });
 
-    if (await approveButton.isVisible().catch(() => false)) {
-      await approveButton.scrollIntoViewIfNeeded();
-      await approveButton.click({ force: true });
-      const gradingMessage = page.getByText(
-        "Proposed grading surface built. Review it and approve when you want to continue.",
-        { exact: true },
-      );
-      const completedPhaseSummary = page.getByText("2/5 phases complete", { exact: true });
-      try {
-        await expect(gradingMessage).toBeVisible({ timeout: 60_000 });
-      } catch {
-        await expect(completedPhaseSummary).toBeVisible({ timeout: 60_000 });
-      }
-      await previewImage.waitFor({ state: "visible", timeout: 12_000 }).catch(() => null);
-      await page.screenshot({
-        path: path.join(artifactDir, "civora-after-approve.png"),
-        fullPage: true,
-      });
-    }
+    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate|Run review concepts/i, {
+      timeout: 15_000,
+    });
+    await page.getByTestId("generate-main-action").click();
+    await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input|Started/i, {
+      timeout: 30_000,
+    });
+
+    await page.screenshot({
+      path: path.join(artifactDir, "civora-after-generate.png"),
+      fullPage: true,
+    });
+
+    await page.getByRole("button", { name: /^Deliver$/ }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Deliver|Review package/i, {
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: /Make Review Package/i }).click();
+    await expect(page.getByTestId("deliver-review-package-summary")).toContainText(
+      /Package made|Package needs input|Review package needs input|Needs input/i,
+      { timeout: 30_000 },
+    );
+    await page.screenshot({
+      path: path.join(artifactDir, "civora-after-deliver.png"),
+      fullPage: true,
+    });
   }
 });
