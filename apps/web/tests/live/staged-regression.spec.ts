@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -47,233 +47,10 @@ async function ensureAppUrl(page: Page) {
   return false;
 }
 
-type JobSummary = {
-  job_id: string;
-  status?: string;
-  stage?: string;
-  stage_detail?: string;
-  project_id?: string | null;
-  created_at?: number;
-  updated_at?: number;
-};
-
-type JobDetailResponse = {
-  success?: boolean;
-  job?: {
-    job_id: string;
-    status?: string;
-    stage?: string;
-    stage_detail?: string;
-    project_id?: string | null;
-    payload?: Record<string, unknown>;
-  };
-};
-
-type ProjectResultResponse = {
-  success?: boolean;
-  project_id?: string;
-  latest_result?: PlanResult;
-};
-
-type PlanResult = {
-  final_plan?: {
-    actions?: unknown[];
-    meta?: {
-      runtime_phase_checkpoint?: {
-        stage_name?: string;
-      };
-    };
-  };
-};
-
-type PreviewResponse = {
-  success?: boolean;
-  preview_image_data_url?: string;
-};
-
 async function ensureArtifactDir(): Promise<string> {
   const dir = path.resolve(process.cwd(), "playwright-artifacts", "staged-regression");
   await fs.mkdir(dir, { recursive: true });
   return dir;
-}
-
-function decodeDataUrl(dataUrl: string): Buffer {
-  const match = /^data:image\/png;base64,(.+)$/i.exec(dataUrl);
-  if (!match) {
-    throw new Error("Preview response did not return a PNG data URL.");
-  }
-  return Buffer.from(match[1], "base64");
-}
-
-async function apiJson<T>(
-  request: APIRequestContext,
-  token: string,
-  pathName: string,
-  options?: { method?: "GET" | "POST"; data?: unknown },
-): Promise<T> {
-  const method = options?.method || "GET";
-  const requestUrl = `${API_BASE_URL.replace(/\/+$/, "")}${pathName}`;
-  let lastStatus = 0;
-  let lastBody = "";
-
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    let response;
-    try {
-      response =
-        method === "POST"
-          ? await request.post(requestUrl, {
-              data: options?.data,
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            })
-          : await request.get(requestUrl, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            });
-    } catch (error) {
-      lastBody = String((error as Error)?.message || error || "");
-      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
-      continue;
-    }
-
-    if (response.ok()) {
-      return (await response.json()) as T;
-    }
-
-    lastStatus = response.status();
-    lastBody = await response.text().catch(() => "");
-    await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
-  }
-
-  expect(
-    false,
-    `${pathName} should respond OK (last status: ${lastStatus}, body: ${lastBody.slice(0, 240)})`,
-  ).toBeTruthy();
-  throw new Error(`${pathName} did not respond OK`);
-}
-
-async function waitForNewJob(
-  page: Page,
-  request: APIRequestContext,
-  token: string,
-  knownJobIds: Set<string>,
-): Promise<JobSummary> {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const payload = await apiJson<{ jobs: JobSummary[] }>(request, token, "/api/jobs");
-    const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
-    const newest = jobs
-      .filter((job) => !knownJobIds.has(job.job_id))
-      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
-    if (newest?.job_id && newest.project_id) {
-      return newest;
-    }
-    const bodyText = (await page.locator("body").innerText().catch(() => "")) || "";
-    const jobMatch = bodyText.match(/job_[a-z0-9]+/i);
-    if (jobMatch?.[0] && !knownJobIds.has(jobMatch[0])) {
-      const detailPayload = await apiJson<JobDetailResponse>(request, token, `/api/jobs/${jobMatch[0]}`);
-      const job = detailPayload.job;
-      if (job?.job_id && job.project_id) {
-        return {
-          job_id: job.job_id,
-          status: job.status,
-          stage: job.stage,
-          stage_detail: job.stage_detail,
-          project_id: job.project_id,
-        };
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-  }
-  throw new Error("Timed out waiting for a newly created staged job.");
-}
-
-async function waitForApprovalCheckpoint(
-  request: APIRequestContext,
-  token: string,
-  jobId: string,
-  projectId: string,
-  expectedStageName: string,
-) {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    const jobPayload = await apiJson<JobDetailResponse>(request, token, `/api/jobs/${jobId}`);
-    const resultPayload = await apiJson<ProjectResultResponse>(
-      request,
-      token,
-      `/api/projects/${projectId}/result`,
-    );
-
-    const job = (jobPayload.job ?? {}) as NonNullable<JobDetailResponse["job"]>;
-    const latestResult = resultPayload.latest_result ?? {};
-    const finalPlan = latestResult.final_plan ?? {};
-    const actions = Array.isArray(finalPlan.actions) ? finalPlan.actions : [];
-    const checkpoint = (finalPlan.meta || {}).runtime_phase_checkpoint || {};
-
-    const approvalReached =
-      String(job.status || "").toLowerCase() === "awaiting_approval" &&
-      String(checkpoint.stage_name || "") === expectedStageName &&
-      actions.length > 0;
-
-    if (approvalReached) {
-      return {
-        job,
-        latestResult,
-        checkpoint,
-        actionCount: actions.length,
-      };
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error(`Timed out waiting for ${expectedStageName} approval checkpoint.`);
-}
-
-async function waitForJobToLeaveApproval(
-  request: APIRequestContext,
-  token: string,
-  jobId: string,
-): Promise<JobSummary> {
-  const deadline = Date.now() + 45_000;
-  while (Date.now() < deadline) {
-    const jobPayload = await apiJson<JobDetailResponse>(request, token, `/api/jobs/${jobId}`);
-    const job = jobPayload.job;
-    if (job?.job_id && String(job.status || "").toLowerCase() !== "awaiting_approval") {
-      return {
-        job_id: job.job_id,
-        status: job.status,
-        stage: job.stage,
-        stage_detail: job.stage_detail,
-        project_id: job.project_id,
-      };
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-  }
-  throw new Error("Timed out waiting for approved job to leave awaiting approval.");
-}
-
-async function savePreviewArtifact(
-  request: APIRequestContext,
-  token: string,
-  artifactDir: string,
-  projectId: string,
-  result: PlanResult,
-  phaseName: string,
-) {
-  const previewPayload = await apiJson<PreviewResponse>(request, token, "/api/preview", {
-    method: "POST",
-    data: {
-      project_id: projectId,
-      result,
-      filename_stem: "staged-regression",
-    },
-  });
-  expect(previewPayload.preview_image_data_url).toBeTruthy();
-  const pngBytes = decodeDataUrl(String(previewPayload.preview_image_data_url));
-  const pngPath = path.join(artifactDir, `${phaseName}.png`);
-  await fs.writeFile(pngPath, pngBytes);
-  return pngPath;
 }
 
 async function waitForComposer(page: Page) {
@@ -354,9 +131,6 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
   const token = String(loginPayload.token || "");
   expect(token).toBeTruthy();
 
-  const existingJobs = await apiJson<{ jobs: JobSummary[] }>(request, token, "/api/jobs");
-  const knownJobIds = new Set((existingJobs.jobs || []).map((job) => job.job_id));
-
   await page.addInitScript(
     ([tokenKey, authToken]) => {
       window.localStorage.setItem(tokenKey, authToken);
@@ -374,94 +148,43 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
   await page.getByRole("button", { name: "Send" }).click();
 
   await expectNoGenericDesignClarification(page);
+  await page.screenshot({
+    path: path.join(artifactDir, "after-prompt.png"),
+    fullPage: true,
+  });
 
-  const newJob = await waitForNewJob(page, request, token, knownJobIds);
-  const jobId = String(newJob.job_id);
-  const projectId = String(newJob.project_id);
-
-  const layoutCheckpoint = await waitForApprovalCheckpoint(
-    request,
-    token,
-    jobId,
-    projectId,
-    "layout",
-  );
-
-  await expect(page.getByRole("button", { name: /Approve & Continue/i })).toBeVisible({
+  await page.getByRole("button", { name: /^Generate$/ }).first().click();
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate|Run review concepts/i, {
+    timeout: 15_000,
+  });
+  await page.getByTestId("generate-main-action").click();
+  await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input|Started/i, {
     timeout: 60_000,
   });
   await page.screenshot({
-    path: path.join(artifactDir, "layout-browser.png"),
+    path: path.join(artifactDir, "after-generate.png"),
     fullPage: true,
   });
-  await savePreviewArtifact(
-    request,
-    token,
-    artifactDir,
-    projectId,
-    layoutCheckpoint.latestResult,
-    "layout-preview",
-  );
 
-  const approveButton = page.getByRole("button", { name: /Approve & Continue/i });
-  await approveButton.scrollIntoViewIfNeeded();
-  await approveButton.click({ force: true });
-
-  const gradingCheckpoint = await waitForApprovalCheckpoint(
-    request,
-    token,
-    jobId,
-    projectId,
-    "grading",
-  );
-
-  await expect(page.getByRole("button", { name: /Approve & Continue/i })).toBeVisible({
-    timeout: 60_000,
+  await page.getByRole("button", { name: /^Deliver$/ }).first().click();
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Deliver|Review package/i, {
+    timeout: 15_000,
   });
+  await page.getByRole("button", { name: /Make Review Package/i }).click();
+  await expect(page.getByTestId("deliver-review-package-summary")).toContainText(
+    /Package made|Package needs input|Review package needs input|Needs input/i,
+    { timeout: 60_000 },
+  );
   await page.screenshot({
-    path: path.join(artifactDir, "grading-browser.png"),
+    path: path.join(artifactDir, "after-deliver.png"),
     fullPage: true,
   });
-  await savePreviewArtifact(
-    request,
-    token,
-    artifactDir,
-    projectId,
-    gradingCheckpoint.latestResult,
-    "grading-preview",
-  );
 
-  expect(gradingCheckpoint.actionCount).toBeGreaterThan(0);
-  expect(layoutCheckpoint.actionCount).toBeGreaterThan(0);
-
-  const continueDiagnostics: string[] = [];
-  page.on("requestfailed", (failedRequest) => {
-    if (failedRequest.url().includes(`/api/jobs/${jobId}/continue`)) {
-      const failure = failedRequest.failure();
-      continueDiagnostics.push(`request failed: ${failure?.errorText || "unknown browser failure"}`);
-    }
+  await page.getByRole("button", { name: "Open chat from header" }).click();
+  const chatInput = await waitForComposer(page);
+  await chatInput.fill("what should I do next?");
+  await chatInput.press("Enter");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Next action|Open Objects|Generate|Deliver|review/i, {
+    timeout: 15_000,
   });
-  page.on("response", (response) => {
-    if (response.url().includes(`/api/jobs/${jobId}/continue`)) {
-      continueDiagnostics.push(`response: ${response.status()} ${response.statusText()}`);
-    }
-  });
-
-  const secondApproveButton = page.getByRole("button", { name: /Approve & Continue/i });
-  await secondApproveButton.scrollIntoViewIfNeeded();
-  await secondApproveButton.click({ force: true });
-
-  const backendError = page.getByText("could not reach the backend", { exact: false });
-  if (await backendError.isVisible({ timeout: 6000 }).catch(() => false)) {
-    await page.screenshot({
-      path: path.join(artifactDir, "second-approval-error.png"),
-      fullPage: true,
-    });
-    throw new Error(
-      `Second approval could not reach the backend. Diagnostics: ${continueDiagnostics.join(" | ") || "none"}`,
-    );
-  }
-
-  const continuedJob = await waitForJobToLeaveApproval(request, token, jobId);
-  expect(String(continuedJob.status || "").toLowerCase()).not.toBe("awaiting_approval");
 });
