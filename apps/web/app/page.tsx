@@ -12406,7 +12406,7 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(what.*(random|weird|messy).*(circle|line|shape|stuff)|what.*(circle|line|shape).*mean|why.*(circle|line|shape|preview).*look|explain.*(preview|drawing|canvas|map))/i.test(normalized)) {
+    if (/(what.*(random|weird|messy).*(circle|line|shape|stuff)|what.*(circle|line|shape).*mean|why.*(circle|line|shape|preview).*look|explain.*(preview|drawing|canvas|map)|what\s+am\s+i\s+looking\s+at|what.*on.*(canvas|preview|map|plan))/i.test(normalized)) {
       const visibleObjects = placed.filter((item) => !item.meta?.ui_hidden);
       const byKind = (matcher: (item: BuildingPlacement) => boolean) => visibleObjects.filter(matcher).length;
       const lineCount = byKind((item) =>
@@ -12427,6 +12427,16 @@ function PerformanceAIDashboardView({
       const draftCount = visibleObjects.filter((item) =>
         ["user", "user_confirmed", "manual_drawn"].includes(String(item.source)) || item.meta?.command_created,
       ).length;
+      const semanticCount = visibleObjects.filter((item) =>
+        Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state),
+      ).length;
+      const fallbackCount = visibleObjects.filter((item) =>
+        Boolean(item.meta?.fallback_bounds_only || item.meta?.bounds_only || item.meta?.generated_review_concept),
+      ).length;
+      const hiddenTraceCount = buildingPlacements.filter((item) => item.meta?.combined_into_object_id || item.meta?.ui_hidden).length;
+      const combinedCount = visibleObjects.filter((item) =>
+        Array.isArray(item.meta?.combined_from_object_ids) && item.meta.combined_from_object_ids.length > 0,
+      ).length;
       const selectedLine = selected
         ? `Selected now: ${formatPlacement(selected)}.`
         : "Nothing is selected; click a shape or open Object Manager to inspect one.";
@@ -12439,8 +12449,12 @@ function PerformanceAIDashboardView({
           `- Filled/outlined areas are the site, buildings, parking, basins, or drawn areas (${areaCount} visible).`,
           sourcePreviewCount ? `- ${sourcePreviewCount} item(s) came from source/context detection and are shown as review candidates.` : "",
           draftCount ? `- ${draftCount} item(s) are user/draft objects you can select, rename, hide, recolor, or delete in Object Manager.` : "",
+          semanticCount ? `- ${semanticCount} item(s) are semantic objects, so Generate can understand them as buildings, parking, basins, roads, or utilities instead of anonymous lines.` : "",
+          combinedCount ? `- ${combinedCount} combined object(s) are shown as one clean item; their original source pieces stay hidden until you choose Explode combined.` : "",
+          fallbackCount ? `- ${fallbackCount} item(s) are fallback/bounds previews, so they are planning placeholders until better source or drawn geometry exists.` : "",
+          hiddenTraceCount ? `- ${hiddenTraceCount} hidden/trace piece(s) are intentionally tucked away to keep the plan clean; Object Manager can show or explode them when needed.` : "",
           selectedLine,
-          "If something looks wrong, select it and use Object Manager to rename, change type/color, hide it, or delete it. Civora should not leave unexplained marks on the canvas.",
+          "If something looks wrong, select it and use Object Manager to rename, change type/color, combine/explode, hide it, or delete it. Civora should not leave unexplained marks on the canvas.",
         ].filter(Boolean).join("\n"),
         "status",
       );
@@ -12737,7 +12751,7 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/(show.*in\s+3d|open\s+3d|3d\s+view|show\s+this\s+3d|what am i looking at)/i.test(normalized)) {
+    if (/(show.*in\s+3d|open\s+3d|3d\s+view|show\s+this\s+3d)/i.test(normalized)) {
       setActiveWorkspaceMode("canvas");
       setPreviewMode("3d");
       handleOpenSidePanel("details");

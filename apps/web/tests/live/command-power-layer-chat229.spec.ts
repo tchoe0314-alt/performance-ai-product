@@ -94,6 +94,12 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(panel).toContainText("Circles/points are usually hydrants, inlets, outfalls, manholes, or point markers");
     await expect(panel).toContainText("Object Manager");
     await expect(panel).not.toContainText(/construction-ready|approved for construction/i);
+
+    await runCommand(page, "what am I looking at?");
+    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    await expect(panel).toContainText("The preview is a review canvas", { timeout: 5_000 });
+    await expect(panel).toContainText(/select, rename, hide, recolor, or delete|rename, change type\/color/i);
+    await expect(panel).not.toContainText("Opened the 3D civil model workspace");
   });
 
   test("natural language address and site size setup bypasses generic design clarification", async ({ page }) => {
