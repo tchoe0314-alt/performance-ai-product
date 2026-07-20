@@ -305,7 +305,6 @@ import type {
   DraftBlockDefinition,
   DraftUndoAction,
   PerformanceAIDashboardProps,
-  PrimaryWorkflowItem,
   RecentChange,
 } from "./utils/dashboardTypes";
 import { buildCadEntityPreview, type CadEntityPreview } from "./utils/cadEntityPreview";
@@ -314,7 +313,11 @@ import {
   disciplinePanelLinks,
   engineeringHealthPanelLinks,
   formatProjectStatusText,
+  isDashboardDisciplinePanel,
   projectStatusDisplayLabel,
+  resolveDashboardControlsHealthStatus,
+  resolveDashboardSidebarModeStatus,
+  resolveSidePanelForRender,
   sidePanelCopy,
   workspaceModeByPanel,
   workspacePanelByMode,
@@ -15099,9 +15102,11 @@ function PerformanceAIDashboardView({
     [activePlacementId, buildingPlacements, selectedObjectIds],
   );
   const { selectedBuilding, selectedObjectSet, selectedObjectRows, selectedObjectMeasurements, selectedObjectMeasurementSummary, hiddenObjectCount, objectManagerTypes, objectManagerLayerRows } = objectSelectionView;
-  const sidePanelForRender = rightRailCollapsed
-    ? null
-    : activeSidePanel ?? renderedSidePanel ?? "dashboard";
+  const sidePanelForRender = resolveSidePanelForRender({
+    rightRailCollapsed,
+    activeSidePanel,
+    renderedSidePanel,
+  });
   const customerTemplateSummaries = customerTemplates?.summaries ?? [];
   const activeCustomerTemplate = customerTemplates?.behavior?.active_template ?? null;
   const customerTemplateBlockerCount = Number(customerTemplates?.behavior?.blockers?.length ?? 0);
@@ -15120,7 +15125,7 @@ function PerformanceAIDashboardView({
   const standardsPanelRows = capabilityAuditRows.filter(
     (item) => item.key === "standards_source_registry" || item.key === "candidate_standards_review",
   );
-  const isDisciplinePanel = disciplinePanelLinks.some((item) => item.panel === sidePanelForRender);
+  const isDisciplinePanel = isDashboardDisciplinePanel(sidePanelForRender);
   const handleOpenSidePanel = useCallback((panel: SidePanelKey | null) => {
     if (sidePanelCloseTimeoutRef.current !== null) {
       window.clearTimeout(sidePanelCloseTimeoutRef.current);
@@ -15206,7 +15211,7 @@ function PerformanceAIDashboardView({
     }
     handleOpenSidePanel(nextPanel);
   }, [handleOpenSidePanel]);
-  const controlsHealthStatus = Object.values(systemStatuses).some((value) => value === "fresh") ? "ok" : "review";
+  const controlsHealthStatus = resolveDashboardControlsHealthStatus(systemStatuses);
   const panelStatus = (target: SidePanelKey): SidebarStatus =>
     resolveDashboardPanelStatus(target, {
       issuesLength: issues.length,
@@ -15237,34 +15242,30 @@ function PerformanceAIDashboardView({
       customerTemplates,
       utilityCatalog,
     });
-  const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus => {
-    if (mode === "trust") return "ok";
-    if (mode === "dashboard") return panelStatus("dashboard");
-    if (mode === "setup") return siteScaleLocked ? "ok" : "review";
-    if (mode === "canvas") return panelStatus("model");
-    if (mode === "layers") return panelStatus("layers");
-    if (mode === "deliver") return String(previewReview?.release_status || "review").toLowerCase() === "blocked" ? "review" : panelStatus("deliverables");
-    if (mode === "data") return panelStatus("data");
-    if (mode === "settings") return panelStatus("settings");
-    return "idle";
-  };
-	  const activePrimaryWorkflowKey = resolveActivePrimaryWorkflowKey({
-	    sidePanelForRender,
-	    activeWorkspaceMode,
-	  });
-	  const primaryWorkflowItems: PrimaryWorkflowItem[] = buildDashboardPrimaryWorkflowItems({
-	    sidebarModeStatus,
-	    panelStatus,
-	    siteScaleLocked,
-	    placedObjectCount: placedObjects.length,
-	    pendingPlacementCount: pendingPlacementObjects.length,
-	    hasHardSystemBlock,
-	    controlsHealthStatus,
-	    systemStatuses,
-	    issueCount: issues.length + analysisIssues.length,
-	    backendResultPresent: Boolean(backendResult),
-	    exportBlockReason,
-	  });
+  const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus =>
+    resolveDashboardSidebarModeStatus({
+      mode,
+      panelStatus,
+      siteScaleLocked,
+      previewReleaseStatus: previewReview?.release_status,
+    });
+  const activePrimaryWorkflowKey = resolveActivePrimaryWorkflowKey({
+    sidePanelForRender,
+    activeWorkspaceMode,
+  });
+  const primaryWorkflowItems = buildDashboardPrimaryWorkflowItems({
+    sidebarModeStatus,
+    panelStatus,
+    siteScaleLocked,
+    placedObjectCount: placedObjects.length,
+    pendingPlacementCount: pendingPlacementObjects.length,
+    hasHardSystemBlock,
+    controlsHealthStatus,
+    systemStatuses,
+    issueCount: issues.length + analysisIssues.length,
+    backendResultPresent: Boolean(backendResult),
+    exportBlockReason,
+  });
   const handleCancelActiveTool = useCallback(() => {
     if (shortcutsOverlayOpen) {
       setShortcutsOverlayOpen(false);
@@ -16311,7 +16312,7 @@ function PerformanceAIDashboardView({
                   <DisciplinePanelTabs
                     items={disciplinePanelLinks}
                     activePanel={sidePanelForRender}
-                    onOpenPanel={handleOpenSidePanel}
+                    onOpenPanel={(panel) => handleOpenSidePanel(panel)}
                   />
                 ) : null}
                 {sidePanelForRender === "projects" ? (

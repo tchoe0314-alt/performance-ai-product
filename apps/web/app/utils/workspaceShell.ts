@@ -1,3 +1,5 @@
+import type { SystemStatus } from "./workflowConstants";
+
 export type SidePanelKey =
   | "projects"
   | "trust"
@@ -193,3 +195,51 @@ export const workspacePanelByMode: Record<WorkspaceMode, SidePanelKey> = {
   data: "data",
   settings: "settings",
 };
+
+export function resolveSidePanelForRender({
+  rightRailCollapsed,
+  activeSidePanel,
+  renderedSidePanel,
+}: {
+  rightRailCollapsed: boolean;
+  activeSidePanel: SidePanelKey | null;
+  renderedSidePanel: SidePanelKey | null;
+}): SidePanelKey | null {
+  return rightRailCollapsed ? null : activeSidePanel ?? renderedSidePanel ?? "dashboard";
+}
+
+export function isDashboardDisciplinePanel(panel: SidePanelKey | null): boolean {
+  return disciplinePanelLinks.some((item) => item.panel === panel);
+}
+
+export function resolveDashboardControlsHealthStatus(
+  systemStatuses: Record<string, SystemStatus>,
+): SidebarStatus {
+  return Object.values(systemStatuses).some((value) => value === "fresh") ? "ok" : "review";
+}
+
+export function resolveDashboardSidebarModeStatus({
+  mode,
+  panelStatus,
+  siteScaleLocked,
+  previewReleaseStatus,
+}: {
+  mode: WorkspaceMode;
+  panelStatus: (target: SidePanelKey) => SidebarStatus;
+  siteScaleLocked: boolean;
+  previewReleaseStatus: unknown;
+}): SidebarStatus {
+  if (mode === "trust") return "ok";
+  if (mode === "dashboard") return panelStatus("dashboard");
+  if (mode === "setup") return siteScaleLocked ? "ok" : "review";
+  if (mode === "canvas") return panelStatus("model");
+  if (mode === "layers") return panelStatus("layers");
+  if (mode === "deliver") {
+    return String(previewReleaseStatus || "review").toLowerCase() === "blocked"
+      ? "review"
+      : panelStatus("deliverables");
+  }
+  if (mode === "data") return panelStatus("data");
+  if (mode === "settings") return panelStatus("settings");
+  return "idle";
+}
