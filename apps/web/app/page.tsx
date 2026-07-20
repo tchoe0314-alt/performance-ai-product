@@ -96,6 +96,7 @@ import type {
   PlanPdfEditableSheet,
   PlanPdfElement,
   CadEntityModelEntityV1,
+  RequestedSiteProgramV1,
 } from "./types";
 
 type SystemGenerationTarget = "roads" | "parking" | "grading" | "drainage" | "utilities" | "full";
@@ -1203,6 +1204,124 @@ const SITE_OBJECT_CATALOG: Record<
   lot_block: { label: "Lot / Subdivision Block", category: "advanced", defaultW: 160, defaultD: 120 },
   bridge: { label: "Bridge", category: "advanced", defaultW: 80, defaultD: 24 },
   custom: { label: "Custom Geometry", category: "advanced", defaultW: 40, defaultD: 40 },
+};
+
+const REQUESTED_PROGRAM_OBJECT_TYPE_MAP: Record<string, SiteObjectType> = {
+  office_building: "office_building",
+  building: "building",
+  parking: "parking",
+  detention_basin: "basin",
+  basin: "basin",
+  driveway: "driveway",
+  road: "road",
+  sidewalk: "sidewalk",
+  ada_route: "sidewalk",
+  water: "utility_corridor",
+  sanitary: "utility_corridor",
+  storm: "utility_corridor",
+};
+
+const requestedProgramToPendingPlacements = (
+  program: RequestedSiteProgramV1 | undefined,
+  existing: BuildingPlacement[] = [],
+): BuildingPlacement[] => {
+  if (!program || typeof program !== "object") return [];
+  const existingKeys = new Set(
+    existing
+      .map((item) => `${item.type ?? "custom"}:${String(item.meta?.requested_program_key ?? item.label).toLowerCase()}`)
+      .filter(Boolean),
+  );
+  const pending: BuildingPlacement[] = [];
+  const addPending = (
+    rawType: string,
+    label: string,
+    extra: Partial<BuildingPlacement> = {},
+    meta: Record<string, unknown> = {},
+  ) => {
+    const type = REQUESTED_PROGRAM_OBJECT_TYPE_MAP[rawType] ?? "custom";
+    const catalog = SITE_OBJECT_CATALOG[type] ?? SITE_OBJECT_CATALOG.custom;
+    const key = `${type}:${label.toLowerCase()}`;
+    if (existingKeys.has(key) || pending.some((item) => `${item.type}:${item.label.toLowerCase()}` === key)) {
+      return;
+    }
+    pending.push({
+      id: `requested-${rawType}-${pending.length + 1}`,
+      label,
+      type,
+      w: extra.w ?? catalog.defaultW,
+      d: extra.d ?? catalog.defaultD,
+      h: extra.h ?? catalog.defaultH,
+      stallCount: extra.stallCount,
+      rotation: 0,
+      placed: false,
+      locked: false,
+      source: "user",
+      generated: false,
+      capabilities: {
+        movable: true,
+        resizable: true,
+        rotatable: true,
+        deletable: true,
+      },
+      systemDependencies: extra.systemDependencies ?? ["roads", "parking", "grading", "drainage", "utilities"],
+      meta: {
+        requested_program_key: label,
+        requested_program_source: program.source || "chat_natural_language",
+        draft_review_required: true,
+        construction_release_allowed: false,
+        ...meta,
+      },
+    });
+  };
+
+  (program.requested_objects ?? []).forEach((item) => {
+    const rawType = String(item.type || "").trim();
+    if (!rawType) return;
+    if (rawType === "office_building") {
+      const area = typeof item.area_sf === "number" ? item.area_sf : undefined;
+      const depth = area ? Math.round(Math.sqrt(area / 1.8)) : SITE_OBJECT_CATALOG.office_building.defaultD;
+      const width = area ? Math.round(area / Math.max(depth, 1)) : SITE_OBJECT_CATALOG.office_building.defaultW;
+      addPending(
+        rawType,
+        area ? `Office Building - ${Math.round(area).toLocaleString()} sf` : item.label || "Office Building",
+        { w: width, d: depth, h: SITE_OBJECT_CATALOG.office_building.defaultH, systemDependencies: ["parking", "grading", "drainage", "utilities"] },
+        area ? { requested_area_sf: Math.round(area) } : {},
+      );
+      return;
+    }
+    if (rawType === "parking") {
+      const stalls = typeof item.stall_count === "number" ? item.stall_count : undefined;
+      addPending(
+        rawType,
+        stalls ? `Parking Field - ${Math.round(stalls)} stalls` : item.label || "Parking Field",
+        { stallCount: stalls, w: SITE_OBJECT_CATALOG.parking.defaultW, d: SITE_OBJECT_CATALOG.parking.defaultD, systemDependencies: ["parking", "grading", "drainage"] },
+        stalls ? { requested_stalls: Math.round(stalls) } : {},
+      );
+      return;
+    }
+    const fallbackLabel =
+      rawType === "detention_basin"
+        ? "Detention Basin"
+        : rawType === "driveway"
+          ? "Driveway Connection"
+          : rawType === "sidewalk" || rawType === "ada_route"
+            ? "Sidewalk / ADA Route"
+            : SITE_OBJECT_CATALOG[REQUESTED_PROGRAM_OBJECT_TYPE_MAP[rawType] ?? "custom"]?.label || rawType;
+    addPending(rawType, fallbackLabel);
+  });
+
+  (program.requested_systems ?? []).forEach((system) => {
+    const key = String(system || "").toLowerCase();
+    if (key === "water") {
+      addPending("water", "Public Water Line", { systemDependencies: ["utilities"] }, { network: "water" });
+    } else if (key === "sanitary") {
+      addPending("sanitary", "Public Sanitary Line", { systemDependencies: ["utilities"] }, { network: "sanitary" });
+    } else if (key === "storm") {
+      addPending("storm", "Storm Sewer", { systemDependencies: ["drainage", "utilities"] }, { network: "storm" });
+    }
+  });
+
+  return pending;
 };
 
 const clampValue = (value: number, min: number, max: number) =>
@@ -3763,9 +3882,15 @@ function PerformanceAIDashboardView({
     }, 0);
     const resolvedParkingCount =
       parkingFromPlacements > 0 ? parkingFromPlacements : parkingCountValue;
+    const requestedOfficeArea = buildingOverrides
+      .map((placement) => Number(placement.meta?.requested_area_sf))
+      .find((value) => Number.isFinite(value) && value > 0);
 
-    if (resolvedParkingCount !== null) {
-      manualFields.site_plan = { parking_count: resolvedParkingCount };
+    if (resolvedParkingCount !== null || requestedOfficeArea) {
+      manualFields.site_plan = {
+        ...(resolvedParkingCount !== null ? { parking_count: resolvedParkingCount } : {}),
+        ...(requestedOfficeArea ? { building_program_sf: requestedOfficeArea, building_type: "office" } : {}),
+      };
     }
 
     if (allPlacementSnapshots.length) {
@@ -3882,6 +4007,7 @@ function PerformanceAIDashboardView({
       meta: {
         chat_thread: chatMessagesRef.current,
         site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
+        requested_site_program_v1: currentProject?.project_input?.meta?.requested_site_program_v1,
         system_dirty_state: systemStatuses,
         reactive_edit_policy_preference: REACTIVE_EDIT_POLICY_PREFERENCE,
         site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
@@ -5860,7 +5986,8 @@ function PerformanceAIDashboardView({
 
     const manualFields = projectInput.manual_fields ?? {};
     const lot = (manualFields.lot ?? {}) as { w?: number; h?: number };
-    const sitePlan = (manualFields.site_plan ?? {}) as { parking_count?: number };
+    const sitePlan = (manualFields.site_plan ?? {}) as { parking_count?: number; building_program_sf?: number; building_type?: string };
+    const requestedProgram = projectInput.meta?.requested_site_program_v1;
     const gradingFields = (manualFields.grading ?? {}) as {
       min_slope_pct?: number;
       max_parking_slope_pct?: number;
@@ -6149,13 +6276,21 @@ function PerformanceAIDashboardView({
             },
           } satisfies BuildingPlacement]
         : [];
-    const mergedPlacements = siteObjectPlacements.length
+    const baseRestoredPlacements = siteObjectPlacements.length
       ? siteObjectPlacements
       : [...restoredSiteBoundary, ...parsedPlacements, ...pondPlacements, ...inletPlacements];
+    const requestedProgramPlacements = requestedProgramToPendingPlacements(requestedProgram, baseRestoredPlacements);
+    const mergedPlacements = [...baseRestoredPlacements, ...requestedProgramPlacements];
     setBuildingPlacements(mergedPlacements);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
     setParkingCount(String(sitePlan.parking_count ?? ""));
+    if (sitePlan.building_type === "office" && typeof sitePlan.building_program_sf === "number" && !manualFields.building_width && !manualFields.building_depth) {
+      const depth = Math.round(Math.sqrt(sitePlan.building_program_sf / 1.8));
+      const width = Math.round(sitePlan.building_program_sf / Math.max(depth, 1));
+      setBuildingWidth(String(width));
+      setBuildingDepth(String(depth));
+    }
     setMinSlopePct(String(gradingFields.min_slope_pct ?? ""));
     if (typeof (gradingFields as Record<string, unknown>).assumed_terrain_slope_pct === "number") {
       const slopePct = Number((gradingFields as Record<string, unknown>).assumed_terrain_slope_pct);

@@ -1431,6 +1431,7 @@ export type ProjectInputMeta = Record<string, unknown> & {
   chat_thread?: ChatMessage[];
   auto_named?: boolean;
   auto_file_named?: boolean;
+  requested_site_program_v1?: RequestedSiteProgramV1;
   reactive_edit_policy_preference?: {
     live_visual_update?: boolean;
     cheap_validation_auto_run?: boolean;
@@ -1439,6 +1440,25 @@ export type ProjectInputMeta = Record<string, unknown> & {
     require_confirmation_for_heavy_engineering?: boolean;
     stale_exports_block_download?: boolean;
   };
+};
+
+export type RequestedSiteProgramObjectV1 = {
+  type?: string;
+  label?: string;
+  area_sf?: number;
+  stall_count?: number;
+  status?: string;
+};
+
+export type RequestedSiteProgramV1 = {
+  schema_version?: "requested_site_program_v1";
+  source?: string;
+  summary?: string;
+  review_required?: boolean;
+  engineer_review_required?: boolean;
+  construction_release_allowed?: false;
+  requested_objects?: RequestedSiteProgramObjectV1[];
+  requested_systems?: string[];
 };
 
 export type CanonicalGeometryType = "polyline" | "polygon" | "rect" | "point";
@@ -1528,7 +1548,7 @@ export type ManualFields = {
     systemDependencies?: string[];
   }>;
   canonical_geometry_handoff_v1?: CanonicalGeometryHandoffV1[];
-  site_plan?: { parking_count?: number };
+  site_plan?: { parking_count?: number; building_program_sf?: number; building_type?: string };
   grading?: {
     min_slope_pct?: number;
     max_parking_slope_pct?: number;

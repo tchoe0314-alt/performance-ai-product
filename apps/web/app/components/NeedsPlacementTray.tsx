@@ -39,6 +39,7 @@ export function NeedsPlacementTray({ items, onPlace }: NeedsPlacementTrayProps) 
               </div>
               <button
                 type="button"
+                aria-label={`Place ${item.label}`}
                 onClick={() => onPlace(item.id)}
                 className="shrink-0 rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
               >

@@ -221,6 +221,88 @@ async function openSetup(page: Page) {
 }
 
 test.describe("project drawer reliability", () => {
+  test("restores requested chat program as actionable placement tray objects", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    store.set("requested-program-project", {
+      project_id: "requested-program-project",
+      name: "Requested Program Project",
+      updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        full_design_mode: true,
+        input_mode: "user",
+        prompt_text: "Saved project with requested program.",
+        meta: {
+          requested_site_program_v1: {
+            schema_version: "requested_site_program_v1",
+            source: "chat_natural_language",
+            summary: "28,000 sf office building, 140 parking spaces; systems: water, sanitary, storm",
+            review_required: true,
+            engineer_review_required: true,
+            construction_release_allowed: false,
+            requested_objects: [
+              { type: "office_building", label: "office building", area_sf: 28000, status: "requested_not_placed" },
+              { type: "parking", label: "parking", stall_count: 140, status: "requested_not_placed" },
+              { type: "detention_basin", label: "detention basin", status: "requested_not_placed" },
+              { type: "driveway", label: "driveway connection", status: "requested_not_placed" },
+              { type: "sidewalk", label: "sidewalks", status: "requested_not_placed" },
+              { type: "ada_route", label: "ADA routes", status: "requested_not_placed" },
+            ],
+            requested_systems: ["water", "sanitary", "storm", "drainage", "roadway"],
+          },
+          site_inputs: {
+            address: "20525 Margo St, Gretna, NE",
+            site_alignment_locked: true,
+          },
+        },
+        manual_fields: {
+          project_name: "Requested Program Project",
+          units: "ft",
+          lot: { x: 0, y: 0, w: 1000, h: 1000 },
+          site_plan: { parking_count: 140, building_program_sf: 28000, building_type: "office" },
+        },
+      },
+      latest_result: {
+        success: true,
+        final_plan: {
+          meta: {
+            location_context: { address: "20525 Margo St, Gretna, NE" },
+            requested_site_program_v1: {
+              schema_version: "requested_site_program_v1",
+              summary: "28,000 sf office building, 140 parking spaces; systems: water, sanitary, storm",
+              construction_release_allowed: false,
+            },
+          },
+        },
+      },
+      has_result: true,
+    });
+    await mockShell(page, store);
+    await page.addInitScript(() => {
+      window.localStorage.setItem("civora.activeProjectId", "requested-program-project");
+    });
+
+    await openApp(page);
+    await openProjects(page);
+    await expect(page.getByTestId("project-drawer-state")).toContainText(/Saved|Restored/i);
+    await page.getByRole("button", { name: "Open project Requested Program Project" }).click();
+
+    await page.getByRole("button", { name: "Open workspace controls" }).click();
+    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await expect(page.getByTestId("needs-placement-tray")).toContainText("Office Building - 28,000 sf");
+    await expect(page.getByTestId("needs-placement-tray")).toContainText("Parking Field - 140 stalls");
+    await expect(page.getByTestId("needs-placement-tray")).toContainText("Detention Basin");
+    await expect(page.getByTestId("needs-placement-tray")).toContainText("Public Water Line");
+    await expect(page.getByTestId("needs-placement-tray")).toContainText("Public Sanitary Line");
+    await expect(page.getByTestId("needs-placement-tray")).toContainText("Storm Sewer");
+
+    await page.getByRole("button", { name: "Place Office Building - 28,000 sf" }).click();
+    await page.getByTestId("workspace-canvas-shell").click({ position: { x: 360, y: 260 } });
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("7 pending");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls");
+    await expect(page.getByTestId("object-manager-panel")).toContainText("Unplaced");
+  });
+
   test("opens, clears drafts, saves, restores, deletes, reloads, and reports backend blockers", async ({ page }) => {
     const pageErrors: string[] = [];
     const consoleErrors: string[] = [];
