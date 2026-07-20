@@ -109,6 +109,11 @@ import {
   buildDashboardIssueTargets,
 } from "./utils/dashboardIssueTargets";
 import {
+  buildDashboardCalculationOverlayStats,
+  buildDashboardEngineeringMetrics,
+  buildDashboardMeasurementOverlayStats,
+} from "./utils/dashboardEngineeringMetrics";
+import {
   buildObjectManagerLayerRows,
   buildObjectManagerTypes,
   buildCustomGeometryMeta,
@@ -1795,63 +1800,28 @@ function PerformanceAIDashboardView({
 
   const selectedIssueLabel = issueTargets.find((item) => item.id === selectedIssueId)?.label ?? "";
 
-  const totalPipeLength =
-    readMetricValue(managerMetrics.storm_pipe_length_ft) ??
-    (pipeSegments.length
-      ? pipeSegments.reduce((sum, seg) => sum + Number(seg.length_ft || 0), 0)
-      : null);
-  const maxSlope = pipeSegments.length
-    ? Math.max(
-        ...pipeSegments.map((seg) =>
-          Number(seg.slope_pct ?? (seg.slope_ft_ft ?? 0) * 100),
-        ),
-      )
-    : null;
-  const minSlope = pipeSegments.length
-    ? Math.min(
-        ...pipeSegments.map((seg) =>
-          Number(seg.slope_pct ?? (seg.slope_ft_ft ?? 0) * 100),
-        ),
-      )
-    : null;
-  const flowCfs =
-    readMetricValue(managerMetrics.pipe_capacity_total_cfs) ??
-    readMetricValue(stormSummary.total_system_flow_cfs) ??
-    readMetricValue(stormSummary.total_system_capacity_cfs) ??
-    null;
-  const cutFillNet =
-    readMetricValue(managerMetrics.earthwork_net_cf) ??
-    readMetricValue((gradingSummary as { earthwork?: { net_cf?: number } })?.earthwork?.net_cf) ??
-    null;
-  const basinSize =
-    (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.area_sf) ||
-    (Array.isArray(drainageSummary?.basins) && drainageSummary.basins[0]?.footprint_area_sf) ||
-    null;
+  const engineeringMetrics = useMemo(
+    () => buildDashboardEngineeringMetrics({
+      managerMetrics,
+      pipeSegments,
+      stormSummary,
+      gradingSummary,
+      drainageSummary,
+    }),
+    [drainageSummary, gradingSummary, managerMetrics, pipeSegments, stormSummary],
+  );
+  const { totalPipeLength, maxSlope, minSlope, flowCfs, cutFillNet, basinSize } = engineeringMetrics;
   const quantityRows = useMemo(
     () => buildDashboardQuantityRows({ costEstimate, quantityExplain, quantityTotals }),
     [costEstimate, quantityExplain, quantityTotals],
   );
   const measurementOverlayStats = useMemo(
-    () => [
-      { label: "Lot area", value: quantityTotals.lot_area_sf ?? null, unit: "sf" },
-      { label: "Building area", value: quantityTotals.building_area_sf ?? null, unit: "sf" },
-      { label: "Parking area", value: quantityTotals.parking_area_sf ?? null, unit: "sf" },
-      { label: "Road length", value: quantityTotals.road_length_ft ?? null, unit: "ft" },
-      { label: "Impervious area", value: quantityTotals.estimated_impervious_area_sf ?? null, unit: "sf" },
-      { label: "Parking stalls", value: quantityTotals.estimated_parking_stalls ?? null, unit: "stalls" },
-    ],
+    () => buildDashboardMeasurementOverlayStats(quantityTotals),
     [quantityTotals],
   );
   const calculationOverlayStats = useMemo(
-    () => [
-      { label: "Total pipe length", value: totalPipeLength, unit: "ft" },
-      { label: "Max slope", value: maxSlope, unit: "%" },
-      { label: "Min slope", value: minSlope, unit: "%" },
-      { label: "Flow (CFS)", value: flowCfs, unit: "cfs" },
-      { label: "Cut / fill net", value: cutFillNet, unit: "cf" },
-      { label: "Pond size", value: basinSize, unit: "sf" },
-    ],
-    [totalPipeLength, maxSlope, minSlope, flowCfs, cutFillNet, basinSize],
+    () => buildDashboardCalculationOverlayStats(engineeringMetrics),
+    [engineeringMetrics],
   );
   const currentTruthAudit = useMemo(
     () => currentPlanMeta?.truth_audit ?? {},
