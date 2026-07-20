@@ -22813,19 +22813,6 @@ function PerformanceAIDashboardView({
     truth_rules: persistedSetupWizardState?.truth_rules,
   };
   const nextSetupAction = setupWizardState.next_action || "Start setup.";
-  const setupChecklistItems: Array<{
-    label: string;
-    status: "done" | "missing" | "blocked";
-    panel: SidePanelKey;
-    action: string;
-    detail: string;
-  }> = setupWizardSteps.map((step) => ({
-    label: step.label,
-    status: step.status === "complete" ? "done" : step.status === "blocked" ? "blocked" : "missing",
-    panel: (step.panel || "site_existing") as SidePanelKey,
-    action: step.next_action,
-    detail: step.status.replaceAll("_", " "),
-  }));
   const dashboardGuidanceStats: Array<[string, number]> = [
     ["Objects", placedObjectCount],
     ["Issues", issues.length + analysisIssues.length],
@@ -23267,8 +23254,6 @@ function PerformanceAIDashboardView({
                     ) : null}
                     <DashboardGuidancePanel
                       stats={dashboardGuidanceStats}
-                      checklistItems={setupChecklistItems}
-                      onOpenPanel={handleOpenSidePanel}
                     />
                     <DashboardIssueReportPanel
                       message={issueReportMessage}
