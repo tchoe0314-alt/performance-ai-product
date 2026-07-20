@@ -291,6 +291,7 @@ import { createDashboardExportActions } from "./utils/dashboardExportActions";
 import { useDashboardFloatingObjectActions } from "./hooks/useDashboardFloatingObjectActions";
 import { useDashboardJobActions } from "./hooks/useDashboardJobActions";
 import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
+import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
@@ -730,6 +731,7 @@ function PerformanceAIDashboardView({
   const directRunAbortRef = useRef<AbortController | null>(null);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
   const ensureProjectDraftRef = useRef<() => Promise<string | null>>(() => Promise.resolve(null));
+  const setupWizardStateRef = useRef<unknown>(null);
   const saveProjectRef = useRef<
     (options?: {
       silent?: boolean;
@@ -6280,155 +6282,28 @@ function PerformanceAIDashboardView({
     }
   };
 
-  const saveProject = async ({
-    silent = false,
-    projectIdOverride,
-    nameOverride,
-    fileNameOverride,
-    projectInputOverride,
-    latestResultOverride,
-    autoNamedOverride,
-    autoFileNamedOverride,
-  }: {
-    silent?: boolean;
-    projectIdOverride?: string | null;
-    nameOverride?: string;
-    fileNameOverride?: string;
-    projectInputOverride?: ProjectInput;
-    latestResultOverride?: PlanResponse;
-    autoNamedOverride?: boolean;
-    autoFileNamedOverride?: boolean;
-  } = {}): Promise<ProjectRecord | null> => {
-    if (!token) {
-      const message = "Sign in/connect backend to save projects.";
-      if (!silent) {
-        setProjectDrawerNotice(message);
-        updateProjectStatus({
-          state: "blocked",
-          area: "projects",
-          title: "Save needs sign-in",
-          detail: "Sign in/connect backend to save projects.",
-          nextAction: "Sign in or reconnect the backend, then press Save Project again.",
-        });
-      }
-      return null;
-    }
-    const effectiveProjectId =
-      projectIdOverride !== undefined
-        ? projectIdOverride
-        : resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
-    const resolvedName = (nameOverride ?? siteName).trim();
-    const resolvedFileName = (fileNameOverride ?? fileName).trim();
-    if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
-      if (!silent) {
-        updateProjectStatus({
-          state: "blocked",
-          area: "projects",
-          title: "Save unavailable in demo",
-          detail: "Demo workspace changes stay local and are not saved to pilot projects.",
-          nextAction: "Start a non-demo project or sign in/connect backend before saving.",
-        });
-      }
-      return currentProject;
-    }
-    if (!silent) {
-      setBusy(true);
-      updateProjectStatus({
-        state: "working",
-        area: "projects",
-        title: "Saving project",
-        detail: `Saving "${resolvedName || "Untitled Project"}" to the project backend.`,
-            nextAction: "Keep the drawer open until the save finishes or shows what needs attention.",
-      });
-    }
-    const liveChatThread = chatMessagesRef.current;
-    const projectInputToSave = projectInputOverride
-      ? {
-          ...projectInputOverride,
-          manual_fields: {
-            ...(projectInputOverride.manual_fields ?? {}),
-            project_name: resolvedName,
-            file_name: resolvedFileName,
-          },
-          meta: {
-            ...(projectInputOverride.meta ?? {}),
-            chat_thread: liveChatThread,
-            auto_named: autoNamedOverride ?? siteNameAuto,
-            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
-            setup_wizard_state_v1: setupWizardState,
-          },
-        }
-      : {
-          ...payloadPreview,
-          manual_fields: {
-            ...(payloadPreview.manual_fields ?? {}),
-            project_name: resolvedName,
-            file_name: resolvedFileName,
-          },
-          meta: {
-            ...(payloadPreview.meta ?? {}),
-            chat_thread: liveChatThread,
-            auto_named: autoNamedOverride ?? siteNameAuto,
-            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
-            setup_wizard_state_v1: setupWizardState,
-          },
-        };
-    const latestResultToSave =
-      latestResultOverride !== undefined ? latestResultOverride : undefined;
-    try {
-      const requestBody: Record<string, unknown> = {
-        project_id: effectiveProjectId,
-        name: resolvedName,
-        project_input: projectInputToSave,
-        metadata: {
-          auto_named: autoNamedOverride ?? siteNameAuto,
-          auto_file_named: autoFileNamedOverride ?? fileNameAuto,
-        },
-      };
-      if (latestResultToSave !== undefined) {
-        requestBody.latest_result = latestResultToSave;
-      }
-      const data = await postJson<{ project: ProjectRecord }>(
-        "/api/projects",
-        requestBody,
-        { token },
-      );
-      resolvedProjectIdRef.current = data.project.project_id;
-      setProjectId(data.project.project_id);
-      setCurrentProject(data.project);
-      setWorkspaceRestoreState("restored");
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
-      }
-      upsertProjectSummary(data.project);
-      setProjectDrawerNotice("Saved. Reload will restore this project on this browser.");
-      if (!silent) {
-        updateProjectStatus({
-          state: "ready",
-          area: "projects",
-          title: "Project saved",
-          detail: `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
-          nextAction: "Continue setup, generate a review draft, or open Deliver when ready.",
-        });
-      }
-      return data.project;
-    } catch (error) {
-      const message = panelErrorMessage(error, "Project save could not complete.");
-      setProjectDrawerNotice(`Save needs attention: ${message}`);
-      if (!silent) {
-        updateProjectStatus({
-          state: "blocked",
-          area: "projects",
-          title: "Save could not finish",
-          detail: message,
-          nextAction: "Check auth/backend connectivity, then press Save Project again.",
-        });
-      }
-      return null;
-    } finally {
-      if (!silent) setBusy(false);
-    }
-  };
+  const { saveProject } = useDashboardProjectSave({
+    chatMessagesRef,
+    currentProject,
+    effectiveDemoWorkspaceEnabled,
+    fileName,
+    fileNameAuto,
+    isSeededDemoProjectId,
+    payloadPreview,
+    projectId,
+    resolvedProjectIdRef,
+    setBusy,
+    setCurrentProject,
+    setProjectDrawerNotice,
+    setProjectId,
+    setWorkspaceRestoreState,
+    setupWizardStateRef,
+    siteName,
+    siteNameAuto,
+    token,
+    updateProjectStatus,
+    upsertProjectSummary,
+  });
 
   useEffect(() => {
     const activeProjectId =
@@ -11537,6 +11412,7 @@ function PerformanceAIDashboardView({
     hasBackendResult: Boolean(backendResult),
     exportBlockText,
   });
+  setupWizardStateRef.current = setupWizardState;
   const dashboardGuidanceStats: Array<[string, number]> = [
     ["Objects", placedObjectCount],
     ["Issues", issues.length + analysisIssues.length],
