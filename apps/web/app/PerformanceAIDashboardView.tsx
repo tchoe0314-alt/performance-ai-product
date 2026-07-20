@@ -85,10 +85,7 @@ import {
 import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
 import { resolveActivePrimaryWorkflowKey } from "./utils/dashboardPrimaryWorkflows";
 import { buildDashboardPrimaryWorkflowItems } from "./utils/dashboardPrimaryWorkflowItems";
-import {
-  buildDashboardConfirmedObjectCounts,
-  buildDashboardExistingConditionRows,
-} from "./utils/dashboardEvidenceSummaries";
+import { buildDashboardSystemEvidenceView } from "./utils/dashboardSystemEvidenceView";
 import {
   DASHBOARD_SOURCE_HUB_LINKS,
   DASHBOARD_SUPPORTED_SHORTCUTS,
@@ -116,10 +113,6 @@ import {
   systemsImpactedByPlacement,
 } from "./utils/dashboardGenerateLayoutContext";
 import { buildDashboardContextualToolbarTools } from "./utils/dashboardContextualToolbar";
-import {
-  buildDashboardSystemReadinessRows,
-  type DashboardSystemBlockerContext,
-} from "./utils/dashboardSystemReadiness";
 import {
   buildDashboardCivil3DWorkflowBlockers,
   buildDashboardWorkflowActionHints,
@@ -11989,79 +11982,64 @@ function PerformanceAIDashboardView({
     () => analysisIssues.find((issue) => issue.id === analysisSelectedIssueId) ?? null,
     [analysisIssues, analysisSelectedIssueId],
   );
-  const confirmedObjectCounts = useMemo(
-    () => buildDashboardConfirmedObjectCounts(buildingPlacements),
-    [buildingPlacements],
-  );
-  const hasHardSystemBlock = issues.some((issue) => issue.severity === "error") || siteTooLargeForGrading;
-  const existingConditionRows = useMemo(
-    () =>
-      buildDashboardExistingConditionRows({
-        hasAppliedAddress,
-        appliedAddressLabel,
-        hasLocationEvidence,
-        hasVerifiedSurveyControl,
-        coordinateSystem: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "",
-        hasTerrainSource,
-        mapAnalysisSuccess: Boolean(mapAnalysis?.success),
-        uploadedImageApiUrl,
-        uploadedImagePreviewUrl,
-        onlineSourceLookupLabel,
-      }),
-    [
-      appliedAddressLabel,
-      hasAppliedAddress,
-      hasLocationEvidence,
-      hasTerrainSource,
-      hasVerifiedSurveyControl,
-      mapAnalysis?.success,
-      onlineSourceLookupLabel,
-      siteInputs,
-      uploadedImageApiUrl,
-      uploadedImagePreviewUrl,
-    ],
-  );
-  const systemBlockerContext = useMemo<DashboardSystemBlockerContext>(() => ({
+  const systemEvidenceView = useMemo(() => buildDashboardSystemEvidenceView({
+    buildingPlacements,
+    issues,
+    siteTooLargeForGrading,
+    hasAppliedAddress,
+    appliedAddressLabel,
+    hasLocationEvidence,
+    hasVerifiedSurveyControl,
+    coordinateSystem: (siteInputs as { coordinate_system?: string } | null)?.coordinate_system || "",
+    hasTerrainSource,
+    mapAnalysisSuccess: Boolean(mapAnalysis?.success),
+    uploadedImageApiUrl,
+    uploadedImagePreviewUrl,
+    onlineSourceLookupLabel,
     missingSite,
     siteScaleLocked,
-    siteTooLargeForGrading,
-    hasTerrainSource,
     hasStandardsEvidence,
-    hasAppliedAddress,
     onlineSourceLookupUnavailable,
     hasAssumedTerrainSlope,
-    hasVerifiedSurveyControl,
     hasBasinPlaced,
     hasBasinObject,
-    buildingPlacements,
-    confirmedObjectCounts,
     utilities,
     hasUtilityConnectionPlaced,
     hasUtilityConnectionObject,
-    hasHardSystemBlock,
+    systemStatuses,
   }), [
+    appliedAddressLabel,
     buildingPlacements,
-    confirmedObjectCounts,
     hasAppliedAddress,
     hasAssumedTerrainSlope,
     hasBasinObject,
     hasBasinPlaced,
-    hasHardSystemBlock,
+    hasLocationEvidence,
     hasStandardsEvidence,
     hasTerrainSource,
     hasUtilityConnectionObject,
     hasUtilityConnectionPlaced,
     hasVerifiedSurveyControl,
+    issues,
+    mapAnalysis?.success,
     missingSite,
+    onlineSourceLookupLabel,
     onlineSourceLookupUnavailable,
+    siteInputs,
     siteScaleLocked,
     siteTooLargeForGrading,
+    systemStatuses,
+    uploadedImageApiUrl,
+    uploadedImagePreviewUrl,
     utilities,
   ]);
-  const systemReadinessRows = useMemo(
-    () => buildDashboardSystemReadinessRows({ systemStatuses, blockerContext: systemBlockerContext }),
-    [systemBlockerContext, systemStatuses],
-  );
+  const {
+    confirmedObjectCounts,
+    hasHardSystemBlock,
+    existingConditionRows,
+    systemBlockerContext,
+    systemReadinessRows,
+  } = systemEvidenceView;
   const exportBlockReason = getExportBlockReason();
   const civil3DWorkflowBlockers = useMemo(
     () =>
