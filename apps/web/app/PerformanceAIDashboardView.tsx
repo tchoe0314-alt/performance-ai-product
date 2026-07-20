@@ -227,6 +227,7 @@ import {
   buildCanonicalWorkspaceBlockers,
   buildGeneratePreflightBlockers,
 } from "./utils/dashboardWorkspaceBlockers";
+import { buildProjectTruthLabels } from "./utils/dashboardProjectTruth";
 import {
   buildDashboardProgressTimelineState,
   buildDashboardSetupWizardState,
@@ -7559,38 +7560,17 @@ function PerformanceAIDashboardView({
     canonicalWorkspaceBlockers.length
       ? canonicalWorkspaceBlockers.join("; ")
       : "No needs-input items recorded for the active workspace; Civora outputs remain review-required.";
-  const restoreTruthLabel =
-    workspaceRestoreState === "failed"
-      ? "Could not restore saved workspace"
-      : effectiveDemoWorkspaceEnabled
-        ? "Local demo only"
-        : workspaceRestoreState === "restored" && currentProject?.project_id
-          ? "Restored saved workspace"
-          : currentProject?.project_id && currentProject?.updated_at
-            ? "Project saved; restore available after reload"
-            : currentProject?.project_id
-              ? "Project saved; restore status pending"
-              : "Restore unavailable";
-  const projectDrawerStateLabel =
-    effectiveDemoWorkspaceEnabled
-      ? "Local demo"
-      : workspaceRestoreState === "failed"
-        ? "Could not restore"
-        : currentProject?.project_id
-          ? "Saved"
-          : token
-            ? "Unsaved draft"
-            : "Restore unavailable";
-  const projectDrawerStateDetail =
-    effectiveDemoWorkspaceEnabled
-      ? "Demo changes stay local and are not saved to project storage."
-      : workspaceRestoreState === "failed"
-        ? projectDrawerNotice || "The saved project could not be restored from the backend."
-        : currentProject?.project_id
-          ? "This browser can restore the active saved project after reload."
-          : token
-            ? "This clean workspace has not been saved yet."
-            : "Sign in and connect to the backend to list, save, open, or delete projects.";
+  const {
+    restoreTruthLabel,
+    projectDrawerStateLabel,
+    projectDrawerStateDetail,
+  } = buildProjectTruthLabels({
+    effectiveDemoWorkspaceEnabled,
+    workspaceRestoreState,
+    currentProject,
+    token,
+    projectDrawerNotice,
+  });
 
   const tryHandleInfoIntent = (message: string): boolean => {
     const normalized = message.toLowerCase();
