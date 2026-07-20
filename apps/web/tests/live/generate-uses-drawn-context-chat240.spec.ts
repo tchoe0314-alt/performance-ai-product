@@ -133,11 +133,17 @@ async function runCommand(page: Page, command: string) {
   await page.getByTestId("civora-command-input").press("Enter");
 }
 
-async function clickSurface(page: Page, xRatio: number, yRatio: number) {
-  const surface = page.getByTestId("preview-drawing-surface");
-  const box = await surface.boundingBox();
-  expect(box).not.toBeNull();
-  await page.mouse.click(box!.x + box!.width * xRatio, box!.y + box!.height * yRatio);
+async function askChat(page: Page, question: string, expected: RegExp) {
+  const chatButton = page.getByRole("button", { name: "Open chat from header" }).first();
+  if (await chatButton.isVisible().catch(() => false)) {
+    await chatButton.click();
+  } else {
+    await page.getByRole("button", { name: "Chat" }).first().click();
+  }
+  const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  await input.fill(question);
+  await input.press("Enter");
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
 test("Generate queues drawn and placed objects as engineering context", async ({ page }) => {
@@ -160,10 +166,8 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"], [data-cad-object-id][aria-label*="water-line"]').first()).toBeVisible({ timeout: 5_000 });
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
-  const cadTools = page.getByTestId("draw-cad-tools-section");
-  await cadTools.getByTestId("cad-tool-line").click();
-  await clickSurface(page, 0.2, 0.35);
-  await clickSurface(page, 0.42, 0.35);
+  await page.getByLabel("CAD command input").fill("LINE 20,20 220,20");
+  await page.getByLabel("CAD command input").press("Enter");
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
 
   await page.getByRole("button", { name: /^Generate$/ }).first().click();
@@ -183,7 +187,7 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   expect(siteObjects.some((item) => String(item.label).includes("Office Building - 28,000 sf") && item.placed === true)).toBeTruthy();
   expect(siteObjects.some((item) => /Basin|Detention/i.test(String(item.label)) && item.type === "basin" && item.placed === true)).toBeTruthy();
   expect(siteObjects.some((item) => /water/i.test(String(item.label)) && item.type === "utility_corridor" && item.placed === true)).toBeTruthy();
-  expect(siteObjects.some((item) => String(item.label).includes("Custom Line") && item.type === "custom" && item.placed === true)).toBeTruthy();
+  expect(siteObjects.some((item) => /Custom Line|Command Line/i.test(String(item.label)) && item.type === "custom" && item.placed === true)).toBeTruthy();
   expect(siteObjects.some((item) => String(item.geometry_type) === "line" || String(item.geometry_type) === "polyline")).toBeTruthy();
 
   expect(buildings.some((item) => String(item.label).includes("Office Building - 28,000 sf"))).toBeTruthy();
@@ -194,9 +198,14 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   expect(meta.requested_system).toBe("full");
   expect(JSON.stringify(meta.auto_site_context_review_summary ?? {})).toContain("parcel/site boundary");
   expect(JSON.stringify(meta.user_layout_context_summary ?? {})).toContain("Office Building - 28,000 sf");
-  expect(JSON.stringify(meta.user_layout_context_summary ?? {})).toContain("Custom Line");
+  expect(JSON.stringify(meta.user_layout_context_summary ?? {})).toMatch(/Custom Line|Command Line/i);
   expect(JSON.stringify(meta.generate_notes ?? [])).toContain("User layout context used by Generate");
   expect(JSON.stringify(siteObjects)).toContain("passed to Generate as review context");
   expect(JSON.stringify(siteObjects)).toContain("draft_review_required");
   expect(JSON.stringify(siteObjects)).toContain('"construction_release_allowed":false');
+
+  await askChat(page, "what did you use from my drawing?", /Generate used these placed\/drawn objects as review context/i);
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Office Building - 28,000 sf/i);
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Custom Line|Command Line/i);
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/editable draft\/review context/i);
 });

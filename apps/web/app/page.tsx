@@ -3007,6 +3007,7 @@ function PerformanceAIDashboardView({
   const [drainageMaxSlopeAdjust, setDrainageMaxSlopeAdjust] = useState(0.001);
   const [utilities, setUtilities] = useState(true);
   const [buildingPlacements, setBuildingPlacements] = useState<BuildingPlacement[]>([]);
+  const buildingPlacementsRef = useRef<BuildingPlacement[]>([]);
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
@@ -3028,6 +3029,10 @@ function PerformanceAIDashboardView({
   const [bulkRotateAngle, setBulkRotateAngle] = useState("15");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
+
+  useEffect(() => {
+    buildingPlacementsRef.current = buildingPlacements;
+  }, [buildingPlacements]);
 
   const [assumptions, setAssumptions] =
     useState<Assumption[]>(defaultAssumptions);
@@ -3628,7 +3633,7 @@ function PerformanceAIDashboardView({
       manualFields.building_depth = buildingDepthValue;
     }
 
-    const allPlacementSnapshots = (placementsOverride ?? buildingPlacements)
+    const allPlacementSnapshots = (placementsOverride ?? buildingPlacementsRef.current)
       .map((placement) => ({
         id: placement.id,
         name: placement.label,
@@ -7444,14 +7449,16 @@ function PerformanceAIDashboardView({
         };
       }
     }
-    setBuildingPlacements((prev) =>
-      bulkUpdateUndo?.after
-        ? (() => {
-            const afterById = new Map(bulkUpdateUndo.after.map((item) => [item.id, item]));
-            return prev.map((item) => (afterById.has(item.id) ? { ...afterById.get(item.id)! } : item));
-          })()
-        : prev.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item)),
-    );
+    const nextPlacements = bulkUpdateUndo?.after
+      ? (() => {
+          const afterById = new Map(bulkUpdateUndo.after.map((item) => [item.id, item]));
+          return buildingPlacementsRef.current.map((item) =>
+            afterById.has(item.id) ? { ...afterById.get(item.id)! } : item,
+          );
+        })()
+      : buildingPlacementsRef.current.map((item) => (item.id === id ? { ...item, ...nextUpdates } : item));
+    buildingPlacementsRef.current = nextPlacements;
+    setBuildingPlacements(nextPlacements);
     markSystemsStale(systemsImpactedByPlacement(target));
     if (recentChange?.undo) {
       setLastDraftAction(recentChange.undo);
@@ -10451,8 +10458,9 @@ function PerformanceAIDashboardView({
       const maxY = Math.max(...ys);
       const isLine = payload.mode === "polyline";
       const isPoint = payload.mode === "point";
+      const currentPlacements = buildingPlacementsRef.current;
       const existingCustomCount =
-        buildingPlacements.filter((item) => item.type === "custom").length + 1;
+        currentPlacements.filter((item) => item.type === "custom").length + 1;
       const nextId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const nextLabel =
         payload.label ??
@@ -10500,7 +10508,9 @@ function PerformanceAIDashboardView({
           deletable: true,
         };
       }
-      setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      const nextPlacements = [...currentPlacements, nextPlacement];
+      buildingPlacementsRef.current = nextPlacements;
+      setBuildingPlacements(nextPlacements);
       setActivePlacementId(nextPlacement.id);
       setSelectedObjectIds([nextPlacement.id]);
       setPlacementModeEnabled(false);
@@ -12253,6 +12263,55 @@ function PerformanceAIDashboardView({
       appendChatMessage(
         "assistant",
         `Selected object: ${formatPlacement(selected)}`,
+        "status",
+      );
+      return true;
+    }
+
+    if (/(what did.*use|what.*used.*draw|use.*my (drawing|objects|layout)|what.*from.*(drawing|objects|layout)|did.*use.*(drawing|objects|layout))/i.test(normalized)) {
+      const userLayoutObjects = placed.filter((item) => {
+        if (item.type === "site" || item.meta?.generated_review_concept) return false;
+        const source = String(item.source || item.meta?.source || "").toLowerCase();
+        return Boolean(
+          item.meta?.semantic_object_model ||
+          item.meta?.semantic_geometry_state ||
+          item.meta?.command_created ||
+          ["user", "user_confirmed", "manual_drawn", "generated"].includes(source),
+        );
+      });
+      const semanticCount = userLayoutObjects.filter((item) =>
+        Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state),
+      ).length;
+      const geometryCount = userLayoutObjects.filter((item) => Boolean(item.geometry || item.geometryType)).length;
+      const generateNotes = generateFlowSummary?.notes ?? [];
+      const generateUsedLayout = generateNotes.some((note) => /User layout context used by Generate/i.test(note));
+
+      if (!userLayoutObjects.length) {
+        appendChatMessage(
+          "assistant",
+          "I do not have placed user layout objects to use yet. Draw or add objects, place them inside the site, then run Generate. I will keep those objects as review context instead of treating them as final professional evidence.",
+          "status",
+        );
+        return true;
+      }
+
+      const listedObjects = userLayoutObjects.slice(0, 12).map((item) => {
+        const systemText = systemsImpactedByPlacement(item);
+        return `- ${formatPlacement(item)}${systemText.length ? `; affects ${systemText.join(", ")}` : ""}`;
+      });
+      appendChatMessage(
+        "assistant",
+        [
+          generateUsedLayout
+            ? "Generate used these placed/drawn objects as review context:"
+            : "These placed/drawn objects are ready to be used as Generate review context:",
+          listedObjects.join("\n"),
+          userLayoutObjects.length > listedObjects.length
+            ? `- plus ${userLayoutObjects.length - listedObjects.length} more placed object(s).`
+            : "",
+          `${semanticCount} semantic object(s), ${geometryCount} geometry-backed object(s).`,
+          "They remain editable draft/review context; they do not become survey/control or final professional evidence.",
+        ].filter(Boolean).join("\n"),
         "status",
       );
       return true;
