@@ -289,7 +289,6 @@ import {
 import {
   cloneBuildingPlacementForUndo,
   cloneBuildingPlacementWithUpdatesForUndo,
-  createDraftArrayCopiesWithTrace,
   createDraftCopyWithTrace as createObjectManagerDraftCopyWithTrace,
   createObjectManagerLayoutUpdateEntries,
   createObjectManagerMirrorUpdateEntries,
@@ -302,11 +301,15 @@ import {
   formatVisibleDraftSelectionMessage,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
-  isObjectManagerCopyableDraft,
   type ObjectManagerLayoutAction,
   partitionObjectManagerTargets,
   summarizeDraftCopyResults,
 } from "./utils/dashboardObjectManagerTrace";
+import {
+  runObjectManagerArraySelected,
+  runObjectManagerBulkCopyByOffset,
+  runObjectManagerBulkDuplicate,
+} from "./utils/dashboardObjectManagerCopyActions";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -3776,23 +3779,41 @@ function PerformanceAIDashboardView({
     systemsImpactedByPlacement,
   ]);
 
-  const createDraftCopyWithTrace = useCallback((
-    item: BuildingPlacement,
-    options: {
-      idPrefix: string;
-      label: string;
-      dx: number;
-      dy: number;
-      source: string;
-      extraMeta?: Record<string, unknown>;
-    },
-  ) =>
-    createObjectManagerDraftCopyWithTrace({
-      item,
-      buildingPlacements,
-      ...options,
-    }),
-  [buildingPlacements]);
+  const persistDraftRefresh = useCallback((reason: string) => {
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => {
+        previewRefreshIntentRef.current = {
+          reason,
+          track: true,
+        };
+      });
+  }, [ensureProjectDraftRef, saveProjectRef]);
+
+  const objectManagerCopyActions = useMemo(() => ({
+    setBuildingPlacements,
+    setSelectedObjectIds,
+    setActivePlacementId,
+    setObjectManagerStatusMessage,
+    setStatusMessage,
+    appendChatMessage,
+    recordRecentChange,
+    recordDraftUndoAction,
+    markSystemsStale,
+    systemsImpactedByPlacement,
+    reportObjectActionBlocker,
+    clearGeneratedPreview,
+    persistDraftRefresh,
+  }), [
+    appendChatMessage,
+    clearGeneratedPreview,
+    markSystemsStale,
+    persistDraftRefresh,
+    recordDraftUndoAction,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    systemsImpactedByPlacement,
+  ]);
 
   const createTraceAwareBulkUpdate = useCallback((
     entries: Array<{ item: BuildingPlacement; updates: Partial<BuildingPlacement> }>,
@@ -3806,243 +3827,34 @@ function PerformanceAIDashboardView({
   [buildingPlacements]);
 
   const handleObjectManagerBulkDuplicate = useCallback(() => {
-    clearGeneratedPreview();
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Bulk duplicate blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const { editable, blockedCount } = partitionObjectManagerTargets({
-      targets,
-      isEditable: (item) => {
-        return isObjectManagerCopyableDraft({
-          item,
-          hasCopyBlocker: Boolean(getObjectEditBlocker(item, "copy")),
-        });
-      },
+    runObjectManagerBulkDuplicate({
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerCopyActions,
     });
-    if (!editable.length) {
-      reportObjectActionBlocker("Bulk duplicate blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const offset = 28;
-    const stamp = Date.now();
-    const copyResults = editable.map((item, index) => createDraftCopyWithTrace(item, {
-      idPrefix: `duplicate-${stamp}-${index}`,
-      label: `${item.label} Copy`,
-      dx: offset,
-      dy: offset,
-      source: "manual_drawn_copy",
-    }));
-    const { visibleDuplicates, createdObjects, hiddenTraceCount } = summarizeDraftCopyResults(copyResults);
-    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
-    setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
-    setActivePlacementId(visibleDuplicates[0]?.id ?? null);
-    createdObjects.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
-    });
-    const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "bulk duplicate" };
-    recordDraftUndoAction(undo);
-    recordRecentChange({
-      type: "object_added",
-      label: "Objects duplicated",
-      detail: `Duplicated ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
-      undo,
-    });
-    const message = `Duplicated ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Duplicates remain review-required draft geometry.`, "status");
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
-        previewRefreshIntentRef.current = {
-          reason: "Refreshing preview after bulk duplicate...",
-          track: true,
-        };
-      });
-  }, [
-    appendChatMessage,
-    buildingPlacements,
-    clearGeneratedPreview,
-    createDraftCopyWithTrace,
-    ensureProjectDraftRef,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    saveProjectRef,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, objectManagerCopyActions, selectedObjectIds]);
 
   const handleObjectManagerBulkCopyByOffset = useCallback(() => {
-    clearGeneratedPreview();
-    const dx = Number(bulkMoveX);
-    const dy = Number(bulkMoveY);
-    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
-      reportObjectActionBlocker("Copy by offset blocked: enter a non-zero X or Y offset.");
-      return;
-    }
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Copy by offset blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const { editable, blockedCount } = partitionObjectManagerTargets({
-      targets,
-      isEditable: (item) => {
-        return isObjectManagerCopyableDraft({
-          item,
-          hasCopyBlocker: Boolean(getObjectEditBlocker(item, "copy")),
-        });
-      },
+    runObjectManagerBulkCopyByOffset({
+      buildingPlacements,
+      selectedObjectIds,
+      bulkMoveX,
+      bulkMoveY,
+      actions: objectManagerCopyActions,
     });
-    if (!editable.length) {
-      reportObjectActionBlocker("Copy by offset blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const stamp = Date.now();
-    const copyResults = editable.map((item, index) => createDraftCopyWithTrace(item, {
-      idPrefix: `copy-vector-${stamp}-${index}`,
-      label: `${item.label} Copy`,
-      dx,
-      dy,
-      source: "manual_drawn_copy_by_offset",
-      extraMeta: { copied_offset_ft: [dx, dy] },
-    }));
-    const { visibleDuplicates, createdObjects, hiddenTraceCount } = summarizeDraftCopyResults(copyResults);
-    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
-    setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
-    setActivePlacementId(visibleDuplicates[0]?.id ?? null);
-    createdObjects.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
-    });
-    const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "copy by offset" };
-    recordDraftUndoAction(undo);
-    const message = `Copied ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"} by ${dx},${dy}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Copies remain review-required draft geometry.`, "status");
-    recordRecentChange({
-      type: "object_added",
-      label: "Objects copied by offset",
-      detail: message,
-      undo,
-    });
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
-        previewRefreshIntentRef.current = {
-          reason: "Refreshing preview after copy by offset...",
-          track: true,
-        };
-      });
-  }, [
-    appendChatMessage,
-    bulkMoveX,
-    bulkMoveY,
-    buildingPlacements,
-    clearGeneratedPreview,
-    createDraftCopyWithTrace,
-    ensureProjectDraftRef,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    saveProjectRef,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [buildingPlacements, bulkMoveX, bulkMoveY, objectManagerCopyActions, selectedObjectIds]);
 
   const handleObjectManagerArraySelected = useCallback(() => {
-    clearGeneratedPreview();
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Array blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const rows = Math.floor(Number(arrayRows));
-    const columns = Math.floor(Number(arrayColumns));
-    const spacingX = Number(arraySpacingX);
-    const spacingY = Number(arraySpacingY);
-    if (!Number.isFinite(rows) || !Number.isFinite(columns) || rows < 1 || columns < 1 || rows * columns < 2) {
-      reportObjectActionBlocker("Array blocked: use at least 2 total positions, like 2 rows by 3 columns.");
-      return;
-    }
-    if (!Number.isFinite(spacingX) || !Number.isFinite(spacingY) || (spacingX === 0 && spacingY === 0)) {
-      reportObjectActionBlocker("Array blocked: provide a non-zero X or Y spacing.");
-      return;
-    }
-    const { editable, blockedCount } = partitionObjectManagerTargets({
-      targets,
-      isEditable: (item) => {
-        return isObjectManagerCopyableDraft({
-          item,
-          hasCopyBlocker: Boolean(getObjectEditBlocker(item, "copy")),
-        });
-      },
-    });
-    if (!editable.length) {
-      reportObjectActionBlocker("Array blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const totalCopies = editable.length * (rows * columns - 1);
-    if (totalCopies > 80) {
-      reportObjectActionBlocker("Array blocked: limit this draft array to 80 new objects or fewer.");
-      return;
-    }
-    const stamp = Date.now();
-    const { visibleDuplicates, createdObjects, hiddenTraceCount } = summarizeDraftCopyResults(createDraftArrayCopiesWithTrace({
-      editable,
+    runObjectManagerArraySelected({
       buildingPlacements,
-      rows,
-      columns,
-      spacingX,
-      spacingY,
-      stamp,
-    }));
-    setBuildingPlacements((prev) => [...prev, ...createdObjects]);
-    setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
-    setActivePlacementId(visibleDuplicates[0]?.id ?? null);
-    createdObjects.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
+      selectedObjectIds,
+      arrayRows,
+      arrayColumns,
+      arraySpacingX,
+      arraySpacingY,
+      actions: objectManagerCopyActions,
     });
-    const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "array" };
-    recordDraftUndoAction(undo);
-    const message = `Array created ${visibleDuplicates.length} draft review cop${visibleDuplicates.length === 1 ? "y" : "ies"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} selected object${blockedCount === 1 ? "" : "s"} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Array output remains review-required draft geometry.`, "status");
-    recordRecentChange({
-      type: "object_added",
-      label: "Objects arrayed",
-      detail: message,
-      undo,
-    });
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
-        previewRefreshIntentRef.current = {
-          reason: "Refreshing preview after array...",
-          track: true,
-        };
-      });
-  }, [
-    appendChatMessage,
-    arrayColumns,
-    arrayRows,
-    arraySpacingX,
-    arraySpacingY,
-    buildingPlacements,
-    clearGeneratedPreview,
-    createDraftCopyWithTrace,
-    ensureProjectDraftRef,
-    markSystemsStale,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    saveProjectRef,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
+  }, [arrayColumns, arrayRows, arraySpacingX, arraySpacingY, buildingPlacements, objectManagerCopyActions, selectedObjectIds]);
 
   const handleObjectManagerBulkLayout = useCallback((layout: ObjectManagerLayoutAction) => {
     const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
