@@ -359,6 +359,11 @@ import {
 } from "./utils/dashboardSiteSetupActions";
 import { createDashboardPlanSheetActions } from "./utils/dashboardPlanSheetActions";
 import {
+  runDashboardExplainPlan,
+  runDashboardPreviewPlan,
+  runDashboardQueuePreviewRefresh,
+} from "./utils/dashboardPlanActionHelpers";
+import {
   runDashboardCloseSidePanel,
   runDashboardOpenPanelFromDrawer,
   runDashboardOpenSidePanel,
@@ -11495,81 +11500,33 @@ function PerformanceAIDashboardView({
   );
 
   const queuePreviewRefresh = (reason: string) => {
-    if (!token) return;
-    const lowerReason = reason.toLowerCase();
-    if (
-      lowerReason.includes("quality") ||
-      lowerReason.includes("label density") ||
-      lowerReason.includes("entering edit mode")
-    ) {
-      return;
-    }
-    previewRefreshIntentRef.current = { reason, track: true };
+    runDashboardQueuePreviewRefresh({
+      previewRefreshIntentRef,
+      reason,
+      token,
+    });
   };
 
   const handlePreviewPlan = async () => {
-    if (!token) return;
-    setStatusMessage("Refreshing preview...");
-    setBusy(true);
-    try {
-      await requestPreview(artifactPayload, { track: true });
-    } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Preview generation failed.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await runDashboardPreviewPlan({
+      artifactPayload,
+      requestPreview,
+      setBusy,
+      setStatusMessage,
+      token,
+    });
   };
 
   const handleExplainPlan = () => {
-    const explanationText =
-      typeof currentExplanation?.summary === "string"
-        ? currentExplanation.summary
-        : typeof currentExplanation?.overview === "string"
-          ? currentExplanation.overview
-          : typeof selectedRun?.message === "string"
-            ? selectedRun.message
-            : "";
-    const fallbackDetails = [
-      currentManualFailures.length
-        ? `Needs input: ${currentManualFailures
-            .slice(0, 3)
-            .map((failure) => failure.code || failure.message || "missing information issue")
-            .join(", ")}.`
-        : null,
-      issues.length
-        ? `Current warnings: ${issues
-            .slice(0, 3)
-            .map((issue) => issue.message)
-            .join("; ")}.`
-        : null,
-      currentTruthAudit?.success === true
-        ? "Truth checks are currently passing."
-        : currentTruthAudit?.success === false
-          ? "Truth checks still need review."
-          : null,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    if (!explanationText && !fallbackDetails) {
-      setStatusMessage("Run Civora AI first so there is a plan to explain.");
-      return;
-    }
-
-    appendChatMessage(
-      "assistant",
-      [
-        explanationText || "Here’s where the current design stands.",
-        typeof currentExplanation?.why === "string" ? currentExplanation.why : null,
-        fallbackDetails || null,
-      ]
-        .filter(Boolean)
-        .join(" "),
-      "explanation",
-    );
-    setStatusMessage("Added the latest plan explanation to the conversation.");
+    runDashboardExplainPlan({
+      appendChatMessage,
+      currentExplanation,
+      currentManualFailures,
+      currentTruthAudit,
+      issues,
+      selectedRunMessage: typeof selectedRun?.message === "string" ? selectedRun.message : "",
+      setStatusMessage,
+    });
   };
 
   const handleRunFix = () => {
