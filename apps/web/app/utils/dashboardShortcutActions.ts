@@ -53,6 +53,66 @@ export function runDashboardShortcutSaveProject({
   });
 }
 
+export function runDashboardCancelActiveTool({
+  shortcutsOverlayOpen,
+  activeSidePanel,
+  previewFullscreenOpen,
+  closeSidePanel,
+  setShortcutsOverlayOpen,
+  setPreviewFullscreenOpen,
+  setPlacementModeEnabled,
+  setActivePlacementId,
+  setSelectedObjectIds,
+  setPendingClarification,
+  setPreviewInteraction,
+  setCadToolRequestSelect,
+  updateProjectStatus,
+}: {
+  shortcutsOverlayOpen: boolean;
+  activeSidePanel: SidePanelKey | null;
+  previewFullscreenOpen: boolean;
+  closeSidePanel: () => void;
+  setShortcutsOverlayOpen: (value: boolean) => void;
+  setPreviewFullscreenOpen: (value: boolean) => void;
+  setPlacementModeEnabled: (value: boolean) => void;
+  setActivePlacementId: (value: string | null) => void;
+  setSelectedObjectIds: (value: string[]) => void;
+  setPendingClarification: (value: null) => void;
+  setPreviewInteraction: (value: "static" | "edit") => void;
+  setCadToolRequestSelect: () => void;
+  updateProjectStatus: UpdateProjectStatus;
+}) {
+  if (shortcutsOverlayOpen) {
+    setShortcutsOverlayOpen(false);
+    return;
+  }
+  if (activeSidePanel === "projects" && document.querySelector('[data-testid="projects-drawer"]')) {
+    closeSidePanel();
+    updateProjectStatus({
+      state: "ready",
+      area: "projects",
+      title: "Projects closed",
+      detail: "Projects drawer closed.",
+      nextAction: "Continue from the canvas or use / for commands.",
+    });
+    return;
+  }
+  if (previewFullscreenOpen) setPreviewFullscreenOpen(false);
+  setPlacementModeEnabled(false);
+  setActivePlacementId(null);
+  setSelectedObjectIds([]);
+  setPendingClarification(null);
+  setPreviewInteraction("static");
+  setCadToolRequestSelect();
+  updateProjectStatus({
+    state: "ready",
+    area: "chat",
+    title: "Active tool cancelled",
+    detail: "Active drawing/tool state cancelled.",
+    nextAction: "Select another tool, continue drawing, or use the command bar.",
+  });
+}
+
 export function runDashboardShortcutOpenGenerate({
   openSidePanel,
   updateProjectStatus,

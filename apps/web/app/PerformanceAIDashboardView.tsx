@@ -106,6 +106,7 @@ import {
   runDashboardShortcutDeleteSelectedObject,
   runDashboardShortcutPasteSelectedObject,
   runDashboardShortcutSaveProject,
+  runDashboardCancelActiveTool,
 } from "./utils/dashboardShortcutActions";
 import { DASHBOARD_CAD_TOOL_GROUPS } from "./utils/dashboardCadToolGroups";
 import {
@@ -15275,34 +15276,20 @@ function PerformanceAIDashboardView({
     exportBlockReason,
   });
   const handleCancelActiveTool = useCallback(() => {
-    if (shortcutsOverlayOpen) {
-      setShortcutsOverlayOpen(false);
-      return;
-    }
-    if (activeSidePanel === "projects" && document.querySelector('[data-testid="projects-drawer"]')) {
-      handleCloseSidePanel();
-      updateProjectStatus({
-        state: "ready",
-        area: "projects",
-        title: "Projects closed",
-        detail: "Projects drawer closed.",
-        nextAction: "Continue from the canvas or use / for commands.",
-      });
-      return;
-    }
-    if (previewFullscreenOpen) setPreviewFullscreenOpen(false);
-    setPlacementModeEnabled(false);
-    setActivePlacementId(null);
-    setSelectedObjectIds([]);
-    setPendingClarification(null);
-    setPreviewInteraction("static");
-    setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
-    updateProjectStatus({
-      state: "ready",
-      area: "chat",
-      title: "Active tool cancelled",
-      detail: "Active drawing/tool state cancelled.",
-      nextAction: "Select another tool, continue drawing, or use the command bar.",
+    runDashboardCancelActiveTool({
+      shortcutsOverlayOpen,
+      activeSidePanel,
+      previewFullscreenOpen,
+      closeSidePanel: handleCloseSidePanel,
+      setShortcutsOverlayOpen,
+      setPreviewFullscreenOpen,
+      setPlacementModeEnabled,
+      setActivePlacementId,
+      setSelectedObjectIds,
+      setPendingClarification,
+      setPreviewInteraction,
+      setCadToolRequestSelect: () => setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" }),
+      updateProjectStatus,
     });
   }, [activeSidePanel, handleCloseSidePanel, previewFullscreenOpen, shortcutsOverlayOpen, updateProjectStatus]);
 
