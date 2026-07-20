@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType, MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { Hand, MapPin, MousePointer2, Pentagon, PencilLine, Square, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import type { BuildingPlacement } from "../types";
 import { CadPrecisionDock } from "./CadPrecisionDock";
@@ -132,6 +132,7 @@ import {
   resolveCadWindowSelectedObjectIds,
 } from "../utils/previewCadWindowSelection";
 import { resolvePreviewVisualKind } from "../utils/previewVisualStyles";
+import { buildPreviewDrawModeButtons } from "../utils/previewDrawModeButtons";
 import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import {
   AI_REALISM_WATERMARK,
@@ -3948,51 +3949,15 @@ export default function PreviewPanel({
     [clearDraftGeometry, onSelectBuilding, onSetPreviewInteraction, pushCadCommandFeedback],
   );
 
-  const drawModeButtons: Array<{
-    mode: DrawMode;
-    label: string;
-    icon: ComponentType<{ className?: string }>;
-    disabled?: boolean;
-    disabledLabel?: string;
-  }> = [
-    { mode: "select", label: "Select", icon: MousePointer2 },
-    { mode: "pan", label: "Pan", icon: Hand },
-    {
-      mode: "site",
-      label: "Draw Site Boundary",
-      icon: Pentagon,
-      disabled: Boolean(siteLocked),
-      disabledLabel: "Change site boundary before drawing a new boundary",
-    },
-    {
-      mode: "polyline",
-      label: "Add Line",
-      icon: PencilLine,
-      disabled: !canDrawObjects,
-      disabledLabel: drawObjectsDisabledLabel,
-    },
-    {
-      mode: "polygon",
-      label: "Add Area",
-      icon: Pentagon,
-      disabled: !canDrawObjects,
-      disabledLabel: drawObjectsDisabledLabel,
-    },
-    {
-      mode: "rect",
-      label: "Add Box",
-      icon: Square,
-      disabled: !canDrawObjects,
-      disabledLabel: drawObjectsDisabledLabel,
-    },
-    {
-      mode: "point",
-      label: "Add Point",
-      icon: MapPin,
-      disabled: !canDrawObjects,
-      disabledLabel: drawObjectsDisabledLabel,
-    },
-  ];
+  const drawModeButtons = useMemo(
+    () =>
+      buildPreviewDrawModeButtons({
+        siteLocked: Boolean(siteLocked),
+        canDrawObjects,
+        drawObjectsDisabledLabel,
+      }),
+    [canDrawObjects, drawObjectsDisabledLabel, siteLocked],
+  );
 
   useEffect(() => {
     if (!externalRectUndo) return;
