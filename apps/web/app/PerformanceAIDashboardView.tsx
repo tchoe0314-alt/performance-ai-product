@@ -294,6 +294,7 @@ import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
 import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
+import { useDashboardWorkspaceReset } from "./hooks/useDashboardWorkspaceReset";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -10262,90 +10263,84 @@ function PerformanceAIDashboardView({
     void runOrchestrator("improve");
   };
 
-  const resetWorkspaceState = useCallback(() => {
-    debugLog("reset-workspace");
-    setCadToolRequest(null);
-    setPlanPreviewUrl("");
-    setPlanPreviewProjectId(null);
-    setPlanPreviewSummary(null);
-    setPlanPreviewAnnotations(null);
-    setPreviewRefreshing(false);
-    setPreviewRefreshNote(null);
-    setBackendResult(null);
-    setGenerateFlowSummary(null);
-    setReviewPackageFlowSummary(null);
-    setExportActionMessage("");
-    setPlanPdfUploadState("idle");
-    setPlanPdfUploadMessage("");
-    setSelectedPlanPdfElementId("");
-    setPlanPdfElementDraftText("");
-    setPlanPdfMoveX("");
-    setPlanPdfMoveY("");
-    setSelectedRunId("");
-    setActiveJobId("");
-    setSelectedJobId("");
-    setJobs([]);
-    setJobToasts([]);
-    setApprovalInFlight(false);
-    setApprovalPhaseLabel(null);
-    setApprovalError(null);
-    setApprovalPendingJobId(null);
-    setUploadedImageApiUrl("");
-    setUploadedImagePreviewUrl("");
-    setImageUploadState("idle");
-    setImageUploadNote(null);
-    setSurveyFileName("");
-    setSurveyUploadMessage("");
-    setSurveySlopeEstimate(null);
-    setSurveyPoints([]);
-    setSurveyPreviewPoints([]);
-    setSurveyDiagnostics(null);
-    setUseSurveyForGrading(true);
-    setMapSnapshotPath("");
-    setMapAnalysis(null);
-    setSiteSelectionMode(false);
-    setViewportFootprint(null);
-    setViewportCenter(null);
-    setAddressSuggestions([]);
-    setSelectedAddressSuggestion(null);
-    setAutoExistingConditionsStatus({
-      status: "waiting",
-      message: "Apply an address and lock the site. Civora will then check available source context inside the boundary.",
-      candidateCount: 0,
-      missing: [],
-    });
-    setLayerManagerOpen(false);
-    setPreviewFullscreenOpen(false);
-    setSelectedJobId("");
-    setMoveEditFeedback("");
-    setJobsPanelStatusMessage("");
-    setWorkspaceRestoreState("idle");
-    setSiteAddress("");
-    setBuildingPlacements([]);
-    setDetectedPlacements([]);
-    setDetectionScaleFeet("");
-    setDetectionScalePixels("");
-    setDetectionScaleFtPerPx(null);
-    setDetectionScaleSource("approximate");
-    setSiteScaleLocked(false);
-    setSiteRotationDeg(0);
-    setSiteRotationInput("0");
-    setShowSiteBounds(true);
-    setFitToSiteRequest(0);
-    setMapCenterRequest(0);
-    setAlignToRoadRequest(0);
-    setFocusDetectedId(null);
-    setFocusObjectId(null);
-    setPlacementModeEnabled(false);
-    setActivePlacementId(null);
-    setAnalysisIssues([]);
-    setAnalysisPaths([]);
-    setAnalysisSelectedIssueId(null);
-    setAnalysisFocusLocked(false);
-    setSelectedIssueId(null);
-    setPendingClarification(null);
-    setPlanSheetSet(createDefaultPlanSheetSet("Untitled Project"));
-  }, [setJobs]);
+  const { resetWorkspaceState } = useDashboardWorkspaceReset({
+    debugLog,
+    setActiveJobId,
+    setActivePlacementId,
+    setAddressSuggestions,
+    setAnalysisFocusLocked,
+    setAnalysisIssues,
+    setAnalysisPaths,
+    setAnalysisSelectedIssueId,
+    setAlignToRoadRequest,
+    setApprovalError,
+    setApprovalInFlight,
+    setApprovalPendingJobId,
+    setApprovalPhaseLabel,
+    setAutoExistingConditionsStatus,
+    setBackendResult,
+    setBuildingPlacements,
+    setCadToolRequest,
+    setDetectedPlacements,
+    setDetectionScaleFeet,
+    setDetectionScaleFtPerPx,
+    setDetectionScalePixels,
+    setDetectionScaleSource,
+    setExportActionMessage,
+    setFitToSiteRequest,
+    setFocusDetectedId,
+    setFocusObjectId,
+    setGenerateFlowSummary,
+    setImageUploadNote,
+    setImageUploadState,
+    setJobs,
+    setJobToasts,
+    setJobsPanelStatusMessage,
+    setLayerManagerOpen,
+    setMapAnalysis,
+    setMapCenterRequest,
+    setMapSnapshotPath,
+    setMoveEditFeedback,
+    setPendingClarification,
+    setPlacementModeEnabled,
+    setPlanPdfElementDraftText,
+    setPlanPdfMoveX,
+    setPlanPdfMoveY,
+    setPlanPdfUploadMessage,
+    setPlanPdfUploadState,
+    setPlanPreviewAnnotations,
+    setPlanPreviewProjectId,
+    setPlanPreviewSummary,
+    setPlanPreviewUrl,
+    setPlanSheetSet,
+    setPreviewFullscreenOpen,
+    setPreviewRefreshing,
+    setPreviewRefreshNote,
+    setReviewPackageFlowSummary,
+    setSelectedAddressSuggestion,
+    setSelectedIssueId,
+    setSelectedJobId,
+    setSelectedPlanPdfElementId,
+    setSelectedRunId,
+    setShowSiteBounds,
+    setSiteAddress,
+    setSiteRotationDeg,
+    setSiteRotationInput,
+    setSiteScaleLocked,
+    setSiteSelectionMode,
+    setSurveyDiagnostics,
+    setSurveyFileName,
+    setSurveyPoints,
+    setSurveyPreviewPoints,
+    setSurveySlopeEstimate,
+    setSurveyUploadMessage,
+    setUseSurveyForGrading,
+    setUploadedImageApiUrl,
+    setUploadedImagePreviewUrl,
+    setViewportCenter,
+    setViewportFootprint,
+    setWorkspaceRestoreState,
+  });
 
   const handleNewProject = async () => {
     const newProjectStartedAt = markCivoraInteraction();
