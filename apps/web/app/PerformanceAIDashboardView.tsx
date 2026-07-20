@@ -279,7 +279,6 @@ import { DashboardRunReviewPanel } from "./components/DashboardRunReviewPanel";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DeliverPanel } from "./components/DeliverPanel";
 import { DenseConceptActionStrip } from "./components/DenseConceptActionStrip";
-import { DesignAlternativesPanel } from "./components/DesignAlternativesPanel";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
 import { type DrawCadToolGroup } from "./components/DrawCadToolsPanel";
 import { FilesPanel } from "./components/FilesPanel";
@@ -295,14 +294,12 @@ import { PlanPdfWorkflowPanel } from "./components/PlanPdfWorkflowPanel";
 import PreviewPanel from "./components/PreviewPanel";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
 import { QuantitiesPanel } from "./components/QuantitiesPanel";
-import { ReportGateListPanel } from "./components/ReportGateListPanel";
-import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
+import { ReportsPanel } from "./components/ReportsPanel";
 import { SelectedObjectInspectorPanel } from "./components/SelectedObjectInspectorPanel";
 import { SetupAddressSection } from "./components/SetupAddressSection";
 import { SetupAutoSiteContextSection } from "./components/SetupAutoSiteContextSection";
 import { SetupSiteBoundarySection } from "./components/SetupSiteBoundarySection";
 import { SetupSurveyTerrainSection } from "./components/SetupSurveyTerrainSection";
-import { SourceConfidencePanel } from "./components/SourceConfidencePanel";
 import { SourceDataReviewPanel } from "./components/SourceDataReviewPanel";
 import { SourceHubPanel } from "./components/SourceHubPanel";
 import { StandardsPanel } from "./components/StandardsPanel";
@@ -22476,137 +22473,53 @@ function PerformanceAIDashboardView({
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" ? (
                   <div className="space-y-3">
                     {sidePanelForRender === "reports" ? (
-	                      <details className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          What is the review package?
-                        </summary>
-                        <div className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                          <p>
-                            The review package collects current project inputs,
-                            assumptions, visible blockers, generated outputs,
-                            quantities, and export evidence so a qualified user
-                            or external licensed engineer can review the work.
-                          </p>
-                          <p className="font-semibold text-slate-800">
-                            It is not a field-use package.
-                            Exports remain review packages for external review.
-                          </p>
-                          <p>
-                            Field use remains outside Civora.
-                          </p>
-                        </div>
-                      </details>
-                    ) : null}
-                    {sidePanelForRender === "reports" ? (
-                      <>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            ["QA items", issues.length + analysisIssues.length],
-                            ["Missing", sidebarMissingInputs.length],
-                            ["Assumptions", sidebarAssumptions.length],
-                            ["Needs input", systemHealthItems.filter((item) => item.state === "blocked").length],
-                          ].map(([label, value]) => (
-                            <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                              <p className="mt-1 text-lg font-semibold text-slate-900">{value}</p>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Engineering health</p>
-                          <div className="mt-3 grid grid-cols-2 gap-2">
-                            {engineeringHealthPanelLinks.map(({ panel, label }) => (
-                              <button
-                                key={panel}
-                                type="button"
-                                onClick={() => handleOpenSidePanel(panel)}
-                                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white"
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        {issues.length ? (
-                          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Engineering Issues</p>
-                              <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Apply fixes</span>
-                            </div>
-                            <div className="mt-3 space-y-2 text-xs text-slate-700">
-                              {issues.map((issue, idx) => {
-                                const applyLabel = drainageIssueApplyLabel(issue);
-                                const canApply = applyLabel ? canApplyDrainageIssue(issue) : false;
-                                const guidance = getIssueGuidance(issue);
-                                return (
-                                  <div
-                                    key={`${issue.message}-${idx}`}
-                                    className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2"
-                                  >
-                                    <div>
-                                      <p className="font-semibold text-slate-800">{issue.message}</p>
-                                      {issue.code ? (
-                                        <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">{issue.code}</p>
-                                      ) : null}
-                                      {guidance.bestNextFix ? (
-                                        <p className="mt-2 text-[11px] font-semibold text-slate-700">Best next fix: {guidance.bestNextFix}</p>
-                                      ) : null}
-                                    </div>
-                                    {applyLabel ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApplyDrainageIssue(issue)}
-                                        disabled={!canApply}
-                                        className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                          canApply
-                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                            : "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
-                                        }`}
-                                      >
-                                        {applyLabel}
-                                      </button>
-                                    ) : (
-                                      <span className="text-[10px] uppercase tracking-[0.12em] text-slate-400">Review</span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
-                        <ReviewIssueTrackerPanel
-                          issues={reviewIssueItems}
-                          openIssueCount={openReviewIssueItems.length}
-                          totalIssueCount={reviewIssueTracker.issue_count ?? reviewIssueItems.length}
-                          needsReviewCount={reviewIssueTracker.needs_review_count ?? 0}
-                          drainageIssueCount={drainageReviewIssueItems.length}
-                          waivedCount={reviewIssueTracker.by_status?.waived_review_required ?? 0}
-                          truthLabel={reviewIssueTracker.truth_label}
-                          onAskCommand={(command) => {
+                      <ReportsPanel
+                        stats={[
+                          { label: "QA items", value: issues.length + analysisIssues.length },
+                          { label: "Missing", value: sidebarMissingInputs.length },
+                          { label: "Assumptions", value: sidebarAssumptions.length },
+                          { label: "Needs input", value: systemHealthItems.filter((item) => item.state === "blocked").length },
+                        ]}
+                        engineeringHealthLinks={engineeringHealthPanelLinks}
+                        issues={issues}
+                        drainageIssueApplyLabel={drainageIssueApplyLabel}
+                        canApplyDrainageIssue={canApplyDrainageIssue}
+                        getIssueGuidance={getIssueGuidance}
+                        onApplyDrainageIssue={handleApplyDrainageIssue}
+                        onOpenSidePanel={handleOpenSidePanel}
+                        reviewIssueTracker={{
+                          issues: reviewIssueItems,
+                          openIssueCount: openReviewIssueItems.length,
+                          totalIssueCount: reviewIssueTracker.issue_count ?? reviewIssueItems.length,
+                          needsReviewCount: reviewIssueTracker.needs_review_count ?? 0,
+                          drainageIssueCount: drainageReviewIssueItems.length,
+                          waivedCount: reviewIssueTracker.by_status?.waived_review_required ?? 0,
+                          truthLabel: reviewIssueTracker.truth_label,
+                          onAskCommand: (command) => {
                             setPrompt(command);
                             handleOpenSidePanel("chat");
-                          }}
-                          onIssueCommand={(action, issueId) => {
+                          },
+                          onIssueCommand: (action, issueId) => {
                             setPrompt(`${action} issue ${issueId}`);
                             handleOpenSidePanel("chat");
-                          }}
-                        />
-                        <ReportGateListPanel title="Truth gates" items={sidebarTruthItems} />
-                        <ReportGateListPanel title="Review gates" items={reviewGateItems} />
-                        <DesignAlternativesPanel
-                          designAlternatives={designAlternatives}
-                          alternatives={designAlternativeItems}
-                          topAlternative={topDesignAlternative}
-                          selectedAlternativeId={selectedDesignAlternativeId}
-                          quantityAvailable={designAlternativeQuantityAvailable}
-                          onAction={(action, optionNumber) => void handleDesignAlternativesAction(action, optionNumber)}
-                        />
-                        <SourceConfidencePanel
-                          summary={sourceConfidenceSummary}
-                          entries={sourceConfidenceRows}
-                          totalEntryCount={sourceConfidenceEntries.length}
-                        />
-                      </>
+                          },
+                        }}
+                        truthGates={sidebarTruthItems}
+                        reviewGates={reviewGateItems}
+                        designAlternatives={{
+                          designAlternatives,
+                          alternatives: designAlternativeItems,
+                          topAlternative: topDesignAlternative,
+                          selectedAlternativeId: selectedDesignAlternativeId,
+                          quantityAvailable: designAlternativeQuantityAvailable,
+                          onAction: (action, optionNumber) => void handleDesignAlternativesAction(action, optionNumber),
+                        }}
+                        sourceConfidence={{
+                          summary: sourceConfidenceSummary,
+                          entries: sourceConfidenceRows,
+                          totalEntryCount: sourceConfidenceEntries.length,
+                        }}
+                      />
                     ) : null}
                     {sidePanelForRender === "quantities" ? (
                       <QuantitiesPanel
