@@ -57,6 +57,7 @@ import { PreviewSuggestedGeometry } from "./PreviewSuggestedGeometry";
 import { PreviewSvgDefs } from "./PreviewSvgDefs";
 import { PreviewWaterFireFlowOverlay } from "./PreviewWaterFireFlowOverlay";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
+import { usePreviewFocusTransform } from "./usePreviewFocusTransform";
 import { usePreviewResizeObservers } from "./usePreviewResizeObservers";
 import { WaterFireFlowEvidenceDock } from "./WaterFireFlowEvidenceDock";
 import {
@@ -6234,102 +6235,20 @@ export default function PreviewPanel({
     setPreviewImageBounds,
     setFullscreenImageBounds,
   });
-  const [focusTransform, setFocusTransform] = useState<{ scale: number; tx: number; ty: number } | null>(null);
-  const updateFocusTransform = useCallback((nextTransform: { scale: number; tx: number; ty: number }) => {
-    setFocusTransform((current) =>
-      current &&
-      Math.abs(current.scale - nextTransform.scale) < 0.001 &&
-      Math.abs(current.tx - nextTransform.tx) < 0.001 &&
-      Math.abs(current.ty - nextTransform.ty) < 0.001
-        ? current
-        : nextTransform,
-    );
-  }, [setFocusTransform]);
-
-  useEffect(() => {
-    if (!focusDetectedId) return;
-    const target = suggestedPlacements.find((item) => item.id === focusDetectedId);
-    let frame: number | null = null;
-    if (target) {
-      frame = window.requestAnimationFrame(() => {
-        setHoveredObjectId((current) => (current === target.id ? current : target.id));
-        onSelectBuilding(target.id);
-      });
-    }
-    if (onClearFocusDetected) {
-      const timer = window.setTimeout(() => onClearFocusDetected(), 400);
-      return () => {
-        if (frame !== null) window.cancelAnimationFrame(frame);
-        window.clearTimeout(timer);
-      };
-    }
-    return () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
-    };
-  }, [focusDetectedId, onClearFocusDetected, onSelectBuilding, suggestedPlacements]);
-
-  useEffect(() => {
-    if (!focusObjectId) return;
-    const target = buildingPlacements.find((item) => item.id === focusObjectId);
-    if (!target || !lotWidth || !lotHeight) return;
-    const minX = target.x ?? 0;
-    const minY = target.y ?? 0;
-    const maxX = minX + target.w;
-    const maxY = minY + target.d;
-    const padding = 0.15;
-    const boxW = Math.max((maxX - minX) / lotWidth, 0.02);
-    const boxH = Math.max((maxY - minY) / lotHeight, 0.02);
-    const scale = Math.min(1 / (boxW + padding), 1 / (boxH + padding));
-    const centerX = (minX + maxX) / 2 / lotWidth;
-    const centerY = (minY + maxY) / 2 / lotHeight;
-    const nextTransform = { scale: Math.min(Math.max(scale, 1), 1.6), tx: centerX, ty: centerY };
-    const handle = window.requestAnimationFrame(() => updateFocusTransform(nextTransform));
-    if (onClearFocusObject) {
-      const timer = window.setTimeout(() => onClearFocusObject(), 500);
-      return () => {
-        window.cancelAnimationFrame(handle);
-        window.clearTimeout(timer);
-      };
-    }
-    return () => window.cancelAnimationFrame(handle);
-  }, [focusObjectId, buildingPlacements, lotHeight, lotWidth, onClearFocusObject, updateFocusTransform]);
-
-  useEffect(() => {
-    if (!analysisHighlight || !lotWidth || !lotHeight) return;
-    const focusItems = [...buildingPlacements, ...suggestedPlacements].filter(
-      (item) => item.id === analysisHighlight.buildingId || item.id === analysisHighlight.accessId,
-    );
-    if (!focusItems.length) return;
-    let minX = Number.POSITIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-    focusItems.forEach((item) => {
-      const x = item.x ?? 0;
-      const y = item.y ?? 0;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x + item.w);
-      maxY = Math.max(maxY, y + item.d);
-    });
-    const path = analysisPaths?.find((p) => p.id === analysisHighlight.pathId);
-    if (path) {
-      minX = Math.min(minX, path.from.x, path.to.x);
-      minY = Math.min(minY, path.from.y, path.to.y);
-      maxX = Math.max(maxX, path.from.x, path.to.x);
-      maxY = Math.max(maxY, path.from.y, path.to.y);
-    }
-    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return;
-    const padding = 0.1;
-    const boxW = Math.max((maxX - minX) / lotWidth, 0.02);
-    const boxH = Math.max((maxY - minY) / lotHeight, 0.02);
-    const scale = Math.min(1 / (boxW + padding), 1 / (boxH + padding));
-    const centerX = (minX + maxX) / 2 / lotWidth;
-    const centerY = (minY + maxY) / 2 / lotHeight;
-    const nextTransform = { scale: Math.min(Math.max(scale, 1), 3), tx: centerX, ty: centerY };
-    const handle = window.requestAnimationFrame(() => updateFocusTransform(nextTransform));
-    return () => window.cancelAnimationFrame(handle);
-  }, [analysisHighlight, analysisPaths, buildingPlacements, lotHeight, lotWidth, suggestedPlacements, updateFocusTransform]);
+  const { focusTransform, setFocusTransform } = usePreviewFocusTransform({
+    focusDetectedId,
+    focusObjectId,
+    buildingPlacements,
+    suggestedPlacements,
+    analysisPaths,
+    analysisHighlight,
+    lotWidth,
+    lotHeight,
+    onSelectBuilding,
+    onClearFocusDetected,
+    onClearFocusObject,
+    setHoveredObjectId,
+  });
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
   const activePreviewMode: "2d" | "3d" = previewMode;
   return (
