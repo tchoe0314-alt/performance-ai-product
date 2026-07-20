@@ -297,12 +297,10 @@ import {
   createObjectManagerRotateUpdateEntries,
   createObjectManagerScaleUpdateEntries,
   createTraceAwareBulkUpdate as createObjectManagerTraceAwareBulkUpdate,
-  formatObjectManagerCountMessage,
   formatVisibleDraftSelectionMessage,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
   type ObjectManagerLayoutAction,
-  partitionObjectManagerTargets,
   summarizeDraftCopyResults,
 } from "./utils/dashboardObjectManagerTrace";
 import {
@@ -310,6 +308,14 @@ import {
   runObjectManagerBulkCopyByOffset,
   runObjectManagerBulkDuplicate,
 } from "./utils/dashboardObjectManagerCopyActions";
+import {
+  runObjectManagerBulkColor,
+  runObjectManagerBulkDelete,
+  runObjectManagerBulkLock,
+  runObjectManagerBulkType,
+  runObjectManagerBulkVisibility,
+  runObjectManagerIsolateSelected,
+} from "./utils/dashboardObjectManagerBulkActions";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -3445,340 +3451,6 @@ function PerformanceAIDashboardView({
     setStatusMessage(message);
   }, [handleUpdateBuilding, reportObjectActionBlocker]);
 
-  const handleObjectManagerBulkVisibility = useCallback((hidden: boolean) => {
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Bulk visibility blocked: select one or more objects first.");
-      return;
-    }
-    const blocked = targets
-      .map((item) => getObjectEditBlocker(item, "hide"))
-      .filter(Boolean) as string[];
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "hide"));
-    if (!editable.length) {
-      reportObjectActionBlocker(blocked[0] ?? "Bulk visibility blocked: selected objects cannot be hidden from the preview.");
-      return;
-    }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
-        meta: { ui_hidden: hidden },
-      })),
-      label: hidden ? "bulk hide" : "bulk show",
-    };
-    editable.forEach((item) => {
-      handleUpdateBuilding(item.id, {
-        meta: {
-          ...(item.meta ?? {}),
-          ui_hidden: hidden,
-        },
-      });
-    });
-    const message = `${hidden ? "Hidden" : "Shown"} ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blocked.length ? `; ${blocked.length} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", message, "status");
-    recordRecentChange({
-      type: "object_visibility_changed",
-      label: hidden ? "Objects hidden" : "Objects shown",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-  ]);
-
-  const handleObjectManagerIsolateSelected = useCallback(() => {
-    const selected = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    const editableSelected = selected.filter((item) => !getObjectEditBlocker(item, "hide"));
-    if (!editableSelected.length) {
-      reportObjectActionBlocker("Isolate selected blocked: select one or more visible editable objects first.");
-      return;
-    }
-    const selectedIdSet = new Set(editableSelected.map((item) => item.id));
-    const editableAffected = buildingPlacements.filter((item) => !getObjectEditBlocker(item, "hide"));
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editableAffected.map(cloneBuildingPlacementForUndo),
-      after: editableAffected.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
-        meta: { ui_hidden: !selectedIdSet.has(item.id) },
-      })),
-      label: "isolate selected",
-    };
-    let hiddenCount = 0;
-    let shownCount = 0;
-    editableAffected.forEach((item) => {
-      const blocker = getObjectEditBlocker(item, "hide");
-      if (blocker) return;
-      const shouldHide = !selectedIdSet.has(item.id);
-      if (shouldHide && !item.meta?.ui_hidden) hiddenCount += 1;
-      if (!shouldHide && item.meta?.ui_hidden) shownCount += 1;
-      handleUpdateBuilding(item.id, {
-        meta: {
-          ...(item.meta ?? {}),
-          ui_hidden: shouldHide,
-        },
-      });
-    });
-    const message = `Isolated ${editableSelected.length} selected object${editableSelected.length === 1 ? "" : "s"}; ${hiddenCount} other object${hiddenCount === 1 ? "" : "s"} hidden${shownCount ? `, ${shownCount} restored.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", message, "status");
-    recordRecentChange({
-      type: "object_visibility_changed",
-      label: "Objects isolated",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-  ]);
-
-  const handleObjectManagerBulkLock = useCallback((locked: boolean) => {
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Bulk lock blocked: select one or more draft objects first.");
-      return;
-    }
-    const { editable, blockedCount } = partitionObjectManagerTargets({
-      targets,
-      isEditable: (item) => {
-      if (item.type === "site") return false;
-      if (item.meta?.ai_realism_artifact) return false;
-      if (item.capabilities?.deletable === false) return false;
-      return true;
-      },
-    });
-    if (!editable.length) {
-      reportObjectActionBlocker("Bulk lock blocked: selected objects are source-only or required project evidence.");
-      return;
-    }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, { locked })),
-      label: locked ? "bulk lock" : "bulk unlock",
-    };
-    editable.forEach((item) => {
-      handleUpdateBuilding(item.id, { locked });
-    });
-    const message = formatObjectManagerCountMessage({
-      action: locked ? "Locked" : "Unlocked",
-      count: editable.length,
-      blockedCount,
-      noun: "selected draft object",
-    });
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", `${message} Locked objects stay visible but cannot be edited until unlocked.`, "status");
-    recordRecentChange({
-      type: "object_style_changed",
-      label: `Objects ${locked ? "locked" : "unlocked"}`,
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    appendChatMessage,
-    buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-  ]);
-
-  const handleObjectManagerBulkColor = useCallback((color: string) => {
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Bulk color blocked: select one or more editable objects first.");
-      return;
-    }
-    const { editable, blockedCount } = partitionObjectManagerTargets({
-      targets,
-      isEditable: (item) => !getObjectEditBlocker(item, "style"),
-    });
-    if (!editable.length) {
-      reportObjectActionBlocker("Bulk color blocked: selected objects are locked, source-only, or not editable.");
-      return;
-    }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
-        meta: { ui_color: color },
-      })),
-      label: "bulk color",
-    };
-    editable.forEach((item) => {
-      handleUpdateBuilding(item.id, {
-        meta: {
-          ...(item.meta ?? {}),
-          ui_color: color,
-        },
-      });
-    });
-    const message = formatObjectManagerCountMessage({
-      action: "Updated color for",
-      count: editable.length,
-      blockedCount,
-    });
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Objects recolored",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-  ]);
-
-  const handleObjectManagerBulkType = useCallback((nextType: SiteObjectType) => {
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Bulk layer/type blocked: select one or more editable objects first.");
-      return;
-    }
-    const { editable, blockedCount } = partitionObjectManagerTargets({
-      targets,
-      isEditable: (item) => !getObjectEditBlocker(item, "type"),
-    });
-    if (!editable.length) {
-      reportObjectActionBlocker("Bulk layer/type blocked: selected objects are locked, source-only, or not editable.");
-      return;
-    }
-    const undo: DraftUndoAction = {
-      action: "bulk_update",
-      before: editable.map(cloneBuildingPlacementForUndo),
-      after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
-        type: nextType,
-        use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
-        meta: {
-          category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
-        },
-      })),
-      label: "bulk layer/type",
-    };
-    editable.forEach((item) => {
-      handleUpdateBuilding(item.id, {
-        type: nextType,
-        use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
-        meta: {
-          ...(item.meta ?? {}),
-          category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
-        },
-      });
-    });
-    const message = formatObjectManagerCountMessage({
-      action: "Updated layer/type for",
-      count: editable.length,
-      blockedCount,
-    });
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Objects layer/type changed",
-      detail: message,
-      undo,
-    });
-    recordDraftUndoAction(undo);
-  }, [
-    buildingPlacements,
-    cloneBuildingPlacementForUndo,
-    cloneBuildingPlacementWithUpdatesForUndo,
-    handleUpdateBuilding,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    selectedObjectIds,
-  ]);
-
-  const handleObjectManagerBulkDelete = useCallback(() => {
-    clearGeneratedPreview();
-    const targets = buildingPlacements.filter((item) => selectedObjectIds.includes(item.id));
-    if (!targets.length) {
-      reportObjectActionBlocker("Bulk delete blocked: select one or more editable draft objects first.");
-      return;
-    }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "delete"));
-    const blockedCount = targets.length - editable.length;
-    if (!editable.length) {
-      reportObjectActionBlocker("Bulk delete blocked: selected objects are locked, source-only, or required project evidence.");
-      return;
-    }
-    const editableIds = new Set(editable.map((item) => item.id));
-    setBuildingPlacements((prev) => prev.filter((item) => !editableIds.has(item.id)));
-    setSelectedObjectIds((prev) => prev.filter((id) => !editableIds.has(id)));
-    setActivePlacementId((prev) => (prev && editableIds.has(prev) ? null : prev));
-    editable.forEach((item) => {
-      markSystemsStale(systemsImpactedByPlacement(item));
-    });
-    const undo: DraftUndoAction = {
-      action: "delete_many",
-      objects: editable.map(cloneBuildingPlacementForUndo),
-      label: "bulk delete",
-    };
-    recordDraftUndoAction(undo);
-    recordRecentChange({
-      type: "object_deleted",
-      label: "Objects deleted",
-      detail: `Deleted ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
-      undo,
-    });
-    const message = `Deleted ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
-    setObjectManagerStatusMessage(message);
-    setStatusMessage(message);
-    appendChatMessage("assistant", message, "status");
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
-        previewRefreshIntentRef.current = {
-          reason: "Refreshing preview after bulk delete...",
-          track: true,
-        };
-      });
-  }, [
-    appendChatMessage,
-    buildingPlacements,
-    clearGeneratedPreview,
-    cloneBuildingPlacementForUndo,
-    ensureProjectDraftRef,
-    markSystemsStale,
-    recordDraftUndoAction,
-    recordRecentChange,
-    reportObjectActionBlocker,
-    saveProjectRef,
-    selectedObjectIds,
-    systemsImpactedByPlacement,
-  ]);
-
   const persistDraftRefresh = useCallback((reason: string) => {
     void ensureProjectDraftRef.current()
       .then(() => saveProjectRef.current({ silent: true }))
@@ -3789,6 +3461,85 @@ function PerformanceAIDashboardView({
         };
       });
   }, [ensureProjectDraftRef, saveProjectRef]);
+
+  const objectManagerBulkActions = useMemo(() => ({
+    setBuildingPlacements,
+    setSelectedObjectIds,
+    setActivePlacementId,
+    setObjectManagerStatusMessage,
+    setStatusMessage,
+    appendChatMessage,
+    recordRecentChange,
+    recordDraftUndoAction,
+    markSystemsStale,
+    systemsImpactedByPlacement,
+    reportObjectActionBlocker,
+    handleUpdateBuilding,
+    clearGeneratedPreview,
+    persistDraftRefresh,
+  }), [
+    appendChatMessage,
+    clearGeneratedPreview,
+    handleUpdateBuilding,
+    markSystemsStale,
+    persistDraftRefresh,
+    recordDraftUndoAction,
+    recordRecentChange,
+    reportObjectActionBlocker,
+    systemsImpactedByPlacement,
+  ]);
+
+  const handleObjectManagerBulkVisibility = useCallback((hidden: boolean) => {
+    runObjectManagerBulkVisibility({
+      hidden,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
+    });
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
+
+  const handleObjectManagerIsolateSelected = useCallback(() => {
+    runObjectManagerIsolateSelected({
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
+    });
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
+
+  const handleObjectManagerBulkLock = useCallback((locked: boolean) => {
+    runObjectManagerBulkLock({
+      locked,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
+    });
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
+
+  const handleObjectManagerBulkColor = useCallback((color: string) => {
+    runObjectManagerBulkColor({
+      color,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
+    });
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
+
+  const handleObjectManagerBulkType = useCallback((nextType: SiteObjectType) => {
+    runObjectManagerBulkType({
+      nextType,
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
+    });
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
+
+  const handleObjectManagerBulkDelete = useCallback(() => {
+    runObjectManagerBulkDelete({
+      buildingPlacements,
+      selectedObjectIds,
+      actions: objectManagerBulkActions,
+    });
+  }, [buildingPlacements, objectManagerBulkActions, selectedObjectIds]);
 
   const objectManagerCopyActions = useMemo(() => ({
     setBuildingPlacements,
