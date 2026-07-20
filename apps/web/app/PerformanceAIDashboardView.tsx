@@ -271,6 +271,7 @@ import {
   type Civil3DWorkflowTab,
   type RoadwayWorkbenchTab,
 } from "./components/CivilRoadwayWorkbench";
+import { DashboardDetailsPanel } from "./components/DashboardDetailsPanel";
 import { DashboardEngineDepthPanel } from "./components/DashboardEngineDepthPanel";
 import { DashboardGuidancePanel } from "./components/DashboardGuidancePanel";
 import { DashboardIssueReportPanel } from "./components/DashboardIssueReportPanel";
@@ -22626,99 +22627,70 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "details" ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Profiles and cross sections</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        {[
-                          ["Road profiles", roads ? "Review" : "No generated roads"],
-                          ["Pipe profiles", utilities ? "Review" : "No generated pipes"],
-                          ["Basin sections", hasBasinPlaced ? "Available" : "Needs basin"],
-                          ["ADA paths", buildingPlacements.some((item) => item.type === "sidewalk") ? "Review" : "Needs paths"],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                            <p className="mt-1 font-semibold text-slate-800">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <SelectedObjectInspectorPanel
-                      selectedBuilding={selectedBuilding}
-                      confidenceEntry={selectedBuilding ? sourceConfidenceByObjectId.get(selectedBuilding.id) : null}
-                      objectManagerStatusMessage={objectManagerStatusMessage}
-                      objectClipboardCount={objectClipboard.length}
-                      displayType={selectedBuilding ? getObjectDisplayType(selectedBuilding) : ""}
-                      reviewLabel={selectedBuilding ? getObjectReviewLabel(selectedBuilding) : ""}
-                      sourceLabel={selectedBuilding ? getObjectSourceLabel(selectedBuilding) : ""}
-                      layerLabel={selectedBuilding ? getObjectLayerLabel(selectedBuilding) : ""}
-                      dimensionsLabel={selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : ""}
-                      editableGeometry={selectedBuilding ? normalizeGeometryPoints(selectedBuilding.geometry) : undefined}
-                      editBlocked={selectedBuilding ? Boolean(getObjectEditBlocker(selectedBuilding, "resize")) : false}
-                      onRename={(item, value) => {
-                        const blocker = getObjectEditBlocker(item, "rename");
-                        if (blocker) {
-                          reportObjectActionBlocker(blocker);
-                          return;
-                        }
-                        handleUpdateBuilding(item.id, { label: value });
-                      }}
-                      onToggleLock={(item) => handleToggleBuildingLock(item.id)}
-                      onToggleHidden={(item) =>
-                        handleUpdateBuilding(item.id, {
-                          meta: {
-                            ...(item.meta ?? {}),
-                            ui_hidden: !Boolean(item.meta?.ui_hidden),
-                          },
-                        })
-                      }
-                      onUpdateObject={(item, updates) => handleUpdateBuilding(item.id, updates)}
-                      onUpdateVertex={handleUpdateObjectVertex}
-                      onInsertVertex={handleInsertObjectVertex}
-                      onDeleteVertex={handleDeleteObjectVertex}
-                      onSnapVertex={handleSnapObjectVertexToNearestEndpoint}
-                      onAlignVertex={handleAlignObjectVertexToPrevious}
-                      onMove={(item) => {
-                        handleObjectManagerSelect(item.id);
-                        setPlacementModeEnabled(true);
-                      }}
-                      onFocus={(item) => {
-                        setFocusObjectId(item.id);
-                        setActiveSidePanel(null);
-                      }}
-                      onCopy={handleObjectManagerCopy}
-                      onPaste={handleObjectManagerPaste}
-                      onTransform={handleObjectManagerTransform}
-                      onDelete={handleObjectManagerDelete}
-                    />
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Object list</p>
-                      <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
-                        {buildingPlacements.length ? (
-                          buildingPlacements.map((item) => {
-                            const meta = item.meta && typeof item.meta === "object" ? item.meta as Record<string, unknown> : {};
-                            const isDraftReviewGeometry =
-                              item.type === "custom" ||
-                              item.source === "manual_drawn" ||
-                              meta.classification_status === "draft_review_required" ||
-                              meta.engineering_status === "draft_review_required";
-                            return (
-                              <button key={item.id} type="button" onClick={() => setActivePlacementId(item.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${activePlacementId === item.id ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"}`}>
-                                {item.label}
-                                <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-70">
-                                  {isDraftReviewGeometry
-                                    ? "Canonical geometry · Draft review required"
-                                    : `${item.placed ? "Placed" : "Not placed"} · ${item.locked ? "Locked" : "Editable"}`}
-                                </span>
-                              </button>
-                            );
+                  <DashboardDetailsPanel
+                    profileRows={[
+                      { label: "Road profiles", value: roads ? "Review" : "No generated roads" },
+                      { label: "Pipe profiles", value: utilities ? "Review" : "No generated pipes" },
+                      { label: "Basin sections", value: hasBasinPlaced ? "Available" : "Needs basin" },
+                      {
+                        label: "ADA paths",
+                        value: buildingPlacements.some((item) => item.type === "sidewalk") ? "Review" : "Needs paths",
+                      },
+                    ]}
+                    selectedInspector={
+                      <SelectedObjectInspectorPanel
+                        selectedBuilding={selectedBuilding}
+                        confidenceEntry={selectedBuilding ? sourceConfidenceByObjectId.get(selectedBuilding.id) : null}
+                        objectManagerStatusMessage={objectManagerStatusMessage}
+                        objectClipboardCount={objectClipboard.length}
+                        displayType={selectedBuilding ? getObjectDisplayType(selectedBuilding) : ""}
+                        reviewLabel={selectedBuilding ? getObjectReviewLabel(selectedBuilding) : ""}
+                        sourceLabel={selectedBuilding ? getObjectSourceLabel(selectedBuilding) : ""}
+                        layerLabel={selectedBuilding ? getObjectLayerLabel(selectedBuilding) : ""}
+                        dimensionsLabel={selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : ""}
+                        editableGeometry={selectedBuilding ? normalizeGeometryPoints(selectedBuilding.geometry) : undefined}
+                        editBlocked={selectedBuilding ? Boolean(getObjectEditBlocker(selectedBuilding, "resize")) : false}
+                        onRename={(item, value) => {
+                          const blocker = getObjectEditBlocker(item, "rename");
+                          if (blocker) {
+                            reportObjectActionBlocker(blocker);
+                            return;
+                          }
+                          handleUpdateBuilding(item.id, { label: value });
+                        }}
+                        onToggleLock={(item) => handleToggleBuildingLock(item.id)}
+                        onToggleHidden={(item) =>
+                          handleUpdateBuilding(item.id, {
+                            meta: {
+                              ...(item.meta ?? {}),
+                              ui_hidden: !Boolean(item.meta?.ui_hidden),
+                            },
                           })
-                        ) : (
-                          <p className="text-sm text-slate-500">No objects yet.</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                        }
+                        onUpdateObject={(item, updates) => handleUpdateBuilding(item.id, updates)}
+                        onUpdateVertex={handleUpdateObjectVertex}
+                        onInsertVertex={handleInsertObjectVertex}
+                        onDeleteVertex={handleDeleteObjectVertex}
+                        onSnapVertex={handleSnapObjectVertexToNearestEndpoint}
+                        onAlignVertex={handleAlignObjectVertexToPrevious}
+                        onMove={(item) => {
+                          handleObjectManagerSelect(item.id);
+                          setPlacementModeEnabled(true);
+                        }}
+                        onFocus={(item) => {
+                          setFocusObjectId(item.id);
+                          setActiveSidePanel(null);
+                        }}
+                        onCopy={handleObjectManagerCopy}
+                        onPaste={handleObjectManagerPaste}
+                        onTransform={handleObjectManagerTransform}
+                        onDelete={handleObjectManagerDelete}
+                      />
+                    }
+                    objects={buildingPlacements}
+                    activePlacementId={activePlacementId}
+                    onSelectObject={setActivePlacementId}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "layers" ? (
