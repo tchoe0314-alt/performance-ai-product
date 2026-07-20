@@ -290,6 +290,7 @@ import {
   runDashboardReactiveValidation,
 } from "./utils/dashboardReactiveRerunView";
 import { createDashboardExportActions } from "./utils/dashboardExportActions";
+import { useDashboardFloatingObjectActions } from "./hooks/useDashboardFloatingObjectActions";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
@@ -11922,37 +11923,23 @@ function PerformanceAIDashboardView({
       siteScaleLocked,
     ],
   );
-  const selectedObjectConfidence = selectedBuilding
-    ? sourceConfidenceByObjectId.get(selectedBuilding.id)
-    : null;
-  const handleEditFloatingSelectedObject = useCallback(() => {
-    if (!selectedBuilding) {
-      return;
-    }
-    if (selectedBuilding.locked || selectedBuilding.capabilities?.movable === false) {
-      const message = `Move/edit needs ${selectedBuilding.label} to be unlocked and movable.`;
-      setPlacementModeEnabled(false);
-      setMoveEditFeedback(message);
-      setStatusMessage(message);
-      appendChatMessage("assistant", message, "status");
-      return;
-    }
-    setPlacementModeEnabled(true);
-    setPreviewInteraction("edit");
-    const message = `Move/edit mode active for ${selectedBuilding.label}.`;
-    setMoveEditFeedback(message);
-    setStatusMessage(`${message} Drag it on the canvas or use object details.`);
-  }, [appendChatMessage, selectedBuilding]);
-  const handleFocusFloatingSelectedObject = useCallback(() => {
-    if (!selectedBuilding) {
-      return;
-    }
-    setFocusObjectId(selectedBuilding.id);
-    setActiveSidePanel(null);
-  }, [selectedBuilding]);
-  const handleOpenFloatingObjectDetails = useCallback(() => {
-    handleOpenPanelFromDrawer("details");
-  }, [handleOpenPanelFromDrawer]);
+  const {
+    handleEditFloatingSelectedObject,
+    handleFocusFloatingSelectedObject,
+    handleOpenFloatingObjectDetails,
+    selectedObjectConfidence,
+  } = useDashboardFloatingObjectActions({
+    appendChatMessage,
+    handleOpenPanelFromDrawer,
+    selectedBuilding,
+    setActiveSidePanel,
+    setFocusObjectId,
+    setMoveEditFeedback,
+    setPlacementModeEnabled,
+    setPreviewInteraction,
+    setStatusMessage,
+    sourceConfidenceByObjectId,
+  });
   const {
     sidebarStaleSystems,
     sidebarMissingInputs,
