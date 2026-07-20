@@ -77,9 +77,9 @@ export default function useAuthState({
       const kind = classifyApiError(error);
       setAuthStatusError(
         kind === "backend_unreachable"
-          ? "Backend unreachable. Sign-in is unavailable until the backend responds."
+          ? "Backend connection needs attention. Sign-in will be available once the backend responds."
           : kind === "api_blocked"
-            ? "Backend API blocked. Check CORS or access settings, then retry sign-in."
+            ? "Backend access needs attention. Check the app/backend access settings, then retry sign-in."
             : apiErrorMessage(error, "Civora AI could not load backend status."),
       );
     }
@@ -116,9 +116,9 @@ export default function useAuthState({
       const kind = classifyApiError(error);
       setAuthError(
         kind === "backend_unreachable"
-          ? "Backend unreachable. Check the backend URL and try signing in again."
+          ? "Backend connection needs attention. Check the backend URL, then try signing in again."
           : kind === "api_blocked"
-            ? "Backend API blocked. Check CORS or access settings, then retry sign-in."
+            ? "Backend access needs attention. Check the app/backend access settings, then retry sign-in."
             : apiErrorMessage(error, "Authentication failed."),
       );
     } finally {
@@ -159,7 +159,7 @@ export default function useAuthState({
         setAuthStatusError(
           error instanceof Error && error.message === "Session expired. Sign in again."
             ? "Session expired. Sign in again."
-            : apiErrorMessage(error, "Backend unreachable. Sign in after the backend is available."),
+            : apiErrorMessage(error, "Backend connection needs attention. Sign in after the backend is available."),
         );
       });
   }, [loadAuthStatus, loadMe, skipInitialAuthStatus]);

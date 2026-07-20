@@ -2742,8 +2742,8 @@ function formatTimestamp(value?: number): string {
 function panelErrorMessage(error: unknown, fallback: string): string {
   const kind = classifyApiError(error);
   if (kind === "auth_expired") return "Session expired. Sign in again.";
-  if (kind === "backend_unreachable") return "Backend unreachable or CORS/API blocked. Check the backend connection, then retry.";
-  if (kind === "api_blocked") return "Backend API blocked. Check CORS or account access, then retry.";
+  if (kind === "backend_unreachable") return "Backend connection needs attention. Check the backend connection, then retry.";
+  if (kind === "api_blocked") return "Backend access needs attention. Check account or app/backend access settings, then retry.";
   if (kind === "rate_limited") return "Rate limited. Wait about a minute, then retry.";
   if (kind === "upload_too_large") return "Upload too large. Choose a smaller file or compress it, then retry.";
   if (kind === "unsupported_file") return "Unsupported file. Use an accepted file type for this upload.";
@@ -2761,7 +2761,7 @@ function chatFailureMessage(error: unknown): string {
     return "I could not reach your Civora session. Sign in again, then resend your message.";
   }
   if (kind === "backend_unreachable" || kind === "api_blocked") {
-    return "I could not reach the backend just now. Check the backend connection, then retry your message.";
+    return "I could not reach Civora services just now. Check the connection, then retry your message.";
   }
   if (kind === "rate_limited") {
     return "The backend is rate limiting requests. Wait about a minute, then retry your message.";

@@ -150,7 +150,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     }
     await addressDetails.getByLabel("Type project address").fill("1 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
-    await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/provider lookup failed/i, { timeout: 30_000 });
+    await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/provider lookup could not complete|provider lookup failed/i, { timeout: 30_000 });
 
     await page.unroute("**/api/existing-conditions/fetch-online");
     await page.route("**/api/existing-conditions/fetch-online", async (route) => {
