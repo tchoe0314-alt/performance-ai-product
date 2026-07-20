@@ -14,9 +14,6 @@ import type {
   ProjectRecord,
   ProjectInput,
   JobSummary,
-  WorkflowArtifact,
-  WorkflowRunSummary,
-  WorkflowReviewDashboard,
   ManualFailure,
   ManagerMetrics,
   MetricValue,
@@ -178,15 +175,14 @@ import {
 import { uploadedImageSrc } from "./utils/auth";
 import {
   artifactFromJob,
-  buildThinkingState,
   chatFailureMessage,
   formatTimestamp,
   isArtifactExportJob,
-  isLikelyStaleJob,
   jobDetailMessage,
   panelErrorMessage,
   uploadStatusMessage,
 } from "./utils/dashboardStatus";
+import { buildDashboardWorkflowState } from "./utils/dashboardWorkflowState";
 import {
   hasAddressCoordinates,
   type AddressSuggestion,
@@ -1061,122 +1057,23 @@ function PerformanceAIDashboardView({
     };
   }, [backendResult, currentProject?.project_id, fileName, projectId, siteName]);
 
-  const workflowRuns = useMemo<WorkflowRunSummary[]>(
+  const workflowState = useMemo(
     () =>
-      Array.isArray(currentProject?.metadata?.workflow?.runs)
-        ? currentProject?.metadata?.workflow?.runs
-        : [],
-    [currentProject],
-  );
-
-  const selectedRun = useMemo<WorkflowRunSummary | null>(() => {
-    if (!workflowRuns.length) return null;
-    return (
-      workflowRuns.find((run) => run.run_id === selectedRunId) ?? workflowRuns[0]
-    );
-  }, [workflowRuns, selectedRunId]);
-  const workflowReviewDashboard = useMemo<WorkflowReviewDashboard | null>(
-    () => currentProject?.metadata?.workflow?.review_dashboard ?? null,
-    [currentProject],
-  );
-  const workflowArtifacts = useMemo<WorkflowArtifact[]>(
-    () =>
-      Array.isArray(currentProject?.metadata?.workflow?.artifacts)
-        ? currentProject.metadata.workflow.artifacts
-        : Array.isArray(workflowReviewDashboard?.recent_artifacts)
-          ? workflowReviewDashboard.recent_artifacts.map((item) => item as WorkflowArtifact)
-          : [],
-    [currentProject, workflowReviewDashboard],
-  );
-  const activeJob = useMemo(
-    () => jobs.find((job) => job.job_id === activeJobId) ?? null,
-    [jobs, activeJobId],
-  );
-  const jobHistory = useMemo(
-    () =>
-      [...jobs].sort(
-        (a, b) =>
-          Number(b.updated_at || b.created_at || 0) -
-          Number(a.updated_at || a.created_at || 0),
-      ),
-    [jobs],
-  );
-  const jobStatusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const job of jobs) {
-      const key = String(job.status || "unknown").toLowerCase();
-      counts[key] = (counts[key] || 0) + 1;
-    }
-    return counts;
-  }, [jobs]);
-  const artifactHistory = useMemo<WorkflowArtifact[]>(() => {
-    const fromJobs = jobs.flatMap((job) => job.artifact_history || []);
-    const completedExportArtifacts = jobs
-      .map((job) => artifactFromJob(job))
-      .filter((artifact): artifact is NonNullable<ReturnType<typeof artifactFromJob>> => Boolean(artifact))
-      .map((artifact) => ({
-        artifact_id: artifact.filename || artifact.download_path || "job-artifact",
-        kind: artifact.kind,
-        filename: artifact.filename,
-        download_path: artifact.download_path,
-      }));
-    return [...fromJobs, ...completedExportArtifacts, ...workflowArtifacts].filter(
-      (item, index, all) => {
-        const key = `${item.artifact_id || ""}:${item.download_path || ""}:${item.filename || ""}`;
-        return index === all.findIndex((candidate) => `${candidate.artifact_id || ""}:${candidate.download_path || ""}:${candidate.filename || ""}` === key);
-      },
-    );
-  }, [jobs, workflowArtifacts]);
-  const currentProjectActiveJob = useMemo(
-    () =>
-      jobs.find(
-        (job) =>
-          Boolean(projectId) &&
-          job.project_id === projectId &&
-          ["queued", "running", "awaiting_approval", "cancelling"].includes(String(job.status || "").toLowerCase()),
-      ) ?? null,
-    [jobs, projectId],
-  );
-  const visibleActiveJob = useMemo(() => {
-    if (activeJobId) {
-      return activeJob;
-    }
-    return projectId ? currentProjectActiveJob : activeJob;
-  }, [activeJob, activeJobId, currentProjectActiveJob, projectId]);
-  const selectedJob = useMemo(
-    () => jobs.find((job) => job.job_id === selectedJobId) ?? visibleActiveJob ?? jobs[0] ?? null,
-    [jobs, selectedJobId, visibleActiveJob],
-  );
-  const visibleActiveJobStale = useMemo(
-    () => isLikelyStaleJob(visibleActiveJob, jobClockMs),
-    [visibleActiveJob, jobClockMs],
-  );
-  const visibleActiveJobStatus = String(visibleActiveJob?.status || "").toLowerCase();
-  const chatBlockingActiveJob = Boolean(
-    visibleActiveJob && ["queued", "running", "cancelling"].includes(visibleActiveJobStatus),
-  );
-  const selectedJobStale = useMemo(
-    () => isLikelyStaleJob(selectedJob, jobClockMs),
-    [selectedJob, jobClockMs],
-  );
-  const thinkingState = useMemo(
-    () =>
-      buildThinkingState({
+      buildDashboardWorkflowState({
+        currentProject,
+        jobs,
+        selectedRunId,
+        activeJobId,
+        selectedJobId,
+        projectId,
+        jobClockMs,
         busy,
         activePlanTool,
-        activeJobStatus: visibleActiveJob?.status,
-        activeJobStage: visibleActiveJob?.stage,
-        activeJobDetail: visibleActiveJob?.stage_detail,
-        activeJobProgress: visibleActiveJob?.progress,
-        activeJobUpdatedAt: visibleActiveJob?.updated_at,
-        activeJobQueuePosition: visibleActiveJob?.queue_position,
-        activeJobQueuedCount: visibleActiveJob?.queued_count,
-        activeJobRunningCount: visibleActiveJob?.running_count,
-        staleJob: visibleActiveJobStale,
         statusMessage,
       }),
-    [busy, visibleActiveJob?.status, visibleActiveJob?.stage, visibleActiveJob?.stage_detail, visibleActiveJob?.progress, visibleActiveJob?.updated_at, visibleActiveJob?.queue_position, visibleActiveJob?.queued_count, visibleActiveJob?.running_count, visibleActiveJobStale, activePlanTool, statusMessage],
+    [activeJobId, activePlanTool, busy, currentProject, jobClockMs, jobs, projectId, selectedJobId, selectedRunId, statusMessage],
   );
+  const { workflowRuns, selectedRun, workflowReviewDashboard, activeJob, jobHistory, jobStatusCounts, artifactHistory, currentProjectActiveJob, visibleActiveJob, visibleActiveJobStale, chatBlockingActiveJob, selectedJob, selectedJobStale, thinkingState } = workflowState;
 
   const chatSummary = useMemo(() => {
     const last = chatMessages[chatMessages.length - 1];
