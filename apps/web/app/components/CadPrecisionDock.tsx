@@ -128,7 +128,7 @@ type CadPrecisionDockProps = {
   undoCadCommand: () => void;
   redoCadCommand: () => void;
   applyCadCoordinate: () => void;
-  runCadCommand: () => void;
+  runCadCommand: (commandOverride?: string) => void;
   transformSelectedCadObjects: (kind: "move" | "rotate" | "scale", valueOverride?: string) => void;
   applySelectedCadDimension: () => void;
   offsetSelectedCadObject: () => void;
@@ -327,6 +327,39 @@ export function CadPrecisionDock({
           </div>
         ) : null}
         <p className="mt-2 text-[11px] font-medium text-slate-500">{cadCommandStatus}</p>
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2" data-testid="cad-power-tools">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Power tools
+            </p>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Same as typed commands
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-4 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em]">
+            {[
+              ["join", "Join", "JOIN"],
+              ["split", "Split", "SPLIT"],
+              ["copy", "Copy", "COPY selected 10,10"],
+              ["rotate", "Rotate", "ROTATE 45"],
+              ["mirror", "Mirror", "MIRROR H"],
+              ["array", "Array", "ARRAY 2 2 20,20"],
+              ["hatch", "Hatch", "HATCH"],
+              ["align", "Align", "ALIGN LEFT"],
+            ].map(([id, label, command]) => (
+              <button
+                key={id}
+                type="button"
+                data-testid={`cad-power-${id}`}
+                aria-label={`${label} selected draft objects`}
+                onClick={() => runCadCommand(command)}
+                className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-slate-600 transition hover:border-slate-300 hover:bg-white"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="mt-2 max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2" data-testid="cad-command-feedback-panel" aria-live="polite">
           {cadCommandHistory.length ? (
             <ol className="space-y-1 text-[11px]">

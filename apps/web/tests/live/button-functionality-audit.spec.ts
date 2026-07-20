@@ -87,6 +87,23 @@ test.describe("button functionality audit", () => {
     }
 
     await expect(page.getByLabel("CAD command input")).toHaveValue(/LINE|CIRCLE|ARC|TEXT|COPY/);
+
+    const powerTools = page.getByTestId("cad-power-tools");
+    await expect(powerTools).toBeVisible();
+    const powerExpectations: Array<[string, RegExp]> = [
+      ["join", /JOIN (created|needs input|blocked)/i],
+      ["split", /SPLIT (restored|needs input|blocked)/i],
+      ["copy", /COPY (created|needs input|blocked)/i],
+      ["rotate", /ROTATE (applied|needs input|blocked)/i],
+      ["mirror", /MIRROR (H applied|needs input|blocked)/i],
+      ["array", /ARRAY (created|needs input|blocked)/i],
+      ["hatch", /HATCH (applied|needs input|blocked)/i],
+      ["align", /ALIGN( LEFT)? (aligned|needs input|blocked)/i],
+    ];
+    for (const [tool, expected] of powerExpectations) {
+      await powerTools.getByTestId(`cad-power-${tool}`).click();
+      await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(expected, { timeout: 5_000 });
+    }
   });
 
   test("primary visible buttons open panels or expose truthful disabled states without browser errors", async ({ page }) => {
