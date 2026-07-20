@@ -7,6 +7,7 @@ import {
   parseCadVectorToken,
 } from "./previewCadCommandParsing";
 import type { CadActiveCommand } from "../components/previewPanelTypes";
+import type { BuildingPlacement } from "../types";
 
 type CadCommandFeedbackStatus = "applied" | "blocked" | "info";
 
@@ -499,6 +500,128 @@ export function handlePreviewCadGeometryCommand({
       meta: { cad_curve_storage: "sampled_chord_polyline", cad_radius_ft: radius, cad_start_deg: startDeg, cad_end_deg: endDeg },
       minPoints: 2,
     });
+    return true;
+  }
+  return false;
+}
+
+type SelectedCadMetrics = {
+  segmentCount: number;
+  totalLength: number;
+  firstAngle: number;
+};
+
+type HandlePreviewCadArrangeMeasureCommandContext = {
+  commandKey: string;
+  args: string[];
+  pointArgs: Array<[number, number]>;
+  selectedCadObject: BuildingPlacement | null;
+  selectedCadMetrics: SelectedCadMetrics | null;
+  visibleCadObjects: BuildingPlacement[];
+  getObjectGeometryPoints: (item: BuildingPlacement) => Array<[number, number]>;
+  arraySelectedCadObject: (rows: number, columns: number, spacing: [number, number]) => void;
+  alignOrDistributeSelectedCadObjects: (
+    command: "ALIGN" | "DISTRIBUTE",
+    mode: "LEFT" | "RIGHT" | "CENTER" | "TOP" | "BOTTOM" | "MIDDLE" | "X" | "Y",
+  ) => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+export function handlePreviewCadArrangeMeasureCommand({
+  commandKey,
+  args,
+  pointArgs,
+  selectedCadObject,
+  selectedCadMetrics,
+  visibleCadObjects,
+  getObjectGeometryPoints,
+  arraySelectedCadObject,
+  alignOrDistributeSelectedCadObjects,
+  pushCadCommandFeedback,
+}: HandlePreviewCadArrangeMeasureCommandContext) {
+  if (commandKey === "ARRAY") {
+    const rows = parseCadNumber(args[0] ?? "", 0);
+    const columns = parseCadNumber(args[1] ?? "", 0);
+    const spacing = parseCadPointToken(args[2] ?? "") ?? [20, 20];
+    if (!Number.isFinite(rows) || !Number.isFinite(columns) || rows < 1 || columns < 1) {
+      pushCadCommandFeedback("ARRAY", "blocked", "ARRAY blocked: use ARRAY rows columns dx,dy, for example ARRAY 2 3 20,15.");
+      return true;
+    }
+    arraySelectedCadObject(rows, columns, spacing);
+    return true;
+  }
+  if (commandKey === "ALIGN") {
+    const modeArg = (args[0] || "LEFT").trim().toUpperCase();
+    const modeAliases: Record<string, "LEFT" | "RIGHT" | "CENTER" | "TOP" | "BOTTOM" | "MIDDLE" | "X" | "Y"> = {
+      L: "LEFT",
+      LEFT: "LEFT",
+      R: "RIGHT",
+      RIGHT: "RIGHT",
+      C: "CENTER",
+      CENTER: "CENTER",
+      CENTRE: "CENTER",
+      X: "X",
+      T: "TOP",
+      TOP: "TOP",
+      B: "BOTTOM",
+      BOTTOM: "BOTTOM",
+      M: "MIDDLE",
+      MID: "MIDDLE",
+      MIDDLE: "MIDDLE",
+      Y: "Y",
+    };
+    const mode = modeAliases[modeArg];
+    if (!mode) {
+      pushCadCommandFeedback("ALIGN", "blocked", "ALIGN blocked: use ALIGN LEFT, RIGHT, CENTER, TOP, BOTTOM, or MIDDLE.");
+      return true;
+    }
+    alignOrDistributeSelectedCadObjects("ALIGN", mode);
+    return true;
+  }
+  if (commandKey === "DISTRIBUTE") {
+    const modeArg = (args[0] || "X").trim().toUpperCase();
+    const axis = ["Y", "V", "VERTICAL"].includes(modeArg) ? "Y" : "X";
+    alignOrDistributeSelectedCadObjects("DISTRIBUTE", axis);
+    return true;
+  }
+  if (commandKey === "DIST" || commandKey === "MEASURE") {
+    if (pointArgs.length >= 2) {
+      const [a, b] = pointArgs;
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const angle = ((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI + 360) % 360;
+      pushCadCommandFeedback("DIST", "info", `DIST ${length.toFixed(2)} ft at ${angle.toFixed(1)} deg between typed points.`);
+      return true;
+    }
+    const fallbackCadObject = selectedCadObject ?? [...visibleCadObjects]
+      .reverse()
+      .find((item) => item.type !== "site" && getObjectGeometryPoints(item).length >= 2) ?? null;
+    const fallbackPoints = fallbackCadObject ? getObjectGeometryPoints(fallbackCadObject) : [];
+    const fallbackSegments = fallbackCadObject && fallbackPoints.length >= 2
+      ? fallbackPoints.map((point, index) => {
+          if (index === fallbackPoints.length - 1 && fallbackCadObject.geometryType === "polyline") return null;
+          const next = index === fallbackPoints.length - 1 ? fallbackPoints[0] : fallbackPoints[index + 1];
+          return {
+            length: Math.hypot(next[0] - point[0], next[1] - point[1]),
+            angle: ((Math.atan2(next[1] - point[1], next[0] - point[0]) * 180) / Math.PI + 360) % 360,
+          };
+        }).filter(Boolean) as Array<{ length: number; angle: number }>
+      : [];
+    const metrics = selectedCadMetrics ?? (fallbackSegments.length
+      ? {
+          segmentCount: fallbackSegments.length,
+          totalLength: fallbackSegments.reduce((sum, segment) => sum + segment.length, 0),
+          firstAngle: fallbackSegments[0]?.angle ?? 0,
+        }
+      : null);
+    if (!metrics || !fallbackCadObject) {
+      pushCadCommandFeedback("DIST", "blocked", "DIST blocked: select a draft line/polyline/area or use DIST x1,y1 x2,y2.");
+      return true;
+    }
+    pushCadCommandFeedback(
+      "DIST",
+      "info",
+      `DIST selected ${fallbackCadObject.label || "object"}: ${metrics.totalLength.toFixed(2)} ft total, ${metrics.segmentCount} segment${metrics.segmentCount === 1 ? "" : "s"}, first angle ${metrics.firstAngle.toFixed(1)} deg.`,
+    );
     return true;
   }
   return false;
