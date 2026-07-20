@@ -305,6 +305,7 @@ import { RecentChangesPanel } from "./components/RecentChangesPanel";
 import { ReportGateListPanel } from "./components/ReportGateListPanel";
 import { ReviewIssueTrackerPanel } from "./components/ReviewIssueTrackerPanel";
 import { SelectedObjectCard } from "./components/SelectedObjectCard";
+import { SelectedObjectInspectorPanel } from "./components/SelectedObjectInspectorPanel";
 import { SetupAddressSection } from "./components/SetupAddressSection";
 import { SetupAutoSiteContextSection } from "./components/SetupAutoSiteContextSection";
 import { SetupSiteBoundarySection } from "./components/SetupSiteBoundarySection";
@@ -22642,409 +22643,54 @@ function PerformanceAIDashboardView({
                         ))}
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="selected-object-inspector">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Selected Object Inspector</p>
-                          <p className="mt-1 text-sm text-slate-600">Review-only object controls tied to the canvas selection.</p>
-                        </div>
-                        {selectedBuilding ? (
-                          <span className="shrink-0 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                            {selectedBuilding.meta?.ui_hidden ? "Hidden" : "Visible"}
-                          </span>
-                        ) : null}
-                      </div>
-                      {selectedBuilding ? (
-                        <div className="mt-3 space-y-2 text-sm text-slate-700">
-                          {sourceConfidenceByObjectId.get(selectedBuilding.id) ? (
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" data-testid="selected-object-confidence-badge">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Source confidence</p>
-                              <div className="mt-1 flex flex-wrap items-center gap-2">
-                                <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                  sourceConfidenceByObjectId.get(selectedBuilding.id)?.confidence_band === "higher"
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : sourceConfidenceByObjectId.get(selectedBuilding.id)?.confidence_band === "review"
-                                      ? "bg-amber-50 text-amber-700"
-                                      : "bg-red-50 text-red-700"
-                                }`}>
-                                  {sourceConfidenceByObjectId.get(selectedBuilding.id)?.visible_badge ||
-                                    sourceConfidenceByObjectId.get(selectedBuilding.id)?.source_type ||
-                                    "low confidence"}
-                                </span>
-                                <span className="text-xs font-medium text-slate-500">
-                                  {sourceConfidenceByObjectId.get(selectedBuilding.id)?.needs_survey_control ? "needs survey control" : "verification visible"}
-                                </span>
-                              </div>
-                              <p className="mt-1 text-xs text-slate-500">
-                                {sourceConfidenceByObjectId.get(selectedBuilding.id)?.why_low_confidence ||
-                                  sourceConfidenceByObjectId.get(selectedBuilding.id)?.next_action}
-                              </p>
-                            </div>
-                          ) : null}
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                              Name
-                              <input
-                                type="text"
-                                value={selectedBuilding.label}
-                                onChange={(event) => {
-                                  const blocker = getObjectEditBlocker(selectedBuilding, "rename");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(selectedBuilding.id, { label: event.target.value });
-                                }}
-                                aria-label="Selected object name"
-                                data-testid="selected-object-name-input"
-                                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm font-semibold normal-case tracking-normal text-slate-900"
-                              />
-                              <span className="mt-1 block text-xs font-semibold normal-case tracking-normal text-slate-700" data-testid="selected-object-name-value">
-                                {selectedBuilding.label || "Unnamed object"}
-                              </span>
-                            </label>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2" data-testid="selected-object-inspector-facts">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Type</p>
-                              <p className="mt-1 font-semibold text-slate-900">{getObjectDisplayType(selectedBuilding)}</p>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Status</p>
-                              <p className="mt-1 font-semibold text-slate-900">{getObjectReviewLabel(selectedBuilding)}</p>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Source</p>
-                              <p className="mt-1 font-semibold text-slate-900">{getObjectSourceLabel(selectedBuilding)}</p>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Layer</p>
-                              <p className="mt-1 font-semibold text-slate-900">{getObjectLayerLabel(selectedBuilding)}</p>
-                            </div>
-                            <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Dimensions / metrics</p>
-                              <p className="mt-1 font-semibold text-slate-900">{getObjectDimensionsLabel(selectedBuilding)}</p>
-                            </div>
-                          </div>
-                          <p className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
-                            selectedBuilding.type === "site"
-                              ? "border-slate-200 bg-slate-50 text-slate-600"
-                              : selectedBuilding.locked
-                                ? "border-amber-200 bg-amber-50 text-amber-800"
-                                : selectedBuilding.placed
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                  : "border-amber-200 bg-amber-50 text-amber-800"
-                          }`}>
-                            {selectedBuilding.type === "site"
-                              ? "Move/edit is controlled from Setup for the site boundary."
-                              : selectedBuilding.locked
-                                ? "Move/edit needs the object unlocked first."
-                                : selectedBuilding.placed
-                                  ? "Move/edit controls available for this draft object."
-                                  : "Move/edit needs the object placed first."}
-                          </p>
-                          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                            Review-only: this object is draft/site evidence for qualified review, not final professional output.
-                          </p>
-                          {objectManagerStatusMessage ? (
-                            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="selected-object-status">
-                              {objectManagerStatusMessage}
-                            </p>
-                          ) : null}
-                          <div className="grid grid-cols-2 gap-2">
-                            <button type="button" onClick={() => handleToggleBuildingLock(selectedBuilding.id)} disabled={selectedBuilding.type === "site"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-                              {selectedBuilding.locked ? "Unlock object" : "Lock object"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleUpdateBuilding(selectedBuilding.id, {
-                                  meta: {
-                                    ...(selectedBuilding.meta ?? {}),
-                                    ui_hidden: !Boolean(selectedBuilding.meta?.ui_hidden),
-                                  },
-                                })
-                              }
-                              disabled={selectedBuilding.type === "site"}
-                              data-testid="selected-object-hide-toggle"
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {selectedBuilding.meta?.ui_hidden ? "Show object" : "Hide object"}
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-[11px]" data-testid="selected-object-exact-geometry">
-                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              X
-                              <input
-                                type="number"
-                                value={Math.round(selectedBuilding.x ?? 0)}
-                                aria-label="Selected object X position"
-                                data-testid="selected-object-x-input"
-                                onChange={(event) =>
-                                  handleUpdateBuilding(selectedBuilding.id, {
-                                    x: Number(event.target.value) || 0,
-                                  })
-                                }
-                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              Y
-                              <input
-                                type="number"
-                                value={Math.round(selectedBuilding.y ?? 0)}
-                                aria-label="Selected object Y position"
-                                data-testid="selected-object-y-input"
-                                onChange={(event) =>
-                                  handleUpdateBuilding(selectedBuilding.id, {
-                                    y: Number(event.target.value) || 0,
-                                  })
-                                }
-                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              W
-                              <input
-                                type="number"
-                                value={Math.round(selectedBuilding.w ?? 0)}
-                                aria-label="Selected object width"
-                                data-testid="selected-object-width-input"
-                                onChange={(event) =>
-                                  handleUpdateBuilding(selectedBuilding.id, {
-                                    w: parsePositiveNumber(event.target.value) ?? selectedBuilding.w,
-                                  })
-                                }
-                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              D
-                              <input
-                                type="number"
-                                value={Math.round(selectedBuilding.d ?? 0)}
-                                aria-label="Selected object depth"
-                                data-testid="selected-object-depth-input"
-                                onChange={(event) =>
-                                  handleUpdateBuilding(selectedBuilding.id, {
-                                    d: parsePositiveNumber(event.target.value) ?? selectedBuilding.d,
-                                  })
-                                }
-                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              Rotation
-                              <input
-                                type="number"
-                                value={Math.round(selectedBuilding.rotation ?? 0)}
-                                aria-label="Selected object rotation"
-                                data-testid="selected-object-rotation-input"
-                                onChange={(event) =>
-                                  handleUpdateBuilding(selectedBuilding.id, {
-                                    rotation: Number(event.target.value) || 0,
-                                  })
-                                }
-                                className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
-                              Source
-                              <input
-                                value={getObjectSourceLabel(selectedBuilding)}
-                                readOnly
-                                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 normal-case tracking-normal text-slate-700"
-                              />
-                            </label>
-                          </div>
-                          {(() => {
-                            const editableGeometry = normalizeGeometryPoints(selectedBuilding.geometry);
-                            if (!editableGeometry?.length) return null;
-                            const editBlocked = Boolean(getObjectEditBlocker(selectedBuilding, "resize"));
-                            return (
-                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="selected-object-vertex-editor">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                                      Vertex editor
-                                    </p>
-                                    <p className="mt-1 text-xs font-medium text-slate-500">
-                                      Exact draft coordinates. Editing vertices does not create engineering approval.
-                                    </p>
-                                  </div>
-                                  <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                    {editableGeometry.length} point{editableGeometry.length === 1 ? "" : "s"}
-                                  </span>
-                                </div>
-                                <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-                                  {editableGeometry.map(([x, y], index) => (
-                                    <div key={`${selectedBuilding.id}-vertex-${index}`} className="grid grid-cols-[auto_1fr_1fr_auto] items-end gap-2 rounded-lg border border-slate-100 bg-white px-2 py-2" data-testid="selected-object-vertex-row">
-                                      <span className="pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                                        V{index + 1}
-                                      </span>
-                                      <label className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                        X
-                                        <input
-                                          type="number"
-                                          value={Math.round(x * 10) / 10}
-                                          disabled={editBlocked}
-                                          aria-label={`Vertex ${index + 1} X`}
-                                          data-testid="selected-object-vertex-x"
-                                          onInput={(event) => handleUpdateObjectVertex(selectedBuilding, index, "x", event.currentTarget.value)}
-                                          onChange={(event) => handleUpdateObjectVertex(selectedBuilding, index, "x", event.target.value)}
-                                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold normal-case tracking-normal text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                                        />
-                                      </label>
-                                      <label className="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                        Y
-                                        <input
-                                          type="number"
-                                          value={Math.round(y * 10) / 10}
-                                          disabled={editBlocked}
-                                          aria-label={`Vertex ${index + 1} Y`}
-                                          data-testid="selected-object-vertex-y"
-                                          onInput={(event) => handleUpdateObjectVertex(selectedBuilding, index, "y", event.currentTarget.value)}
-                                          onChange={(event) => handleUpdateObjectVertex(selectedBuilding, index, "y", event.target.value)}
-                                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold normal-case tracking-normal text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                                        />
-                                      </label>
-                                      <div className="flex flex-col gap-1">
-                                        <button
-                                          type="button"
-                                          disabled={editBlocked || selectedBuilding.geometryType === "point"}
-                                          onClick={() => handleInsertObjectVertex(selectedBuilding, index)}
-                                          data-testid="selected-object-vertex-insert"
-                                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-                                        >
-                                          Add
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={editBlocked}
-                                          onClick={() => handleDeleteObjectVertex(selectedBuilding, index)}
-                                          data-testid="selected-object-vertex-delete"
-                                          className="rounded-md border border-rose-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                        >
-                                          Del
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={editBlocked}
-                                          onClick={() => handleSnapObjectVertexToNearestEndpoint(selectedBuilding, index)}
-                                          data-testid="selected-object-vertex-snap"
-                                          className="rounded-md border border-blue-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                        >
-                                          Snap
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={editBlocked}
-                                          onClick={() => handleAlignObjectVertexToPrevious(selectedBuilding, index, "x")}
-                                          data-testid="selected-object-vertex-align-x"
-                                          className="rounded-md border border-emerald-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                        >
-                                          Align X
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={editBlocked}
-                                          onClick={() => handleAlignObjectVertexToPrevious(selectedBuilding, index, "y")}
-                                          data-testid="selected-object-vertex-align-y"
-                                          className="rounded-md border border-emerald-100 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                        >
-                                          Align Y
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                                {editBlocked ? (
-                                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-[11px] font-semibold text-amber-800">
-                                    Unlock this draft object before editing vertices.
-                                  </p>
-                                ) : null}
-                              </div>
-                            );
-                          })()}
-                          <div className="grid grid-cols-2 gap-2" data-testid="selected-object-actions">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleObjectManagerSelect(selectedBuilding.id);
-                                setPlacementModeEnabled(true);
-                              }}
-                              className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-slate-800"
-                            >
-                              Move
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFocusObjectId(selectedBuilding.id);
-                                setActiveSidePanel(null);
-                              }}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                            >
-                              Focus
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerCopy(selectedBuilding)}
-                              data-testid="selected-object-copy"
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                            >
-                              Copy
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleObjectManagerPaste}
-                              disabled={!objectClipboard.length}
-                              data-testid="selected-object-paste"
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Paste
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerTransform(selectedBuilding, "rotate")}
-                              data-testid="selected-object-rotate"
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                            >
-                              Rotate 90
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerTransform(selectedBuilding, "flip_horizontal")}
-                              data-testid="selected-object-flip-horizontal"
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                            >
-                              Flip H
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerTransform(selectedBuilding, "flip_vertical")}
-                              data-testid="selected-object-flip-vertical"
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
-                            >
-                              Flip V
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleObjectManagerDelete(selectedBuilding)}
-                              disabled={selectedBuilding.type === "site"}
-                              data-testid="selected-object-delete"
-                              className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500" data-testid="selected-object-empty-state">
-                          No object selected. Select an object in Object Manager or on the canvas to inspect it.
-                        </p>
-                      )}
-                    </div>
+                    <SelectedObjectInspectorPanel
+                      selectedBuilding={selectedBuilding}
+                      confidenceEntry={selectedBuilding ? sourceConfidenceByObjectId.get(selectedBuilding.id) : null}
+                      objectManagerStatusMessage={objectManagerStatusMessage}
+                      objectClipboardCount={objectClipboard.length}
+                      displayType={selectedBuilding ? getObjectDisplayType(selectedBuilding) : ""}
+                      reviewLabel={selectedBuilding ? getObjectReviewLabel(selectedBuilding) : ""}
+                      sourceLabel={selectedBuilding ? getObjectSourceLabel(selectedBuilding) : ""}
+                      layerLabel={selectedBuilding ? getObjectLayerLabel(selectedBuilding) : ""}
+                      dimensionsLabel={selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : ""}
+                      editableGeometry={selectedBuilding ? normalizeGeometryPoints(selectedBuilding.geometry) : undefined}
+                      editBlocked={selectedBuilding ? Boolean(getObjectEditBlocker(selectedBuilding, "resize")) : false}
+                      onRename={(item, value) => {
+                        const blocker = getObjectEditBlocker(item, "rename");
+                        if (blocker) {
+                          reportObjectActionBlocker(blocker);
+                          return;
+                        }
+                        handleUpdateBuilding(item.id, { label: value });
+                      }}
+                      onToggleLock={(item) => handleToggleBuildingLock(item.id)}
+                      onToggleHidden={(item) =>
+                        handleUpdateBuilding(item.id, {
+                          meta: {
+                            ...(item.meta ?? {}),
+                            ui_hidden: !Boolean(item.meta?.ui_hidden),
+                          },
+                        })
+                      }
+                      onUpdateObject={(item, updates) => handleUpdateBuilding(item.id, updates)}
+                      onUpdateVertex={handleUpdateObjectVertex}
+                      onInsertVertex={handleInsertObjectVertex}
+                      onDeleteVertex={handleDeleteObjectVertex}
+                      onSnapVertex={handleSnapObjectVertexToNearestEndpoint}
+                      onAlignVertex={handleAlignObjectVertexToPrevious}
+                      onMove={(item) => {
+                        handleObjectManagerSelect(item.id);
+                        setPlacementModeEnabled(true);
+                      }}
+                      onFocus={(item) => {
+                        setFocusObjectId(item.id);
+                        setActiveSidePanel(null);
+                      }}
+                      onCopy={handleObjectManagerCopy}
+                      onPaste={handleObjectManagerPaste}
+                      onTransform={handleObjectManagerTransform}
+                      onDelete={handleObjectManagerDelete}
+                    />
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Object list</p>
                       <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
