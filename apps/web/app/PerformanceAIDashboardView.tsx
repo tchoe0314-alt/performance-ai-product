@@ -366,6 +366,7 @@ import {
   runDashboardCandidateReviewDecision,
   runDashboardDesignAlternativesAction,
 } from "./utils/dashboardReviewWorkflowActions";
+import { runDashboardSetMessageFeedback } from "./utils/dashboardChatFeedbackActions";
 import {
   buildDashboardReactiveChangedSystems,
   buildDashboardReactiveChangedTargets,
@@ -1560,41 +1561,15 @@ function PerformanceAIDashboardView({
     messageId: string,
     feedback: ChatMessage["feedback"],
   ) => {
-    if (!token || !feedback) return;
-    const thread = chatMessagesRef.current;
-    const idx = thread.findIndex((message) => message.id === messageId);
-    if (idx < 0) return;
-    const target = thread[idx];
-    const prevUser = [...thread]
-      .slice(0, idx)
-      .reverse()
-      .find((message) => message.role === "user");
-    const userMessage = prevUser?.content ?? "";
-
-    setChatMessages((current) => {
-      const next = current.map((message) =>
-        message.id === messageId ? { ...message, feedback } : message,
-      );
-      chatMessagesRef.current = next;
-      return next;
+    await runDashboardSetMessageFeedback({
+      buildChatDecisionContext,
+      chatMessagesRef,
+      currentProjectId: currentProject?.project_id,
+      feedback,
+      messageId,
+      setChatMessages,
+      token,
     });
-
-    try {
-      await postJson<{ success: boolean }>(
-        "/api/chat/feedback",
-        {
-          project_id: currentProject?.project_id ?? null,
-          message_id: messageId,
-          feedback,
-          message: userMessage,
-          assistant_message: target.content,
-          context: buildChatDecisionContext({}, userMessage),
-        },
-        { token },
-      );
-    } catch {
-      // Feedback logging should never block chat UX.
-    }
   };
 
   useEffect(() => {
