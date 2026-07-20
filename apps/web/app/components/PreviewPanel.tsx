@@ -2664,6 +2664,11 @@ export default function PreviewPanel({
     construction_release_allowed: false,
     ...extra,
   }), []);
+  const draftGeometryCreatedMessage = useCallback(
+    (command: string) =>
+      `${command.toUpperCase()} created editable draft geometry for review. Rerun affected systems before relying on it.`,
+    [],
+  );
   const createCadCommandGeometry = useCallback(
     (
       command: string,
@@ -2686,10 +2691,10 @@ export default function PreviewPanel({
         label: options.label,
         meta: reviewRequiredCommandMeta(command, options.meta),
       });
-      pushCadCommandFeedback(command, "applied", `${command.toUpperCase()} created manual_drawn draft_review_required geometry. Review and rerun affected systems before relying on it.`);
+      pushCadCommandFeedback(command, "applied", draftGeometryCreatedMessage(command));
       return true;
     },
-    [canDrawObjects, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta],
+    [canDrawObjects, draftGeometryCreatedMessage, onCreateCustomGeometry, pushCadCommandFeedback, reviewRequiredCommandMeta],
   );
   const transformSelectedCadObjects = useCallback(
     (kind: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", valueOverride?: string) => {
@@ -4806,7 +4811,7 @@ export default function PreviewPanel({
         "applied",
         drawMode === "site"
           ? "Site boundary captured from drawn points."
-          : "AREA created manual_drawn draft_review_required geometry.",
+          : draftGeometryCreatedMessage("AREA"),
       );
       setDraftPoints([]);
       setDraftPreviewPoint(null);
@@ -4819,7 +4824,7 @@ export default function PreviewPanel({
     pushCadCommandFeedback(
       drawMode === "rect" ? "BOX" : "LINE",
       "applied",
-      `${drawMode === "rect" ? "BOX" : "LINE"} created manual_drawn draft_review_required geometry.`,
+      draftGeometryCreatedMessage(drawMode === "rect" ? "BOX" : "LINE"),
     );
     clearDraftGeometry();
     setDrawMode("select");
@@ -4831,6 +4836,7 @@ export default function PreviewPanel({
 	    drawMode,
     onCreateCustomGeometry,
     onCreateSiteBoundary,
+    draftGeometryCreatedMessage,
     pushCadCommandFeedback,
   ]);
 
@@ -4981,7 +4987,7 @@ export default function PreviewPanel({
           return true;
         }
         onCreateCustomGeometry({ mode: "rect", points: [currentDraftPoints[0], point] });
-        pushCadCommandFeedback("BOX", "applied", "BOX created manual_drawn draft_review_required geometry.");
+        pushCadCommandFeedback("BOX", "applied", draftGeometryCreatedMessage("BOX"));
         setDrawMode("select");
         setDraftPreviewPoint(null);
         draftPointsRef.current = [];
@@ -5042,10 +5048,10 @@ export default function PreviewPanel({
               polygon_holes_blocked_reason: "Canvas polygon editor supports one exterior ring only.",
             },
           });
-          pushCadCommandFeedback("AREA", "applied", "AREA created manual_drawn draft_review_required geometry.");
+          pushCadCommandFeedback("AREA", "applied", draftGeometryCreatedMessage("AREA"));
         } else {
           onCreateCustomGeometry({ mode: "polyline", points: nextPoints });
-          pushCadCommandFeedback("LINE", "applied", "LINE created manual_drawn draft_review_required geometry.");
+          pushCadCommandFeedback("LINE", "applied", draftGeometryCreatedMessage("LINE"));
         }
         setDrawMode("select");
         setDraftPreviewPoint(null);
@@ -5066,6 +5072,7 @@ export default function PreviewPanel({
       clearDraftGeometry,
       drawAutoFinishPointCount,
       draftPoints,
+      draftGeometryCreatedMessage,
       drawMode,
       onCreateCustomGeometry,
       onCreateSiteBoundary,

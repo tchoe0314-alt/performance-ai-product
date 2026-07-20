@@ -93,7 +93,7 @@ test.describe("dense canvas draw hit capture", () => {
     await page.mouse.click(points.areaC.x, points.areaC.y);
     await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
-    await expect(feedback).toContainText(/AREA created manual_drawn draft_review_required geometry/);
+    await expect(feedback).toContainText(/AREA created editable draft geometry for review/);
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first()).toBeVisible();
   });
 });

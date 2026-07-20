@@ -323,7 +323,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools).toContainText("LINE accepted 2 points");
     await cadTools.getByLabel("CAD command input").fill("");
     await cadTools.getByRole("button", { name: "Run" }).click();
-    await expect(cadTools).toContainText("LINE created manual_drawn draft_review_required geometry");
+    await expect(cadTools).toContainText("LINE created editable draft geometry for review");
     await expect(page.getByText("Command Line").filter({ visible: true }).first()).toBeVisible();
 
     await cadTools.getByLabel("CAD X coordinate").fill("120");

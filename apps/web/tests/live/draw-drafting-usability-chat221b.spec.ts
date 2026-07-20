@@ -285,7 +285,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("draft-precision-readout")).toContainText(/SEG 80\.0 ft @ 0\.0 deg/);
 
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created manual_drawn draft_review_required geometry/);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created editable draft geometry for review/);
     await (await revealCadTool(page, "measure")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/80\.00 ft total.*first angle 0\.0 deg/i);
 
@@ -299,7 +299,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await commandInput.press("Enter");
     await expect(page.getByTestId("draft-precision-readout")).toContainText(/SEG 40\.0 ft @ 90\.0 deg/);
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created manual_drawn draft_review_required geometry/);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created editable draft geometry for review/);
   });
 
   test("visible JOIN and SPLIT combine and restore selected draft linework", async ({ page }) => {
@@ -398,7 +398,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.5, 0.62);
     await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created editable draft geometry for review/);
 
     const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
     await expect(areaRow).toBeVisible();
@@ -430,7 +430,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.5, 0.62);
     await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created editable draft geometry for review/);
 
     const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
     await expect(areaRow).toBeVisible();
@@ -485,7 +485,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await clickExposedSurface(surface, 0.5, 0.62);
     await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created manual_drawn draft_review_required geometry/);
+    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/AREA created editable draft geometry for review/);
 
     const areaRow = page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first();
     await expect(areaRow).toBeVisible();
