@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { X } from "lucide-react";
 
 import type { BuildingPlacement } from "../types";
 import { CadPrecisionDock } from "./CadPrecisionDock";
@@ -35,7 +34,6 @@ import type { CadDimensionMode, CadSymbolKind, DrawMode } from "../utils/cadTool
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
 import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
-import { PreviewAnnotationLabelMarkers } from "./PreviewAnnotationLabelMarkers";
 import { PreviewBasePlanGrid } from "./PreviewBasePlanGrid";
 import { PreviewCadMarkers } from "./PreviewCadMarkers";
 import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
@@ -53,6 +51,10 @@ import { PreviewMetricOverlayCard } from "./PreviewMetricOverlayCard";
 import { PreviewObjectHoverCard } from "./PreviewObjectHoverCard";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
 import { PreviewParkingModules } from "./PreviewParkingModules";
+import {
+  PreviewFullscreenHeader,
+  PreviewPlanAnnotationOverlay,
+} from "./PreviewPlanAnnotationOverlay";
 import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
 import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
 import { PreviewRectObjects } from "./PreviewRectObjects";
@@ -95,7 +97,6 @@ import {
 import { buildPreviewParkingMapModules } from "../utils/previewParkingMapModules";
 import {
   buildPlanScaleBar,
-  buildPreviewBoundsStyle,
   buildScaleTruthLabel,
 } from "../utils/previewLayoutHelpers";
 import {
@@ -4638,33 +4639,14 @@ export default function PreviewPanel({
                   />
                 ) : null}
                 {showGeneratedPlan && planPreviewAnnotations?.labels?.length && previewImageBounds ? (
-                  <div
-                    className="pointer-events-none absolute"
-                    style={{
-                      left: previewImageBounds.left,
-                      top: previewImageBounds.top,
-                      width: previewImageBounds.width,
-                      height: previewImageBounds.height,
-                    }}
-                  >
-                    {activeHighlightBounds ? (
-                      <div
-                        className="absolute rounded-[14px] border border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_4px_rgba(56,189,248,0.14)]"
-                        style={buildPreviewBoundsStyle(activeHighlightBounds)}
-                      />
-                    ) : null}
-                    {issueHighlightBounds ? (
-                      <div
-                        className="absolute rounded-[12px] border border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_4px_rgba(244,63,94,0.1)]"
-                        style={buildPreviewBoundsStyle(issueHighlightBounds)}
-                      />
-                    ) : null}
-                    <PreviewAnnotationLabelMarkers
-                      labels={planPreviewAnnotations.labels}
-                      selectedIssueLabel={selectedIssueLabel}
-                      showHover={showHover}
-                    />
-                  </div>
+                  <PreviewPlanAnnotationOverlay
+                    imageBounds={previewImageBounds}
+                    labels={planPreviewAnnotations.labels}
+                    selectedIssueLabel={selectedIssueLabel}
+                    showHover={showHover}
+                    activeHighlightBounds={activeHighlightBounds}
+                    issueHighlightBounds={issueHighlightBounds}
+                  />
                 ) : null}
               </div>
               {showHover && activeAnnotation && hoverPoint ? (
@@ -4682,23 +4664,11 @@ export default function PreviewPanel({
               />
               {/* Status panel removed: keep preview visually clean. */}
               {previewFullscreenOpen && showMap ? (
-                <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 flex items-center justify-between gap-3 border-b border-white/10 bg-slate-950/88 px-5 py-4 text-white backdrop-blur">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Fullscreen Preview
-                    </p>
-                    <p className="mt-1 text-sm text-slate-200">
-                      Inspect the live map without rebuilding the preview.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onCloseFullscreen}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
-                  >
-                    <X className="h-4 w-4" />
-                    Close
-                  </button>
+                <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 border-b border-white/10 bg-slate-950/88 backdrop-blur">
+                  <PreviewFullscreenHeader
+                    description="Inspect the live map without rebuilding the preview."
+                    onClose={onCloseFullscreen}
+                  />
                 </div>
               ) : null}
             </div>
@@ -4708,24 +4678,10 @@ export default function PreviewPanel({
       {previewFullscreenOpen && planPreviewUrl && !showMap ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/92 backdrop-blur-sm">
           <div className="flex h-full w-full flex-col bg-slate-950">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4 text-white">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Fullscreen Preview
-                </p>
-                <p className="mt-1 text-sm text-slate-200">
-                  Inspect the latest engineered plan without the sidebar chrome.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={onCloseFullscreen}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
-              >
-                <X className="h-4 w-4" />
-                Close
-              </button>
-            </div>
+            <PreviewFullscreenHeader
+              description="Inspect the latest engineered plan without the sidebar chrome."
+              onClose={onCloseFullscreen}
+            />
             <div className="flex min-h-0 flex-1 items-center justify-center p-0">
               <div
                 ref={fullscreenRef}
@@ -4798,34 +4754,15 @@ export default function PreviewPanel({
                   </div>
                 ) : null}
                 {planPreviewAnnotations?.labels?.length && fullscreenImageBounds ? (
-                  <div
-                    className="pointer-events-none absolute"
-                    style={{
-                      left: fullscreenImageBounds.left,
-                      top: fullscreenImageBounds.top,
-                      width: fullscreenImageBounds.width,
-                      height: fullscreenImageBounds.height,
-                    }}
-                  >
-                    {!siteLocked && lotWidth > 0 && lotHeight > 0 ? (
-                      <div className="absolute inset-0 rounded-[16px] border border-dashed border-slate-300/70" />
-                    ) : null}
-                    {activeHighlightBounds ? (
-                      <div
-                        className="absolute rounded-[14px] border border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_4px_rgba(56,189,248,0.14)]"
-                        style={buildPreviewBoundsStyle(activeHighlightBounds)}
-                      />
-                    ) : null}
-                    {issueHighlightBounds ? (
-                      <div
-                        className="absolute rounded-[12px] border border-rose-400/80 bg-rose-400/10 shadow-[0_0_0_4px_rgba(244,63,94,0.1)]"
-                        style={buildPreviewBoundsStyle(issueHighlightBounds)}
-                      />
-                    ) : null}
-                    <PreviewAnnotationLabelMarkers
+                  <>
+                    <PreviewPlanAnnotationOverlay
+                      imageBounds={fullscreenImageBounds}
                       labels={planPreviewAnnotations.labels}
                       selectedIssueLabel={selectedIssueLabel}
                       showHover={showHover}
+                      activeHighlightBounds={activeHighlightBounds}
+                      issueHighlightBounds={issueHighlightBounds}
+                      showUnlockedSiteFrame={!siteLocked && lotWidth > 0 && lotHeight > 0}
                     />
                     {visibleCadObjects
                       .filter((item) => item.placed && Number.isFinite(item.x) && Number.isFinite(item.y))
@@ -4905,7 +4842,7 @@ export default function PreviewPanel({
                             />
                           );
                         })}
-                  </div>
+                  </>
                 ) : null}
                 {showHover && activeAnnotation && fullscreenHoverPoint ? (
                   <PreviewAnnotationHoverCard
