@@ -232,13 +232,16 @@ import {
 import {
   cloneBuildingPlacementForUndo,
   cloneBuildingPlacementWithUpdatesForUndo,
+  createDraftArrayCopiesWithTrace,
   createDraftCopyWithTrace as createObjectManagerDraftCopyWithTrace,
   createTraceAwareBulkUpdate as createObjectManagerTraceAwareBulkUpdate,
   formatObjectManagerCountMessage,
   formatVisibleDraftSelectionMessage,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
+  isObjectManagerCopyableDraft,
   partitionObjectManagerTargets,
+  summarizeDraftCopyResults,
 } from "./utils/dashboardObjectManagerTrace";
 import { buildProjectInputPlacements } from "./utils/projectInputRestore";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
@@ -4578,11 +4581,10 @@ function PerformanceAIDashboardView({
     const { editable, blockedCount } = partitionObjectManagerTargets({
       targets,
       isEditable: (item) => {
-      if (getObjectEditBlocker(item, "copy")) return false;
-      if (item.capabilities?.deletable === false) return false;
-      if (item.generated) return false;
-      if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
-      return true;
+        return isObjectManagerCopyableDraft({
+          item,
+          hasCopyBlocker: Boolean(getObjectEditBlocker(item, "copy")),
+        });
       },
     });
     if (!editable.length) {
@@ -4598,8 +4600,7 @@ function PerformanceAIDashboardView({
       dy: offset,
       source: "manual_drawn_copy",
     }));
-    const visibleDuplicates = copyResults.map((result) => result.visible);
-    const createdObjects = copyResults.flatMap((result) => result.created);
+    const { visibleDuplicates, createdObjects, hiddenTraceCount } = summarizeDraftCopyResults(copyResults);
     setBuildingPlacements((prev) => [...prev, ...createdObjects]);
     setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
     setActivePlacementId(visibleDuplicates[0]?.id ?? null);
@@ -4614,7 +4615,6 @@ function PerformanceAIDashboardView({
       detail: `Duplicated ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`,
       undo,
     });
-    const hiddenTraceCount = createdObjects.length - visibleDuplicates.length;
     const message = `Duplicated ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
@@ -4654,14 +4654,15 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Copy by offset blocked: select one or more editable draft objects first.");
       return;
     }
-    const editable = targets.filter((item) => {
-      if (getObjectEditBlocker(item, "copy")) return false;
-      if (item.capabilities?.deletable === false) return false;
-      if (item.generated) return false;
-      if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
-      return true;
+    const { editable, blockedCount } = partitionObjectManagerTargets({
+      targets,
+      isEditable: (item) => {
+        return isObjectManagerCopyableDraft({
+          item,
+          hasCopyBlocker: Boolean(getObjectEditBlocker(item, "copy")),
+        });
+      },
     });
-    const blockedCount = targets.length - editable.length;
     if (!editable.length) {
       reportObjectActionBlocker("Copy by offset blocked: selected objects are locked, source-only, or required project evidence.");
       return;
@@ -4675,8 +4676,7 @@ function PerformanceAIDashboardView({
       source: "manual_drawn_copy_by_offset",
       extraMeta: { copied_offset_ft: [dx, dy] },
     }));
-    const visibleDuplicates = copyResults.map((result) => result.visible);
-    const createdObjects = copyResults.flatMap((result) => result.created);
+    const { visibleDuplicates, createdObjects, hiddenTraceCount } = summarizeDraftCopyResults(copyResults);
     setBuildingPlacements((prev) => [...prev, ...createdObjects]);
     setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
     setActivePlacementId(visibleDuplicates[0]?.id ?? null);
@@ -4685,7 +4685,6 @@ function PerformanceAIDashboardView({
     });
     const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "copy by offset" };
     recordDraftUndoAction(undo);
-    const hiddenTraceCount = createdObjects.length - visibleDuplicates.length;
     const message = `Copied ${visibleDuplicates.length} selected draft object${visibleDuplicates.length === 1 ? "" : "s"} by ${dx},${dy}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
@@ -4739,14 +4738,15 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Array blocked: provide a non-zero X or Y spacing.");
       return;
     }
-    const editable = targets.filter((item) => {
-      if (getObjectEditBlocker(item, "copy")) return false;
-      if (item.capabilities?.deletable === false) return false;
-      if (item.generated) return false;
-      if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
-      return true;
+    const { editable, blockedCount } = partitionObjectManagerTargets({
+      targets,
+      isEditable: (item) => {
+        return isObjectManagerCopyableDraft({
+          item,
+          hasCopyBlocker: Boolean(getObjectEditBlocker(item, "copy")),
+        });
+      },
     });
-    const blockedCount = targets.length - editable.length;
     if (!editable.length) {
       reportObjectActionBlocker("Array blocked: selected objects are locked, source-only, or required project evidence.");
       return;
@@ -4757,33 +4757,15 @@ function PerformanceAIDashboardView({
       return;
     }
     const stamp = Date.now();
-    const visibleDuplicates: BuildingPlacement[] = [];
-    const createdObjects: BuildingPlacement[] = [];
-    editable.forEach((item, sourceIndex) => {
-      for (let row = 0; row < rows; row += 1) {
-        for (let column = 0; column < columns; column += 1) {
-          if (row === 0 && column === 0) continue;
-          const dx = column * spacingX;
-          const dy = row * spacingY;
-          const result = createDraftCopyWithTrace(item, {
-            idPrefix: `array-${stamp}-${sourceIndex}-${row}-${column}`,
-            label: `${item.label} Array ${row + 1}-${column + 1}`,
-            dx,
-            dy,
-            source: "manual_drawn_array",
-            extraMeta: {
-              array_source_object_id: item.id,
-              array_source_label: item.label,
-              array_rows: rows,
-              array_columns: columns,
-              array_spacing_ft: [spacingX, spacingY],
-            },
-          });
-          visibleDuplicates.push(result.visible);
-          createdObjects.push(...result.created);
-        }
-      }
-    });
+    const { visibleDuplicates, createdObjects, hiddenTraceCount } = summarizeDraftCopyResults(createDraftArrayCopiesWithTrace({
+      editable,
+      buildingPlacements,
+      rows,
+      columns,
+      spacingX,
+      spacingY,
+      stamp,
+    }));
     setBuildingPlacements((prev) => [...prev, ...createdObjects]);
     setSelectedObjectIds(visibleDuplicates.map((item) => item.id));
     setActivePlacementId(visibleDuplicates[0]?.id ?? null);
@@ -4792,7 +4774,6 @@ function PerformanceAIDashboardView({
     });
     const undo: DraftUndoAction = { action: "add_many", objects: createdObjects, label: "array" };
     recordDraftUndoAction(undo);
-    const hiddenTraceCount = createdObjects.length - visibleDuplicates.length;
     const message = `Array created ${visibleDuplicates.length} draft review cop${visibleDuplicates.length === 1 ? "y" : "ies"}${hiddenTraceCount ? ` with ${hiddenTraceCount} hidden source trace piece${hiddenTraceCount === 1 ? "" : "s"}` : ""}${blockedCount ? `; ${blockedCount} selected object${blockedCount === 1 ? "" : "s"} blocked.` : "."}`;
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);

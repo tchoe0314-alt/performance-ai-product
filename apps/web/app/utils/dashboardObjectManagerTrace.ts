@@ -62,6 +62,20 @@ export function formatObjectManagerCountMessage({
   return `${action} ${count} ${noun}${count === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
 }
 
+export function isObjectManagerCopyableDraft({
+  item,
+  hasCopyBlocker,
+}: {
+  item: BuildingPlacement;
+  hasCopyBlocker: boolean;
+}): boolean {
+  if (hasCopyBlocker) return false;
+  if (item.capabilities?.deletable === false) return false;
+  if (item.generated) return false;
+  if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
+  return true;
+}
+
 export function cloneBuildingPlacementForUndo(item: BuildingPlacement): BuildingPlacement {
   return {
     ...item,
@@ -183,6 +197,68 @@ export function createDraftCopyWithTrace({
     },
   };
   return { visible, created: [...copiedSourceItems, visible] };
+}
+
+export function summarizeDraftCopyResults(
+  copyResults: Array<{ visible: BuildingPlacement; created: BuildingPlacement[] }>,
+): {
+  visibleDuplicates: BuildingPlacement[];
+  createdObjects: BuildingPlacement[];
+  hiddenTraceCount: number;
+} {
+  const visibleDuplicates = copyResults.map((result) => result.visible);
+  const createdObjects = copyResults.flatMap((result) => result.created);
+  return {
+    visibleDuplicates,
+    createdObjects,
+    hiddenTraceCount: createdObjects.length - visibleDuplicates.length,
+  };
+}
+
+export function createDraftArrayCopiesWithTrace({
+  editable,
+  buildingPlacements,
+  rows,
+  columns,
+  spacingX,
+  spacingY,
+  stamp,
+}: {
+  editable: BuildingPlacement[];
+  buildingPlacements: BuildingPlacement[];
+  rows: number;
+  columns: number;
+  spacingX: number;
+  spacingY: number;
+  stamp: number;
+}): Array<{ visible: BuildingPlacement; created: BuildingPlacement[] }> {
+  return editable.flatMap((item, sourceIndex) => {
+    const copyResults: Array<{ visible: BuildingPlacement; created: BuildingPlacement[] }> = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        if (row === 0 && column === 0) continue;
+        const dx = column * spacingX;
+        const dy = row * spacingY;
+        copyResults.push(createDraftCopyWithTrace({
+          item,
+          buildingPlacements,
+          idPrefix: `array-${stamp}-${sourceIndex}-${row}-${column}`,
+          label: `${item.label} Array ${row + 1}-${column + 1}`,
+          dx,
+          dy,
+          source: "manual_drawn_array",
+          extraMeta: {
+            array_source_object_id: item.id,
+            array_source_label: item.label,
+            array_rows: rows,
+            array_columns: columns,
+            array_spacing_ft: [spacingX, spacingY],
+          },
+        }));
+      }
+    }
+    return copyResults;
+  });
 }
 
 export function buildSyncedCombinedSourceTraces({
