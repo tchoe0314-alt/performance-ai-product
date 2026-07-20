@@ -30,7 +30,7 @@ export function ReviewIssueTrackerPanel({
             {openIssueCount} open of {totalIssueCount}
           </p>
           <p className="mt-1 text-xs font-medium text-slate-500">
-            Blockers, QA, exports, candidates, smart fixes, and depth checks.
+            Needs, QA, exports, candidates, smart fixes, and depth checks.
           </p>
         </div>
         <button
@@ -56,7 +56,7 @@ export function ReviewIssueTrackerPanel({
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {[
-          "show drainage blockers",
+          "show drainage needs",
           "what does the engineer need to review?",
           "reopen grading issue",
         ].map((command) => (

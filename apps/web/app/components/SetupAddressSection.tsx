@@ -135,8 +135,8 @@ export function SetupAddressSection({
         </span>
       </button>
       {autoExistingConditionsStatus.status === "blocked" ? (
-        <p data-testid="apply-address-status" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-          {autoExistingConditionsStatus.message}
+        <p data-testid="apply-address-status" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+          Needs input: {autoExistingConditionsStatus.message.replace(/\bblocked:?/gi, "needs input:").replace(/\bfailed\b/gi, "could not complete")}
         </p>
       ) : null}
     </DisclosurePanel>

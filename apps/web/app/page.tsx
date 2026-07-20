@@ -5926,7 +5926,7 @@ function PerformanceAIDashboardView({
             review_required: true,
             construction_release_allowed: false,
             truth_label:
-              "Automatic existing-condition detection creates review-required candidates only; it is not survey/control or construction-release evidence.",
+              "Automatic existing-condition detection creates review-required candidates only; it is not survey/control or final professional evidence.",
           },
         },
       },
@@ -12201,13 +12201,13 @@ function PerformanceAIDashboardView({
       return true;
     }
 
-    if (/show sheet blockers|sheet blockers|sheet blocked/i.test(normalized)) {
+    if (/show sheet blockers|sheet blockers|sheet blocked|show sheet needs|sheet needs/i.test(normalized)) {
       const blockers = getPlanSheetBlockers();
       appendChatMessage(
         "assistant",
         blockers.length
-          ? `Sheet blockers:\n${blockers.map((blocker) => `- ${blocker}`).join("\n")}`
-          : "No sheet blockers recorded.",
+          ? `Sheet needs:\n${blockers.map((blocker) => `- ${formatCalmActionMessage(blocker)}`).join("\n")}`
+          : "No sheet needs are recorded.",
         "status",
       );
       setActiveWorkspaceMode("deliver");
@@ -17026,7 +17026,7 @@ function PerformanceAIDashboardView({
         review_required: true,
         construction_release_allowed: false,
         truth_label:
-          "Automatic existing-condition detection creates review-required candidates only; it is not survey/control or construction-release evidence.",
+          "Automatic existing-condition detection creates review-required candidates only; it is not survey/control or final professional evidence.",
       };
       const nextSiteInputs: SiteInputs = {
         ...currentSiteInputs,
