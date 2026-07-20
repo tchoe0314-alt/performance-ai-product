@@ -1070,7 +1070,7 @@ function CivilSurfaceCorridorWorkflow({
 
       {activeTab === "blockers" ? (
         <div className="mt-4 space-y-2">
-          {(blockers.length ? blockers : ["No corridor-specific blockers recorded. Review-required status remains until source evidence is checked."]).map((blocker) => (
+          {(blockers.length ? blockers : ["No corridor-specific needs are recorded. Review-required status remains until source evidence is checked."]).map((blocker) => (
             <div key={blocker} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
               {blocker}
             </div>
@@ -2394,7 +2394,7 @@ const createDefaultPlanSheet = (index = 0, projectName = "Untitled Project"): Pl
         title: "General Review Notes",
         rows: [
           ["1", "Verify source geometry before reliance."],
-          ["2", "Resolve listed blockers before package handoff."],
+          ["2", "Resolve listed needs before package handoff."],
         ],
       },
     ],
@@ -4391,11 +4391,11 @@ function PerformanceAIDashboardView({
           ? "setup_site_boundary"
           : "general",
       what_is_wrong: reason,
-      why_it_matters: "Civora keeps unresolved blockers visible so review outputs do not overstate the current state.",
+      why_it_matters: "Civora keeps unresolved needs visible so review outputs do not overstate the current state.",
       can_civora_fix: !reason.toLowerCase().includes("survey") && !reason.toLowerCase().includes("standards"),
       fix_mode: !reason.toLowerCase().includes("survey") && !reason.toLowerCase().includes("standards") ? "auto_supported" : "manual_input_required",
       one_action_needed_next: reason.toLowerCase().includes("export")
-        ? "Open Deliver and rebuild the review report after blockers are resolved."
+        ? "Open Deliver and rebuild the review report after needs are resolved."
         : reason.toLowerCase().includes("boundary")
           ? "Open Setup and lock the site boundary."
           : "Run a fix pass.",
@@ -4404,7 +4404,7 @@ function PerformanceAIDashboardView({
         : reason.toLowerCase().includes("standards")
           ? "accepted standards source"
           : "",
-      what_happens_after_fix: "Civora will refresh blockers and keep remaining review gates visible.",
+      what_happens_after_fix: "Civora will refresh needs and keep remaining review gates visible.",
       ui_action: reason.toLowerCase().includes("export")
         ? { type: "open_panel", panel: "deliverables" }
         : reason.toLowerCase().includes("boundary") || reason.toLowerCase().includes("setup")
@@ -4419,7 +4419,7 @@ function PerformanceAIDashboardView({
       manual_action_count: recommendations.filter((item) => !item.can_civora_fix).length,
       recommendations,
       next_best_recommendation: recommendations[0],
-      truth_label: "Smart Fix explains blockers and only runs supported actions.",
+      truth_label: "Smart Fix explains needs and only runs supported actions.",
     };
   }, [currentPlanMeta.smart_fix_recommendations_v1, smartFixBlockedReasons]);
   const smartFixItems = smartFixRecommendations.recommendations ?? [];
@@ -11382,7 +11382,7 @@ function PerformanceAIDashboardView({
             : mode === "improve"
               ? "Civora AI generated an improved plan."
               : "Plan run completed.",
-        nextAction: "Review the generated draft, blockers, assumptions, and preview before deliverables.",
+        nextAction: "Review the generated draft, needs, assumptions, and preview before deliverables.",
       });
       if (clearPromptOnSuccess) {
         setPrompt("");
@@ -11542,7 +11542,7 @@ function PerformanceAIDashboardView({
       if (mode === "fix") {
         appendChatMessage(
           "system",
-          "Fix the active design and focus on the most important engineering blockers.",
+          "Fix the active design and focus on the most important engineering needs.",
           "action",
         );
       } else if (mode === "improve") {
@@ -13092,7 +13092,7 @@ function PerformanceAIDashboardView({
       appendChatMessage(
         "assistant",
         sourceConfidenceRows.length
-          ? `Showing source confidence and blocker badges in 3D. Low-confidence entries: ${sourceConfidenceRows
+          ? `Showing source confidence and review-need badges in 3D. Low-confidence entries: ${sourceConfidenceRows
               .filter((entry) => entry.confidence_band !== "higher")
               .slice(0, 4)
               .map((entry) => entry.label || entry.source_name || "source entry")
@@ -13139,7 +13139,7 @@ function PerformanceAIDashboardView({
     if (/(stamp|seal|sign|submit|construction[- ]ready|approve.*construction|engineer of record)/i.test(normalized)) {
       appendChatMessage(
         "assistant",
-        "No. Civora cannot stamp, seal, sign, certify, submit, approve construction, or act as engineer of record. Civora can prepare review evidence packages, calculations, reports, exports, assumptions, blockers, and traceability for qualified review. Field use and professional responsibility remain outside Civora.",
+        "No. Civora cannot stamp, seal, sign, certify, submit, approve construction, or act as engineer of record. Civora can prepare review evidence packages, calculations, reports, exports, assumptions, needs, and traceability for qualified review. Field use and professional responsibility remain outside Civora.",
         "status",
       );
       return true;
@@ -13187,7 +13187,7 @@ function PerformanceAIDashboardView({
           "assistant",
           workflowActionHints[0]
             ? `Best available fix path: ${workflowActionHints[0]} Review responsibility remains outside Civora.`
-            : "No smart-fix recommendation is recorded yet. Run or load a project so Civora can tie fixes to blockers and evidence.",
+            : "No smart-fix recommendation is recorded yet. Run or load a project so Civora can tie fixes to needs and evidence.",
           "status",
         );
         return true;
@@ -13432,7 +13432,7 @@ function PerformanceAIDashboardView({
       }
       appendChatMessage(
         "assistant",
-        "I do not see a single automatic fix to apply. Open Review for blockers, or ask for a specific action like 'fix drainage' or 'improve parking'.",
+        "I do not see a single automatic fix to apply. Open Review for needs, or ask for a specific action like 'fix drainage' or 'improve parking'.",
         "status",
       );
       return true;
@@ -13489,7 +13489,7 @@ function PerformanceAIDashboardView({
     appendChatMessage("user", message);
     appendChatMessage(
       "assistant",
-      "I can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can help prepare review-only draft materials and call out blockers for a qualified professional to review.",
+      "I can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can help prepare review-only draft materials and call out needs for a qualified professional to review.",
       "status",
     );
     updateProjectStatus({
@@ -13886,7 +13886,7 @@ function PerformanceAIDashboardView({
         return true;
       }
       void saveSiteAddress();
-      appendChatMessage("assistant", "Applying the typed address as source context. Exact provider/auth blockers will stay visible in Setup if the backend cannot apply it.", "status");
+      appendChatMessage("assistant", "Applying the typed address as source context. Exact provider/auth needs will stay visible in Setup if the backend cannot apply it.", "status");
       return true;
     }
     if (/^draw site boundary$/.test(normalized)) {
@@ -13975,7 +13975,7 @@ function PerformanceAIDashboardView({
     if (/^show only blockers$/.test(normalized)) {
       appendChatMessage("user", message);
       handleOpenSidePanel("analysis");
-      appendChatMessage("assistant", "Opened the blocker/review view. If no blockers are recorded, the panel will show the exact empty state.", "status");
+      appendChatMessage("assistant", "Opened the needs/review view. If no needs are recorded, the panel will show the exact empty state.", "status");
       updateProjectStatus({
         state: canonicalWorkspaceBlockers.length ? "blocked" : "ready",
         area: "chat",
@@ -13988,7 +13988,7 @@ function PerformanceAIDashboardView({
     if (/^generate$/.test(normalized)) {
       appendChatMessage("user", message);
       handleOpenSidePanel("generate");
-      appendChatMessage("assistant", "Running Generate from the locked site. I will show visible review concepts on the canvas and exact blockers if a system cannot run.", "status");
+      appendChatMessage("assistant", "Running Generate from the locked site. I will show visible review concepts on the canvas and exact needs if a system cannot run.", "status");
       void handleGenerateSystem("full");
       return true;
     }
@@ -15457,7 +15457,7 @@ function PerformanceAIDashboardView({
       setStatusMessage("Plan PDF analyzed. All extracted objects are review-required.");
       appendChatMessage(
         "assistant",
-        "Plan PDF imported. I extracted review-required sheet candidates where embedded text was available and recorded blockers for OCR, raster preview, and vector geometry where unsupported.",
+        "Plan PDF imported. I extracted review-required sheet candidates where embedded text was available and recorded needs for OCR, raster preview, and vector geometry where unsupported.",
         "status",
       );
     } catch (error) {
@@ -17319,7 +17319,7 @@ function PerformanceAIDashboardView({
         area: "setup",
         title: "Detecting site context",
         detail: "Site boundary locked. Checking available existing-condition sources inside the site.",
-        nextAction: "Review found candidates or blockers before generating.",
+        nextAction: "Review found candidates or needs before generating.",
       });
       void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
       return;
@@ -17410,7 +17410,7 @@ function PerformanceAIDashboardView({
       area: "setup",
       title: "Detecting site context",
       detail: "Site applied and locked. Civora is checking source context inside the site.",
-      nextAction: "Review found candidates or blockers before generating.",
+      nextAction: "Review found candidates or needs before generating.",
     });
     lastAppliedSiteRef.current = {
       w: width,
@@ -19879,7 +19879,7 @@ function PerformanceAIDashboardView({
       area: "deliver",
       title: "Creating review package",
       detail: "Civora is assembling available review deliverables and missing-item notes.",
-      nextAction: "Wait for the package summary to show created items or exact blockers.",
+      nextAction: "Wait for the package summary to show created items or exact needs.",
     });
     const blockers = getPlanSheetBlockers();
     const missing = uniqueStrings([

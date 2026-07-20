@@ -76,7 +76,7 @@ export default function AuthScreen({
               <div className="space-y-2 text-sm leading-6 text-slate-600">
                 <p>
                   Civora is a private-pilot planning and review workspace for
-                  civil site concepts, assumptions, blockers, and review-package
+                  civil site concepts, assumptions, needs, and review-package
                   materials.
                 </p>
                 <p className="font-semibold text-slate-800">
