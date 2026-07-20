@@ -354,11 +354,10 @@ import { LayersPanel } from "./components/LayersPanel";
 import { LibrariesPanel } from "./components/LibrariesPanel";
 import { ModelReviewPanel } from "./components/ModelReviewPanel";
 import { DashboardObjectManagerPanel } from "./components/DashboardObjectManagerPanel";
+import { DashboardReportsQuantitiesPanel } from "./components/DashboardReportsQuantitiesPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import PreviewPanel from "./components/PreviewPanel";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
-import { QuantitiesPanel } from "./components/QuantitiesPanel";
-import { ReportsPanel } from "./components/ReportsPanel";
 import { RoadwayWorkbenchPanel } from "./components/RoadwayWorkbenchPanel";
 import { SelectedObjectInspectorPanel } from "./components/SelectedObjectInspectorPanel";
 import { SanitaryWorkbenchPanel } from "./components/SanitaryWorkbenchPanel";
@@ -17242,67 +17241,64 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" ? (
-                  <div className="space-y-3">
-                    {sidePanelForRender === "reports" ? (
-                      <ReportsPanel
-                        stats={[
-                          { label: "QA items", value: issues.length + analysisIssues.length },
-                          { label: "Missing", value: sidebarMissingInputs.length },
-                          { label: "Assumptions", value: sidebarAssumptions.length },
-                          { label: "Needs input", value: systemHealthItems.filter((item) => item.state === "blocked").length },
-                        ]}
-                        engineeringHealthLinks={engineeringHealthPanelLinks}
-                        issues={issues}
-                        drainageIssueApplyLabel={drainageIssueApplyLabel}
-                        canApplyDrainageIssue={canApplyDrainageIssue}
-                        getIssueGuidance={getIssueGuidance}
-                        onApplyDrainageIssue={handleApplyDrainageIssue}
-                        onOpenSidePanel={handleOpenSidePanel}
-                        reviewIssueTracker={{
-                          issues: reviewIssueItems,
-                          openIssueCount: openReviewIssueItems.length,
-                          totalIssueCount: reviewIssueTracker.issue_count ?? reviewIssueItems.length,
-                          needsReviewCount: reviewIssueTracker.needs_review_count ?? 0,
-                          drainageIssueCount: drainageReviewIssueItems.length,
-                          waivedCount: reviewIssueTracker.by_status?.waived_review_required ?? 0,
-                          truthLabel: reviewIssueTracker.truth_label,
-                          onAskCommand: (command) => {
-                            setPrompt(command);
-                            handleOpenSidePanel("chat");
-                          },
-                          onIssueCommand: (action, issueId) => {
-                            setPrompt(`${action} issue ${issueId}`);
-                            handleOpenSidePanel("chat");
-                          },
-                        }}
-                        truthGates={sidebarTruthItems}
-                        reviewGates={reviewGateItems}
-                        designAlternatives={{
-                          designAlternatives,
-                          alternatives: designAlternativeItems,
-                          topAlternative: topDesignAlternative,
-                          selectedAlternativeId: selectedDesignAlternativeId,
-                          quantityAvailable: designAlternativeQuantityAvailable,
-                          onAction: (action, optionNumber) => void handleDesignAlternativesAction(action, optionNumber),
-                        }}
-                        sourceConfidence={{
-                          summary: sourceConfidenceSummary,
-                          entries: sourceConfidenceRows,
-                          totalEntryCount: sourceConfidenceEntries.length,
-                        }}
-                      />
-                    ) : null}
-                    {sidePanelForRender === "quantities" ? (
-                      <QuantitiesPanel
-                        rows={quantityRows}
-                        staleSystemCount={sidebarStaleSystems.length}
-                        trustScoreLabel={sidebarTrustScore}
-                        onExportReport={handleExportQuantityReviewReport}
-                        formatMetric={formatMetric}
-                        statusLabelForQuantityReview={statusLabelForQuantityReview}
-                      />
-                    ) : null}
-                  </div>
+                  <DashboardReportsQuantitiesPanel
+                    activePanel={sidePanelForRender}
+                    reports={{
+                      stats: [
+                        { label: "QA items", value: issues.length + analysisIssues.length },
+                        { label: "Missing", value: sidebarMissingInputs.length },
+                        { label: "Assumptions", value: sidebarAssumptions.length },
+                        { label: "Needs input", value: systemHealthItems.filter((item) => item.state === "blocked").length },
+                      ],
+                      engineeringHealthLinks: engineeringHealthPanelLinks,
+                      issues,
+                      drainageIssueApplyLabel,
+                      canApplyDrainageIssue,
+                      getIssueGuidance,
+                      onApplyDrainageIssue: handleApplyDrainageIssue,
+                      onOpenSidePanel: handleOpenSidePanel,
+                      reviewIssueTracker: {
+                        issues: reviewIssueItems,
+                        openIssueCount: openReviewIssueItems.length,
+                        totalIssueCount: reviewIssueTracker.issue_count ?? reviewIssueItems.length,
+                        needsReviewCount: reviewIssueTracker.needs_review_count ?? 0,
+                        drainageIssueCount: drainageReviewIssueItems.length,
+                        waivedCount: reviewIssueTracker.by_status?.waived_review_required ?? 0,
+                        truthLabel: reviewIssueTracker.truth_label,
+                        onAskCommand: (command) => {
+                          setPrompt(command);
+                          handleOpenSidePanel("chat");
+                        },
+                        onIssueCommand: (action, issueId) => {
+                          setPrompt(`${action} issue ${issueId}`);
+                          handleOpenSidePanel("chat");
+                        },
+                      },
+                      truthGates: sidebarTruthItems,
+                      reviewGates: reviewGateItems,
+                      designAlternatives: {
+                        designAlternatives,
+                        alternatives: designAlternativeItems,
+                        topAlternative: topDesignAlternative,
+                        selectedAlternativeId: selectedDesignAlternativeId,
+                        quantityAvailable: designAlternativeQuantityAvailable,
+                        onAction: (action, optionNumber) => void handleDesignAlternativesAction(action, optionNumber),
+                      },
+                      sourceConfidence: {
+                        summary: sourceConfidenceSummary,
+                        entries: sourceConfidenceRows,
+                        totalEntryCount: sourceConfidenceEntries.length,
+                      },
+                    }}
+                    quantities={{
+                      rows: quantityRows,
+                      staleSystemCount: sidebarStaleSystems.length,
+                      trustScoreLabel: sidebarTrustScore,
+                      onExportReport: handleExportQuantityReviewReport,
+                      formatMetric,
+                      statusLabelForQuantityReview,
+                    }}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "chat" ? (
