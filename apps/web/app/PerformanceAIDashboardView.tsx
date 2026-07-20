@@ -188,8 +188,6 @@ import {
 } from "./utils/dashboardReviewCollections";
 import { buildDashboardSourceConfidenceView } from "./utils/dashboardSourceConfidenceView";
 import {
-  buildDashboardProgressTimelineState,
-  buildDashboardSetupWizardState,
   progressTimelineDotClass,
   progressTimelineStatusClass,
 } from "./utils/dashboardWorkflowProgress";
@@ -199,10 +197,6 @@ import {
   buildGradingDrainageReviewContextPlacements,
   type GradingDrainageReviewContextMode,
 } from "./utils/dashboardReviewContextPlacements";
-import {
-  buildDashboardSidebarReviewState,
-  buildIssueDiagnosticSummary,
-} from "./utils/dashboardSidebarReview";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -253,6 +247,7 @@ import { useDashboardReviewWorkflowActions } from "./hooks/useDashboardReviewWor
 import { useDashboardPlanPdfDerivedState } from "./hooks/useDashboardPlanPdfDerivedState";
 import { useDashboardEngineeringReviewState } from "./hooks/useDashboardEngineeringReviewState";
 import { useDashboardAutoSiteContextState } from "./hooks/useDashboardAutoSiteContextState";
+import { useDashboardShellReviewState } from "./hooks/useDashboardShellReviewState";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -8936,98 +8931,73 @@ function PerformanceAIDashboardView({
     setStatusMessage,
     sourceConfidenceByObjectId,
   });
+  const exportBlockText = getExportBlockReason();
   const {
-    sidebarStaleSystems,
+    dashboardGuidanceStats,
+    issueDiagnosticSummary,
+    nextSetupAction,
+    progressPanelTarget,
+    progressPercent,
+    progressTimelineState,
+    progressTimelineSteps,
+    reviewGateItems,
+    setupWizardState,
+    sidebarAssumptions,
     sidebarMissingInputs,
     sidebarReleaseStatus,
+    sidebarStaleSystems,
     sidebarTrustScore,
-    sidebarAssumptions,
     sidebarTruthItems,
-    reviewGateItems,
-  } = buildDashboardSidebarReviewState({
-    systemStatuses,
-    missingSite,
-    hasTerrainSource,
-    hasBasinPlaced,
-    drainageFresh: systemStatuses.drainage === "fresh",
+  } = useDashboardShellReviewState({
+    activeWorkspaceMode,
+    analysisIssues,
+    appliedAddressLabel,
     backendResultPresent: Boolean(backendResult),
-    siteScaleLocked,
-    buildingPlacementCount: buildingPlacements.length,
+    buildingPlacements,
+    candidateAcceptedCount: candidateReviewCounts.accepted ?? 0,
+    candidateItemCount: candidateReviewItems.length,
+    candidatePendingCount: candidateReviewCounts.pending ?? 0,
+    candidateTotalCount: candidateReviewInbox.candidate_count ?? 0,
+    canonicalWorkspaceBlockers,
+    currentPlanMeta,
+    currentProjectId: currentProject?.project_id || projectId || null,
+    currentProjectName: currentProject?.name,
+    exportBlockText,
+    hasAppliedAddress,
+    hasAssumedTerrainSlope,
+    hasBasinPlaced,
+    hasHardSystemBlock,
+    hasTerrainSource,
+    hasVerifiedSurveyControl,
+    issueReportMessage,
+    issues,
+    lotHeight: lotBounds.h,
+    lotWidth: lotBounds.w,
+    mapAnalysisSuccess: Boolean(mapAnalysis?.success),
+    mapSnapshotPath,
+    missingSite,
+    onlineSourceLookupLabel,
+    parkingCount,
+    placedObjectCount,
+    previewBlockedReasons,
+    releaseStatusRaw: previewReview?.release_status,
+    sidePanelForRender,
     siteAddress,
     siteInputAddress: siteInputs?.address,
     siteInputLat: siteInputs?.geocode?.lat,
     siteInputLng: siteInputs?.geocode?.lng,
-    uploadedImagePreviewUrl,
-    uploadedImageApiUrl,
-    surveyPreviewPointCount: surveyPreviewPoints.length,
-    mapSnapshotPath,
-    releaseStatusRaw: previewReview?.release_status,
-    trustScoreRaw: previewReview?.trust_score,
-    assumptionCategories: previewReview?.assumption_categories,
-    hasHardSystemBlock,
-    previewBlockedReasonCount: previewBlockedReasons.length,
-    standardsOk: panelStatus("standards") === "ok",
-  });
-  const exportBlockText = getExportBlockReason();
-  const { setupWizardState, setupWizardSteps, nextSetupAction } = buildDashboardSetupWizardState({
-    persistedSetupWizardState: currentPlanMeta.setup_wizard_state_v1,
-    hasAppliedAddress,
-    siteAddress,
-    appliedAddressLabel,
+    siteName,
     siteScaleLocked,
     siteSizeSet,
-    hasSiteObject: buildingPlacements.some((item) => item.type === "site"),
-    hasSourceContext: Boolean(mapAnalysis?.success || uploadedImageApiUrl || uploadedImagePreviewUrl),
-    onlineSourceLookupLabel,
-    hasVerifiedSurveyControl,
-    hasTerrainSource,
-    surveyPreviewPointCount: surveyPreviewPoints.length,
-    hasAssumedTerrainSlope,
     standardsOk: panelStatus("standards") === "ok",
-    placedObjectCount,
-    parkingCount,
+    surveyPreviewPointCount: surveyPreviewPoints.length,
     systemStatuses,
-    hasBackendResult: Boolean(backendResult),
-    exportBlockText,
+    trustScoreRaw: previewReview?.trust_score,
+    assumptionCategories: previewReview?.assumption_categories,
+    uploadedImageApiUrl,
+    uploadedImagePreviewUrl,
   });
   setupWizardStateRef.current = setupWizardState;
-  const dashboardGuidanceStats: Array<[string, number]> = [
-    ["Objects", placedObjectCount],
-    ["Issues", issues.length + analysisIssues.length],
-    ["Fresh", Object.values(systemStatuses).filter((status) => status === "fresh").length],
-    ["Outputs", backendResult ? 1 : 0],
-  ];
-  const progressPanelTarget = (value?: string): SidePanelKey => {
-    const panel = String(value || "dashboard") as SidePanelKey;
-    return sidePanelCopy[panel] ? panel : "dashboard";
-  };
-  const bottomBlockerItems = [
-    ...canonicalWorkspaceBlockers,
-    ...previewBlockedReasons,
-    ...issues.map((issue) => issue.message),
-    ...analysisIssues.map((issue) => issue.message),
-  ].filter(Boolean);
-  const { progressTimelineState, progressTimelineSteps, progressPercent } = buildDashboardProgressTimelineState({
-    persistedProgressTimeline: currentPlanMeta.progress_timeline_v1,
-    setupWizardSteps,
-    candidatePendingCount: candidateReviewCounts.pending ?? 0,
-    candidateAcceptedCount: candidateReviewCounts.accepted ?? 0,
-    candidateItemCount: candidateReviewItems.length,
-    candidateTotalCount: candidateReviewInbox.candidate_count ?? 0,
-    placedObjectCount,
-    systemStatuses,
-    bottomBlockerItems,
-    hasHardSystemBlock,
-    hasBackendResult: Boolean(backendResult),
-    exportBlockText,
-  });
-  const visibleStatusSummary = bottomBlockerItems.length
-    ? bottomBlockerItems.slice(0, 6).join("; ")
-    : hasHardSystemBlock
-      ? "Hard system blocker recorded."
-      : backendResult
-        ? "No visible blockers recorded."
-        : "No run output yet.";
   const denseConceptObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.dense_concept_generated)).length;
   const denseConceptActive = denseConceptObjectCount >= 6;
   const drawWorkspaceActive =
@@ -9049,17 +9019,6 @@ function PerformanceAIDashboardView({
     !sidePanelVisible &&
     !(mobileViewport && leftSidebarOpen);
   const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
-  const issueDiagnosticSummary = buildIssueDiagnosticSummary({
-    projectId: currentProject?.project_id || projectId || "draft / unavailable",
-    projectName: siteName || currentProject?.name || "Untitled Project",
-    panelTitle: sidePanelForRender ? sidePanelCopy[sidePanelForRender].title : activeWorkspaceMode,
-    visibleStatusSummary,
-    siteLocked: siteScaleLocked,
-    lotWidth: lotBounds.w,
-    lotHeight: lotBounds.h,
-    systemStatuses,
-    issueReportMessage,
-  });
   const handleCopyIssueDiagnostic = async () => {
     try {
       await navigator.clipboard.writeText(issueDiagnosticSummary);
