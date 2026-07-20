@@ -10,7 +10,6 @@ import type {
   Issue,
   BackendAssumption,
   BackendIssue,
-  ManualFields,
   ProjectRecord,
   ProjectInput,
   JobSummary,
@@ -68,7 +67,6 @@ import {
   SITE_WARNING_ACRES,
   buildAssumedSlopeEstimate,
   formatStageLabel,
-  isEngineeringSystemStatus,
   isHardGenerateBlocker,
   siteAreaAcresFromSize,
   statusLabelForQuantityReview,
@@ -185,6 +183,7 @@ import {
   buildDashboardArtifactPayload,
   buildDashboardPayloadPreview,
 } from "./utils/dashboardPayloads";
+import { buildDashboardProjectInputView } from "./utils/dashboardProjectInputView";
 import { buildDashboardObjectSelectionView } from "./utils/dashboardObjectSelectionView";
 import {
   hasAddressCoordinates,
@@ -277,7 +276,6 @@ import {
   partitionObjectManagerTargets,
   summarizeDraftCopyResults,
 } from "./utils/dashboardObjectManagerTrace";
-import { buildProjectInputPlacements } from "./utils/projectInputRestore";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -1833,130 +1831,56 @@ function PerformanceAIDashboardView({
       return;
     }
 
-    const manualFields = projectInput.manual_fields ?? {};
-    const lot = (manualFields.lot ?? {}) as { w?: number; h?: number };
-    const sitePlan = (manualFields.site_plan ?? {}) as { parking_count?: number; building_program_sf?: number; building_type?: string };
-    const gradingFields = (manualFields.grading ?? {}) as {
-      min_slope_pct?: number;
-      max_parking_slope_pct?: number;
-      max_road_grade_pct?: number;
-      max_ada_cross_slope_pct?: number;
-      assumed_terrain_source?: boolean;
-      assumed_terrain_slope_pct?: number;
-    };
-    const drainageFields = (manualFields.drainage ?? {}) as NonNullable<ManualFields["drainage"]>;
-    const drainageForced = Array.isArray(drainageFields?.forced_inlets)
-      ? (drainageFields?.forced_inlets as Array<Record<string, unknown>>)
-      : [];
-    const disciplines = toArray(manualFields.disciplines);
-    const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
-    const restoredThread: ChatMessage[] = Array.isArray(projectInput.meta?.chat_thread)
-      ? projectInput.meta.chat_thread
-          .filter((message) => message && typeof message.content === "string")
-          .map((message): ChatMessage => ({
-            id:
-              typeof message.id === "string"
-                ? message.id
-                : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            role:
-              message.role === "user" ||
-              message.role === "assistant" ||
-              message.role === "system"
-                ? message.role
-                : "assistant",
-            content: message.content,
-            createdAt:
-              typeof message.createdAt === "number"
-                ? message.createdAt
-                : Date.now(),
-            kind:
-              message.kind === "status" ||
-              message.kind === "explanation" ||
-              message.kind === "action"
-                ? message.kind
-                : "message",
-            feedback:
-              message.feedback === "up" || message.feedback === "down"
-                ? message.feedback
-                : undefined,
-            phaseTag: typeof message.phaseTag === "string" ? message.phaseTag : undefined,
-          }))
-      : [];
-    const autoNamed = Boolean(projectInput.meta?.auto_named);
-    const autoFileNamed = Boolean(projectInput.meta?.auto_file_named);
+    const restoredProjectInput = buildDashboardProjectInputView(projectInput, siteInputs);
 
-    setPrompt(projectInput.prompt_text ?? "");
-    setImageName(projectInput.image_path ?? "");
+    setPrompt(restoredProjectInput.promptText);
+    setImageName(restoredProjectInput.imagePath);
     setUploadedImageApiUrl(
-      projectInput.image_path ? uploadedImageSrc(projectInput.image_path, token) : "",
+      restoredProjectInput.imagePath ? uploadedImageSrc(restoredProjectInput.imagePath, token) : "",
     );
     setUploadedImagePreviewUrl("");
-    setSiteName(manualFields.project_name ?? "");
-    setFileName(manualFields.file_name ?? "");
-    setSiteNameAuto(autoNamed || !manualFields.project_name);
-    setFileNameAuto(autoFileNamed || !(manualFields.file_name ?? manualFields.project_name));
-    setUnits(manualFields.units ?? "ft");
-    setProjectType(manualFields.project_type ?? "");
-    setLotWidth(String(lot.w ?? ""));
-    setLotHeight(String(lot.h ?? ""));
-    setSetback(String(manualFields.setback ?? ""));
-    setBuildingWidth(String(manualFields.building_width ?? ""));
-    setBuildingDepth(String(manualFields.building_depth ?? ""));
-    setBuildingCount(buildingsList.length ? String(buildingsList.length) : "");
-    const mergedPlacements = buildProjectInputPlacements({ projectInput, siteInputs });
-    setBuildingPlacements(mergedPlacements);
+    setSiteName(restoredProjectInput.siteName);
+    setFileName(restoredProjectInput.fileName);
+    setSiteNameAuto(restoredProjectInput.siteNameAuto);
+    setFileNameAuto(restoredProjectInput.fileNameAuto);
+    setUnits(restoredProjectInput.units);
+    setProjectType(restoredProjectInput.projectType);
+    setLotWidth(restoredProjectInput.lotWidth);
+    setLotHeight(restoredProjectInput.lotHeight);
+    setSetback(restoredProjectInput.setback);
+    setBuildingWidth(restoredProjectInput.buildingWidth);
+    setBuildingDepth(restoredProjectInput.buildingDepth);
+    setBuildingCount(restoredProjectInput.buildingCount);
+    setBuildingPlacements(restoredProjectInput.mergedPlacements);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);
-    setParkingCount(String(sitePlan.parking_count ?? ""));
-    if (sitePlan.building_type === "office" && typeof sitePlan.building_program_sf === "number" && !manualFields.building_width && !manualFields.building_depth) {
-      const depth = Math.round(Math.sqrt(sitePlan.building_program_sf / 1.8));
-      const width = Math.round(sitePlan.building_program_sf / Math.max(depth, 1));
-      setBuildingWidth(String(width));
-      setBuildingDepth(String(depth));
+    setParkingCount(restoredProjectInput.parkingCount);
+    if (restoredProjectInput.officeProgramDims) {
+      setBuildingWidth(restoredProjectInput.officeProgramDims.width);
+      setBuildingDepth(restoredProjectInput.officeProgramDims.depth);
     }
-    setMinSlopePct(String(gradingFields.min_slope_pct ?? ""));
-    if (typeof (gradingFields as Record<string, unknown>).assumed_terrain_slope_pct === "number") {
-      const slopePct = Number((gradingFields as Record<string, unknown>).assumed_terrain_slope_pct);
-      setAssumedTerrainSlopePct(String(slopePct));
-      setSurveySlopeEstimate(buildAssumedSlopeEstimate(slopePct));
+    setMinSlopePct(restoredProjectInput.minSlopePct);
+    if (typeof restoredProjectInput.assumedTerrainSlopePct === "number") {
+      setAssumedTerrainSlopePct(String(restoredProjectInput.assumedTerrainSlopePct));
+      setSurveySlopeEstimate(restoredProjectInput.assumedSlopeEstimate);
       setUseSurveyForGrading(false);
     }
-    setPipeMinSlopePct(String(drainageFields.min_pipe_slope_pct ?? ""));
-    setDrainageForcedInlets(
-      drainageForced
-        .map((item) => {
-          const rec = item as { x?: number; y?: number; name?: string };
-          if (typeof rec?.x !== "number" || typeof rec?.y !== "number") return null;
-          return { x: rec.x, y: rec.y, name: typeof rec.name === "string" ? rec.name : undefined };
-        })
-        .filter(Boolean) as Array<{ x: number; y: number; name?: string }>,
-    );
-    setDrainageConnectOrphans(Boolean((manualFields.drainage ?? {}).connect_orphans));
-    setDrainageAllowSlopeAdjust(Boolean((manualFields.drainage ?? {}).allow_slope_adjustment));
-    const rawMaxSlopeAdjust = (manualFields.drainage ?? {}).max_slope_adjust;
-    setDrainageMaxSlopeAdjust(
-      typeof rawMaxSlopeAdjust === "number" && Number.isFinite(rawMaxSlopeAdjust)
-        ? rawMaxSlopeAdjust
-        : 0.001,
-    );
-    setMaxParkingSlopePct(String(gradingFields.max_parking_slope_pct ?? ""));
-    setMaxRoadGradePct(String(gradingFields.max_road_grade_pct ?? ""));
-    setMaxAdaCrossSlopePct(String(gradingFields.max_ada_cross_slope_pct ?? ""));
-    setRoads(disciplines.includes("corridor"));
-    setGrading(disciplines.includes("grading"));
-    setDrainage(disciplines.includes("drainage"));
-    setUtilities(disciplines.includes("utility"));
-    const restoredSystemState = projectInput.meta?.system_dirty_state;
-    if (restoredSystemState && typeof restoredSystemState === "object") {
-      setSystemStatuses({
-        roads: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).roads) ? (restoredSystemState as Record<string, SystemStatus>).roads : DEFAULT_SYSTEM_STATUS.roads,
-        parking: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).parking) ? (restoredSystemState as Record<string, SystemStatus>).parking : DEFAULT_SYSTEM_STATUS.parking,
-        grading: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).grading) ? (restoredSystemState as Record<string, SystemStatus>).grading : DEFAULT_SYSTEM_STATUS.grading,
-        drainage: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).drainage) ? (restoredSystemState as Record<string, SystemStatus>).drainage : DEFAULT_SYSTEM_STATUS.drainage,
-        utilities: isEngineeringSystemStatus((restoredSystemState as Record<string, unknown>).utilities) ? (restoredSystemState as Record<string, SystemStatus>).utilities : DEFAULT_SYSTEM_STATUS.utilities,
-      });
+    setPipeMinSlopePct(restoredProjectInput.pipeMinSlopePct);
+    setDrainageForcedInlets(restoredProjectInput.drainageForcedInlets);
+    setDrainageConnectOrphans(restoredProjectInput.drainageConnectOrphans);
+    setDrainageAllowSlopeAdjust(restoredProjectInput.drainageAllowSlopeAdjust);
+    setDrainageMaxSlopeAdjust(restoredProjectInput.drainageMaxSlopeAdjust);
+    setMaxParkingSlopePct(restoredProjectInput.maxParkingSlopePct);
+    setMaxRoadGradePct(restoredProjectInput.maxRoadGradePct);
+    setMaxAdaCrossSlopePct(restoredProjectInput.maxAdaCrossSlopePct);
+    setRoads(restoredProjectInput.roads);
+    setGrading(restoredProjectInput.grading);
+    setDrainage(restoredProjectInput.drainage);
+    setUtilities(restoredProjectInput.utilities);
+    if (restoredProjectInput.systemStatuses) {
+      setSystemStatuses(restoredProjectInput.systemStatuses);
     }
-    const nextThread = restoredThread.length ? restoredThread : [createWelcomeMessage()];
+    const nextThread = restoredProjectInput.chatThread;
     chatMessagesRef.current = nextThread;
     setChatMessages(nextThread);
   };
