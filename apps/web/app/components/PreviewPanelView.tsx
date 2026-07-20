@@ -104,6 +104,11 @@ import {
   parseCadRelativePointToken,
   parseCadVectorToken,
 } from "../utils/previewCadCommandParsing";
+import {
+  isCadCrossingSelection,
+  isCadWindowSelectionTooSmall,
+  resolveCadWindowSelectedObjectIds,
+} from "../utils/previewCadWindowSelection";
 import { resolvePreviewVisualKind } from "../utils/previewVisualStyles";
 import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import {
@@ -1581,29 +1586,12 @@ export default function PreviewPanel({
   const finishCadWindowSelect = useCallback(
     (windowRect: { startX: number; startY: number; currentX: number; currentY: number }) => {
       if (!previewRef.current) return;
-      const left = Math.min(windowRect.startX, windowRect.currentX);
-      const right = Math.max(windowRect.startX, windowRect.currentX);
-      const top = Math.min(windowRect.startY, windowRect.currentY);
-      const bottom = Math.max(windowRect.startY, windowRect.currentY);
-      const crossingSelect = windowRect.currentX < windowRect.startX;
-      if (right - left < 8 || bottom - top < 8) return;
+      const crossingSelect = isCadCrossingSelection(windowRect);
+      if (isCadWindowSelectionTooSmall(windowRect)) return;
       const candidates = Array.from(
         previewRef.current.querySelectorAll<HTMLElement>("[data-cad-object-id]"),
       );
-      const ids = candidates
-        .filter((element) => {
-          const rect = element.getBoundingClientRect();
-          const intersects = rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
-          if (crossingSelect) return intersects;
-          return intersects && rect.left >= left && rect.right <= right && rect.top >= top && rect.bottom <= bottom;
-        })
-        .map((element) => element.dataset.cadObjectId)
-        .filter((id): id is string => Boolean(id));
-      const uniqueIds = Array.from(new Set(ids));
-      const selectableIds = uniqueIds.filter((id) => {
-        const item = visibleCadObjects.find((candidate) => candidate.id === id);
-        return item && item.type !== "site" && !item.locked;
-      });
+      const selectableIds = resolveCadWindowSelectedObjectIds(windowRect, candidates, visibleCadObjects);
       setCadSelectionSet(selectableIds);
       onSelectObjects?.(selectableIds);
       onSelectBuilding(selectableIds[0] ?? null);
