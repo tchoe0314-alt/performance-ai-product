@@ -126,7 +126,6 @@ import {
   type SystemStatus,
 } from "./utils/workflowConstants";
 import {
-  CustomGeometryHandoffDetails,
   buildObjectManagerLayerRows,
   buildObjectManagerTypes,
   buildCanonicalGeometryHandoffV1,
@@ -295,9 +294,9 @@ import { ObjectManagerBulkToolsPanel } from "./components/ObjectManagerBulkTools
 import { ObjectManagerCombineBlocksPanel } from "./components/ObjectManagerCombineBlocksPanel";
 import { ObjectManagerHiddenState } from "./components/ObjectManagerHiddenState";
 import { ObjectManagerLayerControls } from "./components/ObjectManagerLayerControls";
+import { ObjectManagerListPanel } from "./components/ObjectManagerListPanel";
 import { ObjectManagerMeasurementsPanel } from "./components/ObjectManagerMeasurementsPanel";
 import { ObjectManagerOverview } from "./components/ObjectManagerOverview";
-import { ObjectManagerRow } from "./components/ObjectManagerRow";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import { PlanPdfWorkflowPanel } from "./components/PlanPdfWorkflowPanel";
 import PreviewPanel from "./components/PreviewPanel";
@@ -22426,144 +22425,29 @@ function PerformanceAIDashboardView({
                           />
                         </div>
                       ) : null}
-                      <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1" data-testid="object-manager-list">
-                        {buildingPlacements.length ? (
-                          buildingPlacements.map((item) => {
-                            const confidenceEntry = sourceConfidenceByObjectId.get(item.id);
-                            const isSelected = activePlacementId === item.id || selectedObjectSet.has(item.id);
-                            return (
-                              <ObjectManagerRow
-                                key={item.id}
-                                item={item}
-                                isSelected={isSelected}
-                                isMultiSelected={selectedObjectSet.has(item.id)}
-                                confidenceEntry={confidenceEntry}
-                                displayType={getObjectDisplayType(item)}
-                                dimensionsLabel={getObjectDimensionsLabel(item)}
-                                sourceLabel={getObjectSourceLabel(item)}
-                                reviewLabel={getObjectReviewLabel(item)}
-                                layerLabel={getObjectLayerLabel(item)}
-                                objectTypeOptions={Object.entries(SITE_OBJECT_CATALOG)
-                                  .filter(([type]) => type !== "site")
-                                  .map(([type, catalog]) => ({ type: type as SiteObjectType, label: catalog.label }))}
-                                objectOutlineColor={objectOutlineColor || "#64748b"}
-                                hasDefaultHeight={SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH !== undefined}
-                                customGeometryDetails={item.type === "custom" ? <CustomGeometryHandoffDetails item={item} units={units} /> : null}
-                                onDragStart={(event) => {
-                                  if (item.locked) return;
-                                  event.dataTransfer?.setData("civora-object-id", item.id);
-                                  setPlacementModeEnabled(true);
-                                }}
-                                onToggleMultiSelect={(checked) => handleObjectManagerToggleMultiSelect(item.id, checked)}
-                                onDelete={() => handleObjectManagerDelete(item)}
-                                onRename={(value) => {
-                                  const blocker = getObjectEditBlocker(item, "rename");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(item.id, { label: value });
-                                }}
-                                onColor={(value) => {
-                                  const blocker = getObjectEditBlocker(item, "style");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(item.id, {
-                                    meta: {
-                                      ...(item.meta ?? {}),
-                                      ui_color: value,
-                                    },
-                                  });
-                                }}
-                                onType={(nextType) => {
-                                  const blocker = getObjectEditBlocker(item, "type");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(item.id, {
-                                    type: nextType,
-                                    use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
-                                    meta: {
-                                      ...(item.meta ?? {}),
-                                      category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
-                                    },
-                                  });
-                                }}
-                                onLength={(value) => {
-                                  const blocker = getObjectEditBlocker(item, "resize");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(item.id, {
-                                    w: parsePositiveNumber(value) ?? item.w,
-                                  });
-                                }}
-                                onWidth={(value) => {
-                                  const blocker = getObjectEditBlocker(item, "resize");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(item.id, {
-                                    d: parsePositiveNumber(value) ?? item.d,
-                                  });
-                                }}
-                                onHeight={(value) => {
-                                  const blocker = getObjectEditBlocker(item, "resize");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(item.id, {
-                                    h: parsePositiveNumber(value) ?? item.h,
-                                  });
-                                }}
-                                onToggleLock={() => handleToggleBuildingLock(item.id)}
-                                onMove={() => {
-                                  handleObjectManagerSelect(item.id);
-                                  setPlacementModeEnabled(true);
-                                }}
-                                onSelect={() => handleObjectManagerSelect(item.id)}
-                                onFocus={() => {
-                                  handleObjectManagerSelect(item.id);
-                                  setFocusObjectId(item.id);
-                                  setRightRailCollapsed(true);
-                                }}
-                                onToggleVisibility={() => {
-                                  const blocker = getObjectEditBlocker(item, "hide");
-                                  if (blocker) {
-                                    reportObjectActionBlocker(blocker);
-                                    return;
-                                  }
-                                  handleUpdateBuilding(item.id, {
-                                    meta: {
-                                      ...(item.meta ?? {}),
-                                      ui_hidden: !Boolean(item.meta?.ui_hidden),
-                                    },
-                                  });
-                                }}
-                                onInspect={() => {
-                                  handleObjectManagerSelect(item.id);
-                                  handleOpenPanelFromDrawer("details");
-                                }}
-                                onCopy={() => handleObjectManagerCopy(item)}
-                                onRotate={() => handleObjectManagerTransform(item, "rotate")}
-                                onFlipHorizontal={() => handleObjectManagerTransform(item, "flip_horizontal")}
-                                onFlipVertical={() => handleObjectManagerTransform(item, "flip_vertical")}
-                                onExplodeCombined={() => handleObjectManagerExplodeCombined(item)}
-                              />
-                            );
-                          })
-                        ) : (
-                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500" data-testid="object-manager-empty-state">
-                            No objects yet. Draw, add, or ask Civora to create one.
-                          </p>
-                        )}
-                      </div>
+                      <ObjectManagerListPanel
+                        objects={buildingPlacements}
+                        units={units}
+                        activeObjectId={activePlacementId}
+                        selectedObjectSet={selectedObjectSet}
+                        sourceConfidenceByObjectId={sourceConfidenceByObjectId}
+                        objectOutlineColor={objectOutlineColor || "#64748b"}
+                        onSetPlacementModeEnabled={setPlacementModeEnabled}
+                        onSelect={handleObjectManagerSelect}
+                        onToggleMultiSelect={handleObjectManagerToggleMultiSelect}
+                        onDelete={handleObjectManagerDelete}
+                        onUpdate={handleUpdateBuilding}
+                        onReportBlocker={reportObjectActionBlocker}
+                        onToggleLock={handleToggleBuildingLock}
+                        onFocus={(objectId) => {
+                          setFocusObjectId(objectId);
+                          setRightRailCollapsed(true);
+                        }}
+                        onInspect={() => handleOpenPanelFromDrawer("details")}
+                        onCopy={handleObjectManagerCopy}
+                        onTransform={handleObjectManagerTransform}
+                        onExplodeCombined={handleObjectManagerExplodeCombined}
+                      />
                     </div>
                   </div>
                 ) : null}
