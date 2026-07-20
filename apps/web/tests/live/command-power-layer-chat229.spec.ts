@@ -126,6 +126,21 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(panel).not.toContainText("Opened the 3D civil model workspace");
   });
 
+  test("chat explains how to draw, finish, and cancel without generic clarification", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await runCommand(page, "how do I finish drawing a boundary?");
+
+    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    const panel = page.getByTestId("workspace-right-panel");
+    await expect(panel).toContainText("Draw Canvas works like this", { timeout: 5_000 });
+    await expect(panel).toContainText("Draw Site Boundary");
+    await expect(panel).toContainText("Press Finish to commit");
+    await expect(panel).toContainText("Press Cancel or Escape");
+    await expect(panel).toContainText("Object Manager");
+    await expect(panel).not.toContainText(/Before I move forward, I still need|site type or land use/i);
+  });
+
   test("natural language address and site size setup bypasses generic design clarification", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
 

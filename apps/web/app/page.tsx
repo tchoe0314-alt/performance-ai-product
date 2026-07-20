@@ -12615,6 +12615,23 @@ function PerformanceAIDashboardView({
       return true;
     }
 
+    if (/(how.*(draw|draft|canvas)|what.*(can|should).*draw|what.*draw.*tools|finish.*(drawing|boundary|line|area|box)|stop.*(drawing|drafting)|cancel.*(drawing|drafting)|submit.*(boundary|drawing)|end.*(drawing|boundary)|where.*finish|how.*use.*(draw|cad))/i.test(normalized)) {
+      appendChatMessage(
+        "assistant",
+        [
+          "Draw Canvas works like this:",
+          "- Open Draw, then pick Draw Site Boundary, Add Line, Add Area, Add Box, or Add Point.",
+          "- Click the preview to place points. The crosshair/readout shows point count and coordinates.",
+          "- Press Finish to commit the boundary/object. Finish needs 3 points for a site/area, 2 points for a line/box, and 1 point for a point.",
+          "- Press Cancel or Escape to stop the active draw tool without saving it.",
+          "- After an object exists, use Object Manager to select, rename, recolor, change type/layer, copy, rotate, mirror, array, combine, hide, or delete it.",
+          "Everything drawn this way stays editable draft/review context. Generate can use it as layout intent, but it is not survey/control or final professional evidence.",
+        ].join("\n"),
+        "status",
+      );
+      return true;
+    }
+
     if (/(what.*(random|weird|messy).*(circle|line|shape|stuff)|what.*(circle|line|shape).*mean|why.*(circle|line|shape|preview).*look|explain.*(preview|drawing|canvas|map)|what\s+am\s+i\s+looking\s+at|what.*on.*(canvas|preview|map|plan))/i.test(normalized)) {
       const visibleObjects = placed.filter((item) => !item.meta?.ui_hidden);
       const byKind = (matcher: (item: BuildingPlacement) => boolean) => visibleObjects.filter(matcher).length;
