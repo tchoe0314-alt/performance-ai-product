@@ -23,6 +23,14 @@ type GenerateFlowSummary = {
   blocked: boolean;
   next_action: string;
   auto_site_context: AutoSiteContextFlowSummary;
+  user_layout_context?: {
+    count: number;
+    semantic_count: number;
+    labels: string[];
+    drawn_labels?: string[];
+    affected_systems: string[];
+    review_required: boolean;
+  } | null;
   safety_wording: string;
 };
 
@@ -133,6 +141,7 @@ export function GeneratePanel({
                 blocked: true,
                 next_action: "Open Setup and lock the site boundary.",
                 auto_site_context: autoSiteContextFlowSummary,
+                user_layout_context: null,
                 safety_wording: "Review draft only.",
               });
               return;
@@ -265,6 +274,19 @@ export function GeneratePanel({
             <p className="mt-1">Ran: {generateFlowSummary.ran.join(", ") || "none"}</p>
             <p className="mt-1">Skipped: {generateFlowSummary.skipped.join(", ") || "none"}</p>
             <p className="mt-1">Needs review: {generateFlowSummary.needs_review.slice(0, 3).join("; ") || "standard review"}</p>
+            {generateFlowSummary.user_layout_context?.count ? (
+              <div className="mt-2 rounded-lg border border-emerald-200 bg-white/70 px-2.5 py-2 text-emerald-900" data-testid="generate-used-drawing-context">
+                <p className="font-semibold">Using from drawing: {generateFlowSummary.user_layout_context.labels.slice(0, 5).join(", ")}{generateFlowSummary.user_layout_context.count > 5 ? `, plus ${generateFlowSummary.user_layout_context.count - 5} more` : ""}</p>
+                <p className="mt-1 text-[11px] text-emerald-800">
+                  {generateFlowSummary.user_layout_context.semantic_count} semantic object{generateFlowSummary.user_layout_context.semantic_count === 1 ? "" : "s"} · affects {generateFlowSummary.user_layout_context.affected_systems.join(", ") || "general layout"} · review context only
+                </p>
+                {generateFlowSummary.user_layout_context.drawn_labels?.length ? (
+                  <p className="mt-1 text-[11px] text-emerald-800">
+                    Draft edits: {generateFlowSummary.user_layout_context.drawn_labels.slice(0, 4).join(", ")}{generateFlowSummary.user_layout_context.drawn_labels.length > 4 ? `, plus ${generateFlowSummary.user_layout_context.drawn_labels.length - 4} more` : ""}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <p className="mt-1 font-semibold">Next: {generateFlowSummary.next_action}</p>
           </div>
         ) : (

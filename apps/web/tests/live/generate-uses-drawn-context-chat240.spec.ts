@@ -185,6 +185,9 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
 
   const request = await runGenerateAndCapture(page, captured);
+  await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/Office Building - 28,000 sf/i);
+  await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/Custom Line|Command Line/i);
+  await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/review context only/i);
   const manualFields = request.manual_fields as Record<string, unknown>;
   const siteObjects = manualFields.site_objects as Array<Record<string, unknown>>;
   const buildings = manualFields.buildings as Array<Record<string, unknown>>;
@@ -235,6 +238,8 @@ test("Generate immediately sees newly combined semantic objects", async ({ page 
   await expect(page.getByTestId("object-manager-status")).toContainText("Combined", { timeout: 5_000 });
 
   const request = await runGenerateAndCapture(page, captured);
+  await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/Combined Site Program/i);
+  await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/semantic object/i);
   const manualFields = request.manual_fields as Record<string, unknown>;
   const siteObjects = manualFields.site_objects as Array<Record<string, unknown>>;
   const buildings = manualFields.buildings as Array<Record<string, unknown>>;
