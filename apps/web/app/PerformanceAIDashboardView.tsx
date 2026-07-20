@@ -258,6 +258,7 @@ import { useDashboardDataSourcesPanelProps } from "./hooks/useDashboardDataSourc
 import { useDashboardGenerationPanelProps } from "./hooks/useDashboardGenerationPanelProps";
 import { useDashboardDraftHistoryState } from "./hooks/useDashboardDraftHistoryState";
 import { useDashboardViewportState } from "./hooks/useDashboardViewportState";
+import { useDashboardDeliverReportsPanelProps } from "./hooks/useDashboardDeliverReportsPanelProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -9035,6 +9036,90 @@ function PerformanceAIDashboardView({
     onRoadwayWorkbenchTabChange: setActiveRoadwayWorkbenchTab,
     hasBackendResult: Boolean(backendResult),
   });
+  const {
+    deliverPanelProps,
+    reportsQuantitiesPanelProps,
+  } = useDashboardDeliverReportsPanelProps({
+    sidePanelForRender,
+    reviewPackageFlowSummary,
+    planPreviewUrl,
+    hasBackendResult: Boolean(backendResult),
+    placedObjectCount,
+    sidebarTrustScore,
+    exportActionMessage,
+    exportBlockReason: getExportBlockReason() || "",
+    planSheetSet,
+    planSheetBlockers: getPlanSheetBlockers(),
+    projectName: siteName || currentProject?.name || "Untitled Project",
+    addressLabel: appliedAddressLabel || siteAddress.trim() || "No address applied",
+    lotWidth: parsePositiveNumber(lotWidth) ?? lotBounds.w ?? 0,
+    lotHeight: parsePositiveNumber(lotHeight) ?? lotBounds.h ?? 0,
+    placements: buildingPlacements,
+    autoSiteContextFlowSummary,
+    sidebarReleaseStatus,
+    reviewGateItems,
+    topSmartFix,
+    onMakeReviewPackage: handleMakeReviewPackage,
+    onPlanSheetExportPdf: handlePlanSheetExportPdf,
+    onExportDxf: handleExportDxf,
+    onExportReport: handleExportReport,
+    onOpenPanel: handleOpenSidePanel,
+    onPlanSheetTitleBlockUpdate: handlePlanSheetTitleBlockUpdate,
+    onPlanSheetScaleChange: handlePlanSheetScaleChange,
+    onPlanSheetViewportUpdate: handlePlanSheetViewportUpdate,
+    onPlanSheetViewportDelete: handlePlanSheetViewportDelete,
+    onPlanSheetAddNote: handlePlanSheetAddNote,
+    onPlanSheetAddAnnotation: addPlanSheetAnnotation,
+    onStatusMessageChange: setStatusMessage,
+    onPlanSheetAddViewport: handlePlanSheetAddViewport,
+    onPlanSheetViewportLayerToggle: handlePlanSheetViewportLayerToggle,
+    onPlanSheetViewportScaleLockToggle: handlePlanSheetViewportScaleLockToggle,
+    onPlanSheetGrayscaleToggle: handlePlanSheetGrayscaleToggle,
+    onPlanSheetAddRevision: () => handlePlanSheetAddRevision(),
+    onPlanSheetAddTable: handlePlanSheetAddTable,
+    onPlanSheetAddDetailBlock: handlePlanSheetAddDetailBlock,
+    onPlanSheetAddReference: handlePlanSheetAddReference,
+    onPlanSheetSelectSheet: (sheetId) => {
+      setPlanSheetSet((current) => ({
+        ...current,
+        activeSheetId: sheetId,
+        updatedAt: new Date().toISOString(),
+      }));
+    },
+    onCreateReviewSheet: handleCreateReviewSheet,
+    onPlanSheetExportJson: handlePlanSheetExportJson,
+    onSmartFixAction: handleSmartFixAction,
+    issues,
+    analysisIssueCount: analysisIssues.length,
+    sidebarMissingInputCount: sidebarMissingInputs.length,
+    sidebarAssumptionCount: sidebarAssumptions.length,
+    blockedSystemCount: systemHealthItems.filter((item) => item.state === "blocked").length,
+    engineeringHealthPanelLinks,
+    drainageIssueApplyLabel,
+    canApplyDrainageIssue,
+    getIssueGuidance,
+    onApplyDrainageIssue: handleApplyDrainageIssue,
+    reviewIssueItems,
+    openReviewIssueCount: openReviewIssueItems.length,
+    reviewIssueTracker,
+    drainageReviewIssueCount: drainageReviewIssueItems.length,
+    onPromptChange: setPrompt,
+    sidebarTruthItems,
+    designAlternatives,
+    designAlternativeItems,
+    topDesignAlternative,
+    selectedDesignAlternativeId,
+    designAlternativeQuantityAvailable,
+    onDesignAlternativesAction: (action, optionNumber) => void handleDesignAlternativesAction(action, optionNumber),
+    sourceConfidenceSummary,
+    sourceConfidenceRows,
+    sourceConfidenceEntryCount: sourceConfidenceEntries.length,
+    quantityRows,
+    staleSystemCount: sidebarStaleSystems.length,
+    onExportQuantityReviewReport: handleExportQuantityReviewReport,
+    formatMetric,
+    statusLabelForQuantityReview,
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9571,127 +9656,11 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "deliverables" ? (
-                  <DeliverPanel
-                    reviewPackageFlowSummary={reviewPackageFlowSummary}
-                    planPreviewUrl={planPreviewUrl}
-                    hasBackendResult={Boolean(backendResult)}
-                    placedObjectCount={placedObjectCount}
-                    sidebarTrustScore={sidebarTrustScore}
-                    exportActionMessage={exportActionMessage}
-                    exportBlockReason={getExportBlockReason() || ""}
-                    planSheetSet={planSheetSet}
-                    planSheetBlockers={getPlanSheetBlockers()}
-                    projectName={siteName || currentProject?.name || "Untitled Project"}
-                    addressLabel={appliedAddressLabel || siteAddress.trim() || "No address applied"}
-                    lotWidth={parsePositiveNumber(lotWidth) ?? lotBounds.w ?? 0}
-                    lotHeight={parsePositiveNumber(lotHeight) ?? lotBounds.h ?? 0}
-                    placements={buildingPlacements}
-                    autoSiteContextFlowSummary={autoSiteContextFlowSummary}
-                    sidebarReleaseStatus={sidebarReleaseStatus}
-                    reviewGateItems={reviewGateItems}
-                    topSmartFix={topSmartFix}
-                    onMakeReviewPackage={handleMakeReviewPackage}
-                    onPlanSheetExportPdf={handlePlanSheetExportPdf}
-                    onExportDxf={handleExportDxf}
-                    onExportReport={handleExportReport}
-                    onOpenQuantities={() => handleOpenSidePanel("quantities")}
-                    onPlanSheetTitleBlockUpdate={handlePlanSheetTitleBlockUpdate}
-                    onPlanSheetScaleChange={handlePlanSheetScaleChange}
-                    onPlanSheetViewportUpdate={handlePlanSheetViewportUpdate}
-                    onPlanSheetViewportDelete={handlePlanSheetViewportDelete}
-                    onPlanSheetAddNote={handlePlanSheetAddNote}
-                    onPlanSheetAddLabel={() => {
-                      addPlanSheetAnnotation("label", "New sheet label");
-                      setStatusMessage("Added a sheet label.");
-                    }}
-                    onPlanSheetAddCallout={() => {
-                      addPlanSheetAnnotation("callout", "Review callout");
-                      setStatusMessage("Added a sheet callout.");
-                    }}
-                    onPlanSheetAddDimension={() => {
-                      addPlanSheetAnnotation("dimension", "Dimension reference");
-                      setStatusMessage("Added a dimension note.");
-                    }}
-                    onPlanSheetAddViewport={handlePlanSheetAddViewport}
-                    onPlanSheetViewportLayerToggle={handlePlanSheetViewportLayerToggle}
-                    onPlanSheetViewportScaleLockToggle={handlePlanSheetViewportScaleLockToggle}
-                    onPlanSheetGrayscaleToggle={handlePlanSheetGrayscaleToggle}
-                    onPlanSheetAddRevision={() => handlePlanSheetAddRevision()}
-                    onPlanSheetAddTable={handlePlanSheetAddTable}
-                    onPlanSheetAddDetailBlock={handlePlanSheetAddDetailBlock}
-                    onPlanSheetAddReference={handlePlanSheetAddReference}
-                    onPlanSheetSelectSheet={(sheetId) => {
-                      setPlanSheetSet((current) => ({
-                        ...current,
-                        activeSheetId: sheetId,
-                        updatedAt: new Date().toISOString(),
-                      }));
-                    }}
-                    onCreateReviewSheet={handleCreateReviewSheet}
-                    onPlanSheetExportJson={handlePlanSheetExportJson}
-                    onSmartFixAction={handleSmartFixAction}
-                  />
+                  <DeliverPanel {...deliverPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "reports" || sidePanelForRender === "quantities" ? (
-                  <DashboardReportsQuantitiesPanel
-                    activePanel={sidePanelForRender}
-                    reports={{
-                      stats: [
-                        { label: "QA items", value: issues.length + analysisIssues.length },
-                        { label: "Missing", value: sidebarMissingInputs.length },
-                        { label: "Assumptions", value: sidebarAssumptions.length },
-                        { label: "Needs input", value: systemHealthItems.filter((item) => item.state === "blocked").length },
-                      ],
-                      engineeringHealthLinks: engineeringHealthPanelLinks,
-                      issues,
-                      drainageIssueApplyLabel,
-                      canApplyDrainageIssue,
-                      getIssueGuidance,
-                      onApplyDrainageIssue: handleApplyDrainageIssue,
-                      onOpenSidePanel: handleOpenSidePanel,
-                      reviewIssueTracker: {
-                        issues: reviewIssueItems,
-                        openIssueCount: openReviewIssueItems.length,
-                        totalIssueCount: reviewIssueTracker.issue_count ?? reviewIssueItems.length,
-                        needsReviewCount: reviewIssueTracker.needs_review_count ?? 0,
-                        drainageIssueCount: drainageReviewIssueItems.length,
-                        waivedCount: reviewIssueTracker.by_status?.waived_review_required ?? 0,
-                        truthLabel: reviewIssueTracker.truth_label,
-                        onAskCommand: (command) => {
-                          setPrompt(command);
-                          handleOpenSidePanel("chat");
-                        },
-                        onIssueCommand: (action, issueId) => {
-                          setPrompt(`${action} issue ${issueId}`);
-                          handleOpenSidePanel("chat");
-                        },
-                      },
-                      truthGates: sidebarTruthItems,
-                      reviewGates: reviewGateItems,
-                      designAlternatives: {
-                        designAlternatives,
-                        alternatives: designAlternativeItems,
-                        topAlternative: topDesignAlternative,
-                        selectedAlternativeId: selectedDesignAlternativeId,
-                        quantityAvailable: designAlternativeQuantityAvailable,
-                        onAction: (action, optionNumber) => void handleDesignAlternativesAction(action, optionNumber),
-                      },
-                      sourceConfidence: {
-                        summary: sourceConfidenceSummary,
-                        entries: sourceConfidenceRows,
-                        totalEntryCount: sourceConfidenceEntries.length,
-                      },
-                    }}
-                    quantities={{
-                      rows: quantityRows,
-                      staleSystemCount: sidebarStaleSystems.length,
-                      trustScoreLabel: sidebarTrustScore,
-                      onExportReport: handleExportQuantityReviewReport,
-                      formatMetric,
-                      statusLabelForQuantityReview,
-                    }}
-                  />
+                  <DashboardReportsQuantitiesPanel {...reportsQuantitiesPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "chat" ? (
