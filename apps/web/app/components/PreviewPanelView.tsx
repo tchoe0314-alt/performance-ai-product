@@ -165,6 +165,7 @@ import {
   handlePreviewCadGeometryCommand,
   handlePreviewCadModifyCommand,
   handlePreviewCadSelectionCommand,
+  handlePreviewCadToolRequest,
   handlePreviewCadTransformCommand,
 } from "../utils/previewCadActiveCommand";
 import {
@@ -2710,160 +2711,45 @@ export default function PreviewPanel({
   useEffect(() => {
     if (!cadToolRequest || cadToolRequest.id === lastCadToolRequestIdRef.current) return;
     lastCadToolRequestIdRef.current = cadToolRequest.id;
-    onSetPreviewMode("2d");
-    onSetPreviewInteraction("edit");
-
-    const activateDrawMode = (mode: DrawMode, label: string, autoFinishPointCount: number | null = null) => {
-      setDraftPoints([]);
-      setDraftPreviewPoint(null);
-      setDrawAutoFinishPointCount(autoFinishPointCount);
-      setCadActiveCommand(null);
-      onSelectBuilding(null);
-      setManagedObjectId(null);
-      setHoveredObjectId(null);
-      setSelectedVertex(null);
-      setCadSelectionSet([]);
-      setDrawMode(mode);
-      pushCadCommandFeedback(
-        label,
-        "info",
-        autoFinishPointCount
-          ? `${label} tool active. Pick ${autoFinishPointCount} point${autoFinishPointCount === 1 ? "" : "s"} on the canvas to create the draft object.`
-          : `${label} tool active. Pick points on the canvas, then Finish when shown.`,
-      );
-    };
-
-    switch (cadToolRequest.tool) {
-      case "select":
-        setDrawMode("select");
-        setDraftPoints([]);
-        setDraftPreviewPoint(null);
-        setDrawAutoFinishPointCount(null);
-        pushCadCommandFeedback("SELECT", "info", "SELECT tool active. Click an object on the canvas or choose one from the object list.");
-        break;
-      case "line":
-        activateDrawMode("polyline", "LINE", 2);
-        break;
-      case "polyline":
-        activateDrawMode("polyline", "PLINE");
-        break;
-      case "area":
-        activateDrawMode("polygon", "AREA");
-        break;
-      case "box":
-        activateDrawMode("rect", "RECTANGLE");
-        break;
-      case "point":
-        activateDrawMode("point", "POINT");
-        break;
-      case "circle":
-        setCadCommandDraft(`CIRCLE ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 25`);
-        pushCadCommandFeedback("CIRCLE", "info", "CIRCLE command loaded. Adjust center/radius in the command line, then press Run.");
-        break;
-      case "arc":
-        setCadCommandDraft(`ARC ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 40 0 90`);
-        pushCadCommandFeedback("ARC", "info", "ARC command loaded. Adjust center/radius/start/end in the command line, then press Run.");
-        break;
-      case "text":
-        setCadCommandDraft(`TEXT ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} note`);
-        pushCadCommandFeedback("TEXT", "info", "TEXT command loaded. Edit the point and note text, then press Run.");
-        break;
-      case "move":
-        transformSelectedCadObjects("move");
-        break;
-      case "copy":
-        setCadCommandDraft("COPY selected 10,10");
-        pushCadCommandFeedback("COPY", "info", "COPY command loaded. Select an object, adjust the vector if needed, then press Run.");
-        break;
-      case "rotate":
-        transformSelectedCadObjects("rotate");
-        break;
-      case "scale":
-        transformSelectedCadObjects("scale");
-        break;
-      case "offset":
-        offsetSelectedCadObjectBy(cadOffsetDistance);
-        break;
-      case "trim":
-        trimExtendSelectedCadObject("trim");
-        break;
-      case "extend":
-        trimExtendSelectedCadObject("extend");
-        break;
-      case "fillet":
-        filletSelectedCadObject();
-        break;
-      case "join":
-        joinSelectedCadObjects();
-        break;
-      case "split":
-        splitSelectedJoinedObject();
-        break;
-      case "close":
-        changeSelectedPolylineState("close");
-        break;
-      case "open":
-        changeSelectedPolylineState("open");
-        break;
-      case "reverse":
-        changeSelectedPolylineState("reverse");
-        break;
-      case "hatch":
-        toggleSelectedCadHatch();
-        break;
-      case "delete":
-        if (selectedDeletableObject) {
-          onRemoveBuilding(selectedDeletableObject.id);
-          pushCadCommandFeedback("DELETE", "applied", "DELETE removed the selected draft object.");
-        } else {
-          pushCadCommandFeedback("DELETE", "blocked", "DELETE blocked: select one unlocked draft object first.");
-        }
-        break;
-      case "dimension":
-        applySelectedCadDimension();
-        break;
-      case "measure":
-        runCadCommand("DIST");
-        break;
-      case "symbol":
-        insertCadSymbol();
-        break;
-      case "layer":
-        applySelectedCadLayer();
-        break;
-      case "properties":
-        applyCadProperties();
-        break;
-      case "snap":
-        setCadSnapEnabled((value) => {
-          pushCadCommandFeedback("SNAP", "info", `SNAP ${!value ? "on" : "off"}.`);
-          return !value;
-        });
-        break;
-      case "ortho":
-        setCadOrthoEnabled((value) => {
-          pushCadCommandFeedback("ORTHO", "info", `ORTHO ${!value ? "on" : "off"}.`);
-          return !value;
-        });
-        break;
-      case "undo":
-        undoCadCommand();
-        break;
-      case "redo":
-        redoCadCommand();
-        break;
-      case "command":
-        if (cadToolRequest.commandText?.trim()) {
-          setCadCommandDraft(cadToolRequest.commandText);
-          window.requestAnimationFrame(() => runCadCommand(cadToolRequest.commandText));
-        } else {
-          setCadCommandDraft((value) => value || "LINE 0,0 100,0");
-          pushCadCommandFeedback("COMMAND", "info", "Command line focused. Type a command or run the loaded example.");
-        }
-        break;
-      default:
-        break;
-    }
+    handlePreviewCadToolRequest({
+      cadToolRequest,
+      lotWidth,
+      lotHeight,
+      cadOffsetDistance,
+      selectedDeletableObject,
+      setDraftPoints,
+      setDraftPreviewPoint,
+      setDrawAutoFinishPointCount,
+      setCadActiveCommand,
+      setCadCommandDraft,
+      setDrawMode,
+      setManagedObjectId,
+      setHoveredObjectId,
+      setSelectedVertex,
+      setCadSelectionSet,
+      setCadSnapEnabled,
+      setCadOrthoEnabled,
+      onSelectBuilding,
+      onSetPreviewMode,
+      onSetPreviewInteraction,
+      onRemoveBuilding,
+      transformSelectedCadObjects,
+      offsetSelectedCadObjectBy,
+      trimExtendSelectedCadObject,
+      filletSelectedCadObject,
+      joinSelectedCadObjects,
+      splitSelectedJoinedObject,
+      changeSelectedPolylineState,
+      toggleSelectedCadHatch,
+      applySelectedCadDimension,
+      insertCadSymbol,
+      applySelectedCadLayer,
+      applyCadProperties,
+      undoCadCommand,
+      redoCadCommand,
+      runCadCommand,
+      pushCadCommandFeedback,
+    });
   }, [
     applyCadProperties,
     applySelectedCadDimension,
