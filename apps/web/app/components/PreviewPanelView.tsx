@@ -46,6 +46,7 @@ import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
+import { PreviewParkingModules } from "./PreviewParkingModules";
 import { PreviewPolylineObjects } from "./PreviewPolylineObjects";
 import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
 import { PreviewRectObjects } from "./PreviewRectObjects";
@@ -56,7 +57,6 @@ import { WaterFireFlowEvidenceDock } from "./WaterFireFlowEvidenceDock";
 import {
   formatFlowValue,
   geometryTruthLabel,
-  hasParkingGeometryEvidence,
   resolveSourceState,
   sourceStateLabel,
   supportsParkingModuleRendering,
@@ -7009,73 +7009,13 @@ export default function PreviewPanel({
                           shouldRevealObjectLabel={shouldRevealObjectLabel}
                           getObjectGeometryPoints={getObjectGeometryPoints}
                         />
-                        {visibleCadObjects
-                          .filter((item) => item.type === "parking" && item.placed && hasParkingGeometryEvidence(item))
-                          .flatMap((item) =>
-                            buildParkingModules(item, accessPointsForParking).map((module, idx) => {
-                              const toPct = (pt: [number, number]) => sitePointToSvgPercent(pt);
-                              const moduleFill = module.isAdaModule
-                                ? "rgba(16,185,129,0.06)"
-                                : module.isCompactModule
-                                  ? "rgba(168,85,247,0.055)"
-                                  : module.angle === 45
-                                    ? "rgba(56,189,248,0.045)"
-                                    : module.angle === 60
-                                      ? "rgba(129,140,248,0.045)"
-                                      : "rgba(148,163,184,0.035)";
-                              return (
-                                <g key={`parking-mod-${item.id}-${idx}`}>
-                                  {showParkingAnalysis ? (
-                                    <polygon
-                                      points={module.bounds.map(toPct).join(" ")}
-                                      fill={moduleFill}
-                                      stroke="rgba(15,23,42,0.08)"
-                                      strokeWidth={0.08}
-                                    />
-                                  ) : null}
-                                  {module.stallPolygons.map((stall, polyIdx) => {
-                                    const fill =
-                                      showParkingAnalysis && stall.kind === "ada"
-                                        ? "rgba(16,185,129,0.2)"
-                                        : showParkingAnalysis && stall.kind === "ada_aisle"
-                                          ? "rgba(52,211,153,0.14)"
-                                        : showParkingAnalysis && stall.kind === "compact"
-                                          ? "rgba(168,85,247,0.18)"
-                                          : "rgba(148,163,184,0.045)";
-                                    const stroke =
-                                      showParkingAnalysis && stall.kind !== "standard"
-                                        ? "rgba(15,23,42,0.34)"
-                                        : "rgba(71,85,105,0.24)";
-                                    const strokeWidth = showParkingAnalysis && stall.kind !== "standard" ? 0.12 : 0.045;
-                                    return (
-                                      <polygon
-                                        key={`stall-${polyIdx}`}
-                                        points={stall.points.map(toPct).join(" ")}
-                                        fill={fill}
-                                        stroke={stroke}
-                                        strokeWidth={strokeWidth}
-                                      />
-                                    );
-                                  })}
-                                  <polyline
-                                    points={module.aisleLine.map(toPct).join(" ")}
-                                    fill="none"
-                                    stroke="rgba(71,85,105,0.24)"
-                                    strokeWidth={0.08}
-                                  />
-                                  {module.stripeLines.map((line, stripeIdx) => (
-                                    <polyline
-                                      key={`stripe-${stripeIdx}`}
-                                      points={line.map(toPct).join(" ")}
-                                      fill="none"
-                                      stroke="rgba(71,85,105,0.2)"
-                                      strokeWidth={0.045}
-                                    />
-                                  ))}
-                                </g>
-                              );
-                            }),
-                          )}
+                        <PreviewParkingModules
+                          objects={visibleCadObjects}
+                          accessPoints={accessPointsForParking}
+                          showParkingAnalysis={showParkingAnalysis}
+                          buildParkingModules={buildParkingModules}
+                          sitePointToSvgPercent={sitePointToSvgPercent}
+                        />
                         {suggestedPlacements
                           .filter((item) => item.geometryType && Array.isArray(item.geometry))
                           .map((item) => {
