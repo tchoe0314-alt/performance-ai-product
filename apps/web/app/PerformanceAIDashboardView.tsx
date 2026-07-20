@@ -267,14 +267,8 @@ import {
   type Civil3DWorkflowTab,
   type RoadwayWorkbenchTab,
 } from "./components/CivilRoadwayWorkbench";
+import { DashboardHomePanel } from "./components/DashboardHomePanel";
 import { DashboardDetailsPanel } from "./components/DashboardDetailsPanel";
-import { DashboardEngineDepthPanel } from "./components/DashboardEngineDepthPanel";
-import { DashboardGuidancePanel } from "./components/DashboardGuidancePanel";
-import { DashboardIssueReportPanel } from "./components/DashboardIssueReportPanel";
-import { DashboardProgressTimeline } from "./components/DashboardProgressTimeline";
-import { DashboardProjectSummary } from "./components/DashboardProjectSummary";
-import { DashboardRunReviewPanel } from "./components/DashboardRunReviewPanel";
-import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
 import { DataSourcesPanel } from "./components/DataSourcesPanel";
 import { DeliverPanel } from "./components/DeliverPanel";
 import { DenseConceptActionStrip } from "./components/DenseConceptActionStrip";
@@ -307,7 +301,6 @@ import { SetupSiteBoundarySection } from "./components/SetupSiteBoundarySection"
 import { SetupSurveyTerrainSection } from "./components/SetupSurveyTerrainSection";
 import { StandardsPanel } from "./components/StandardsPanel";
 import { SystemReadinessPanel } from "./components/SystemReadinessPanel";
-import { TakeoffSnapshotPanel } from "./components/TakeoffSnapshotPanel";
 import { TemplatesPanel } from "./components/TemplatesPanel";
 import { TrustPanel } from "./components/TrustPanel";
 import { UtilityCatalogPanel } from "./components/UtilityCatalogPanel";
@@ -20385,82 +20378,74 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "dashboard" ? (
-                  <div className="space-y-4">
-                    <DashboardProjectSummary
-                      siteName={siteName}
-                      fileName={fileName}
-                      lotWidth={lotBounds.w}
-                      lotHeight={lotBounds.h}
-                      hasHardSystemBlock={hasHardSystemBlock}
-                      hasBackendResult={Boolean(backendResult)}
-                      onSiteNameChange={(value) => {
+                  <DashboardHomePanel
+                    projectSummary={{
+                      siteName,
+                      fileName,
+                      lotWidth: lotBounds.w,
+                      lotHeight: lotBounds.h,
+                      hasHardSystemBlock,
+                      hasBackendResult: Boolean(backendResult),
+                      onSiteNameChange: (value) => {
                         setSiteName(value);
                         setSiteNameAuto(false);
-                      }}
-                      onFileNameChange={(value) => {
+                      },
+                      onFileNameChange: (value) => {
                         setFileName(value);
                         setFileNameAuto(false);
-                      }}
-                      onSaveName={() =>
+                      },
+                      onSaveName: () =>
                         void saveProject({
                           nameOverride: siteName.trim(),
                           fileNameOverride: fileName.trim(),
                           autoNamedOverride: false,
                           autoFileNamedOverride: false,
-                        })
-                      }
-                    />
-                    <DashboardProgressTimeline
-                      progressTimelineState={progressTimelineState}
-                      progressTimelineSteps={progressTimelineSteps}
-                      progressPercent={progressPercent}
-                      onOpenPanel={handleOpenSidePanel}
-                      progressPanelTarget={progressPanelTarget}
-                      progressTimelineDotClass={progressTimelineDotClass}
-                      progressTimelineStatusClass={progressTimelineStatusClass}
-                    />
-                    {engineDepthDashboard ? (
-                      <DashboardEngineDepthPanel
-                        dashboard={engineDepthDashboard}
-                        onOpenPanel={handleOpenSidePanel}
-                      />
-                    ) : null}
-                    <DashboardGuidancePanel
-                      stats={dashboardGuidanceStats}
-                    />
-                    <DashboardIssueReportPanel
-                      message={issueReportMessage}
-                      diagnosticSummary={issueDiagnosticSummary}
-                      copied={issueReportCopied}
-                      onMessageChange={setIssueReportMessage}
-                      onCopyDiagnostic={handleCopyIssueDiagnostic}
-                    />
-                    {workflowReviewDashboard ? (
-                      <DashboardRunReviewPanel
-                        dashboard={workflowReviewDashboard}
-                        onOpenPanel={handleOpenSidePanel}
-                      />
-                    ) : null}
-                    <DashboardStatusPanels
-                      systemHealthItems={systemHealthItems}
-                      attentionMessages={[...issues.map((issue) => issue.message), ...analysisIssues.map((issue) => issue.message)]}
-                      onOpenHealthItem={(key) =>
+                        }),
+                    }}
+                    progressTimeline={{
+                      progressTimelineState,
+                      progressTimelineSteps,
+                      progressPercent,
+                      onOpenPanel: handleOpenSidePanel,
+                      progressPanelTarget,
+                      progressTimelineDotClass,
+                      progressTimelineStatusClass,
+                    }}
+                    engineDepth={engineDepthDashboard ? {
+                      dashboard: engineDepthDashboard,
+                      onOpenPanel: handleOpenSidePanel,
+                    } : null}
+                    guidance={{ stats: dashboardGuidanceStats }}
+                    issueReport={{
+                      message: issueReportMessage,
+                      diagnosticSummary: issueDiagnosticSummary,
+                      copied: issueReportCopied,
+                      onMessageChange: setIssueReportMessage,
+                      onCopyDiagnostic: handleCopyIssueDiagnostic,
+                    }}
+                    runReview={workflowReviewDashboard ? {
+                      dashboard: workflowReviewDashboard,
+                      onOpenPanel: handleOpenSidePanel,
+                    } : null}
+                    statusPanels={{
+                      systemHealthItems,
+                      attentionMessages: [...issues.map((issue) => issue.message), ...analysisIssues.map((issue) => issue.message)],
+                      onOpenHealthItem: (key) =>
                         handleOpenSidePanel(
                           key === "data"
                             ? "site_existing"
                             : key === "roadway"
                               ? "roadway"
                               : (key as SidePanelKey),
-                        )
-                      }
-                      onOpenReview={() => handleOpenSidePanel("analysis")}
-                    />
-                    <TakeoffSnapshotPanel
-                      rows={quantityRows}
-                      formatMetric={formatMetric}
-                      statusLabelForQuantityReview={statusLabelForQuantityReview}
-                    />
-                  </div>
+                        ),
+                      onOpenReview: () => handleOpenSidePanel("analysis"),
+                    }}
+                    takeoffSnapshot={{
+                      rows: quantityRows,
+                      formatMetric,
+                      statusLabelForQuantityReview,
+                    }}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "site_existing" ? (
