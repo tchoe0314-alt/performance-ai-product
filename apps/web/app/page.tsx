@@ -23536,6 +23536,8 @@ function PerformanceAIDashboardView({
       : backendResult
         ? "No visible blockers recorded."
         : "No run output yet.";
+  const denseConceptObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.dense_concept_generated)).length;
+  const denseConceptActive = denseConceptObjectCount >= 6;
   const drawWorkspaceActive =
     activePrimaryWorkflowKey === "draw" ||
     activePrimaryWorkflowKey === "objects" ||
@@ -27417,10 +27419,10 @@ function PerformanceAIDashboardView({
 	                    </button>
 	                  </div>
 	                ) : null}
-	                {selectedBuilding && !(previewInteraction === "edit" && activePrimaryWorkflowKey === "draw") ? (
-	                  <div
-	                    data-testid="floating-object-inspector"
-	                    className="pointer-events-none absolute left-3 top-[9.75rem] z-[32] hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
+                {selectedBuilding && !(previewInteraction === "edit" && activePrimaryWorkflowKey === "draw") ? (
+                  <div
+                    data-testid="floating-object-inspector"
+                    className="pointer-events-none absolute left-3 top-[9.75rem] z-[32] hidden w-[min(340px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 text-xs text-slate-600 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl sm:block lg:left-[272px] lg:top-[9rem]"
 	                  >
 	                    <div className="flex items-start justify-between gap-3">
 	                      <div className="min-w-0">
@@ -27502,6 +27504,53 @@ function PerformanceAIDashboardView({
 	                        {moveEditFeedback}
 	                      </p>
 	                    ) : null}
+	                  </div>
+	                ) : null}
+	                {denseConceptActive && !sidePanelVisible ? (
+	                  <div
+	                    data-testid="dense-concept-action-strip"
+	                    className={`absolute bottom-4 left-4 z-[35] flex max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-2xl border border-slate-200/90 bg-white/92 p-3 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.72)] backdrop-blur-2xl lg:left-[128px] ${
+                        rightRailCollapsed ? "lg:max-w-[min(760px,calc(100vw-10rem))]" : "lg:max-w-[min(620px,calc(100vw-36rem))]"
+                      }`}
+	                  >
+	                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+	                      <div className="min-w-0">
+	                        <p className="truncate text-sm font-semibold text-slate-950">Dense concept ready</p>
+	                        <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
+	                          {denseConceptObjectCount} editable draft objects. Edit the layout, then Generate.
+	                        </p>
+	                      </div>
+	                      <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:items-center">
+	                        <button
+	                          type="button"
+	                          onClick={() => handleOpenSidePanel("objects")}
+	                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+	                        >
+	                          Edit objects
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={() => handleOpenSidePanel("generate")}
+	                          className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
+	                        >
+	                          Generate
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={() => handleOpenSidePanel("deliverables")}
+	                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+	                        >
+	                          Deliver
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={() => handleSetPreviewQuality("high")}
+	                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+	                        >
+	                          High quality
+	                        </button>
+	                      </div>
+	                    </div>
 	                  </div>
 	                ) : null}
 	                <div

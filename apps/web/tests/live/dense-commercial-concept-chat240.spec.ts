@@ -107,6 +107,16 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
   await expect(page.locator("body")).toContainText(/Dense review concept created/i);
   await expect(page.locator("body")).not.toContainText(/site type or land use|which systems to include/i);
 
+  const actionStrip = page.getByTestId("dense-concept-action-strip");
+  await expect(actionStrip).toBeVisible();
+  await expect(actionStrip).toContainText(/17 editable draft objects/i);
+  await expect(actionStrip.getByRole("button", { name: "Generate" })).toBeVisible();
+  await expect(actionStrip.getByRole("button", { name: "Deliver" })).toBeVisible();
+  await actionStrip.getByRole("button", { name: "High quality" }).click();
+  await actionStrip.getByRole("button", { name: "Edit objects" }).click();
+  await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf");
+  await expect(actionStrip).toBeHidden();
+
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const objectPanel = page.getByTestId("object-manager-panel");
   await expect(objectPanel).toContainText("Office Building - 28,000 sf");
