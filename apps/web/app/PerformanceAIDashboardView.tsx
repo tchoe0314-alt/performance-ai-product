@@ -275,6 +275,7 @@ import { DashboardProgressTimeline } from "./components/DashboardProgressTimelin
 import { DashboardProjectSummary } from "./components/DashboardProjectSummary";
 import { DashboardRunReviewPanel } from "./components/DashboardRunReviewPanel";
 import { DashboardStatusPanels } from "./components/DashboardStatusPanels";
+import { DataSourcesPanel } from "./components/DataSourcesPanel";
 import { DeliverPanel } from "./components/DeliverPanel";
 import { DenseConceptActionStrip } from "./components/DenseConceptActionStrip";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
@@ -293,7 +294,6 @@ import { LibrariesPanel } from "./components/LibrariesPanel";
 import { ModelReviewPanel } from "./components/ModelReviewPanel";
 import { ObjectManagerPanel } from "./components/ObjectManagerPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
-import { PlanPdfWorkflowPanel } from "./components/PlanPdfWorkflowPanel";
 import PreviewPanel from "./components/PreviewPanel";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
 import { QuantitiesPanel } from "./components/QuantitiesPanel";
@@ -305,8 +305,6 @@ import { SetupAddressSection } from "./components/SetupAddressSection";
 import { SetupAutoSiteContextSection } from "./components/SetupAutoSiteContextSection";
 import { SetupSiteBoundarySection } from "./components/SetupSiteBoundarySection";
 import { SetupSurveyTerrainSection } from "./components/SetupSurveyTerrainSection";
-import { SourceDataReviewPanel } from "./components/SourceDataReviewPanel";
-import { SourceHubPanel } from "./components/SourceHubPanel";
 import { StandardsPanel } from "./components/StandardsPanel";
 import { SystemReadinessPanel } from "./components/SystemReadinessPanel";
 import { TakeoffSnapshotPanel } from "./components/TakeoffSnapshotPanel";
@@ -20582,444 +20580,129 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "data" ? (
-                  <div className="space-y-4">
-                    <details className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Detailed source evidence and import tools
-                      </summary>
-                      <div className="mt-3 space-y-4">
-                    <SourceHubPanel
-                      links={sourceHubLinks}
-                      metrics={sourceHubMetrics}
-                      entryCount={sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length}
-                      entries={sourceConfidenceRows}
-                      onOpenPanel={handleOpenSidePanel}
-                    />
-                      <PlanPdfWorkflowPanel
-                        analysis={planPdfAnalysis}
-                        sourceUrl={planPdfSourceUrl}
-                        firstPage={planPdfFirstPage}
-                        elements={planPdfElements}
-                        selectedElement={selectedPlanPdfElement}
-                        changedReport={planPdfChangedReport}
-                        changedElements={planPdfChangedElements}
-                        unreadableItems={planPdfUnreadableItems}
-                        blockers={planPdfBlockers}
-                        uploadState={planPdfUploadState}
-                        uploadMessage={planPdfUploadMessage}
-                        draftText={planPdfElementDraftText}
-                        moveX={planPdfMoveX}
-                        moveY={planPdfMoveY}
-                        extractionSummaryRows={planPdfExtractionSummaryRows}
-                        classificationPreviewRows={planPdfClassificationPreviewRows}
-                        inputRef={planPdfInputRef}
-                        onUploadFile={uploadPlanPdf}
-                        onSelectElement={setSelectedPlanPdfElementId}
-                        onDraftTextChange={setPlanPdfElementDraftText}
-                        onMoveXChange={setPlanPdfMoveX}
-                        onMoveYChange={setPlanPdfMoveY}
-                        onUpdateElement={(elementId, patch) => void updatePlanPdfElement(elementId, patch)}
-                        onExportJson={() => void exportPlanPdfReport()}
-                        onExportPdf={() => void exportPlanPdfReviewPdf()}
-                        onEditByChat={() => {
-                          setPrompt("change pool deck elevation");
-                          handleOpenSidePanel("chat");
-                        }}
-                        onWhatChanged={() => {
-                          setPrompt("what changed?");
-                          handleOpenSidePanel("chat");
-                        }}
-                        onAskUnreadable={() => {
-                          setPrompt("show unreadable text");
-                          handleOpenSidePanel("chat");
-                        }}
-                        onInvalidMove={() => {
-                          setStatusMessage("Moving a PDF-derived element requires explicit target x0/y0 coordinates.");
-                        }}
-                      />
-                      <SourceDataReviewPanel
-                        capabilityRows={capabilityAuditRows}
-                        onlineDiscoveryStatus={onlineDiscovery.status ?? ""}
-                        onlineDiscoveryRan={Boolean(onlineDiscovery.version)}
-                        onlineDiscoverySources={onlineDiscoverySources}
-                        candidateCounts={candidateReviewCounts}
-                        candidateItems={candidateReviewItems}
-                        onCandidateDecision={(candidateId, decision) => void handleCandidateReviewDecision(candidateId, decision)}
-                      />
-                    <div>
-                      <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Site address
-                      </label>
-                      <input
-                        value={siteAddress}
-                        onChange={(event) => {
-                          setSiteAddress(event.target.value);
-                          setSelectedAddressSuggestion(null);
-                        }}
-                        placeholder="123 Main St, City, State"
-                        className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none"
-                      />
-                      {addressSuggestions.length ? (
-                        <div className="mt-2 max-h-40 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
-                          {addressSuggestions.map((suggestion) => (
-                            <button
-                              key={`${suggestion.lat ?? "lat"}-${suggestion.lng ?? "lng"}-${suggestion.display_name ?? "address"}`}
-                              type="button"
-                              aria-label={`Use address suggestion ${suggestion.display_name ?? "address"}`}
-                              onClick={() => {
-                                setSelectedAddressSuggestion(suggestion);
-                                setSiteAddress(suggestion.display_name ?? siteAddress);
-                                setAddressSuggestions([]);
-                              }}
-                              className={`w-full rounded-xl px-3 py-2 text-left text-[12px] transition ${
-                                selectedAddressSuggestion?.display_name === suggestion.display_name
-                                  ? "bg-slate-900 text-white"
-                                  : "hover:bg-slate-50"
-                              }`}
-                            >
-                              <span className="block truncate">{suggestion.display_name ?? "Address suggestion"}</span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => void saveSiteAddress()}
-                        disabled={!siteAddress.trim()}
-                        className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Apply address
-                        </button>
-                        {autoExistingConditionsStatus.status === "blocked" ? (
-                          <p data-testid="apply-address-status" className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                            {formatCalmActionMessage(autoExistingConditionsStatus.message)}
-                          </p>
-                        ) : null}
-                      </div>
-
-                  <div className="space-y-2 text-sm text-slate-700">
-                      <button
-                        type="button"
-                        onClick={() => mapSnapshotInputRef.current?.click()}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
-                      >
-                        <span>Upload site image / map snapshot</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {uploadedImageApiUrl || uploadedImagePreviewUrl ? "Ready" : "Upload"}
-                        </span>
-                      </button>
-                      {imageUploadState !== "idle" ? (
-                        <p data-testid="image-upload-status" className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
-                          imageUploadState === "failed"
-                            ? "border-red-200 bg-red-50 text-red-700"
-                            : "border-slate-200 bg-slate-50 text-slate-600"
-                        }`}>
-                          {imageUploadNote ||
-                            (imageUploadState === "uploading"
-                              ? "Uploading image…"
-                              : imageUploadState === "detecting"
-                                ? "Detecting site features…"
-                                : imageUploadState === "failed"
-                                  ? "Image upload failed."
-                                  : "Image uploaded.")}
-                        </p>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={analyzeMapSnapshot}
-                        disabled={!mapSnapshotPath}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span>Analyze map snapshot</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {mapAnalysis?.success ? "Ready" : "Analyze"}
-                        </span>
-                      </button>
-                      {siteScaleLocked ? (
-                        <button
-                          type="button"
-                          onClick={handleUnlockSite}
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
-                        >
-                          <span>Change Site</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">Unlock</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => void handleApplySite()}
-                          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
-                        >
-                          <span>Lock Site</span>
-                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">Apply</span>
-                        </button>
-                      )}
-                      <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-600">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Site
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-slate-800">
-                          {lotBounds.w && lotBounds.h
-                            ? `Site: ${lotBounds.w.toFixed(0)} ft × ${lotBounds.h.toFixed(0)} ft`
-                            : "Site: —"}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Status: {siteScaleLocked ? "Site Locked" : "Selecting Site"}
-                        </p>
-                        {siteTooLargeForWarning ? (
-                          <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
-                            {OVERSIZED_SITE_MESSAGE}
-                          </p>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleGenerateSystem("grading")}
-                        disabled={missingSite || !hasTerrainSource || siteTooLargeForGrading}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span>Detect grading</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {missingSite
-                            ? "Needs site"
-                            : !hasTerrainSource
-                              ? "Needs terrain"
-                              : siteTooLargeForGrading
-                                ? "Too large"
-                                : "Run"}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAnalyzeImageFeatures()}
-                        disabled={!mapSnapshotPath}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span>Detect site features</span>
-                        <span className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {missingImage ? "Needs image" : detectedPlacements.length ? "Detected" : "Run"}
-                        </span>
-                      </button>
-                      {!siteSelectionMode && buildingPlacements.some((item) => item.type === "site") ? (
-                        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-600">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Detect existing context
-                          </p>
-                          <div className="mt-2 grid gap-2">
-                            {(["roads", "buildings", "parking"] as const).map((key) => (
-                              <label key={key} className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={detectionChoices[key]}
-                                  onChange={(event) =>
-                                    setDetectionChoices((prev) => ({
-                                      ...prev,
-                                      [key]: event.target.checked,
-                                    }))
-                                  }
-                                />
-                                <span className="capitalize">{key}</span>
-                              </label>
-                            ))}
-                            <label className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={detectionChoices.grading}
-                                onChange={(event) =>
-                                  setDetectionChoices((prev) => ({
-                                    ...prev,
-                                    grading: event.target.checked,
-                                  }))
-                                }
-                              />
-                              <span>Detect grading</span>
-                            </label>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => void runSelectedDetections()}
-                            className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                          >
-                            Run selected detection
-                          </button>
-                        </div>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={handleAnalyzeSiteAccess}
-                        disabled={confirmedObjectCounts.buildings === 0 || confirmedObjectCounts.access === 0}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
-                      >
-                        <span>Analyze site access</span>
-                        <span className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                          {analysisIssues.length ? "Reviewed" : "Run"}
-                        </span>
-                      </button>
-                      {confirmedObjectCounts.buildings === 0 || confirmedObjectCounts.access === 0 ? (
-                        <p className="text-xs text-slate-500">
-                          Address provides site context only. Add or confirm buildings and access objects to run analysis.
-                        </p>
-                      ) : null}
-                      {uploadedImageApiUrl || uploadedImagePreviewUrl ? (
-                        <p className="text-xs text-slate-500">
-                          Map snapshot loaded and ready for interpretation.
-                        </p>
-                      ) : null}
-                      {mapAnalysis?.success ? (
-                        <p className="text-xs text-slate-500">
-                          Map analysis captured {mapAnalysisCounts.zones} zones,{" "}
-                          {mapAnalysisCounts.objects} objects,{" "}
-                          {mapAnalysisCounts.centerlines} centerlines.
-                        </p>
-                      ) : null}
-                    </div>
-
-
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Site rotation
-                      </p>
-                      <div className="mt-3 flex items-center gap-3">
-                        <input
-                          type="range"
-                          min={-180}
-                          max={180}
-                          value={siteRotationDeg}
-                          disabled={siteScaleLocked}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            setSiteRotationDeg(value);
-                            setSiteRotationInput(String(value));
-                            scheduleRotationSave(value);
-                          }}
-                          className="w-full disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                        <input
-                          type="number"
-                          value={siteRotationInput}
-                          disabled={siteScaleLocked}
-                          onChange={(event) => {
-                            setSiteRotationInput(event.target.value);
-                            const value = Number(event.target.value);
-                            if (Number.isFinite(value)) {
-                              setSiteRotationDeg(value);
-                              scheduleRotationSave(value);
-                            }
-                          }}
-                          className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFitToSiteRequest((value) => value + 1);
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          Fit to Site
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setMapCenterRequest((value) => value + 1)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          Use Map Center
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAlignToRoadRequest((value) => value + 1)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          Align to Nearest Road
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSiteRotationDeg(0);
-                            setSiteRotationInput("0");
-                            scheduleRotationSave(0);
-                          }}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-50"
-                        >
-                          Reset Rotation
-                        </button>
-                      </div>
-                      {!siteScaleLocked ? (
-                        <p className="mt-2 text-xs text-slate-500">
-                          Hold <span className="font-semibold">R</span> and drag the canvas to rotate the site.
-                        </p>
-                      ) : null}
-                    </div>
-
-
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Drainage source
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-800">
-                        {drainageSourceOverride === "user" ? "User provided" : "Civora generated"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Source: {drainageSurfaceSummary.surfaceSource}
-                        {drainageSurfaceSummary.surfaceQuality
-                          ? ` · ${drainageSurfaceSummary.surfaceQuality.replace(/_/g, " ")}`
-                          : ""}
-                      </p>
-                      {drainageSurfaceSummary.surfaceDetail ? (
-                        <p className="mt-1 text-xs text-slate-500">
-                          {drainageSurfaceSummary.surfaceDetail}
-                        </p>
-                      ) : null}
-                      <label className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                        <span>Source override</span>
-                        <select
-                          value={drainageSourceOverride}
-                          onChange={(event) => {
-                            const next = event.target.value === "user" ? "user" : "civora";
-                            setDrainageSourceOverride(next);
-                            const currentInput = currentProject?.project_input ?? payloadPreview;
-                            void saveProject({
-                              silent: true,
-                              projectInputOverride: {
-                                ...currentInput,
-                                input_mode: "user",
-                                strict_mode: false,
-                                allow_ai_fill_for_blanks: false,
-                                meta: {
-                                  ...(currentInput?.meta ?? {}),
-                                  site_inputs: {
-                                    ...(currentInput?.meta?.site_inputs ?? {}),
-                                    drainage_source_override: next,
-                                  },
-                                },
-                              },
-                            });
-                          }}
-                          className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
-                        >
-                          <option value="civora">Civora</option>
-                          <option value="user">User</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    <input
-                      ref={mapSnapshotInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (event) => {
-                        const file = event.currentTarget.files?.[0];
-                        if (file) {
-                          await uploadImage(file);
-                        }
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                      </div>
-                    </details>
-                  </div>
+                  <DataSourcesPanel
+                    sourceHubLinks={sourceHubLinks}
+                    sourceHubMetrics={sourceHubMetrics}
+                    sourceConfidenceEntryCount={sourceConfidenceSummary.entry_count ?? sourceConfidenceEntries.length}
+                    sourceConfidenceRows={sourceConfidenceRows}
+                    onOpenPanel={handleOpenSidePanel}
+                    planPdfAnalysis={planPdfAnalysis}
+                    planPdfSourceUrl={planPdfSourceUrl}
+                    planPdfFirstPage={planPdfFirstPage}
+                    planPdfElements={planPdfElements}
+                    selectedPlanPdfElement={selectedPlanPdfElement}
+                    planPdfChangedReport={planPdfChangedReport}
+                    planPdfChangedElements={planPdfChangedElements}
+                    planPdfUnreadableItems={planPdfUnreadableItems}
+                    planPdfBlockers={planPdfBlockers}
+                    planPdfUploadState={planPdfUploadState}
+                    planPdfUploadMessage={planPdfUploadMessage}
+                    planPdfElementDraftText={planPdfElementDraftText}
+                    planPdfMoveX={planPdfMoveX}
+                    planPdfMoveY={planPdfMoveY}
+                    planPdfExtractionSummaryRows={planPdfExtractionSummaryRows}
+                    planPdfClassificationPreviewRows={planPdfClassificationPreviewRows}
+                    planPdfInputRef={planPdfInputRef}
+                    onUploadPlanPdf={uploadPlanPdf}
+                    onSelectPlanPdfElement={setSelectedPlanPdfElementId}
+                    onPlanPdfDraftTextChange={setPlanPdfElementDraftText}
+                    onPlanPdfMoveXChange={setPlanPdfMoveX}
+                    onPlanPdfMoveYChange={setPlanPdfMoveY}
+                    onUpdatePlanPdfElement={(elementId, patch) => void updatePlanPdfElement(elementId, patch)}
+                    onExportPlanPdfJson={() => void exportPlanPdfReport()}
+                    onExportPlanPdf={() => void exportPlanPdfReviewPdf()}
+                    onEditPdfByChat={() => {
+                      setPrompt("change pool deck elevation");
+                      handleOpenSidePanel("chat");
+                    }}
+                    onWhatChanged={() => {
+                      setPrompt("what changed?");
+                      handleOpenSidePanel("chat");
+                    }}
+                    onAskUnreadable={() => {
+                      setPrompt("show unreadable text");
+                      handleOpenSidePanel("chat");
+                    }}
+                    onInvalidPlanPdfMove={() => {
+                      setStatusMessage("Moving a PDF-derived element requires explicit target x0/y0 coordinates.");
+                    }}
+                    capabilityAuditRows={capabilityAuditRows}
+                    onlineDiscoveryStatus={onlineDiscovery.status ?? ""}
+                    onlineDiscoveryRan={Boolean(onlineDiscovery.version)}
+                    onlineDiscoverySources={onlineDiscoverySources}
+                    candidateReviewCounts={candidateReviewCounts}
+                    candidateReviewItems={candidateReviewItems}
+                    onCandidateDecision={(candidateId, decision) => void handleCandidateReviewDecision(candidateId, decision)}
+                    siteAddress={siteAddress}
+                    selectedAddressSuggestion={selectedAddressSuggestion}
+                    addressSuggestions={addressSuggestions}
+                    onSiteAddressChange={setSiteAddress}
+                    onSelectedAddressSuggestionChange={setSelectedAddressSuggestion}
+                    onAddressSuggestionsChange={setAddressSuggestions}
+                    onApplyAddress={() => void saveSiteAddress()}
+                    autoExistingConditionsStatus={autoExistingConditionsStatus}
+                    mapSnapshotInputRef={mapSnapshotInputRef}
+                    uploadedImageApiUrl={uploadedImageApiUrl}
+                    uploadedImagePreviewUrl={uploadedImagePreviewUrl}
+                    imageUploadState={imageUploadState}
+                    imageUploadNote={imageUploadNote}
+                    mapSnapshotPath={mapSnapshotPath}
+                    mapAnalysis={mapAnalysis}
+                    onAnalyzeMapSnapshot={analyzeMapSnapshot}
+                    siteScaleLocked={siteScaleLocked}
+                    onUnlockSite={handleUnlockSite}
+                    onApplySite={() => void handleApplySite()}
+                    lotBounds={lotBounds}
+                    siteTooLargeForWarning={siteTooLargeForWarning}
+                    missingSite={missingSite}
+                    hasTerrainSource={hasTerrainSource}
+                    siteTooLargeForGrading={siteTooLargeForGrading}
+                    onGenerateSystem={handleGenerateSystem}
+                    onAnalyzeImageFeatures={() => handleAnalyzeImageFeatures()}
+                    missingImage={missingImage}
+                    detectedPlacementsCount={detectedPlacements.length}
+                    siteSelectionMode={siteSelectionMode}
+                    hasSiteObject={buildingPlacements.some((item) => item.type === "site")}
+                    detectionChoices={detectionChoices}
+                    onDetectionChoicesChange={setDetectionChoices}
+                    onRunSelectedDetections={() => void runSelectedDetections()}
+                    onAnalyzeSiteAccess={handleAnalyzeSiteAccess}
+                    confirmedObjectCounts={confirmedObjectCounts}
+                    analysisIssueCount={analysisIssues.length}
+                    mapAnalysisCounts={mapAnalysisCounts}
+                    siteRotationDeg={siteRotationDeg}
+                    siteRotationInput={siteRotationInput}
+                    onSiteRotationDegChange={setSiteRotationDeg}
+                    onSiteRotationInputChange={setSiteRotationInput}
+                    onScheduleRotationSave={scheduleRotationSave}
+                    onFitToSite={() => setFitToSiteRequest((value) => value + 1)}
+                    onUseMapCenter={() => setMapCenterRequest((value) => value + 1)}
+                    onAlignToRoad={() => setAlignToRoadRequest((value) => value + 1)}
+                    drainageSourceOverride={drainageSourceOverride}
+                    drainageSurfaceSummary={drainageSurfaceSummary}
+                    onDrainageSourceOverrideChange={(next) => {
+                      setDrainageSourceOverride(next);
+                      const currentInput = currentProject?.project_input ?? payloadPreview;
+                      void saveProject({
+                        silent: true,
+                        projectInputOverride: {
+                          ...currentInput,
+                          input_mode: "user",
+                          strict_mode: false,
+                          allow_ai_fill_for_blanks: false,
+                          meta: {
+                            ...(currentInput?.meta ?? {}),
+                            site_inputs: {
+                              ...(currentInput?.meta?.site_inputs ?? {}),
+                              drainage_source_override: next,
+                            },
+                          },
+                        },
+                      });
+                    }}
+                    mapSnapshotUploadInputRef={mapSnapshotInputRef}
+                    onUploadImage={uploadImage}
+                  />
                 ) : null}
 
                 {sidePanelForRender === "model" ? (
