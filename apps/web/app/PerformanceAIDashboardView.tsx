@@ -268,8 +268,8 @@ import {
   type GradingDrainageReviewContextMode,
 } from "./utils/dashboardReviewContextPlacements";
 import {
-  buildReviewGateItems,
-  buildSidebarTruthItems,
+  buildDashboardSidebarReviewState,
+  buildIssueDiagnosticSummary,
 } from "./utils/dashboardSidebarReview";
 import {
   cloneBuildingPlacementForUndo,
@@ -16049,49 +16049,37 @@ function PerformanceAIDashboardView({
   const handleOpenFloatingObjectDetails = useCallback(() => {
     handleOpenPanelFromDrawer("details");
   }, [handleOpenPanelFromDrawer]);
-  const sidebarStaleSystems = (Object.entries(systemStatuses) as Array<[EngineeringSystemKey, SystemStatus]>)
-    .filter(([, status]) => status === "stale")
-    .map(([system]) => system);
-  const sidebarMissingInputs = [
-    missingSite ? "site" : null,
-    !hasTerrainSource ? "terrain" : null,
-    !hasBasinPlaced && systemStatuses.drainage !== "fresh" ? "basin" : null,
-  ].filter(Boolean) as string[];
-  const sidebarHasTruthEvidence = Boolean(
-    backendResult ||
-      siteScaleLocked ||
-      buildingPlacements.length ||
-      siteAddress.trim() ||
-      siteInputs?.address ||
-      siteInputs?.geocode?.lat ||
-      siteInputs?.geocode?.lng ||
-      uploadedImagePreviewUrl ||
-      uploadedImageApiUrl ||
-      surveyPreviewPoints.length ||
-      mapSnapshotPath,
-  );
-  const sidebarReleaseStatus = String(previewReview?.release_status || "review").toLowerCase();
-  const sidebarTrustScore =
-    typeof previewReview?.trust_score === "number" ? `${Math.round(previewReview.trust_score)}%` : "not reported";
-  const sidebarAssumptions = Array.isArray(previewReview?.assumption_categories)
-    ? previewReview.assumption_categories.filter(Boolean)
-    : [];
-  const sidebarTruthItems = buildSidebarTruthItems({
-    hasTruthEvidence: sidebarHasTruthEvidence,
-    releaseStatus: sidebarReleaseStatus,
-    trustScore: typeof previewReview?.trust_score === "number" ? previewReview.trust_score : null,
-    trustScoreLabel: sidebarTrustScore,
-    assumptionCount: sidebarAssumptions.length,
-    hasBackendResult: Boolean(backendResult),
-    staleSystems: sidebarStaleSystems,
+  const {
+    sidebarStaleSystems,
+    sidebarMissingInputs,
+    sidebarReleaseStatus,
+    sidebarTrustScore,
+    sidebarAssumptions,
+    sidebarTruthItems,
+    reviewGateItems,
+  } = buildDashboardSidebarReviewState({
+    systemStatuses,
+    missingSite,
+    hasTerrainSource,
+    hasBasinPlaced,
+    drainageFresh: systemStatuses.drainage === "fresh",
+    backendResultPresent: Boolean(backendResult),
+    siteScaleLocked,
+    buildingPlacementCount: buildingPlacements.length,
+    siteAddress,
+    siteInputAddress: siteInputs?.address,
+    siteInputLat: siteInputs?.geocode?.lat,
+    siteInputLng: siteInputs?.geocode?.lng,
+    uploadedImagePreviewUrl,
+    uploadedImageApiUrl,
+    surveyPreviewPointCount: surveyPreviewPoints.length,
+    mapSnapshotPath,
+    releaseStatusRaw: previewReview?.release_status,
+    trustScoreRaw: previewReview?.trust_score,
+    assumptionCategories: previewReview?.assumption_categories,
     hasHardSystemBlock,
     previewBlockedReasonCount: previewBlockedReasons.length,
-  });
-  const reviewGateItems = buildReviewGateItems({
     standardsOk: panelStatus("standards") === "ok",
-    hasTerrainSource,
-    hasBackendResult: Boolean(backendResult),
-    releaseStatus: sidebarReleaseStatus,
   });
   const exportBlockText = getExportBlockReason();
   const { setupWizardState, setupWizardSteps, nextSetupAction } = buildDashboardSetupWizardState({
@@ -16173,18 +16161,17 @@ function PerformanceAIDashboardView({
     !sidePanelVisible &&
     !(mobileViewport && leftSidebarOpen);
   const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
-  const issueDiagnosticSummary = [
-    "Civora pilot issue report",
-    `Project ID: ${currentProject?.project_id || projectId || "draft / unavailable"}`,
-    `Project name: ${siteName || currentProject?.name || "Untitled Project"}`,
-    `Panel / workflow step: ${sidePanelForRender ? sidePanelCopy[sidePanelForRender].title : activeWorkspaceMode}`,
-    `Visible status: ${visibleStatusSummary}`,
-    `Site: ${siteScaleLocked ? "locked" : "not locked"}; ${lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "size unavailable"}`,
-    `Systems: ${Object.entries(systemStatuses).map(([key, value]) => `${key}=${value}`).join(", ")}`,
-    `User message: ${issueReportMessage.trim() || "(add details before sending)"}`,
-    "",
-    "Reminder: outputs are review-required materials only. Field use remains outside Civora.",
-  ].join("\n");
+  const issueDiagnosticSummary = buildIssueDiagnosticSummary({
+    projectId: currentProject?.project_id || projectId || "draft / unavailable",
+    projectName: siteName || currentProject?.name || "Untitled Project",
+    panelTitle: sidePanelForRender ? sidePanelCopy[sidePanelForRender].title : activeWorkspaceMode,
+    visibleStatusSummary,
+    siteLocked: siteScaleLocked,
+    lotWidth: lotBounds.w,
+    lotHeight: lotBounds.h,
+    systemStatuses,
+    issueReportMessage,
+  });
   const handleCopyIssueDiagnostic = async () => {
     try {
       await navigator.clipboard.writeText(issueDiagnosticSummary);

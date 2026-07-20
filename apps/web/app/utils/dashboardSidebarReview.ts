@@ -122,3 +122,141 @@ export function buildReviewGateItems({
     },
   ];
 }
+
+export function buildDashboardSidebarReviewState({
+  systemStatuses,
+  missingSite,
+  hasTerrainSource,
+  hasBasinPlaced,
+  drainageFresh,
+  backendResultPresent,
+  siteScaleLocked,
+  buildingPlacementCount,
+  siteAddress,
+  siteInputAddress,
+  siteInputLat,
+  siteInputLng,
+  uploadedImagePreviewUrl,
+  uploadedImageApiUrl,
+  surveyPreviewPointCount,
+  mapSnapshotPath,
+  releaseStatusRaw,
+  trustScoreRaw,
+  assumptionCategories,
+  hasHardSystemBlock,
+  previewBlockedReasonCount,
+  standardsOk,
+}: {
+  systemStatuses: Record<string, string>;
+  missingSite: boolean;
+  hasTerrainSource: boolean;
+  hasBasinPlaced: boolean;
+  drainageFresh: boolean;
+  backendResultPresent: boolean;
+  siteScaleLocked: boolean;
+  buildingPlacementCount: number;
+  siteAddress: string;
+  siteInputAddress?: unknown;
+  siteInputLat?: unknown;
+  siteInputLng?: unknown;
+  uploadedImagePreviewUrl?: string | null;
+  uploadedImageApiUrl?: string | null;
+  surveyPreviewPointCount: number;
+  mapSnapshotPath?: string | null;
+  releaseStatusRaw?: unknown;
+  trustScoreRaw?: unknown;
+  assumptionCategories?: unknown;
+  hasHardSystemBlock: boolean;
+  previewBlockedReasonCount: number;
+  standardsOk: boolean;
+}) {
+  const sidebarStaleSystems = Object.entries(systemStatuses)
+    .filter(([, status]) => status === "stale")
+    .map(([system]) => system);
+  const sidebarMissingInputs = [
+    missingSite ? "site" : null,
+    !hasTerrainSource ? "terrain" : null,
+    !hasBasinPlaced && !drainageFresh ? "basin" : null,
+  ].filter(Boolean) as string[];
+  const sidebarHasTruthEvidence = Boolean(
+    backendResultPresent ||
+      siteScaleLocked ||
+      buildingPlacementCount ||
+      siteAddress.trim() ||
+      siteInputAddress ||
+      siteInputLat ||
+      siteInputLng ||
+      uploadedImagePreviewUrl ||
+      uploadedImageApiUrl ||
+      surveyPreviewPointCount ||
+      mapSnapshotPath,
+  );
+  const sidebarReleaseStatus = String(releaseStatusRaw || "review").toLowerCase();
+  const sidebarTrustScore =
+    typeof trustScoreRaw === "number" ? `${Math.round(trustScoreRaw)}%` : "not reported";
+  const sidebarAssumptions = Array.isArray(assumptionCategories)
+    ? assumptionCategories.filter(Boolean)
+    : [];
+  const sidebarTruthItems = buildSidebarTruthItems({
+    hasTruthEvidence: sidebarHasTruthEvidence,
+    releaseStatus: sidebarReleaseStatus,
+    trustScore: typeof trustScoreRaw === "number" ? trustScoreRaw : null,
+    trustScoreLabel: sidebarTrustScore,
+    assumptionCount: sidebarAssumptions.length,
+    hasBackendResult: backendResultPresent,
+    staleSystems: sidebarStaleSystems,
+    hasHardSystemBlock,
+    previewBlockedReasonCount,
+  });
+  const reviewGateItems = buildReviewGateItems({
+    standardsOk,
+    hasTerrainSource,
+    hasBackendResult: backendResultPresent,
+    releaseStatus: sidebarReleaseStatus,
+  });
+  return {
+    sidebarStaleSystems,
+    sidebarMissingInputs,
+    sidebarHasTruthEvidence,
+    sidebarReleaseStatus,
+    sidebarTrustScore,
+    sidebarAssumptions,
+    sidebarTruthItems,
+    reviewGateItems,
+  };
+}
+
+export function buildIssueDiagnosticSummary({
+  projectId,
+  projectName,
+  panelTitle,
+  visibleStatusSummary,
+  siteLocked,
+  lotWidth,
+  lotHeight,
+  systemStatuses,
+  issueReportMessage,
+}: {
+  projectId: string;
+  projectName: string;
+  panelTitle: string;
+  visibleStatusSummary: string;
+  siteLocked: boolean;
+  lotWidth: number;
+  lotHeight: number;
+  systemStatuses: Record<string, string>;
+  issueReportMessage: string;
+}) {
+  return [
+    "Civora pilot issue report",
+    `Project ID: ${projectId}`,
+    `Project name: ${projectName}`,
+    `Panel / workflow step: ${panelTitle}`,
+    `Visible status: ${visibleStatusSummary}`,
+    `Site: ${siteLocked ? "locked" : "not locked"}; ${lotWidth && lotHeight ? `${lotWidth.toFixed(0)} ft x ${lotHeight.toFixed(0)} ft` : "size unavailable"}`,
+    `Systems: ${Object.entries(systemStatuses).map(([key, value]) => `${key}=${value}`).join(", ")}`,
+    `User message: ${issueReportMessage.trim() || "(add details before sending)"}`,
+    "",
+    "Reminder: outputs are review-required materials only. Field use remains outside Civora.",
+  ].join("\n");
+}
