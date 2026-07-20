@@ -57,6 +57,7 @@ import { PreviewSuggestedGeometry } from "./PreviewSuggestedGeometry";
 import { PreviewSvgDefs } from "./PreviewSvgDefs";
 import { PreviewWaterFireFlowOverlay } from "./PreviewWaterFireFlowOverlay";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
+import { usePreviewResizeObservers } from "./usePreviewResizeObservers";
 import { WaterFireFlowEvidenceDock } from "./WaterFireFlowEvidenceDock";
 import {
   formatFlowValue,
@@ -6211,99 +6212,28 @@ export default function PreviewPanel({
     waterFireFlow,
   ]);
 
-  useEffect(() => {
-    const handleUpdate = () => {
-      if (previewResizeRafRef.current !== null) return;
-      previewResizeRafRef.current = window.requestAnimationFrame(() => {
-        previewResizeRafRef.current = null;
-        updateContainerBounds();
-        if (showMap && previewRef.current) {
-          const rect = previewRef.current.getBoundingClientRect();
-          const nextBounds = { left: 0, top: 0, width: rect.width, height: rect.height };
-          setPreviewImageBounds((current) =>
-            current &&
-            Math.abs(current.width - nextBounds.width) < 0.5 &&
-            Math.abs(current.height - nextBounds.height) < 0.5
-              ? current
-              : nextBounds,
-          );
-          const nextSize = { w: Math.round(rect.width), h: Math.round(rect.height) };
-          const prev = previewSizeRef.current;
-          if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
-            previewSizeRef.current = nextSize;
-            const now = Date.now();
-            if (now - lastMapResizeRef.current > 120) {
-              lastMapResizeRef.current = now;
-              mapRef.current?.resize();
-            }
-          }
-        } else if (planPreviewUrl && showGeneratedPlan) {
-          updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds);
-        } else {
-          setPreviewImageBounds(null);
-        }
-      });
-    };
-    handleUpdate();
-    if (!previewRef.current) return;
-    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleUpdate) : null;
-    if (observer) observer.observe(previewRef.current);
-    window.addEventListener("resize", handleUpdate);
-    return () => {
-      if (observer) observer.disconnect();
-      window.removeEventListener("resize", handleUpdate);
-      if (previewResizeRafRef.current !== null) {
-        cancelAnimationFrame(previewResizeRafRef.current);
-        previewResizeRafRef.current = null;
-      }
-    };
-  }, [planPreviewUrl, previewMode, showGeneratedPlan, showMap, updateContainerBounds, updateImageBounds]);
-
-  useEffect(() => {
-    if (!previewFullscreenOpen) return;
-    const handleUpdate = () => {
-      if (fullscreenResizeRafRef.current !== null) return;
-      fullscreenResizeRafRef.current = window.requestAnimationFrame(() => {
-        fullscreenResizeRafRef.current = null;
-        if (showMap && fullscreenRef.current) {
-          const rect = fullscreenRef.current.getBoundingClientRect();
-          const nextBounds = { left: 0, top: 0, width: rect.width, height: rect.height };
-          setFullscreenImageBounds((current) =>
-            current &&
-            Math.abs(current.width - nextBounds.width) < 0.5 &&
-            Math.abs(current.height - nextBounds.height) < 0.5
-              ? current
-              : nextBounds,
-          );
-          const nextSize = { w: Math.round(rect.width), h: Math.round(rect.height) };
-          const prev = fullscreenSizeRef.current;
-          if (!prev || prev.w !== nextSize.w || prev.h !== nextSize.h) {
-            fullscreenSizeRef.current = nextSize;
-            const now = Date.now();
-            if (now - lastMapResizeRef.current > 120) {
-              lastMapResizeRef.current = now;
-              fullscreenMapRef.current?.resize();
-            }
-          }
-        } else if (planPreviewUrl) {
-          updateImageBounds(fullscreenRef, fullscreenImageRef, setFullscreenImageBounds);
-        }
-      });
-    };
-    handleUpdate();
-    if (!fullscreenRef.current) return;
-    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleUpdate) : null;
-    if (observer) observer.observe(fullscreenRef.current);
-    window.addEventListener("resize", handleUpdate);
-    return () => {
-      if (observer) observer.disconnect();
-      window.removeEventListener("resize", handleUpdate);
-      if (fullscreenResizeRafRef.current !== null) {
-        cancelAnimationFrame(fullscreenResizeRafRef.current);
-        fullscreenResizeRafRef.current = null;
-      }
-    };
-  }, [planPreviewUrl, previewFullscreenOpen, showMap, updateImageBounds]);
+  usePreviewResizeObservers({
+    previewRef,
+    previewImageRef,
+    fullscreenRef,
+    fullscreenImageRef,
+    mapRef,
+    fullscreenMapRef,
+    previewResizeRafRef,
+    fullscreenResizeRafRef,
+    previewSizeRef,
+    fullscreenSizeRef,
+    lastMapResizeRef,
+    showMap,
+    showGeneratedPlan,
+    planPreviewUrl,
+    previewMode,
+    previewFullscreenOpen,
+    updateContainerBounds,
+    updateImageBounds,
+    setPreviewImageBounds,
+    setFullscreenImageBounds,
+  });
   const [focusTransform, setFocusTransform] = useState<{ scale: number; tx: number; ty: number } | null>(null);
   const updateFocusTransform = useCallback((nextTransform: { scale: number; tx: number; ty: number }) => {
     setFocusTransform((current) =>
