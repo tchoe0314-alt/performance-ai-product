@@ -102,7 +102,7 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIM/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await (await revealCadTool(page, "command")).click();
-    await expect(page.getByLabel("CAD command input")).toHaveValue(/LINE/);
+    await expect(page.getByLabel("Draft command input")).toHaveValue(/LINE/);
     const generateOpenMs = await timedOpen(page, "Generate", /Generate Systems/);
     const deliverOpenMs = await timedOpen(page, /^Deliver$/, /Deliver|Plan Sheets|Files/);
 

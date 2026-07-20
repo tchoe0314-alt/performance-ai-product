@@ -110,8 +110,8 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await openDrawPanel(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText("AI realism visualization regenerated");
 
-    await page.getByLabel("CAD command input").fill("LINE 20,20 90,20");
-    await page.getByLabel("CAD command input").press("Enter");
+    await page.getByLabel("Draft command input").fill("LINE 20,20 90,20");
+    await page.getByLabel("Draft command input").press("Enter");
     await openDrawPanel(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText(/AI realism visualization is stale|AI realism stale/i);
 

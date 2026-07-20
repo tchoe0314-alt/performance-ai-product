@@ -4749,7 +4749,7 @@ function PerformanceAIDashboardView({
       const blockers = cadEntityReviewBlockers(entity, validationBlockersByEntity.get(entityId) ?? [], unsupported);
       const w = Math.max(1, bbox.maxX - bbox.minX);
       const d = Math.max(1, bbox.maxY - bbox.minY);
-      const label = String(entity.label || entity.name || entity.geometry?.text || entityType.replace(/_/g, " ") || "CAD entity");
+      const label = String(entity.label || entity.name || entity.geometry?.text || entityType.replace(/_/g, " ") || "Draft entity");
       const siteType = cadLayerToSiteType(layerName, entityType);
       const previewLayer = cadPreviewLayer(layerName, entityType);
       const sourceConfidence = String(entity.source_confidence || sourceConfidenceByObjectId.get(linkedObjectId)?.confidence_band || "review required");
@@ -4766,7 +4766,7 @@ function PerformanceAIDashboardView({
         unsupported_entity_placeholder: unsupported,
         review_only: true,
         construction_release_allowed: false,
-        source_note: "Persistent CAD entity preview; review/communication only.",
+        source_note: "Persistent draft entity preview; review/communication only.",
       };
       objects.push({
         id: entityId,
@@ -21683,12 +21683,12 @@ function PerformanceAIDashboardView({
       ),
       row(
         "cad_geometry_handoff",
-        "CAD geometry handoff",
+        "Draft geometry handoff",
         handoffs.length > 0 || placedObjectCount > 0,
         ["UI", "chat", "API", "report"],
         handoffs.length ? `${handoffs.length} canonical handoff(s)` : placedObjectCount ? "Draft objects need canonical handoff review" : "No geometry yet",
         "No canonical geometry handoff exists.",
-        "Draw or import geometry, classify it, then preserve the canonical_geometry_handoff_v1 record for CAD/export.",
+        "Draw or import geometry, classify it, then preserve the canonical_geometry_handoff_v1 record for review/export.",
         handoffs.length === 0,
       ),
     ];
@@ -26108,7 +26108,7 @@ function PerformanceAIDashboardView({
                                   : "Move/edit needs the object placed first."}
                           </p>
                           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                            Review-only: this object is draft/site evidence for qualified review, not construction-ready output.
+                            Review-only: this object is draft/site evidence for qualified review, not final professional output.
                           </p>
                           {objectManagerStatusMessage ? (
                             <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="selected-object-status">

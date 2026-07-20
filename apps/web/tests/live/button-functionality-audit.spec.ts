@@ -42,7 +42,7 @@ async function clickCadTool(page: Page, tool: string, expected: RegExp) {
 }
 
 test.describe("button functionality audit", () => {
-  test("CAD palette buttons each trigger a distinct action or truthful blocked state", async ({ page }) => {
+  test("Draft palette buttons each trigger a distinct action or truthful blocked state", async ({ page }) => {
     await openDemoWorkspace(page);
 
     const blockedOrNeedsInput = "blocked|needs input";
@@ -86,7 +86,7 @@ test.describe("button functionality audit", () => {
       await clickCadTool(page, tool, expected);
     }
 
-    await expect(page.getByLabel("CAD command input")).toHaveValue(/LINE|CIRCLE|ARC|TEXT|COPY/);
+    await expect(page.getByLabel("Draft command input")).toHaveValue(/LINE|CIRCLE|ARC|TEXT|COPY/);
 
     const powerTools = page.getByTestId("cad-power-tools");
     await expect(powerTools).toBeVisible();

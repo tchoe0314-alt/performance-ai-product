@@ -2473,7 +2473,7 @@ export default function PreviewPanel({
         else applyRectUndo();
         recordUndoFeedback("applied", "UNDO restored the last canvas drawing edit.");
       } else {
-        recordUndoFeedback("blocked", "UNDO blocked: no draft CAD history is available.");
+        recordUndoFeedback("blocked", "UNDO blocked: no draft history is available.");
       }
       return;
     }
@@ -2497,7 +2497,7 @@ export default function PreviewPanel({
     };
     const entry = cadRedoStack[cadRedoStack.length - 1];
     if (!entry) {
-      recordRedoFeedback("blocked", "REDO blocked: no draft CAD redo history is available.");
+      recordRedoFeedback("blocked", "REDO blocked: no draft redo history is available.");
       return;
     }
     applyCadHistorySnapshot(entry.after);
@@ -2875,7 +2875,7 @@ export default function PreviewPanel({
         onCreateCustomGeometry({
           mode,
           points: copiedGeometry,
-          label: `${target.label || "CAD object"} Copy`,
+          label: `${target.label || "Draft object"} Copy`,
           meta: reviewRequiredCommandMeta("COPY", {
             copied_from_object_id: target.id,
             copied_object_type: target.type,
@@ -3023,7 +3023,7 @@ export default function PreviewPanel({
           if (row === 0 && column === 0) continue;
           const copiedGeometry = translateSiteGeometry(sourceGeometry, { x: dx * column, y: dy * row }) ?? sourceGeometry;
           const ok = createCadCommandGeometry("ARRAY", selectedCadObject.geometryType === "polygon" || selectedCadObject.geometryType === "rect" ? "polygon" : "polyline", copiedGeometry, {
-            label: `${selectedCadObject.label || "CAD object"} Array ${row + 1}-${column + 1}`,
+            label: `${selectedCadObject.label || "Draft object"} Array ${row + 1}-${column + 1}`,
             meta: {
               array_source_object_id: selectedCadObject.id,
               array_rows: rows,
@@ -3099,8 +3099,8 @@ export default function PreviewPanel({
     }
     const joinedLabel =
       selectedTargets.length === 2
-        ? `${selectedTargets[0].label || "CAD"} + ${selectedTargets[1].label || "CAD"} Join`
-        : `Joined CAD Object ${selectedTargets.length}`;
+        ? `${selectedTargets[0].label || "Draft"} + ${selectedTargets[1].label || "Draft"} Join`
+        : `Joined Draft Object ${selectedTargets.length}`;
     selectedTargets.forEach((item) => {
       onUpdateBuilding(item.id, {
         meta: {
@@ -3566,7 +3566,7 @@ export default function PreviewPanel({
       pushCadCommandFeedback("PROPERTIES", "blocked", "PROPERTIES blocked: select one editable draft object first.");
       return;
     }
-    const safeName = cadPropertyDraft.name.trim() || selectedCadObject.label || "CAD object";
+    const safeName = cadPropertyDraft.name.trim() || selectedCadObject.label || "Draft object";
     const safeLayer = cadPropertyDraft.layer.trim().toUpperCase() || "C-DRAFT";
     const safeType = cadPropertyDraft.type.trim() || selectedCadObject.type || "custom";
     updateCadObject(
@@ -8659,7 +8659,7 @@ export default function PreviewPanel({
                                   strokeWidth={0.42}
                                   strokeDasharray="1.4 1"
                                 >
-                                  <title>{blockers[0] || "Unsupported CAD entity requires review."}</title>
+                                  <title>{blockers[0] || "Unsupported draft entity requires review."}</title>
                                 </rect>
                               </g>
                             );
@@ -9201,7 +9201,7 @@ export default function PreviewPanel({
                             key={item.id}
                             data-object-overlay
                             data-cad-object-id={item.id}
-                            aria-label={`Select ${item.label || item.type || "CAD object"}`}
+                            aria-label={`Select ${item.label || item.type || "Draft object"}`}
                             data-preview-quality={previewQuality}
                             data-visual-kind={visualKind}
                             data-source-state={sourceState}

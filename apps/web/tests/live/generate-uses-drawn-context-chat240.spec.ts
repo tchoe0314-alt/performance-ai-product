@@ -180,8 +180,8 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await openFreshMargoProject(page);
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
-  await page.getByLabel("CAD command input").fill("LINE 20,20 220,20");
-  await page.getByLabel("CAD command input").press("Enter");
+  await page.getByLabel("Draft command input").fill("LINE 20,20 220,20");
+  await page.getByLabel("Draft command input").press("Enter");
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
 
   const request = await runGenerateAndCapture(page, captured);

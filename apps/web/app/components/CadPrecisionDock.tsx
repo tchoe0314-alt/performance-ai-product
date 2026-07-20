@@ -215,8 +215,8 @@ export function CadPrecisionDock({
           <div className="flex gap-1">
             <button
               type="button"
-              aria-label="Undo CAD command"
-              title="Undo CAD command"
+              aria-label="Undo draft command"
+              title="Undo draft command"
               onClick={undoCadCommand}
               disabled={!cadHistory.length && !lastPolylineEdit && !lastRectEdit}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 disabled:opacity-40"
@@ -225,8 +225,8 @@ export function CadPrecisionDock({
             </button>
             <button
               type="button"
-              aria-label="Redo CAD command"
-              title="Redo CAD command"
+              aria-label="Redo draft command"
+              title="Redo draft command"
               onClick={redoCadCommand}
               disabled={!cadRedoStack.length}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 disabled:opacity-40"
@@ -263,7 +263,7 @@ export function CadPrecisionDock({
         </div>
         <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
           <input
-            aria-label="CAD X coordinate"
+            aria-label="Draft X coordinate"
             inputMode="decimal"
             value={cadCoordinateDraft.x}
             onChange={(event) => setCadCoordinateDraft((prev) => ({ ...prev, x: event.target.value }))}
@@ -271,7 +271,7 @@ export function CadPrecisionDock({
             className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
           />
           <input
-            aria-label="CAD Y coordinate"
+            aria-label="Draft Y coordinate"
             inputMode="decimal"
             value={cadCoordinateDraft.y}
             onChange={(event) => setCadCoordinateDraft((prev) => ({ ...prev, y: event.target.value }))}
@@ -291,7 +291,7 @@ export function CadPrecisionDock({
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Draft command line</p>
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <input
-              aria-label="CAD command input"
+              aria-label="Draft command input"
               value={cadCommandDraft}
               onChange={(event) => setCadCommandDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -394,19 +394,19 @@ export function CadPrecisionDock({
         </div>
         <div className="mt-3 grid grid-cols-[1fr_repeat(3,auto)] gap-2">
           <input
-            aria-label="CAD transform value"
+            aria-label="Draft transform value"
             inputMode="decimal"
             value={cadTransformValue}
             onChange={(event) => setCadTransformValue(event.target.value)}
             className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
           />
-          <button type="button" aria-label="Move selected CAD objects" onClick={() => transformSelectedCadObjects("move")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Move className="h-4 w-4" /></button>
-          <button type="button" aria-label="Rotate selected CAD objects" onClick={() => transformSelectedCadObjects("rotate")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RotateCw className="h-4 w-4" /></button>
-          <button type="button" aria-label="Scale selected CAD objects" onClick={() => transformSelectedCadObjects("scale")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scale className="h-4 w-4" /></button>
+          <button type="button" aria-label="Move selected draft objects" onClick={() => transformSelectedCadObjects("move")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Move className="h-4 w-4" /></button>
+          <button type="button" aria-label="Rotate selected draft objects" onClick={() => transformSelectedCadObjects("rotate")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RotateCw className="h-4 w-4" /></button>
+          <button type="button" aria-label="Scale selected draft objects" onClick={() => transformSelectedCadObjects("scale")} disabled={!selectedCadIds.length} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scale className="h-4 w-4" /></button>
         </div>
         <div className="mt-3 grid grid-cols-[auto_1fr_auto] gap-2">
           <select
-            aria-label="CAD dimension mode"
+            aria-label="Draft dimension mode"
             value={cadDimensionMode}
             onChange={(event) => setCadDimensionMode(event.target.value as CadDimensionMode)}
             className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
@@ -415,7 +415,7 @@ export function CadPrecisionDock({
             <option value="aligned">Aligned</option>
           </select>
           <input
-            aria-label="CAD dimension label"
+            aria-label="Draft dimension label"
             value={cadDimensionLabelDraft}
             onChange={(event) => setCadDimensionLabelDraft(event.target.value)}
             placeholder="Editable dimension label"
@@ -427,19 +427,19 @@ export function CadPrecisionDock({
       <section className="min-w-0">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Modify / layers</p>
         <div className="mt-3 grid grid-cols-4 gap-2">
-          <button type="button" aria-label="Offset selected CAD object" title="Offset selected CAD object" onClick={offsetSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Ruler className="h-4 w-4" /></button>
-          <button type="button" aria-label="Trim selected CAD object" title="Trim selected CAD object" onClick={() => trimExtendSelectedCadObject("trim")} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scissors className="h-4 w-4" /></button>
-          <button type="button" aria-label="Extend selected CAD object" title="Extend selected CAD object" onClick={() => trimExtendSelectedCadObject("extend")} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><GitBranch className="h-4 w-4" /></button>
-          <button type="button" aria-label="Fillet selected CAD vertex" title="Fillet selected CAD vertex" onClick={filletSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RefreshCw className="h-4 w-4" /></button>
+          <button type="button" aria-label="Offset selected draft object" title="Offset selected draft object" onClick={offsetSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Ruler className="h-4 w-4" /></button>
+          <button type="button" aria-label="Trim selected draft object" title="Trim selected draft object" onClick={() => trimExtendSelectedCadObject("trim")} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><Scissors className="h-4 w-4" /></button>
+          <button type="button" aria-label="Extend selected draft object" title="Extend selected draft object" onClick={() => trimExtendSelectedCadObject("extend")} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><GitBranch className="h-4 w-4" /></button>
+          <button type="button" aria-label="Fillet selected draft vertex" title="Fillet selected draft vertex" onClick={filletSelectedCadObject} disabled={!selectedCadObject} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 disabled:opacity-40"><RefreshCw className="h-4 w-4" /></button>
         </div>
         <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
-          <input aria-label="CAD offset distance" inputMode="decimal" value={cadOffsetDistance} onChange={(event) => setCadOffsetDistance(event.target.value)} className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD fillet radius" inputMode="decimal" value={cadFilletRadius} onChange={(event) => setCadFilletRadius(event.target.value)} className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft offset distance" inputMode="decimal" value={cadOffsetDistance} onChange={(event) => setCadOffsetDistance(event.target.value)} className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft fillet radius" inputMode="decimal" value={cadFilletRadius} onChange={(event) => setCadFilletRadius(event.target.value)} className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
           <button type="button" onClick={() => setCadSelectionSet(selectedBuildingId ? [selectedBuildingId] : [])} disabled={!selectedBuildingId} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 disabled:opacity-40">Set</button>
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
           <select
-            aria-label="CAD layer"
+            aria-label="Draft layer"
             value={cadLayerDraft}
             onChange={(event) => setCadLayerDraft(event.target.value)}
             className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
@@ -471,7 +471,7 @@ export function CadPrecisionDock({
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Symbols / properties</p>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
           <select
-            aria-label="CAD symbol"
+            aria-label="Draft symbol"
             value={cadSymbolDraft}
             onChange={(event) => setCadSymbolDraft(event.target.value as CadSymbolKind)}
             className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
@@ -487,22 +487,22 @@ export function CadPrecisionDock({
             <option value="benchmark">Benchmark</option>
             <option value="note_callout">Note / callout</option>
           </select>
-          <button type="button" aria-label="Insert CAD symbol" onClick={insertCadSymbol} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Insert</button>
+          <button type="button" aria-label="Insert draft symbol" onClick={insertCadSymbol} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Insert</button>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <input aria-label="CAD symbol attribute ID" value={cadPropertyDraft.id} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, id: event.target.value }))} placeholder="ID" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD object name" value={cadPropertyDraft.name} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD object type" value={cadPropertyDraft.type} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, type: event.target.value }))} placeholder="Type" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD object layer property" value={cadPropertyDraft.layer} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))} placeholder="Layer" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD symbol elevation attribute" value={cadPropertyDraft.elevation} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, elevation: event.target.value }))} placeholder="Elevation" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD symbol material attribute" value={cadPropertyDraft.material} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, material: event.target.value }))} placeholder="Material" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD symbol size attribute" value={cadPropertyDraft.size} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, size: event.target.value }))} placeholder="Size" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <button type="button" aria-label="Apply CAD symbol properties" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
+          <input aria-label="Draft symbol attribute ID" value={cadPropertyDraft.id} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, id: event.target.value }))} placeholder="ID" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft object name" value={cadPropertyDraft.name} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft object type" value={cadPropertyDraft.type} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, type: event.target.value }))} placeholder="Type" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft object layer property" value={cadPropertyDraft.layer} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))} placeholder="Layer" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft symbol elevation attribute" value={cadPropertyDraft.elevation} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, elevation: event.target.value }))} placeholder="Elevation" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft symbol material attribute" value={cadPropertyDraft.material} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, material: event.target.value }))} placeholder="Material" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft symbol size attribute" value={cadPropertyDraft.size} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, size: event.target.value }))} placeholder="Size" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <button type="button" aria-label="Apply draft symbol properties" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
         </div>
         <div className="mt-3 grid gap-2">
-          <input aria-label="CAD symbol source attribute" value={cadPropertyDraft.source} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, source: event.target.value }))} placeholder="Source" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD source note" value={cadPropertyDraft.sourceNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, sourceNote: event.target.value }))} placeholder="Source note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="CAD review note" value={cadPropertyDraft.reviewNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, reviewNote: event.target.value }))} placeholder="Review note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft symbol source attribute" value={cadPropertyDraft.source} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, source: event.target.value }))} placeholder="Source" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft source note" value={cadPropertyDraft.sourceNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, sourceNote: event.target.value }))} placeholder="Source note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <input aria-label="Draft review note" value={cadPropertyDraft.reviewNote} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, reviewNote: event.target.value }))} placeholder="Review note" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
         </div>
         <p className="mt-2 text-[11px] font-medium text-slate-500">Snap priority: endpoint, midpoint, intersection, perpendicular, then ortho.</p>
         <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold text-slate-600" data-testid="cad-topology-status">

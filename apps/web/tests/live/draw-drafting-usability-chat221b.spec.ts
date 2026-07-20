@@ -125,7 +125,7 @@ async function clickExposedSurface(surface: Locator, xRatio: number, yRatio: num
 }
 
 test.describe("Chat 221B draw drafting usability", () => {
-  test("CAD command feedback uses needs-input language for visible user errors", async ({ page }) => {
+  test("Draft command feedback uses needs-input language for visible user errors", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
 
@@ -165,7 +165,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   });
 
-  test("visible Add Line CAD control is above preview hit layers and changes state", async ({ page }) => {
+  test("visible Add Line draft control is above preview hit layers and changes state", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
 
@@ -271,7 +271,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const commandInput = page.getByLabel("CAD command input");
+    const commandInput = page.getByLabel("Draft command input");
     await cadTools.getByTestId("cad-tool-line").click();
 
     await commandInput.fill("120,120");
@@ -326,13 +326,13 @@ test.describe("Chat 221B draw drafting usability", () => {
     await (await revealCadTool(page, "join")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/JOIN created .* from 2 draft source objects/);
 
-    const joinedRow = page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined CAD Object/ }).first();
+    const joinedRow = page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined Draft Object/ }).first();
     await expect(joinedRow).toBeVisible();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
 
     await (await revealCadTool(page, "split")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SPLIT restored 2 source trace objects/);
-    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined CAD Object/ })).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Join|Joined Draft Object/ })).toHaveCount(0);
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ })).toHaveCount(2);
   });
@@ -343,7 +343,7 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
     const addLine = cadTools.getByTestId("cad-tool-line");
-    const commandInput = page.getByLabel("CAD command input");
+    const commandInput = page.getByLabel("Draft command input");
     const corners: Array<[number, number]> = [
       [120, 120],
       [240, 120],
