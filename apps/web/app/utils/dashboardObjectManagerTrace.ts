@@ -34,6 +34,34 @@ export function invertVisibleDraftSelection({
   };
 }
 
+export function partitionObjectManagerTargets({
+  targets,
+  isEditable,
+}: {
+  targets: BuildingPlacement[];
+  isEditable: (item: BuildingPlacement) => boolean;
+}): { editable: BuildingPlacement[]; blockedCount: number } {
+  const editable = targets.filter(isEditable);
+  return {
+    editable,
+    blockedCount: targets.length - editable.length,
+  };
+}
+
+export function formatObjectManagerCountMessage({
+  action,
+  count,
+  blockedCount = 0,
+  noun = "selected object",
+}: {
+  action: string;
+  count: number;
+  blockedCount?: number;
+  noun?: string;
+}): string {
+  return `${action} ${count} ${noun}${count === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+}
+
 export function cloneBuildingPlacementForUndo(item: BuildingPlacement): BuildingPlacement {
   return {
     ...item,

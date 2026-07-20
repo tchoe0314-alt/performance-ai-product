@@ -234,9 +234,11 @@ import {
   cloneBuildingPlacementWithUpdatesForUndo,
   createDraftCopyWithTrace as createObjectManagerDraftCopyWithTrace,
   createTraceAwareBulkUpdate as createObjectManagerTraceAwareBulkUpdate,
+  formatObjectManagerCountMessage,
   formatVisibleDraftSelectionMessage,
   getVisibleEditableDraftObjectIds,
   invertVisibleDraftSelection,
+  partitionObjectManagerTargets,
 } from "./utils/dashboardObjectManagerTrace";
 import { buildProjectInputPlacements } from "./utils/projectInputRestore";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
@@ -4315,13 +4317,15 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Bulk lock blocked: select one or more draft objects first.");
       return;
     }
-    const editable = targets.filter((item) => {
+    const { editable, blockedCount } = partitionObjectManagerTargets({
+      targets,
+      isEditable: (item) => {
       if (item.type === "site") return false;
       if (item.meta?.ai_realism_artifact) return false;
       if (item.capabilities?.deletable === false) return false;
       return true;
+      },
     });
-    const blockedCount = targets.length - editable.length;
     if (!editable.length) {
       reportObjectActionBlocker("Bulk lock blocked: selected objects are source-only or required project evidence.");
       return;
@@ -4335,7 +4339,12 @@ function PerformanceAIDashboardView({
     editable.forEach((item) => {
       handleUpdateBuilding(item.id, { locked });
     });
-    const message = `${locked ? "Locked" : "Unlocked"} ${editable.length} selected draft object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    const message = formatObjectManagerCountMessage({
+      action: locked ? "Locked" : "Unlocked",
+      count: editable.length,
+      blockedCount,
+      noun: "selected draft object",
+    });
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     appendChatMessage("assistant", `${message} Locked objects stay visible but cannot be edited until unlocked.`, "status");
@@ -4363,8 +4372,10 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Bulk color blocked: select one or more editable objects first.");
       return;
     }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "style"));
-    const blockedCount = targets.length - editable.length;
+    const { editable, blockedCount } = partitionObjectManagerTargets({
+      targets,
+      isEditable: (item) => !getObjectEditBlocker(item, "style"),
+    });
     if (!editable.length) {
       reportObjectActionBlocker("Bulk color blocked: selected objects are locked, source-only, or not editable.");
       return;
@@ -4385,7 +4396,11 @@ function PerformanceAIDashboardView({
         },
       });
     });
-    const message = `Updated color for ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    const message = formatObjectManagerCountMessage({
+      action: "Updated color for",
+      count: editable.length,
+      blockedCount,
+    });
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     recordRecentChange({
@@ -4411,8 +4426,10 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Bulk layer/type blocked: select one or more editable objects first.");
       return;
     }
-    const editable = targets.filter((item) => !getObjectEditBlocker(item, "type"));
-    const blockedCount = targets.length - editable.length;
+    const { editable, blockedCount } = partitionObjectManagerTargets({
+      targets,
+      isEditable: (item) => !getObjectEditBlocker(item, "type"),
+    });
     if (!editable.length) {
       reportObjectActionBlocker("Bulk layer/type blocked: selected objects are locked, source-only, or not editable.");
       return;
@@ -4439,7 +4456,11 @@ function PerformanceAIDashboardView({
         },
       });
     });
-    const message = `Updated layer/type for ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blockedCount ? `; ${blockedCount} blocked.` : "."}`;
+    const message = formatObjectManagerCountMessage({
+      action: "Updated layer/type for",
+      count: editable.length,
+      blockedCount,
+    });
     setObjectManagerStatusMessage(message);
     setStatusMessage(message);
     recordRecentChange({
@@ -4554,14 +4575,16 @@ function PerformanceAIDashboardView({
       reportObjectActionBlocker("Bulk duplicate blocked: select one or more editable draft objects first.");
       return;
     }
-    const editable = targets.filter((item) => {
+    const { editable, blockedCount } = partitionObjectManagerTargets({
+      targets,
+      isEditable: (item) => {
       if (getObjectEditBlocker(item, "copy")) return false;
       if (item.capabilities?.deletable === false) return false;
       if (item.generated) return false;
       if (item.source === "detected_from_gis" || item.source === "detected_from_image" || item.source === "inferred") return false;
       return true;
+      },
     });
-    const blockedCount = targets.length - editable.length;
     if (!editable.length) {
       reportObjectActionBlocker("Bulk duplicate blocked: selected objects are locked, source-only, or required project evidence.");
       return;
