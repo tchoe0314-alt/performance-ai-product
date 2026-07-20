@@ -252,6 +252,7 @@ import { useDashboardStartPanelProps } from "./hooks/useDashboardStartPanelProps
 import { useDashboardDataSourcesPanelProps } from "./hooks/useDashboardDataSourcesPanelProps";
 import { useDashboardGenerationPanelProps } from "./hooks/useDashboardGenerationPanelProps";
 import { useDashboardDraftHistoryState } from "./hooks/useDashboardDraftHistoryState";
+import { useDashboardViewportState } from "./hooks/useDashboardViewportState";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -380,7 +381,6 @@ function PerformanceAIDashboardView({
     sidebarVisible,
     setSidebarVisible,
   } = useDashboardLeftSidebarState();
-  const [mobileViewport, setMobileViewport] = useState(false);
   const [, setChatCollapsed] = useState(false);
   const [commandBarExpanded, setCommandBarExpanded] = useState(false);
   const {
@@ -396,6 +396,17 @@ function PerformanceAIDashboardView({
     panelCloseProbeRef,
     sidePanelCloseTimeoutRef,
   } = useDashboardSidePanelState();
+  const {
+    handleViewportCenter,
+    handleViewportFootprint,
+    mobileViewport,
+    setViewportCenter,
+    setViewportFootprint,
+    viewportCenter,
+    viewportFootprint,
+  } = useDashboardViewportState({
+    onCollapseRightRail: setRightRailCollapsed,
+  });
   const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(true);
   const [cadToolRequest, setCadToolRequest] = useState<CadToolRequestForPreview | null>(null);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
@@ -554,43 +565,6 @@ function PerformanceAIDashboardView({
   const [mapAnalysis, setMapAnalysis] = useState<MapAnalysis | null>(null);
   const [siteAddress, setSiteAddress] = useState("");
   const [siteSelectionMode, setSiteSelectionMode] = useState(false);
-  const [viewportFootprint, setViewportFootprint] = useState<{
-    widthFt: number;
-    heightFt: number;
-    bounds?: {
-      north: number;
-      south: number;
-      east: number;
-      west: number;
-      centerLat: number;
-      centerLng: number;
-    };
-  } | null>(null);
-  const [viewportCenter, setViewportCenter] = useState<{ lat: number; lng: number } | null>(null);
-  const handleViewportFootprint = useCallback((value: NonNullable<typeof viewportFootprint>) => {
-    setViewportFootprint((prev) => {
-      if (
-        prev &&
-        Math.abs(prev.widthFt - value.widthFt) < 0.01 &&
-        Math.abs(prev.heightFt - value.heightFt) < 0.01 &&
-        Math.abs((prev.bounds?.north ?? 0) - (value.bounds?.north ?? 0)) < 1e-7 &&
-        Math.abs((prev.bounds?.south ?? 0) - (value.bounds?.south ?? 0)) < 1e-7 &&
-        Math.abs((prev.bounds?.east ?? 0) - (value.bounds?.east ?? 0)) < 1e-7 &&
-        Math.abs((prev.bounds?.west ?? 0) - (value.bounds?.west ?? 0)) < 1e-7
-      ) {
-        return prev;
-      }
-      return value;
-    });
-  }, []);
-  const handleViewportCenter = useCallback((value: { lat: number; lng: number }) => {
-    setViewportCenter((prev) => {
-      if (prev && Math.abs(prev.lat - value.lat) < 1e-7 && Math.abs(prev.lng - value.lng) < 1e-7) {
-        return prev;
-      }
-      return value;
-    });
-  }, []);
   const [detectionChoices, setDetectionChoices] = useState({
     roads: true,
     buildings: true,
@@ -738,16 +712,6 @@ function PerformanceAIDashboardView({
     });
   }, []);
   const applyingSiteRef = useRef(false);
-
-  useEffect(() => {
-    const syncViewport = () => setMobileViewport(window.innerWidth < 1024);
-    syncViewport();
-    window.addEventListener("resize", syncViewport);
-    if (window.innerWidth < 1024) {
-      setRightRailCollapsed(true);
-    }
-    return () => window.removeEventListener("resize", syncViewport);
-  }, []);
 
   const {
     projects,
