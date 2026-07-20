@@ -7,7 +7,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 
 import type { BuildingPlacement } from "../types";
 import { CadPrecisionDock } from "./CadPrecisionDock";
-import { CanvasQuickDrawPalette } from "./CanvasQuickDrawPalette";
+import { Preview2DCanvasShell } from "./Preview2DCanvasShell";
 import { Preview3DShell } from "./Preview3DShell";
 import {
   boundsForSiteGeometry,
@@ -31,16 +31,8 @@ import {
 } from "../utils/cadGeometryKernel";
 import type { CadDimensionMode, CadSymbolKind, DrawMode } from "../utils/cadToolTypes";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
-import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
-import { Preview2DSurface } from "./Preview2DSurface";
-import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
 import { PreviewCanvasControlStack } from "./PreviewCanvasControlStack";
-import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewGeneratedPlanFullscreen } from "./PreviewGeneratedPlanFullscreen";
-import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
-import {
-  PreviewFullscreenHeader,
-} from "./PreviewPlanAnnotationOverlay";
 import { UtilityCoordinationDock } from "./UtilityCoordinationDock";
 import { usePreviewFocusTransform } from "./usePreviewFocusTransform";
 import { usePreviewAnnotationHover } from "./usePreviewAnnotationHover";
@@ -52,7 +44,6 @@ import {
   usePreviewCadShortcutEffect,
   usePreviewCadToolRequestEffect,
 } from "./usePreviewCadToolEffects";
-import { WaterFireFlowEvidenceDock } from "./WaterFireFlowEvidenceDock";
 import {
   clampValue,
   getPreviewCadLayer,
@@ -3635,140 +3626,142 @@ export default function PreviewPanel({
               onSetAiVisualizationOn={setAiVisualizationOn}
             />
           ) : (
-            <div
-              ref={previewRef}
-              className={`civora-preview-shell relative flex w-full min-w-0 flex-1 min-h-[320px] items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] ${
-                previewFullscreenOpen && showMap
-                  ? "fixed inset-0 z-[120] rounded-none bg-slate-950 p-0"
-                  : ""
-              } ${
-                placementMode || allowEdits ? "cursor-crosshair" : "cursor-default"
-              }`}
-              style={{ touchAction: drawMode === "select" ? "auto" : "none" }}
-              {...preview2DShellHandlers}
-	            >
-	              <CanvasQuickDrawPalette
-                visible={previewMode === "2d" && showQuickDrawPalette}
-                drawMode={drawMode}
-                siteLocked={Boolean(siteLocked)}
-                hasDrawableSiteSize={hasDrawableSiteSize}
-                canDrawObjects={canDrawObjects}
-                drawObjectsDisabledLabel={drawObjectsDisabledLabel}
-                canFinishDraftGeometry={canFinishDraftGeometry}
-                finishDraftBlockedReason={finishDraftBlockedReason}
-                onActivateDrawTool={activateDrawTool}
-                onFinishDraftGeometry={finishDraftGeometry}
-                onCancelDraw={() => {
+            <Preview2DCanvasShell
+              previewRef={previewRef}
+              previewFullscreenOpen={previewFullscreenOpen}
+              showMap={showMap}
+              placementMode={placementMode}
+              allowEdits={allowEdits}
+              drawMode={drawMode}
+              shellHandlers={preview2DShellHandlers}
+              quickDrawPaletteProps={{
+                visible: previewMode === "2d" && showQuickDrawPalette,
+                drawMode,
+                siteLocked: Boolean(siteLocked),
+                hasDrawableSiteSize,
+                canDrawObjects,
+                drawObjectsDisabledLabel,
+                canFinishDraftGeometry,
+                finishDraftBlockedReason,
+                onActivateDrawTool: activateDrawTool,
+                onFinishDraftGeometry: finishDraftGeometry,
+                onCancelDraw: () => {
                   clearDraftGeometry();
                   setDrawMode("select");
                   setActiveSnapPoint(null);
                   setCadCommandStatus("Cancelled active drawing tool.");
-                }}
-                onUnlockSite={onUnlockSite}
-                onLockSite={onLockSite}
-                onClearDraftGeometry={clearDraftGeometry}
-                onSetDrawMode={setDrawMode}
-                onSetPreviewInteraction={onSetPreviewInteraction}
-                onPushCadCommandFeedback={pushCadCommandFeedback}
-              />
-              <PreviewFloatingToolbar
-                previewMode={previewMode}
-                activePreviewMode={activePreviewMode}
-                previewQuality={previewQuality}
-                canUse3D={canUse3D}
-                isHighQuality={isHighQuality}
-                aiRealismEnabled={aiRealismEnabled}
-                allowEdits={allowEdits}
-                siteLocked={Boolean(siteLocked)}
-                canDrawObjects={canDrawObjects}
-                drawObjectsDisabledLabel={drawObjectsDisabledLabel}
-                drawMode={drawMode}
-                onSetPreviewMode={onSetPreviewMode}
-                onSetPreviewQuality={onSetPreviewQuality}
-                onSetAiVisualizationOff={setAiVisualizationOff}
-                onSetAiVisualizationOn={setAiVisualizationOn}
-                onSetPreviewInteraction={onSetPreviewInteraction}
-                onUnlockSite={onUnlockSite}
-                onClearDraftGeometry={clearDraftGeometry}
-                onSetDrawMode={setDrawMode}
-                onActivateDrawTool={activateDrawTool}
-              />
-              {isHighQuality && aiRealismEnabled ? (
-                <AiRealismPreviewOverlay
-                  artifact={aiRealismDisplayArtifact}
-                  blocker={aiRealismBlocker}
-                  stale={Boolean(aiRealismDisplayArtifact?.stale)}
-                  hasTerrainSource={hasTerrainSource}
-                  watermark={AI_REALISM_WATERMARK}
-                  onRegenerate={generateAiRealismArtifact}
-                />
-              ) : null}
-              {showMobileDrawToolbar ? (
-                <PreviewMobileDrawToolbar
-                  drawModeButtons={drawModeButtons}
-                  drawMode={drawMode}
-                  compactViewport={compactViewport}
-                  canFinishDraftGeometry={canFinishDraftGeometry}
-                  finishDraftBlockedReason={finishDraftBlockedReason}
-                  selectedDeletable={Boolean(selectedDeletableObject)}
-                  siteLocked={Boolean(siteLocked)}
-                  onActivateTool={(mode, blockedMessage) => {
-                    activateDrawTool(mode, blockedMessage);
-                    if (!blockedMessage && mode !== "select") {
-                      window.requestAnimationFrame(() => {
-                        previewRef.current?.scrollIntoView({
-                          behavior: "auto",
-                          block: "center",
-                          inline: "nearest",
-                        });
-                      });
+                },
+                onUnlockSite,
+                onLockSite,
+                onClearDraftGeometry: clearDraftGeometry,
+                onSetDrawMode: setDrawMode,
+                onSetPreviewInteraction,
+                onPushCadCommandFeedback: pushCadCommandFeedback,
+              }}
+              floatingToolbarProps={{
+                previewMode,
+                activePreviewMode,
+                previewQuality,
+                canUse3D,
+                isHighQuality,
+                aiRealismEnabled,
+                allowEdits,
+                siteLocked: Boolean(siteLocked),
+                canDrawObjects,
+                drawObjectsDisabledLabel,
+                drawMode,
+                onSetPreviewMode,
+                onSetPreviewQuality,
+                onSetAiVisualizationOff: setAiVisualizationOff,
+                onSetAiVisualizationOn: setAiVisualizationOn,
+                onSetPreviewInteraction,
+                onUnlockSite,
+                onClearDraftGeometry: clearDraftGeometry,
+                onSetDrawMode: setDrawMode,
+                onActivateDrawTool: activateDrawTool,
+              }}
+              aiRealismPreviewOverlayProps={
+                isHighQuality && aiRealismEnabled
+                  ? {
+                      artifact: aiRealismDisplayArtifact,
+                      blocker: aiRealismBlocker,
+                      stale: Boolean(aiRealismDisplayArtifact?.stale),
+                      hasTerrainSource,
+                      watermark: AI_REALISM_WATERMARK,
+                      onRegenerate: generateAiRealismArtifact,
                     }
-                  }}
-                  onFinish={finishDraftGeometry}
-                  onCancel={() => {
-                    clearDraftGeometry();
-                    setDrawMode("select");
-                    setActiveSnapPoint(null);
-                    setCadCommandStatus("Cancelled active drawing tool.");
-                  }}
-                  onChangeSite={onUnlockSite ? () => {
-                    onUnlockSite();
-                    clearDraftGeometry();
-                    setDrawMode("select");
-                    onSetPreviewInteraction("edit");
-                  } : undefined}
-                  onResetView={resetCanvasView}
-                  onDeleteSelected={() => {
-                    if (!selectedDeletableObject) return;
-                    const targetObject = buildingPlacements.find((item) => item.id === selectedDeletableObject.id);
-                    if (targetObject) {
-                      setLastRectEdit({
-                        id: targetObject.id,
-                        snapshot: { ...targetObject },
-                        action: "delete",
-                        ts: Date.now(),
-                      });
+                  : undefined
+              }
+              mobileDrawToolbarProps={
+                showMobileDrawToolbar
+                  ? {
+                      drawModeButtons,
+                      drawMode,
+                      compactViewport,
+                      canFinishDraftGeometry,
+                      finishDraftBlockedReason,
+                      selectedDeletable: Boolean(selectedDeletableObject),
+                      siteLocked: Boolean(siteLocked),
+                      onActivateTool: (mode, blockedMessage) => {
+                        activateDrawTool(mode, blockedMessage);
+                        if (!blockedMessage && mode !== "select") {
+                          window.requestAnimationFrame(() => {
+                            previewRef.current?.scrollIntoView({
+                              behavior: "auto",
+                              block: "center",
+                              inline: "nearest",
+                            });
+                          });
+                        }
+                      },
+                      onFinish: finishDraftGeometry,
+                      onCancel: () => {
+                        clearDraftGeometry();
+                        setDrawMode("select");
+                        setActiveSnapPoint(null);
+                        setCadCommandStatus("Cancelled active drawing tool.");
+                      },
+                      onChangeSite: onUnlockSite
+                        ? () => {
+                            onUnlockSite();
+                            clearDraftGeometry();
+                            setDrawMode("select");
+                            onSetPreviewInteraction("edit");
+                          }
+                        : undefined,
+                      onResetView: resetCanvasView,
+                      onDeleteSelected: () => {
+                        if (!selectedDeletableObject) return;
+                        const targetObject = buildingPlacements.find((item) => item.id === selectedDeletableObject.id);
+                        if (targetObject) {
+                          setLastRectEdit({
+                            id: targetObject.id,
+                            snapshot: { ...targetObject },
+                            action: "delete",
+                            ts: Date.now(),
+                          });
+                        }
+                        onRemoveBuilding(selectedDeletableObject.id);
+                      },
                     }
-                    onRemoveBuilding(selectedDeletableObject.id);
-                  }}
-                />
-              ) : null}
-              <Preview2DSurface
-                mapContainerRef={mapContainerRef}
-                showMap={showMap}
-                previewMode={previewMode}
-                showGeneratedPlan={showGeneratedPlan}
-                planPreviewUrl={planPreviewUrl}
-                hasLiveObjects={hasLiveObjects}
-                placementMode={placementMode}
-                allowEdits={allowEdits}
-                overlayBoundsResolved={Boolean(overlayBoundsResolved)}
-                cadWindowSelect={cadWindowSelect}
-                previewImageRef={previewImageRef}
-                previewRef={previewRef}
-                setPreviewImageBounds={setPreviewImageBounds}
-                updateImageBounds={updateImageBounds}
-                onMouseDown={(event) => {
+                  : undefined
+              }
+              surfaceProps={{
+                mapContainerRef,
+                showMap,
+                previewMode,
+                showGeneratedPlan,
+                planPreviewUrl,
+                hasLiveObjects,
+                placementMode,
+                allowEdits,
+                overlayBoundsResolved: Boolean(overlayBoundsResolved),
+                cadWindowSelect,
+                previewImageRef,
+                previewRef,
+                setPreviewImageBounds,
+                updateImageBounds,
+                onMouseDown: (event) => {
                   if (allowMapInteraction) return;
                   if (drawMode === "pan") {
                     handleDrawPointer(event, overlayBoundsResolved);
@@ -3788,8 +3781,8 @@ export default function PreviewPanel({
                       value: typeof siteRotationDeg === "number" ? siteRotationDeg : 0,
                     });
                   }
-                }}
-                mapStatusOverlayProps={{
+                },
+                mapStatusOverlayProps: {
                   debugEnabled: Boolean(debugStats?.enabled),
                   geocode,
                   showMap,
@@ -3803,8 +3796,8 @@ export default function PreviewPanel({
                   mapError,
                   showMap3D,
                   siteRotationDeg,
-                }}
-                canvasHudProps={{
+                },
+                canvasHudProps: {
                   scaleLengthFt: planScaleBar.lengthFt,
                   zoomScale: canvasView.scale,
                   lotWidth,
@@ -3823,8 +3816,8 @@ export default function PreviewPanel({
                     setCanvasView((prev) => ({ ...prev, scale: Math.max(prev.scale - 0.15, 0.55) }));
                   },
                   onResetView: resetCanvasView,
-                }}
-                overlayStackProps={{
+                },
+                overlayStackProps: {
                   drawMode,
                   draftPointCount,
                   overlayPointerEvents,
@@ -3959,8 +3952,8 @@ export default function PreviewPanel({
                     analysisHighlight,
                     sitePointToPreviewPercent,
                   },
-                }}
-                planAnnotationOverlayProps={
+                },
+                planAnnotationOverlayProps:
                   showGeneratedPlan && planPreviewAnnotations?.labels?.length && previewImageBounds
                     ? {
                         imageBounds: previewImageBounds,
@@ -3970,32 +3963,32 @@ export default function PreviewPanel({
                         activeHighlightBounds,
                         issueHighlightBounds,
                       }
-                    : undefined
-                }
-              />
-              {showHover && activeAnnotation && hoverPoint ? (
-                <PreviewAnnotationHoverCard
-                  annotation={activeAnnotation}
-                  details={hoverDetails}
-                  point={hoverPoint}
-                  maxLeft={520}
-                  maxTop={420}
-                />
-              ) : null}
-              <WaterFireFlowEvidenceDock
-                waterFireFlow={waterFireFlow}
-                onSelectScenario={setSelectedFireScenarioId}
-              />
-              {/* Status panel removed: keep preview visually clean. */}
-              {previewFullscreenOpen && showMap ? (
-                <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 border-b border-white/10 bg-slate-950/88 backdrop-blur">
-                  <PreviewFullscreenHeader
-                    description="Inspect the live map without rebuilding the preview."
-                    onClose={onCloseFullscreen}
-                  />
-                </div>
-              ) : null}
-            </div>
+                    : undefined,
+              }}
+              annotationHoverCardProps={
+                showHover && activeAnnotation && hoverPoint
+                  ? {
+                      annotation: activeAnnotation,
+                      details: hoverDetails,
+                      point: hoverPoint,
+                      maxLeft: 520,
+                      maxTop: 420,
+                    }
+                  : undefined
+              }
+              waterFireFlowEvidenceDockProps={{
+                waterFireFlow,
+                onSelectScenario: setSelectedFireScenarioId,
+              }}
+              fullscreenHeaderProps={
+                previewFullscreenOpen && showMap
+                  ? {
+                      description: "Inspect the live map without rebuilding the preview.",
+                      onClose: onCloseFullscreen,
+                    }
+                  : undefined
+              }
+            />
           )}
         </div>
 
