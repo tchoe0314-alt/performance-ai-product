@@ -27,8 +27,6 @@ import type {
   PlanRequestPayload,
   PreviewRequestPayload,
   SiteInputs,
-  OnlineExistingConditionsDiscovery,
-  LocalGisProviderRegistry,
   CandidateReviewInbox,
   DesignAlternativesV1,
   ReviewIssueTrackerV1,
@@ -156,7 +154,6 @@ import {
   hasAddressCoordinates,
   type AddressSuggestion,
   type AutoExistingConditionsUiStatus,
-  type AutoSiteContextFlowSummary,
   type CustomerTemplateRegistryResponse,
   type GenerateFlowSummary,
   type ReviewPackageFlowSummary,
@@ -172,11 +169,6 @@ import {
   applyPreviewLayerGating,
   buildPreviewLayerList,
 } from "./utils/dashboardPreviewLayers";
-import {
-  buildAutoSiteContextFlowSummary,
-  buildAutoSiteContextRows,
-  buildPreviewSourceContextBadges,
-} from "./utils/dashboardAutoSiteContext";
 import {
   buildDashboardPreview3DView,
 } from "./utils/dashboardPreview3DItems";
@@ -260,6 +252,7 @@ import { useDashboardSelectedDetectionActions } from "./hooks/useDashboardSelect
 import { useDashboardReviewWorkflowActions } from "./hooks/useDashboardReviewWorkflowActions";
 import { useDashboardPlanPdfDerivedState } from "./hooks/useDashboardPlanPdfDerivedState";
 import { useDashboardEngineeringReviewState } from "./hooks/useDashboardEngineeringReviewState";
+import { useDashboardAutoSiteContextState } from "./hooks/useDashboardAutoSiteContextState";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -4240,112 +4233,33 @@ function PerformanceAIDashboardView({
     return false;
   };
 
-  const onlineDiscovery =
-    (siteInputs?.online_existing_conditions_discovery_v1 ??
-      (currentPlanMeta.online_existing_conditions_discovery_v1 as OnlineExistingConditionsDiscovery | undefined) ??
-      {}) as OnlineExistingConditionsDiscovery;
-  const mapFeatureDetectionReport =
-    ((siteInputs?.map_feature_detection_report_v1 ??
-      (currentPlanMeta.map_feature_detection_report_v1 as Record<string, unknown> | undefined) ??
-      {}) as Record<string, unknown>);
-  const siteIntelligenceSummary =
-    ((onlineDiscovery.site_intelligence_summary_v1 ??
-      mapFeatureDetectionReport.site_intelligence_summary_v1 ??
-      {}) as Record<string, unknown>);
-  const siteIntelligenceFound = Array.isArray(siteIntelligenceSummary.found)
-    ? (siteIntelligenceSummary.found as Array<Record<string, unknown>>)
-    : [];
-  const siteIntelligenceMissing = Array.isArray(siteIntelligenceSummary.missing)
-    ? (siteIntelligenceSummary.missing as Array<Record<string, unknown>>)
-    : [];
-  const siteIntelligenceAssumed = Array.isArray(siteIntelligenceSummary.assumed)
-    ? (siteIntelligenceSummary.assumed as Array<Record<string, unknown>>)
-    : [];
-  const siteIntelligenceOutside = Array.isArray(siteIntelligenceSummary.outside_site)
-    ? (siteIntelligenceSummary.outside_site as Array<Record<string, unknown>>)
-    : [];
-  const roadFrontageHint = (siteIntelligenceSummary.road_frontage ?? {}) as Record<string, unknown>;
-  const drivewaySuggestion = Array.isArray(siteIntelligenceSummary.driveway_suggestions)
-    ? ((siteIntelligenceSummary.driveway_suggestions as Array<Record<string, unknown>>)[0] ?? {})
-    : {};
-  const gradingContextHint = (siteIntelligenceSummary.grading_context ?? {}) as Record<string, unknown>;
-  const onlineDiscoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
-  const onlineFoundSources = onlineDiscoverySources.filter((source) => Number(source.candidate_count ?? 0) > 0);
-  const onlineDiscoveryCandidateCount = Number(onlineDiscovery.candidate_count ?? 0);
-  const localGisProviderRegistry =
-    (siteInputs?.local_gis_provider_registry_v1 ??
-      onlineDiscovery.local_gis_provider_registry_v1 ??
-      (currentPlanMeta.local_gis_provider_registry_v1 as LocalGisProviderRegistry | undefined) ??
-      {}) as LocalGisProviderRegistry;
-  const localGisProviders = Array.isArray(localGisProviderRegistry.providers) ? localGisProviderRegistry.providers : [];
-  const configuredLocalGisProviders = localGisProviders.filter((provider) => Boolean(provider.service_url || provider.arcgis?.service_url));
-  const onlineSourceLookupUnavailable =
-    hasAppliedAddress &&
-    onlineDiscoveryCandidateCount === 0 &&
-    String(onlineDiscovery.status || "").includes("failed");
-  const onlineSourceProvidersAbsent =
-    hasAppliedAddress &&
-    onlineDiscoveryCandidateCount === 0 &&
-    onlineDiscoverySources.length === 0 &&
-    configuredLocalGisProviders.length === 0 &&
-    !onlineSourceLookupUnavailable;
-  const onlineSourceLookupLabel = !hasAppliedAddress
-    ? "Needs address/location first"
-    : onlineDiscoveryCandidateCount > 0
-      ? `${onlineDiscoveryCandidateCount} candidate${onlineDiscoveryCandidateCount === 1 ? "" : "s"} for review`
-      : onlineSourceLookupUnavailable
-        ? "Provider lookup failed; retry source discovery."
-        : onlineSourceProvidersAbsent
-          ? "No source providers configured."
-          : "Providers returned no usable features.";
-  const autoSiteContextData = useMemo(
-    () =>
-      ((siteInputs?.auto_existing_conditions_v1 ??
-        (currentPlanMeta as Record<string, unknown>).auto_existing_conditions_v1 ??
-        {}) as Record<string, unknown>),
-    [(currentPlanMeta as Record<string, unknown>).auto_existing_conditions_v1, siteInputs?.auto_existing_conditions_v1],
-  );
-  const autoSiteContextFlowSummary = useMemo<AutoSiteContextFlowSummary>(
-    () =>
-      buildAutoSiteContextFlowSummary({
-        autoContext: autoSiteContextData,
-        onlineDiscovery,
-        autoExistingConditionsStatus,
-      }),
-    [autoExistingConditionsStatus, autoSiteContextData, onlineDiscovery],
-  );
-  const autoSiteContextRows = useMemo(
-    () =>
-      buildAutoSiteContextRows({
-        onlineDiscovery,
-        onlineDiscoverySources,
-        siteIntelligenceFound,
-        siteIntelligenceMissing,
-        siteIntelligenceAssumed,
-        siteIntelligenceOutside,
-        hasAssumedTerrainSlope,
-        assumedTerrainSlopePct,
-      }),
-    [
-      assumedTerrainSlopePct,
-      hasAssumedTerrainSlope,
-      onlineDiscovery,
-      onlineDiscoverySources,
-      siteIntelligenceAssumed,
-      siteIntelligenceFound,
-      siteIntelligenceMissing,
-      siteIntelligenceOutside,
-    ],
-  );
-  const previewSourceContextBadges = useMemo(
-    () =>
-      buildPreviewSourceContextBadges({
-        autoSiteContextFlowSummary,
-        hasAssumedTerrainSlope,
-        assumedTerrainSlopePct,
-      }),
-    [assumedTerrainSlopePct, autoSiteContextFlowSummary, hasAssumedTerrainSlope],
-  );
+  const {
+    autoSiteContextFlowSummary,
+    autoSiteContextRows,
+    configuredLocalGisProviders,
+    drivewaySuggestion,
+    gradingContextHint,
+    localGisProviderRegistry,
+    onlineDiscovery,
+    onlineDiscoverySources,
+    onlineFoundSources,
+    onlineSourceLookupLabel,
+    onlineSourceLookupUnavailable,
+    previewSourceContextBadges,
+    roadFrontageHint,
+    siteIntelligenceAssumed,
+    siteIntelligenceFound,
+    siteIntelligenceMissing,
+    siteIntelligenceOutside,
+    siteIntelligenceSummary,
+  } = useDashboardAutoSiteContextState({
+    assumedTerrainSlopePct,
+    autoExistingConditionsStatus,
+    currentPlanMeta,
+    hasAppliedAddress,
+    hasAssumedTerrainSlope,
+    siteInputs,
+  });
   const getGeneratePreflightBlockers = useCallback(
     (target: SystemGenerationTarget) =>
       buildGeneratePreflightBlockers({
