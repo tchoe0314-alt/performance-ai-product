@@ -626,3 +626,115 @@ export function handlePreviewCadArrangeMeasureCommand({
   }
   return false;
 }
+
+type HandlePreviewCadAnnotationSettingsCommandContext = {
+  commandKey: string;
+  args: string[];
+  pointArgs: Array<[number, number]>;
+  selectedCadIds: string[];
+  buildingPlacements: BuildingPlacement[];
+  cadLayerOptions: string[];
+  cadSnapEnabled: boolean;
+  cadOrthoEnabled: boolean;
+  setHiddenCadLayers: (updater: string[] | ((prev: string[]) => string[])) => void;
+  setCadLayerDraft: (layer: string) => void;
+  setCadSnapEnabled: (enabled: boolean) => void;
+  setCadOrthoEnabled: (enabled: boolean) => void;
+  createCadCommandGeometry: (
+    command: string,
+    mode: "polyline" | "polygon" | "rect" | "point",
+    points: Array<[number, number]>,
+    options?: { label?: string; meta?: Record<string, unknown>; minPoints?: number },
+  ) => void;
+  updateCadObject: (item: BuildingPlacement, updates: Partial<BuildingPlacement>, label: string) => void;
+  pushCadCommandFeedback: (command: string, status: CadCommandFeedbackStatus, message: string) => void;
+};
+
+export function handlePreviewCadAnnotationSettingsCommand({
+  commandKey,
+  args,
+  pointArgs,
+  selectedCadIds,
+  buildingPlacements,
+  cadLayerOptions,
+  cadSnapEnabled,
+  cadOrthoEnabled,
+  setHiddenCadLayers,
+  setCadLayerDraft,
+  setCadSnapEnabled,
+  setCadOrthoEnabled,
+  createCadCommandGeometry,
+  updateCadObject,
+  pushCadCommandFeedback,
+}: HandlePreviewCadAnnotationSettingsCommandContext) {
+  if (commandKey === "TEXT") {
+    const point = pointArgs[0];
+    const text = args.filter((arg) => !parseCadPointToken(arg)).join(" ").trim();
+    if (!point || !text) {
+      pushCadCommandFeedback("TEXT", "blocked", "TEXT blocked: use TEXT x,y note text.");
+      return true;
+    }
+    createCadCommandGeometry("TEXT", "point", [point], { label: text.slice(0, 48), meta: { cad_text: text, cad_layer: "C-ANNO" }, minPoints: 1 });
+    return true;
+  }
+  if (commandKey === "LAYER") {
+    const layerAction = (args[0] || "").trim().toUpperCase();
+    const layer = (args[1] || "").trim().toUpperCase();
+    if (layerAction === "ALL" || layerAction === "SHOWALL") {
+      setHiddenCadLayers([]);
+      pushCadCommandFeedback("LAYER", "applied", "LAYER ALL showed every draft layer.");
+      return true;
+    }
+    if (["HIDE", "OFF", "SHOW", "ON", "ONLY", "ISOLATE"].includes(layerAction)) {
+      if (!layer) {
+        pushCadCommandFeedback("LAYER", "blocked", `LAYER ${layerAction} blocked: provide a layer name like LAYER ${layerAction} C-UTIL.`);
+        return true;
+      }
+      if (layerAction === "HIDE" || layerAction === "OFF") {
+        setHiddenCadLayers((prev) => Array.from(new Set([...prev, layer])));
+        pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} hid ${layer}.`);
+        return true;
+      }
+      if (layerAction === "SHOW" || layerAction === "ON") {
+        setHiddenCadLayers((prev) => prev.filter((item) => item !== layer));
+        pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} showed ${layer}.`);
+        return true;
+      }
+      setHiddenCadLayers(cadLayerOptions.filter((item) => item !== layer));
+      pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} isolated ${layer}.`);
+      return true;
+    }
+    const targetLayer = layerAction;
+    if (!targetLayer) {
+      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: provide a layer name like LAYER C-UTIL.");
+      return true;
+    }
+    setCadLayerDraft(targetLayer);
+    if (selectedCadIds.length) {
+      selectedCadIds.forEach((id) => {
+        const target = buildingPlacements.find((item) => item.id === id);
+        if (!target || target.locked || target.type === "site") return;
+        updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: targetLayer } }, "Layer");
+      });
+      pushCadCommandFeedback("LAYER", "applied", `LAYER applied ${targetLayer} to selected draft object(s).`);
+    } else {
+      pushCadCommandFeedback("LAYER", "info", `Current draft layer set to ${targetLayer}. Select objects to apply it.`);
+    }
+    return true;
+  }
+  if (commandKey === "SNAP") {
+    const arg = (args[0] || "").toLowerCase();
+    const next = arg === "off" ? false : arg === "on" ? true : !cadSnapEnabled;
+    setCadSnapEnabled(next);
+    pushCadCommandFeedback("SNAP", "info", `SNAP ${next ? "on" : "off"}.`);
+    return true;
+  }
+  if (commandKey === "ORTHO") {
+    const arg = (args[0] || "").toLowerCase();
+    const next = arg === "off" ? false : arg === "on" ? true : !cadOrthoEnabled;
+    setCadOrthoEnabled(next);
+    pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
+    return true;
+  }
+  return false;
+}

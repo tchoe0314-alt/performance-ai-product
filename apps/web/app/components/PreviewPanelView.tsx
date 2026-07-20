@@ -154,13 +154,13 @@ import {
   isKnownCadCommand,
   normalizeCadCommandKey,
   parseCadNumber,
-  parseCadPointToken,
 } from "../utils/previewCadCommandParsing";
 import {
   finishPreviewCadActiveCommand,
   handlePreviewActiveCanvasDrawInput,
   handlePreviewCadArrangeMeasureCommand,
   handlePreviewCadActiveCommandInput,
+  handlePreviewCadAnnotationSettingsCommand,
   handlePreviewCadGeometryCommand,
   handlePreviewCadTransformCommand,
 } from "../utils/previewCadActiveCommand";
@@ -2712,73 +2712,23 @@ export default function PreviewPanel({
       applySelectedCadDimension();
       return;
     }
-    if (commandKey === "TEXT") {
-      const point = pointArgs[0];
-      const text = args.filter((arg) => !parseCadPointToken(arg)).join(" ").trim();
-      if (!point || !text) {
-        pushCadCommandFeedback("TEXT", "blocked", "TEXT blocked: use TEXT x,y note text.");
-        return;
-      }
-      createCadCommandGeometry("TEXT", "point", [point], { label: text.slice(0, 48), meta: { cad_text: text, cad_layer: "C-ANNO" }, minPoints: 1 });
-      return;
-    }
-    if (commandKey === "LAYER") {
-      const layerAction = (args[0] || "").trim().toUpperCase();
-      const layer = (args[1] || "").trim().toUpperCase();
-      if (layerAction === "ALL" || layerAction === "SHOWALL") {
-        setHiddenCadLayers([]);
-        pushCadCommandFeedback("LAYER", "applied", "LAYER ALL showed every draft layer.");
-        return;
-      }
-      if (["HIDE", "OFF", "SHOW", "ON", "ONLY", "ISOLATE"].includes(layerAction)) {
-        if (!layer) {
-          pushCadCommandFeedback("LAYER", "blocked", `LAYER ${layerAction} blocked: provide a layer name like LAYER ${layerAction} C-UTIL.`);
-          return;
-        }
-        if (layerAction === "HIDE" || layerAction === "OFF") {
-          setHiddenCadLayers((prev) => Array.from(new Set([...prev, layer])));
-          pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} hid ${layer}.`);
-          return;
-        }
-        if (layerAction === "SHOW" || layerAction === "ON") {
-          setHiddenCadLayers((prev) => prev.filter((item) => item !== layer));
-          pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} showed ${layer}.`);
-          return;
-        }
-        setHiddenCadLayers(cadLayerOptions.filter((item) => item !== layer));
-        pushCadCommandFeedback("LAYER", "applied", `LAYER ${layerAction} isolated ${layer}.`);
-        return;
-      }
-      const targetLayer = layerAction;
-      if (!targetLayer) {
-        pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: provide a layer name like LAYER C-UTIL.");
-        return;
-      }
-      setCadLayerDraft(targetLayer);
-      if (selectedCadIds.length) {
-        selectedCadIds.forEach((id) => {
-          const target = buildingPlacements.find((item) => item.id === id);
-          if (!target || target.locked || target.type === "site") return;
-          updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: targetLayer } }, "Layer");
-        });
-        pushCadCommandFeedback("LAYER", "applied", `LAYER applied ${targetLayer} to selected draft object(s).`);
-      } else {
-        pushCadCommandFeedback("LAYER", "info", `Current draft layer set to ${targetLayer}. Select objects to apply it.`);
-      }
-      return;
-    }
-    if (commandKey === "SNAP") {
-      const arg = (args[0] || "").toLowerCase();
-      const next = arg === "off" ? false : arg === "on" ? true : !cadSnapEnabled;
-      setCadSnapEnabled(next);
-      pushCadCommandFeedback("SNAP", "info", `SNAP ${next ? "on" : "off"}.`);
-      return;
-    }
-    if (commandKey === "ORTHO") {
-      const arg = (args[0] || "").toLowerCase();
-      const next = arg === "off" ? false : arg === "on" ? true : !cadOrthoEnabled;
-      setCadOrthoEnabled(next);
-      pushCadCommandFeedback("ORTHO", "info", `ORTHO ${next ? "on" : "off"}.`);
+    if (handlePreviewCadAnnotationSettingsCommand({
+      commandKey,
+      args,
+      pointArgs,
+      selectedCadIds,
+      buildingPlacements,
+      cadLayerOptions,
+      cadSnapEnabled,
+      cadOrthoEnabled,
+      setHiddenCadLayers,
+      setCadLayerDraft,
+      setCadSnapEnabled,
+      setCadOrthoEnabled,
+      createCadCommandGeometry,
+      updateCadObject,
+      pushCadCommandFeedback,
+    })) {
       return;
     }
     pushCadCommandFeedback(commandKey, "blocked", `Unknown command: ${commandKey}. Try LINE/L, PLINE/PL, RECTANGLE/REC, CIRCLE/C, ARC/A, ARRAY/AR, ALIGN/AL, DISTRIBUTE, DIST/DI, OFFSET/O, TRIM/TR, EXTEND/EX, FILLET/F, JOIN/J, SPLIT/BR, CLOSE/CL, OPEN, REVERSE/REV, HATCH/H, MIRROR/MI, MOVE/M, ROTATE/RO, SCALE/SC, COPY/CO, DELETE/E, DIM/D, TEXT/T, LAYER/LA, SELECT, SNAP, or ORTHO.`);
