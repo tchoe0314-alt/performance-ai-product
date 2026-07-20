@@ -236,10 +236,7 @@ import {
   buildPreviewSourceContextBadges,
 } from "./utils/dashboardAutoSiteContext";
 import {
-  buildAnnotationPreview3DItems,
-  buildBackendPreview3DItems,
-  buildPlacementPreview3DItems,
-  hasDashboardGradingSurface,
+  buildDashboardPreview3DView,
 } from "./utils/dashboardPreview3DItems";
 import {
   buildCanonicalWorkspaceBlockers,
@@ -11854,39 +11851,32 @@ function PerformanceAIDashboardView({
     setPreviewLabelDensity(previewQuality === "high" ? "high" : "standard");
   }, [previewQuality]);
 
-  const hasGradingSurface = useMemo(() => hasDashboardGradingSurface(backendResult), [backendResult]);
-  const preview3DItems = useMemo(
-    () => buildBackendPreview3DItems({
+  const lotBounds = resolveLotBounds();
+  const {
+    hasGradingSurface,
+    preview3DEffectiveItems,
+    usingAnnotation3D,
+  } = useMemo(
+    () =>
+      buildDashboardPreview3DView({
+        backendResult,
+        buildingPlacements,
+        cadEntityPreview,
+        lot: lotBounds,
+        planPreviewAnnotations,
+        previewLayersEffective,
+        sourceConfidenceByObjectId,
+      }),
+    [
       backendResult,
+      buildingPlacements,
       cadEntityPreview,
-      previewLayersEffective,
-    }),
-    [backendResult, cadEntityPreview, previewLayersEffective],
-  );
-  const preview3DAnnotationItems = useMemo(
-    () => buildAnnotationPreview3DItems({
+      lotBounds,
       planPreviewAnnotations,
       previewLayersEffective,
-    }),
-    [planPreviewAnnotations, previewLayersEffective],
-  );
-  const preview3DPlacementItems = useMemo(
-    () => buildPlacementPreview3DItems({
-      lot: resolveLotBounds(),
-      buildingPlacements,
-      cadEntityPreviewItems3D: cadEntityPreview.items3D,
       sourceConfidenceByObjectId,
-    }),
-    [buildingPlacements, cadEntityPreview.items3D, resolveLotBounds, sourceConfidenceByObjectId],
+    ],
   );
-  const preview3DEffectiveItems = preview3DItems.length
-    ? preview3DItems
-    : preview3DAnnotationItems.length
-      ? preview3DAnnotationItems
-      : preview3DPlacementItems;
-  const usingAnnotation3D =
-    preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
-  const lotBounds = resolveLotBounds();
   const siteDerivedView = useMemo(
     () =>
       buildDashboardSiteDerivedView({

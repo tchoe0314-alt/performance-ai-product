@@ -37,6 +37,56 @@ export function hasDashboardGradingSurface(backendResult: PlanResponse | null | 
   );
 }
 
+export function buildDashboardPreview3DView({
+  backendResult,
+  buildingPlacements,
+  cadEntityPreview,
+  lot,
+  planPreviewAnnotations,
+  previewLayersEffective,
+  sourceConfidenceByObjectId,
+}: {
+  backendResult: PlanResponse | null | undefined;
+  buildingPlacements: BuildingPlacement[];
+  cadEntityPreview: CadEntityPreview;
+  lot: { x?: number; y?: number; w: number; h: number };
+  planPreviewAnnotations: { labels?: Array<Record<string, unknown>> } | null | undefined;
+  previewLayersEffective: PreviewLayerFlags;
+  sourceConfidenceByObjectId: Map<string, SourceConfidenceEntry>;
+}) {
+  const hasGradingSurface = hasDashboardGradingSurface(backendResult);
+  const preview3DItems = buildBackendPreview3DItems({
+    backendResult,
+    cadEntityPreview,
+    previewLayersEffective,
+  });
+  const preview3DAnnotationItems = buildAnnotationPreview3DItems({
+    planPreviewAnnotations,
+    previewLayersEffective,
+  });
+  const preview3DPlacementItems = buildPlacementPreview3DItems({
+    lot,
+    buildingPlacements,
+    cadEntityPreviewItems3D: cadEntityPreview.items3D,
+    sourceConfidenceByObjectId,
+  });
+  const preview3DEffectiveItems = preview3DItems.length
+    ? preview3DItems
+    : preview3DAnnotationItems.length
+      ? preview3DAnnotationItems
+      : preview3DPlacementItems;
+  const usingAnnotation3D = preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
+
+  return {
+    hasGradingSurface,
+    preview3DAnnotationItems,
+    preview3DEffectiveItems,
+    preview3DItems,
+    preview3DPlacementItems,
+    usingAnnotation3D,
+  };
+}
+
 export function buildBackendPreview3DItems({
   backendResult,
   cadEntityPreview,
