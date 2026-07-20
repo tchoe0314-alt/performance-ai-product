@@ -248,6 +248,7 @@ import { useDashboardPlanPdfDerivedState } from "./hooks/useDashboardPlanPdfDeri
 import { useDashboardEngineeringReviewState } from "./hooks/useDashboardEngineeringReviewState";
 import { useDashboardAutoSiteContextState } from "./hooks/useDashboardAutoSiteContextState";
 import { useDashboardShellReviewState } from "./hooks/useDashboardShellReviewState";
+import { useDashboardStartPanelProps } from "./hooks/useDashboardStartPanelProps";
 import {
   useDashboardSiteAccessAnalysis,
   type DashboardAccessAnalysisIssue,
@@ -9029,6 +9030,111 @@ function PerformanceAIDashboardView({
       setStatusMessage(error instanceof Error ? error.message : "Could not copy issue summary.");
     }
   };
+  const { dashboardHomePanelProps, importSurveyPanelProps, siteSetupPanelProps } = useDashboardStartPanelProps({
+    siteName,
+    fileName,
+    lotBounds,
+    hasHardSystemBlock,
+    hasBackendResult: Boolean(backendResult),
+    onSiteNameChange: setSiteName,
+    onSiteNameAutoChange: setSiteNameAuto,
+    onFileNameChange: setFileName,
+    onFileNameAutoChange: setFileNameAuto,
+    onSaveProject: saveProject,
+    progressTimelineState,
+    progressTimelineSteps,
+    progressPercent,
+    progressPanelTarget,
+    progressTimelineDotClass,
+    progressTimelineStatusClass,
+    engineDepthDashboard,
+    dashboardGuidanceStats,
+    issueReportMessage,
+    issueDiagnosticSummary,
+    issueReportCopied,
+    onIssueReportMessageChange: setIssueReportMessage,
+    onCopyIssueDiagnostic: handleCopyIssueDiagnostic,
+    workflowReviewDashboard,
+    systemHealthItems,
+    issueMessages: issues.map((issue) => issue.message),
+    analysisIssueMessages: analysisIssues.map((issue) => issue.message),
+    quantityRows,
+    formatMetric,
+    statusLabelForQuantityReview,
+    onOpenSidePanel: handleOpenSidePanel,
+    pendingAddressEdit,
+    siteAddress,
+    appliedAddress: siteInputs?.address || "",
+    addressNeedsApply,
+    hasAppliedAddress,
+    localAddressLocked,
+    siteScaleLocked,
+    onlineDiscoveryBusy,
+    addressSuggestions,
+    autoExistingConditionsStatus,
+    siteAddressInputRef,
+    onSiteAddressChange: setSiteAddress,
+    onSelectedAddressSuggestionChange: setSelectedAddressSuggestion,
+    onAddressSuggestionsChange: setAddressSuggestions,
+    onSaveSiteAddress: () => void saveSiteAddress(),
+    onCreateCenteredSite: () => void handleCreateCenteredSiteFromSetup(),
+    onStartBlankSite: handleStartBlankSite,
+    lotWidth,
+    lotHeight,
+    siteTooLargeForWarning,
+    oversizedSiteMessage: OVERSIZED_SITE_MESSAGE,
+    onLotWidthChange: setLotWidth,
+    onLotHeightChange: setLotHeight,
+    onStartSiteBoundaryDraw: handleStartSiteBoundaryDraw,
+    onApplySite: () => void handleApplySite(),
+    onUnlockSite: handleUnlockSite,
+    hasTerrainSource,
+    surveyFileName,
+    uploadedImagePreviewUrl,
+    uploadedImageApiUrl,
+    surveyPreviewPointCount: surveyPreviewPoints.length,
+    surveyUploadMessage,
+    imageUploadState,
+    imageUploadNote,
+    mapSnapshotPath,
+    mapSnapshotInputRef,
+    surveyInputRef,
+    onOpenImport: () => handleOpenSidePanel("import_survey"),
+    onAnalyzeMapSnapshot: analyzeMapSnapshot,
+    onUploadImage: uploadImage,
+    onUploadExistingConditions: uploadExistingConditions,
+    autoSiteContextFlowSummary,
+    siteIntelligenceSummary,
+    siteIntelligenceFoundCount: siteIntelligenceFound.length,
+    siteIntelligenceMissingCount: siteIntelligenceMissing.length,
+    siteIntelligenceAssumedCount: siteIntelligenceAssumed.length,
+    siteIntelligenceOutsideCount: siteIntelligenceOutside.length,
+    roadFrontageMessage: String(roadFrontageHint.message || ""),
+    drivewaySuggestionMessage: String(drivewaySuggestion.message || ""),
+    gradingContextMessage: String(gradingContextHint.message || ""),
+    autoSiteContextRows,
+    onlineFoundSources,
+    candidateReviewItemCount: candidateReviewItems.length,
+    onReviewFoundContext: () => handleOpenSidePanel("data"),
+    onRerunSiteContext: () => void saveSiteAddress(),
+    planPdfReady: Boolean(planPdfAnalysis),
+    mapAnalysisReady: Boolean(mapAnalysis?.success),
+    detectionScaleFtPerPx,
+    siteRotationDeg,
+    onFitToSite: () => setFitToSiteRequest((value) => value + 1),
+    onMapCenter: () => setMapCenterRequest((value) => value + 1),
+    onAlignRoad: () => setAlignToRoadRequest((value) => value + 1),
+    onResetRotation: () => {
+      setSiteRotationDeg(0);
+      setSiteRotationInput("0");
+      scheduleRotationSave(0);
+    },
+    onRotationChange: (value) => {
+      setSiteRotationDeg(value);
+      setSiteRotationInput(String(value));
+      scheduleRotationSave(value);
+    },
+  });
   const activePanelTitle =
     previewMode === "3d" && sidePanelForRender === "model"
       ? "3D"
@@ -9165,187 +9271,16 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "dashboard" ? (
-                  <DashboardHomePanel
-                    projectSummary={{
-                      siteName,
-                      fileName,
-                      lotWidth: lotBounds.w,
-                      lotHeight: lotBounds.h,
-                      hasHardSystemBlock,
-                      hasBackendResult: Boolean(backendResult),
-                      onSiteNameChange: (value) => {
-                        setSiteName(value);
-                        setSiteNameAuto(false);
-                      },
-                      onFileNameChange: (value) => {
-                        setFileName(value);
-                        setFileNameAuto(false);
-                      },
-                      onSaveName: () =>
-                        void saveProject({
-                          nameOverride: siteName.trim(),
-                          fileNameOverride: fileName.trim(),
-                          autoNamedOverride: false,
-                          autoFileNamedOverride: false,
-                        }),
-                    }}
-                    progressTimeline={{
-                      progressTimelineState,
-                      progressTimelineSteps,
-                      progressPercent,
-                      onOpenPanel: handleOpenSidePanel,
-                      progressPanelTarget,
-                      progressTimelineDotClass,
-                      progressTimelineStatusClass,
-                    }}
-                    engineDepth={engineDepthDashboard ? {
-                      dashboard: engineDepthDashboard,
-                      onOpenPanel: handleOpenSidePanel,
-                    } : null}
-                    guidance={{ stats: dashboardGuidanceStats }}
-                    issueReport={{
-                      message: issueReportMessage,
-                      diagnosticSummary: issueDiagnosticSummary,
-                      copied: issueReportCopied,
-                      onMessageChange: setIssueReportMessage,
-                      onCopyDiagnostic: handleCopyIssueDiagnostic,
-                    }}
-                    runReview={workflowReviewDashboard ? {
-                      dashboard: workflowReviewDashboard,
-                      onOpenPanel: handleOpenSidePanel,
-                    } : null}
-                    statusPanels={{
-                      systemHealthItems,
-                      attentionMessages: [...issues.map((issue) => issue.message), ...analysisIssues.map((issue) => issue.message)],
-                      onOpenHealthItem: (key) =>
-                        handleOpenSidePanel(
-                          key === "data"
-                            ? "site_existing"
-                            : key === "roadway"
-                              ? "roadway"
-                              : (key as SidePanelKey),
-                        ),
-                      onOpenReview: () => handleOpenSidePanel("analysis"),
-                    }}
-                    takeoffSnapshot={{
-                      rows: quantityRows,
-                      formatMetric,
-                      statusLabelForQuantityReview,
-                    }}
-                  />
+                  <DashboardHomePanel {...dashboardHomePanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "site_existing" ? (
-                  <SiteSetupPanel
-                    address={{
-                      pendingAddressEdit,
-                      siteAddress,
-                      appliedAddress: siteInputs?.address || "",
-                      addressNeedsApply,
-                      hasAppliedAddress,
-                      localAddressLocked,
-                      siteScaleLocked,
-                      onlineDiscoveryBusy,
-                      addressSuggestions,
-                      autoExistingConditionsStatus,
-                      siteAddressInputRef,
-                      onSiteAddressChange: setSiteAddress,
-                      onSelectedAddressSuggestionChange: setSelectedAddressSuggestion,
-                      onAddressSuggestionsChange: setAddressSuggestions,
-                      onSaveSiteAddress: () => void saveSiteAddress(),
-                      onCreateCenteredSite: () => void handleCreateCenteredSiteFromSetup(),
-                      onStartBlankSite: handleStartBlankSite,
-                    }}
-                    boundary={{
-                      lotBounds,
-                      lotWidth,
-                      lotHeight,
-                      siteScaleLocked,
-                      siteTooLargeForWarning,
-                      oversizedSiteMessage: OVERSIZED_SITE_MESSAGE,
-                      siteAddress,
-                      onlineDiscoveryBusy,
-                      onLotWidthChange: setLotWidth,
-                      onLotHeightChange: setLotHeight,
-                      onStartSiteBoundaryDraw: handleStartSiteBoundaryDraw,
-                      onApplySite: () => void handleApplySite(),
-                      onUnlockSite: handleUnlockSite,
-                      onCreateCenteredSite: () => void handleCreateCenteredSiteFromSetup(),
-                    }}
-                    surveyTerrain={{
-                      hasTerrainSource,
-                      surveyFileName,
-                      uploadedImagePreviewUrl,
-                      uploadedImageApiUrl,
-                      surveyPreviewPointCount: surveyPreviewPoints.length,
-                      surveyUploadMessage,
-                      imageUploadState,
-                      imageUploadNote,
-                      mapSnapshotPath,
-                      mapSnapshotInputRef,
-                      surveyInputRef,
-                      onOpenImport: () => handleOpenSidePanel("import_survey"),
-                      onAnalyzeMapSnapshot: analyzeMapSnapshot,
-                      onUploadImage: uploadImage,
-                      onUploadExistingConditions: uploadExistingConditions,
-                    }}
-                    autoSiteContext={{
-                      autoSiteContextFlowSummary,
-                      autoExistingConditionsStatus,
-                      siteIntelligenceSummary,
-                      siteIntelligenceFoundCount: siteIntelligenceFound.length,
-                      siteIntelligenceMissingCount: siteIntelligenceMissing.length,
-                      siteIntelligenceAssumedCount: siteIntelligenceAssumed.length,
-                      siteIntelligenceOutsideCount: siteIntelligenceOutside.length,
-                      roadFrontageMessage: String(roadFrontageHint.message || ""),
-                      drivewaySuggestionMessage: String(drivewaySuggestion.message || ""),
-                      gradingContextMessage: String(gradingContextHint.message || ""),
-                      autoSiteContextRows,
-                      onlineFoundSources,
-                      candidateReviewItemCount: candidateReviewItems.length,
-                      hasAppliedAddress,
-                      onlineDiscoveryBusy,
-                      onReviewFoundContext: () => handleOpenSidePanel("data"),
-                      onRerunSiteContext: () => void saveSiteAddress(),
-                    }}
-                  />
+                  <SiteSetupPanel {...siteSetupPanelProps} />
                 ) : null}
 
 
                 {sidePanelForRender === "import_survey" ? (
-                  <ImportSurveyPanel
-                    mapSnapshotReady={Boolean(uploadedImagePreviewUrl || uploadedImageApiUrl)}
-                    surveyPointCount={surveyPreviewPoints.length}
-                    imageUploadState={imageUploadState}
-                    imageUploadNote={imageUploadNote}
-                    surveyUploadMessage={surveyUploadMessage}
-                    planPdfReady={Boolean(planPdfAnalysis)}
-                    mapAnalysisReady={Boolean(mapAnalysis?.success)}
-                    mapSnapshotPath={mapSnapshotPath}
-                    hasTerrainSource={hasTerrainSource}
-                    detectionScaleFtPerPx={detectionScaleFtPerPx}
-                    siteRotationDeg={siteRotationDeg}
-                    siteScaleLocked={siteScaleLocked}
-                    mapSnapshotInputRef={mapSnapshotInputRef}
-                    surveyInputRef={surveyInputRef}
-                    onUploadImage={uploadImage}
-                    onUploadExistingConditions={uploadExistingConditions}
-                    onOpenPlanPdf={() => handleOpenSidePanel("data")}
-                    onAnalyzeMapSnapshot={analyzeMapSnapshot}
-                    onFitToSite={() => setFitToSiteRequest((value) => value + 1)}
-                    onMapCenter={() => setMapCenterRequest((value) => value + 1)}
-                    onAlignRoad={() => setAlignToRoadRequest((value) => value + 1)}
-                    onResetRotation={() => {
-                      setSiteRotationDeg(0);
-                      setSiteRotationInput("0");
-                      scheduleRotationSave(0);
-                    }}
-                    onRotationChange={(value) => {
-                      setSiteRotationDeg(value);
-                      setSiteRotationInput(String(value));
-                      scheduleRotationSave(value);
-                    }}
-                  />
+                  <ImportSurveyPanel {...importSurveyPanelProps} />
                 ) : null}
 
                 {sidePanelForRender === "data" ? (
