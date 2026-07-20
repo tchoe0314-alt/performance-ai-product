@@ -4,18 +4,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
-  AlertCircle,
   Box,
-  Crosshair,
   FileText,
   Gauge,
-  Hand,
   Layers,
   MapPinned,
-  MousePointer2,
-  Move,
-  Pencil,
-  Ruler,
   SlidersHorizontal,
 } from "lucide-react";
 
@@ -119,6 +112,7 @@ import {
   buildGenerateLayoutContext,
   systemsImpactedByPlacement,
 } from "./utils/dashboardGenerateLayoutContext";
+import { buildDashboardContextualToolbarTools } from "./utils/dashboardContextualToolbar";
 import {
   buildDashboardSystemReadinessRows,
   getDashboardSystemBlockers,
@@ -288,7 +282,6 @@ import type {
   DraftUndoAction,
   PerformanceAIDashboardProps,
   PrimaryWorkflowItem,
-  PrimaryWorkflowKey,
   RecentChange,
 } from "./utils/dashboardTypes";
 import { buildCadEntityPreview, type CadEntityPreview } from "./utils/cadEntityPreview";
@@ -17207,124 +17200,39 @@ function PerformanceAIDashboardView({
     ["?", "Show shortcuts"],
   ];
 
-  const contextualToolbarTools = [
-    {
-      label: "Address",
-      icon: MapPinned,
-      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
-      action: () => handleOpenPanelFromDrawer("site_existing"),
-      active: sidePanelForRender === "site_existing",
-    },
-    {
-      label: siteScaleLocked ? "Unlock" : "Lock site",
-      icon: Crosshair,
-      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
-      action: siteScaleLocked ? handleUnlockSite : () => void handleApplySite(),
-      active: siteScaleLocked,
-      testId: "site-lock-toolbar",
-    },
-    {
-      label: "Import",
-      icon: FileText,
-      modes: ["setup", "deliver"] as PrimaryWorkflowKey[],
-      action: () => handleOpenPanelFromDrawer("import_survey"),
-      active: sidePanelForRender === "import_survey",
-    },
-    {
-      label: "Select",
-      icon: MousePointer2,
-      modes: ["draw", "design", "analyze", "deliver"] as PrimaryWorkflowKey[],
-      action: () => setPreviewInteraction("static"),
-      active: previewInteraction === "static",
-    },
-    {
-      label: "Pan",
-      icon: Hand,
-      modes: ["draw", "design", "analyze", "deliver"] as PrimaryWorkflowKey[],
-      action: () => setPreviewInteraction("static"),
-      active: false,
-    },
-    {
-      label: "Draw Site Boundary",
-      icon: Crosshair,
-      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
-      action: handleStartSiteBoundaryDraw,
-      active: !siteScaleLocked && activePrimaryWorkflowKey === "draw",
-      testId: "workspace-draw-site-boundary-shortcut",
-    },
-    {
-      label: "Change Site Boundary",
-      icon: Crosshair,
-      modes: ["draw"] as PrimaryWorkflowKey[],
-      action: handleUnlockSite,
-      active: siteScaleLocked,
-      testId: "change-site-boundary-toolbar",
-    },
-    {
-      label: "Draw tools",
-      icon: Pencil,
-      modes: ["draw"] as PrimaryWorkflowKey[],
-      action: () => handleOpenPanelFromDrawer("model"),
-      active: activePrimaryWorkflowKey === "draw",
-    },
-    {
-      label: "Modify",
-      icon: Move,
-      modes: ["setup", "draw"] as PrimaryWorkflowKey[],
-      action: () => setPreviewInteraction("edit"),
-      active: previewInteraction === "edit",
-      testId: "workspace-preview-interaction-edit",
-    },
-    {
-      label: "Measure",
-      icon: Ruler,
-      modes: ["draw", "analyze"] as PrimaryWorkflowKey[],
-      action: () => setShowMeasurements((value) => !value),
-      active: showMeasurements,
-    },
-    {
-      label: "Calcs",
-      icon: Gauge,
-      modes: ["analyze"] as PrimaryWorkflowKey[],
-      action: () => setShowCalculations((value) => !value),
-      active: showCalculations,
-    },
-    {
-      label: "Snaps",
-      icon: Crosshair,
-      modes: ["draw"] as PrimaryWorkflowKey[],
-      action: () => handleOpenPanelFromDrawer("model"),
-      active: previewInteraction === "edit",
-    },
-    {
-      label: "Layers",
-      icon: Layers,
-      modes: ["setup", "draw", "design", "analyze", "deliver"] as PrimaryWorkflowKey[],
-      action: () => setLayerManagerOpen((value) => !value),
-      active: layerManagerOpen,
-    },
-    {
-      label: "Run",
-      icon: SlidersHorizontal,
-      modes: ["design", "analyze"] as PrimaryWorkflowKey[],
-      action: () => handleOpenPanelFromDrawer("generate"),
-      active: sidePanelForRender === "generate",
-    },
-    {
-      label: "Issues",
-      icon: AlertCircle,
-      modes: ["analyze"] as PrimaryWorkflowKey[],
-      action: () => handleOpenPanelFromDrawer("analysis"),
-      active: sidePanelForRender === "analysis",
-    },
-    {
-      label: "Sheets",
-      icon: FileText,
-      modes: ["deliver"] as PrimaryWorkflowKey[],
-      action: () => handleOpenPanelFromDrawer("deliverables"),
-      active: sidePanelForRender === "deliverables",
-    },
-  ].filter((tool) => tool.modes.includes(activePrimaryWorkflowKey));
+  const contextualToolbarTools = useMemo(
+    () =>
+      buildDashboardContextualToolbarTools({
+        activePrimaryWorkflowKey,
+        sidePanelForRender,
+        siteScaleLocked,
+        previewInteraction,
+        showMeasurements,
+        showCalculations,
+        layerManagerOpen,
+        onOpenPanel: handleOpenPanelFromDrawer,
+        onToggleSiteLock: () => void handleApplySite(),
+        onUnlockSite: handleUnlockSite,
+        onStartSiteBoundaryDraw: handleStartSiteBoundaryDraw,
+        onSetPreviewInteraction: setPreviewInteraction,
+        onToggleMeasurements: () => setShowMeasurements((value) => !value),
+        onToggleCalculations: () => setShowCalculations((value) => !value),
+        onToggleLayerManager: () => setLayerManagerOpen((value) => !value),
+      }),
+    [
+      activePrimaryWorkflowKey,
+      handleApplySite,
+      handleOpenPanelFromDrawer,
+      handleStartSiteBoundaryDraw,
+      handleUnlockSite,
+      layerManagerOpen,
+      previewInteraction,
+      showCalculations,
+      showMeasurements,
+      sidePanelForRender,
+      siteScaleLocked,
+    ],
+  );
   const selectedObjectConfidence = selectedBuilding
     ? sourceConfidenceByObjectId.get(selectedBuilding.id)
     : null;
