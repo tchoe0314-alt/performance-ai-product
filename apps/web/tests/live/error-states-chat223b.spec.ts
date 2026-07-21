@@ -190,7 +190,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await openWorkspacePanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
     const sources = page.getByTestId("setup-survey-terrain-card");
     if (!(await sources.evaluate((element) => element.hasAttribute("open")))) {
-      await sources.locator("summary").click();
+      await sources.locator(":scope > summary").click();
     }
     await expect(sources).toContainText(/Map snapshot|Survey/i, { timeout: 10_000 });
     await sources.getByRole("button", { name: /^Import$/ }).click();

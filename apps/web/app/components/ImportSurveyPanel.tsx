@@ -1,5 +1,7 @@
 import type { RefObject } from "react";
 
+import { bestSurveySourceLabel, SURVEY_SOURCE_HIERARCHY } from "../utils/surveySourceHierarchy";
+
 type ImageUploadState = "idle" | "uploading" | "detecting" | "failed" | "ready";
 
 type ImportSurveyPanelProps = {
@@ -53,6 +55,12 @@ export function ImportSurveyPanel({
   onResetRotation,
   onRotationChange,
 }: ImportSurveyPanelProps) {
+  const bestSourceLabel = bestSurveySourceLabel({
+    surveyPreviewPointCount: surveyPointCount,
+    hasTerrainSource,
+    uploadedImagePreviewUrl: mapSnapshotReady ? "uploaded" : "",
+  });
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -99,6 +107,22 @@ export function ImportSurveyPanel({
             <span>Analyze map snapshot</span>
             <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{mapAnalysisReady ? "Ready" : "Analyze"}</span>
           </button>
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="import-source-hierarchy">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Best source order</p>
+          <p className="mt-1 text-xs font-semibold text-slate-800">{bestSourceLabel}</p>
+          <ol className="mt-3 space-y-1 text-xs font-semibold text-slate-600">
+            {SURVEY_SOURCE_HIERARCHY.map((tier) => (
+              <li key={tier.id}>
+                {tier.rank}. {tier.title}
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-[11px] leading-5 text-slate-500">
+            Supported review inputs include CSV/TXT point files, DXF, LandXML, GeoJSON/JSON, SHP/ZIP, GPKG,
+            GeoTIFF, LAS/LAZ, PDFs, and map images. Civora stores source confidence separately from drawing
+            and generated design output.
+          </p>
         </div>
         <input
           ref={mapSnapshotInputRef}

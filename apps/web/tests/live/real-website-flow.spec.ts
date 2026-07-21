@@ -86,6 +86,12 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByTestId("survey-source-hierarchy")).toContainText(/Utility records \/ as-builts/i);
     await expect(page.getByTestId("survey-source-hierarchy")).toContainText(/GIS \/ parcel \/ public context/i);
     await expect(page.getByTestId("best-survey-source-label")).toContainText(/Best source/i);
+    await page.getByTestId("setup-survey-terrain-card").getByRole("button", { name: /^Import$/ }).click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Import inputs");
+    await expect(page.getByTestId("import-source-hierarchy")).toContainText(/Professional survey \/ control/i);
+    await expect(page.getByTestId("import-source-hierarchy")).toContainText(/Civil CAD \/ LandXML \/ point files/i);
+    await expect(page.getByTestId("import-source-hierarchy")).toContainText(/GeoTIFF/i);
+    await page.getByRole("button", { name: /^Setup$/ }).click();
     const siteContextDetails = page.getByTestId("setup-detect-inside-site");
     if (!(await siteContextDetails.evaluate((node) => node.hasAttribute("open")))) {
       await siteContextDetails.getByText("Auto Site Context").first().click();
