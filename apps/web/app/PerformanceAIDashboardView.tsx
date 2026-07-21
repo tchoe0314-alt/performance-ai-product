@@ -245,6 +245,7 @@ import { useDashboardGenerateSystemAction } from "./hooks/useDashboardGenerateSy
 import { useDashboardSiteGeometryActions } from "./hooks/useDashboardSiteGeometryActions";
 import { useDashboardPayloadPreviewState } from "./hooks/useDashboardPayloadPreviewState";
 import { useDashboardAutoFitSite } from "./hooks/useDashboardAutoFitSite";
+import { useDashboardGenerateFlowCoordinator } from "./hooks/useDashboardGenerateFlowCoordinator";
 import type {
   ApprovalState,
   CadToolRequestForPreview,
@@ -264,7 +265,6 @@ import {
   resolveDashboardSidebarModeStatus,
   resolveSidePanelForRender,
   sidePanelCopy,
-  workspaceModeByPanel,
   type ProjectStatusSummary,
   type SidebarStatus,
   type SidePanelKey,
@@ -3619,83 +3619,27 @@ function PerformanceAIDashboardView({
     withReactiveRerunContext,
   });
 
-  const persistFlowMetadata = useCallback(
-    async (
-      updates: Partial<{
-        generate_flow_summary_v1: GenerateFlowSummary;
-        review_package_flow_summary_v1: ReviewPackageFlowSummary;
-      }>,
-    ) => {
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const currentInputMode = currentInput?.input_mode === "assisted" ? "assisted" : "user";
-      const nextProjectInput: ProjectInput = {
-        ...currentInput,
-        input_mode: currentInputMode,
-        strict_mode: currentInput?.strict_mode ?? false,
-        allow_ai_fill_for_blanks: currentInput?.allow_ai_fill_for_blanks ?? false,
-        meta: {
-          ...(currentInput?.meta ?? {}),
-          site_inputs: {
-            ...((currentInput?.meta?.site_inputs ?? {}) as SiteInputs),
-            ...updates,
-          },
-        },
-      };
-      setCurrentProject((project) =>
-        project
-          ? {
-              ...project,
-              project_input: nextProjectInput,
-              updated_at: Date.now() / 1000,
-            }
-          : project,
-      );
-      await saveProject({ silent: true, projectInputOverride: nextProjectInput });
-    },
-    [currentProject, payloadPreview, saveProject],
-  );
-
-  const generatePendingPlacementObjects = useMemo(
-    () => buildingPlacements.filter((item) => !item.placed && item.type !== "site"),
-    [buildingPlacements],
-  );
-  const generatePendingPlacementLabels = useMemo(
-    () => generatePendingPlacementObjects.map((item) => item.label),
-    [generatePendingPlacementObjects],
-  );
-  const openGenerateBlockerPanel = useCallback(
-    (panel: SidePanelKey) => {
-      if (sidePanelCloseTimeoutRef.current !== null) {
-        window.clearTimeout(sidePanelCloseTimeoutRef.current);
-        sidePanelCloseTimeoutRef.current = null;
-      }
-      panelOpenProbeRef.current = {
-        label: panel === "projects" ? "projects.drawer.open" : "panel.open",
-        panel,
-        startedAt: markCivoraInteraction(),
-      };
-      setLayerManagerOpen(false);
-      setRightRailCollapsed(false);
-      if (!(["objects", "details", "layers", "model"] as SidePanelKey[]).includes(panel)) {
-        setPlacementModeEnabled(false);
-        setPreviewInteraction("static");
-        setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
-      }
-      setActiveSidePanel(panel);
-      setActiveWorkspaceMode(workspaceModeByPanel[panel]);
-    },
-    [
-      panelOpenProbeRef,
-      setActiveSidePanel,
-      setActiveWorkspaceMode,
-      setCadToolRequest,
-      setLayerManagerOpen,
-      setPlacementModeEnabled,
-      setPreviewInteraction,
-      setRightRailCollapsed,
-      sidePanelCloseTimeoutRef,
-    ],
-  );
+  const {
+    generatePendingPlacementLabels,
+    generatePendingPlacementObjects,
+    openGenerateBlockerPanel,
+    persistFlowMetadata,
+  } = useDashboardGenerateFlowCoordinator({
+    buildingPlacements,
+    currentProject,
+    panelOpenProbeRef,
+    payloadPreview,
+    saveProject,
+    setActiveSidePanel,
+    setActiveWorkspaceMode,
+    setCadToolRequest,
+    setCurrentProject,
+    setLayerManagerOpen,
+    setPlacementModeEnabled,
+    setPreviewInteraction,
+    setRightRailCollapsed,
+    sidePanelCloseTimeoutRef,
+  });
 
   const handleGenerateSystem = useDashboardGenerateSystemAction({
     appendChatMessage,
