@@ -4,6 +4,7 @@ import type { BuildingPlacement, GradingEarthworkUx } from "../types";
 import type { DrawMode } from "../utils/cadToolTypes";
 import { formatMetric } from "../utils/formatting";
 import { buildPreviewParkingMapModules } from "../utils/previewParkingMapModules";
+import type { PreviewSurveyPoint } from "../utils/previewLayoutHelpers";
 import type { buildWaterFireFlowViewModel } from "../utils/previewWaterFireFlow";
 import { PreviewBasePlanGrid } from "./PreviewBasePlanGrid";
 import { PreviewCadMarkers } from "./PreviewCadMarkers";
@@ -38,6 +39,7 @@ type PreviewPlanCanvasLayersProps = {
   buildingPlacements: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
   surveyPointCount: number;
+  surveyPoints?: PreviewSurveyPoint[];
   hasTerrainSurfaceEvidence: boolean;
   showMap: boolean;
   isHighQuality: boolean;
@@ -81,6 +83,7 @@ export function PreviewPlanCanvasLayers({
   buildingPlacements,
   suggestedPlacements,
   surveyPointCount,
+  surveyPoints,
   hasTerrainSurfaceEvidence,
   showMap,
   isHighQuality,
@@ -144,6 +147,7 @@ export function PreviewPlanCanvasLayers({
             lotWidth={lotWidth}
             lotHeight={lotHeight}
             planScaleBar={planScaleBar}
+            surveyPoints={surveyPoints}
           />
           <PreviewPolylineObjects
             objects={visibleCadObjects}

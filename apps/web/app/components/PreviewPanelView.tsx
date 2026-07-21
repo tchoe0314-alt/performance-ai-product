@@ -2656,6 +2656,7 @@ export default function PreviewPanel({
                     buildingPlacements,
                     suggestedPlacements,
                     surveyPointCount: surveyPoints?.length ?? 0,
+                    surveyPoints,
                     hasTerrainSurfaceEvidence: Boolean(hasSourceBackedSurfaceEvidence && hasGradingSurface),
                     showMap,
                     isHighQuality,

@@ -5,15 +5,77 @@ export type PreviewBounds = {
   y2: number;
 };
 
-export const SURVEY_SHEET_SPOT_ELEVATIONS = [
-  { x: 12, y: 18, label: "x 952.4" },
-  { x: 35, y: 26, label: "x 953.1" },
-  { x: 63, y: 20, label: "x 954.6" },
-  { x: 78, y: 38, label: "x 951.8" },
-  { x: 20, y: 58, label: "x 950.2" },
-  { x: 45, y: 70, label: "x 949.7" },
-  { x: 68, y: 78, label: "x 948.9" },
-] as const;
+export type PreviewSurveyPoint = { x: number; y: number; z?: number };
+
+const clampSvgPercent = (value: number) => Math.min(Math.max(value, 0.8), 99.2);
+
+export function buildSourceBackedSurveySpots({
+  lotHeight,
+  lotWidth,
+  maxLabels = 9,
+  points,
+}: {
+  lotHeight: number;
+  lotWidth: number;
+  maxLabels?: number;
+  points?: PreviewSurveyPoint[];
+}) {
+  const width = Math.max(lotWidth, 1);
+  const height = Math.max(lotHeight, 1);
+  const finitePoints = (points ?? [])
+    .map((point) => ({
+      x: Number(point.x),
+      y: Number(point.y),
+      z: typeof point.z === "number" ? Number(point.z) : undefined,
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  const pointsWithElevation = finitePoints.filter((point) => Number.isFinite(point.z));
+  if (!pointsWithElevation.length) return [];
+
+  const step = Math.max(1, Math.ceil(pointsWithElevation.length / maxLabels));
+  return pointsWithElevation
+    .filter((_, index) => index % step === 0)
+    .slice(0, maxLabels)
+    .map((point, index) => ({
+      id: `source-spot-${index}-${Math.round(point.x)}-${Math.round(point.y)}`,
+      x: clampSvgPercent((point.x / width) * 100),
+      y: clampSvgPercent((point.y / height) * 100),
+      label: `x ${point.z!.toFixed(2)}`,
+    }));
+}
+
+export function buildSourceBackedSurveyTrace({
+  lotHeight,
+  lotWidth,
+  maxPoints = 80,
+  points,
+}: {
+  lotHeight: number;
+  lotWidth: number;
+  maxPoints?: number;
+  points?: PreviewSurveyPoint[];
+}) {
+  const width = Math.max(lotWidth, 1);
+  const height = Math.max(lotHeight, 1);
+  const finitePoints = (points ?? [])
+    .map((point) => ({
+      x: Number(point.x),
+      y: Number(point.y),
+      z: typeof point.z === "number" ? Number(point.z) : undefined,
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (!finitePoints.length) return [];
+  const step = Math.max(1, Math.ceil(finitePoints.length / maxPoints));
+  return finitePoints
+    .filter((_, index) => index % step === 0)
+    .slice(0, maxPoints)
+    .map((point, index) => ({
+      id: `source-point-${index}-${Math.round(point.x)}-${Math.round(point.y)}`,
+      x: clampSvgPercent((point.x / width) * 100),
+      y: clampSvgPercent((point.y / height) * 100),
+      hasElevation: Number.isFinite(point.z),
+    }));
+}
 
 const clampPercent = (value: number) => Math.min(Math.max(value * 100, 0), 100);
 

@@ -1,4 +1,8 @@
-import { SURVEY_SHEET_SPOT_ELEVATIONS } from "../utils/previewLayoutHelpers";
+import {
+  buildSourceBackedSurveySpots,
+  buildSourceBackedSurveyTrace,
+  type PreviewSurveyPoint,
+} from "../utils/previewLayoutHelpers";
 
 type PreviewBasePlanGridProps = {
   showMap: boolean;
@@ -11,15 +15,10 @@ type PreviewBasePlanGridProps = {
     widthPct: number;
     lengthFt: number;
   };
+  surveyPoints?: PreviewSurveyPoint[];
 };
 
 const titleBlockLines = [15, 30, 47, 64, 82];
-const cornerLabels: Array<[number, number, string]> = [
-  [1.2, 1.2, "NW CORNER"],
-  [83.8, 1.2, "NE CORNER"],
-  [1.2, 98.8, "SW CORNER"],
-  [83.8, 98.8, "SE CORNER"],
-];
 
 export function PreviewBasePlanGrid({
   showMap,
@@ -29,7 +28,13 @@ export function PreviewBasePlanGrid({
   lotWidth,
   lotHeight,
   planScaleBar,
+  surveyPoints,
 }: PreviewBasePlanGridProps) {
+  const sourceSurveyTrace = buildSourceBackedSurveyTrace({ points: surveyPoints, lotWidth, lotHeight });
+  const sourceSurveySpots = buildSourceBackedSurveySpots({ points: surveyPoints, lotWidth, lotHeight });
+  const hasSourceSurveyPoints = sourceSurveyTrace.length > 0;
+  const hasSourceElevations = sourceSurveySpots.length > 0;
+
   return (
     <>
       <g data-testid="cad-plan-grid" opacity={showMap ? 0 : 1}>
@@ -98,17 +103,16 @@ export function PreviewBasePlanGrid({
                 SITE LOCKED · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
               </text>
             ) : null}
-            {isHighQuality && hasSurveyOrTerrainEvidence ? (
+            {isHighQuality && hasSourceSurveyPoints ? (
               <g data-testid="survey-boundary-annotation" pointerEvents="none">
-                <text x={42.6} y={2.55} textAnchor="middle" fontSize="0.66" fill="#475569">N 89°58&apos;30&quot; E · {Math.round(lotWidth)}.00&apos;</text>
-                <text x={42.6} y={98.2} textAnchor="middle" fontSize="0.66" fill="#475569">S 89°58&apos;30&quot; W · {Math.round(lotWidth)}.00&apos;</text>
-                <text x={2.2} y={50} transform="rotate(-90 2.2 50)" textAnchor="middle" fontSize="0.66" fill="#475569">N 00°01&apos;30&quot; W · {Math.round(lotHeight)}.00&apos;</text>
-                <text x={83.8} y={50} transform="rotate(90 83.8 50)" textAnchor="middle" fontSize="0.66" fill="#475569">S 00°01&apos;30&quot; E · {Math.round(lotHeight)}.00&apos;</text>
-                {cornerLabels.map(([x, y, label]) => (
-                  <g key={`corner-${label}`}>
-                    <line x1={x - 0.75} y1={y} x2={x + 0.75} y2={y} stroke="#334155" strokeWidth={0.08} />
-                    <line x1={x} y1={y - 0.75} x2={x} y2={y + 0.75} stroke="#334155" strokeWidth={0.08} />
-                    <text x={x + 0.9} y={y + (y < 50 ? 1.65 : -0.9)} fontSize="0.52" fill="#64748b">{label}</text>
+                <text x={42.6} y={2.55} textAnchor="middle" fontSize="0.66" fill="#475569">SOURCE POINT EXTENT · {sourceSurveyTrace.length} PTS SHOWN</text>
+                <text x={42.6} y={98.2} textAnchor="middle" fontSize="0.66" fill="#475569">UPLOADED POINTS FOR REVIEW · FIELD VERIFY</text>
+                <text x={2.2} y={50} transform="rotate(-90 2.2 50)" textAnchor="middle" fontSize="0.66" fill="#475569">SOURCE REVIEW</text>
+                <text x={83.8} y={50} transform="rotate(90 83.8 50)" textAnchor="middle" fontSize="0.66" fill="#475569">NOT SURVEY CONTROL</text>
+                {sourceSurveyTrace.slice(0, 24).map((point) => (
+                  <g key={point.id} data-testid="source-survey-point">
+                    <circle cx={point.x} cy={point.y} r={0.22} fill={point.hasElevation ? "#334155" : "#94a3b8"} opacity={0.78} />
+                    <title>Uploaded/source point shown in site coordinates for review.</title>
                   </g>
                 ))}
               </g>
@@ -124,28 +128,14 @@ export function PreviewBasePlanGrid({
           {planScaleBar.lengthFt} FT
         </text>
       </g>
-      {isHighQuality && !showMap && siteLocked && hasSurveyOrTerrainEvidence ? (
+      {isHighQuality && !showMap && siteLocked && hasSourceElevations ? (
         <g data-testid="plan-grading-context-lines" opacity={0.2} pointerEvents="none">
-          {[0, 1, 2, 3, 4].map((index) => {
-            const y = 18 + index * 12.5;
-            const offset = index * 1.8;
-            return (
-              <path
-                key={`review-contour-${index}`}
-                d={`M ${9 + offset} ${y} C ${25 + offset} ${y - 4.2} ${37 - offset} ${y + 5.8} ${54 + offset} ${y + 1.2} S ${79 - offset} ${y - 3.6} ${93 - offset * 0.2} ${y + 1.8}`}
-                fill="none"
-                stroke="#64748b"
-                strokeWidth={0.07}
-              >
-                <title>Subtle review contour cue. Not survey control.</title>
-              </path>
-            );
-          })}
-          {SURVEY_SHEET_SPOT_ELEVATIONS.map((spot) => (
-            <g key={`spot-${spot.label}-${spot.x}-${spot.y}`} data-testid="survey-spot-elevation">
+          {sourceSurveySpots.map((spot) => (
+            <g key={spot.id} data-testid="survey-spot-elevation">
               <text x={spot.x} y={spot.y} fontSize="0.86" fill="#64748b">{spot.label}</text>
               <line x1={spot.x - 0.32} y1={spot.y - 0.32} x2={spot.x + 0.32} y2={spot.y + 0.32} stroke="#64748b" strokeWidth={0.08} />
               <line x1={spot.x - 0.32} y1={spot.y + 0.32} x2={spot.x + 0.32} y2={spot.y - 0.32} stroke="#64748b" strokeWidth={0.08} />
+              <title>Uploaded/source elevation point. Review only.</title>
             </g>
           ))}
         </g>
