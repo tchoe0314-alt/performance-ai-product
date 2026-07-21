@@ -108,6 +108,7 @@ export function useDashboardChatCommandProps({
     chatScrollRef,
     onSetMessageFeedback,
     ...sharedPromptProps,
+    promptInputRef: commandInputRef,
     visibleActiveJobStatus,
     hasDirectRunInFlight,
     onCancelJob,

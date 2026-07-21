@@ -1,6 +1,8 @@
 "use client";
 
 import { ChevronDown, FileImage } from "lucide-react";
+import { useEffect } from "react";
+import type { RefObject } from "react";
 
 import type { ChatMessage, PlanToolMode } from "../types";
 import { formatChatTimestamp } from "../utils/formatting";
@@ -26,6 +28,7 @@ type ChatPanelProps = {
   pendingClarification?: string | null;
   onContinuePendingClarification?: () => void;
   prompt: string;
+  promptInputRef?: RefObject<HTMLTextAreaElement | null>;
   imageName: string;
   onPromptChange: (value: string) => void;
   onPromptKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -60,6 +63,7 @@ export default function ChatPanel({
   pendingClarification,
   onContinuePendingClarification,
   prompt,
+  promptInputRef,
   imageName,
   onPromptChange,
   onPromptKeyDown,
@@ -86,6 +90,13 @@ export default function ChatPanel({
   const blocksChatInput = busy || (hasVisibleActiveJob && !isAwaitingApproval);
   const approvalLabel = approvalPhaseLabel ? `Starting ${approvalPhaseLabel}...` : "Starting next phase...";
   const showContinuePending = Boolean(pendingClarification && onContinuePendingClarification && !blocksChatInput);
+  useEffect(() => {
+    if (blocksChatInput) return;
+    const frame = window.requestAnimationFrame(() => {
+      promptInputRef?.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [blocksChatInput, promptInputRef]);
 
   return (
     <div className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
@@ -244,6 +255,7 @@ export default function ChatPanel({
 
         <div className={`min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:rounded-3xl ${collapsed ? "" : "mb-4"}`}>
           <TextArea
+            ref={promptInputRef}
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             onKeyDown={onPromptKeyDown}
