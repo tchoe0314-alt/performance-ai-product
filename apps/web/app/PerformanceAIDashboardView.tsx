@@ -98,7 +98,6 @@ import { formatCalmActionMessage } from "./utils/objectGeometry";
 import {
   defaultAssumptions,
   toReadableLabel,
-  toArray,
   parsePositiveNumber,
   formatMetric,
   summarizePlanResponse,
@@ -107,7 +106,6 @@ import {
 import {
   createChatMessage,
   createWelcomeMessage,
-  extractDesignMemory,
 } from "./utils/chat";
 import {
   createDenseCommercialConceptPlacements,
@@ -259,6 +257,7 @@ import { useDashboardObjectRemoveRestoreActions } from "./hooks/useDashboardObje
 import { useDashboardAddObjectAction } from "./hooks/useDashboardAddObjectAction";
 import { useDashboardReviewConceptActions } from "./hooks/useDashboardReviewConceptActions";
 import { useDashboardPlanPayloadBuilder } from "./hooks/useDashboardPlanPayloadBuilder";
+import { useDashboardChatDecisionContextBuilder } from "./hooks/useDashboardChatDecisionContextBuilder";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -2203,98 +2202,6 @@ function PerformanceAIDashboardView({
     if (typeof overrides.maxAdaCrossSlopePct === "string" || typeof overrides.maxAdaCrossSlopePct === "number") {
       setMaxAdaCrossSlopePct(String(overrides.maxAdaCrossSlopePct));
     }
-  };
-
-  const buildChatDecisionContext = (
-    overrides: ControlOverrides = {},
-    message: string,
-  ) => {
-    const liveThread = chatMessagesRef.current;
-    const designMemory = extractDesignMemory(liveThread);
-    const storedMemory =
-      currentProject?.project_input?.meta?.chat_memory &&
-      typeof currentProject.project_input.meta.chat_memory === "object"
-        ? currentProject.project_input.meta.chat_memory
-        : null;
-    const mergedPreferences = [
-      ...toArray((storedMemory as { preferences?: string[] } | null)?.preferences),
-      ...designMemory.preferences,
-    ].slice(-8);
-    const mergedConstraints = [
-      ...toArray((storedMemory as { constraints?: string[] } | null)?.constraints),
-      ...designMemory.constraints,
-    ].slice(-8);
-    return {
-      strategy_mode: assistedEnabled ? "assisted" : "user",
-      site_name: overrides.siteName ?? siteName,
-      file_name: overrides.fileName ?? fileName,
-      project_type: overrides.projectType ?? projectType,
-      units: overrides.units ?? units,
-      lot_width: overrides.lotWidth ?? lotWidth,
-      lot_height: overrides.lotHeight ?? lotHeight,
-      building_width: overrides.buildingWidth ?? buildingWidth,
-      building_depth: overrides.buildingDepth ?? buildingDepth,
-      setback: overrides.setback ?? setback,
-      building_count: overrides.buildingCount ?? buildingCount,
-      parking_count: overrides.parkingCount ?? parkingCount,
-      min_slope_pct: overrides.minSlopePct ?? minSlopePct,
-      pipe_min_slope_pct: overrides.pipeMinSlopePct ?? pipeMinSlopePct,
-      max_parking_slope_pct: overrides.maxParkingSlopePct ?? maxParkingSlopePct,
-      max_road_grade_pct: overrides.maxRoadGradePct ?? maxRoadGradePct,
-      max_ada_cross_slope_pct: overrides.maxAdaCrossSlopePct ?? maxAdaCrossSlopePct,
-      roads: overrides.roads ?? roads,
-      grading: overrides.grading ?? grading,
-      drainage: overrides.drainage ?? drainage,
-      utilities: overrides.utilities ?? utilities,
-      has_plan: Boolean(backendResult?.final_plan),
-      has_preview: Boolean(planPreviewUrl),
-      site_locked: siteScaleLocked,
-      site_address: siteAddress,
-      applied_address: appliedAddressLabel,
-      online_source_lookup: onlineSourceLookupLabel,
-      has_location_evidence: hasLocationEvidence,
-      has_site_boundary: buildingPlacements.some((item) => item.type === "site"),
-      has_terrain_source: hasTerrainSource,
-      has_assumed_terrain_slope: hasAssumedTerrainSlope,
-      has_verified_survey_control: hasVerifiedSurveyControl,
-      placed_object_count: placedObjectCount,
-      pending_placement_count: pendingPlacementObjects.length,
-      pending_placement_objects: pendingPlacementObjects.map((item) => ({ id: item.id, label: item.label, type: item.type })),
-      system_statuses: systemStatuses,
-      map_analysis_success: Boolean(mapAnalysis?.success),
-      setup_wizard_state_v1: setupWizardState,
-      current_project: currentProject
-        ? {
-            project_id: currentProject.project_id,
-            name: currentProject.name,
-          }
-        : null,
-      current_explanation: currentExplanation,
-      current_truth_audit: currentTruthAudit,
-      engineering_status: currentPlanMeta?.engineering_status ?? {},
-      convergence_summary: currentPlanMeta?.convergence_summary ?? {},
-      manual_failures: currentManualFailures,
-      assumptions,
-      produced_deliverables: Array.isArray(currentPlanMeta?.deliverables?.produced)
-        ? currentPlanMeta.deliverables.produced
-        : [],
-      issues,
-      memory_summary: {
-        preferences: mergedPreferences,
-        constraints: mergedConstraints,
-        open_questions: toArray((storedMemory as { open_questions?: string[] } | null)?.open_questions).slice(-6),
-        examples: [...mergedPreferences, ...mergedConstraints].slice(-8),
-      },
-      current_phase:
-        String(visibleActiveJob?.stage || "") ||
-        String((currentPlanMeta?.runtime_phase_checkpoint as { stage_name?: string } | undefined)?.stage_name || ""),
-      current_phase_detail: String(visibleActiveJob?.stage_detail || ""),
-      progress_timeline_v1: progressTimelineState,
-      chat_thread: [
-        ...liveThread,
-        createChatMessage("user", message),
-      ].map(({ role, content, kind }) => ({ role, content, kind })),
-    };
   };
 
   const {
@@ -8013,6 +7920,55 @@ function PerformanceAIDashboardView({
     uploadedImagePreviewUrl,
   });
   setupWizardStateRef.current = setupWizardState;
+  const buildChatDecisionContext = useDashboardChatDecisionContextBuilder({
+    appliedAddressLabel,
+    assistedEnabled,
+    assumptions,
+    backendResultHasFinalPlan: Boolean(backendResult?.final_plan),
+    buildingCount,
+    buildingDepth,
+    buildingPlacements,
+    buildingWidth,
+    chatMessagesRef,
+    currentExplanation,
+    currentManualFailures,
+    currentPlanMeta,
+    currentProject,
+    currentTruthAudit,
+    drainage,
+    fileName,
+    grading,
+    hasAssumedTerrainSlope,
+    hasLocationEvidence,
+    hasTerrainSource,
+    hasVerifiedSurveyControl,
+    issues,
+    lotHeight,
+    lotWidth,
+    mapAnalysisSuccess: Boolean(mapAnalysis?.success),
+    maxAdaCrossSlopePct,
+    maxParkingSlopePct,
+    maxRoadGradePct,
+    minSlopePct,
+    onlineSourceLookupLabel,
+    parkingCount,
+    pendingPlacementObjects,
+    pipeMinSlopePct,
+    planPreviewUrl,
+    placedObjectCount,
+    progressTimelineState,
+    projectType,
+    roads,
+    setback,
+    setupWizardState,
+    siteAddress,
+    siteName,
+    siteScaleLocked,
+    systemStatuses,
+    units,
+    utilities,
+    visibleActiveJob,
+  });
   const denseConceptObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.dense_concept_generated)).length;
   const denseConceptActive = denseConceptObjectCount >= 6;
   const drawWorkspaceActive =
