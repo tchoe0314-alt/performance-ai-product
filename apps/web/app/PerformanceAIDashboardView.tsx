@@ -52,7 +52,6 @@ import { buildDashboardCapabilityAuditRows } from "./utils/dashboardCapabilityAu
 import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
 import { resolveActivePrimaryWorkflowKey } from "./utils/dashboardPrimaryWorkflows";
 import { buildDashboardPrimaryWorkflowItems } from "./utils/dashboardPrimaryWorkflowItems";
-import { buildDashboardSystemEvidenceView } from "./utils/dashboardSystemEvidenceView";
 import {
   DASHBOARD_SOURCE_HUB_LINKS,
   DASHBOARD_SUPPORTED_SHORTCUTS,
@@ -246,6 +245,7 @@ import { useDashboardSiteGeometryActions } from "./hooks/useDashboardSiteGeometr
 import { useDashboardPayloadPreviewState } from "./hooks/useDashboardPayloadPreviewState";
 import { useDashboardAutoFitSite } from "./hooks/useDashboardAutoFitSite";
 import { useDashboardGenerateFlowCoordinator } from "./hooks/useDashboardGenerateFlowCoordinator";
+import { useDashboardSystemEvidenceView } from "./hooks/useDashboardSystemEvidenceView";
 import type {
   ApprovalState,
   CadToolRequestForPreview,
@@ -4367,7 +4367,7 @@ function PerformanceAIDashboardView({
     () => analysisIssues.find((issue) => issue.id === analysisSelectedIssueId) ?? null,
     [analysisIssues, analysisSelectedIssueId],
   );
-  const systemEvidenceView = useMemo(() => buildDashboardSystemEvidenceView({
+  const systemEvidenceView = useDashboardSystemEvidenceView({
     buildingPlacements,
     issues,
     siteTooLargeForGrading,
@@ -4392,32 +4392,7 @@ function PerformanceAIDashboardView({
     hasUtilityConnectionPlaced,
     hasUtilityConnectionObject,
     systemStatuses,
-  }), [
-    appliedAddressLabel,
-    buildingPlacements,
-    hasAppliedAddress,
-    hasAssumedTerrainSlope,
-    hasBasinObject,
-    hasBasinPlaced,
-    hasLocationEvidence,
-    hasStandardsEvidence,
-    hasTerrainSource,
-    hasUtilityConnectionObject,
-    hasUtilityConnectionPlaced,
-    hasVerifiedSurveyControl,
-    issues,
-    mapAnalysis?.success,
-    missingSite,
-    onlineSourceLookupLabel,
-    onlineSourceLookupUnavailable,
-    siteInputs,
-    siteScaleLocked,
-    siteTooLargeForGrading,
-    systemStatuses,
-    uploadedImageApiUrl,
-    uploadedImagePreviewUrl,
-    utilities,
-  ]);
+  });
   const {
     confirmedObjectCounts,
     hasHardSystemBlock,
