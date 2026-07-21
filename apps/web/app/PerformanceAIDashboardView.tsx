@@ -40,7 +40,6 @@ import {
   EMPTY_REACTIVE_VALIDATION,
   OVERSIZED_SITE_MESSAGE,
   REACTIVE_EDIT_POLICY_PREFERENCE,
-  REACTIVE_SYSTEM_STAGE_MAP,
   SQFT_PER_ACRE,
   SITE_GRADING_HARD_BLOCK_ACRES,
   SITE_WARNING_ACRES,
@@ -259,6 +258,7 @@ import { useDashboardObjectUpdateAction } from "./hooks/useDashboardObjectUpdate
 import { useDashboardObjectRemoveRestoreActions } from "./hooks/useDashboardObjectRemoveRestoreActions";
 import { useDashboardAddObjectAction } from "./hooks/useDashboardAddObjectAction";
 import { useDashboardReviewConceptActions } from "./hooks/useDashboardReviewConceptActions";
+import { useDashboardPlanPayloadBuilder } from "./hooks/useDashboardPlanPayloadBuilder";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -2297,131 +2297,41 @@ function PerformanceAIDashboardView({
     };
   };
 
-  const buildPayloadFromOverrides = (
-    overrides: ControlOverrides = {},
-    promptOverride?: string,
-    projectIdOverride?: string | null,
-    placementsOverride?: BuildingPlacement[],
-  ): PlanRequestPayload => {
-    const nextSiteName = overrides.siteName ?? siteName;
-    const nextFileName = overrides.fileName ?? fileName;
-    const nextUnits = overrides.units ?? units;
-    const nextProjectType = overrides.projectType ?? projectType;
-    const nextRoads = overrides.roads ?? roads;
-    const nextGrading = overrides.grading ?? grading;
-    const nextDrainage = overrides.drainage ?? drainage;
-    const nextUtilities = overrides.utilities ?? utilities;
-    const nextBuildingCount = overrides.buildingCount ?? buildingCount;
-    const nextMinSlopePct = overrides.minSlopePct ?? minSlopePct;
-    const nextPipeMinSlopePct = overrides.pipeMinSlopePct ?? pipeMinSlopePct;
-    const nextMaxParkingSlopePct = overrides.maxParkingSlopePct ?? maxParkingSlopePct;
-    const nextMaxRoadGradePct = overrides.maxRoadGradePct ?? maxRoadGradePct;
-    const nextMaxAdaCrossSlopePct = overrides.maxAdaCrossSlopePct ?? maxAdaCrossSlopePct;
-
-    return {
-      project_id:
-        projectIdOverride !== undefined ? projectIdOverride : projectId || null,
-      full_design_mode: true,
-      input_mode: assistedEnabled ? "assisted" : "user",
-      strict_mode: false,
-      prompt_text: (promptOverride ?? prompt) || null,
-      image_path: imageName || null,
-      meta: {
-        chat_thread: chatMessagesRef.current,
-        site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
-        system_dirty_state: systemStatuses,
-        reactive_edit_policy_preference: REACTIVE_EDIT_POLICY_PREFERENCE,
-        site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
-        assisted_enabled: assistedEnabled,
-      },
-      manual_fields: buildManualFields({
-        nextSiteName,
-        nextFileName,
-        nextUnits,
-        nextProjectType,
-        nextLotWidth: overrides.lotWidth ?? lotWidth,
-        nextLotHeight: overrides.lotHeight ?? lotHeight,
-        nextSetback: overrides.setback ?? setback,
-        nextBuildingWidth: overrides.buildingWidth ?? buildingWidth,
-        nextBuildingDepth: overrides.buildingDepth ?? buildingDepth,
-        nextBuildingCount,
-        nextParkingCount: overrides.parkingCount ?? parkingCount,
-        nextMinSlopePct,
-        nextPipeMinSlopePct,
-        nextMaxParkingSlopePct,
-        nextMaxRoadGradePct,
-        nextMaxAdaCrossSlopePct,
-        nextRoads,
-        nextGrading,
-        nextDrainage,
-        nextUtilities,
-        placementsOverride,
-      }),
-      allow_ai_fill_for_blanks: assistedEnabled,
-    };
-  };
-
-  const withReactiveRerunContext = useCallback(
-    (
-      requestPayload: PlanRequestPayload,
-      requestedSystem: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
-    ): PlanRequestPayload => {
-      if (requestedSystem === "full") return requestPayload;
-      const checkpointFinalPlan = backendResult?.final_plan;
-      if (!checkpointFinalPlan || typeof checkpointFinalPlan !== "object") {
-        return requestPayload;
-      }
-      const changedSystems = Object.entries(systemStatuses)
-        .filter(([system, status]) => status === "stale" && system in REACTIVE_SYSTEM_STAGE_MAP)
-        .map(([system]) => system as keyof typeof REACTIVE_SYSTEM_STAGE_MAP);
-      if (!changedSystems.includes(requestedSystem)) {
-        changedSystems.push(requestedSystem);
-      }
-      const changedTargets = Array.from(
-        new Set(
-          changedSystems.flatMap((system) => REACTIVE_SYSTEM_STAGE_MAP[system] ?? []),
-        ),
-      );
-      if (!changedTargets.length) return requestPayload;
-
-      const existingMeta = (requestPayload.meta ?? {}) as Record<string, unknown>;
-      const existingOrchestratorMeta =
-        existingMeta.orchestrator_meta && typeof existingMeta.orchestrator_meta === "object"
-          ? (existingMeta.orchestrator_meta as Record<string, unknown>)
-          : {};
-      const existingRuntimeResume =
-        existingOrchestratorMeta.runtime_resume &&
-        typeof existingOrchestratorMeta.runtime_resume === "object"
-          ? (existingOrchestratorMeta.runtime_resume as Record<string, unknown>)
-          : {};
-
-      return {
-        ...requestPayload,
-        meta: {
-          ...existingMeta,
-          requested_system: requestedSystem,
-          changed_targets: changedTargets,
-          stale_outputs: changedTargets,
-          reactive_checkpoint_final_plan: checkpointFinalPlan,
-          reactive_partial_rerun_request: {
-            enabled: true,
-            requested_system: requestedSystem,
-            checkpoint_attached: true,
-            changed_targets: changedTargets,
-          },
-          orchestrator_meta: {
-            ...existingOrchestratorMeta,
-            runtime_resume: {
-              ...existingRuntimeResume,
-              final_plan: checkpointFinalPlan,
-              reactive_checkpoint_source: "web_current_backend_result",
-            },
-          },
-        },
-      };
-    },
-    [backendResult?.final_plan, systemStatuses],
-  );
+  const {
+    buildPayloadFromOverrides,
+    withReactiveRerunContext,
+  } = useDashboardPlanPayloadBuilder({
+    assistedEnabled,
+    backendResult,
+    buildManualFields,
+    buildingCount,
+    buildingDepth,
+    buildingPlacements,
+    buildingWidth,
+    chatMessagesRef,
+    currentProject,
+    drainage,
+    fileName,
+    grading,
+    imageName,
+    lotHeight,
+    lotWidth,
+    maxAdaCrossSlopePct,
+    maxParkingSlopePct,
+    maxRoadGradePct,
+    minSlopePct,
+    parkingCount,
+    pipeMinSlopePct,
+    projectId,
+    projectType,
+    prompt,
+    roads,
+    setback,
+    siteName,
+    systemStatuses,
+    units,
+    utilities,
+  });
 
   const isConnectivityFailureMessage = (message: string) =>
     message.toLowerCase().includes("backend unreachable") ||
