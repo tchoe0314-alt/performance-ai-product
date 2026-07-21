@@ -2266,7 +2266,7 @@ export default function PreviewPanel({
             allowEdits={allowEdits}
             drawMode={drawMode}
             selectedObjectPresent={Boolean(selectedObject)}
-            showDesktopDrawTools={!showMobileDrawToolbar}
+            showDesktopDrawTools={!showMobileDrawToolbar && !showQuickDrawPalette}
             headerProps={{
               previewMode,
               previewQuality,
@@ -2281,7 +2281,7 @@ export default function PreviewPanel({
               siteLocked,
               canDrawObjects,
               drawObjectsDisabledLabel,
-              showDrawTools: !showMobileDrawToolbar,
+              showDrawTools: !showMobileDrawToolbar && !showQuickDrawPalette,
               isHighQuality,
               useLightHighQuality,
               busy,
@@ -2480,7 +2480,7 @@ export default function PreviewPanel({
                 canDrawObjects,
                 drawObjectsDisabledLabel,
                 drawMode,
-                showDrawTools: !showMobileDrawToolbar,
+                showDrawTools: !showMobileDrawToolbar && !showQuickDrawPalette,
                 onSetPreviewMode,
                 onSetPreviewQuality,
                 onSetAiVisualizationOff: setAiVisualizationOff,
