@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
   await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
@@ -56,8 +57,11 @@ async function mockSignedInShell(page: Page) {
     });
   });
   await page.addInitScript(
-    ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
-    [TOKEN_KEY, "pw-token"] as const,
+    ([tokenKey, restoreKey, authToken]) => {
+      window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "pw-token"] as const,
   );
 }
 
@@ -91,8 +95,11 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
       await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
     });
     await page.addInitScript(
-      ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
-      [TOKEN_KEY, "expired-token"] as const,
+      ([tokenKey, restoreKey, authToken]) => {
+        window.localStorage.setItem(tokenKey, authToken);
+        window.sessionStorage.setItem(restoreKey, "1");
+      },
+      [TOKEN_KEY, SESSION_RESTORE_KEY, "expired-token"] as const,
     );
 
     await page.goto("/", { waitUntil: "domcontentloaded" });

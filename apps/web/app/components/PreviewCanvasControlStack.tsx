@@ -15,6 +15,7 @@ type PreviewCanvasControlStackProps = {
   objectManagerProps: ComponentProps<typeof PreviewObjectManagerOverlay>;
   previewMode: "2d" | "3d";
   selectedObjectPresent: boolean;
+  showDesktopDrawTools?: boolean;
   stableDrawToolbarProps: ComponentProps<typeof PreviewStableDrawToolbar>;
 };
 
@@ -26,6 +27,7 @@ export function PreviewCanvasControlStack({
   objectManagerProps,
   previewMode,
   selectedObjectPresent,
+  showDesktopDrawTools = true,
   stableDrawToolbarProps,
 }: PreviewCanvasControlStackProps) {
   return (
@@ -39,7 +41,7 @@ export function PreviewCanvasControlStack({
           />
         ) : null}
       </div>
-      {previewMode === "2d" && allowEdits ? <PreviewStableDrawToolbar {...stableDrawToolbarProps} /> : null}
+      {showDesktopDrawTools && previewMode === "2d" && allowEdits ? <PreviewStableDrawToolbar {...stableDrawToolbarProps} /> : null}
       <PreviewActiveDrawHud {...activeDrawHudProps} />
     </div>
   );

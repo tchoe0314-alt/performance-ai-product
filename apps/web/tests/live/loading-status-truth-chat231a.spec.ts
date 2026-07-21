@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 async function collectPageErrors(page: Page) {
   const errors: string[] = [];
@@ -120,8 +121,11 @@ async function mockSignedInProjectShell(page: Page) {
     });
   });
   await page.addInitScript(
-    ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
-    [TOKEN_KEY, "pw-token"] as const,
+    ([tokenKey, restoreKey, authToken]) => {
+      window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "pw-token"] as const,
   );
 }
 

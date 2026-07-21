@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 
 import type {
@@ -95,6 +95,17 @@ export function useDashboardPlanPayloadBuilder({
   units,
   utilities,
 }: UseDashboardPlanPayloadBuilderInput) {
+  const latestBackendResultRef = useRef<PlanResponse | null>(backendResult);
+  const latestSystemStatusesRef = useRef<Record<EngineeringSystemKey, SystemStatus>>(systemStatuses);
+
+  useEffect(() => {
+    latestBackendResultRef.current = backendResult;
+  }, [backendResult]);
+
+  useEffect(() => {
+    latestSystemStatusesRef.current = systemStatuses;
+  }, [systemStatuses]);
+
   const buildPayloadFromOverrides = useCallback((
     overrides: ControlOverrides = {},
     promptOverride?: string,
@@ -195,11 +206,11 @@ export function useDashboardPlanPayloadBuilder({
       requestedSystem: SystemGenerationTarget,
     ): PlanRequestPayload => {
       if (requestedSystem === "full") return requestPayload;
-      const checkpointFinalPlan = backendResult?.final_plan;
+      const checkpointFinalPlan = latestBackendResultRef.current?.final_plan;
       if (!checkpointFinalPlan || typeof checkpointFinalPlan !== "object") {
         return requestPayload;
       }
-      const changedSystems = Object.entries(systemStatuses)
+      const changedSystems = Object.entries(latestSystemStatusesRef.current)
         .filter(([system, status]) => status === "stale" && system in REACTIVE_SYSTEM_STAGE_MAP)
         .map(([system]) => system as keyof typeof REACTIVE_SYSTEM_STAGE_MAP);
       if (!changedSystems.includes(requestedSystem)) {
@@ -248,7 +259,7 @@ export function useDashboardPlanPayloadBuilder({
         },
       };
     },
-    [backendResult?.final_plan, systemStatuses],
+    [],
   );
 
   return {

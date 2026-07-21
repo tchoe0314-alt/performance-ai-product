@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 test("fresh setup creates a centered 1000 by 1000 site from an address", async ({ page }) => {
   let geocodeCalled = false;
@@ -102,18 +103,25 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
         map_feature_detection_report_v1: {
           version: "map_feature_detection_report_v1",
           candidate_count: 3,
-          feature_candidates: [],
+          feature_candidates: [
+            { candidate_id: "parcel-1", feature_type: "parcel_or_site_boundary", source_name: "Test Parcels", confidence: 0.88, review_required: true },
+            { candidate_id: "road-1", feature_type: "road_or_drive", source_name: "Test Roads", confidence: 0.84, review_required: true },
+            { candidate_id: "terrain-1", feature_type: "terrain", source_name: "Test Terrain", confidence: 0.72, review_required: true },
+          ],
         },
       }),
     });
   });
 
   await page.addInitScript(
-    ([tokenKey, token]) => window.localStorage.setItem(tokenKey, token),
-    [TOKEN_KEY, "chat239-token"] as const,
+    ([tokenKey, restoreKey, token]) => {
+      window.localStorage.setItem(tokenKey, token);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "chat239-token"] as const,
   );
 
-  await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("button", { name: "Projects" }).first().click();
@@ -245,18 +253,25 @@ test("chat can create the same centered site from natural language", async ({ pa
         map_feature_detection_report_v1: {
           version: "map_feature_detection_report_v1",
           candidate_count: 3,
-          feature_candidates: [],
+          feature_candidates: [
+            { candidate_id: "parcel-1", feature_type: "parcel_or_site_boundary", source_name: "Test Parcels", confidence: 0.88, review_required: true },
+            { candidate_id: "road-1", feature_type: "road_or_drive", source_name: "Test Roads", confidence: 0.84, review_required: true },
+            { candidate_id: "terrain-1", feature_type: "terrain", source_name: "Test Terrain", confidence: 0.72, review_required: true },
+          ],
         },
       }),
     });
   });
 
   await page.addInitScript(
-    ([tokenKey, token]) => window.localStorage.setItem(tokenKey, token),
-    [TOKEN_KEY, "chat239-token"] as const,
+    ([tokenKey, restoreKey, token]) => {
+      window.localStorage.setItem(tokenKey, token);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "chat239-token"] as const,
   );
 
-  await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("button", { name: "Projects" }).first().click();

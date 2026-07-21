@@ -14,6 +14,7 @@ type PreviewFloatingToolbarProps = {
   canDrawObjects: boolean;
   drawObjectsDisabledLabel: string;
   drawMode: DrawMode;
+  showDrawTools?: boolean;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewQuality: (value: PreviewQualityValue) => void;
   onSetAiVisualizationOff: () => void;
@@ -37,6 +38,7 @@ export function PreviewFloatingToolbar({
   canDrawObjects,
   drawObjectsDisabledLabel,
   drawMode,
+  showDrawTools = true,
   onSetPreviewMode,
   onSetPreviewQuality,
   onSetAiVisualizationOff,
@@ -126,7 +128,7 @@ export function PreviewFloatingToolbar({
       >
         Edit
       </button>
-      {siteLocked && onUnlockSite ? (
+      {showDrawTools && siteLocked && onUnlockSite ? (
         <button
           type="button"
           title="Unlock the site boundary for editing"
@@ -142,7 +144,7 @@ export function PreviewFloatingToolbar({
           Change Site
         </button>
       ) : null}
-      {previewMode === "2d" && allowEdits ? (
+      {showDrawTools && previewMode === "2d" && allowEdits ? (
         <>
           {!siteLocked ? (
             <button

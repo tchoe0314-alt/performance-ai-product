@@ -5,14 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/apps/web"
 RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression-$$}"
 PLAYWRIGHT_CASES=(
-  "tests/live/ui-functionality-chat32.spec.ts:11"
-  "tests/live/ui-functionality-chat32.spec.ts:53"
-  "tests/live/ui-functionality-chat32.spec.ts:80"
-  "tests/live/civil-3d-viewer.spec.ts:27"
-  "tests/live/civil-3d-viewer.spec.ts:62"
-  "tests/live/civil-3d-viewer.spec.ts:73"
-  "tests/live/civil-3d-viewer.spec.ts:91"
-  "tests/live/civil-3d-viewer.spec.ts:101"
+  "tests/live/ui-functionality-chat32.spec.ts"
+  "tests/live/civil-3d-viewer.spec.ts"
 )
 BACKEND_SMOKE_TESTS=(
   "tests/test_release_gates.py"

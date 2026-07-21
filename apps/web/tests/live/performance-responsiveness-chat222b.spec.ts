@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 async function collectPageFailures(page: Page) {
   const pageErrors: string[] = [];
@@ -92,8 +93,11 @@ async function mockProjectsBackend(page: Page) {
   const store = new Map([[project.project_id, project]]);
 
   await page.addInitScript(
-    ([tokenKey, token]) => window.localStorage.setItem(tokenKey, token),
-    [TOKEN_KEY, "chat222b-token"] as const,
+    ([tokenKey, restoreKey, token]) => {
+      window.localStorage.setItem(tokenKey, token);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "chat222b-token"] as const,
   );
   await page.route("**/api/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });

@@ -53,13 +53,29 @@ const layoutContextScore = (item: BuildingPlacement) => {
 };
 
 export function buildGenerateLayoutContext(buildingPlacements: BuildingPlacement[]): GenerateLayoutContext | null {
+  const siteProgramTypes = new Set([
+    "office_building",
+    "building",
+    "parking",
+    "basin",
+    "outfall",
+    "road",
+    "driveway",
+    "sidewalk",
+    "utility_corridor",
+    "hydrant",
+    "inlet",
+    "manhole",
+  ]);
   const userLayoutContext = buildingPlacements.filter((item) => {
     if (!item.placed || item.type === "site" || item.meta?.generated_review_concept) return false;
     const source = String(item.source || item.meta?.source || "").toLowerCase();
+    const type = String(item.type || "").toLowerCase();
     return Boolean(
       item.meta?.semantic_object_model ||
       item.meta?.semantic_geometry_state ||
       item.meta?.command_created ||
+      siteProgramTypes.has(type) ||
       ["user", "user_confirmed", "manual_drawn", "generated"].includes(source),
     );
   });

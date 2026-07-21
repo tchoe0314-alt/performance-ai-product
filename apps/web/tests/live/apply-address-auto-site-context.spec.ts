@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   let savedProjectInput: Record<string, unknown> | null = null;
@@ -150,8 +151,11 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   });
 
   await page.addInitScript(
-    ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
-    [TOKEN_KEY, "pw-token"] as const,
+    ([tokenKey, restoreKey, authToken]) => {
+      window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "pw-token"] as const,
   );
 
   await page.goto("/", { waitUntil: "domcontentloaded" });

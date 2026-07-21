@@ -22,6 +22,6 @@ test("Review issue tracker remains visible and routes commands to chat", async (
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Chat|what issues are open/i);
 
   panel = await openReportsPanel(page);
-  await panel.getByRole("button", { name: "show drainage blockers" }).click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Chat|show drainage blockers/i);
+  await panel.getByRole("button", { name: "show drainage needs" }).click();
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Chat|show drainage needs/i);
 });

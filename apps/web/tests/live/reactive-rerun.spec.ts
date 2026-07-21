@@ -1,13 +1,17 @@
 import { expect, test, type Route } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 test("focused generate sends reactive checkpoint metadata", async ({ page }) => {
   let observedPayload: unknown = null;
 
   await page.addInitScript(
-    ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
-    [TOKEN_KEY, "reactive-rerun-token"] as const,
+    ([tokenKey, restoreKey, authToken]) => {
+      window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "reactive-rerun-token"] as const,
   );
 
   await page.route("**/api/auth/**", async (route) => {
@@ -89,13 +93,29 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
     });
   });
 
-  await page.goto("/?demo=workspace", { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  const siteDetails = page.getByTestId("setup-site-box-controls");
+  if (!(await siteDetails.evaluate((element) => element.hasAttribute("open")))) {
+    await siteDetails.locator("summary").click();
+  }
+  await page.getByRole("button", { name: "Use 1000 ft x 1000 ft" }).click();
+  await page.getByRole("button", { name: "Lock Boundary" }).click();
+  await expect(page.getByText("SITE LOCKED").first()).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: /^Generate$/ }).first().click();
   await expect(page.getByTestId("generate-reactive-details")).toBeVisible();
   const systemDetails = page.getByTestId("generate-system-details");
   if (!(await systemDetails.evaluate((element) => element.hasAttribute("open")))) {
     await systemDetails.locator("summary").click();
   }
+  await page.getByTestId("generate-grading").click();
+  await expect.poll(() => observedPayload, { timeout: 8_000 }).not.toBeNull();
+  await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran: grading/i, { timeout: 8_000 });
+  await expect(page.getByTestId("generate-grading")).toBeEnabled({ timeout: 8_000 });
+  await page.waitForTimeout(250);
+  observedPayload = null;
+
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toContain("saved checkpoint");
     await dialog.accept();

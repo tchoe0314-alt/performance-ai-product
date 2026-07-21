@@ -300,7 +300,7 @@ export function useDashboardGenerateSystemAction({
       }
 
       const systemLabel = target === "full" ? "full site systems" : target;
-      const queueLongRun = target === "grading" || target === "drainage" || target === "utilities" || target === "full";
+      const queueLongRun = target === "full";
       if (
         target !== "full" &&
         reactiveValidation.requiresConfirmation &&
@@ -323,7 +323,7 @@ export function useDashboardGenerateSystemAction({
       const systemRequestPayload = withReactiveRerunContext(
         {
           ...requestPayload,
-          full_design_mode: target === "full" ? true : requestPayload.full_design_mode,
+          full_design_mode: target === "full",
           manual_fields: nextManualFields,
           meta: {
             ...(requestPayload.meta ?? {}),

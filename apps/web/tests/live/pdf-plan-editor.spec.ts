@@ -8,6 +8,7 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://127.0.0.1:8002";
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 const POOL_PDF_PATH =
   process.env.CIVORA_PDF_PLAN_FIXTURE ||
   path.resolve(process.cwd(), "../../backend/fixtures/plan_pdfs/pool-geometric.pdf");
@@ -32,10 +33,11 @@ async function loginAndSeedToken(request: APIRequestContext, page: Page) {
   expect(token).toBeTruthy();
 
   await page.addInitScript(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
+    ([tokenKey, restoreKey, value]) => {
+      window.localStorage.setItem(tokenKey, value);
+      window.sessionStorage.setItem(restoreKey, "1");
     },
-    [TOKEN_KEY, token] as const,
+    [TOKEN_KEY, SESSION_RESTORE_KEY, token] as const,
   );
   return token;
 }

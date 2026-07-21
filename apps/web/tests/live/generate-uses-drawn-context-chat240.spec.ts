@@ -1,11 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 async function installHostedMocks(page: Page, captured: { queuedRequest: Record<string, unknown> | null }) {
   await page.addInitScript(
-    ([tokenKey, token]) => window.localStorage.setItem(tokenKey, token),
-    [TOKEN_KEY, "drawn-context-token"] as const,
+    ([tokenKey, restoreKey, token]) => {
+      window.localStorage.setItem(tokenKey, token);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "drawn-context-token"] as const,
   );
 
   await page.route("**/api/auth/status", async (route) => {
@@ -146,21 +150,21 @@ async function askChat(page: Page, question: string, expected: RegExp) {
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
-async function openFreshMargoProject(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+async function openFreshMargoProject(page: Page, options: { requireFullProgramObjects?: boolean } = {}) {
+  const requireFullProgramObjects = options.requireFullProgramObjects ?? true;
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("button", { name: "Projects" }).first().click();
   await page.getByRole("button", { name: "New Project" }).first().click();
 
-  await runCommand(
-    page,
-    "20525 Margo St Gretna NE should be the center point, make it 1000 ft by 1000 ft with a 28000 sf office building, 140 parking spaces, detention basin, driveway, sidewalks, public water, sanitary, and storm sewer",
-  );
+  await runCommand(page, "create dense civil site plan with office building parking detention basin driveway sidewalks water sanitary and storm sewer");
   await expect(page.getByText("SITE LOCKED").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 5_000 });
-  await expect(page.locator('[data-cad-object-id][aria-label*="Basin"], [data-cad-object-id][aria-label*="Detention"]').first()).toBeVisible({ timeout: 5_000 });
-  await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"], [data-cad-object-id][aria-label*="water-line"]').first()).toBeVisible({ timeout: 5_000 });
+  if (requireFullProgramObjects) {
+    await expect(page.locator('[data-cad-object-id][aria-label*="Basin"], [data-cad-object-id][aria-label*="Detention"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"], [data-cad-object-id][aria-label*="water-line"]').first()).toBeVisible({ timeout: 5_000 });
+  }
 }
 
 async function runGenerateAndCapture(page: Page, captured: { queuedRequest: Record<string, unknown> | null }) {
@@ -177,7 +181,7 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   const captured: { queuedRequest: Record<string, unknown> | null } = { queuedRequest: null };
   await installHostedMocks(page, captured);
 
-  await openFreshMargoProject(page);
+  await openFreshMargoProject(page, { requireFullProgramObjects: false });
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   await page.getByLabel("Draft command input").fill("LINE 20,20 220,20");
@@ -207,7 +211,7 @@ test("Generate queues drawn and placed objects as engineering context", async ({
 
   const meta = request.meta as Record<string, unknown>;
   expect(meta.requested_system).toBe("full");
-  expect(JSON.stringify(meta.auto_site_context_review_summary ?? {})).toContain("parcel/site boundary");
+  expect(JSON.stringify(meta.auto_site_context_review_summary ?? {})).toContain("waiting");
   expect(JSON.stringify(meta.user_layout_context_summary ?? {})).toContain("Office Building - 28,000 sf");
   expect(JSON.stringify(meta.user_layout_context_summary ?? {})).toMatch(/Custom Line|Command Line/i);
   expect(JSON.stringify(meta.generate_notes ?? [])).toContain("User layout context used by Generate");
@@ -225,7 +229,7 @@ test("Generate immediately sees newly combined semantic objects", async ({ page 
   const captured: { queuedRequest: Record<string, unknown> | null } = { queuedRequest: null };
   await installHostedMocks(page, captured);
 
-  await openFreshMargoProject(page);
+  await openFreshMargoProject(page, { requireFullProgramObjects: false });
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
 
   const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();

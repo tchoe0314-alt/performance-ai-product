@@ -22,6 +22,7 @@ type PreviewCanvasHeaderControlsProps = {
   siteLocked?: boolean;
   canDrawObjects: boolean;
   drawObjectsDisabledLabel: string;
+  showDrawTools?: boolean;
   isHighQuality: boolean;
   useLightHighQuality: boolean;
   busy: boolean;
@@ -56,6 +57,7 @@ export function PreviewCanvasHeaderControls({
   siteLocked,
   canDrawObjects,
   drawObjectsDisabledLabel,
+  showDrawTools = true,
   isHighQuality,
   useLightHighQuality,
   busy,
@@ -139,7 +141,7 @@ export function PreviewCanvasHeaderControls({
           >
             Edit
           </button>
-          {previewMode === "2d" ? (
+          {showDrawTools && previewMode === "2d" ? (
             <button
               type="button"
               data-testid="preview-inner-draw-site-boundary"
@@ -167,7 +169,7 @@ export function PreviewCanvasHeaderControls({
               Draw Site Boundary
             </button>
           ) : null}
-          {previewMode === "2d" && siteLocked && onUnlockSite ? (
+          {showDrawTools && previewMode === "2d" && siteLocked && onUnlockSite ? (
             <button
               type="button"
               data-testid="change-site-boundary-toolbar-hidden"
@@ -183,7 +185,7 @@ export function PreviewCanvasHeaderControls({
               Change Site
             </button>
           ) : null}
-          {previewMode === "2d" ? (
+          {showDrawTools && previewMode === "2d" ? (
             <PreviewDrawToolButtons
               drawMode={drawMode}
               disabled={!canDrawObjects}
