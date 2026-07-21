@@ -59,6 +59,38 @@ async function mockShell(page: Page, store: Map<string, SavedProject>) {
     });
   });
 
+  await page.route("**/api/customer-templates", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        registry: {
+          version: "customer_template_registry_v1",
+          templates: [],
+          review_required: true,
+          construction_release_allowed: false,
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/utility-catalogs", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        catalog: {
+          version: "utility_catalog_v1",
+          records: [],
+          review_required: true,
+          construction_release_allowed: false,
+        },
+      }),
+    });
+  });
+
   await page.route("**/api/geocode", async (route) => {
     await route.fulfill({
       status: 200,
