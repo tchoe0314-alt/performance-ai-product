@@ -54,7 +54,7 @@ export function PreviewPolylineObjects({
                   data-testid="plan-road-corridor"
                   points={points.join(" ")}
                   fill="none"
-                  stroke={sourceState === "fallback" ? "rgba(100,116,139,0.13)" : "rgba(15, 23, 42, 0.11)"}
+                  stroke={sourceState === "fallback" ? "rgba(100,116,139,0.22)" : "rgba(15, 23, 42, 0.11)"}
                   strokeWidth={corridorStrokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -94,10 +94,10 @@ export function PreviewPolylineObjects({
                   points={points.join(" ")}
                   fill="none"
                   stroke="url(#cad-asphalt-light)"
-                  strokeWidth={Math.max(0.12, corridorStrokeWidth * 0.2)}
+                  strokeWidth={Math.max(0.08, corridorStrokeWidth * 0.16)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  opacity={sourceState === "fallback" ? 0.28 : 0.72}
+                  opacity={sourceState === "fallback" ? 0.36 : 0.72}
                 />
               ) : null}
               {isHighQuality && isUtilityLine ? (
