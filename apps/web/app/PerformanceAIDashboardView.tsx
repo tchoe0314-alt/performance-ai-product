@@ -246,6 +246,7 @@ import { useDashboardPayloadPreviewState } from "./hooks/useDashboardPayloadPrev
 import { useDashboardAutoFitSite } from "./hooks/useDashboardAutoFitSite";
 import { useDashboardGenerateFlowCoordinator } from "./hooks/useDashboardGenerateFlowCoordinator";
 import { useDashboardSystemEvidenceView } from "./hooks/useDashboardSystemEvidenceView";
+import { useDashboardScaleSaveScheduler } from "./hooks/useDashboardScaleSaveScheduler";
 import type {
   ApprovalState,
   CadToolRequestForPreview,
@@ -1780,40 +1781,15 @@ function PerformanceAIDashboardView({
     setStatusMessage(question);
   }
 
-  const scheduleScaleSave = useCallback(
-    (ftPerPx: number, source: "mapbox" | "manual" | "approximate") => {
-      if (scaleSaveTimeoutRef.current !== null) {
-        window.clearTimeout(scaleSaveTimeoutRef.current);
-      }
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      scaleSaveTimeoutRef.current = window.setTimeout(() => {
-        if (!saveProjectRef.current) return;
-        void saveProjectRef.current({
-          silent: true,
-          projectInputOverride: {
-            ...currentInput,
-            input_mode: "user",
-            strict_mode: false,
-            allow_ai_fill_for_blanks: false,
-            meta: {
-              ...(currentInput?.meta ?? {}),
-              site_inputs: {
-                ...(currentInput?.meta?.site_inputs ?? {}),
-                detection_scale: {
-                  distance_ft: detectionScaleFeet ? parsePositiveNumber(detectionScaleFeet) ?? undefined : undefined,
-                  pixel_distance: detectionScalePixels ? parsePositiveNumber(detectionScalePixels) ?? undefined : undefined,
-                  scale_ft_per_px: ftPerPx,
-                  scale_source: source,
-                },
-                site_alignment_locked: siteScaleLocked,
-              },
-            },
-          },
-        });
-      }, 600);
-    },
-    [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, siteScaleLocked],
-  );
+  const scheduleScaleSave = useDashboardScaleSaveScheduler({
+    currentProject,
+    detectionScaleFeet,
+    detectionScalePixels,
+    payloadPreview,
+    saveProjectRef,
+    scaleSaveTimeoutRef,
+    siteScaleLocked,
+  });
 
   useEffect(() => {
     if (buildingPlacements.length > 0) {
