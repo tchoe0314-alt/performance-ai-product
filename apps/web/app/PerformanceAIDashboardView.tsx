@@ -727,6 +727,7 @@ function PerformanceAIDashboardView({
     onRefreshJobs: refreshJobs,
     onStatusMessage: setStatusMessage,
     skipInitialAuthStatus: effectiveDemoWorkspaceEnabled,
+    skipStoredAuthRestore: effectiveDemoWorkspaceEnabled,
     onLogoutCleanup: () => {
       setProjects([]);
       setJobs([]);
