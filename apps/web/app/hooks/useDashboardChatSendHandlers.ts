@@ -368,5 +368,81 @@ export function useDashboardChatSendHandlers({
     }
   }, [cancelActiveCommandState, handleSendMessage]);
 
-  return { handlePromptKeyDown, handleSendMessage };
+  const handleContinuePendingClarification = useCallback(() => {
+    if (!pendingClarification) return;
+    const lot = resolveLotBounds();
+    const hasSite = Boolean(lot.w && lot.h);
+    if (pendingClarification.action === "set_site_then_add") {
+      if (!hasSite) {
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      const type = pendingClarification.payload?.type as SiteObjectType | undefined;
+      if (type) {
+        setPendingClarification(null);
+        handleAddObject(type);
+      }
+      return;
+    }
+    if (pendingClarification.action === "set_site_then_detect") {
+      if (!hasSite) {
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      setPendingClarification(null);
+      void handleAnalyzeImageFeatures();
+      return;
+    }
+    if (pendingClarification.action === "set_site_then_generate") {
+      if (!hasSite) {
+        appendChatMessage("assistant", pendingClarification.question, "status");
+        return;
+      }
+      const target = pendingClarification.payload?.target as SystemGenerationTarget | undefined;
+      if (target) {
+        setPendingClarification(null);
+        void handleGenerateSystem(target);
+      }
+      return;
+    }
+    if (pendingClarification.action === "upload_image_then_detect") {
+      if (!mapSnapshotPath) {
+        appendChatMessage("assistant", "Please upload a site image/map snapshot first.", "status");
+        return;
+      }
+      setPendingClarification(null);
+      void handleAnalyzeImageFeatures();
+      return;
+    }
+    if (pendingClarification.action === "access_analysis_missing") {
+      setPendingClarification(null);
+      handleAnalyzeSiteAccess();
+      return;
+    }
+    if (pendingClarification.action === "grading_source") {
+      const target = pendingClarification.payload?.target as SystemGenerationTarget | undefined;
+      if (target) {
+        const slopeEstimateOverride = buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8);
+        setUseSurveyForGrading(false);
+        setSurveySlopeEstimate(slopeEstimateOverride);
+        setPendingClarification(null);
+        void handleGenerateSystem(target, { slopeEstimateOverride });
+      }
+    }
+  }, [
+    appendChatMessage,
+    assumedTerrainSlopePct,
+    handleAddObject,
+    handleAnalyzeImageFeatures,
+    handleAnalyzeSiteAccess,
+    handleGenerateSystem,
+    mapSnapshotPath,
+    pendingClarification,
+    resolveLotBounds,
+    setPendingClarification,
+    setSurveySlopeEstimate,
+    setUseSurveyForGrading,
+  ]);
+
+  return { handleContinuePendingClarification, handlePromptKeyDown, handleSendMessage };
 }
