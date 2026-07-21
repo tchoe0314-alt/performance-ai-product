@@ -2885,8 +2885,6 @@ def _looks_like_site_setup(message: str) -> bool:
     lowered = _normalized_chat_text(message)
     has_address = bool(_extract_address_text(message))
     has_site_dimensions = bool(_extract_site_dimensions(message))
-    if has_address and has_site_dimensions:
-        return True
     design_program_signal = any(
         phrase in lowered
         for phrase in [
@@ -2902,6 +2900,10 @@ def _looks_like_site_setup(message: str) -> bool:
             "setbacks",
         ]
     )
+    if design_program_signal and has_site_dimensions and not has_address:
+        return False
+    if has_address and has_site_dimensions:
+        return True
     setup_only_signal = any(
         phrase in lowered
         for phrase in [

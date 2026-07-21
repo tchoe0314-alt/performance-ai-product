@@ -340,6 +340,11 @@ def _next_question(action_id: str, missing: List[str]) -> str:
 
 def _candidate_actions(text: str) -> List[Dict[str, Any]]:
     candidates: List[Dict[str, Any]] = []
+    full_design_scope = (
+        re.search(r"\b(design|generate|create|lay out|layout)\b.*\b(site plan|civil site|site)\b", text)
+        and any(token in text for token in ["building", "parking", "driveway", "road", "drainage", "storm", "inlet", "pipe"])
+        and any(token in text for token in ["include", "with", "add", "ensure", "maintain"])
+    )
     if re.search(r"\b(open|show|go to|take me to)\b.*\b(setup|canvas|review|deliver|data|layers|settings|objects|generate)\b", text):
         candidates.append(_candidate("open_ui_panel", 0.94, ["UI navigation wording"]))
     if re.search(r"\b(2d|3d|standard|high quality|high-quality|quality)\b", text) and any(token in text for token in ["canvas", "preview", "view", "mode", "quality", "3d", "2d"]):
@@ -352,7 +357,14 @@ def _candidate_actions(text: str) -> List[Dict[str, Any]]:
         candidates.append(_candidate("request_review_export_package", 0.9, ["review/export package wording"]))
     if re.search(r"\b(undo|redo|search)\b", text):
         candidates.append(_candidate("unsupported_ui_action", 0.82, ["unsupported UI action wording"]))
-    if re.search(r"\b(?:site|lot|boundary|size)\b.*\b\d+(?:\.\d+)?\s*(?:ft|feet|')?\s*(?:x|by)\s*\d+(?:\.\d+)?\b", text) or "address is" in text or re.search(r"\b\d+(?:\.\d+)?\s*(?:ac|acre|acres)\b.*\bblank site\b", text):
+    if (
+        not full_design_scope
+        and (
+            re.search(r"\b(?:site|lot|boundary|size)\b.*\b\d+(?:\.\d+)?\s*(?:ft|feet|')?\s*(?:x|by)\s*\d+(?:\.\d+)?\b", text)
+            or "address is" in text
+            or re.search(r"\b\d+(?:\.\d+)?\s*(?:ac|acre|acres)\b.*\bblank site\b", text)
+        )
+    ):
         candidates.append(_candidate("site_setup", 0.94, ["site setup dimensions/address wording"]))
     if any(phrase in text for phrase in ["why is this broken", "why broken", "broken", "not working", "what's wrong", "whats wrong"]):
         candidates.append(_candidate("explain_blockers", 0.88, ["debug/explain wording"]))
