@@ -31,12 +31,14 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
     await expect(page.getByTestId("professional-building-cues").first()).toBeVisible();
     await expect(page.getByTestId("professional-parking-field").first()).toBeVisible();
-    await expect(page.getByTestId("plan-grading-context-lines").first()).toBeVisible();
     await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
-    await expect(page.getByTestId("survey-boundary-annotation").first()).toBeVisible();
-    await expect(page.getByTestId("survey-spot-elevation").first()).toBeVisible();
+    await expect(page.getByTestId("plan-grading-context-lines")).toHaveCount(0);
+    await expect(page.getByTestId("survey-boundary-annotation")).toHaveCount(0);
+    await expect(page.getByTestId("survey-spot-elevation")).toHaveCount(0);
     await expect(canvas).not.toContainText(/PRELIMINARY BASE PLAN/i);
     await expect(canvas).toContainText(/SITE REVIEW/i);
+    await expect(canvas).toContainText(/CONCEPT PLAN/i);
+    await expect(canvas).toContainText(/NO SURVEY \/ TOPO SOURCE/i);
     await expect(page.getByTestId("selected-object-quick-toolbar")).toHaveCount(0);
     await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
     await expect(canvas.locator("#cad-building-poche")).toHaveCount(1);

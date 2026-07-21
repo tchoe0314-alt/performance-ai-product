@@ -4,6 +4,7 @@ type PreviewBasePlanGridProps = {
   showMap: boolean;
   isHighQuality: boolean;
   siteLocked: boolean;
+  hasSurveyOrTerrainEvidence: boolean;
   lotWidth: number;
   lotHeight: number;
   planScaleBar: {
@@ -24,6 +25,7 @@ export function PreviewBasePlanGrid({
   showMap,
   isHighQuality,
   siteLocked,
+  hasSurveyOrTerrainEvidence,
   lotWidth,
   lotHeight,
   planScaleBar,
@@ -48,9 +50,13 @@ export function PreviewBasePlanGrid({
               <line key={`sheet-title-line-${y}`} x1={84.6} y1={y} x2={99.2} y2={y} stroke="#111827" strokeWidth={0.08} />
             ))}
             <text x={91.9} y={6.2} textAnchor="middle" fontSize="1.05" fontWeight={850} fill="#111827">SITE REVIEW</text>
-            <text x={91.9} y={8.0} textAnchor="middle" fontSize="0.86" fontWeight={700} fill="#334155">CONCEPT EXHIBIT</text>
+            <text x={91.9} y={8.0} textAnchor="middle" fontSize="0.86" fontWeight={700} fill="#334155">
+              {hasSurveyOrTerrainEvidence ? "SOURCE EXHIBIT" : "CONCEPT PLAN"}
+            </text>
             <text x={91.9} y={11.9} textAnchor="middle" fontSize="0.72" fill="#475569">{Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT</text>
-            <text x={91.9} y={13.4} textAnchor="middle" fontSize="0.72" fill="#475569">SOURCE REVIEW</text>
+            <text x={91.9} y={13.4} textAnchor="middle" fontSize="0.72" fill="#475569">
+              {hasSurveyOrTerrainEvidence ? "SOURCE REVIEW" : "NO SURVEY / TOPO SOURCE"}
+            </text>
             <text x={86.0} y={33.0} fontSize="0.8" fontWeight={850} fill="#111827">LEGEND</text>
             <line x1={86.0} y1={34.0} x2={89.8} y2={34.0} stroke="#111827" strokeWidth={0.16} strokeDasharray="1 0.7" />
             <text x={90.4} y={34.4} fontSize="0.72" fill="#334155">PROPERTY LINE</text>
@@ -63,8 +69,12 @@ export function PreviewBasePlanGrid({
             <rect x={86.0} y={45.6} width={3.6} height={1.4} fill="rgba(255,255,255,0.7)" stroke="#111827" strokeWidth={0.1} />
             <text x={90.4} y={46.7} fontSize="0.72" fill="#334155">BUILDING</text>
             <text x={86.0} y={68.5} fontSize="0.72" fontWeight={850} fill="#111827">NOTES</text>
-            <text x={86.0} y={70.4} fontSize="0.55" fill="#64748b">SOURCE REVIEW ONLY</text>
-            <text x={86.0} y={72.0} fontSize="0.55" fill="#64748b">FIELD VERIFY</text>
+            <text x={86.0} y={70.4} fontSize="0.55" fill="#64748b">
+              {hasSurveyOrTerrainEvidence ? "SOURCE REVIEW ONLY" : "DRAWN / GENERATED CONTEXT"}
+            </text>
+            <text x={86.0} y={72.0} fontSize="0.55" fill="#64748b">
+              {hasSurveyOrTerrainEvidence ? "FIELD VERIFY" : "ADD SURVEY OR TERRAIN"}
+            </text>
             <text x={86.0} y={87.2} fontSize="0.78" fill="#334155">SHEET</text>
             <text x={91.8} y={95.5} textAnchor="middle" fontSize="3.1" fontWeight={900} fill="#111827">C1.0</text>
             <path d="M 92 20 L 92 14 L 90.6 17.2 L 92 16.5 L 93.4 17.2 Z" fill="#111827" />
@@ -88,7 +98,7 @@ export function PreviewBasePlanGrid({
                 SITE LOCKED · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
               </text>
             ) : null}
-            {isHighQuality ? (
+            {isHighQuality && hasSurveyOrTerrainEvidence ? (
               <g data-testid="survey-boundary-annotation" pointerEvents="none">
                 <text x={42.6} y={2.55} textAnchor="middle" fontSize="0.66" fill="#475569">N 89°58&apos;30&quot; E · {Math.round(lotWidth)}.00&apos;</text>
                 <text x={42.6} y={98.2} textAnchor="middle" fontSize="0.66" fill="#475569">S 89°58&apos;30&quot; W · {Math.round(lotWidth)}.00&apos;</text>
@@ -114,7 +124,7 @@ export function PreviewBasePlanGrid({
           {planScaleBar.lengthFt} FT
         </text>
       </g>
-      {isHighQuality && !showMap && siteLocked ? (
+      {isHighQuality && !showMap && siteLocked && hasSurveyOrTerrainEvidence ? (
         <g data-testid="plan-grading-context-lines" opacity={0.2} pointerEvents="none">
           {[0, 1, 2, 3, 4].map((index) => {
             const y = 18 + index * 12.5;

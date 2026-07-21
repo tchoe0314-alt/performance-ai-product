@@ -137,6 +137,7 @@ export function PreviewPlanCanvasLayers({
             showMap={showMap}
             isHighQuality={isHighQuality}
             siteLocked={siteLocked}
+            hasSurveyOrTerrainEvidence={surveyPointCount > 0}
             lotWidth={lotWidth}
             lotHeight={lotHeight}
             planScaleBar={planScaleBar}
