@@ -35,6 +35,9 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
     await expect(page.getByTestId("survey-boundary-annotation").first()).toBeVisible();
     await expect(page.getByTestId("survey-spot-elevation").first()).toBeVisible();
+    await expect(canvas).not.toContainText(/PRELIMINARY BASE PLAN/i);
+    await expect(canvas).toContainText(/SITE REVIEW/i);
+    await expect(page.getByTestId("selected-object-quick-toolbar")).toHaveCount(0);
     await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
     await expect(canvas.locator("#cad-building-poche")).toHaveCount(1);
     await expect(canvas.locator("#cad-asphalt-light")).toHaveCount(1);
@@ -46,6 +49,10 @@ test.describe("Chat 234 preview realism truth pass", () => {
       ? hydrantOverlay
       : page.locator("[data-object-overlay][data-visual-kind]").first();
     await topVisibleOverlay.hover();
+    await expect(page.getByTestId("selected-object-quick-toolbar")).toHaveCount(0);
+    await topVisibleOverlay.click();
+    await topVisibleOverlay.hover();
+    await expect(page.getByTestId("selected-object-quick-toolbar")).toHaveCount(1);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-review-object-badge")).toHaveCount(0);
 

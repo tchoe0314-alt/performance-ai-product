@@ -76,7 +76,7 @@ export function PreviewRectObjects({
                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                       fill="none"
                       stroke="url(#cad-asphalt-light)"
-                      strokeWidth={Math.max(0.12, corridorAxis.width * 0.22)}
+                      strokeWidth={Math.max(0.08, corridorAxis.width * 0.16)}
                       strokeLinecap="round"
                       opacity={sourceState === "fallback" ? 0.28 : 0.75}
                     />
@@ -233,8 +233,6 @@ export function PreviewRectObjects({
               ) : null}
               {isHighQuality && visualKind === "building" ? (
                 <g data-testid="professional-building-cues" opacity={sourceState === "fallback" ? 0.42 : 0.86}>
-                  <line x1={rect.left} y1={rect.top + rect.height} x2={rect.left + rect.width} y2={rect.top} stroke="rgba(15,23,42,0.32)" strokeWidth={0.12} />
-                  <line x1={rect.left} y1={rect.top} x2={rect.left + rect.width} y2={rect.top + rect.height} stroke="rgba(15,23,42,0.18)" strokeWidth={0.1} />
                   <rect
                     x={rect.left + rect.width * 0.08}
                     y={rect.top + rect.height * 0.08}
@@ -243,7 +241,13 @@ export function PreviewRectObjects({
                     rx={0.08}
                     fill="none"
                     stroke="rgba(15,23,42,0.14)"
-                    strokeWidth={0.08}
+                    strokeWidth={0.05}
+                  />
+                  <path
+                    d={`M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.24} H ${rect.left + rect.width * 0.88} M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.5} H ${rect.left + rect.width * 0.88} M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.76} H ${rect.left + rect.width * 0.88}`}
+                    fill="none"
+                    stroke="rgba(15,23,42,0.08)"
+                    strokeWidth={0.04}
                   />
                   <line
                     x1={rect.left + rect.width * 0.43}
@@ -251,13 +255,13 @@ export function PreviewRectObjects({
                     x2={rect.left + rect.width * 0.57}
                     y2={rect.top + rect.height}
                     stroke="rgba(15,23,42,0.62)"
-                    strokeWidth={0.16}
+                    strokeWidth={0.1}
                   />
                   <path
                     d={`M ${rect.left + rect.width * 0.43} ${rect.top + rect.height * 1.04} Q ${rect.left + rect.width * 0.5} ${rect.top + rect.height * 1.1} ${rect.left + rect.width * 0.57} ${rect.top + rect.height * 1.04}`}
                     fill="none"
                     stroke="rgba(15,23,42,0.24)"
-                    strokeWidth={0.1}
+                    strokeWidth={0.06}
                   />
                 </g>
               ) : null}

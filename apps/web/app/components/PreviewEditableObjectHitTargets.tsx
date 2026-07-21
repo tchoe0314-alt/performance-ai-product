@@ -187,7 +187,7 @@ export function PreviewEditableObjectHitTargets({
           const isCustomArea = isPolygon;
           const showBox = !isPolyline && !isCustomArea;
           const showBoxChrome = showBox && (isSelected || Boolean(isAccessHighlight));
-          const showQuickSelectionActions = isSelected && drawMode === "select";
+          const showQuickSelectionActions = isSelected && drawMode === "select" && hoveredObjectId === item.id;
           const showSelectionAffordances = showQuickSelectionActions && allowEdits;
           const isSite = item.type === "site";
           const visualKind = resolvePreviewVisualKind(item);
