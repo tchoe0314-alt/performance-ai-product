@@ -80,6 +80,12 @@ test.describe("real website workflow clarity", () => {
     await expectSectionToggles(page, "setup-site-box-controls", "Site Boundary", /Width \(ft\)/);
     await page.getByTestId("setup-survey-terrain-card").getByText("Survey / Terrain").first().click();
     await expect(page.getByTestId("setup-survey-terrain-card")).toHaveAttribute("open", "");
+    await expect(page.getByTestId("survey-source-hierarchy")).toContainText(/Professional survey \/ control/i);
+    await expect(page.getByTestId("survey-source-hierarchy")).toContainText(/Civil CAD \/ LandXML \/ point files/i);
+    await expect(page.getByTestId("survey-source-hierarchy")).toContainText(/LiDAR \/ DEM \/ GeoTIFF terrain/i);
+    await expect(page.getByTestId("survey-source-hierarchy")).toContainText(/Utility records \/ as-builts/i);
+    await expect(page.getByTestId("survey-source-hierarchy")).toContainText(/GIS \/ parcel \/ public context/i);
+    await expect(page.getByTestId("best-survey-source-label")).toContainText(/Best source/i);
     const siteContextDetails = page.getByTestId("setup-detect-inside-site");
     if (!(await siteContextDetails.evaluate((node) => node.hasAttribute("open")))) {
       await siteContextDetails.getByText("Auto Site Context").first().click();

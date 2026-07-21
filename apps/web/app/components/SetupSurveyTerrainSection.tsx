@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 
+import { bestSurveySourceLabel, SURVEY_SOURCE_HIERARCHY } from "../utils/surveySourceHierarchy";
 import { DisclosurePanel } from "./ui";
 
 type ImageUploadState = "idle" | "uploading" | "detecting" | "ready" | "failed" | string;
@@ -39,6 +40,14 @@ export function SetupSurveyTerrainSection({
   onUploadImage,
   onUploadExistingConditions,
 }: SetupSurveyTerrainSectionProps) {
+  const bestSourceLabel = bestSurveySourceLabel({
+    surveyFileName,
+    surveyPreviewPointCount,
+    hasTerrainSource,
+    uploadedImagePreviewUrl,
+    uploadedImageApiUrl,
+  });
+
   return (
     <DisclosurePanel
       testId="setup-survey-terrain-card"
@@ -54,6 +63,24 @@ export function SetupSurveyTerrainSection({
       >
         Import
       </button>
+      <div className="mb-3 rounded-xl border border-slate-200 bg-white/85 p-3" data-testid="survey-source-hierarchy">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Source ladder</p>
+        <p className="mt-1 text-xs font-semibold text-slate-800" data-testid="best-survey-source-label">{bestSourceLabel}</p>
+        <div className="mt-3 space-y-2">
+          {SURVEY_SOURCE_HIERARCHY.map((tier) => (
+            <details key={tier.id} className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2" data-testid={`survey-source-tier-${tier.id}`}>
+              <summary className="cursor-pointer text-xs font-semibold text-slate-700">
+                {tier.rank}. {tier.title}
+              </summary>
+              <div className="mt-2 space-y-1 text-[11px] leading-5 text-slate-500">
+                <p><span className="font-semibold text-slate-600">Examples:</span> {tier.examples}</p>
+                <p><span className="font-semibold text-slate-600">Use:</span> {tier.use}</p>
+                <p><span className="font-semibold text-slate-600">Confidence:</span> {tier.confidence}</p>
+              </div>
+            </details>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => surveyInputRef.current?.click()} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50">
           {surveyPreviewPointCount ? "Replace Survey" : "Upload Survey"}
