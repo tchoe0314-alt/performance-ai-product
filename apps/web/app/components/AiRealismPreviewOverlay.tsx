@@ -60,7 +60,7 @@ export function AiRealismPreviewOverlay({
           </div>
           <div
             data-testid="ai-realism-source-summary"
-            className="pointer-events-auto absolute left-4 top-4 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
+            className="pointer-events-auto absolute left-4 top-20 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
