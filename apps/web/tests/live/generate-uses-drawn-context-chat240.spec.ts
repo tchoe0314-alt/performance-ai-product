@@ -138,7 +138,7 @@ async function runCommand(page: Page, command: string) {
 }
 
 async function askChat(page: Page, question: string, expected: RegExp) {
-  const chatButton = page.getByRole("button", { name: "Open chat from header" }).first();
+  const chatButton = page.getByTestId("header-chat-button").first();
   if (await chatButton.isVisible().catch(() => false)) {
     await chatButton.click();
   } else {

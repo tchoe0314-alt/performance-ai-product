@@ -180,7 +180,7 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
     fullPage: true,
   });
 
-  await page.getByRole("button", { name: "Open chat from header" }).click();
+  await page.getByTestId("header-chat-button").click();
   const chatInput = await waitForComposer(page);
   await chatInput.fill("what should I do next?");
   await chatInput.press("Enter");

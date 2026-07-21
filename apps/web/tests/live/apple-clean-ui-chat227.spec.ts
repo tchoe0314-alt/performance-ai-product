@@ -34,8 +34,8 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await expect(page.getByTestId("workspace-canvas-frame")).toBeVisible();
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
     await expect(page.getByTestId("primary-workflow-sidebar")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open chat from header" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open projects from header" })).toBeVisible();
+    await expect(page.getByTestId("header-chat-button")).toBeVisible();
+    await expect(page.getByTestId("header-projects-button")).toBeVisible();
     await expect(page.getByRole("button", { name: "Search unavailable" })).toHaveCount(0);
     await expect(page.getByTestId("preview-inner-mode-2d").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByTestId("preview-inner-quality-high").filter({ visible: true }).first()).toBeVisible();
@@ -45,7 +45,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
 
     await expect(page.getByTestId("preview-source-review-object-badge")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await page.getByTestId("header-projects-button").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await page.getByRole("button", { name: "Minimize" }).click();
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);

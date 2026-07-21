@@ -59,7 +59,7 @@ async function seedBrowserToken(page: Page, token: string) {
 
 async function hasAuthenticatedShell(page: Page) {
   const shellControls = [
-    page.getByRole("button", { name: "Open projects from header" }),
+    page.getByTestId("header-projects-button"),
     page.getByRole("button", { name: "Open projects", exact: true }),
     page.getByRole("button", { name: /^Projects$/ }).first(),
     page.getByText(/^Dashboard$/).first(),

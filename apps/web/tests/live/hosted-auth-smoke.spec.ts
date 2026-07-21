@@ -35,7 +35,7 @@ async function openWorkspace(page: Page) {
 }
 
 async function askChat(page: Page, prompt: string, expected: RegExp) {
-  await page.getByRole("button", { name: "Open chat from header" }).click();
+  await page.getByTestId("header-chat-button").click();
   const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
   await input.fill(prompt);
   await input.press("Enter");
@@ -75,11 +75,11 @@ test.describe("hosted authenticated smoke", () => {
     await openWorkspace(page);
 
     await expect(page.getByRole("banner").getByRole("button", { name: "Open workspace controls" })).toBeVisible();
-    await expect(page.getByRole("banner").getByRole("button", { name: "Open projects from header" })).toBeVisible();
-    await expect(page.getByRole("banner").getByRole("button", { name: "Open chat from header" })).toBeVisible();
+    await expect(page.getByTestId("header-projects-button")).toBeVisible();
+    await expect(page.getByTestId("header-chat-button")).toBeVisible();
     await expect(page.getByRole("banner").getByRole("button", { name: "Help" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await page.getByTestId("header-projects-button").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await page.getByRole("button", { name: /New Project/i }).click();
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();

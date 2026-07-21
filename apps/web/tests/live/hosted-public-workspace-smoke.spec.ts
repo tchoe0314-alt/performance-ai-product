@@ -50,8 +50,8 @@ test.describe("hosted/public workspace smoke", () => {
   test("loads the current workspace shell and core controls without auth", async ({ page }) => {
     const browserHealth = await openWorkspace(page);
 
-    await expect(page.getByRole("button", { name: "Open projects from header" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open chat from header" })).toBeVisible();
+    await expect(page.getByTestId("header-projects-button")).toBeVisible();
+    await expect(page.getByTestId("header-chat-button")).toBeVisible();
     await expect(page.getByRole("button", { name: /^Setup$/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Draw$/ })).toBeVisible();
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
@@ -83,11 +83,11 @@ test.describe("hosted/public workspace smoke", () => {
     await expect(page.getByTestId("deliver-review-package-flow").getByRole("button", { name: /Make Review Package/i })).toHaveCount(1);
     await expect(page.getByTestId("deliver-review-sheet-preview")).toContainText(/Review sheet preview/i);
 
-    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await page.getByTestId("header-projects-button").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await page.getByRole("button", { name: "Minimize" }).click();
 
-    await page.getByRole("button", { name: "Open chat from header" }).click();
+    await page.getByTestId("header-chat-button").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
     await expect(page.getByText(/construction-ready|Civora approved|stamped by Civora|sealed by Civora|engineer of record/i)).toHaveCount(0);

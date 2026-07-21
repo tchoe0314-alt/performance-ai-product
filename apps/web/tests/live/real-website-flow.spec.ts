@@ -62,10 +62,10 @@ test.describe("real website workflow clarity", () => {
 
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Setup$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open projects from header" })).toBeVisible();
-    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await expect(page.getByTestId("header-projects-button")).toBeVisible();
+    await page.getByTestId("header-projects-button").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open chat from header" })).toBeVisible();
+    await expect(page.getByTestId("header-chat-button")).toBeVisible();
     await page.getByRole("button", { name: /^Setup$/ }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
     await expect(page.getByTestId("setup-address-truth")).toBeVisible();

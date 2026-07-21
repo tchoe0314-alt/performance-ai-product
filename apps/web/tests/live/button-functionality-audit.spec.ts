@@ -132,7 +132,7 @@ test.describe("button functionality audit", () => {
       await openWorkspacePanel(page, button, expected);
     }
 
-    await page.getByRole("button", { name: "Open chat from header" }).click();
+    await page.getByTestId("header-chat-button").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
     await page.getByRole("button", { name: /^Setup$/ }).click();

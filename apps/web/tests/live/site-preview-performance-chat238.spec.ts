@@ -23,7 +23,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 async function openNewProject(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Open projects from header" }).click();
+  await page.getByTestId("header-projects-button").click();
   await expect(page.getByTestId("projects-drawer")).toBeVisible();
   await page.getByRole("button", { name: /new project/i }).first().click();
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();

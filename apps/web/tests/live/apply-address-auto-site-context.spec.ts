@@ -195,7 +195,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("site-intelligence-driveway")).toContainText("starting suggestion");
   await expect(page.getByTestId("site-intelligence-grading")).toContainText("not a grading surface");
 
-  await page.getByRole("button", { name: "Open chat from header" }).click();
+  await page.getByTestId("header-chat-button").click();
   const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
   await composer.fill("what did you find here?");
   await composer.press("Enter");

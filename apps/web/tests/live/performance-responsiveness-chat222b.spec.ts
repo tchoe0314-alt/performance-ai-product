@@ -261,7 +261,7 @@ test.describe("Chat 222B performance and responsiveness", () => {
     await measureVisible(
       page,
       "projects drawer open",
-      () => page.getByRole("button", { name: "Open projects from header" }).click(),
+      () => page.getByTestId("header-projects-button").click(),
       page.getByTestId("projects-drawer"),
     );
     await measureVisible(
@@ -276,7 +276,7 @@ test.describe("Chat 222B performance and responsiveness", () => {
       "projects new project",
       async () => {
         await page.getByRole("button", { name: "New Project" }).first().click();
-        await page.getByRole("button", { name: "Open projects from header" }).click();
+        await page.getByTestId("header-projects-button").click();
       },
       page.getByTestId("project-drawer-state").filter({ hasText: "Unsaved draft" }),
       5_000,
@@ -284,7 +284,7 @@ test.describe("Chat 222B performance and responsiveness", () => {
     page.once("dialog", async (dialog) => {
       await dialog.accept();
     });
-    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await page.getByTestId("header-projects-button").click();
     await measureVisible(
       page,
       "projects delete project",

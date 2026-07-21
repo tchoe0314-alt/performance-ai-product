@@ -46,8 +46,8 @@ test.describe("Chat 232 naming and trust copy", () => {
   test("main visible labels use the cleaned naming spine", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await expect(page.getByRole("button", { name: "Open projects from header" })).toContainText("Projects");
-    await expect(page.getByRole("button", { name: "Open chat from header" })).toContainText("Chat");
+    await expect(page.getByTestId("header-projects-button")).toContainText("Projects");
+    await expect(page.getByTestId("header-chat-button")).toContainText("Chat");
     await expect(page.getByRole("button", { name: "Help" })).toBeVisible();
 
     const sidebar = page.getByTestId("primary-workflow-sidebar");

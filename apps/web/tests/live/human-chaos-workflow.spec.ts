@@ -172,7 +172,7 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
   await shot(page, testInfo, "07-generate-deliver");
 
   await timed("chat visible help and refusal", async () => {
-    await humanClick(page.getByRole("button", { name: "Open chat from header" }), "Chat");
+    await humanClick(page.getByTestId("header-chat-button"), "Chat");
     const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
     await input.fill("what changed?");
     await input.press("Enter");

@@ -32,7 +32,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
 }
 
 async function askChat(page: Page, question: string, expected: RegExp) {
-  await page.getByRole("button", { name: "Open chat from header" }).click();
+  await page.getByTestId("header-chat-button").click();
   const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
   await input.fill(question);
   await input.press("Enter");

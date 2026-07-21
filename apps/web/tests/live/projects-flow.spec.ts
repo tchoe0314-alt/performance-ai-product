@@ -245,7 +245,7 @@ async function openApp(page: Page) {
 }
 
 async function openProjects(page: Page) {
-  await page.getByRole("button", { name: "Open projects from header" }).click();
+  await page.getByTestId("header-projects-button").click();
   await expect(page.getByTestId("projects-drawer")).toBeVisible();
 }
 
@@ -336,7 +336,7 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("object-manager-panel")).toContainText("7 pending");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Unplaced");
-    await page.getByRole("button", { name: "Open chat from header" }).click();
+    await page.getByTestId("header-chat-button").click();
     await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("what should I do next?");
     await page.getByPlaceholder("Message Civora AI with what you want to create or change...").press("Enter");
     await expect(page.getByTestId("workspace-right-panel").getByText("Open Objects and place Parking Field - 140 stalls", { exact: false }).last()).toBeVisible();
@@ -375,7 +375,7 @@ test.describe("project drawer reliability", () => {
     await addressDetails.getByLabel("Type project address").fill("123 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
     await expect(page.getByTestId("auto-site-context-summary")).toContainText(/parcel\/site boundary|candidates/i, { timeout: 30_000 });
-    await page.getByRole("button", { name: "Open chat from header" }).click();
+    await page.getByTestId("header-chat-button").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
     await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("Generate a parking layout note.");
 
@@ -393,7 +393,7 @@ test.describe("project drawer reliability", () => {
     await openSetup(page);
     await expect(page.getByLabel("Type project address")).toHaveValue("");
     await expect(page.getByText("parcel/site boundary")).not.toBeVisible();
-    await page.getByRole("button", { name: "Open chat from header" }).click();
+    await page.getByTestId("header-chat-button").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toHaveValue("");
 
     await openProjects(page);
@@ -401,7 +401,7 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("project-drawer-state")).toContainText("Saved");
     await openSetup(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/123 Main St, Test City, TX/i);
-    await page.getByRole("button", { name: "Open chat from header" }).click();
+    await page.getByTestId("header-chat-button").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toHaveValue("Generate a parking layout note.");
 
     await page.reload({ waitUntil: "domcontentloaded" });

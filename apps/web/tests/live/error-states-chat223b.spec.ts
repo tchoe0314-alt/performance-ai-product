@@ -256,7 +256,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Open projects from header" }).click();
+    await page.getByTestId("header-projects-button").click();
     await page.getByRole("button", { name: "Open Jobs" }).click();
     await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
     await expect(page.getByTestId("jobs-stale-warning")).toContainText("Backend status is stale", { timeout: 30_000 });
@@ -284,7 +284,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Open chat from header" }).click();
+    await page.getByTestId("header-chat-button").click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Command Center|Conversation/i);
     const input = page
       .getByTestId("workspace-right-panel")
