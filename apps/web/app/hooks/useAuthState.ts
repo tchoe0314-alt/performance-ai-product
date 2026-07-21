@@ -47,6 +47,7 @@ export default function useAuthState({
 
   const refreshProjectsRef = useRef(onRefreshProjects);
   const refreshJobsRef = useRef(onRefreshJobs);
+  const shouldSkipStoredAuthRestoreRef = useRef(shouldSkipStoredAuthRestore);
 
   useEffect(() => {
     refreshProjectsRef.current = onRefreshProjects;
@@ -55,6 +56,10 @@ export default function useAuthState({
   useEffect(() => {
     refreshJobsRef.current = onRefreshJobs;
   }, [onRefreshJobs]);
+
+  useEffect(() => {
+    shouldSkipStoredAuthRestoreRef.current = shouldSkipStoredAuthRestore;
+  }, [shouldSkipStoredAuthRestore]);
 
   const loadMe = useCallback(async (authToken: string) => {
     try {
@@ -150,7 +155,7 @@ export default function useAuthState({
       void loadAuthStatus();
     }
     const shouldSkipStoredRestore =
-      skipStoredAuthRestore || Boolean(shouldSkipStoredAuthRestore?.());
+      skipStoredAuthRestore || Boolean(shouldSkipStoredAuthRestoreRef.current?.());
     const stored = shouldSkipStoredRestore ? "" : getStoredToken();
     if (!stored) return;
     setToken(stored);
@@ -171,7 +176,6 @@ export default function useAuthState({
   }, [
     loadAuthStatus,
     loadMe,
-    shouldSkipStoredAuthRestore,
     skipInitialAuthStatus,
     skipStoredAuthRestore,
   ]);

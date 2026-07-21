@@ -307,8 +307,13 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("workspace-right-panel").getByText("Open Objects and place Parking Field - 140 stalls", { exact: false }).last()).toBeVisible();
 
     await page.getByRole("button", { name: /^Generate$/ }).first().click();
-    await expect(page.getByTestId("generate-placement-context")).toContainText("7 requested objects still need placement");
-    await expect(page.getByTestId("generate-placement-context")).toContainText("Parking Field - 140 stalls");
+    const visibleGeneratePanel = page.getByTestId("workspace-right-panel");
+    await expect(visibleGeneratePanel.getByTestId("generate-placement-context")).toContainText(
+      "7 requested objects still need placement",
+    );
+    await expect(visibleGeneratePanel.getByTestId("generate-placement-context")).toContainText(
+      "Parking Field - 140 stalls",
+    );
   });
 
   test("opens, clears drafts, saves, restores, deletes, reloads, and reports backend blockers", async ({ page }) => {
