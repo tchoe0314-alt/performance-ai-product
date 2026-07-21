@@ -248,6 +248,7 @@ import { useDashboardPowerCommandHandler } from "./hooks/useDashboardPowerComman
 import { useDashboardObjectCommandIntentHandler } from "./hooks/useDashboardObjectCommandIntentHandler";
 import { useDashboardChatSendHandlers } from "./hooks/useDashboardChatSendHandlers";
 import { useDashboardInfoIntentHandler } from "./hooks/useDashboardInfoIntentHandler";
+import { useDashboardDrainageAutofix } from "./hooks/useDashboardDrainageAutofix";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -3887,131 +3888,20 @@ function PerformanceAIDashboardView({
   const getIssueGuidance = getDashboardDrainageIssueGuidance;
   const canApplyDrainageIssue = canApplyDashboardDrainageIssue;
 
-  const runDrainageAutofix = useCallback(
-    async ({
-      placementsOverride,
-      forcedInlets,
-      forcedBasins,
-      connectOrphans,
-      allowSlopeAdjust,
-    }: {
-      placementsOverride?: BuildingPlacement[];
-      forcedInlets?: Array<Record<string, unknown>>;
-      forcedBasins?: Array<Record<string, unknown>>;
-      connectOrphans?: boolean;
-      allowSlopeAdjust?: boolean;
-    }): Promise<boolean> => {
-      if (!ensureSiteLocked("drainage")) return false;
-      const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null, placementsOverride);
-      const omitField = { source: "omit", value: null } as const;
-      const nextManualFields = {
-        ...(requestPayload.manual_fields ?? {}),
-      } as Record<string, unknown>;
-      const rawDrainage = nextManualFields.drainage;
-      const unwrappedDrainage =
-        rawDrainage &&
-        typeof rawDrainage === "object" &&
-        "value" in (rawDrainage as Record<string, unknown>)
-          ? ((rawDrainage as Record<string, unknown>).value ?? {})
-          : rawDrainage ?? {};
-      const nextDrainage = {
-        ...(typeof unwrappedDrainage === "object" && unwrappedDrainage !== null ? unwrappedDrainage : {}),
-      } as Record<string, unknown>;
-      if (forcedInlets && forcedInlets.length) {
-        nextDrainage.forced_inlets = forcedInlets;
-      }
-      if (forcedBasins) {
-        if (forcedBasins.length) {
-          nextManualFields.ponds = forcedBasins;
-        }
-        nextDrainage.autofix_action = "add_basin";
-      }
-      if (connectOrphans) {
-        nextDrainage.connect_orphans = true;
-      }
-      if (allowSlopeAdjust) {
-        nextDrainage.allow_slope_adjustment = true;
-        nextDrainage.max_slope_adjust = drainageMaxSlopeAdjust;
-        nextDrainage.autofix_action = "adjust_slope";
-      }
-      nextManualFields.drainage = nextDrainage;
-      nextManualFields.utility_network = omitField;
-
-      const drainagePayload: PlanRequestPayload = withReactiveRerunContext(
-        {
-          ...requestPayload,
-          manual_fields: nextManualFields,
-          meta: {
-            ...(requestPayload.meta ?? {}),
-            requested_system: "drainage",
-          },
-          prompt_text: null,
-        },
-        "drainage",
-      );
-      if (allowSlopeAdjust) {
-        const existingDrainage = (requestPayload.drainage ?? {}) as Record<string, unknown>;
-        (drainagePayload as Record<string, unknown>).drainage = {
-          ...existingDrainage,
-          allow_slope_adjustment: true,
-          max_slope_adjust: drainageMaxSlopeAdjust,
-          autofix_action: "adjust_slope",
-        };
-      }
-
-      if (token && (projectId || currentProject?.project_id)) {
-        const targetProjectId = projectId || currentProject?.project_id || null;
-        try {
-          const queued = await postJson<{ job: JobSummary }>(
-            "/api/jobs/drainage",
-            {
-              project_id: targetProjectId,
-              request: drainagePayload,
-            },
-            { token },
-          );
-          const jobId = queued.job.job_id;
-          setActiveJobId(jobId);
-          appendChatMessage(
-            "assistant",
-            `Queued drainage autofix as ${jobId}. Civora will show queued/running progress here and refresh the review state when it completes.`,
-            "status",
-          );
-          setStatusMessage(`Drainage autofix queued as ${jobId}.`);
-          return true;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Drainage autofix failed.";
-          appendChatMessage("assistant", message, "status");
-          setStatusMessage(message);
-          return false;
-        }
-      } else {
-        await executePlanAction({
-          mode: "run",
-          requestPayload: drainagePayload,
-          assistantPrefix: "Applying drainage fix…",
-        });
-      }
-      setSystemStatuses((prev) => ({ ...prev, drainage: "fresh" }));
-      return true;
-    },
-    [
-      buildPayloadFromOverrides,
-      drainageMaxSlopeAdjust,
-      ensureSiteLocked,
-      executePlanAction,
-      token,
-      projectId,
-      currentProject?.project_id,
-      currentProject?.name,
-      siteName,
-      loadProjectResultInBackground,
-      appendChatMessage,
-      setActiveJobId,
-      setSystemStatuses,
-      withReactiveRerunContext,
-    ],
-  );
+  const runDrainageAutofix = useDashboardDrainageAutofix({
+    appendChatMessage,
+    buildPayloadFromOverrides,
+    currentProjectId: currentProject?.project_id,
+    drainageMaxSlopeAdjust,
+    ensureSiteLocked,
+    executePlanAction,
+    projectId,
+    setActiveJobId,
+    setStatusMessage,
+    setSystemStatuses,
+    token,
+    withReactiveRerunContext,
+  });
 
   const persistFlowMetadata = useCallback(
     async (
