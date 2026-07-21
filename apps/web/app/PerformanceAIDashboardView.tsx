@@ -179,15 +179,6 @@ import {
   measureCivoraInteractionAfterPaint,
 } from "./utils/performanceProbes";
 import {
-  runDashboardPlaceBuilding,
-  runDashboardPlaceObject,
-  runDashboardSelectPlacementTarget,
-} from "./utils/dashboardPlacementActions";
-import {
-  runDashboardCreateCustomGeometry,
-  type DashboardCustomGeometryPayload,
-} from "./utils/dashboardCustomGeometryActions";
-import {
   runDashboardStartBlankSite,
   runDashboardStartSiteBoundaryDraw,
   runDashboardToggleSiteLock,
@@ -256,6 +247,7 @@ import { useDashboardPlanPayloadBuilder } from "./hooks/useDashboardPlanPayloadB
 import { useDashboardChatDecisionContextBuilder } from "./hooks/useDashboardChatDecisionContextBuilder";
 import { useDashboardSheetIntentHandler } from "./hooks/useDashboardSheetIntentHandler";
 import { useDashboardObjectPersistenceActions } from "./hooks/useDashboardObjectPersistenceActions";
+import { useDashboardPlacementActionHandlers } from "./hooks/useDashboardPlacementActionHandlers";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -1937,18 +1929,22 @@ function PerformanceAIDashboardView({
     appendChatMessage,
   });
 
-  const handleToggleBuildingLock = useCallback((id: string) => {
-    const target = buildingPlacements.find((item) => item.id === id);
-    if (!target) return;
-    handleUpdateBuilding(id, { locked: !target.locked });
-  }, [buildingPlacements, handleUpdateBuilding]);
-
-  const dashboardPlacementActions = useMemo(() => ({
+  const {
+    handleCreateCustomGeometry,
+    handlePlaceBuilding,
+    handlePlaceObject,
+    handleSelectPlacementTarget,
+    handleToggleBuildingLock,
+  } = useDashboardPlacementActionHandlers({
+    activePlacementId,
     askClarification,
     buildDefaultPolyline,
+    buildingPlacements,
+    buildingPlacementsRef,
     clearGeneratedPreview,
     debugLog,
     ensureSiteBoundary,
+    handleUpdateBuilding,
     markSystemsStale,
     persistDraftRefresh,
     resolveDefaultBuildingDims,
@@ -1960,45 +1956,10 @@ function PerformanceAIDashboardView({
     setPreviewMode,
     setSelectedObjectIds,
     setStatusMessage,
+    siteScaleLocked,
     systemsImpactedByPlacement,
-  }), [
-    askClarification,
-    buildDefaultPolyline,
-    clearGeneratedPreview,
-    debugLog,
-    ensureSiteBoundary,
-    markSystemsStale,
-    persistDraftRefresh,
-    resolveDefaultBuildingDims,
-    resolveLotBounds,
-    systemsImpactedByPlacement,
-  ]);
-
-  const handlePlaceBuilding = useCallback(
-    (position: { x: number; y: number }) => {
-      runDashboardPlaceBuilding({
-        position,
-        activePlacementId,
-        buildingPlacements,
-        siteScaleLocked,
-        actions: dashboardPlacementActions,
-      });
-    },
-    [activePlacementId, buildingPlacements, dashboardPlacementActions, siteScaleLocked],
-  );
-
-  const handlePlaceObject = useCallback(
-    (id: string, position: { x: number; y: number }) => {
-      runDashboardPlaceObject({
-        id,
-        position,
-        buildingPlacements,
-        siteScaleLocked,
-        actions: dashboardPlacementActions,
-      });
-    },
-    [buildingPlacements, dashboardPlacementActions, siteScaleLocked],
-  );
+    units,
+  });
 
   const handleCreateSiteBoundary = useDashboardSiteBoundaryDrawAction({
     buildManualFields,
@@ -2038,42 +1999,6 @@ function PerformanceAIDashboardView({
     units,
     utilities,
   });
-
-  const dashboardCustomGeometryActions = useMemo(() => ({
-    clearGeneratedPreview,
-    ensureSiteBoundary,
-    markSystemsStale,
-    persistDraftRefresh,
-    resolveLotBounds,
-    setActivePlacementId,
-    setBuildingPlacements,
-    setPlacementModeEnabled,
-    setPreviewInteraction,
-    setPreviewMode,
-    setSelectedObjectIds,
-    setStatusMessage,
-  }), [clearGeneratedPreview, ensureSiteBoundary, markSystemsStale, persistDraftRefresh, resolveLotBounds]);
-
-  const handleCreateCustomGeometry = useCallback(
-    (payload: DashboardCustomGeometryPayload) => {
-      runDashboardCreateCustomGeometry({
-        payload,
-        buildingPlacementsRef,
-        siteScaleLocked,
-        units: units || "ft",
-        actions: dashboardCustomGeometryActions,
-      });
-    },
-    [dashboardCustomGeometryActions, siteScaleLocked, units],
-  );
-
-  const handleSelectPlacementTarget = useCallback((id: string) => {
-    runDashboardSelectPlacementTarget({
-      id,
-      buildingPlacements,
-      actions: dashboardPlacementActions,
-    });
-  }, [buildingPlacements, dashboardPlacementActions]);
 
   function askClarification(question: string, action: string, payload?: Record<string, unknown>) {
     setPendingClarification({ action, payload, question });
