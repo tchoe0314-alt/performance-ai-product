@@ -114,10 +114,7 @@ import {
   panelErrorMessage,
 } from "./utils/dashboardStatus";
 import { buildDashboardWorkflowState } from "./utils/dashboardWorkflowState";
-import {
-  buildDashboardArtifactPayload,
-  buildDashboardPayloadPreview,
-} from "./utils/dashboardPayloads";
+import { buildDashboardArtifactPayload } from "./utils/dashboardPayloads";
 import { runDashboardApplyProjectInput } from "./utils/dashboardProjectRestoreActions";
 import { buildDashboardObjectSelectionView } from "./utils/dashboardObjectSelectionView";
 import {
@@ -161,7 +158,6 @@ import {
   progressTimelineDotClass,
   progressTimelineStatusClass,
 } from "./utils/dashboardWorkflowProgress";
-import { buildDashboardManualFields } from "./utils/dashboardManualFields";
 import { buildDashboardSystemHealthItems } from "./utils/dashboardSystemHealth";
 import {
   markCivoraInteraction,
@@ -248,6 +244,7 @@ import { useDashboardDrainageAutofix } from "./hooks/useDashboardDrainageAutofix
 import { useDashboardDrainageIssueApplyAction } from "./hooks/useDashboardDrainageIssueApplyAction";
 import { useDashboardGenerateSystemAction } from "./hooks/useDashboardGenerateSystemAction";
 import { useDashboardSiteGeometryActions } from "./hooks/useDashboardSiteGeometryActions";
+import { useDashboardPayloadPreviewState } from "./hooks/useDashboardPayloadPreviewState";
 import type {
   ApprovalState,
   CadToolRequestForPreview,
@@ -830,91 +827,42 @@ function PerformanceAIDashboardView({
     },
   ];
 
-  const buildManualFields = useCallback(
-    (fields: Omit<Parameters<typeof buildDashboardManualFields>[0], "buildingPlacements" | "surveySlopeEstimate" | "drainageForcedInlets" | "drainageConnectOrphans" | "drainageAllowSlopeAdjust" | "drainageMaxSlopeAdjust">) =>
-      buildDashboardManualFields({
-        ...fields,
-        buildingPlacements: buildingPlacementsRef.current,
-        surveySlopeEstimate,
-        drainageForcedInlets,
-        drainageConnectOrphans,
-        drainageAllowSlopeAdjust,
-        drainageMaxSlopeAdjust,
-      }),
-    [
-      drainageAllowSlopeAdjust,
-      drainageConnectOrphans,
-      drainageForcedInlets,
-      drainageMaxSlopeAdjust,
-      surveySlopeEstimate,
-    ],
-  );
-
-  const payloadPreview = useMemo(
-    () => buildDashboardPayloadPreview({
-      projectId,
-      assistedEnabled,
-      prompt,
-      imageName,
-      chatMessages: chatMessagesRef.current,
-      currentProject,
-      systemStatuses,
-      reactiveEditPolicyPreference: REACTIVE_EDIT_POLICY_PREFERENCE,
-      siteObjectId: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
-      manualFields: buildManualFields({
-        nextSiteName: siteName,
-        nextFileName: fileName,
-        nextUnits: units,
-        nextProjectType: projectType,
-        nextLotWidth: lotWidth,
-        nextLotHeight: lotHeight,
-        nextSetback: setback,
-        nextBuildingWidth: buildingWidth,
-        nextBuildingDepth: buildingDepth,
-        nextBuildingCount: buildingCount,
-        nextParkingCount: parkingCount,
-        nextMinSlopePct: minSlopePct,
-        nextPipeMinSlopePct: pipeMinSlopePct,
-        nextMaxParkingSlopePct: maxParkingSlopePct,
-        nextMaxRoadGradePct: maxRoadGradePct,
-        nextMaxAdaCrossSlopePct: maxAdaCrossSlopePct,
-        nextRoads: roads,
-        nextGrading: grading,
-        nextDrainage: drainage,
-        nextUtilities: utilities,
-      }),
-    }),
-    [
-      buildingPlacements,
-      projectId,
-      prompt,
-      imageName,
-      siteName,
-      fileName,
-      units,
-      projectType,
-      lotWidth,
-      lotHeight,
-      setback,
-      buildingWidth,
-      buildingDepth,
-      buildingCount,
-      parkingCount,
-      minSlopePct,
-      pipeMinSlopePct,
-      maxParkingSlopePct,
-      maxRoadGradePct,
-      maxAdaCrossSlopePct,
-      roads,
-      grading,
-      drainage,
-      utilities,
-      systemStatuses,
-      assistedEnabled,
-      currentProject,
-      buildManualFields,
-    ],
-  );
+  const { buildManualFields, payloadPreview } = useDashboardPayloadPreviewState({
+    assistedEnabled,
+    buildingPlacements,
+    buildingCount,
+    buildingDepth,
+    buildingWidth,
+    chatMessages,
+    currentProject,
+    drainageAllowSlopeAdjust,
+    drainageConnectOrphans,
+    drainageForcedInlets,
+    drainageMaxSlopeAdjust,
+    drainage,
+    fileName,
+    grading,
+    imageName,
+    lotHeight,
+    lotWidth,
+    maxAdaCrossSlopePct,
+    maxParkingSlopePct,
+    maxRoadGradePct,
+    minSlopePct,
+    parkingCount,
+    pipeMinSlopePct,
+    projectId,
+    projectType,
+    prompt,
+    reactiveEditPolicyPreference: REACTIVE_EDIT_POLICY_PREFERENCE,
+    roads,
+    setback,
+    siteName,
+    surveySlopeEstimate,
+    systemStatuses,
+    units,
+    utilities,
+  });
 
   const artifactPayload = useMemo(
     () => buildDashboardArtifactPayload({ backendResult, projectId, currentProject, fileName, siteName }),
