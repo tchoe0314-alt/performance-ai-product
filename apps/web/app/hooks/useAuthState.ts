@@ -8,6 +8,7 @@ import {
   clearStoredToken,
   getStoredToken,
   setStoredToken,
+  shouldRestoreStoredToken,
 } from "../utils/auth";
 
 type RefreshJobsOptions = { suppressError?: boolean; force?: boolean };
@@ -155,7 +156,9 @@ export default function useAuthState({
       void loadAuthStatus();
     }
     const shouldSkipStoredRestore =
-      skipStoredAuthRestore || Boolean(shouldSkipStoredAuthRestoreRef.current?.());
+      skipStoredAuthRestore ||
+      !shouldRestoreStoredToken() ||
+      Boolean(shouldSkipStoredAuthRestoreRef.current?.());
     const stored = shouldSkipStoredRestore ? "" : getStoredToken();
     if (!stored) return;
     setToken(stored);

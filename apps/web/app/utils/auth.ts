@@ -2,6 +2,7 @@ import { toApiUrl } from "../../lib/api";
 
 const TOKEN_KEY = "civora-ai-token";
 const LEGACY_TOKEN_KEY = "performance-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 export function getStoredToken() {
   if (typeof window === "undefined") {
@@ -19,6 +20,7 @@ export function setStoredToken(token: string) {
     return;
   }
   window.localStorage.setItem(TOKEN_KEY, token);
+  window.sessionStorage.setItem(SESSION_RESTORE_KEY, "1");
 }
 
 export function clearStoredToken() {
@@ -27,6 +29,14 @@ export function clearStoredToken() {
   }
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(LEGACY_TOKEN_KEY);
+  window.sessionStorage.removeItem(SESSION_RESTORE_KEY);
+}
+
+export function shouldRestoreStoredToken() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.sessionStorage.getItem(SESSION_RESTORE_KEY) === "1";
 }
 
 export function uploadedImageSrc(pathOrUrl: string, token: string): string {

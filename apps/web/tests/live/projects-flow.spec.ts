@@ -199,7 +199,10 @@ async function mockShell(page: Page, store: Map<string, SavedProject>) {
   });
 
   await page.addInitScript(
-    ([tokenKey, authToken]) => window.localStorage.setItem(tokenKey, authToken),
+    ([tokenKey, authToken]) => {
+      window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem("civora-ai-session-auth-restore", "1");
+    },
     [TOKEN_KEY, "pw-token"] as const,
   );
 }
