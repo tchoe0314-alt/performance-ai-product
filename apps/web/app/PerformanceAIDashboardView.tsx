@@ -983,6 +983,15 @@ function PerformanceAIDashboardView({
     useSurveyForGrading,
     standardsEvidenceValues: [minSlopePct, pipeMinSlopePct, maxParkingSlopePct, maxRoadGradePct, maxAdaCrossSlopePct, currentPlanMetaRecord.standards_package, currentPlanMetaRecord.standards_source_registry, currentPlanMetaRecord.standards_acceptance_report],
   });
+  const hasSourceBackedSurfaceEvidence = useMemo(() => {
+    const normalizedSurveyFile = String(surveyFileName || "").trim();
+    const sourceBackedFile =
+      useSurveyForGrading &&
+      /\.(csv|txt|nez|pnezd|dxf|xml|landxml|las|laz|tif|tiff|geotiff)$/i.test(normalizedSurveyFile);
+    const slopeFromSourcePoints =
+      Boolean(surveySlopeEstimate?.slope_percent) && Number(surveySlopeEstimate?.point_count ?? 0) > 0;
+    return surveyPreviewPoints.length > 0 || sourceBackedFile || slopeFromSourcePoints;
+  }, [surveyFileName, surveyPreviewPoints.length, surveySlopeEstimate?.point_count, surveySlopeEstimate?.slope_percent, useSurveyForGrading]);
   const smartFixBlockedReasons = useMemo(() => buildSmartFixBlockedReasons(currentPlanMeta), [currentPlanMeta]);
   const smartFixRecommendations = useMemo(
     () => buildSmartFixRecommendations(currentPlanMeta, smartFixBlockedReasons),
@@ -5557,6 +5566,7 @@ function PerformanceAIDashboardView({
     canvasPreviewInteraction,
     systemStatuses,
     hasTerrainSource,
+    hasSourceBackedSurfaceEvidence,
     hasBasinPlaced,
     siteTooLargeForGrading,
     hasHardSystemBlock,

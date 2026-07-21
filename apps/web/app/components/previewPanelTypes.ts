@@ -188,6 +188,7 @@ export type PreviewPanelProps = {
   previewQuality: "standard" | "high";
   systemStatuses: EngineeringSystemStatuses;
   hasTerrainSource: boolean;
+  hasSourceBackedSurfaceEvidence: boolean;
   hasBasinPlaced: boolean;
   siteTooLargeForGrading: boolean;
   hasHardSystemBlock: boolean;

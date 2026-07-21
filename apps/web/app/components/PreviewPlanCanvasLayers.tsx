@@ -38,6 +38,7 @@ type PreviewPlanCanvasLayersProps = {
   buildingPlacements: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
   surveyPointCount: number;
+  hasTerrainSurfaceEvidence: boolean;
   showMap: boolean;
   isHighQuality: boolean;
   lotWidth: number;
@@ -80,6 +81,7 @@ export function PreviewPlanCanvasLayers({
   buildingPlacements,
   suggestedPlacements,
   surveyPointCount,
+  hasTerrainSurfaceEvidence,
   showMap,
   isHighQuality,
   lotWidth,
@@ -108,6 +110,7 @@ export function PreviewPlanCanvasLayers({
   gradingEarthworkUx,
 }: PreviewPlanCanvasLayersProps) {
   if (!overlayBoundsResolved || previewMode !== "2d") return null;
+  const hasSurveyOrTerrainEvidence = surveyPointCount > 0 || hasTerrainSurfaceEvidence;
 
   return (
     <div
@@ -125,7 +128,7 @@ export function PreviewPlanCanvasLayers({
           style={viewportTransformStyle}
         />
       ) : null}
-      {buildingPlacements.length || suggestedPlacements.length || surveyPointCount > 0 ? (
+      {buildingPlacements.length || suggestedPlacements.length || hasSurveyOrTerrainEvidence ? (
         <svg
           className="absolute inset-0"
           viewBox="0 0 100 100"
@@ -137,7 +140,7 @@ export function PreviewPlanCanvasLayers({
             showMap={showMap}
             isHighQuality={isHighQuality}
             siteLocked={siteLocked}
-            hasSurveyOrTerrainEvidence={surveyPointCount > 0}
+            hasSurveyOrTerrainEvidence={hasSurveyOrTerrainEvidence}
             lotWidth={lotWidth}
             lotHeight={lotHeight}
             planScaleBar={planScaleBar}

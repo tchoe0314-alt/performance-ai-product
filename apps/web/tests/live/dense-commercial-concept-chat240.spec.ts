@@ -34,7 +34,7 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   );
 
   const canvas = page.getByTestId("workspace-canvas-shell");
-  await expect(canvas).toContainText("SITE LOCKED", { timeout: 10_000 });
+  await expect(canvas).toContainText(/site locked/i, { timeout: 10_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 84 stalls"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 56 stalls"]').first()).toBeVisible();
@@ -51,11 +51,13 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("professional-basin-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
   await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
-  await expect(page.getByTestId("plan-grading-context-lines").first()).toBeVisible();
   await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
-  await expect(page.getByTestId("survey-boundary-annotation").first()).toBeVisible();
-  await expect(page.getByTestId("survey-spot-elevation").first()).toBeVisible();
+  await expect(page.getByTestId("plan-grading-context-lines")).toHaveCount(0);
+  await expect(page.getByTestId("survey-boundary-annotation")).toHaveCount(0);
+  await expect(page.getByTestId("survey-spot-elevation")).toHaveCount(0);
   await expect(page.getByTestId("survey-utility-callout").first()).toBeVisible();
+  await expect(canvas).toContainText(/concept plan/i);
+  await expect(canvas).toContainText(/no survey \/ topo source/i);
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const objectPanel = page.getByTestId("object-manager-panel");
@@ -93,7 +95,7 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
   );
 
   const canvas = page.getByTestId("workspace-canvas-shell");
-  await expect(canvas).toContainText("SITE LOCKED", { timeout: 10_000 });
+  await expect(canvas).toContainText(/site locked/i, { timeout: 10_000 });
   await expect(canvas).toContainText(/1000 FT x 1000 FT/i);
   await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 84 stalls"]').first()).toBeVisible();
