@@ -19,6 +19,7 @@ type UseAuthStateOptions = {
   onLogoutCleanup?: () => void;
   skipInitialAuthStatus?: boolean;
   skipStoredAuthRestore?: boolean;
+  shouldSkipStoredAuthRestore?: () => boolean;
 };
 
 const noop = () => {};
@@ -30,6 +31,7 @@ export default function useAuthState({
   onLogoutCleanup = noop,
   skipInitialAuthStatus = false,
   skipStoredAuthRestore = false,
+  shouldSkipStoredAuthRestore,
 }: UseAuthStateOptions) {
   const [token, setToken] = useState("");
   const [user, setUser] = useState<UserRecord | null>(null);
@@ -147,7 +149,9 @@ export default function useAuthState({
     if (!skipInitialAuthStatus) {
       void loadAuthStatus();
     }
-    const stored = skipStoredAuthRestore ? "" : getStoredToken();
+    const shouldSkipStoredRestore =
+      skipStoredAuthRestore || Boolean(shouldSkipStoredAuthRestore?.());
+    const stored = shouldSkipStoredRestore ? "" : getStoredToken();
     if (!stored) return;
     setToken(stored);
     void loadMe(stored)
@@ -164,7 +168,13 @@ export default function useAuthState({
             : apiErrorMessage(error, "Backend connection needs attention. Sign in after the backend is available."),
         );
       });
-  }, [loadAuthStatus, loadMe, skipInitialAuthStatus, skipStoredAuthRestore]);
+  }, [
+    loadAuthStatus,
+    loadMe,
+    shouldSkipStoredAuthRestore,
+    skipInitialAuthStatus,
+    skipStoredAuthRestore,
+  ]);
 
   return {
     token,
