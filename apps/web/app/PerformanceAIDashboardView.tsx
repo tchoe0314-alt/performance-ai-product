@@ -43,12 +43,8 @@ import {
   SQFT_PER_ACRE,
   SITE_GRADING_HARD_BLOCK_ACRES,
   SITE_WARNING_ACRES,
-  buildAssumedSlopeEstimate,
   formatStageLabel,
-  isHardGenerateBlocker,
-  siteAreaAcresFromSize,
   statusLabelForQuantityReview,
-  uniqueStrings,
   type EngineeringSystemKey,
   type ReactiveValidationState,
   type SystemGenerationTarget,
@@ -250,6 +246,7 @@ import { useDashboardChatSendHandlers } from "./hooks/useDashboardChatSendHandle
 import { useDashboardInfoIntentHandler } from "./hooks/useDashboardInfoIntentHandler";
 import { useDashboardDrainageAutofix } from "./hooks/useDashboardDrainageAutofix";
 import { useDashboardDrainageIssueApplyAction } from "./hooks/useDashboardDrainageIssueApplyAction";
+import { useDashboardGenerateSystemAction } from "./hooks/useDashboardGenerateSystemAction";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -270,6 +267,7 @@ import {
   resolveDashboardSidebarModeStatus,
   resolveSidePanelForRender,
   sidePanelCopy,
+  workspaceModeByPanel,
   type ProjectStatusSummary,
   type SidebarStatus,
   type SidePanelKey,
@@ -3940,375 +3938,82 @@ function PerformanceAIDashboardView({
     [currentProject, payloadPreview, saveProject],
   );
 
-  const handleGenerateSystem = useCallback(
-    async (
-      target: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full",
-      options?: { slopeEstimateOverride?: SurveySlopeResponse | null },
-    ) => {
-      const generateStartedAt = markCivoraInteraction();
-      const preflightBlockers = getGeneratePreflightBlockers(target);
-      const hardPreflightBlockers = preflightBlockers.filter((item) => isHardGenerateBlocker(item.label));
-      const userLayoutContextSummary = currentGenerateLayoutContext;
-      const reviewNotes = uniqueStrings([
-        ...preflightBlockers.filter((item) => !isHardGenerateBlocker(item.label)).map((item) => item.label),
-        userLayoutContextSummary
-          ? `User layout context used by Generate: ${userLayoutContextSummary.labels.join(", ")}${userLayoutContextSummary.count > userLayoutContextSummary.labels.length ? `, plus ${userLayoutContextSummary.count - userLayoutContextSummary.labels.length} more` : ""}`
-          : "",
-        userLayoutContextSummary?.semantic_count ? `${userLayoutContextSummary.semantic_count} semantic drafted object${userLayoutContextSummary.semantic_count === 1 ? "" : "s"} included as review context` : "",
-        pendingPlacementObjects.length
-          ? `Requested objects still need placement before Generate can use them as layout context: ${pendingPlacementLabels.slice(0, 8).join(", ")}${pendingPlacementObjects.length > 8 ? `, plus ${pendingPlacementObjects.length - 8} more` : ""}`
-          : "",
-        ...autoSiteContextFlowSummary.missingLabels.map((item) => `Auto Site Context missing source: ${item}`),
-        autoSiteContextFlowSummary.candidateCount > 0
-          ? `Auto Site Context source candidates available for review: ${autoSiteContextFlowSummary.candidateLabels.join(", ") || `${autoSiteContextFlowSummary.candidateCount} candidate(s)`}`
-          : "",
-        hasAssumedTerrainSlope ? "review-only assumed terrain slope; survey/control still needed" : "",
-      ]);
-      const targetSystems =
-        target === "full"
-          ? (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[])
-          : ([target] as EngineeringSystemKey[]);
-      const skippedSystems =
-        target === "full"
-          ? []
-          : (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[]).filter((system) => system !== target);
-      const blockedSummary = (reason: string, nextAction: string): GenerateFlowSummary => ({
-        version: "generate_flow_summary_v1",
-        generated_at: new Date().toISOString(),
-        target,
-        ran: [],
-        skipped: targetSystems,
-        needs_review: uniqueStrings([reason, ...reviewNotes]),
-        notes: reviewNotes,
-        blocked: true,
-        next_action: nextAction,
-        auto_site_context: autoSiteContextFlowSummary,
-        user_layout_context: userLayoutContextSummary,
-        safety_wording:
-          "Generate creates review-required drafts for qualified review.",
-      });
-      const recordGenerateSummary = (summary: GenerateFlowSummary) => {
-        setGenerateFlowSummary(summary);
-        recordRecentChange({
-          type: "generate_recorded",
-	          label: summary.blocked ? "Generate needs input" : "Generate recorded",
-          detail: summary.blocked
-	            ? `Generate needs input: ${summary.needs_review[0] || summary.next_action}`
-            : `Generate ran ${summary.ran.join(", ") || "none"}; skipped ${summary.skipped.join(", ") || "none"}.`,
-          undoBlockedReason: "Generate history is a review record. Undo draft object edits separately, then rerun Generate if needed.",
-        });
-        measureCivoraInteractionAfterPaint("generate.panel.response.visible", generateStartedAt, {
-          target,
-          blocked: summary.blocked,
-          ran: summary.ran.length,
-          skipped: summary.skipped.length,
-        });
-        void persistFlowMetadata({ generate_flow_summary_v1: summary });
+  const generatePendingPlacementObjects = useMemo(
+    () => buildingPlacements.filter((item) => !item.placed && item.type !== "site"),
+    [buildingPlacements],
+  );
+  const generatePendingPlacementLabels = useMemo(
+    () => generatePendingPlacementObjects.map((item) => item.label),
+    [generatePendingPlacementObjects],
+  );
+  const openGenerateBlockerPanel = useCallback(
+    (panel: SidePanelKey) => {
+      if (sidePanelCloseTimeoutRef.current !== null) {
+        window.clearTimeout(sidePanelCloseTimeoutRef.current);
+        sidePanelCloseTimeoutRef.current = null;
+      }
+      panelOpenProbeRef.current = {
+        label: panel === "projects" ? "projects.drawer.open" : "panel.open",
+        panel,
+        startedAt: markCivoraInteraction(),
       };
-      if (hardPreflightBlockers.length) {
-        const firstHardBlocker = hardPreflightBlockers[0];
-        const summary = blockedSummary(
-          firstHardBlocker.label,
-          `Open ${toReadableLabel(firstHardBlocker.action)} and fix: ${firstHardBlocker.label}.`,
-        );
-        recordGenerateSummary(summary);
-        appendChatMessage(
-          "assistant",
-	          `Generate needs input: ${firstHardBlocker.label}. Next action: ${summary.next_action}`,
-          "status",
-        );
-        updateProjectStatus({
-          state: "blocked",
-          area: "generate",
-	          title: "Generate needs input",
-          detail: firstHardBlocker.label,
-          nextAction: summary.next_action,
-        });
-        handleOpenSidePanel(firstHardBlocker.action);
-        return;
+      setLayerManagerOpen(false);
+      setRightRailCollapsed(false);
+      if (!(["objects", "details", "layers", "model"] as SidePanelKey[]).includes(panel)) {
+        setPlacementModeEnabled(false);
+        setPreviewInteraction("static");
+        setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
       }
-      if (!hasSiteBoundary()) {
-        const summary = blockedSummary("missing site boundary dimensions", "Set site width/depth or draw a site boundary, then lock the site.");
-        recordGenerateSummary(summary);
-        updateProjectStatus({
-          state: "blocked",
-          area: "generate",
-	          title: "Generate needs site boundary",
-          detail: "Set and lock a site boundary first.",
-          nextAction: summary.next_action,
-        });
-        askClarification(
-          "I need a site boundary before generating systems. What size should the site be?",
-          "set_site_then_generate",
-          { target },
-        );
-        return;
-      }
-      if (!ensureSiteLocked(target)) {
-        const summary = blockedSummary("site boundary exists but is not locked", "Lock the site boundary in Setup before running Generate.");
-        recordGenerateSummary(summary);
-        updateProjectStatus({
-          state: "blocked",
-          area: "generate",
-	          title: "Generate needs locked boundary",
-          detail: "Site boundary exists but is not locked.",
-          nextAction: summary.next_action,
-        });
-        return;
-      }
-      if (target === "grading" || target === "drainage" || target === "full") {
-        const lot = resolveLotBounds();
-        const siteAreaAcres = siteAreaAcresFromSize(lot.w, lot.h);
-        if (target === "grading" && siteAreaAcres > SITE_GRADING_HARD_BLOCK_ACRES) {
-          const summary = blockedSummary(OVERSIZED_SITE_MESSAGE, "Reduce the site area or zoom to a smaller grading area.");
-          recordGenerateSummary(summary);
-          updateProjectStatus({
-            state: "blocked",
-            area: "generate",
-	            title: "Generate needs smaller grading area",
-            detail: OVERSIZED_SITE_MESSAGE,
-            nextAction: summary.next_action,
-          });
-          return;
-        }
-      }
-      const conceptCount = createGenerateConceptObjects(target, reviewNotes);
-      const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null);
-      const omitField = { source: "omit", value: null } as const;
-      const nextManualFields = {
-        ...(requestPayload.manual_fields ?? {}),
-      } as Record<string, unknown>;
-      const targetUsesTerrain = target === "grading" || target === "drainage" || target === "full";
-      const hasSurvey = Boolean(surveyFileName) && useSurveyForGrading;
-      const hasMapTerrain = Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng);
-      const slopeEstimateOverride =
-        options?.slopeEstimateOverride ??
-        (targetUsesTerrain && !hasSurvey && !hasMapTerrain && !surveySlopeEstimate?.slope_percent
-          ? buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8)
-          : null);
-      if (slopeEstimateOverride?.slope_percent) {
-        nextManualFields.grading = {
-          ...((typeof nextManualFields.grading === "object" && nextManualFields.grading !== null
-            ? nextManualFields.grading
-            : {}) as Record<string, unknown>),
-          min_slope_pct:
-            parsePositiveNumber(minSlopePct) ?? slopeEstimateOverride.slope_percent,
-          assumed_terrain_source: true,
-        };
-        nextManualFields.terrain =
-          slopeEstimateOverride.direction && slopeEstimateOverride.slope_percent
-            ? `First-pass assumed ${slopeEstimateOverride.slope_percent.toFixed(2)}% slope toward ${slopeEstimateOverride.direction}`
-            : "First-pass assumed terrain slope";
-      }
-
-      if (target === "roads" || target === "parking") {
-        nextManualFields.grading = omitField;
-        nextManualFields.drainage = omitField;
-        nextManualFields.utility_network = omitField;
-      } else if (target === "grading") {
-        nextManualFields.drainage = omitField;
-        nextManualFields.utility_network = omitField;
-      } else if (target === "drainage") {
-        nextManualFields.utility_network = omitField;
-      } else if (target === "utilities") {
-        nextManualFields.drainage = omitField;
-      }
-
-      const systemLabel = target === "full" ? "full site systems" : target;
-      const queueLongRun = target === "grading" || target === "drainage" || target === "utilities" || target === "full";
-      if (
-        target !== "full" &&
-        reactiveValidation.requiresConfirmation &&
-        REACTIVE_EDIT_POLICY_PREFERENCE.require_confirmation_for_heavy_engineering
-      ) {
-        const confirmed = window.confirm(
-          `This rerun will update ${reactiveValidation.changedSystems.join(", ")} from the saved checkpoint and may touch ${reactiveValidation.changedTargets.length} downstream stages. Run it now?`,
-        );
-        if (!confirmed) {
-          updateProjectStatus({
-            state: "stale",
-            area: "generate",
-            title: "Generate stale",
-            detail: "Reactive engineering rerun cancelled. Visual edits remain live; engineering outputs are still stale.",
-            nextAction: "Review changed objects, then rerun affected systems when ready.",
-          });
-          return;
-        }
-      }
-      const systemRequestPayload = withReactiveRerunContext(
-        {
-          ...requestPayload,
-          full_design_mode: target === "full" ? true : requestPayload.full_design_mode,
-          manual_fields: nextManualFields,
-          meta: {
-            ...(requestPayload.meta ?? {}),
-            requested_system: target,
-            auto_site_context_review_summary: autoSiteContextFlowSummary,
-            user_layout_context_summary: userLayoutContextSummary,
-            generate_notes: reviewNotes,
-          },
-          prompt_text: null,
-        },
-        target,
-      );
-      if (!token && effectiveDemoWorkspaceEnabled) {
-        const runSummary: GenerateFlowSummary = {
-          version: "generate_flow_summary_v1",
-          generated_at: new Date().toISOString(),
-          target,
-          ran: targetSystems,
-          skipped: skippedSystems,
-          needs_review: reviewNotes,
-          notes: reviewNotes,
-          blocked: false,
-          next_action: reviewNotes.length
-            ? "Review the local draft notes and provide or accept missing sources before relying on outputs."
-            : "Review the local draft package; outputs remain engineer-review-required.",
-          auto_site_context: autoSiteContextFlowSummary,
-          user_layout_context: userLayoutContextSummary,
-          safety_wording:
-            "Generate creates review-required drafts for qualified review.",
-        };
-        recordGenerateSummary(runSummary);
-        setSystemStatuses((prev) => {
-          const next = { ...prev };
-          targetSystems.forEach((system) => {
-            next[system] = "fresh";
-          });
-          return next;
-        });
-        updateProjectStatus({
-          state: "needs review",
-          area: "generate",
-          title: runSummary.skipped.length ? "Started, with skipped systems" : "Generate draft ready",
-          detail: `${systemLabel} ran in local demo mode with review-required outputs.`,
-          nextAction: runSummary.next_action,
-        });
-        appendChatMessage(
-          "assistant",
-          [
-            `${runSummary.skipped.length ? "Started, with skipped systems" : "Generate started"}. Ran: ${runSummary.ran.join(", ")}.`,
-            conceptCount ? `Canvas: added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"}.` : "",
-            runSummary.skipped.length ? `Skipped: ${runSummary.skipped.join(", ")}.` : "Skipped: none.",
-            runSummary.needs_review.length ? `Needs review: ${runSummary.needs_review.slice(0, 5).join("; ")}.` : "Needs review: standard engineer review.",
-          ].filter(Boolean).join(" "),
-          "status",
-        );
-        return;
-      }
-      if (!token) {
-        const summary = blockedSummary(
-          "backend/auth session is required to run Generate on the hosted website",
-          "Sign in/connect backend, or keep editing the local review layout before running Generate.",
-        );
-        recordGenerateSummary(summary);
-        updateProjectStatus({
-          state: "blocked",
-          area: "generate",
-          title: "Generate needs sign-in",
-          detail: "Hosted Generate needs a signed-in backend session. No backend request was sent.",
-          nextAction: summary.next_action,
-        });
-        appendChatMessage(
-          "assistant",
-          conceptCount
-            ? `I added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"} to the canvas. Hosted Generate still needs a signed-in backend session before an engineering request can run.`
-            : "Generate needs a signed-in backend session on the hosted website. I did not send an engineering request; keep editing locally or sign in/connect backend to run Generate.",
-          "status",
-        );
-        return;
-      }
-      const runSummary: GenerateFlowSummary = {
-        version: "generate_flow_summary_v1",
-        generated_at: new Date().toISOString(),
-        target,
-        ran: targetSystems,
-        skipped: skippedSystems,
-        needs_review: reviewNotes,
-        notes: reviewNotes,
-        blocked: false,
-        next_action: reviewNotes.length
-          ? "Review the generated draft notes and provide or accept missing sources before relying on outputs."
-          : "Review the generated draft package; outputs remain engineer-review-required.",
-        auto_site_context: autoSiteContextFlowSummary,
-        user_layout_context: userLayoutContextSummary,
-        safety_wording:
-          "Generate creates review-required drafts for qualified review.",
-      };
-      recordGenerateSummary(runSummary);
-      updateProjectStatus({
-        state: "working",
-        area: "generate",
-        title: "Generate working",
-        detail: `Running ${systemLabel} from the locked site.`,
-        nextAction: "Wait for the run to finish, queue, or show a blocker.",
-      });
-      appendChatMessage(
-        "assistant",
-        [
-          `${runSummary.skipped.length ? "Started, with skipped systems" : "Generate started"}. Ran: ${runSummary.ran.join(", ")}.`,
-          conceptCount ? `Canvas: added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"}.` : "",
-          runSummary.skipped.length ? `Skipped: ${runSummary.skipped.join(", ")}.` : "Skipped: none.",
-          runSummary.needs_review.length ? `Needs review: ${runSummary.needs_review.slice(0, 5).join("; ")}.` : "Needs review: standard engineer review.",
-        ].filter(Boolean).join(" "),
-        "status",
-      );
-      await executePlanAction({
-        mode: "run",
-        requestPayload: systemRequestPayload,
-        assistantPrefix: `Generating a review draft for ${systemLabel} around the locked site...`,
-        timeoutMs: queueLongRun ? undefined : 20_000,
-        allowQueueFallback: true,
-        forceQueue: queueLongRun,
-      });
-      if (queueLongRun) {
-        return;
-      }
-      setSystemStatuses((prev) => {
-        const next = { ...prev };
-        next[target] = "fresh";
-        reactiveChangedSystems.forEach((system) => {
-          next[system] = "fresh";
-        });
-        return next;
-      });
-      updateProjectStatus({
-        state: "needs review",
-        area: "generate",
-        title: "Generate needs review",
-        detail: `${systemLabel} draft is current in this workspace.`,
-        nextAction: runSummary.next_action,
-      });
+      setActiveSidePanel(panel);
+      setActiveWorkspaceMode(workspaceModeByPanel[panel]);
     },
     [
-      askClarification,
-      assumedTerrainSlopePct,
-      buildPayloadFromOverrides,
-      createGenerateConceptObjects,
-      currentGenerateLayoutContext,
-      executePlanAction,
-      getGeneratePreflightBlockers,
-      hasSiteBoundary,
-      ensureSiteLocked,
-      autoSiteContextFlowSummary,
-      hasAssumedTerrainSlope,
-      minSlopePct,
-      persistFlowMetadata,
-      projectId,
-      resolveLotBounds,
-      siteInputs?.geocode?.lat,
-      siteInputs?.geocode?.lng,
-      surveyFileName,
-      surveySlopeEstimate?.slope_percent,
-      token,
-      useSurveyForGrading,
-      withReactiveRerunContext,
-      reactiveValidation,
-      reactiveChangedSystems,
-      recordRecentChange,
-      updateProjectStatus,
+      panelOpenProbeRef,
+      setActiveSidePanel,
+      setActiveWorkspaceMode,
+      setCadToolRequest,
+      setLayerManagerOpen,
+      setPlacementModeEnabled,
+      setPreviewInteraction,
+      setRightRailCollapsed,
+      sidePanelCloseTimeoutRef,
     ],
   );
+
+  const handleGenerateSystem = useDashboardGenerateSystemAction({
+    appendChatMessage,
+    askClarification,
+    assumedTerrainSlopePct,
+    autoSiteContextFlowSummary,
+    buildPayloadFromOverrides,
+    createGenerateConceptObjects,
+    currentGenerateLayoutContext,
+    effectiveDemoWorkspaceEnabled,
+    ensureSiteLocked,
+    executePlanAction,
+    getGeneratePreflightBlockers,
+    handleOpenSidePanel: openGenerateBlockerPanel,
+    hasAssumedTerrainSlope,
+    hasSiteBoundary,
+    minSlopePct,
+    pendingPlacementLabels: generatePendingPlacementLabels,
+    pendingPlacementObjects: generatePendingPlacementObjects,
+    persistFlowMetadata,
+    projectId,
+    reactiveChangedSystems,
+    reactiveValidation,
+    recordRecentChange,
+    resolveLotBounds,
+    setGenerateFlowSummary,
+    setSystemStatuses,
+    siteHasGeocode: Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng),
+    surveyFileName,
+    surveySlopePercent: surveySlopeEstimate?.slope_percent,
+    token,
+    updateProjectStatus,
+    useSurveyForGrading,
+    withReactiveRerunContext,
+  });
 
   useEffect(() => {
     handleGenerateSystemRef.current = handleGenerateSystem;
