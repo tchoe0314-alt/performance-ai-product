@@ -91,10 +91,6 @@ import {
   buildDashboardAssumptionsFromPlanResult,
   buildDashboardIssuesFromPlanResult,
 } from "./utils/dashboardPlanResultView";
-import { formatCalmActionMessage } from "./utils/objectGeometry";
-
-
-
 import {
   defaultAssumptions,
   toReadableLabel,
@@ -259,6 +255,7 @@ import { useDashboardReviewConceptActions } from "./hooks/useDashboardReviewConc
 import { useDashboardPlanPayloadBuilder } from "./hooks/useDashboardPlanPayloadBuilder";
 import { useDashboardChatDecisionContextBuilder } from "./hooks/useDashboardChatDecisionContextBuilder";
 import { useDashboardSheetIntentHandler } from "./hooks/useDashboardSheetIntentHandler";
+import { useDashboardObjectPersistenceActions } from "./hooks/useDashboardObjectPersistenceActions";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -1819,30 +1816,20 @@ function PerformanceAIDashboardView({
     units,
   });
 
-  const persistDetectedPlacements = useCallback(
-    (nextDetected: BuildingPlacement[]) => {
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        detected_objects: nextDetected,
-      };
-      void ensureProjectDraftRef.current()
-        .then(() => saveProjectRef.current({
-          silent: true,
-          projectInputOverride: {
-            ...currentInput,
-            input_mode: "user",
-            strict_mode: false,
-            allow_ai_fill_for_blanks: false,
-            meta: {
-              ...(currentInput?.meta ?? {}),
-              site_inputs: nextSiteInputs,
-            },
-          },
-        }));
-    },
-    [currentProject, payloadPreview],
-  );
+  const {
+    persistDetectedPlacements,
+    persistDraftRefresh,
+    reportObjectActionBlocker,
+  } = useDashboardObjectPersistenceActions({
+    appendChatMessage,
+    currentProject,
+    ensureProjectDraftRef,
+    payloadPreview,
+    previewRefreshIntentRef,
+    saveProjectRef,
+    setObjectManagerStatusMessage,
+    setStatusMessage,
+  });
 
   const {
     handleRemoveBuilding,
@@ -1866,24 +1853,6 @@ function PerformanceAIDashboardView({
     setSelectedObjectIds,
     setStatusMessage,
   });
-
-  const reportObjectActionBlocker = useCallback((message: string) => {
-    const calmMessage = formatCalmActionMessage(message);
-    setObjectManagerStatusMessage(calmMessage);
-    setStatusMessage(calmMessage);
-    appendChatMessage("assistant", calmMessage, "status");
-  }, []);
-
-  const persistDraftRefresh = useCallback((reason: string) => {
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
-        previewRefreshIntentRef.current = {
-          reason,
-          track: true,
-        };
-      });
-  }, [ensureProjectDraftRef, saveProjectRef]);
 
   const {
     handleAlignObjectVertexToPrevious,
