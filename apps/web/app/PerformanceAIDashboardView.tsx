@@ -63,7 +63,6 @@ import {
   buildGenerateLayoutContext,
   systemsImpactedByPlacement,
 } from "./utils/dashboardGenerateLayoutContext";
-import { buildDashboardContextualToolbarTools } from "./utils/dashboardContextualToolbar";
 import {
   buildDashboardCivil3DWorkflowBlockers,
   buildDashboardWorkflowActionHints,
@@ -247,6 +246,7 @@ import { useDashboardAutoFitSite } from "./hooks/useDashboardAutoFitSite";
 import { useDashboardGenerateFlowCoordinator } from "./hooks/useDashboardGenerateFlowCoordinator";
 import { useDashboardSystemEvidenceView } from "./hooks/useDashboardSystemEvidenceView";
 import { useDashboardScaleSaveScheduler } from "./hooks/useDashboardScaleSaveScheduler";
+import { useDashboardContextualToolbarTools } from "./hooks/useDashboardContextualToolbarTools";
 import type {
   ApprovalState,
   CadToolRequestForPreview,
@@ -4679,39 +4679,23 @@ function PerformanceAIDashboardView({
 
   const supportedShortcuts = DASHBOARD_SUPPORTED_SHORTCUTS;
 
-  const contextualToolbarTools = useMemo(
-    () =>
-      buildDashboardContextualToolbarTools({
-        activePrimaryWorkflowKey,
-        sidePanelForRender,
-        siteScaleLocked,
-        previewInteraction,
-        showMeasurements,
-        showCalculations,
-        layerManagerOpen,
-        onOpenPanel: handleOpenPanelFromDrawer,
-        onToggleSiteLock: () => void handleApplySite(),
-        onUnlockSite: handleUnlockSite,
-        onStartSiteBoundaryDraw: handleStartSiteBoundaryDraw,
-        onSetPreviewInteraction: setPreviewInteraction,
-        onToggleMeasurements: () => setShowMeasurements((value) => !value),
-        onToggleCalculations: () => setShowCalculations((value) => !value),
-        onToggleLayerManager: () => setLayerManagerOpen((value) => !value),
-      }),
-    [
-      activePrimaryWorkflowKey,
-      handleApplySite,
-      handleOpenPanelFromDrawer,
-      handleStartSiteBoundaryDraw,
-      handleUnlockSite,
-      layerManagerOpen,
-      previewInteraction,
-      showCalculations,
-      showMeasurements,
-      sidePanelForRender,
-      siteScaleLocked,
-    ],
-  );
+  const contextualToolbarTools = useDashboardContextualToolbarTools({
+    activePrimaryWorkflowKey,
+    handleApplySite,
+    handleOpenPanelFromDrawer,
+    handleStartSiteBoundaryDraw,
+    handleUnlockSite,
+    layerManagerOpen,
+    previewInteraction,
+    setLayerManagerOpen,
+    setPreviewInteraction,
+    setShowCalculations,
+    setShowMeasurements,
+    showCalculations,
+    showMeasurements,
+    sidePanelForRender,
+    siteScaleLocked,
+  });
   const {
     handleEditFloatingSelectedObject,
     handleFocusFloatingSelectedObject,
