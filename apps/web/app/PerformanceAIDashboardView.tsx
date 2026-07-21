@@ -248,6 +248,7 @@ import { useDashboardChatDecisionContextBuilder } from "./hooks/useDashboardChat
 import { useDashboardSheetIntentHandler } from "./hooks/useDashboardSheetIntentHandler";
 import { useDashboardObjectPersistenceActions } from "./hooks/useDashboardObjectPersistenceActions";
 import { useDashboardPlacementActionHandlers } from "./hooks/useDashboardPlacementActionHandlers";
+import { useDashboardCommandUtilityActions } from "./hooks/useDashboardCommandUtilityActions";
 import type { ParkingParams } from "./utils/previewGeometryTruth";
 import type {
   ApprovalState,
@@ -3817,66 +3818,29 @@ function PerformanceAIDashboardView({
     return false;
   };
 
-  const shouldRouteToOrchestrator = (message: string): boolean => {
-    const normalized = message.toLowerCase();
-    if (normalized.length < 140) return false;
-    const asksForDesign =
-      /\b(design|create|generate|produce|engineer|layout|site plan|development)\b/.test(normalized);
-    const describesScope =
-      /\b(include|with|building|road|parking|grading|drainage|utilities|detention|basin|sanitary|water)\b/.test(
-        normalized,
-      );
-    return asksForDesign && describesScope;
-  };
-
-  const focusCommandInput = useCallback(() => {
-    setShortcutsOverlayOpen(false);
-    setCommandBarExpanded(true);
-    setRightRailCollapsed(true);
-    setSidePanelVisible(false);
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setWorkspaceChromeMinimized(true);
-    setPlacementModeEnabled(false);
-    setPreviewInteraction("static");
-    setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
-    window.requestAnimationFrame(() => {
-      const input =
-        commandInputRef.current ??
-        (document.querySelector(
-          '[data-testid="civora-command-input"], textarea[placeholder="Ask Civora..."], textarea[placeholder^="Message Civora"]',
-        ) as HTMLTextAreaElement | null);
-      if (!input) {
-        updateProjectStatus({
-          state: "blocked",
-          area: "chat",
-          title: "Command focus needs attention",
-          detail: "Command input is not mounted.",
-          nextAction: "Open the chat panel or return to the canvas, then try / again.",
-        });
-        return;
-      }
-      input.focus();
-      input.select();
-    });
-  }, [updateProjectStatus]);
-
-  const refuseUnsafeConstructionCommand = (message: string) => {
-    appendChatMessage("user", message);
-    appendChatMessage(
-      "assistant",
-      "I can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can help prepare review-only draft materials and call out needs for a qualified professional to review.",
-      "status",
-    );
-    updateProjectStatus({
-      state: "blocked",
-      area: "chat",
-      title: "Command refused",
-      detail: "Construction authorization refused. Civora stays review-only.",
-      nextAction: "Ask for review-only draft materials, blocker review, or a review package instead.",
-    });
-    return true;
-  };
+  const {
+    cancelActiveCommandState,
+    focusCommandInput,
+    refuseUnsafeConstructionCommand,
+    shouldRouteToOrchestrator,
+  } = useDashboardCommandUtilityActions({
+    appendChatMessage,
+    commandInputRef,
+    setActivePlacementId,
+    setActiveSidePanel,
+    setCadToolRequest,
+    setCommandBarExpanded,
+    setPendingClarification,
+    setPlacementModeEnabled,
+    setPreviewInteraction,
+    setRenderedSidePanel,
+    setRightRailCollapsed,
+    setShortcutsOverlayOpen,
+    setSidePanelVisible,
+    setStatusMessage,
+    setWorkspaceChromeMinimized,
+    updateProjectStatus,
+  });
 
   const handleCreateDenseCommercialConcept = useCallback((message: string) => {
     appendChatMessage("user", message);
@@ -4410,13 +4374,7 @@ function PerformanceAIDashboardView({
   ) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      setShortcutsOverlayOpen(false);
-      setPlacementModeEnabled(false);
-      setActivePlacementId(null);
-      setPendingClarification(null);
-      setPreviewInteraction("static");
-      setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
-      setStatusMessage("Active drawing/tool state cancelled.");
+      cancelActiveCommandState();
       return;
     }
     if (event.key === "Enter" && !event.shiftKey) {
