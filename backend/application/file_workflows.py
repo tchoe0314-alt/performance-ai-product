@@ -279,31 +279,45 @@ def upload_existing_conditions_file(
     imports = []
     warnings: list[str] = []
     classification = classify_existing_conditions_file(target)
+    def _append_guarded_import(importer, *, blocked_classification: Optional[Dict[str, Any]] = None) -> None:
+        try:
+            imports.append(importer(target))
+        except Exception as exc:
+            rec = dict(blocked_classification or classification)
+            message = f"{safe_name} could not be imported: {exc}"
+            rec["required_dependency"] = message
+            imports.append(dependency_blocked_existing_conditions_import(target, rec))
+            warnings.append(message)
+
     if not classification.get("supported"):
         imports.append(dependency_blocked_existing_conditions_import(target, classification))
     elif suffix == ".csv":
-        survey = import_survey_csv(target)
-        imports.append(survey)
-        surface = import_surface_grid_csv(target)
-        if surface.get("success"):
-            imports.append(surface)
-        else:
-            warnings.extend(surface.get("warnings") or [])
-    elif suffix in {".geojson", ".json"}:
         try:
-            imports.append(import_geojson(target))
+            survey = import_survey_csv(target)
+            imports.append(survey)
+            surface = import_surface_grid_csv(target)
+            if surface.get("success"):
+                imports.append(surface)
+            else:
+                warnings.extend(surface.get("warnings") or [])
         except Exception as exc:
-            warnings.append(f"GeoJSON import failed: {exc}")
+            rec = dict(classification)
+            message = f"{safe_name} could not be imported: {exc}"
+            rec["required_dependency"] = message
+            imports.append(dependency_blocked_existing_conditions_import(target, rec))
+            warnings.append(message)
+    elif suffix in {".geojson", ".json"}:
+        _append_guarded_import(import_geojson)
     elif suffix == ".dxf":
-        imports.append(import_dxf_existing_conditions(target))
+        _append_guarded_import(import_dxf_existing_conditions)
     elif suffix in {".shp", ".gpkg"}:
-        imports.append(import_geospatial_vector_file(target))
+        _append_guarded_import(import_geospatial_vector_file)
     elif suffix in {".tif", ".tiff"}:
-        imports.append(import_geotiff_surface(target))
+        _append_guarded_import(import_geotiff_surface)
     elif suffix in {".las", ".laz"}:
-        imports.append(import_las_point_cloud(target))
+        _append_guarded_import(import_las_point_cloud)
     elif suffix in {".xml", ".landxml"}:
-        imports.append(import_landxml_metadata(target))
+        _append_guarded_import(import_landxml_metadata)
     else:
         imports.append(dependency_blocked_existing_conditions_import(target, classification))
 

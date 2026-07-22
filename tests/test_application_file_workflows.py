@@ -167,6 +167,25 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             self.assertEqual(result["format_classification"]["format"], "zip")
             self.assertEqual(result["import_matrix"][0]["status"], "blocked")
 
+    def test_upload_existing_conditions_converts_importer_exceptions_to_blocked_sources(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            upload = UploadFile(filename="broken.tif", file=BytesIO(b"not a raster"))
+            with patch(
+                "backend.application.file_workflows.import_geotiff_surface",
+                side_effect=RuntimeError("raster driver rejected file"),
+            ):
+                result = upload_existing_conditions_file(
+                    upload_dir=Path(tmpdir),
+                    file=upload,
+                    current_user={"user_id": "u1"},
+                )
+
+            self.assertFalse(result["success"])
+            self.assertTrue(result["imports"][0]["dependency_blocked"])
+            self.assertIn("broken.tif could not be imported", result["imports"][0]["required_dependency"])
+            self.assertEqual(result["import_matrix"][0]["status"], "blocked")
+            self.assertIn("One or more existing-condition imports failed.", result["import_matrix"][0]["blocker_messages"])
+
     def test_online_sources_returns_truth_labeled_registry(self):
         result = existing_conditions_online_sources(address="1 Main St", bbox={"west": -97, "south": 32, "east": -96, "north": 33})
 
