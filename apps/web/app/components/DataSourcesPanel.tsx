@@ -614,11 +614,12 @@ export function DataSourcesPanel({
             accept="image/*"
             className="hidden"
             onChange={async (event) => {
-              const file = event.currentTarget.files?.[0];
+              const input = event.currentTarget;
+              const file = input.files?.[0];
               if (file) {
                 await onUploadImage(file);
               }
-              event.currentTarget.value = "";
+              input.value = "";
             }}
           />
         </div>

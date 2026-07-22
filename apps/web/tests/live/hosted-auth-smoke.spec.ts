@@ -81,7 +81,7 @@ test.describe("hosted authenticated smoke", () => {
 
     await page.getByTestId("header-projects-button").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
-    await page.getByRole("button", { name: /New Project/i }).click();
+    await page.getByRole("button", { name: /New Project/i }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Open workspace controls" }).click();

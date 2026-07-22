@@ -81,11 +81,12 @@ export function PlanPdfWorkflowPanel({
   onInvalidMove: () => void;
 }) {
   const handleInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
     if (file) {
       await onUploadFile(file);
     }
-    event.currentTarget.value = "";
+    input.value = "";
   };
 
   const firstPageWidth = Number((firstPage as { width?: number } | null)?.width ?? 1);
