@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 const DEFAULT_APP_URL = "https://civoraai.com/demo/workspace?debugPreview=1&aiRealismProvider=mock";
 const DEFAULT_API_URL = "https://api.civoraai.com";
 
@@ -22,10 +23,11 @@ async function login(request: APIRequestContext) {
 
 async function seedAuth(page: Page, token: string) {
   await page.addInitScript(
-    ([tokenKey, authToken]) => {
+    ([tokenKey, restoreKey, authToken]) => {
       window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
     },
-    [TOKEN_KEY, token] as const,
+    [TOKEN_KEY, SESSION_RESTORE_KEY, token] as const,
   );
 }
 
