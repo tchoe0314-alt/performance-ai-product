@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,8 +61,8 @@ class RealInputFileBenchmarkTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             dxf_import = self._build_dxf_benchmark(Path(tmpdir) / "survey.dxf")
-            geotiff_import = self._build_optional_geotiff_benchmark(Path(tmpdir) / "surface.tif")
-            las_import = self._build_optional_las_benchmark(Path(tmpdir) / "cloud.las")
+            geotiff_import = import_geotiff_surface(FIXTURE_DIR / "surface_grid.tif", coordinate_system=CONTROL_CRS)
+            las_import = import_las_point_cloud(FIXTURE_DIR / "surface_points.las", coordinate_system=CONTROL_CRS)
 
         imports = {
             "CSV survey points": survey,
@@ -101,19 +100,13 @@ class RealInputFileBenchmarkTests(unittest.TestCase):
         else:
             self.assertEqual(benchmark_rows["DXF survey"]["canonical_vs_metadata"], "metadata-only")
 
-        self.assertIn(benchmark_rows["GeoTIFF/DEM"]["support"], {"supported", "limited"})
-        if benchmark_rows["GeoTIFF/DEM"]["support"] == "supported":
-            self.assertIn("terrain_surface", benchmark_rows["GeoTIFF/DEM"]["canonical_targets"])
-        else:
-            self.assertEqual(benchmark_rows["GeoTIFF/DEM"]["canonical_vs_metadata"], "metadata-only")
-            self.assertIn("dependency_blocked_imports", benchmark_rows["GeoTIFF/DEM"]["blockers"])
+        self.assertEqual(benchmark_rows["GeoTIFF/DEM"]["support"], "supported")
+        self.assertEqual(benchmark_rows["GeoTIFF/DEM"]["canonical_vs_metadata"], "canonical")
+        self.assertIn("terrain_surface", benchmark_rows["GeoTIFF/DEM"]["canonical_targets"])
 
-        self.assertIn(benchmark_rows["LAS/LiDAR"]["support"], {"supported", "limited"})
-        if benchmark_rows["LAS/LiDAR"]["support"] == "supported":
-            self.assertIn("lidar_point_cloud", benchmark_rows["LAS/LiDAR"]["canonical_targets"])
-        else:
-            self.assertEqual(benchmark_rows["LAS/LiDAR"]["canonical_vs_metadata"], "metadata-only")
-            self.assertIn("dependency_blocked_imports", benchmark_rows["LAS/LiDAR"]["blockers"])
+        self.assertEqual(benchmark_rows["LAS/LiDAR"]["support"], "supported")
+        self.assertEqual(benchmark_rows["LAS/LiDAR"]["canonical_vs_metadata"], "canonical")
+        self.assertIn("lidar_point_cloud", benchmark_rows["LAS/LiDAR"]["canonical_targets"])
 
         for row in benchmark_rows.values():
             self.assertFalse(row["production_ready"], row)
@@ -199,54 +192,6 @@ class RealInputFileBenchmarkTests(unittest.TestCase):
         )
         doc.saveas(path)
         return import_dxf_existing_conditions(path, coordinate_system=CONTROL_CRS)
-
-    def _build_optional_geotiff_benchmark(self, path: Path) -> Dict[str, Any]:
-        classification = classify_existing_conditions_file(path)
-        if not classification["supported"]:
-            return dependency_blocked_existing_conditions_import(path, classification)
-        if importlib.util.find_spec("rasterio") is None:
-            blocked = dict(classification)
-            blocked["supported"] = False
-            blocked["required_dependency"] = "GeoTIFF import requires rasterio; install rasterio to prove raster surface import locally."
-            return dependency_blocked_existing_conditions_import(path, blocked)
-        import numpy as np
-        import rasterio
-        from rasterio.transform import from_origin
-
-        data = np.array([[612.4, 612.0], [611.0, 610.4]], dtype="float32")
-        with rasterio.open(
-            path,
-            "w",
-            driver="GTiff",
-            height=2,
-            width=2,
-            count=1,
-            dtype="float32",
-            crs="EPSG:2276",
-            transform=from_origin(5000.0, 10150.0, 75.0, 75.0),
-        ) as dataset:
-            dataset.write(data, 1)
-        return import_geotiff_surface(path, coordinate_system=CONTROL_CRS)
-
-    def _build_optional_las_benchmark(self, path: Path) -> Dict[str, Any]:
-        classification = classify_existing_conditions_file(path)
-        if not classification["supported"]:
-            return dependency_blocked_existing_conditions_import(path, classification)
-        if importlib.util.find_spec("laspy") is None:
-            blocked = dict(classification)
-            blocked["supported"] = False
-            blocked["required_dependency"] = "LAS/LiDAR import requires laspy; install laspy to prove point-cloud import locally."
-            return dependency_blocked_existing_conditions_import(path, blocked)
-        import laspy
-        import numpy as np
-
-        header = laspy.LasHeader(point_format=3, version="1.2")
-        las = laspy.LasData(header)
-        las.x = np.array([5000.0, 5125.0, 5000.0, 5125.0])
-        las.y = np.array([10000.0, 10000.0, 10150.0, 10150.0])
-        las.z = np.array([612.4, 612.0, 611.0, 610.4])
-        las.write(path)
-        return import_las_point_cloud(path, coordinate_system=CONTROL_CRS)
 
 
 if __name__ == "__main__":

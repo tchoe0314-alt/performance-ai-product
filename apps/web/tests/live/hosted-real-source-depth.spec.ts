@@ -10,6 +10,8 @@ const apiBaseUrl = (process.env.PLAYWRIGHT_API_BASE_URL || process.env.NEXT_PUBL
 const fixtureDir = path.resolve(__dirname, "../../../../backend/fixtures/real_input_benchmarks");
 const landxmlFixture = path.join(fixtureDir, "surface_pipe.landxml");
 const geojsonFixture = path.join(fixtureDir, "constraints.geojson");
+const geotiffFixture = path.join(fixtureDir, "surface_grid.tif");
+const lasFixture = path.join(fixtureDir, "surface_points.las");
 
 type UploadResponse = {
   success?: boolean;
@@ -80,27 +82,25 @@ test.describe("hosted real source depth", () => {
     expect(geojson.import_validation?.production_usable, "GIS context alone must not become production/survey truth").toBe(false);
 
     const geotiff = await uploadExistingCondition(request, token, {
-      name: "blocked-or-supported-geotiff.tif",
+      name: "surface_grid.tif",
       mimeType: "image/tiff",
-      buffer: Buffer.from("not-a-real-geotiff-fixture"),
+      buffer: fs.readFileSync(geotiffFixture),
     });
     expect(geotiff.file_type).toBe("tif");
     expect(String(geotiff.imports?.[0]?.source_type || "")).toMatch(/geotiff/i);
-    expect(geotiff.success || false, "Invalid/missing GeoTIFF dependency must not be treated as canonical truth").toBe(false);
-    expect([...((geotiff.warnings || []) as string[]), ...((geotiff.imports?.[0]?.warnings as string[]) || [])].join(" ")).toMatch(
-      /Rasterio|GDAL|not recognized|not supported|not a recognized|invalid|No such file|TIFF|tif|could not be imported/i,
-    );
+    expect(geotiff.success, "Valid GeoTIFF fixture should canonicalize as terrain evidence").toBe(true);
+    expect(canonicalTargets(geotiff)).toEqual(expect.arrayContaining(["dem_surface", "terrain_surface"]));
+    expect(geotiff.import_validation?.production_usable, "GeoTIFF alone must not become survey/control truth").toBe(false);
 
     const las = await uploadExistingCondition(request, token, {
-      name: "blocked-or-supported-lidar.las",
+      name: "surface_points.las",
       mimeType: "application/octet-stream",
-      buffer: Buffer.from("not-a-real-las-fixture"),
+      buffer: fs.readFileSync(lasFixture),
     });
     expect(las.file_type).toBe("las");
     expect(String(las.imports?.[0]?.source_type || "")).toMatch(/las|point_cloud/i);
-    expect(las.success || false, "Invalid/missing LAS dependency must not be treated as canonical truth").toBe(false);
-    expect([...((las.warnings || []) as string[]), ...((las.imports?.[0]?.warnings as string[]) || [])].join(" ")).toMatch(
-      /laspy|LAS|LAZ|not recognized|not supported|invalid|File is not a LAS|could not be imported/i,
-    );
+    expect(las.success, "Valid LAS fixture should canonicalize as LiDAR terrain evidence").toBe(true);
+    expect(canonicalTargets(las)).toEqual(expect.arrayContaining(["lidar_point_cloud", "terrain_evidence"]));
+    expect(las.import_validation?.production_usable, "LAS alone must not become survey/control truth").toBe(false);
   });
 });
