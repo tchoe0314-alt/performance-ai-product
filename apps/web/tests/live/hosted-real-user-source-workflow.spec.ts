@@ -3,7 +3,7 @@ import path from "node:path";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
-const DEFAULT_APP_URL = "https://civoraai.com/demo/workspace?debugPreview=1&aiRealismProvider=mock";
+const DEFAULT_APP_URL = "https://civoraai.com/?debugPreview=1&aiRealismProvider=mock";
 const DEFAULT_API_URL = "https://api.civoraai.com";
 const email = process.env.CIVORA_EMAIL || "";
 const password = process.env.CIVORA_PASSWORD || "";
@@ -46,7 +46,9 @@ async function openPanel(page: Page, name: RegExp | string, expected: RegExp | s
 }
 
 async function uploadSource(page: Page, filename: string, expected: RegExp) {
+  await openPanel(page, /^Setup$/, /Address \/ Location|Site Boundary|Survey \/ Terrain/i);
   const surveySection = page.getByTestId("setup-survey-terrain-card");
+  await expect(surveySection).toBeVisible({ timeout: 20_000 });
   if (!(await surveySection.evaluate((node) => node.hasAttribute("open")))) {
     await surveySection.locator("summary").first().click();
   }
