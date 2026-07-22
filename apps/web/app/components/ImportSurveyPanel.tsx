@@ -10,6 +10,7 @@ type ImportSurveyPanelProps = {
   imageUploadState: ImageUploadState | string;
   imageUploadNote?: string | null;
   surveyUploadMessage?: string | null;
+  sourceEffectRows: string[];
   planPdfReady: boolean;
   mapAnalysisReady: boolean;
   mapSnapshotPath?: string | null;
@@ -36,6 +37,7 @@ export function ImportSurveyPanel({
   imageUploadState,
   imageUploadNote,
   surveyUploadMessage,
+  sourceEffectRows,
   planPdfReady,
   mapAnalysisReady,
   mapSnapshotPath,
@@ -98,6 +100,16 @@ export function ImportSurveyPanel({
             }`}>
               {surveyUploadMessage}
             </p>
+          ) : null}
+          {sourceEffectRows.length ? (
+            <div data-testid="source-effects-summary" className="rounded-xl border border-sky-100 bg-sky-50/80 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700">Source effects</p>
+              <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-700">
+                {sourceEffectRows.map((row) => (
+                  <li key={row}>{row}</li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           <button type="button" onClick={onOpenPlanPdf} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             <span>Plan PDF visual editor</span>

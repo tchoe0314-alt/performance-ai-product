@@ -29,6 +29,7 @@ type UseDashboardSupportPanelPropsInput = {
   surveyFileName: string;
   projectRecordLabel: string;
   surveyUploadMessage: string;
+  sourceEffectRows: string[];
   planPreviewUrl: string;
   hasBackendResult: boolean;
   dxfStatus: string;
@@ -81,6 +82,7 @@ export function useDashboardSupportPanelProps({
   surveyFileName,
   projectRecordLabel,
   surveyUploadMessage,
+  sourceEffectRows,
   planPreviewUrl,
   hasBackendResult,
   dxfStatus,
@@ -179,6 +181,7 @@ export function useDashboardSupportPanelProps({
     surveyFileName,
     projectRecordLabel,
     surveyUploadMessage,
+    sourceEffectRows,
     previewReady: Boolean(planPreviewUrl),
     reportReady: hasBackendResult,
     dxfStatus,
@@ -200,6 +203,7 @@ export function useDashboardSupportPanelProps({
     planPreviewUrl,
     projectRecordLabel,
     surveyFileName,
+    sourceEffectRows,
     surveyInputRef,
     surveyUploadMessage,
     uploadedImageApiUrl,

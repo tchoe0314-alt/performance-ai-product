@@ -477,6 +477,7 @@ function PerformanceAIDashboardView({
   const [planPdfMoveY, setPlanPdfMoveY] = useState("");
   const [surveyFileName, setSurveyFileName] = useState("");
   const [surveyUploadMessage, setSurveyUploadMessage] = useState("");
+  const [sourceEffectRows, setSourceEffectRows] = useState<string[]>([]);
   const [surveySlopeEstimate, setSurveySlopeEstimate] = useState<SurveySlopeResponse | null>(null);
   const [, setSurveyPoints] = useState<number[][]>([]);
   const [, setSurveyDiagnostics] = useState<{
@@ -2758,6 +2759,7 @@ function PerformanceAIDashboardView({
     const mapSnapshot = siteInputs?.map_snapshot ?? {};
     const mapAnalysisResult = siteInputs?.map_analysis ?? null;
     const surveyFile = siteInputs?.survey_file ?? {};
+    const existingImport = (siteInputs as Record<string, unknown>)?.existing_conditions_import as Record<string, unknown> | undefined;
     const slopeEstimate = siteInputs?.slope_estimate ?? null;
       const detectionScale = siteInputs?.detection_scale ?? {};
       const alignmentLocked =
@@ -2771,6 +2773,7 @@ function PerformanceAIDashboardView({
       : [];
     setSiteAddress(String(siteInputs?.address || ""));
     setSurveyFileName(String(surveyFile?.stored_filename || ""));
+    setSourceEffectRows(Array.isArray(existingImport?.source_effect_rows) ? existingImport.source_effect_rows.map(String) : []);
     setSurveySlopeEstimate(slopeEstimate || null);
     setUseSurveyForGrading(useSurvey !== undefined ? Boolean(useSurvey) : true);
     setSurveyPoints(storedPoints as number[][]);
@@ -2931,6 +2934,7 @@ function PerformanceAIDashboardView({
     setSurveyFileName,
     setSurveyPoints,
     setSurveyPreviewPoints,
+    setSourceEffectRows,
     setSurveyUploadMessage,
     token,
     useSurveyForGrading,
@@ -3797,6 +3801,7 @@ function PerformanceAIDashboardView({
     setSurveyPoints,
     setSurveyPreviewPoints,
     setSurveySlopeEstimate,
+    setSourceEffectRows,
     setSurveyUploadMessage,
     setUseSurveyForGrading,
     setUploadedImageApiUrl,
@@ -3875,6 +3880,7 @@ function PerformanceAIDashboardView({
     setSurveyPoints,
     setSurveyPreviewPoints,
     setSurveySlopeEstimate,
+    setSourceEffectRows,
     setSystemStatuses,
     setUnits,
     setUploadedImageApiUrl,
@@ -5085,6 +5091,7 @@ function PerformanceAIDashboardView({
     uploadedImageApiUrl,
     surveyPreviewPointCount: surveyPreviewPoints.length,
     surveyUploadMessage,
+    sourceEffectRows,
     imageUploadState,
     imageUploadNote,
     mapSnapshotPath,
@@ -5423,6 +5430,7 @@ function PerformanceAIDashboardView({
     surveyFileName,
     projectRecordLabel: currentProject?.project_id || projectId || "Draft",
     surveyUploadMessage,
+    sourceEffectRows,
     planPreviewUrl,
     hasBackendResult: Boolean(backendResult),
     dxfStatus: getExportBlockReason() || (backendResult ? "Review export" : "Needs run"),

@@ -52,3 +52,50 @@ export function summarizeExistingConditionsUpload(data: UploadExistingConditions
     blockerMessages.length ? `Exact blockers:\n${blockerMessages.map((item) => `- ${item}`).join("\n")}` : "Exact blockers: none recorded.",
   ].join("\n");
 }
+
+function labelForTarget(target: string) {
+  const normalized = target.replace(/_/g, " ").toLowerCase();
+  if (target === "survey_points") return "Survey/control points";
+  if (target === "terrain_surface" || target === "dem_surface") return "Terrain surface";
+  if (target === "lidar_point_cloud" || target === "terrain_evidence") return "LiDAR / point-cloud terrain evidence";
+  if (target === "terrain_surface_metadata") return "Surface metadata";
+  if (target === "pipe_network_metadata") return "Pipe-network metadata";
+  if (target === "gis_layers") return "GIS/context layers";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function labelForFileType(fileType: string) {
+  const normalized = fileType.toLowerCase();
+  if (normalized === "csv") return "CSV survey/topo";
+  if (normalized === "tif" || normalized === "tiff" || normalized === "geotiff") return "GeoTIFF terrain";
+  if (normalized === "las" || normalized === "laz") return "LAS/LiDAR point cloud";
+  if (normalized === "landxml" || normalized === "xml") return "LandXML exchange";
+  if (normalized === "geojson" || normalized === "json") return "GeoJSON/GIS context";
+  if (normalized === "dxf") return "DXF source drawing";
+  return `${fileType.toUpperCase()} source`;
+}
+
+export function buildExistingConditionsSourceEffects(data: UploadExistingConditionsResponse) {
+  const matrix = data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [];
+  const targets = matrix
+    .flatMap((item) => item.canonical_targets ?? [])
+    .filter((item, index, items) => item && items.indexOf(item) === index);
+  const blockedMessages = matrix
+    .flatMap((item) => item.blocker_messages ?? [])
+    .concat((data.blockers ?? []).map((item) => String(item.reason || item.message || item.field || "")))
+    .filter((item, index, items) => item && items.indexOf(item) === index)
+    .slice(0, 2);
+  const fileType = String(data.file_type || "source");
+  const sourceLabel = labelForFileType(fileType);
+  const rows = [
+    `${sourceLabel}: ${data.success ? "imported as review source evidence" : "stored, but not usable as source evidence yet"}.`,
+    targets.length
+      ? `Affects: ${targets.map(labelForTarget).join(", ")}.`
+      : "Affects: no canonical model targets yet.",
+    "Does not replace survey control, professional review, or construction documents.",
+  ];
+  if (blockedMessages.length) {
+    rows.push(`Needs review: ${blockedMessages.join(" ")}`);
+  }
+  return rows;
+}

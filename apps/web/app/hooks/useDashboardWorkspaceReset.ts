@@ -116,6 +116,7 @@ type UseDashboardWorkspaceResetOptions = {
   setSurveyPoints: Dispatch<SetStateAction<number[][]>>;
   setSurveyPreviewPoints: Dispatch<SetStateAction<Array<{ x: number; y: number; z?: number }>>>;
   setSurveySlopeEstimate: Dispatch<SetStateAction<SurveySlopeResponse | null>>;
+  setSourceEffectRows: Dispatch<SetStateAction<string[]>>;
   setSurveyUploadMessage: Dispatch<SetStateAction<string>>;
   setUseSurveyForGrading: Dispatch<SetStateAction<boolean>>;
   setUploadedImageApiUrl: Dispatch<SetStateAction<string>>;
@@ -206,6 +207,7 @@ export function useDashboardWorkspaceReset({
   setSurveyPoints,
   setSurveyPreviewPoints,
   setSurveySlopeEstimate,
+  setSourceEffectRows,
   setSurveyUploadMessage,
   setUseSurveyForGrading,
   setUploadedImageApiUrl,
@@ -252,6 +254,7 @@ export function useDashboardWorkspaceReset({
     setSurveyPoints([]);
     setSurveyPreviewPoints([]);
     setSurveyDiagnostics(null);
+    setSourceEffectRows([]);
     setUseSurveyForGrading(true);
     setMapSnapshotPath("");
     setMapAnalysis(null);
@@ -367,6 +370,7 @@ export function useDashboardWorkspaceReset({
     setSurveyPoints,
     setSurveyPreviewPoints,
     setSurveySlopeEstimate,
+    setSourceEffectRows,
     setSurveyUploadMessage,
     setUseSurveyForGrading,
     setUploadedImageApiUrl,

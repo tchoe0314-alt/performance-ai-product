@@ -95,6 +95,7 @@ type UseDashboardStartPanelPropsInput = {
   uploadedImageApiUrl: string;
   surveyPreviewPointCount: number;
   surveyUploadMessage: string;
+  sourceEffectRows: string[];
   imageUploadState: string;
   imageUploadNote: string | null;
   mapSnapshotPath: string | null;
@@ -193,6 +194,7 @@ export function useDashboardStartPanelProps({
   uploadedImageApiUrl,
   surveyPreviewPointCount,
   surveyUploadMessage,
+  sourceEffectRows,
   imageUploadState,
   imageUploadNote,
   mapSnapshotPath,
@@ -375,6 +377,7 @@ export function useDashboardStartPanelProps({
       uploadedImageApiUrl,
       surveyPreviewPointCount,
       surveyUploadMessage,
+      sourceEffectRows,
       imageUploadState,
       imageUploadNote,
       mapSnapshotPath,
@@ -459,6 +462,7 @@ export function useDashboardStartPanelProps({
     surveyInputRef,
     surveyPreviewPointCount,
     surveyUploadMessage,
+    sourceEffectRows,
     uploadedImageApiUrl,
     uploadedImagePreviewUrl,
   ]);
@@ -469,6 +473,7 @@ export function useDashboardStartPanelProps({
     imageUploadState,
     imageUploadNote,
     surveyUploadMessage,
+    sourceEffectRows,
     planPdfReady,
     mapAnalysisReady,
     mapSnapshotPath,
@@ -510,6 +515,7 @@ export function useDashboardStartPanelProps({
     surveyInputRef,
     surveyPreviewPointCount,
     surveyUploadMessage,
+    sourceEffectRows,
     uploadedImageApiUrl,
     uploadedImagePreviewUrl,
   ]);

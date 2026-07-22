@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { uploadStatusMessage } from "../utils/dashboardStatus";
 import {
+  buildExistingConditionsSourceEffects,
   mapSurveyPointsToSite,
   summarizeExistingConditionsUpload,
 } from "../utils/dashboardExistingConditionsUpload";
@@ -44,6 +45,7 @@ type UseDashboardExistingConditionsUploadOptions = {
   setSurveyFileName: Dispatch<SetStateAction<string>>;
   setSurveyPoints: Dispatch<SetStateAction<number[][]>>;
   setSurveyPreviewPoints: Dispatch<SetStateAction<Array<{ x: number; y: number; z?: number }>>>;
+  setSourceEffectRows: Dispatch<SetStateAction<string[]>>;
   setSurveyUploadMessage: Dispatch<SetStateAction<string>>;
   token: string | null;
   useSurveyForGrading: boolean;
@@ -61,6 +63,7 @@ export function useDashboardExistingConditionsUpload({
   setSurveyFileName,
   setSurveyPoints,
   setSurveyPreviewPoints,
+  setSourceEffectRows,
   setSurveyUploadMessage,
   token,
   useSurveyForGrading,
@@ -89,6 +92,7 @@ export function useDashboardExistingConditionsUpload({
         token,
       });
       const storedFilename = data.stored_filename || file.name;
+      const sourceEffectRows = buildExistingConditionsSourceEffects(data);
       const canonical = data.canonical_existing_conditions ?? {};
       const survey = canonical.survey && typeof canonical.survey === "object" ? canonical.survey as Record<string, unknown> : {};
       const surveyPoints = Array.isArray(survey.points)
@@ -97,6 +101,7 @@ export function useDashboardExistingConditionsUpload({
             .filter((point) => point.every((value) => Number.isFinite(value)))
         : [];
       setSurveyFileName(storedFilename);
+      setSourceEffectRows(sourceEffectRows);
       setSurveyPoints(surveyPoints);
       setSurveyPreviewPoints(mapSurveyPointsToSite(surveyPoints, lotWidthValue, lotHeightValue));
       setSurveyDiagnostics({
@@ -126,11 +131,12 @@ export function useDashboardExistingConditionsUpload({
         survey_bounds: (survey.bounds as SiteInputs["survey_bounds"]) ?? null,
         survey_elevation_range: (survey.elevation_range as SiteInputs["survey_elevation_range"]) ?? null,
         use_survey_for_grading: useSurveyForGrading,
-        existing_conditions_import: {
-          filename: data.filename || file.name,
-          stored_filename: storedFilename,
-          file_type: data.file_type,
-          import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [],
+            existing_conditions_import: {
+              filename: data.filename || file.name,
+              stored_filename: storedFilename,
+              file_type: data.file_type,
+              source_effect_rows: sourceEffectRows,
+              import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [],
           canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only ?? {},
           blockers: data.blockers ?? data.import_validation?.blockers ?? [],
           package_status: String(data.existing_conditions_package?.status ?? "unknown"),
@@ -170,6 +176,11 @@ export function useDashboardExistingConditionsUpload({
     } catch (error) {
       setSurveyFileName(file.name);
       const message = uploadStatusMessage("survey", error);
+      setSourceEffectRows([
+        `${file.name}: upload did not complete.`,
+        message,
+        "No project geometry, source confidence, or generated output was changed.",
+      ]);
       setSurveyUploadMessage(message);
       setStatusMessage(message);
     }
@@ -185,6 +196,7 @@ export function useDashboardExistingConditionsUpload({
     setSurveyFileName,
     setSurveyPoints,
     setSurveyPreviewPoints,
+    setSourceEffectRows,
     setSurveyUploadMessage,
     token,
     useSurveyForGrading,

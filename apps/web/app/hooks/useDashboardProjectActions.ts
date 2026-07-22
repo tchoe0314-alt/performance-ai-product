@@ -99,6 +99,7 @@ type UseDashboardProjectActionsOptions = {
   setSurveyPoints: Dispatch<SetStateAction<number[][]>>;
   setSurveyPreviewPoints: Dispatch<SetStateAction<Array<{ x: number; y: number; z?: number }>>>;
   setSurveySlopeEstimate: Dispatch<SetStateAction<SurveySlopeResponse | null>>;
+  setSourceEffectRows: Dispatch<SetStateAction<string[]>>;
   setSystemStatuses: Dispatch<SetStateAction<Record<EngineeringSystemKey, SystemStatus>>>;
   setUnits: Dispatch<SetStateAction<string>>;
   setUploadedImageApiUrl: Dispatch<SetStateAction<string>>;
@@ -180,6 +181,7 @@ export function useDashboardProjectActions({
   setSurveyPoints,
   setSurveyPreviewPoints,
   setSurveySlopeEstimate,
+  setSourceEffectRows,
   setSystemStatuses,
   setUnits,
   setUploadedImageApiUrl,
@@ -222,6 +224,7 @@ export function useDashboardProjectActions({
     setSurveyPoints([]);
     setSurveyPreviewPoints([]);
     setSurveyDiagnostics(null);
+    setSourceEffectRows([]);
     setUseSurveyForGrading(true);
     setMapSnapshotPath("");
     setMapAnalysis(null);
@@ -349,6 +352,7 @@ export function useDashboardProjectActions({
     setSurveyPoints,
     setSurveyPreviewPoints,
     setSurveySlopeEstimate,
+    setSourceEffectRows,
     setSystemStatuses,
     setUnits,
     setUploadedImageApiUrl,

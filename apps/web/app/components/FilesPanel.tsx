@@ -3,6 +3,7 @@ type FilesPanelProps = {
   surveyFileName: string;
   projectRecordLabel: string;
   surveyUploadMessage: string;
+  sourceEffectRows: string[];
   previewReady: boolean;
   reportReady: boolean;
   dxfStatus: string;
@@ -29,6 +30,7 @@ export function FilesPanel({
   surveyFileName,
   projectRecordLabel,
   surveyUploadMessage,
+  sourceEffectRows,
   previewReady,
   reportReady,
   dxfStatus,
@@ -78,6 +80,16 @@ export function FilesPanel({
           >
             {surveyUploadMessage}
           </p>
+        ) : null}
+        {sourceEffectRows.length ? (
+          <div data-testid="source-effects-summary" className="mt-3 rounded-xl border border-sky-100 bg-sky-50/80 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700">Source effects</p>
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-700">
+              {sourceEffectRows.map((row) => (
+                <li key={row}>{row}</li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
