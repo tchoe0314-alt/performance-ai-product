@@ -7,6 +7,7 @@ const email = process.env.CIVORA_EMAIL || "";
 const password = process.env.CIVORA_PASSWORD || "";
 const prompt = process.env.CIVORA_PROMPT || "";
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 const API_BASE_URL =
   process.env.PLAYWRIGHT_API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -132,10 +133,11 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
   expect(token).toBeTruthy();
 
   await page.addInitScript(
-    ([tokenKey, authToken]) => {
+    ([tokenKey, restoreKey, authToken]) => {
       window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
     },
-    [TOKEN_KEY, token] as const,
+    [TOKEN_KEY, SESSION_RESTORE_KEY, token] as const,
   );
 
   await page.goto(baseURL!, { waitUntil: "domcontentloaded" });
