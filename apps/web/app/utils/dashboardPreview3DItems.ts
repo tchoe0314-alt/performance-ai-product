@@ -414,7 +414,8 @@ export function buildPlacementPreview3DItems({
         ? item.meta.blockers.map((blocker) => String(blocker))
         : [];
       const isBuilding = Boolean(item.type && item.type.includes("building")) || !item.type;
-      const isRoad = item.type === "road" || item.type === "driveway" || item.type === "sidewalk";
+      const isSidewalk = item.type === "sidewalk";
+      const isRoad = item.type === "road" || item.type === "driveway";
       const isParking = item.type === "parking";
       const isDrainage = item.type === "basin" || item.type === "inlet" || item.type === "outfall";
       const isUtility = item.type === "hydrant" || item.type === "manhole" || item.type === "utility_corridor";
@@ -424,15 +425,29 @@ export function buildPlacementPreview3DItems({
         y: item.y ?? 0,
         w: Math.max(1, item.w),
         h: Math.max(1, item.d),
-        height: isBuilding ? Math.max(8, Number(item.h ?? 28)) : isDrainage ? 3 : isRoad ? 1.5 : isParking ? 1 : 6,
+        height: isBuilding
+          ? Math.max(8, Number(item.h ?? 28))
+          : isDrainage
+            ? 3
+            : isRoad
+              ? 1.5
+              : isParking
+                ? 1
+                : isSidewalk
+                  ? 0.4
+                  : 6,
         z: isDrainage ? -1 : 0,
+        geometryType: item.geometryType,
+        geometry: item.geometry,
         color: isBuilding
           ? "#d1d5db"
           : isDrainage
             ? "#bfdbfe"
             : isUtility
               ? "#e9d5ff"
-              : isRoad || isParking
+              : isSidewalk
+                ? "#d6d3d1"
+                : isRoad || isParking
                 ? "#cbd5e1"
                 : "#e5e7eb",
         label: item.label ?? SITE_OBJECT_CATALOG[item.type ?? "building"]?.label ?? "Object",
@@ -444,7 +459,9 @@ export function buildPlacementPreview3DItems({
               ? "DRAINAGE"
               : isUtility
                 ? "UTILITY"
-                : "ROAD",
+                : isSidewalk
+                  ? "SIDEWALK"
+                  : "ROAD",
         source: confidenceEntry?.source_name || item.source || "workspace object",
         confidence: confidenceEntry?.confidence_band || item.confidence || metaConfidence,
         blockers: [

@@ -419,7 +419,7 @@ export default function Preview3DCanvas({
           const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
           const tubeRadius =
             layer === "ROAD"
-              ? Math.max(Math.min(Math.min(item.w, item.h) * 0.07, 5.5), 2.2)
+              ? Math.max(Math.min(Math.min(item.w, item.h) * 0.045, 3.2), 1.35)
               : layer === "SIDEWALK"
                 ? 0.55
                 : layer === "UTILITY"
