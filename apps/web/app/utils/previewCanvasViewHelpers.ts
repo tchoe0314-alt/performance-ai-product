@@ -11,7 +11,7 @@ export function buildBalancedPreviewCanvasView(
   balancedScale: number,
 ): PreviewCanvasView {
   const offsetX = rect ? Math.max(24, rect.width * (1 - balancedScale) * 0.5) : 36;
-  const offsetY = rect ? Math.max(22, rect.height * (1 - balancedScale) * 0.5) : 32;
+  const offsetY = rect ? Math.max(16, rect.height * (1 - balancedScale) * 0.08) : 24;
   return { scale: balancedScale, offsetX, offsetY };
 }
 

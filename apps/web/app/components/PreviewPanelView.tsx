@@ -92,6 +92,7 @@ import {
   buildSelectedCadMetrics,
   buildVisibleCadObjects,
 } from "../utils/previewCadDerivedObjects";
+
 import {
   getCadCommandFirstValue,
   getCadCommandPointArgs,
@@ -138,6 +139,13 @@ import { usePreviewCadLineworkCommands } from "./usePreviewCadLineworkCommands";
 import { usePreviewCadTransformCommands } from "./usePreviewCadTransformCommands";
 import { usePreviewCadWindowSelection } from "./usePreviewCadWindowSelection";
 import { usePreviewDraftGeometry } from "./usePreviewDraftGeometry";
+
+const HIGH_QUALITY_DRAWING_VIEWPORT = {
+  left: 1.2,
+  top: 1.2,
+  width: 82.6,
+  height: 97.6,
+};
 
 export default function PreviewPanel({
   previewReview,
@@ -2024,6 +2032,29 @@ export default function PreviewPanel({
     [geocode, lotHeight, lotWidth, siteRotationDeg],
   );
   const coordinateMode = resolveCoordinateMode(mapAnchor);
+  const sheetDrawingViewport = isHighQuality && !showMap ? HIGH_QUALITY_DRAWING_VIEWPORT : null;
+  const mapPointIntoSheetViewport = useCallback(
+    (point: [number, number]): [number, number] => {
+      if (!sheetDrawingViewport) return point;
+      return [
+        sheetDrawingViewport.left + (point[0] / 100) * sheetDrawingViewport.width,
+        sheetDrawingViewport.top + (point[1] / 100) * sheetDrawingViewport.height,
+      ];
+    },
+    [sheetDrawingViewport],
+  );
+  const mapRectIntoSheetViewport = useCallback(
+    (rect: { left: number; top: number; width: number; height: number }) => {
+      if (!sheetDrawingViewport) return rect;
+      return {
+        left: sheetDrawingViewport.left + (rect.left / 100) * sheetDrawingViewport.width,
+        top: sheetDrawingViewport.top + (rect.top / 100) * sheetDrawingViewport.height,
+        width: (rect.width / 100) * sheetDrawingViewport.width,
+        height: (rect.height / 100) * sheetDrawingViewport.height,
+      };
+    },
+    [sheetDrawingViewport],
+  );
 
   const siteToLatLng = useCallback(
     (xFt: number, yFt: number) => {
@@ -2041,9 +2072,9 @@ export default function PreviewPanel({
 
   const sitePointToPreviewPercent = useCallback(
     (point: [number, number], targetMap: mapboxgl.Map | null = mapRef.current): [number, number] => {
-      return resolveSitePointToPreviewPercent({ point, targetMap, showMap, mapAnchor, currentSiteSize });
+      return mapPointIntoSheetViewport(resolveSitePointToPreviewPercent({ point, targetMap, showMap, mapAnchor, currentSiteSize }));
     },
-    [currentSiteSize, mapAnchor, showMap],
+    [currentSiteSize, mapAnchor, mapPointIntoSheetViewport, showMap],
   );
 
   const sitePointToSvgPercent = useCallback(
@@ -2056,15 +2087,27 @@ export default function PreviewPanel({
 
   const siteRectPercent = useCallback(
     (item: BuildingPlacement) => {
-      return resolveSiteRectPercent(item, currentSiteSize);
+      return mapRectIntoSheetViewport(resolveSiteRectPercent(item, currentSiteSize));
     },
-    [currentSiteSize],
+    [currentSiteSize, mapRectIntoSheetViewport],
   );
   const mapAnchoredRectPercent = useCallback(
     (item: BuildingPlacement, targetMap: mapboxgl.Map | null) => {
-      return resolveMapAnchoredRectPercent({ item, targetMap, showMap, mapAnchor, currentSiteSize });
+      return mapRectIntoSheetViewport(resolveMapAnchoredRectPercent({ item, targetMap, showMap, mapAnchor, currentSiteSize }));
     },
-    [currentSiteSize, mapAnchor, showMap],
+    [currentSiteSize, mapAnchor, mapRectIntoSheetViewport, showMap],
+  );
+  const drawingSiteTupleToPercent = useCallback(
+    (point: [number, number], siteSize: { width: number; height: number }) => {
+      return mapPointIntoSheetViewport(siteTupleToPercent(point, siteSize));
+    },
+    [mapPointIntoSheetViewport],
+  );
+  const drawingSiteRectToPercent = useCallback(
+    (rect: { x: number; y: number; width: number; height: number }, siteSize: { width: number; height: number }) => {
+      return mapRectIntoSheetViewport(siteRectToPercent(rect, siteSize));
+    },
+    [mapRectIntoSheetViewport],
   );
   const resolveObjectHitZIndex = useCallback(
     (
@@ -2680,8 +2723,8 @@ export default function PreviewPanel({
                     draftPreviewPoint,
                     drawingLotWidth,
                     drawingLotHeight,
-                    siteTupleToPercent,
-                    siteRectToPercent,
+                    siteTupleToPercent: drawingSiteTupleToPercent,
+                    siteRectToPercent: drawingSiteRectToPercent,
                     showEarthworkUx,
                     gradingEarthworkUx,
                   },
