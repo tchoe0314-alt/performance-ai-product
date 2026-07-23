@@ -24,11 +24,14 @@ type PreviewCanvasHeaderControlsProps = {
   drawObjectsDisabledLabel: string;
   showDrawTools?: boolean;
   isHighQuality: boolean;
+  aiRealismEnabled: boolean;
   useLightHighQuality: boolean;
   busy: boolean;
   analysisHighlight: unknown;
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onSetPreviewMode: (value: "2d" | "3d") => void;
+  onSetAiVisualizationOff: () => void;
+  onSetAiVisualizationOn: () => void;
   onSetPreviewInteraction: (value: "static" | "edit") => void;
   onSetMapOverlayEnabled: (updater: (value: boolean) => boolean) => void;
   onSetMapLocked: (updater: (value: boolean) => boolean) => void;
@@ -59,11 +62,14 @@ export function PreviewCanvasHeaderControls({
   drawObjectsDisabledLabel,
   showDrawTools = true,
   isHighQuality,
+  aiRealismEnabled,
   useLightHighQuality,
   busy,
   analysisHighlight,
   onSetPreviewQuality,
   onSetPreviewMode,
+  onSetAiVisualizationOff,
+  onSetAiVisualizationOn,
   onSetPreviewInteraction,
   onSetMapOverlayEnabled,
   onSetMapLocked,
@@ -91,12 +97,12 @@ export function PreviewCanvasHeaderControls({
           <PreviewQualityToggle
             value={previewQuality}
             onChange={onSetPreviewQuality}
-            standardTestId="preview-inner-quality-standard"
-            highTestId="preview-inner-quality-high"
+            standardTestId="preview-quality-standard"
+            highTestId="preview-quality-high"
           />
           <button
             type="button"
-            data-testid="preview-inner-mode-2d"
+            data-testid="preview-mode-2d"
             onClick={() => onSetPreviewMode("2d")}
             className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
               previewMode === "2d" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
@@ -106,7 +112,7 @@ export function PreviewCanvasHeaderControls({
           </button>
           <button
             type="button"
-            data-testid="preview-inner-mode-3d"
+            data-testid="preview-mode-3d"
             onClick={() => {
               if (!canUse3D) return;
               onSetPreviewMode("3d");
@@ -132,7 +138,7 @@ export function PreviewCanvasHeaderControls({
           </button>
           <button
             type="button"
-            data-testid="preview-inner-interaction-edit"
+            data-testid="preview-interaction-edit"
             aria-label="Use canvas edit tool"
             onClick={() => onSetPreviewInteraction("edit")}
             className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
@@ -141,6 +147,43 @@ export function PreviewCanvasHeaderControls({
           >
             Edit
           </button>
+          {isHighQuality ? (
+            <div
+              data-testid="ai-realism-toggle"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5"
+              aria-label="AI Visualization toggle"
+            >
+              <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                AI Visualization
+              </span>
+              <button
+                type="button"
+                data-testid="ai-realism-off"
+                onClick={onSetAiVisualizationOff}
+                aria-pressed={!aiRealismEnabled}
+                className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                  !aiRealismEnabled
+                    ? "border-slate-900 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                Off
+              </button>
+              <button
+                type="button"
+                data-testid="ai-realism-on"
+                onClick={onSetAiVisualizationOn}
+                aria-pressed={aiRealismEnabled}
+                className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
+                  aiRealismEnabled
+                    ? "border-slate-900 bg-slate-950 text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                On
+              </button>
+            </div>
+          ) : null}
           {showDrawTools && previewMode === "2d" ? (
             <button
               type="button"

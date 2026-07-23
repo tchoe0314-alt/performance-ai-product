@@ -4,7 +4,6 @@ import { AiRealismPreviewOverlay } from "./AiRealismPreviewOverlay";
 import { CanvasQuickDrawPalette } from "./CanvasQuickDrawPalette";
 import { Preview2DSurface } from "./Preview2DSurface";
 import { PreviewAnnotationHoverCard } from "./PreviewAnnotationHoverCard";
-import { PreviewFloatingToolbar } from "./PreviewFloatingToolbar";
 import { PreviewMobileDrawToolbar } from "./PreviewMobileDrawToolbar";
 import { PreviewFullscreenHeader } from "./PreviewPlanAnnotationOverlay";
 import { WaterFireFlowEvidenceDock } from "./WaterFireFlowEvidenceDock";
@@ -18,7 +17,6 @@ type Preview2DCanvasShellProps = {
   drawMode: string;
   shellHandlers: HTMLAttributes<HTMLDivElement>;
   quickDrawPaletteProps: ComponentProps<typeof CanvasQuickDrawPalette>;
-  floatingToolbarProps: ComponentProps<typeof PreviewFloatingToolbar>;
   aiRealismPreviewOverlayProps?: ComponentProps<typeof AiRealismPreviewOverlay>;
   mobileDrawToolbarProps?: ComponentProps<typeof PreviewMobileDrawToolbar>;
   surfaceProps: ComponentProps<typeof Preview2DSurface>;
@@ -36,7 +34,6 @@ export function Preview2DCanvasShell({
   drawMode,
   shellHandlers,
   quickDrawPaletteProps,
-  floatingToolbarProps,
   aiRealismPreviewOverlayProps,
   mobileDrawToolbarProps,
   surfaceProps,
@@ -58,7 +55,6 @@ export function Preview2DCanvasShell({
       {...shellHandlers}
     >
       <CanvasQuickDrawPalette {...quickDrawPaletteProps} />
-      <PreviewFloatingToolbar {...floatingToolbarProps} />
       {aiRealismPreviewOverlayProps ? <AiRealismPreviewOverlay {...aiRealismPreviewOverlayProps} /> : null}
       {mobileDrawToolbarProps ? <PreviewMobileDrawToolbar {...mobileDrawToolbarProps} /> : null}
       <Preview2DSurface {...surfaceProps} />

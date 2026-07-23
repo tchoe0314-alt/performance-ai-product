@@ -2250,7 +2250,6 @@ export default function PreviewPanel({
     setHoveredObjectId,
   });
   const showParkingAnalysis = Boolean(analysisPaths && analysisPaths.length);
-  const activePreviewMode: "2d" | "3d" = previewMode;
   const preview2DShellHandlers = usePreview2DShellHandlers({
     allowMapInteraction,
     drawMode,
@@ -2327,11 +2326,14 @@ export default function PreviewPanel({
               drawObjectsDisabledLabel,
               showDrawTools: previewInteraction === "edit" && !showMobileDrawToolbar && !showQuickDrawPalette,
               isHighQuality,
+              aiRealismEnabled,
               useLightHighQuality,
               busy,
               analysisHighlight,
               onSetPreviewQuality,
               onSetPreviewMode,
+              onSetAiVisualizationOff: setAiVisualizationOff,
+              onSetAiVisualizationOn: setAiVisualizationOn,
               onSetPreviewInteraction,
               onSetMapOverlayEnabled: setMapOverlayEnabled,
               onSetMapLocked: setMapLocked,
@@ -2470,14 +2472,8 @@ export default function PreviewPanel({
               hasTerrainSource={hasTerrainSource}
               hasGradingSurface={hasGradingSurface}
               usingAnnotation3D={usingAnnotation3D}
-              isHighQuality={isHighQuality}
-              aiRealismEnabled={aiRealismEnabled}
-              onSetPreviewMode={onSetPreviewMode}
-              onSetPreviewQuality={onSetPreviewQuality}
               onSelectItem={onSelectBuilding}
               onOpenFullscreen={onOpenFullscreen}
-              onSetAiVisualizationOff={setAiVisualizationOff}
-              onSetAiVisualizationOn={setAiVisualizationOn}
             />
           ) : (
             <Preview2DCanvasShell
@@ -2511,29 +2507,6 @@ export default function PreviewPanel({
                 onSetDrawMode: setDrawMode,
                 onSetPreviewInteraction,
                 onPushCadCommandFeedback: pushCadCommandFeedback,
-              }}
-              floatingToolbarProps={{
-                previewMode,
-                activePreviewMode,
-                previewQuality,
-                canUse3D,
-                isHighQuality,
-                aiRealismEnabled,
-                allowEdits,
-                siteLocked: Boolean(siteLocked),
-                canDrawObjects,
-                drawObjectsDisabledLabel,
-                drawMode,
-                showDrawTools: previewInteraction === "edit" && !showMobileDrawToolbar && !showQuickDrawPalette,
-                onSetPreviewMode,
-                onSetPreviewQuality,
-                onSetAiVisualizationOff: setAiVisualizationOff,
-                onSetAiVisualizationOn: setAiVisualizationOn,
-                onSetPreviewInteraction,
-                onUnlockSite,
-                onClearDraftGeometry: clearDraftGeometry,
-                onSetDrawMode: setDrawMode,
-                onActivateDrawTool: activateDrawTool,
               }}
               aiRealismPreviewOverlayProps={
                 isHighQuality && aiRealismEnabled
