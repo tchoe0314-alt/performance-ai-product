@@ -28,8 +28,8 @@ type Preview3DCanvasProps = {
 const layerPalette: Record<string, { top: string; side: string; line: string }> = {
   BUILDING: { top: "#f3f4f6", side: "#cbd5e1", line: "#64748b" },
   STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
-  ROAD: { top: "#4b5563", side: "#374151", line: "#f8fafc" },
-  PARKING: { top: "#6b7280", side: "#4b5563", line: "#f8fafc" },
+  ROAD: { top: "#687381", side: "#566171", line: "#e5e7eb" },
+  PARKING: { top: "#7b8490", side: "#687381", line: "#f1f5f9" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
@@ -97,8 +97,8 @@ const getItemId = (item: Preview3DItem, index: number) =>
   item.id || `${normalizeLayer(item.layer).toLowerCase()}-${item.label.replace(/\W+/g, "-").toLowerCase()}-${index}`;
 
 const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
-  if (layer === "ROAD" || layer === "PARKING") return 0.12;
-  if (layer === "SIDEWALK") return 0.08;
+  if (layer === "ROAD" || layer === "PARKING") return 0.055;
+  if (layer === "SIDEWALK") return 0.035;
   if (layer === "CONSTRAINT") return 0.06;
   if (layer === "DRAINAGE") return Math.max(1.4, Math.min(Math.abs(item.height || 2.4), 5));
   if (layer === "UTILITY") return Math.max(0.22, Math.min(Math.min(item.w, item.h) * 0.03, 0.7));
@@ -108,7 +108,7 @@ const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
 
 const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
   if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" || layer === "CONSTRAINT") {
-    return Math.max(0.08, heightFt);
+    return Math.max(0.025, heightFt);
   }
   return Math.max(heightFt, 0.35);
 };
@@ -429,7 +429,7 @@ export default function Preview3DCanvas({
           const lineMaterial = new THREE.LineBasicMaterial({
             color: layer === "ROAD" ? "#f8fafc" : palette.line,
             transparent: true,
-            opacity: layer === "ROAD" ? 0.54 : 0.42,
+            opacity: layer === "ROAD" ? 0.34 : 0.42,
           });
           item.geometry.slice(0, -1).forEach(([x1, y1], segmentIndex) => {
             const [x2, y2] = item.geometry?.[segmentIndex + 1] ?? [x1, y1];
@@ -445,7 +445,7 @@ export default function Preview3DCanvas({
             segment.rotation.y = -Math.atan2(dy, dx);
             segment.userData = object.userData;
             object.add(segment);
-            addExactEdges(segment, layer === "ROAD" ? "rgba(15,23,42,0.34)" : palette.line, layer === "ROAD" ? 0.2 : 0.32);
+            addExactEdges(segment, layer === "ROAD" ? "#94a3b8" : palette.line, layer === "ROAD" ? 0.12 : 0.32);
             if (layer === "ROAD" && state !== "low") {
               const centerline = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints([
