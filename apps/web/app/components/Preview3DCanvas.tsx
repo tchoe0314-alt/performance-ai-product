@@ -26,15 +26,15 @@ type Preview3DCanvasProps = {
 };
 
 const layerPalette: Record<string, { top: string; side: string; line: string }> = {
-  BUILDING: { top: "#334155", side: "#475569", line: "#e2e8f0" },
-  STRUCTURE: { top: "#a16207", side: "#ca8a04", line: "#fef3c7" },
-  ROAD: { top: "#374151", side: "#4b5563", line: "#f8fafc" },
-  PARKING: { top: "#64748b", side: "#94a3b8", line: "#f8fafc" },
-  SIDEWALK: { top: "#99f6e4", side: "#5eead4", line: "#0f766e" },
-  DRAINAGE: { top: "#38bdf8", side: "#0284c7", line: "#e0f2fe" },
-  UTILITY: { top: "#a78bfa", side: "#7c3aed", line: "#faf5ff" },
-  CONSTRAINT: { top: "#fda4af", side: "#fb7185", line: "#fff1f2" },
-  TERRAIN: { top: "#bbf7d0", side: "#86efac", line: "#166534" },
+  BUILDING: { top: "#f3f4f6", side: "#cbd5e1", line: "#64748b" },
+  STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
+  ROAD: { top: "#4b5563", side: "#374151", line: "#f8fafc" },
+  PARKING: { top: "#6b7280", side: "#4b5563", line: "#f8fafc" },
+  SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
+  DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
+  UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
+  CONSTRAINT: { top: "#f8b4a5", side: "#f97360", line: "#9f3412" },
+  TERRAIN: { top: "#d7e7c6", side: "#adc894", line: "#5c7f46" },
 };
 
 const normalizeLayer = (layer: string) => {
@@ -95,6 +95,23 @@ const createTextSprite = (label: string, color = "#0f172a") => {
 
 const getItemId = (item: Preview3DItem, index: number) =>
   item.id || `${normalizeLayer(item.layer).toLowerCase()}-${item.label.replace(/\W+/g, "-").toLowerCase()}-${index}`;
+
+const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
+  if (layer === "ROAD" || layer === "PARKING") return 0.12;
+  if (layer === "SIDEWALK") return 0.08;
+  if (layer === "CONSTRAINT") return 0.06;
+  if (layer === "DRAINAGE") return Math.max(1.4, Math.min(Math.abs(item.height || 2.4), 5));
+  if (layer === "UTILITY") return Math.max(0.22, Math.min(Math.min(item.w, item.h) * 0.03, 0.7));
+  if (layer === "BUILDING") return Math.max(14, Math.min(item.height || Math.min(item.w, item.h) * 0.22, 52));
+  return Math.max(0.35, Math.min(item.height || 1, 8));
+};
+
+const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
+  if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" || layer === "CONSTRAINT") {
+    return Math.max(0.08, heightFt);
+  }
+  return Math.max(heightFt, 0.35);
+};
 
 export default function Preview3DCanvas({
   items,
@@ -220,7 +237,7 @@ export default function Preview3DCanvas({
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(previewQuality === "high" ? "#e2e8f0" : "#eef2f7");
+    scene.background = new THREE.Color(previewQuality === "high" ? "#eef5f7" : "#f3f6f8");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
@@ -230,9 +247,9 @@ export default function Preview3DCanvas({
     rendererRef.current = renderer;
     mount.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(48, width / height, 0.1, 5000);
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 5000);
     const maxSpan = Math.max(modelBounds.spanX, modelBounds.spanY);
-    camera.position.set(maxSpan * 0.72, maxSpan * 0.62, maxSpan * 0.78);
+    camera.position.set(maxSpan * 0.86, maxSpan * 0.58, maxSpan * 0.80);
     cameraRef.current = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -245,10 +262,10 @@ export default function Preview3DCanvas({
     controls.update();
     controlsRef.current = controls;
 
-    const ambient = new THREE.HemisphereLight("#ffffff", "#94a3b8", previewQuality === "high" ? 2.4 : 2.0);
+    const ambient = new THREE.HemisphereLight("#ffffff", "#b6c4cf", previewQuality === "high" ? 1.95 : 1.75);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight("#ffffff", previewQuality === "high" ? 2.8 : 1.8);
-    sun.position.set(maxSpan * 0.3, maxSpan * 0.8, maxSpan * 0.6);
+    const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.35 : 1.55);
+    sun.position.set(maxSpan * 0.42, maxSpan * 0.95, maxSpan * 0.52);
     sun.castShadow = previewQuality === "high";
     scene.add(sun);
 
@@ -292,12 +309,12 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#f1f5f9" : "#bbf7d0",
+      color: terrainState.mode === "fallback" ? "#f3f1e8" : "#d7e7c6",
       roughness: 0.9,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
       transparent: terrainState.mode === "fallback",
-      opacity: terrainState.mode === "fallback" ? 0.92 : 1,
+      opacity: terrainState.mode === "fallback" ? 0.96 : 1,
     });
     const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
     terrain.receiveShadow = true;
@@ -305,13 +322,13 @@ export default function Preview3DCanvas({
 
     const pickables: THREE.Object3D[] = [];
     let visibleLabelCount = 0;
-    const maxVisibleLabels = previewQuality === "high" ? 8 : 5;
+    const maxVisibleLabels = selectedItemId ? 1 : 0;
     items.forEach((item, index) => {
       const layer = normalizeLayer(item.layer);
       if (layer === "TERRAIN") return;
       const id = getItemId(item, index);
       const palette = layerPalette[layer] || { top: item.color || "#cbd5e1", side: item.color || "#94a3b8", line: "#f8fafc" };
-      const heightFt = Math.max(layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" ? 0.45 : 1, item.height || 1);
+      const heightFt = displayHeightForLayer(item, layer);
       const baseY = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
       const state = confidenceState(item);
       const object = new THREE.Group();
@@ -328,9 +345,9 @@ export default function Preview3DCanvas({
 
       const cadMaterial = new THREE.MeshStandardMaterial({
         color: state === "blocked" ? "#dc2626" : state === "low" ? "#94a3b8" : item.unsupported ? "#f59e0b" : palette.top,
-        roughness: 0.64,
+        roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
         transparent: item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
-        opacity: item.unsupported ? 0.58 : state === "low" ? 0.72 : state === "imported" ? 0.82 : state === "stale" ? 0.76 : layer === "CONSTRAINT" ? 0.68 : 1,
+        opacity: item.unsupported ? 0.58 : state === "low" ? 0.66 : state === "imported" ? 0.8 : state === "stale" ? 0.72 : layer === "CONSTRAINT" ? 0.36 : 1,
       });
       let renderedCadGeometry = false;
       const addExactEdges = (mesh: THREE.Mesh, color = palette.line, opacity = 0.62) => {
@@ -369,7 +386,14 @@ export default function Preview3DCanvas({
             else shape.lineTo(sx, sy);
           });
           shape.closePath();
-          const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.max(heightFt, 0.35), bevelEnabled: false });
+          const displayDepth = surfaceExtrudeDepth(heightFt, layer);
+          const geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: displayDepth,
+            bevelEnabled: layer === "BUILDING",
+            bevelSegments: layer === "BUILDING" ? 1 : 0,
+            bevelSize: layer === "BUILDING" ? 0.6 : 0,
+            bevelThickness: layer === "BUILDING" ? 0.4 : 0,
+          });
           geometry.rotateX(-Math.PI / 2);
           const mesh = new THREE.Mesh(geometry, cadMaterial);
           mesh.userData = object.userData;
@@ -383,8 +407,8 @@ export default function Preview3DCanvas({
               const x = bounds.min.x + ((bounds.max.x - bounds.min.x) * stripeIndex) / stripeCount;
               const line = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints([
-                  new THREE.Vector3(x, baseY + Math.max(heightFt, 0.35) + 0.08, bounds.min.z),
-                  new THREE.Vector3(x, baseY + Math.max(heightFt, 0.35) + 0.08, bounds.max.z),
+                  new THREE.Vector3(x, baseY + displayDepth + 0.06, bounds.min.z),
+                  new THREE.Vector3(x, baseY + displayDepth + 0.06, bounds.max.z),
                 ]),
                 stripeMaterial,
               );
@@ -393,8 +417,16 @@ export default function Preview3DCanvas({
           }
         } else {
           const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
+          const tubeRadius =
+            layer === "ROAD"
+              ? Math.max(Math.min(Math.min(item.w, item.h) * 0.07, 5.5), 2.2)
+              : layer === "SIDEWALK"
+                ? 0.55
+                : layer === "UTILITY"
+                  ? 0.42
+                  : Math.max(Math.min(item.w, item.h) * 0.012, 0.22);
           const tube = new THREE.Mesh(
-            new THREE.TubeGeometry(curve, Math.max(points.length * 8, 8), Math.max(Math.min(item.w, item.h) * 0.015, 0.28), 8, false),
+            new THREE.TubeGeometry(curve, Math.max(points.length * 10, 10), tubeRadius, 8, false),
             cadMaterial,
           );
           tube.userData = object.userData;
@@ -440,24 +472,41 @@ export default function Preview3DCanvas({
       } else if (layer === "DRAINAGE") {
         const depth = Math.max(1.2, Math.abs(Math.min(baseY, 0)) || Math.min(heightFt, 4));
         const basin = new THREE.Mesh(
-          new THREE.BoxGeometry(Math.max(item.w * 0.72, 1), Math.max(depth, 0.75), Math.max(item.h * 0.72, 1)),
-          new THREE.MeshStandardMaterial({ color: palette.top, roughness: 0.55, transparent: true, opacity: 0.74 }),
+          new THREE.CylinderGeometry(1, 0.64, Math.max(depth, 0.75), 64),
+          new THREE.MeshStandardMaterial({ color: "#7fc6a4", roughness: 0.84, transparent: true, opacity: 0.72 }),
         );
+        basin.scale.set(Math.max(item.w * 0.5, 1), 1, Math.max(item.h * 0.5, 1));
         basin.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, -depth / 2));
         basin.userData = object.userData;
         object.add(basin);
 
-        const rim = new THREE.LineSegments(
-          new THREE.EdgesGeometry(new THREE.BoxGeometry(item.w, 0.35, item.h)),
-          new THREE.LineBasicMaterial({ color: palette.line }),
+        const water = new THREE.Mesh(
+          new THREE.CylinderGeometry(1, 1, 0.08, 64),
+          new THREE.MeshStandardMaterial({ color: "#7dd3fc", roughness: 0.18, metalness: 0.02, transparent: true, opacity: 0.68 }),
         );
-        rim.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, 0.2));
+        water.scale.set(Math.max(item.w * 0.36, 1), 1, Math.max(item.h * 0.34, 1));
+        water.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, 0.05));
+        object.add(water);
+
+        const rimPoints = Array.from({ length: 96 }, (_, pointIndex) => {
+          const angle = (Math.PI * 2 * pointIndex) / 95;
+          return new THREE.Vector3(
+            Math.cos(angle) * Math.max(item.w * 0.52, 1),
+            0.16,
+            Math.sin(angle) * Math.max(item.h * 0.52, 1),
+          );
+        });
+        const rim = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(rimPoints),
+          new THREE.LineBasicMaterial({ color: "#236a7b", transparent: true, opacity: 0.7 }),
+        );
+        rim.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, 0));
         object.add(rim);
       } else if (layer === "UTILITY") {
-        const geometry = new THREE.CapsuleGeometry(Math.max(Math.min(item.w, item.h) * 0.08, 0.45), Math.max(item.w, item.h), 8, 16);
+        const geometry = new THREE.CapsuleGeometry(0.46, Math.max(item.w, item.h), 6, 12);
         const utility = new THREE.Mesh(
           geometry,
-          new THREE.MeshStandardMaterial({ color: palette.side, roughness: 0.45, metalness: 0.05 }),
+          new THREE.MeshStandardMaterial({ color: palette.side, roughness: 0.6, metalness: 0.02 }),
         );
         utility.rotation.z = Math.PI / 2;
         utility.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, Math.max(baseY, 1.5)));
@@ -496,6 +545,16 @@ export default function Preview3DCanvas({
         mesh.userData = object.userData;
         object.add(mesh);
 
+        if (layer === "BUILDING") {
+          const roof = new THREE.Mesh(
+            new THREE.BoxGeometry(Math.max(item.w * 0.98, 1), 0.18, Math.max(item.h * 0.98, 1)),
+            new THREE.MeshStandardMaterial({ color: "#e5e7eb", roughness: 0.78 }),
+          );
+          roof.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.12));
+          object.add(roof);
+          addExactEdges(mesh, "#475569", 0.42);
+        }
+
         if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK") {
           const stripe = new THREE.LineSegments(
             new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w * 0.96, 1), 0.08, Math.max(item.h * 0.96, 1))),
@@ -503,6 +562,33 @@ export default function Preview3DCanvas({
           );
           stripe.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.08));
           object.add(stripe);
+          if (layer === "PARKING" && item.w >= 48 && item.h >= 34) {
+            const stallMaterial = new THREE.LineBasicMaterial({
+              color: "#f8fafc",
+              transparent: true,
+              opacity: 0.54,
+            });
+            const stallCount = Math.max(4, Math.min(18, Math.floor(item.w / 10)));
+            for (let stripeIndex = 1; stripeIndex < stallCount; stripeIndex += 1) {
+              const x = item.x + (item.w * stripeIndex) / stallCount;
+              const stall = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                  toScene(x, item.y + item.h * 0.10, baseY + heightFt + 0.14),
+                  toScene(x, item.y + item.h * 0.90, baseY + heightFt + 0.14),
+                ]),
+                stallMaterial,
+              );
+              object.add(stall);
+            }
+            const aisle = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints([
+                toScene(item.x + item.w * 0.05, item.y + item.h * 0.5, baseY + heightFt + 0.15),
+                toScene(item.x + item.w * 0.95, item.y + item.h * 0.5, baseY + heightFt + 0.15),
+              ]),
+              new THREE.LineBasicMaterial({ color: "#dbeafe", transparent: true, opacity: 0.62 }),
+            );
+            object.add(aisle);
+          }
         }
       }
 
@@ -594,7 +680,7 @@ export default function Preview3DCanvas({
       });
       mount.innerHTML = "";
     };
-  }, [items, modelBounds, onSelectItem, previewQuality, terrainState]);
+  }, [items, modelBounds, onSelectItem, previewQuality, selectedItemId, terrainState]);
 
   return (
     <div

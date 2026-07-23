@@ -146,6 +146,7 @@ export function useDashboardAddObjectAction({
         type,
         options,
         lot,
+        existingPlacements: buildingPlacements,
         existingCount,
         defaultDimensions:
           type === "building" ? resolveDefaultBuildingDims() : { w: catalog.defaultW, d: catalog.defaultD },
