@@ -77,6 +77,13 @@ export function WorkspaceCanvasArea({
   onFocusSelectedObject,
   onOpenSelectedObjectDetails,
 }: WorkspaceCanvasAreaProps) {
+  const floatingInspectorAllowed =
+    activeWorkflowKey === "draw" ||
+    sidePanelForRender === "objects" ||
+    sidePanelForRender === "model" ||
+    sidePanelForRender === "layers" ||
+    sidePanelForRender === "details";
+
   return (
     <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
       <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
@@ -121,7 +128,7 @@ export function WorkspaceCanvasArea({
               onOpenFullDetails={() => onOpenPanel("layers")}
             />
           ) : null}
-          {selectedBuilding && !(previewInteraction === "edit" && activeWorkflowKey === "draw") ? (
+          {selectedBuilding && floatingInspectorAllowed && !(previewInteraction === "edit" && activeWorkflowKey === "draw") ? (
             <FloatingObjectInspector
               selectedBuilding={selectedBuilding}
               selectedObjectConfidence={selectedObjectConfidence}
