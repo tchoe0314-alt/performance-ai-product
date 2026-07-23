@@ -391,7 +391,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
     await officeRow.getByTestId("object-manager-select").click();
-    await expect(page.getByTestId("floating-object-inspector")).toContainText("Office Building - 28,000 sf");
+    await expect(officeRow).toContainText(/Office Building - 28,000 sf|Selected/i);
+    await expect(page.getByTestId("floating-object-inspector")).toHaveCount(0);
 
     await officeRow.getByTestId("object-manager-inspect").click();
     await expect(page.getByTestId("selected-object-inspector")).toBeVisible();
@@ -711,7 +712,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText(
       "Combined 2 drawn objects into Combined Site Program",
     );
-    await expect(page.getByTestId("floating-object-inspector")).toContainText("Combined Site Program");
+    await expect(combinedRow).toContainText("Combined Site Program");
+    await expect(page.getByTestId("floating-object-inspector")).toHaveCount(0);
     await page.getByTestId("recent-changes-undo").click();
     await expect(page.getByTestId("object-manager-status")).toContainText(
       "Undo: restored 2 source objects from combine objects.",

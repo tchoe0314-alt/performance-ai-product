@@ -77,11 +77,7 @@ export function WorkspaceCanvasArea({
   onFocusSelectedObject,
   onOpenSelectedObjectDetails,
 }: WorkspaceCanvasAreaProps) {
-  const floatingInspectorAllowed =
-    sidePanelForRender === "objects" ||
-    sidePanelForRender === "model" ||
-    sidePanelForRender === "layers" ||
-    sidePanelForRender === "details";
+  const floatingInspectorAllowed = !sidePanelForRender && rightRailCollapsed;
 
   return (
     <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
