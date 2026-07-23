@@ -44,7 +44,7 @@ export function PreviewPolylineObjects({
             (isCorridorLine ? Math.max(Math.min(item.w, item.d), 18) : null);
           const corridorStrokeWidth =
             corridorWidthFt && isCorridorLine
-              ? Math.max(0.38, Math.min(1.85, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100 * 0.48))
+              ? Math.max(0.26, Math.min(1.25, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100 * 0.34))
               : visualStyle.strokeWidth;
 
           return (
@@ -54,7 +54,7 @@ export function PreviewPolylineObjects({
                   data-testid="plan-road-corridor"
                   points={points.join(" ")}
                   fill="none"
-                  stroke={sourceState === "fallback" ? "rgba(100,116,139,0.22)" : "rgba(15, 23, 42, 0.11)"}
+                  stroke={sourceState === "fallback" ? "rgba(100,116,139,0.16)" : "rgba(15, 23, 42, 0.075)"}
                   strokeWidth={corridorStrokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -66,7 +66,7 @@ export function PreviewPolylineObjects({
                   points={points.join(" ")}
                   fill="none"
                   stroke="rgba(15,118,110,0.42)"
-                  strokeWidth={0.82}
+                  strokeWidth={0.48}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeDasharray="1.8 1.2"
@@ -79,7 +79,7 @@ export function PreviewPolylineObjects({
                 stroke={visualStyle.stroke}
                 strokeWidth={
                   isUtilityLine && isHighQuality
-                    ? 0.045
+                    ? 0.032
                     : isCorridorLine && isHighQuality
                       ? Math.max(0.1, corridorStrokeWidth * 0.07)
                       : visualStyle.strokeWidth
@@ -94,7 +94,7 @@ export function PreviewPolylineObjects({
                   points={points.join(" ")}
                   fill="none"
                   stroke="url(#cad-asphalt-light)"
-                  strokeWidth={Math.max(0.08, corridorStrokeWidth * 0.16)}
+                  strokeWidth={Math.max(0.045, corridorStrokeWidth * 0.1)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={sourceState === "fallback" ? 0.36 : 0.72}
@@ -113,7 +113,7 @@ export function PreviewPolylineObjects({
                         r={0.24}
                         fill="#ffffff"
                         stroke={visualStyle.stroke}
-                        strokeWidth={0.1}
+                        strokeWidth={0.065}
                       >
                         <title>{sourceStateLabel(sourceState)}</title>
                       </circle>
@@ -139,12 +139,12 @@ export function PreviewPolylineObjects({
                           x2={Math.min(82, x + 8)}
                           y2={Math.max(5, y - 4)}
                           stroke={visualStyle.stroke}
-                          strokeWidth={0.07}
+                          strokeWidth={0.045}
                         />
                         <text
                           x={Math.min(82, x + 8.4)}
                           y={Math.max(5, y - 4.2)}
-                          fontSize="0.8"
+                          fontSize="0.68"
                           fill={visualStyle.stroke}
                           fontWeight={700}
                         >

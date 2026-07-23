@@ -49,10 +49,10 @@ export function PreviewBasePlanGrid({
         />
         {isHighQuality ? (
           <g data-testid="survey-base-plan-frame" pointerEvents="none">
-            <rect x={0.8} y={0.8} width={98.4} height={98.4} fill="none" stroke="#111827" strokeWidth={0.22} />
-            <rect x={84.6} y={0.8} width={14.6} height={98.4} fill="rgba(255,255,255,0.86)" stroke="#111827" strokeWidth={0.14} />
+            <rect x={0.8} y={0.8} width={98.4} height={98.4} fill="none" stroke="#111827" strokeWidth={0.14} />
+            <rect x={84.6} y={0.8} width={14.6} height={98.4} fill="rgba(255,255,255,0.78)" stroke="#111827" strokeWidth={0.09} />
             {titleBlockLines.map((y) => (
-              <line key={`sheet-title-line-${y}`} x1={84.6} y1={y} x2={99.2} y2={y} stroke="#111827" strokeWidth={0.08} />
+              <line key={`sheet-title-line-${y}`} x1={84.6} y1={y} x2={99.2} y2={y} stroke="#111827" strokeWidth={0.05} />
             ))}
             <text x={91.9} y={6.2} textAnchor="middle" fontSize="1.05" fontWeight={850} fill="#111827">SITE REVIEW</text>
             <text x={91.9} y={8.0} textAnchor="middle" fontSize="0.86" fontWeight={700} fill="#334155">
@@ -93,8 +93,8 @@ export function PreviewBasePlanGrid({
           height={97.6}
           fill={siteLocked && !isHighQuality ? "rgba(16,185,129,0.024)" : "none"}
           stroke={siteLocked ? (isHighQuality ? "#111827" : "rgba(5,150,105,0.62)") : isHighQuality ? "rgba(15,23,42,0.44)" : "rgba(51,65,85,0.36)"}
-          strokeWidth={siteLocked ? (isHighQuality ? 0.11 : 0.34) : 0.22}
-          strokeDasharray={isHighQuality ? "2 0.9 0.35 0.9" : siteLocked ? undefined : "2 1.2"}
+          strokeWidth={siteLocked ? (isHighQuality ? 0.07 : 0.34) : 0.18}
+          strokeDasharray={isHighQuality ? "1.8 1.1 0.28 1.1" : siteLocked ? undefined : "2 1.2"}
         />
         {siteLocked ? (
           <>

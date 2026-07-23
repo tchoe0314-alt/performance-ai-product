@@ -36,7 +36,7 @@ export function AiRealismPreviewOverlay({
   return (
     <div
       data-testid="ai-realism-preview"
-      className="pointer-events-none absolute inset-0 z-[160] flex items-center justify-center overflow-hidden rounded-[24px] bg-slate-950"
+      className="pointer-events-none absolute inset-0 z-[160] flex items-center justify-center overflow-hidden rounded-[24px] bg-slate-950/35"
       onClick={stopPreviewPointerEvent}
       onDoubleClick={stopPreviewPointerEvent}
       onMouseDown={stopPreviewPointerEvent}
@@ -50,17 +50,17 @@ export function AiRealismPreviewOverlay({
             data-testid="ai-realism-image"
             src={artifact.image_data_url}
             alt="AI realism visualization generated from the current review layout"
-            className="pointer-events-none h-full w-full object-cover"
+            className="pointer-events-none h-full w-full object-cover opacity-95"
           />
           <div
             data-testid="ai-realism-watermark"
-            className="absolute inset-x-4 bottom-4 rounded-lg border border-white/25 bg-slate-950/82 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur"
+            className="absolute inset-x-4 bottom-4 rounded-lg border border-white/30 bg-slate-950/66 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur"
           >
             {watermark}
           </div>
           <div
             data-testid="ai-realism-source-summary"
-            className="pointer-events-auto absolute left-4 top-20 max-w-[min(32rem,calc(100%-2rem))] rounded-xl border border-white/35 bg-white/92 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
+            className="pointer-events-auto absolute left-4 top-16 max-w-[min(26rem,calc(100%-2rem))] rounded-xl border border-white/45 bg-white/82 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>

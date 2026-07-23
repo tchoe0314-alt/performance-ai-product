@@ -2,17 +2,17 @@ export function PreviewSvgDefs() {
   return (
     <defs>
       <filter id="plan-ink-soften" x="-10%" y="-10%" width="120%" height="120%">
-        <feDropShadow dx="0" dy="0.08" stdDeviation="0.08" floodColor="rgba(15,23,42,0.18)" />
+        <feDropShadow dx="0" dy="0.035" stdDeviation="0.035" floodColor="rgba(15,23,42,0.1)" />
       </filter>
       <pattern id="cad-hatch-diagonal" patternUnits="userSpaceOnUse" width="2.4" height="2.4" patternTransform="rotate(45)">
         <line x1="0" y1="0" x2="0" y2="2.4" stroke="rgba(15,23,42,0.34)" strokeWidth="0.16" />
       </pattern>
-      <pattern id="cad-building-poche" patternUnits="userSpaceOnUse" width="3.2" height="3.2" patternTransform="rotate(45)">
-        <line x1="0" y1="0" x2="0" y2="3.2" stroke="rgba(15,23,42,0.16)" strokeWidth="0.12" />
+      <pattern id="cad-building-poche" patternUnits="userSpaceOnUse" width="3.8" height="3.8" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="3.8" stroke="rgba(15,23,42,0.09)" strokeWidth="0.07" />
       </pattern>
-      <pattern id="cad-asphalt-light" patternUnits="userSpaceOnUse" width="3.4" height="3.4">
-        <path d="M 0 3.4 L 3.4 0" stroke="rgba(51,65,85,0.08)" strokeWidth="0.12" />
-        <path d="M 1.7 3.4 L 3.4 1.7" stroke="rgba(51,65,85,0.06)" strokeWidth="0.1" />
+      <pattern id="cad-asphalt-light" patternUnits="userSpaceOnUse" width="4.2" height="4.2">
+        <path d="M 0 4.2 L 4.2 0" stroke="rgba(51,65,85,0.045)" strokeWidth="0.07" />
+        <path d="M 2.1 4.2 L 4.2 2.1" stroke="rgba(51,65,85,0.032)" strokeWidth="0.055" />
       </pattern>
       <pattern id="cad-hatch-water" patternUnits="userSpaceOnUse" width="4.4" height="2.6">
         <path d="M 0 1.3 C 1.1 0.3 2.2 2.3 3.3 1.3 S 5.5 1.3 6.6 1.3" fill="none" stroke="rgba(2,132,199,0.42)" strokeWidth="0.18" />

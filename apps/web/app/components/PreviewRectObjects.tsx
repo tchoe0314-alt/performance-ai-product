@@ -65,7 +65,7 @@ export function PreviewRectObjects({
                     points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                     fill="none"
                     stroke={visualStyle.fill}
-                    strokeWidth={Math.max(0.32, corridorAxis.width * 0.42)}
+                    strokeWidth={Math.max(0.22, corridorAxis.width * 0.34)}
                     strokeLinecap="round"
                     opacity={Math.min(0.72, visualStyle.opacity)}
                   >
@@ -76,7 +76,7 @@ export function PreviewRectObjects({
                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                       fill="none"
                       stroke="url(#cad-asphalt-light)"
-                      strokeWidth={Math.max(0.08, corridorAxis.width * 0.16)}
+                      strokeWidth={Math.max(0.05, corridorAxis.width * 0.1)}
                       strokeLinecap="round"
                       opacity={sourceState === "fallback" ? 0.28 : 0.75}
                     />
@@ -95,7 +95,7 @@ export function PreviewRectObjects({
                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                       fill="none"
                       stroke="rgba(248,250,252,0.7)"
-                      strokeWidth={0.08}
+                      strokeWidth={0.045}
                       strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
                       strokeLinecap="round"
                     />
@@ -157,7 +157,7 @@ export function PreviewRectObjects({
                       rx={cornerRadius}
                       fill="url(#cad-building-poche)"
                       stroke="none"
-                      opacity={sourceState === "fallback" ? 0.28 : 0.8}
+                      opacity={sourceState === "fallback" ? 0.18 : 0.48}
                     />
                   ) : null}
                   {isFallbackBounds ? (
@@ -204,8 +204,8 @@ export function PreviewRectObjects({
                       "water",
                     )}
                     fill="none"
-                    stroke="rgba(224,242,254,0.72)"
-                    strokeWidth={0.1}
+                    stroke="rgba(2,132,199,0.34)"
+                    strokeWidth={0.055}
                   />
                   <path
                     data-testid="professional-basin-footprint"
@@ -218,15 +218,15 @@ export function PreviewRectObjects({
                       },
                       "water",
                     )}
-                    fill="rgba(125,211,252,0.16)"
-                    stroke="rgba(2,132,199,0.36)"
-                    strokeWidth={0.07}
+                    fill="rgba(125,211,252,0.08)"
+                    stroke="rgba(2,132,199,0.28)"
+                    strokeWidth={0.045}
                   />
                   <path
                     d={`M ${rect.left + rect.width * 0.18} ${rect.top + rect.height * 0.55} C ${rect.left + rect.width * 0.35} ${rect.top + rect.height * 0.46} ${rect.left + rect.width * 0.58} ${rect.top + rect.height * 0.64} ${rect.left + rect.width * 0.82} ${rect.top + rect.height * 0.5}`}
                     fill="none"
-                    stroke="rgba(14,116,144,0.34)"
-                    strokeWidth={0.09}
+                    stroke="rgba(14,116,144,0.24)"
+                    strokeWidth={0.05}
                     strokeLinecap="round"
                   />
                 </g>
@@ -240,14 +240,14 @@ export function PreviewRectObjects({
                     height={rect.height * 0.84}
                     rx={0.08}
                     fill="none"
-                    stroke="rgba(15,23,42,0.14)"
-                    strokeWidth={0.05}
+                    stroke="rgba(15,23,42,0.1)"
+                    strokeWidth={0.035}
                   />
                   <path
                     d={`M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.24} H ${rect.left + rect.width * 0.88} M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.5} H ${rect.left + rect.width * 0.88} M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.76} H ${rect.left + rect.width * 0.88}`}
                     fill="none"
-                    stroke="rgba(15,23,42,0.08)"
-                    strokeWidth={0.04}
+                    stroke="rgba(15,23,42,0.055)"
+                    strokeWidth={0.025}
                   />
                   <line
                     x1={rect.left + rect.width * 0.43}
@@ -255,13 +255,13 @@ export function PreviewRectObjects({
                     x2={rect.left + rect.width * 0.57}
                     y2={rect.top + rect.height}
                     stroke="rgba(15,23,42,0.62)"
-                    strokeWidth={0.1}
+                    strokeWidth={0.065}
                   />
                   <path
                     d={`M ${rect.left + rect.width * 0.43} ${rect.top + rect.height * 1.04} Q ${rect.left + rect.width * 0.5} ${rect.top + rect.height * 1.1} ${rect.left + rect.width * 0.57} ${rect.top + rect.height * 1.04}`}
                     fill="none"
-                    stroke="rgba(15,23,42,0.24)"
-                    strokeWidth={0.06}
+                    stroke="rgba(15,23,42,0.16)"
+                    strokeWidth={0.035}
                   />
                 </g>
               ) : null}
@@ -272,8 +272,8 @@ export function PreviewRectObjects({
                     y1={rect.top + rect.height * 0.5}
                     x2={rect.left + rect.width * 0.92}
                     y2={rect.top + rect.height * 0.5}
-                    stroke="rgba(71,85,105,0.26)"
-                    strokeWidth={0.035}
+                    stroke="rgba(71,85,105,0.18)"
+                    strokeWidth={0.022}
                     strokeDasharray="0.42 0.34"
                   />
                   {Array.from({ length: Math.min(10, Math.max(3, Math.round(rect.width / 3.6))) }).map((_, stallIdx, stalls) => {
@@ -285,8 +285,8 @@ export function PreviewRectObjects({
                         y1={rect.top + rect.height * 0.16}
                         x2={x}
                         y2={rect.top + rect.height * 0.84}
-                        stroke="rgba(71,85,105,0.22)"
-                        strokeWidth={0.028}
+                        stroke="rgba(71,85,105,0.16)"
+                        strokeWidth={0.018}
                       />
                     );
                   })}
@@ -298,7 +298,7 @@ export function PreviewRectObjects({
                     points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                     fill="none"
                     stroke="rgba(15,118,110,0.34)"
-                    strokeWidth={Math.max(0.46, corridorAxis.width * 0.7)}
+                    strokeWidth={Math.max(0.26, corridorAxis.width * 0.46)}
                     strokeLinecap="round"
                     opacity={0.48}
                   />

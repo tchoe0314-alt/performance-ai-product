@@ -104,7 +104,7 @@ export function PreviewPolygonObjects({
                 points={points.join(" ")}
                 fill={isFallbackBounds ? "rgba(248,250,252,0.035)" : visualStyle.fill}
                 stroke={visualStyle.stroke}
-                strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
+                strokeWidth={isFallbackBounds ? 0.13 : visualStyle.strokeWidth}
                 strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
                 opacity={visualStyle.opacity}
                 strokeLinejoin="round"
@@ -116,7 +116,7 @@ export function PreviewPolygonObjects({
                   points={points.join(" ")}
                   fill="none"
                   stroke="#94a3b8"
-                  strokeWidth={0.08}
+                  strokeWidth={0.05}
                   strokeDasharray="0.4 1.2"
                   opacity={0.5}
                 />
@@ -127,14 +127,14 @@ export function PreviewPolygonObjects({
                 </polygon>
               ) : null}
               {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={0.54}>
+                <g data-testid="plan-parking-stall-cues" opacity={0.42}>
                   <line
                     x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
                     y1={(bounds.minY + bounds.maxY) / 2}
                     x2={bounds.maxX - (bounds.maxX - bounds.minX) * 0.1}
                     y2={(bounds.minY + bounds.maxY) / 2}
-                    stroke="rgba(71,85,105,0.26)"
-                    strokeWidth={0.035}
+                    stroke="rgba(71,85,105,0.18)"
+                    strokeWidth={0.022}
                     strokeDasharray="0.42 0.34"
                   />
                   {Array.from({ length: stripeCount }).map((_, stripeIdx) => {
@@ -148,8 +148,8 @@ export function PreviewPolygonObjects({
                         y1={bounds.minY + (bounds.maxY - bounds.minY) * 0.16}
                         x2={x}
                         y2={bounds.maxY - (bounds.maxY - bounds.minY) * 0.16}
-                        stroke="rgba(71,85,105,0.22)"
-                        strokeWidth={0.028}
+                        stroke="rgba(71,85,105,0.16)"
+                        strokeWidth={0.018}
                       />
                     );
                   })}
@@ -160,25 +160,25 @@ export function PreviewPolygonObjects({
                   <polygon
                     points={innerShelf.length ? innerShelf.map(sitePointToSvgPercent).join(" ") : innerPolygonPoints}
                     fill="none"
-                    stroke="rgba(224,242,254,0.7)"
-                    strokeWidth={0.09}
+                    stroke="rgba(2,132,199,0.34)"
+                    strokeWidth={0.052}
                     strokeLinejoin="round"
                   />
                   {bottomShelf.length ? (
                     <polygon
                       points={bottomShelf.map(sitePointToSvgPercent).join(" ")}
-                      fill="rgba(2,132,199,0.1)"
-                      stroke="rgba(3,105,161,0.6)"
-                      strokeWidth={0.08}
+                      fill="rgba(2,132,199,0.055)"
+                      stroke="rgba(3,105,161,0.34)"
+                      strokeWidth={0.048}
                       strokeLinejoin="round"
                     />
                   ) : null}
                   {waterSurface.length ? (
                     <polygon
                       points={waterSurface.map(sitePointToSvgPercent).join(" ")}
-                      fill="rgba(125,211,252,0.24)"
-                      stroke="rgba(14,165,233,0.58)"
-                      strokeWidth={0.07}
+                      fill="rgba(125,211,252,0.12)"
+                      stroke="rgba(14,165,233,0.34)"
+                      strokeWidth={0.042}
                       strokeLinejoin="round"
                     />
                   ) : null}
