@@ -2157,6 +2157,7 @@ export type Preview3DItem = {
   terrainSample?: boolean;
   geometryType?: "polygon" | "polyline" | "rect" | "point" | "circle";
   geometry?: Array<[number, number]>;
+  corridorWidth?: number;
   radius?: number;
   entityType?: string;
   linkedObjectId?: string;

@@ -70,8 +70,16 @@ export function buildDashboardPreview3DView({
     cadEntityPreviewItems3D: cadEntityPreview.items3D,
     sourceConfidenceByObjectId,
   });
+  const supplementalPlacement3DItems = preview3DItems.length
+    ? preview3DPlacementItems.filter((item) => {
+        const layer = String(item.layer || "").toUpperCase();
+        if (!["ROAD", "SIDEWALK", "UTILITY"].includes(layer)) return false;
+        const itemId = String(item.id || "");
+        return !preview3DItems.some((existing) => String(existing.id || "") === itemId);
+      })
+    : [];
   const preview3DEffectiveItems = preview3DItems.length
-    ? preview3DItems
+    ? [...preview3DItems, ...supplementalPlacement3DItems]
     : preview3DAnnotationItems.length
       ? preview3DAnnotationItems
       : preview3DPlacementItems;
@@ -419,6 +427,17 @@ export function buildPlacementPreview3DItems({
       const isParking = item.type === "parking";
       const isDrainage = item.type === "basin" || item.type === "inlet" || item.type === "outfall";
       const isUtility = item.type === "hydrant" || item.type === "manhole" || item.type === "utility_corridor";
+      const rawCorridorWidth =
+        Number(item.meta?.corridor_width_ft) ||
+        Number(item.meta?.width_ft) ||
+        Number(item.meta?.road_width_ft) ||
+        Number(item.meta?.sidewalk_width_ft) ||
+        0;
+      const corridorWidth = isRoad
+        ? Math.max(18, Math.min(rawCorridorWidth || Math.min(item.w, item.d) || 28, 42))
+        : isSidewalk
+          ? Math.max(4, Math.min(rawCorridorWidth || 6, 12))
+          : undefined;
       items.push({
         id: item.id,
         x: item.x ?? 0,
@@ -439,6 +458,7 @@ export function buildPlacementPreview3DItems({
         z: isDrainage ? -1 : 0,
         geometryType: item.geometryType,
         geometry: item.geometry,
+        corridorWidth,
         color: isBuilding
           ? "#d1d5db"
           : isDrainage

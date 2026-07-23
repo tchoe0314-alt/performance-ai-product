@@ -415,13 +415,55 @@ export default function Preview3DCanvas({
               object.add(line);
             }
           }
+        } else if (layer === "ROAD" || layer === "SIDEWALK") {
+          const corridorWidth = Math.max(
+            layer === "ROAD" ? 16 : 4,
+            Math.min(Number(item.corridorWidth ?? (layer === "ROAD" ? 28 : 6)), layer === "ROAD" ? 42 : 12),
+          );
+          const slabDepth = surfaceExtrudeDepth(heightFt, layer);
+          const slabMaterial = new THREE.MeshStandardMaterial({
+            color: palette.top,
+            roughness: layer === "ROAD" ? 0.9 : 0.82,
+            metalness: 0.01,
+          });
+          const lineMaterial = new THREE.LineBasicMaterial({
+            color: layer === "ROAD" ? "#f8fafc" : palette.line,
+            transparent: true,
+            opacity: layer === "ROAD" ? 0.54 : 0.42,
+          });
+          item.geometry.slice(0, -1).forEach(([x1, y1], segmentIndex) => {
+            const [x2, y2] = item.geometry?.[segmentIndex + 1] ?? [x1, y1];
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const length = Math.hypot(dx, dy);
+            if (length < 0.01) return;
+            const segment = new THREE.Mesh(
+              new THREE.BoxGeometry(length, slabDepth, corridorWidth),
+              slabMaterial,
+            );
+            segment.position.copy(toScene((x1 + x2) / 2, (y1 + y2) / 2, baseY + slabDepth / 2 + 0.05));
+            segment.rotation.y = -Math.atan2(dy, dx);
+            segment.userData = object.userData;
+            object.add(segment);
+            addExactEdges(segment, layer === "ROAD" ? "rgba(15,23,42,0.34)" : palette.line, layer === "ROAD" ? 0.2 : 0.32);
+            if (layer === "ROAD" && state !== "low") {
+              const centerline = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                  toScene(x1, y1, baseY + slabDepth + 0.12),
+                  toScene(x2, y2, baseY + slabDepth + 0.12),
+                ]),
+                lineMaterial,
+              );
+              object.add(centerline);
+            }
+          });
         } else {
           const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
           const tubeRadius =
             layer === "ROAD"
-              ? Math.max(Math.min(Math.min(item.w, item.h) * 0.045, 3.2), 1.35)
+              ? Math.max(5, Math.min(Number(item.corridorWidth ?? 28) / 2, 21))
               : layer === "SIDEWALK"
-                ? 0.55
+                ? Math.max(1.8, Math.min(Number(item.corridorWidth ?? 6) / 2, 6))
                 : layer === "UTILITY"
                   ? 0.42
                   : Math.max(Math.min(item.w, item.h) * 0.012, 0.22);

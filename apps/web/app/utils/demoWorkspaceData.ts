@@ -108,11 +108,11 @@ export const createDemoPlacements = (): BuildingPlacement[] => [
     geometryType: "polyline",
     geometry: [
       [82, 294],
-      [210, 210],
-      [522, 210],
-      [664, 310],
-      [540, 410],
-      [160, 410],
+      [210, 320],
+      [500, 320],
+      [668, 330],
+      [704, 498],
+      [126, 498],
       [82, 294],
     ],
   },
@@ -292,8 +292,8 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
     }),
     line("loop-road", "Internal Loop Drive", "road", [
       [siteW * 0.14, siteH * 0.54],
-      [siteW * 0.28, siteH * 0.42],
-      [siteW * 0.64, siteH * 0.42],
+      [siteW * 0.28, siteH * 0.52],
+      [siteW * 0.64, siteH * 0.52],
       [siteW * 0.78, siteH * 0.56],
       [siteW * 0.66, siteH * 0.78],
       [siteW * 0.20, siteH * 0.78],
@@ -302,7 +302,7 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
     line("driveway", "Driveway Connection", "driveway", [
       [siteW * 0.03, siteH * 0.54],
       [siteW * 0.14, siteH * 0.54],
-      [siteW * 0.28, siteH * 0.42],
+      [siteW * 0.28, siteH * 0.52],
     ], { corridor_width_ft: 30, dense_concept_generated: true }),
     line("ada-route", "Sidewalk / ADA Route", "sidewalk", [
       [siteW * 0.18, siteH * 0.36],

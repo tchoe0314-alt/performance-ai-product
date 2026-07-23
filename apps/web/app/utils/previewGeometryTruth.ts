@@ -87,8 +87,9 @@ export const resolveSourceState = (item: BuildingPlacement): PreviewSourceState 
   if (statusText.includes("inferred") || statusText.includes("low") || item.source === "inferred") return "inferred";
   if (statusText.includes("import") || item.source === "detected_from_image") return "imported";
   const hasPathGeometry = hasExplicitFootprintGeometry(item);
+  const isRectLike = !item.geometryType || item.geometryType === "rect";
   const sourceBackedRect =
-    item.geometryType === "rect" &&
+    isRectLike &&
     (item.source === "user" ||
       item.source === "manual_drawn" ||
       item.source === "user_confirmed" ||
@@ -96,8 +97,8 @@ export const resolveSourceState = (item: BuildingPlacement): PreviewSourceState 
       statusText.includes("source-backed") ||
       statusText.includes("survey") ||
       statusText.includes("import"));
-  if (!hasPathGeometry && item.geometryType === "rect" && item.type !== "site" && !sourceBackedRect) return "fallback";
-  if (!hasPathGeometry && item.geometryType !== "rect" && item.type !== "site") return "fallback";
+  if (!hasPathGeometry && isRectLike && item.type !== "site" && !sourceBackedRect) return "fallback";
+  if (!hasPathGeometry && !isRectLike && item.type !== "site") return "fallback";
   return "verified";
 };
 

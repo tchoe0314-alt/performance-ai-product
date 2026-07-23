@@ -22,7 +22,7 @@ export function PreviewRectObjectChrome({
   return (
     <>
       <div
-        className={`pointer-events-none h-full w-full rounded-[8px] shadow-sm transition ${
+        className={`pointer-events-none h-full w-full rounded-[8px] transition ${
           showBoxChrome ? `border ${borderColor}` : ""
         } ${
           showBoxChrome && selected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-white/80 shadow-[0_0_0_6px_rgba(251,191,36,0.14)]" : ""
@@ -47,9 +47,6 @@ export function PreviewRectObjectChrome({
             />
           ))}
         </>
-      ) : null}
-      {showBox && highQuality && visualKind === "building" ? (
-        <div className="pointer-events-none absolute inset-x-[16%] top-1/2 h-px -translate-y-1/2 bg-white/35" />
       ) : null}
       {showBox && highQuality && visualKind === "water" ? (
         <div className="pointer-events-none absolute inset-x-[14%] top-1/2 h-px -translate-y-1/2 bg-sky-100/60 shadow-[0_5px_0_rgba(224,242,254,0.34),0_-5px_0_rgba(224,242,254,0.24)]" />

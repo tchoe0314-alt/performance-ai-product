@@ -148,32 +148,6 @@ export function PreviewRectObjects({
                   >
                     <title>{sourceStateLabel(sourceState)}</title>
                   </rect>
-                  {isHighQuality && visualKind === "building" ? (
-                    <rect
-                      x={rect.left}
-                      y={rect.top}
-                      width={rect.width}
-                      height={rect.height}
-                      rx={cornerRadius}
-                      fill="url(#cad-building-poche)"
-                      stroke="none"
-                      opacity={sourceState === "fallback" ? 0.18 : 0.48}
-                    />
-                  ) : null}
-                  {isFallbackBounds ? (
-                    <rect
-                      x={rect.left + rect.width * 0.03}
-                      y={rect.top + rect.height * 0.03}
-                      width={rect.width * 0.94}
-                      height={rect.height * 0.94}
-                      rx={0.14}
-                      fill="none"
-                      stroke="#cbd5e1"
-                      strokeWidth={0.06}
-                      strokeDasharray="0.4 0.9"
-                      opacity={0.5}
-                    />
-                  ) : null}
                   {hatchFill ? (
                     <rect
                       data-testid="cad-hatch-fill"
@@ -231,24 +205,8 @@ export function PreviewRectObjects({
                   />
                 </g>
               ) : null}
-              {isHighQuality && visualKind === "building" ? (
-                <g data-testid="professional-building-cues" opacity={sourceState === "fallback" ? 0.42 : 0.86}>
-                  <rect
-                    x={rect.left + rect.width * 0.08}
-                    y={rect.top + rect.height * 0.08}
-                    width={rect.width * 0.84}
-                    height={rect.height * 0.84}
-                    rx={0.08}
-                    fill="none"
-                    stroke="rgba(15,23,42,0.1)"
-                    strokeWidth={0.035}
-                  />
-                  <path
-                    d={`M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.24} H ${rect.left + rect.width * 0.88} M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.5} H ${rect.left + rect.width * 0.88} M ${rect.left + rect.width * 0.12} ${rect.top + rect.height * 0.76} H ${rect.left + rect.width * 0.88}`}
-                    fill="none"
-                    stroke="rgba(15,23,42,0.055)"
-                    strokeWidth={0.025}
-                  />
+              {isHighQuality && visualKind === "building" && selected ? (
+                <g data-testid="professional-building-cues" opacity={0.72}>
                   <line
                     x1={rect.left + rect.width * 0.43}
                     y1={rect.top + rect.height}
@@ -256,12 +214,6 @@ export function PreviewRectObjects({
                     y2={rect.top + rect.height}
                     stroke="rgba(15,23,42,0.62)"
                     strokeWidth={0.065}
-                  />
-                  <path
-                    d={`M ${rect.left + rect.width * 0.43} ${rect.top + rect.height * 1.04} Q ${rect.left + rect.width * 0.5} ${rect.top + rect.height * 1.1} ${rect.left + rect.width * 0.57} ${rect.top + rect.height * 1.04}`}
-                    fill="none"
-                    stroke="rgba(15,23,42,0.16)"
-                    strokeWidth={0.035}
                   />
                 </g>
               ) : null}
