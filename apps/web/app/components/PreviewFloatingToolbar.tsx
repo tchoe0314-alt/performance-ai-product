@@ -50,7 +50,7 @@ export function PreviewFloatingToolbar({
   onActivateDrawTool,
 }: PreviewFloatingToolbarProps) {
   return (
-    <div className="absolute left-1/2 top-3 z-[220] flex max-w-[calc(100%-8rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/94 p-1 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.65)] backdrop-blur">
+    <div className="absolute right-3 top-3 z-[220] flex max-w-[min(28rem,calc(100%-1.5rem))] flex-wrap items-center justify-end gap-1.5 rounded-lg border border-slate-200 bg-white/90 p-1 shadow-[0_14px_38px_-30px_rgba(15,23,42,0.58)] backdrop-blur">
       <button
         type="button"
         data-testid="preview-mode-2d"
