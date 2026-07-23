@@ -3,10 +3,7 @@ import type { RefObject } from "react";
 
 import type { ChatMessage } from "../types";
 import type { CadToolRequestForPreview } from "../utils/dashboardTypes";
-import type {
-  ProjectStatusSummary,
-  SidePanelKey,
-} from "../utils/workspaceShell";
+import type { ProjectStatusSummary } from "../utils/workspaceShell";
 
 type AppendChatMessage = (
   role: ChatMessage["role"],
@@ -21,7 +18,6 @@ type UseDashboardCommandUtilityActionsInput = {
   appendChatMessage: AppendChatMessage;
   commandInputRef: RefObject<HTMLTextAreaElement | null>;
   setActivePlacementId: StateSetter<string | null>;
-  setActiveSidePanel: StateSetter<SidePanelKey | null>;
   setCadToolRequest: StateSetter<CadToolRequestForPreview | null>;
   setCommandBarExpanded: StateSetter<boolean>;
   setPendingClarification: StateSetter<{
@@ -31,10 +27,7 @@ type UseDashboardCommandUtilityActionsInput = {
   } | null>;
   setPlacementModeEnabled: StateSetter<boolean>;
   setPreviewInteraction: StateSetter<"static" | "edit">;
-  setRenderedSidePanel: StateSetter<SidePanelKey | null>;
-  setRightRailCollapsed: StateSetter<boolean>;
   setShortcutsOverlayOpen: StateSetter<boolean>;
-  setSidePanelVisible: StateSetter<boolean>;
   setStatusMessage: StateSetter<string>;
   setWorkspaceChromeMinimized: StateSetter<boolean>;
   updateProjectStatus: (summary: Omit<ProjectStatusSummary, "updatedAt">) => void;
@@ -56,16 +49,12 @@ export function useDashboardCommandUtilityActions({
   appendChatMessage,
   commandInputRef,
   setActivePlacementId,
-  setActiveSidePanel,
   setCadToolRequest,
   setCommandBarExpanded,
   setPendingClarification,
   setPlacementModeEnabled,
   setPreviewInteraction,
-  setRenderedSidePanel,
-  setRightRailCollapsed,
   setShortcutsOverlayOpen,
-  setSidePanelVisible,
   setStatusMessage,
   setWorkspaceChromeMinimized,
   updateProjectStatus,
@@ -73,10 +62,6 @@ export function useDashboardCommandUtilityActions({
   const focusCommandInput = useCallback(() => {
     setShortcutsOverlayOpen(false);
     setCommandBarExpanded(true);
-    setRightRailCollapsed(true);
-    setSidePanelVisible(false);
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
     setWorkspaceChromeMinimized(true);
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
@@ -102,15 +87,11 @@ export function useDashboardCommandUtilityActions({
     });
   }, [
     commandInputRef,
-    setActiveSidePanel,
     setCadToolRequest,
     setCommandBarExpanded,
     setPlacementModeEnabled,
     setPreviewInteraction,
-    setRenderedSidePanel,
-    setRightRailCollapsed,
     setShortcutsOverlayOpen,
-    setSidePanelVisible,
     setWorkspaceChromeMinimized,
     updateProjectStatus,
   ]);

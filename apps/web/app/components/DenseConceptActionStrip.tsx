@@ -1,6 +1,5 @@
 type DenseConceptActionStripProps = {
   active: boolean;
-  sidePanelVisible: boolean;
   rightRailCollapsed: boolean;
   objectCount: number;
   onEditObjects: () => void;
@@ -11,7 +10,6 @@ type DenseConceptActionStripProps = {
 
 export function DenseConceptActionStrip({
   active,
-  sidePanelVisible,
   rightRailCollapsed,
   objectCount,
   onEditObjects,
@@ -19,7 +17,7 @@ export function DenseConceptActionStrip({
   onDeliver,
   onHighQuality,
 }: DenseConceptActionStripProps) {
-  if (!active || sidePanelVisible) {
+  if (!active) {
     return null;
   }
 

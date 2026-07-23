@@ -29,7 +29,6 @@ type WorkspaceCanvasAreaProps = {
   moveEditFeedback?: string;
   previewInteraction: PreviewPanelProps["previewInteraction"];
   denseConceptActive: boolean;
-  sidePanelVisible: boolean;
   denseConceptObjectCount: number;
   previewPanelProps: PreviewPanelProps;
   onOpenPanel: (panel: SidePanelKey) => void;
@@ -64,7 +63,6 @@ export function WorkspaceCanvasArea({
   moveEditFeedback,
   previewInteraction,
   denseConceptActive,
-  sidePanelVisible,
   denseConceptObjectCount,
   previewPanelProps,
   onOpenPanel,
@@ -135,7 +133,6 @@ export function WorkspaceCanvasArea({
           ) : null}
           <DenseConceptActionStrip
             active={denseConceptActive}
-            sidePanelVisible={sidePanelVisible}
             rightRailCollapsed={rightRailCollapsed}
             objectCount={denseConceptObjectCount}
             onEditObjects={() => onOpenPanel("objects")}

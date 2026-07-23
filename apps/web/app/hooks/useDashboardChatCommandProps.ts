@@ -12,6 +12,7 @@ type PinnedCommandBarProps = ComponentProps<typeof PinnedCommandBar>;
 type UseDashboardChatCommandPropsInput = {
   chatMessages: ChatMessage[];
   chatScrollRef: ChatPanelProps["chatScrollRef"];
+  chatPromptInputRef: RefObject<HTMLTextAreaElement | null>;
   onSetMessageFeedback: ChatPanelProps["onSetMessageFeedback"];
   thinkingState: ChatPanelProps["thinkingState"];
   busy: boolean;
@@ -54,6 +55,7 @@ type UseDashboardChatCommandPropsInput = {
 export function useDashboardChatCommandProps({
   chatMessages,
   chatScrollRef,
+  chatPromptInputRef,
   onSetMessageFeedback,
   thinkingState,
   busy,
@@ -108,7 +110,7 @@ export function useDashboardChatCommandProps({
     chatScrollRef,
     onSetMessageFeedback,
     ...sharedPromptProps,
-    promptInputRef: commandInputRef,
+    promptInputRef: chatPromptInputRef,
     visibleActiveJobStatus,
     hasDirectRunInFlight,
     onCancelJob,

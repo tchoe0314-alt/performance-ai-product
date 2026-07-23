@@ -319,7 +319,7 @@ export function useDashboardPowerCommandHandler({
     setSidePanelVisible,
   ]);
 
-  return useCallback((message: string): boolean => {
+  return useCallback((message: string): boolean | "panel" => {
     const normalized = message.trim().toLowerCase().replace(/\s+/g, " ");
     if (!normalized) return false;
     if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
@@ -450,7 +450,7 @@ export function useDashboardPowerCommandHandler({
         `Running draft command: ${message.trim()}. Results are shown in Draw / Object Manager command feedback. Draft objects remain review-required.`,
         "status",
       );
-      return true;
+      return "panel";
     }
     if (/^(start site|start a site|new site)$/.test(normalized)) {
       appendChatMessage("user", message);

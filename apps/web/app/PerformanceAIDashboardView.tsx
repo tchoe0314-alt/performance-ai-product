@@ -629,6 +629,7 @@ function PerformanceAIDashboardView({
   } = useDashboardDraftHistoryState();
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatPromptInputRef = useRef<HTMLTextAreaElement | null>(null);
   const commandInputRef = useRef<HTMLTextAreaElement | null>(null);
   const siteAddressInputRef = useRef<HTMLInputElement | null>(null);
   const mapSnapshotInputRef = useRef<HTMLInputElement | null>(null);
@@ -2614,16 +2615,12 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     commandInputRef,
     setActivePlacementId,
-    setActiveSidePanel,
     setCadToolRequest,
     setCommandBarExpanded,
     setPendingClarification,
     setPlacementModeEnabled,
     setPreviewInteraction,
-    setRenderedSidePanel,
-    setRightRailCollapsed,
     setShortcutsOverlayOpen,
-    setSidePanelVisible,
     setStatusMessage,
     setWorkspaceChromeMinimized,
     updateProjectStatus,
@@ -4929,6 +4926,7 @@ function PerformanceAIDashboardView({
     handleToggleSiteLock,
     imageName,
     mapSnapshotPath,
+    onOpenChatPanel: () => handleOpenSidePanel("chat"),
     pendingClarification,
     prompt,
     refuseUnsafeConstructionCommand,
@@ -5013,8 +5011,6 @@ function PerformanceAIDashboardView({
     canvasDrawControlsActive ? "edit" : "static";
   const commandBarVisible =
     Boolean(commandBarExpanded || prompt.trim() || imageName || busy || chatBlockingActiveJob) &&
-    activeSidePanel !== "chat" &&
-    !sidePanelVisible &&
     !(mobileViewport && leftSidebarOpen);
   const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
   const handleCopyIssueDiagnostic = async () => {
@@ -5552,7 +5548,6 @@ function PerformanceAIDashboardView({
     moveEditFeedback,
     previewInteraction,
     denseConceptActive,
-    sidePanelVisible,
     denseConceptObjectCount,
     onOpenPanel: handleOpenPanelFromDrawer,
     onMinimizeChrome: () => setWorkspaceChromeMinimized(true),
@@ -5665,6 +5660,7 @@ function PerformanceAIDashboardView({
   } = useDashboardChatCommandProps({
     chatMessages,
     chatScrollRef,
+    chatPromptInputRef,
     onSetMessageFeedback: setMessageFeedback,
     thinkingState,
     busy,
@@ -5943,7 +5939,6 @@ function PerformanceAIDashboardView({
                     handleObjectManagerSelect={handleObjectManagerSelect}
                     setPlacementModeEnabled={setPlacementModeEnabled}
                     setFocusObjectId={setFocusObjectId}
-                    setRightRailCollapsed={setRightRailCollapsed}
                     handleObjectManagerCopy={handleObjectManagerCopy}
                     handleObjectManagerTransform={handleObjectManagerTransform}
                     handleObjectManagerDelete={handleObjectManagerDelete}

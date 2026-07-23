@@ -46,6 +46,7 @@ type UseDashboardChatSendHandlersInput = {
   handleToggleSiteLock: () => void;
   imageName: string | null;
   mapSnapshotPath: string | null;
+  onOpenChatPanel: () => void;
   pendingClarification: PendingClarification;
   prompt: string;
   refuseUnsafeConstructionCommand: (message: string) => boolean;
@@ -61,7 +62,7 @@ type UseDashboardChatSendHandlersInput = {
   tryHandleActionIntent: (message: string) => boolean;
   tryHandleInfoIntent: (message: string) => boolean;
   tryHandleObjectIntent: (message: string) => boolean;
-  tryHandlePowerCommand: (message: string) => boolean;
+  tryHandlePowerCommand: (message: string) => boolean | "panel";
   tryHandleSheetIntent: (message: string) => boolean;
 };
 
@@ -81,6 +82,7 @@ export function useDashboardChatSendHandlers({
   handleToggleSiteLock,
   imageName,
   mapSnapshotPath,
+  onOpenChatPanel,
   pendingClarification,
   prompt,
   refuseUnsafeConstructionCommand,
@@ -102,9 +104,12 @@ export function useDashboardChatSendHandlers({
   const handleSendMessage = useCallback(() => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
+    const keepChatVisible = () => window.requestAnimationFrame(onOpenChatPanel);
+    onOpenChatPanel();
     if (trimmed && /\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/i.test(trimmed)) {
       refuseUnsafeConstructionCommand(trimmed);
       setPrompt("");
+      keepChatVisible();
       return;
     }
     const normalizedStatus = String(activeJob?.status || "").toLowerCase();
@@ -295,6 +300,9 @@ export function useDashboardChatSendHandlers({
       const handledPowerCommand = tryHandlePowerCommand(trimmed);
       if (handledPowerCommand) {
         setPrompt("");
+        if (handledPowerCommand !== "panel") {
+          keepChatVisible();
+        }
         return;
       }
       const routeToOrchestrator = shouldRouteToOrchestrator(trimmed);
@@ -302,21 +310,25 @@ export function useDashboardChatSendHandlers({
         const handled = tryHandleObjectIntent(trimmed);
         if (handled) {
           setPrompt("");
+          keepChatVisible();
           return;
         }
         const handledSheet = tryHandleSheetIntent(trimmed);
         if (handledSheet) {
           setPrompt("");
+          keepChatVisible();
           return;
         }
         const handledInfo = tryHandleInfoIntent(trimmed);
         if (handledInfo) {
           setPrompt("");
+          keepChatVisible();
           return;
         }
         const handledAction = tryHandleActionIntent(trimmed);
         if (handledAction) {
           setPrompt("");
+          keepChatVisible();
           return;
         }
       }
@@ -337,6 +349,7 @@ export function useDashboardChatSendHandlers({
     handleToggleSiteLock,
     imageName,
     mapSnapshotPath,
+    onOpenChatPanel,
     pendingClarification,
     prompt,
     refuseUnsafeConstructionCommand,
@@ -370,6 +383,7 @@ export function useDashboardChatSendHandlers({
 
   const handleContinuePendingClarification = useCallback(() => {
     if (!pendingClarification) return;
+    onOpenChatPanel();
     const lot = resolveLotBounds();
     const hasSite = Boolean(lot.w && lot.h);
     if (pendingClarification.action === "set_site_then_add") {
@@ -437,6 +451,7 @@ export function useDashboardChatSendHandlers({
     handleAnalyzeSiteAccess,
     handleGenerateSystem,
     mapSnapshotPath,
+    onOpenChatPanel,
     pendingClarification,
     resolveLotBounds,
     setPendingClarification,

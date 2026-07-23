@@ -1,9 +1,15 @@
-import type { BuildingPlacement } from "../types";
+import type { BuildingPlacement, SiteObjectType } from "../types";
 
 type SelectedObjectCardProps = {
   selectedObject: BuildingPlacement | null;
   displayType: string;
   dimensionsLabel: string;
+  objectTypeOptions: Array<{ type: SiteObjectType; label: string }>;
+  objectOutlineColor: string;
+  onRename: (item: BuildingPlacement, value: string) => void;
+  onColor: (item: BuildingPlacement, value: string) => void;
+  onType: (item: BuildingPlacement, type: SiteObjectType) => void;
+  onToggleVisibility: (item: BuildingPlacement) => void;
   onMove: (item: BuildingPlacement) => void;
   onFocus: (item: BuildingPlacement) => void;
   onCopy: (item: BuildingPlacement) => void;
@@ -16,6 +22,12 @@ export function SelectedObjectCard({
   selectedObject,
   displayType,
   dimensionsLabel,
+  objectTypeOptions,
+  objectOutlineColor,
+  onRename,
+  onColor,
+  onType,
+  onToggleVisibility,
   onMove,
   onFocus,
   onCopy,
@@ -44,51 +56,105 @@ export function SelectedObjectCard({
         </span>
       </div>
       {selectedObject ? (
-        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-          <button
-            type="button"
-            onClick={() => onMove(selectedObject)}
-            className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
-          >
-            Move
-          </button>
-          <button
-            type="button"
-            onClick={() => onFocus(selectedObject)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-          >
-            Focus
-          </button>
-          <button
-            type="button"
-            onClick={() => onCopy(selectedObject)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-          >
-            Copy
-          </button>
-          <button
-            type="button"
-            onClick={() => onRotate(selectedObject)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-          >
-            Rotate
-          </button>
-          <button
-            type="button"
-            onClick={() => onFlipHorizontal(selectedObject)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
-          >
-            Flip H
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(selectedObject)}
-            disabled={selectedObject.type === "site"}
-            className="rounded-lg border border-rose-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Delete
-          </button>
-        </div>
+        <>
+          {selectedObject.type !== "site" ? (
+            <div className="mt-3 grid grid-cols-[1fr_auto] gap-2 text-[11px]">
+              <label className="col-span-2 flex flex-col gap-1 font-medium text-slate-500">
+                Name
+                <input
+                  type="text"
+                  value={selectedObject.label}
+                  aria-label={`Rename selected object ${selectedObject.label}`}
+                  data-testid="preview-object-manager-rename"
+                  onChange={(event) => onRename(selectedObject, event.target.value)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-900"
+                />
+              </label>
+              <label className="flex flex-col gap-1 font-medium text-slate-500">
+                Layer / type
+                <select
+                  value={selectedObject.type ?? "custom"}
+                  aria-label={`Layer type selected object ${selectedObject.label}`}
+                  data-testid="preview-object-manager-type"
+                  onChange={(event) => onType(selectedObject, event.target.value as SiteObjectType)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-900"
+                >
+                  {objectTypeOptions.map((option) => (
+                    <option key={option.type} value={option.type}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 font-medium text-slate-500">
+                Color
+                <input
+                  type="color"
+                  value={String(selectedObject.meta?.ui_color || selectedObject.meta?.color || objectOutlineColor || "#64748b")}
+                  aria-label={`Color selected object ${selectedObject.label}`}
+                  data-testid="preview-object-manager-color"
+                  onChange={(event) => onColor(selectedObject, event.target.value)}
+                  className="h-9 w-12 rounded-lg border border-slate-200 bg-white"
+                />
+              </label>
+            </div>
+          ) : null}
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => onMove(selectedObject)}
+              className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
+            >
+              Move
+            </button>
+            <button
+              type="button"
+              onClick={() => onFocus(selectedObject)}
+              data-testid="preview-object-manager-focus"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+            >
+              Focus
+            </button>
+            <button
+              type="button"
+              onClick={() => onCopy(selectedObject)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => onRotate(selectedObject)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+            >
+              Rotate
+            </button>
+            <button
+              type="button"
+              onClick={() => onFlipHorizontal(selectedObject)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50"
+            >
+              Flip H
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleVisibility(selectedObject)}
+              data-testid="preview-object-manager-visibility"
+              disabled={selectedObject.type === "site"}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {selectedObject.meta?.ui_hidden ? "Show" : "Hide"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(selectedObject)}
+              disabled={selectedObject.type === "site"}
+              className="col-span-2 rounded-lg border border-rose-200 bg-white px-3 py-2 font-semibold uppercase tracking-[0.12em] text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Delete
+            </button>
+          </div>
+        </>
       ) : null}
     </div>
   );

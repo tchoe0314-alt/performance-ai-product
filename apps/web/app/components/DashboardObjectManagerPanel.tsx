@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { BuildingPlacement, SiteObjectType } from "../types";
-import { getObjectDimensionsLabel, getObjectDisplayType } from "../utils/objectGeometry";
+import { getObjectDimensionsLabel, getObjectDisplayType, getObjectEditBlocker } from "../utils/objectGeometry";
 import type { ObjectManagerLayoutAction } from "../utils/dashboardObjectManagerTrace";
 import type { CadToolRequestForPreview, DraftBlockDefinition, RecentChange } from "../utils/dashboardTypes";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
@@ -17,7 +17,6 @@ type DashboardObjectManagerPanelProps = {
   handleObjectManagerSelect: (id: string) => void;
   setPlacementModeEnabled: Dispatch<SetStateAction<boolean>>;
   setFocusObjectId: Dispatch<SetStateAction<string | null>>;
-  setRightRailCollapsed: Dispatch<SetStateAction<boolean>>;
   handleObjectManagerCopy: (item: BuildingPlacement) => void;
   handleObjectManagerTransform: (item: BuildingPlacement, transform: ObjectManagerTransform) => void;
   handleObjectManagerDelete: (item: BuildingPlacement) => void;
@@ -121,7 +120,6 @@ export function DashboardObjectManagerPanel({
   handleObjectManagerSelect,
   setPlacementModeEnabled,
   setFocusObjectId,
-  setRightRailCollapsed,
   handleObjectManagerCopy,
   handleObjectManagerTransform,
   handleObjectManagerDelete,
@@ -215,6 +213,10 @@ export function DashboardObjectManagerPanel({
   handleOpenDetailsPanel,
   handleObjectManagerExplodeCombined,
 }: DashboardObjectManagerPanelProps) {
+  const objectTypeOptions = Object.entries(SITE_OBJECT_CATALOG)
+    .filter(([type]) => type !== "site")
+    .map(([type, catalog]) => ({ type: type as SiteObjectType, label: catalog.label }));
+
   return (
     <ObjectManagerPanel
       cadTools={{ groups: cadToolGroups, onSelectTool: triggerCadTool }}
@@ -232,13 +234,63 @@ export function DashboardObjectManagerPanel({
         selectedObject: selectedBuilding,
         displayType: selectedBuilding ? getObjectDisplayType(selectedBuilding) : "",
         dimensionsLabel: selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : "",
+        objectTypeOptions,
+        objectOutlineColor,
+        onRename: (item, value) => {
+          const blocker = getObjectEditBlocker(item, "rename");
+          if (blocker) {
+            reportObjectActionBlocker(blocker);
+            return;
+          }
+          handleUpdateBuilding(item.id, { label: value });
+        },
+        onColor: (item, value) => {
+          const blocker = getObjectEditBlocker(item, "style");
+          if (blocker) {
+            reportObjectActionBlocker(blocker);
+            return;
+          }
+          handleUpdateBuilding(item.id, {
+            meta: {
+              ...(item.meta ?? {}),
+              ui_color: value,
+            },
+          });
+        },
+        onType: (item, nextType) => {
+          const blocker = getObjectEditBlocker(item, "type");
+          if (blocker) {
+            reportObjectActionBlocker(blocker);
+            return;
+          }
+          handleUpdateBuilding(item.id, {
+            type: nextType,
+            use: SITE_OBJECT_CATALOG[nextType]?.use ?? item.use,
+            meta: {
+              ...(item.meta ?? {}),
+              category: SITE_OBJECT_CATALOG[nextType]?.category ?? "advanced",
+            },
+          });
+        },
+        onToggleVisibility: (item) => {
+          const blocker = getObjectEditBlocker(item, "hide");
+          if (blocker) {
+            reportObjectActionBlocker(blocker);
+            return;
+          }
+          handleUpdateBuilding(item.id, {
+            meta: {
+              ...(item.meta ?? {}),
+              ui_hidden: !Boolean(item.meta?.ui_hidden),
+            },
+          });
+        },
         onMove: (item) => {
           handleObjectManagerSelect(item.id);
           setPlacementModeEnabled(true);
         },
         onFocus: (item) => {
           setFocusObjectId(item.id);
-          setRightRailCollapsed(true);
         },
         onCopy: handleObjectManagerCopy,
         onRotate: (item) => handleObjectManagerTransform(item, "rotate"),
@@ -400,7 +452,6 @@ export function DashboardObjectManagerPanel({
         onToggleLock: handleToggleBuildingLock,
         onFocus: (objectId) => {
           setFocusObjectId(objectId);
-          setRightRailCollapsed(true);
         },
         onInspect: handleOpenDetailsPanel,
         onCopy: handleObjectManagerCopy,

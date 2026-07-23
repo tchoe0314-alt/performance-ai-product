@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Loader2, MessageSquareText, SendHorizonal } from "lucide-react";
 
 import type { PlanToolMode } from "../types";
@@ -65,11 +66,26 @@ export default function PinnedCommandBar({
       ].filter(([, value]) => Boolean(value))
     : [];
 
+  useEffect(() => {
+    if (isWorking) return;
+    const focusInput = () => {
+      const input = commandInputRef?.current;
+      if (!input) return;
+      input.focus();
+      input.select();
+    };
+    const frame = window.requestAnimationFrame(() => {
+      focusInput();
+      window.setTimeout(focusInput, 0);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [commandInputRef, isWorking]);
+
   return (
     <div
       data-testid="floating-command-bar"
       data-command-bar-id="pinned-civora-command-bar"
-      className="civora-motion-command-bar fixed right-2 top-[4.75rem] z-[45] w-[min(30rem,calc(100vw-1rem))] rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:right-4 sm:top-20"
+      className="civora-motion-command-bar fixed right-2 top-[4.75rem] z-[120] w-[min(30rem,calc(100vw-1rem))] rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:right-4 sm:top-20"
     >
       {isWorking ? (
         <div className="mb-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -130,8 +146,8 @@ export default function PinnedCommandBar({
           type="button"
           onClick={onSendMessage}
           disabled={!canSend}
-          aria-label="Send message to Civora"
-          title={isWorking ? "Civora is working" : "Send"}
+          aria-label="Run Civora command"
+          title={isWorking ? "Civora is working" : "Run command"}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
         >
           {isWorking && activePlanTool === "run" ? (

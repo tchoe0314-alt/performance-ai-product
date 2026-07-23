@@ -117,7 +117,7 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
   await actionStrip.getByRole("button", { name: "High quality" }).click();
   await actionStrip.getByRole("button", { name: "Edit objects" }).click();
   await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf");
-  await expect(actionStrip).toBeHidden();
+  await expect(actionStrip).toBeVisible();
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const objectPanel = page.getByTestId("object-manager-panel");
