@@ -78,7 +78,6 @@ export function WorkspaceCanvasArea({
   onOpenSelectedObjectDetails,
 }: WorkspaceCanvasAreaProps) {
   const floatingInspectorAllowed =
-    activeWorkflowKey === "draw" ||
     sidePanelForRender === "objects" ||
     sidePanelForRender === "model" ||
     sidePanelForRender === "layers" ||
