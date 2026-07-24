@@ -29,6 +29,7 @@ type UseDashboardDenseConceptActionInput = {
   setActiveSidePanel: StateSetter<SidePanelKey | null>;
   setActiveWorkspaceMode: StateSetter<WorkspaceMode>;
   setBuildingPlacements: StateSetter<BuildingPlacement[]>;
+  setCommandBarExpanded: StateSetter<boolean>;
   setFitToSiteRequest: StateSetter<number>;
   setLotHeight: StateSetter<string>;
   setLotWidth: StateSetter<string>;
@@ -56,6 +57,7 @@ export function useDashboardDenseConceptAction({
   setActiveSidePanel,
   setActiveWorkspaceMode,
   setBuildingPlacements,
+  setCommandBarExpanded,
   setFitToSiteRequest,
   setLotHeight,
   setLotWidth,
@@ -119,6 +121,7 @@ export function useDashboardDenseConceptAction({
     markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
     setActivePlacementId(null);
     setPlacementModeEnabled(false);
+    setCommandBarExpanded(false);
     setPreviewMode("2d");
     setPreviewQuality("high");
     setPreviewInteraction("static");
@@ -161,6 +164,7 @@ export function useDashboardDenseConceptAction({
     setActiveSidePanel,
     setActiveWorkspaceMode,
     setBuildingPlacements,
+    setCommandBarExpanded,
     setFitToSiteRequest,
     setLotHeight,
     setLotWidth,

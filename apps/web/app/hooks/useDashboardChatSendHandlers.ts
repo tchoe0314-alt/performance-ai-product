@@ -46,6 +46,7 @@ type UseDashboardChatSendHandlersInput = {
   handleToggleSiteLock: () => void;
   imageName: string | null;
   mapSnapshotPath: string | null;
+  onCloseChatPanel: () => void;
   onOpenChatPanel: () => void;
   pendingClarification: PendingClarification;
   prompt: string;
@@ -82,6 +83,7 @@ export function useDashboardChatSendHandlers({
   handleToggleSiteLock,
   imageName,
   mapSnapshotPath,
+  onCloseChatPanel,
   onOpenChatPanel,
   pendingClarification,
   prompt,
@@ -301,7 +303,7 @@ export function useDashboardChatSendHandlers({
       if (handledPowerCommand) {
         setPrompt("");
         if (handledPowerCommand !== "panel") {
-          keepChatVisible();
+          window.requestAnimationFrame(onCloseChatPanel);
         }
         return;
       }
@@ -349,6 +351,7 @@ export function useDashboardChatSendHandlers({
     handleToggleSiteLock,
     imageName,
     mapSnapshotPath,
+    onCloseChatPanel,
     onOpenChatPanel,
     pendingClarification,
     prompt,

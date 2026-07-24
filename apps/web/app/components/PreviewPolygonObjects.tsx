@@ -127,7 +127,7 @@ export function PreviewPolygonObjects({
                 </polygon>
               ) : null}
               {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={0.42}>
+                <g data-testid="plan-parking-stall-cues" opacity={sourceState === "fallback" ? 0.4 : 0.68}>
                   <line
                     x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
                     y1={(bounds.minY + bounds.maxY) / 2}

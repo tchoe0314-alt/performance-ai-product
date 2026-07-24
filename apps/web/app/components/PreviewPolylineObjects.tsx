@@ -100,7 +100,7 @@ export function PreviewPolylineObjects({
                   opacity={sourceState === "fallback" ? 0.36 : 0.72}
                 />
               ) : null}
-              {isHighQuality && isUtilityLine ? (
+              {isHighQuality && isUtilityLine && isSelectedPolyline ? (
                 <g>
                   {points.map((point, idx) => {
                     const [x, y] = String(point).split(",").map((value) => Number(value));

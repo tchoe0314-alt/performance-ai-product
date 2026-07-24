@@ -538,7 +538,9 @@ export default function Preview3DCanvas({
       }
 
       if (renderedCadGeometry) {
-        if (state === "low" || state === "imported" || state === "stale" || state === "blocked") {
+        const showReviewRing =
+          selectedItemId === id || item.unsupported || state === "blocked" || (state === "stale" && layer !== "ROAD" && layer !== "PARKING");
+        if (showReviewRing) {
           const reviewRing = new THREE.LineSegments(
             new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w, 1), 0.08, Math.max(item.h, 1))),
             new THREE.LineBasicMaterial({ color: state === "blocked" ? "#dc2626" : "#f59e0b", transparent: true, opacity: 0.28 }),

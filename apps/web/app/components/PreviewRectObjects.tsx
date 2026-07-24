@@ -205,8 +205,17 @@ export function PreviewRectObjects({
                   />
                 </g>
               ) : null}
-              {isHighQuality && visualKind === "building" && selected ? (
-                <g data-testid="professional-building-cues" opacity={0.72}>
+              {isHighQuality && visualKind === "building" && !isFallbackBounds ? (
+                <g data-testid="professional-building-cues" opacity={selected ? 0.74 : 0.38}>
+                  <rect
+                    x={rect.left + rect.width * 0.06}
+                    y={rect.top + rect.height * 0.08}
+                    width={rect.width * 0.88}
+                    height={rect.height * 0.84}
+                    rx={0.12}
+                    fill="url(#cad-building-poche)"
+                    stroke="none"
+                  />
                   <line
                     x1={rect.left + rect.width * 0.43}
                     y1={rect.top + rect.height}
@@ -218,7 +227,7 @@ export function PreviewRectObjects({
                 </g>
               ) : null}
               {isHighQuality && visualKind === "parking" && hasParkingGeometryEvidence(item) ? (
-                <g data-testid="plan-parking-stall-cues">
+                <g data-testid="plan-parking-stall-cues" opacity={sourceState === "fallback" ? 0.42 : 0.72}>
                   <line
                     x1={rect.left + rect.width * 0.08}
                     y1={rect.top + rect.height * 0.5}

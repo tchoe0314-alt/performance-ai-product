@@ -85,7 +85,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
 
     await expect(page.locator('[data-cad-object-id][aria-label*="Review Grading Fall Line"]').first()).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-cad-object-id][aria-label*="Review Drainage Area Cue"]').first()).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/editable review context/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/editable review context/i).first()).toBeVisible({ timeout: 5_000 });
     await page.getByRole("button", { name: "Open Civora chat history" }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/not survey\/control evidence/i);
 
@@ -110,7 +110,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await runCommand(page, "add water line");
     await runCommand(page, "what are these random circles and lines?");
 
-    await expect(page.getByText("Civora: The preview is a review canvas", { exact: false })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Civora: The preview is a review canvas", { exact: false }).first()).toBeVisible({ timeout: 5_000 });
     await page.getByRole("button", { name: "Open Civora chat history" }).click();
     const panel = page.getByTestId("workspace-right-panel");
     await expect(panel).toContainText("The preview is a review canvas", { timeout: 5_000 });
@@ -236,7 +236,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await openDemoWorkspace(page);
 
     await runCommand(page, "hide utilities");
-    await expect(page.getByText("Utility and drainage layers are hidden in the preview.")).toBeVisible();
+    await expect(page.getByText("Utility and drainage layers are hidden in the preview.").first()).toBeVisible();
 
     await runCommand(page, "show only blockers");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Review|Issue|blocker/i);
@@ -278,21 +278,21 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
     });
-    await expect(page.getByText(/Deleted Office Building - 28,000 sf|DELETE removed Office Building - 28,000 sf/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Deleted Office Building - 28,000 sf|DELETE removed Office Building - 28,000 sf/i).first()).toBeVisible({ timeout: 5_000 });
 
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, ctrlKey: true, bubbles: true }));
     });
-    await expect(page.getByText(/Undo: restored Office Building - 28,000 sf/)).toBeVisible();
+    await expect(page.getByText(/Undo: restored Office Building - 28,000 sf/).first()).toBeVisible();
 
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "s", metaKey: true, ctrlKey: true, bubbles: true }));
     });
-    await expect(page.getByText(/Demo workspace changes stay local|Sign in\/connect backend to save projects|Saved project/)).toBeVisible();
+    await expect(page.getByText(/Demo workspace changes stay local|Sign in\/connect backend to save projects|Saved project/).first()).toBeVisible();
 
     await runCommand(page, "stamp this");
-    await expect(page.getByText(/can't stamp, seal, sign, certify/i)).toBeVisible();
+    await expect(page.getByText(/can't stamp, seal, sign, certify/i).first()).toBeVisible();
     await runCommand(page, "act as engineer of record");
-    await expect(page.getByText(/can't stamp, seal, sign, certify/i)).toBeVisible();
+    await expect(page.getByText(/can't stamp, seal, sign, certify/i).first()).toBeVisible();
   });
 });

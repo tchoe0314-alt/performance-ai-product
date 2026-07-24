@@ -67,27 +67,27 @@ export function resolvePreviewSvgVisualStyle(
     };
   }
   if (kind === "road") {
-    return { fill: "rgba(71, 85, 105, 0.018)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.1, 0.22), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(71, 85, 105, 0.04)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.14, 0.26), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "parking") {
-    return { fill: "rgba(248, 250, 252, 0.12)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.095, 0.2), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(226, 232, 240, 0.2)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.13, 0.24), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "water") {
-    return { fill: "rgba(125, 211, 252, 0.08)", stroke: stateStroke("#0284c7"), strokeWidth: reviewWidth(0.095, 0.22), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(125, 211, 252, 0.14)", stroke: stateStroke("#0284c7"), strokeWidth: reviewWidth(0.13, 0.24), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "landscape") {
-    return { fill: "rgba(134, 239, 172, 0.07)", stroke: stateStroke("#16a34a"), strokeWidth: reviewWidth(0.09, 0.2), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(134, 239, 172, 0.1)", stroke: stateStroke("#15803d"), strokeWidth: reviewWidth(0.11, 0.22), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "sidewalk") {
-    return { fill: "rgba(248, 250, 252, 0.14)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.07, 0.16), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(248, 250, 252, 0.2)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.09, 0.18), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "utility") {
-    return { fill: "rgba(37, 99, 235, 0.01)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.04, 0.1), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(37, 99, 235, 0.012)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.055, 0.12), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "building") {
-    return { fill: "rgba(255, 255, 255, 0.48)", stroke: stateStroke("#111827"), strokeWidth: reviewWidth(0.12, 0.22), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(255, 255, 255, 0.68)", stroke: stateStroke("#111827"), strokeWidth: reviewWidth(0.18, 0.28), strokeDasharray: dash, opacity: stateOpacity };
   }
-  return { fill: "rgba(248, 250, 252, 0.02)", stroke: stateStroke("#94a3b8"), strokeWidth: reviewWidth(0.11, 0.28), strokeDasharray: dash, opacity: stateOpacity };
+  return { fill: "rgba(248, 250, 252, 0.04)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.13, 0.28), strokeDasharray: dash, opacity: stateOpacity };
 }
 
 export function cadHatchPatternForPreviewItem(item: BuildingPlacement) {

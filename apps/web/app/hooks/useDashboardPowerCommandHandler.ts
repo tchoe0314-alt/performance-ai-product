@@ -289,6 +289,7 @@ export function useDashboardPowerCommandHandler({
     }
     requested.forEach((action) => action());
     setActivePlacementId(null);
+    setCommandBarExpanded(false);
     setPreviewInteraction("static");
     setActiveWorkspaceMode("canvas");
     setActiveSidePanel(null);
@@ -312,6 +313,7 @@ export function useDashboardPowerCommandHandler({
     setActivePlacementId,
     setActiveSidePanel,
     setActiveWorkspaceMode,
+    setCommandBarExpanded,
     setParkingCount,
     setPreviewInteraction,
     setRenderedSidePanel,
@@ -369,6 +371,7 @@ export function useDashboardPowerCommandHandler({
       }
       setShowSiteBounds(false);
       setSiteSelectionMode(false);
+      setCommandBarExpanded(false);
       setPreviewMode("2d");
       setPreviewInteraction("static");
       setActiveWorkspaceMode("canvas");
@@ -414,6 +417,7 @@ export function useDashboardPowerCommandHandler({
         meta: { command_created: true, command_source: "direct_object_command" },
       });
       setActivePlacementId(null);
+      setCommandBarExpanded(false);
       setPreviewInteraction("static");
       setActiveWorkspaceMode("canvas");
       setActiveSidePanel(null);
