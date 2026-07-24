@@ -24,7 +24,7 @@ export type CadHistoryEntry = {
   after: BuildingPlacement;
 };
 
-export const BALANCED_CANVAS_SCALE = 0.48;
+export const BALANCED_CANVAS_SCALE = 0.58;
 
 export type CadCommandHistoryEntry = {
   id: string;
