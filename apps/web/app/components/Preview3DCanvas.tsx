@@ -30,6 +30,7 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
   ROAD: { top: "#8f9aa6", side: "#6f7b87", line: "#f8fafc" },
   PARKING: { top: "#c9d1da", side: "#9da9b6", line: "#f8fafc" },
+  LOT: { top: "#f8fafc", side: "#e2e8f0", line: "#64748b" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
@@ -43,10 +44,11 @@ const normalizeLayer = (layer: string) => {
   if (key.includes("BUILDING") || key.includes("PAD")) return "BUILDING";
   if (key.includes("STRUCTURE")) return "STRUCTURE";
   if (key.includes("PARK")) return "PARKING";
+  if (key.includes("LOT") || key.includes("BLOCK")) return "LOT";
   if (key.includes("SIDEWALK") || key.includes("WALK")) return "SIDEWALK";
   if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM")) return "DRAINAGE";
   if (key.includes("UTILITY") || key.includes("WATER") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
-  if (key.includes("LOT") || key.includes("EASEMENT") || key.includes("CONSTRAINT") || key.includes("SETBACK")) return "CONSTRAINT";
+  if (key.includes("EASEMENT") || key.includes("CONSTRAINT") || key.includes("SETBACK")) return "CONSTRAINT";
   if (key.includes("LANDSCAPE") || key.includes("OPEN") || key.includes("GREEN")) return "LANDSCAPE";
   if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
   if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
@@ -101,6 +103,7 @@ const getItemId = (item: Preview3DItem, index: number) =>
 const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
   if (layer === "ROAD" || layer === "PARKING") return 0.055;
   if (layer === "SIDEWALK") return 0.035;
+  if (layer === "LOT") return 0.025;
   if (layer === "CONSTRAINT") return 0.06;
   if (layer === "LANDSCAPE") return 0.08;
   if (layer === "DRAINAGE") return Math.max(1.4, Math.min(Math.abs(item.height || 2.4), 5));
@@ -110,7 +113,7 @@ const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
 };
 
 const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
-  if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" || layer === "CONSTRAINT" || layer === "LANDSCAPE") {
+  if (layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK" || layer === "CONSTRAINT" || layer === "LANDSCAPE") {
     return Math.max(0.025, heightFt);
   }
   return Math.max(heightFt, 0.35);
@@ -257,7 +260,7 @@ export default function Preview3DCanvas({
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(previewQuality === "high" ? "#e9f1f4" : "#f3f6f8");
+    scene.background = new THREE.Color(previewQuality === "high" ? "#f8fafc" : "#f3f6f8");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
@@ -284,11 +287,13 @@ export default function Preview3DCanvas({
     controls.update();
     controlsRef.current = controls;
 
-    const ambient = new THREE.HemisphereLight("#ffffff", "#b6c4cf", previewQuality === "high" ? 1.72 : 1.75);
+    const ambient = new THREE.HemisphereLight("#ffffff", "#cfd8df", previewQuality === "high" ? 1.5 : 1.65);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.35 : 1.55);
+    const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.6 : 1.65);
     sun.position.set(maxSpan * 0.42, maxSpan * 0.95, maxSpan * 0.52);
     sun.castShadow = previewQuality === "high";
+    sun.shadow.mapSize.width = previewQuality === "high" ? 2048 : 1024;
+    sun.shadow.mapSize.height = previewQuality === "high" ? 2048 : 1024;
     scene.add(sun);
 
     const root = new THREE.Group();
@@ -331,12 +336,12 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#ebe9dd" : "#d7e7c6",
+      color: terrainState.mode === "fallback" ? "#f1eee5" : "#d7e7c6",
       roughness: 0.9,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
-      transparent: terrainState.mode === "fallback",
-      opacity: terrainState.mode === "fallback" ? 0.9 : 1,
+      transparent: false,
+      opacity: 1,
     });
     const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
     terrain.receiveShadow = true;
@@ -381,18 +386,24 @@ export default function Preview3DCanvas({
       };
 
       const cadMaterial = new THREE.MeshStandardMaterial({
-        color: state === "blocked"
-          ? "#dc2626"
-          : state === "low" && (layer === "ROAD" || layer === "PARKING")
-            ? "#c9d1da"
-            : state === "low"
-              ? "#94a3b8"
-              : item.unsupported
-                ? "#f59e0b"
-                : palette.top,
+        color: layer === "LOT" ? palette.top : state === "blocked" ? "#dc2626" : item.unsupported ? "#f59e0b" : palette.top,
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
         transparent: item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
-        opacity: item.unsupported ? 0.58 : state === "low" ? 0.66 : state === "imported" ? 0.8 : state === "stale" ? 0.72 : layer === "CONSTRAINT" ? 0.36 : 1,
+        opacity: layer === "LOT"
+          ? 0.06
+          : item.unsupported
+          ? 0.62
+          : state === "low"
+            ? layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK"
+              ? 0.82
+              : 0.9
+            : state === "imported"
+              ? 0.88
+                : state === "stale"
+                  ? 0.82
+                  : layer === "CONSTRAINT"
+                    ? 0.34
+                  : 1,
       });
       let renderedCadGeometry = false;
       const roofProfile = String(item.meta?.roof_profile || "").toLowerCase();
@@ -470,8 +481,10 @@ export default function Preview3DCanvas({
           const mesh = new THREE.Mesh(geometry, cadMaterial);
           mesh.userData = object.userData;
           object.add(mesh);
-          if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {
-            addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.3 : 0.46);
+          if (layer === "LOT") {
+            addExactEdges(mesh, palette.line, 0.5);
+          } else if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {
+            addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.42 : 0.58);
           }
           if (layer === "BUILDING" && previewQuality === "high") {
             const roofY = baseY + displayDepth + 0.2;
@@ -507,7 +520,7 @@ export default function Preview3DCanvas({
             water.userData = object.userData;
             object.add(water);
           }
-          if (layer === "PARKING" && state !== "low" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
+          if (layer === "PARKING" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
             const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.34 });
             const bounds = new THREE.Box3().setFromObject(mesh);
             const stripeCount = Math.max(2, Math.min(7, Math.floor((bounds.max.x - bounds.min.x) / 18)));
@@ -553,10 +566,8 @@ export default function Preview3DCanvas({
             segment.rotation.y = -Math.atan2(dy, dx);
             segment.userData = object.userData;
             object.add(segment);
-            if (layer !== "ROAD" || state !== "low") {
-              addExactEdges(segment, layer === "ROAD" ? "#94a3b8" : palette.line, layer === "ROAD" ? 0.1 : 0.32);
-            }
-            if (layer === "ROAD" && state !== "low") {
+            addExactEdges(segment, layer === "ROAD" ? "#64748b" : palette.line, layer === "ROAD" ? 0.18 : 0.32);
+            if (layer === "ROAD") {
               const centerline = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints([
                   toScene(x1, y1, baseY + slabDepth + 0.12),
@@ -583,7 +594,7 @@ export default function Preview3DCanvas({
           );
           tube.userData = object.userData;
           object.add(tube);
-          if (layer === "ROAD" && state !== "low") {
+          if (layer === "ROAD") {
             const centerline = new THREE.Line(
               new THREE.BufferGeometry().setFromPoints(points.map((point) => point.clone().add(new THREE.Vector3(0, 0.12, 0)))),
               new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.72 }),
@@ -687,12 +698,14 @@ export default function Preview3DCanvas({
         object.add(outline);
       } else {
         const geometry = new THREE.BoxGeometry(Math.max(item.w, 1), heightFt, Math.max(item.h, 1));
-        const flatPlanSurface = layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK";
+        const flatPlanSurface = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK";
         const material = flatPlanSurface
           ? new THREE.MeshBasicMaterial({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
               transparent: true,
-              opacity: layer === "PARKING"
+              opacity: layer === "LOT"
+                ? 0.08
+                : layer === "PARKING"
                 ? 0.46
                 : layer === "ROAD"
                   ? 0.86
@@ -794,10 +807,18 @@ export default function Preview3DCanvas({
             );
             object.add(roofLines);
           }
-          addExactEdges(mesh, "#475569", 0.42);
+          addExactEdges(mesh, "#334155", state === "low" ? 0.54 : 0.66);
         }
 
-        if ((layer === "ROAD" || layer === "SIDEWALK") && state !== "low") {
+        if (layer === "LOT") {
+          const lotLine = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w * 0.98, 1), 0.08, Math.max(item.h * 0.98, 1))),
+            new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.46 }),
+          );
+          lotLine.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + visualLift + heightFt + 0.08));
+          object.add(lotLine);
+        }
+        if (layer === "ROAD" || layer === "SIDEWALK") {
           const stripe = new THREE.LineSegments(
             new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w * 0.96, 1), 0.08, Math.max(item.h * 0.96, 1))),
             new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.78 }),

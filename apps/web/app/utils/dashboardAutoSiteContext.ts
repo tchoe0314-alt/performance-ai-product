@@ -54,6 +54,34 @@ const childSourceProviderLabels = (source: Record<string, unknown> | undefined) 
   );
 };
 
+const sourceNextStepForCategory = (key: string) => {
+  if (key === "survey_control") {
+    return "Add an uploaded survey/topo package, control sheet, benchmark/datum note, or licensed surveyor source before relying on boundaries or elevations.";
+  }
+  if (key === "terrain") {
+    return "Add a DEM/GeoTIFF/LAS/topo PDF or connect a terrain provider to turn the preview surface into source-backed grading context.";
+  }
+  if (key === "drainage") {
+    return "Add storm atlas/drainage GIS, survey topo, inlet/outfall evidence, or a reviewed drainage source before relying on flow direction, basin routing, or storm layout.";
+  }
+  if (key === "utilities") {
+    return "Add utility-owner records, locates, as-builts, or source-backed utility GIS before relying on water, sanitary, or storm utility positions.";
+  }
+  if (key === "buildings") {
+    return "Connect a building-footprint source or upload a site plan/image before treating buildings as source-backed context.";
+  }
+  if (key === "roads") {
+    return "Connect ROW/road centerline data or confirm frontage manually before relying on driveway/access assumptions.";
+  }
+  if (key === "parcel") {
+    return "Connect parcel/site-boundary data or draw and lock a review boundary before clipping context to the site.";
+  }
+  if (key === "flood_wetlands") {
+    return "Connect floodplain/wetland sources or upload environmental constraints before relying on constraint screening.";
+  }
+  return "Add a source file or provider connection to improve this context.";
+};
+
 export const buildAutoSiteContextFlowSummary = ({
   autoContext,
   onlineDiscovery,
@@ -157,8 +185,8 @@ export const buildAutoSiteContextRows = ({
         detail: hasSurveyControl
           ? "Survey/control evidence is attached for review."
           : hasDiscovery
-            ? "Online address/GIS context does not satisfy survey, boundary control, benchmark, datum, or utility-locate evidence."
-            : "Not checked yet. Apply an address or upload survey/control evidence.",
+            ? `Online address/GIS context does not satisfy survey, boundary control, benchmark, datum, or utility-locate evidence. ${sourceNextStepForCategory(category.key)}`
+            : `Not checked yet. ${sourceNextStepForCategory(category.key)}`,
       };
     }
     const source = onlineDiscoverySources.find((item) => matchesSourceTerms(item as Record<string, unknown>, category.terms));
@@ -218,8 +246,8 @@ export const buildAutoSiteContextRows = ({
             : status === "missing"
               ? category.key === "drainage" && childProviders.length
                 ? `Checked ${childProviders.slice(0, 4).join(", ")}${childProviders.length > 4 ? `, plus ${childProviders.length - 4} more` : ""}; no usable drainage features were returned inside/near the active site.`
-                : blocker || `${category.title} source returned no usable features or is not configured.`
-              : "Not checked yet. Apply an address and create/lock a site.";
+                : `${blocker || `${category.title} source returned no usable features or is not configured.`} ${sourceNextStepForCategory(category.key)}`
+              : `Not checked yet. ${sourceNextStepForCategory(category.key)}`;
     return {
       key: category.key,
       title: category.title,

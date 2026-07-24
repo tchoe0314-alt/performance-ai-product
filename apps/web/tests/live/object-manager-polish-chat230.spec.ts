@@ -40,6 +40,10 @@ async function openDrawPanel(page: Page) {
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
 }
 
+function canvasObject(page: Page, label: string) {
+  return page.locator(`[data-object-overlay][data-cad-object-id][aria-label*="${label}"]`).first();
+}
+
 async function expectNoOverflow(page: Page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
@@ -101,8 +105,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await runCommand(page, "add 28000 sf office building");
     await runCommand(page, "add 140 parking spaces");
 
-    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first();
-    const parkingOverlay = page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first();
+    const officeOverlay = canvasObject(page, "Office Building - 28,000 sf");
+    const parkingOverlay = canvasObject(page, "Parking Field - 140 stalls");
     await expect(officeOverlay).toBeVisible({ timeout: 5_000 });
     await expect(parkingOverlay).toBeVisible({ timeout: 5_000 });
 
@@ -152,8 +156,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await runCommand(page, "add 140 parking spaces");
     await openDrawPanel(page);
 
-    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
-    const parkingOverlay = page.locator('[data-cad-object-id][aria-label*="Parking Field"]').first();
+    const officeOverlay = canvasObject(page, "Office Building");
+    const parkingOverlay = canvasObject(page, "Parking Field");
     await expect(officeOverlay).toBeVisible();
     await expect(parkingOverlay).toBeVisible();
     await page.getByRole("button", { name: /Select Pick objects/i }).click();
@@ -195,7 +199,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await runCommand(page, "add 28000 sf office building");
     await openDrawPanel(page);
 
-    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    const officeOverlay = canvasObject(page, "Office Building");
     await expect(officeOverlay).toBeVisible();
     await officeOverlay.click();
 
@@ -215,7 +219,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await quickToolbar().getByTestId("selected-object-quick-inspect").click();
     await expect(quickToolbar().getByTestId("selected-object-quick-status")).toContainText(/INSPECT selected Office Building/);
 
-    const copiedOfficeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf Copy"]').first();
+    const copiedOfficeOverlay = canvasObject(page, "Office Building - 28,000 sf Copy");
     await expect(copiedOfficeOverlay).toBeVisible();
     await copiedOfficeOverlay.click();
     await expect(quickToolbar()).toBeVisible();
@@ -229,8 +233,10 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await openDrawPanel(page);
 
     await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-select").click();
-    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    const officeOverlay = canvasObject(page, "Office Building");
     await expect(officeOverlay).toBeVisible();
+    await officeOverlay.click();
+    await expect(page.getByTestId("draw-selected-object-card")).toContainText("Office Building", { timeout: 5_000 });
 
     const beforeMove = await officeOverlay.boundingBox();
     expect(beforeMove).not.toBeNull();
@@ -239,6 +245,12 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.mouse.move(beforeMove!.x + beforeMove!.width * 0.78 + 48, beforeMove!.y + beforeMove!.height * 0.52 + 24, { steps: 8 });
     await page.mouse.up();
 
+    await expect
+      .poll(async () => {
+        const box = await officeOverlay.boundingBox();
+        return Boolean(box && box.x > beforeMove!.x + 12 && box.y > beforeMove!.y + 6);
+      })
+      .toBeTruthy();
     const afterMove = await officeOverlay.boundingBox();
     expect(afterMove).not.toBeNull();
     expect(afterMove!.x).toBeGreaterThan(beforeMove!.x + 12);
@@ -270,7 +282,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await openDrawPanel(page);
 
     await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-select").click();
-    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    const officeOverlay = canvasObject(page, "Office Building");
     await expect(officeOverlay).toBeVisible();
     await officeOverlay.click();
 
@@ -297,7 +309,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await runCommand(page, "add 28000 sf office building");
     await openDrawPanel(page);
 
-    const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building"]').first();
+    const officeOverlay = canvasObject(page, "Office Building");
     await expect(officeOverlay).toBeVisible();
     await page.getByRole("button", { name: /Select Pick objects/i }).click();
 
@@ -992,7 +1004,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     const combinedRow = page.getByTestId("object-manager-row").filter({ hasText: "Combined Site Program" }).first();
     await combinedRow.getByTestId("object-manager-inspect").click();
-    const combinedOverlay = page.locator('[data-cad-object-id][aria-label*="Combined Site Program"]').first();
+    const combinedOverlay = canvasObject(page, "Combined Site Program");
     await expect(combinedOverlay).toBeVisible();
     const beforeGroupBox = await combinedOverlay.boundingBox();
     expect(beforeGroupBox).not.toBeNull();
@@ -1016,8 +1028,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
       "Exploded Combined Site Program back into 2 preserved source pieces",
     );
 
-    const restoredOfficeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first();
-    const restoredParkingOverlay = page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first();
+    const restoredOfficeOverlay = canvasObject(page, "Office Building - 28,000 sf");
+    const restoredParkingOverlay = canvasObject(page, "Parking Field - 140 stalls");
     await expect(restoredOfficeOverlay).toBeVisible();
     await expect(restoredParkingOverlay).toBeVisible();
     const officeBox = await restoredOfficeOverlay.boundingBox();
@@ -1056,8 +1068,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     );
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first()).toContainText(/90|Visible/);
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first()).toContainText(/90|Visible/);
-    const restoredOfficeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first();
-    const restoredParkingOverlay = page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first();
+    const restoredOfficeOverlay = canvasObject(page, "Office Building - 28,000 sf");
+    const restoredParkingOverlay = canvasObject(page, "Parking Field - 140 stalls");
     await expect(restoredOfficeOverlay).toBeVisible();
     await expect(restoredParkingOverlay).toBeVisible();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");

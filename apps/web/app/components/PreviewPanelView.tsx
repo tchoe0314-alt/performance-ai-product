@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -1953,10 +1954,6 @@ export default function PreviewPanel({
     ) => {
       if (!allowEdits || building.type === "site") return;
       if (building.locked) return;
-      if (selectedBuildingId && selectedBuildingId !== building.id) {
-        onSelectBuilding(building.id);
-        return;
-      }
       const caps = getEditCapabilities(building);
       if (mode === "move" && !caps.movable) return;
       if (mode === "resize" && !caps.resizable) return;
@@ -1996,7 +1993,7 @@ export default function PreviewPanel({
         y: (event.clientY - rect.top) / Math.max(canvasView.scale, 0.1),
       });
     },
-    [allowEdits, canvasView.scale, getEditCapabilities, onSelectBuilding, selectedBuildingId],
+    [allowEdits, canvasView.scale, getEditCapabilities, onSelectBuilding],
   );
 
   const hoverDetails = useMemo(
@@ -2016,6 +2013,42 @@ export default function PreviewPanel({
     () => buildPreviewOverlayBounds(previewContainerBounds),
     [previewContainerBounds],
   );
+
+  useEffect(() => {
+    if (!draggingBuildingId || !draggingMode || !overlayBoundsResolved || !previewRef.current) return;
+    const handleMove = (event: MouseEvent) => {
+      const target = previewRef.current;
+      if (!target) return;
+      updateDraggedBuilding(
+        {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          currentTarget: target,
+        } as ReactMouseEvent<HTMLDivElement>,
+        overlayBoundsResolved,
+      );
+    };
+    const handleUp = () => {
+      setDraggingBuildingId(null);
+      setDraggingMode(null);
+      setDraggingVertex(null);
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp, { once: true });
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [
+    draggingBuildingId,
+    draggingMode,
+    overlayBoundsResolved,
+    previewRef,
+    setDraggingBuildingId,
+    setDraggingMode,
+    setDraggingVertex,
+    updateDraggedBuilding,
+  ]);
 
   useEffect(() => {
     if (showHover) return;

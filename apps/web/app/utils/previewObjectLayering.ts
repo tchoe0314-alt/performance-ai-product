@@ -17,13 +17,31 @@ export function resolvePreviewObjectHitZIndex({
   if (item.type === "site") return 18;
   const sourceState = resolveSourceState(item);
   const area = Math.max(rectPct.width * rectPct.height, 0.01);
-  const compactShapeBoost = Math.max(0, Math.min(18, 18 - area * 0.9));
+  const compactShapeBoost = Math.max(0, Math.min(26, 26 - Math.sqrt(area) * 4.2));
   const pointLike =
     item.geometryType === "point" ||
     Boolean(item.meta?.cad_symbol) ||
     ["hydrant", "inlet", "outfall", "manhole"].includes(String(item.type || ""));
+  const lineLike = item.geometryType === "polyline" || visualKind === "utility" || visualKind === "water";
+  const layerText = `${item.type || ""} ${item.use || ""} ${item.label || ""} ${item.meta?.cad_layer || ""} ${item.meta?.layer || ""}`.toLowerCase();
+  const drainageOrUtility =
+    layerText.includes("storm") ||
+    layerText.includes("drain") ||
+    layerText.includes("outfall") ||
+    layerText.includes("inlet") ||
+    layerText.includes("water") ||
+    layerText.includes("sanitary") ||
+    layerText.includes("utility");
   const kindBoost =
-    pointLike ? 24 : visualKind === "utility" ? 16 : visualKind === "water" ? 10 : visualKind === "road" ? 8 : 0;
+    pointLike
+      ? 32
+      : drainageOrUtility
+        ? 26
+        : lineLike
+          ? 18
+          : visualKind === "road"
+            ? 8
+            : 0;
   const stateBoost = sourceState === "fallback" ? -8 : sourceState === "blocked" ? 4 : 0;
   return Math.max(22, Math.min(84, Math.round(42 + compactShapeBoost + kindBoost + stateBoost)));
 }
