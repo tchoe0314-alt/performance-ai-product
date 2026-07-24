@@ -345,8 +345,8 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
   };
   const buildingW = Math.min(205, siteW * 0.22);
   const buildingD = Math.min(86, siteH * 0.09);
-  const parkingW = Math.min(310, siteW * 0.32);
-  const parkingD = Math.min(118, siteH * 0.12);
+  const parkingW = Math.min(300, siteW * 0.30);
+  const parkingD = Math.min(126, siteH * 0.13);
   const contours = Array.from({ length: 7 }).map((_, idx) => {
     const y = siteH * (0.18 + idx * 0.105);
     const grade = 1025 - idx * 2;
@@ -369,18 +369,18 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
     line("frontage-road", "Public Frontage Road", "road", [
       [siteW * 0.02, siteH * 0.12],
       [siteW * 0.36, siteH * 0.10],
-      [siteW * 0.72, siteH * 0.115],
-      [siteW * 0.98, siteH * 0.14],
+      [siteW * 0.72, siteH * 0.11],
+      [siteW * 0.98, siteH * 0.13],
     ], { corridor_width_ft: 42, dense_concept_generated: true, public_row_edge: true }),
-    polygon("office-main", "Office Building - 28,000 sf", "office_building", notchedBuilding(siteW * 0.38, siteH * 0.18, buildingW, buildingD), {
+    polygon("office-main", "Office Building - 28,000 sf", "office_building", notchedBuilding(siteW * 0.43, siteH * 0.39, buildingW, buildingD), {
       h: 34,
       meta: { requested_area_sf: 28000, dense_concept_generated: true, roof_profile: "flat", entrance_side: "south" },
     }),
-    polygon("office-flex", "Future Flex / Service Pad", "building", notchedBuilding(siteW * 0.16, siteH * 0.21, buildingW * 0.72, buildingD * 0.7, "north"), {
+    polygon("office-flex", "Future Flex / Service Pad", "building", notchedBuilding(siteW * 0.66, siteH * 0.29, buildingW * 0.64, buildingD * 0.64, "north"), {
       h: 24,
       meta: { dense_concept_generated: true, roof_profile: "flat", service_pad: true },
     }),
-    place("parking-north", "Parking Field - 84 stalls", "parking", siteW * 0.34, siteH * 0.34, parkingW, parkingD, {
+    place("parking-north", "Parking Field - 84 stalls", "parking", siteW * 0.30, siteH * 0.23, parkingW, parkingD, {
       stallCount: 84,
       meta: {
         requested_stalls: 84,
@@ -402,7 +402,7 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
         dense_concept_generated: true,
       },
     }),
-    place("parking-south", "Parking Field - 56 stalls", "parking", siteW * 0.20, siteH * 0.63, parkingW * 0.86, parkingD * 0.92, {
+    place("parking-south", "Parking Field - 56 stalls", "parking", siteW * 0.30, siteH * 0.58, parkingW * 0.88, parkingD * 0.92, {
       stallCount: 56,
       meta: {
         requested_stalls: 56,
@@ -423,35 +423,34 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
         dense_concept_generated: true,
       },
     }),
-    place("basin", "Detention Basin A", "basin", siteW * 0.68, siteH * 0.66, siteW * 0.18, siteH * 0.12, {
+    place("basin", "Detention Basin A", "basin", siteW * 0.69, siteH * 0.67, siteW * 0.18, siteH * 0.12, {
       meta: { normal_pool_elevation_ft: 1012.4, bottom_elevation_ft: 1007.2, dense_concept_generated: true },
     }),
     line("loop-road", "Internal Loop Drive", "road", [
-      [siteW * 0.13, siteH * 0.54],
-      [siteW * 0.27, siteH * 0.50],
-      [siteW * 0.68, siteH * 0.50],
-      [siteW * 0.80, siteH * 0.58],
-      [siteW * 0.70, siteH * 0.79],
-      [siteW * 0.22, siteH * 0.79],
-      [siteW * 0.13, siteH * 0.54],
+      [siteW * 0.24, siteH * 0.28],
+      [siteW * 0.70, siteH * 0.28],
+      [siteW * 0.80, siteH * 0.40],
+      [siteW * 0.78, siteH * 0.78],
+      [siteW * 0.24, siteH * 0.78],
+      [siteW * 0.18, siteH * 0.56],
+      [siteW * 0.24, siteH * 0.28],
     ], { corridor_width_ft: 28, dense_concept_generated: true }),
     line("driveway", "Driveway Connection", "driveway", [
-      [siteW * 0.03, siteH * 0.55],
-      [siteW * 0.13, siteH * 0.54],
-      [siteW * 0.27, siteH * 0.50],
+      [siteW * 0.49, siteH * 0.12],
+      [siteW * 0.49, siteH * 0.21],
+      [siteW * 0.44, siteH * 0.28],
     ], { corridor_width_ft: 30, dense_concept_generated: true }),
     line("service-drive", "Rear Service Drive", "driveway", [
-      [siteW * 0.24, siteH * 0.23],
-      [siteW * 0.38, siteH * 0.24],
-      [siteW * 0.58, siteH * 0.25],
-      [siteW * 0.72, siteH * 0.34],
+      [siteW * 0.62, siteH * 0.34],
+      [siteW * 0.73, siteH * 0.36],
+      [siteW * 0.79, siteH * 0.46],
     ], { corridor_width_ft: 22, dense_concept_generated: true, service_access: true }),
     line("ada-route", "Sidewalk / ADA Route", "sidewalk", [
-      [siteW * 0.20, siteH * 0.36],
-      [siteW * 0.36, siteH * 0.36],
-      [siteW * 0.48, siteH * 0.27],
-      [siteW * 0.60, siteH * 0.36],
-      [siteW * 0.72, siteH * 0.66],
+      [siteW * 0.32, siteH * 0.36],
+      [siteW * 0.43, siteH * 0.36],
+      [siteW * 0.51, siteH * 0.48],
+      [siteW * 0.58, siteH * 0.58],
+      [siteW * 0.68, siteH * 0.68],
     ], { routeKind: "ada_review_route", dense_concept_generated: true }),
     line("frontage-sidewalk", "Frontage Sidewalk", "sidewalk", [
       [siteW * 0.05, siteH * 0.18],
@@ -460,53 +459,53 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
       [siteW * 0.93, siteH * 0.21],
     ], { routeKind: "public_frontage_walk", corridor_width_ft: 6, dense_concept_generated: true }),
     line("crosswalk-main", "Main Entry Crosswalk", "sidewalk", [
-      [siteW * 0.49, siteH * 0.34],
-      [siteW * 0.49, siteH * 0.50],
+      [siteW * 0.49, siteH * 0.28],
+      [siteW * 0.49, siteH * 0.39],
     ], { routeKind: "crosswalk_review", corridor_width_ft: 10, cad_hatch_enabled: true, dense_concept_generated: true }),
     line("water-main", "Public Water Line", "utility_corridor", [
-      [siteW * 0.06, siteH * 0.31],
-      [siteW * 0.25, siteH * 0.31],
-      [siteW * 0.48, siteH * 0.28],
-      [siteW * 0.74, siteH * 0.39],
+      [siteW * 0.08, siteH * 0.18],
+      [siteW * 0.34, siteH * 0.18],
+      [siteW * 0.49, siteH * 0.21],
+      [siteW * 0.78, siteH * 0.34],
     ], { network: "water", dense_concept_generated: true }),
     line("water-lateral-office", "Office Water Service Lateral", "utility_corridor", [
-      [siteW * 0.48, siteH * 0.28],
-      [siteW * 0.48, siteH * 0.22],
+      [siteW * 0.55, siteH * 0.34],
+      [siteW * 0.55, siteH * 0.39],
     ], { network: "water", service_lateral: true, dense_concept_generated: true }),
     line("sanitary-main", "Public Sanitary Line", "utility_corridor", [
-      [siteW * 0.08, siteH * 0.86],
-      [siteW * 0.42, siteH * 0.86],
-      [siteW * 0.66, siteH * 0.80],
-      [siteW * 0.84, siteH * 0.74],
+      [siteW * 0.12, siteH * 0.86],
+      [siteW * 0.40, siteH * 0.84],
+      [siteW * 0.63, siteH * 0.80],
+      [siteW * 0.84, siteH * 0.73],
     ], { network: "sanitary", dense_concept_generated: true }),
     line("sanitary-lateral-office", "Office Sanitary Lateral", "utility_corridor", [
-      [siteW * 0.52, siteH * 0.82],
-      [siteW * 0.52, siteH * 0.27],
+      [siteW * 0.54, siteH * 0.80],
+      [siteW * 0.54, siteH * 0.48],
     ], { network: "sanitary", service_lateral: true, dense_concept_generated: true }),
     line("storm-main", "Storm Sewer", "utility_corridor", [
-      [siteW * 0.43, siteH * 0.47],
-      [siteW * 0.62, siteH * 0.51],
-      [siteW * 0.73, siteH * 0.62],
+      [siteW * 0.43, siteH * 0.36],
+      [siteW * 0.58, siteH * 0.46],
+      [siteW * 0.70, siteH * 0.61],
       [siteW * 0.78, siteH * 0.72],
     ], { network: "storm", dense_concept_generated: true }),
     line("storm-parking-collector", "Parking Court Storm Collector", "utility_corridor", [
-      [siteW * 0.42, siteH * 0.44],
-      [siteW * 0.52, siteH * 0.47],
-      [siteW * 0.62, siteH * 0.51],
+      [siteW * 0.42, siteH * 0.53],
+      [siteW * 0.56, siteH * 0.54],
+      [siteW * 0.70, siteH * 0.61],
     ], { network: "storm", dense_concept_generated: true }),
     polygon("landscape-buffer", "Frontage Landscape Buffer", "landscape", [
       [siteW * 0.07, siteH * 0.19],
       [siteW * 0.84, siteH * 0.20],
-      [siteW * 0.89, siteH * 0.29],
-      [siteW * 0.12, siteH * 0.28],
+      [siteW * 0.86, siteH * 0.25],
+      [siteW * 0.12, siteH * 0.25],
     ], { meta: { ui_color: "#65a30d", cad_hatch_enabled: true, cad_hatch_pattern: "landscape", dense_concept_generated: true } }),
-    place("inlet-a", "Storm Inlet S-1", "inlet", siteW * 0.46, siteH * 0.46, 12, 12, { meta: { dense_concept_generated: true } }),
-    place("inlet-b", "Storm Inlet S-2", "inlet", siteW * 0.66, siteH * 0.57, 12, 12, { meta: { dense_concept_generated: true } }),
-    place("inlet-c", "Storm Inlet S-3", "inlet", siteW * 0.40, siteH * 0.66, 12, 12, { meta: { dense_concept_generated: true } }),
+    place("inlet-a", "Storm Inlet S-1", "inlet", siteW * 0.43, siteH * 0.36, 12, 12, { meta: { dense_concept_generated: true } }),
+    place("inlet-b", "Storm Inlet S-2", "inlet", siteW * 0.58, siteH * 0.46, 12, 12, { meta: { dense_concept_generated: true } }),
+    place("inlet-c", "Storm Inlet S-3", "inlet", siteW * 0.42, siteH * 0.53, 12, 12, { meta: { dense_concept_generated: true } }),
     place("outfall", "Outfall OF-1", "outfall", siteW * 0.78, siteH * 0.72, 12, 12, { meta: { dense_concept_generated: true } }),
-    place("hydrant-a", "Hydrant W-1", "hydrant", siteW * 0.24, siteH * 0.31, 10, 10, { meta: { dense_concept_generated: true } }),
-    place("hydrant-b", "Hydrant W-2", "hydrant", siteW * 0.70, siteH * 0.43, 10, 10, { meta: { dense_concept_generated: true } }),
-    place("manhole-a", "Sanitary Manhole SS-1", "manhole", siteW * 0.52, siteH * 0.82, 12, 12, { meta: { network: "sanitary", dense_concept_generated: true } }),
+    place("hydrant-a", "Hydrant W-1", "hydrant", siteW * 0.34, siteH * 0.18, 10, 10, { meta: { dense_concept_generated: true } }),
+    place("hydrant-b", "Hydrant W-2", "hydrant", siteW * 0.78, siteH * 0.34, 10, 10, { meta: { dense_concept_generated: true } }),
+    place("manhole-a", "Sanitary Manhole SS-1", "manhole", siteW * 0.54, siteH * 0.80, 12, 12, { meta: { network: "sanitary", dense_concept_generated: true } }),
     ...Array.from({ length: 16 }).map((_, idx) =>
       place(
         `landscape-tree-${idx}`,
