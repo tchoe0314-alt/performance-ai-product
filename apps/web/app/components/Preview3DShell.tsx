@@ -67,22 +67,20 @@ export function Preview3DShell({
           Approximate 3D
         </div>
       ) : null}
-      {!hasGradingSurface ? (
-        <div
-          className={`pointer-events-none absolute right-4 rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm ${
-            usingAnnotation3D ? "top-14" : "top-4"
-          }`}
+      <div className="absolute right-4 top-4 z-[120] flex max-w-[min(260px,calc(100%-2rem))] flex-col items-end gap-2">
+        <button
+          type="button"
+          onClick={onOpenFullscreen}
+          className="rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
         >
-          Grading surface missing
-        </div>
-      ) : null}
-      <button
-        type="button"
-        onClick={onOpenFullscreen}
-        className="absolute right-4 top-4 rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
-      >
-        Open Fullscreen
-      </button>
+          Open Fullscreen
+        </button>
+        {!hasGradingSurface ? (
+          <div className="pointer-events-none rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
+            Grading surface missing
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -267,17 +267,19 @@ export default function Preview3DCanvas({
     rendererRef.current = renderer;
     mount.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 5000);
+    const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 5000);
     const maxSpan = Math.max(modelBounds.spanX, modelBounds.spanY);
-    camera.position.set(maxSpan * 0.86, maxSpan * 0.58, maxSpan * 0.80);
+    camera.position.set(maxSpan * 0.62, maxSpan * 0.48, maxSpan * 0.66);
+    camera.zoom = previewQuality === "high" ? 1.12 : 1.04;
+    camera.updateProjectionMatrix();
     cameraRef.current = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = false;
     controls.enablePan = true;
     controls.enableZoom = true;
-    controls.minDistance = Math.max(maxSpan * 0.18, 25);
-    controls.maxDistance = Math.max(maxSpan * 3.2, 300);
+    controls.minDistance = Math.max(maxSpan * 0.14, 25);
+    controls.maxDistance = Math.max(maxSpan * 2.6, 300);
     controls.target.set(0, 0, 0);
     controls.update();
     controlsRef.current = controls;
@@ -980,7 +982,7 @@ export default function Preview3DCanvas({
         Orbit | Pan | Zoom
       </div>
       {objectChips.length ? (
-        <div className="absolute right-4 top-28 z-[90] flex max-h-44 w-[min(260px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
+        <div className="absolute right-4 top-32 z-[90] flex max-h-36 w-[min(238px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/88 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
           {objectChips.map((object) => (
             <button
               key={object.id}
