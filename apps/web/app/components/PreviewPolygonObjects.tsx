@@ -12,6 +12,7 @@ import {
   resolvePreviewSvgVisualStyle,
   resolvePreviewVisualKind,
 } from "../utils/previewVisualStyles";
+import { semanticLayerForPlacement } from "../utils/previewSemanticLayers";
 
 type PreviewPolygonObjectsProps = {
   objects: BuildingPlacement[];
@@ -103,7 +104,7 @@ export function PreviewPolygonObjects({
           const isLandscapeSurface = visualKind === "landscape";
 
           return (
-            <g key={`custom-poly-${item.id}`}>
+            <g key={`custom-poly-${item.id}`} data-semantic-layer={semanticLayerForPlacement(item)}>
               <polygon
                 data-testid="plan-polygon-object"
                 points={points.join(" ")}

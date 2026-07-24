@@ -12,6 +12,7 @@ import {
   resolvePreviewVisualKind,
   roundedSiteShapePath,
 } from "../utils/previewVisualStyles";
+import { semanticLayerForPlacement } from "../utils/previewSemanticLayers";
 
 type PreviewRect = {
   left: number;
@@ -66,7 +67,7 @@ export function PreviewRectObjects({
                 : 0.7;
 
           return (
-            <g key={`rect-plan-${item.id}`} data-testid="plan-rect-object">
+            <g key={`rect-plan-${item.id}`} data-testid="plan-rect-object" data-semantic-layer={semanticLayerForPlacement(item)}>
               {corridorAxis ? (
                 <>
                   <polyline

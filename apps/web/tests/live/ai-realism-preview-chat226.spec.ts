@@ -67,7 +67,7 @@ test.describe("Chat 226 AI realism preview", () => {
     await expect(page.getByTestId("preview-source-confidence-summary")).toHaveCount(0);
 
     await enableHighQuality(page);
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Presentation/realism mode");
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Plan Sheet mode");
     await expect(page.getByTestId("ai-realism-off")).toHaveClass(/bg-slate-950/);
     await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();
     await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();

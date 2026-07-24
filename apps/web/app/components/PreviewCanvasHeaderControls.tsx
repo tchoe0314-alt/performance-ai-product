@@ -5,6 +5,11 @@ import { Lock, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
 import type { CoordinateMode } from "../utils/geometryTransforms";
 import { coordinateModeLabel } from "../utils/geometryTransforms";
 import type { DrawMode } from "../utils/cadToolTypes";
+import type { PreviewSemanticLayer } from "../utils/previewSemanticLayers";
+import {
+  PREVIEW_SEMANTIC_LAYER_LABELS,
+  PRIMARY_PREVIEW_SEMANTIC_LAYERS,
+} from "../utils/previewSemanticLayers";
 import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
 
@@ -28,6 +33,7 @@ type PreviewCanvasHeaderControlsProps = {
   useLightHighQuality: boolean;
   busy: boolean;
   analysisHighlight: unknown;
+  semanticLayerVisibility: Partial<Record<PreviewSemanticLayer, boolean>>;
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetAiVisualizationOff: () => void;
@@ -44,6 +50,8 @@ type PreviewCanvasHeaderControlsProps = {
   onResetView?: () => void;
   onRefreshPreview: () => void;
   onClearHighlights?: () => void;
+  onToggleSemanticLayer: (layer: PreviewSemanticLayer) => void;
+  onShowAllSemanticLayers: () => void;
 };
 
 export function PreviewCanvasHeaderControls({
@@ -66,6 +74,7 @@ export function PreviewCanvasHeaderControls({
   useLightHighQuality,
   busy,
   analysisHighlight,
+  semanticLayerVisibility,
   onSetPreviewQuality,
   onSetPreviewMode,
   onSetAiVisualizationOff,
@@ -82,7 +91,17 @@ export function PreviewCanvasHeaderControls({
   onResetView,
   onRefreshPreview,
   onClearHighlights,
+  onToggleSemanticLayer,
+  onShowAllSemanticLayers,
 }: PreviewCanvasHeaderControlsProps) {
+  const modeLabel = previewMode === "3d"
+    ? "3D Model"
+    : aiRealismEnabled && isHighQuality
+      ? "Presentation"
+      : previewQuality === "high"
+        ? "Plan Sheet"
+        : "Draft";
+
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
       <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
@@ -90,7 +109,7 @@ export function PreviewCanvasHeaderControls({
           Canvas
         </span>
         <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-          {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} /{" "}
+          {modeLabel} / {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} /{" "}
           {coordinateModeLabel(coordinateMode)}
         </span>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -99,6 +118,8 @@ export function PreviewCanvasHeaderControls({
             onChange={onSetPreviewQuality}
             standardTestId="preview-quality-standard"
             highTestId="preview-quality-high"
+            standardLabel="Draft"
+            highLabel="Plan Sheet"
           />
           <button
             type="button"
@@ -239,12 +260,44 @@ export function PreviewCanvasHeaderControls({
             />
           ) : null}
         </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid="preview-semantic-layer-controls">
+          <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Layers
+          </span>
+          {PRIMARY_PREVIEW_SEMANTIC_LAYERS.map((layer) => {
+            const visible = semanticLayerVisibility[layer] !== false;
+            return (
+              <button
+                key={layer}
+                type="button"
+                data-testid={`preview-layer-toggle-${layer}`}
+                aria-pressed={visible}
+                onClick={() => onToggleSemanticLayer(layer)}
+                className={`inline-flex h-7 items-center rounded-full border px-2 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                  visible
+                    ? "border-slate-300 bg-white text-slate-700"
+                    : "border-slate-200 bg-slate-100 text-slate-400"
+                }`}
+              >
+                {PREVIEW_SEMANTIC_LAYER_LABELS[layer]}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            data-testid="preview-layer-show-all"
+            onClick={onShowAllSemanticLayers}
+            className="inline-flex h-7 items-center rounded-full border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500"
+          >
+            All
+          </button>
+        </div>
         {isHighQuality ? (
           <span
             data-testid="high-quality-preview-only-label"
             className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
           >
-            Presentation/realism mode. Visual preview only. Canonical geometry unchanged. Not engineering evidence.
+            {aiRealismEnabled ? "Presentation" : "Plan Sheet"} mode. Visual preview only. Canonical geometry unchanged. Not engineering evidence.
           </span>
         ) : null}
         {useLightHighQuality ? (

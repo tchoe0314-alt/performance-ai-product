@@ -114,6 +114,11 @@ import {
   handlePreviewCadTransformCommand,
 } from "../utils/previewCadActiveCommand";
 import { resolvePreviewVisualKind } from "../utils/previewVisualStyles";
+import type { PreviewSemanticLayer } from "../utils/previewSemanticLayers";
+import {
+  isPreviewSemanticLayerVisible,
+  semanticLayerFor3DItem,
+} from "../utils/previewSemanticLayers";
 import {
   buildPreviewCurrentSiteSize,
   buildPreviewParkingAccessPoints,
@@ -843,6 +848,23 @@ export default function PreviewPanel({
           item.meta?.subdivision_cad_recreation,
       ),
     [visibleCadObjects],
+  );
+  const [semanticLayerVisibility, setSemanticLayerVisibility] = useState<Partial<Record<PreviewSemanticLayer, boolean>>>({});
+  const toggleSemanticLayer = useCallback((layer: PreviewSemanticLayer) => {
+    setSemanticLayerVisibility((current) => ({
+      ...current,
+      [layer]: current[layer] === false,
+    }));
+  }, []);
+  const showAllSemanticLayers = useCallback(() => {
+    setSemanticLayerVisibility({});
+  }, []);
+  const filteredPreview3DItems = useMemo(
+    () =>
+      preview3DEffectiveItems.filter((item) =>
+        isPreviewSemanticLayerVisible(semanticLayerFor3DItem(item), semanticLayerVisibility),
+      ),
+    [preview3DEffectiveItems, semanticLayerVisibility],
   );
 
   const canvasCompositionSignature = useMemo(
@@ -2340,6 +2362,7 @@ export default function PreviewPanel({
               useLightHighQuality,
               busy,
               analysisHighlight,
+              semanticLayerVisibility,
               onSetPreviewQuality,
               onSetPreviewMode,
               onSetAiVisualizationOff: setAiVisualizationOff,
@@ -2356,6 +2379,8 @@ export default function PreviewPanel({
               onResetView,
               onRefreshPreview,
               onClearHighlights,
+              onToggleSemanticLayer: toggleSemanticLayer,
+              onShowAllSemanticLayers: showAllSemanticLayers,
             }}
             objectManagerProps={{
               visible: allowEdits && drawMode === "select" && Boolean(selectedObject),
@@ -2475,7 +2500,7 @@ export default function PreviewPanel({
           <UtilityCoordinationDock rows={utilityCoordinationRows} summary={utilityCoordinationSummary} />
           {show3D ? (
             <Preview3DShell
-              items={preview3DEffectiveItems}
+              items={filteredPreview3DItems}
               allowEdits={allowEdits}
               previewQuality={previewQuality}
               selectedItemId={selectedBuildingId}
@@ -2711,6 +2736,7 @@ export default function PreviewPanel({
                     siteRectToPercent: drawingSiteRectToPercent,
                     showEarthworkUx,
                     gradingEarthworkUx,
+                    semanticLayerVisibility,
                   },
                   waterFireFlowHitTargetsProps: {
                     waterFireFlow,

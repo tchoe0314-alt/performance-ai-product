@@ -4,6 +4,11 @@ import type { BuildingPlacement, GradingEarthworkUx } from "../types";
 import type { DrawMode } from "../utils/cadToolTypes";
 import { formatMetric } from "../utils/formatting";
 import { buildPreviewParkingMapModules } from "../utils/previewParkingMapModules";
+import type { PreviewSemanticLayer } from "../utils/previewSemanticLayers";
+import {
+  isPreviewSemanticLayerVisible,
+  semanticLayerForPlacement,
+} from "../utils/previewSemanticLayers";
 import type { PreviewSurveyPoint } from "../utils/previewLayoutHelpers";
 import type { buildWaterFireFlowViewModel } from "../utils/previewWaterFireFlow";
 import { PreviewBasePlanGrid } from "./PreviewBasePlanGrid";
@@ -71,6 +76,7 @@ type PreviewPlanCanvasLayersProps = {
   ) => DraftRectPercent;
   showEarthworkUx: boolean;
   gradingEarthworkUx?: GradingEarthworkUx | null;
+  semanticLayerVisibility?: Partial<Record<PreviewSemanticLayer, boolean>>;
 };
 
 export function PreviewPlanCanvasLayers({
@@ -113,9 +119,13 @@ export function PreviewPlanCanvasLayers({
   siteRectToPercent,
   showEarthworkUx,
   gradingEarthworkUx,
+  semanticLayerVisibility = {},
 }: PreviewPlanCanvasLayersProps) {
   if (!overlayBoundsResolved || previewMode !== "2d") return null;
   const hasSurveyOrTerrainEvidence = surveyPointCount > 0 || hasTerrainSurfaceEvidence;
+  const layerVisibleObjects = visibleCadObjects.filter((item) =>
+    isPreviewSemanticLayerVisible(semanticLayerForPlacement(item), semanticLayerVisibility),
+  );
 
   return (
     <div
@@ -153,7 +163,7 @@ export function PreviewPlanCanvasLayers({
             surveyPoints={surveyPoints}
           />
           <PreviewPolylineObjects
-            objects={visibleCadObjects}
+            objects={layerVisibleObjects}
             selectedBuildingId={selectedBuildingId}
             isHighQuality={isHighQuality}
             cadReferenceMode={cadReferenceMode}
@@ -161,21 +171,21 @@ export function PreviewPlanCanvasLayers({
             sitePointToSvgPercent={sitePointToSvgPercent}
           />
           <PreviewRectObjects
-            objects={visibleCadObjects}
+            objects={layerVisibleObjects}
             selectedBuildingId={selectedBuildingId}
             isHighQuality={isHighQuality}
             cadReferenceMode={cadReferenceMode}
             mapAnchoredRectPercent={mapAnchoredRectPercent}
           />
           <PreviewPolygonObjects
-            objects={visibleCadObjects}
+            objects={layerVisibleObjects}
             selectedBuildingId={selectedBuildingId}
             isHighQuality={isHighQuality}
             cadReferenceMode={cadReferenceMode}
             sitePointToSvgPercent={sitePointToSvgPercent}
           />
           <PreviewCadMarkers
-            objects={visibleCadObjects}
+            objects={layerVisibleObjects}
             selectedBuildingId={selectedBuildingId}
             currentSiteSize={currentSiteSize}
             sitePointToPreviewPercent={sitePointToPreviewPercent}
@@ -184,7 +194,7 @@ export function PreviewPlanCanvasLayers({
             getObjectGeometryPoints={getObjectGeometryPoints}
           />
           <PreviewParkingModules
-            objects={visibleCadObjects}
+            objects={layerVisibleObjects}
             accessPoints={accessPointsForParking}
             showParkingAnalysis={showParkingAnalysis}
             buildParkingModules={buildPreviewParkingMapModules}

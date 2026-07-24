@@ -4,6 +4,7 @@ import {
   resolvePreviewSvgVisualStyle,
   resolvePreviewVisualKind,
 } from "../utils/previewVisualStyles";
+import { semanticLayerForPlacement } from "../utils/previewSemanticLayers";
 
 type PreviewPolylineObjectsProps = {
   objects: BuildingPlacement[];
@@ -72,7 +73,7 @@ export function PreviewPolylineObjects({
               : [];
 
           return (
-            <g key={`poly-${item.id}`}>
+            <g key={`poly-${item.id}`} data-semantic-layer={semanticLayerForPlacement(item)}>
               {isHighQuality && isCorridorLine ? (
                 <polyline
                   data-testid="plan-road-corridor"

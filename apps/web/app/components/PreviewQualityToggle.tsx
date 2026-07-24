@@ -5,12 +5,16 @@ export function PreviewQualityToggle({
   onChange,
   standardTestId,
   highTestId,
+  standardLabel = "Standard",
+  highLabel = "High",
   buttonClassName = "inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold",
 }: {
   value: PreviewQualityValue;
   onChange: (value: PreviewQualityValue) => void;
   standardTestId?: string;
   highTestId?: string;
+  standardLabel?: string;
+  highLabel?: string;
   buttonClassName?: string;
 }) {
   const inactiveClass = "border-slate-200 bg-white text-slate-600";
@@ -28,7 +32,7 @@ export function PreviewQualityToggle({
         onClick={() => setQuality("standard")}
         className={`${buttonClassName} ${value === "standard" ? activeClass : inactiveClass}`}
       >
-        Standard
+        {standardLabel}
       </button>
       <button
         type="button"
@@ -36,7 +40,7 @@ export function PreviewQualityToggle({
         onClick={() => setQuality("high")}
         className={`${buttonClassName} ${value === "high" ? activeClass : inactiveClass}`}
       >
-        High
+        {highLabel}
       </button>
     </>
   );

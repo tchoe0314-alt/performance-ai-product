@@ -169,12 +169,19 @@ test("creates an urbanization campus plan with colored sheet objects and 3D mass
   await expect(page.locator("body")).not.toContainText(/site type or land use|which systems to include/i);
 
   await canvas.getByTestId("preview-quality-high").click();
+  await expect(canvas).toContainText(/Plan Sheet/i);
   await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-edge-lines").first()).toBeVisible();
   await expect(page.getByTestId("plan-tree-symbol").first()).toBeVisible();
   await expect(page.getByTestId("plan-plaza-module-lines").first()).toBeVisible();
   await expect(page.getByTestId("plan-utility-node-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
+  await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();
+  await page.getByTestId("preview-layer-toggle-lots").click();
+  await expect(page.locator('svg [data-semantic-layer="lots"]')).toHaveCount(0);
+  await expect(page.locator('[data-cad-object-id][aria-label*="Civic Hall"]').first()).toBeVisible();
+  await page.getByTestId("preview-layer-show-all").click();
+  await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();
   await page.getByTestId("preview-mode-3d").click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("civil-3d-object-strip")).toContainText(/Civic Hall|Library|Market Hall/i, { timeout: 20_000 });
