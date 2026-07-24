@@ -770,19 +770,75 @@ export default function Preview3DCanvas({
           object.add(stripe);
         }
         if (layer === "PARKING" && previewQuality === "high" && item.w >= 70 && item.h >= 42) {
-          const stallMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.18 });
-          const stallCount = Math.min(8, Math.max(4, Math.floor(item.w / 34)));
-          for (let stallIndex = 1; stallIndex < stallCount; stallIndex += 1) {
-            const x = item.x + (item.w * stallIndex) / stallCount;
-            const stallLine = new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints([
-                toScene(x, item.y + item.h * 0.12, baseY + visualLift + heightFt + 0.1),
-                toScene(x, item.y + item.h * 0.88, baseY + visualLift + heightFt + 0.1),
-              ]),
-              stallMaterial,
+          const metadata = item.meta ?? {};
+          const requestedStalls = Number(metadata.requested_stalls ?? metadata.parkingCapacity ?? 0);
+          const moduleCols = Math.max(
+            1,
+            Math.min(6, Number(metadata.parkingModuleCols) || Math.ceil(Math.sqrt(Math.max(requestedStalls, 24) / 16))),
+          );
+          const moduleRows = Math.max(
+            1,
+            Math.min(4, Number(metadata.parkingModuleRows) || Math.ceil(Math.max(requestedStalls, 24) / (moduleCols * 18))),
+          );
+          const topY = baseY + visualLift + heightFt + 0.14;
+          const stallMaterial = new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.48 });
+          const aisleMaterial = new THREE.LineBasicMaterial({ color: "#475569", transparent: true, opacity: 0.38 });
+          const moduleMaterial = new THREE.LineBasicMaterial({ color: "#1f2937", transparent: true, opacity: 0.22 });
+          const stallColumns = Math.min(18, Math.max(6, Math.floor(item.w / Math.max(moduleCols * 11, 1))));
+          const stallRows = Math.min(8, Math.max(3, moduleRows * 2));
+
+          for (let col = 1; col < stallColumns; col += 1) {
+            const x = item.x + (item.w * col) / stallColumns;
+            object.add(
+              new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                  toScene(x, item.y + item.h * 0.08, topY),
+                  toScene(x, item.y + item.h * 0.92, topY),
+                ]),
+                stallMaterial,
+              ),
             );
-            object.add(stallLine);
           }
+          for (let row = 1; row < stallRows; row += 1) {
+            const y = item.y + (item.h * row) / stallRows;
+            const material = row % 2 === 0 ? aisleMaterial : stallMaterial;
+            object.add(
+              new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                  toScene(item.x + item.w * 0.06, y, topY + 0.01),
+                  toScene(item.x + item.w * 0.94, y, topY + 0.01),
+                ]),
+                material,
+              ),
+            );
+          }
+          for (let col = 1; col < moduleCols; col += 1) {
+            const x = item.x + (item.w * col) / moduleCols;
+            object.add(
+              new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                  toScene(x, item.y + item.h * 0.05, topY + 0.02),
+                  toScene(x, item.y + item.h * 0.95, topY + 0.02),
+                ]),
+                moduleMaterial,
+              ),
+            );
+          }
+          const accentPads = [
+            { color: "#10b981", x: item.x + item.w * 0.14, y: item.y + item.h * 0.18 },
+            { color: "#10b981", x: item.x + item.w * 0.22, y: item.y + item.h * 0.18 },
+            { color: "#a855f7", x: item.x + item.w * 0.74, y: item.y + item.h * 0.78 },
+            { color: "#a855f7", x: item.x + item.w * 0.82, y: item.y + item.h * 0.78 },
+          ];
+          accentPads.forEach((pad) => {
+            const padMesh = new THREE.Mesh(
+              new THREE.PlaneGeometry(Math.max(item.w * 0.045, 4), Math.max(item.h * 0.16, 8)),
+              new THREE.MeshStandardMaterial({ color: pad.color, transparent: true, opacity: 0.34, roughness: 0.78 }),
+            );
+            padMesh.rotation.x = -Math.PI / 2;
+            padMesh.position.copy(toScene(pad.x, pad.y, topY + 0.03));
+            object.add(padMesh);
+          });
         }
       }
 

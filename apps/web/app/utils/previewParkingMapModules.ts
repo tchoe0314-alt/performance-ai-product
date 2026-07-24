@@ -212,7 +212,9 @@ export function buildPreviewParkingMapModules(
       const baseXBottom = moduleX + rowOffsetBottom + i * stallW;
       const baseYTop = moduleY;
       const baseYBottom = moduleY + moduleDepthLocal - scaledStall;
-      const stallWidthUsed = useAda ? clampWidth(stallWidth) : useCompact ? clampWidth(compactWidth) : clampWidth(stallW);
+      const adaAisleReserve = useAda ? Math.max(Math.min(adaAisleWidth, stallW * 0.36), stallW * 0.18) : 0;
+      const adaStallWidth = useAda ? Math.max(stallW - adaAisleReserve, stallW * 0.56) : stallW;
+      const stallWidthUsed = useAda ? adaStallWidth : useCompact ? clampWidth(compactWidth) : clampWidth(stallW);
       const topPoly = buildStallPoly(baseXTop, baseYTop, stallWidthUsed, depthUnitTop, scaledStall);
       stallPolygons.push({
         points: topPoly,
@@ -223,7 +225,7 @@ export function buildPreviewParkingMapModules(
         [baseXTop + stallWidthUsed + depthVecTop.x, baseYTop + depthVecTop.y],
       ]);
       if (useAda && includeAdaAisle) {
-        const accessibleAisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), 0);
+        const accessibleAisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), stallW * 0.12);
         if (accessibleAisleWidth > 0.1) {
           const aislePoly = buildStallPoly(
             baseXTop + stallWidthUsed,
@@ -246,7 +248,7 @@ export function buildPreviewParkingMapModules(
           [baseXBottom + stallWidthUsed + depthVecBottom.x, baseYBottom + depthVecBottom.y],
         ]);
         if (useAda && includeAdaAisle) {
-          const accessibleAisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), 0);
+          const accessibleAisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), stallW * 0.12);
           if (accessibleAisleWidth > 0.1) {
             const bottomAisle = buildStallPoly(
               baseXBottom + stallWidthUsed,

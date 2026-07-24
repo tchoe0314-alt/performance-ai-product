@@ -58,6 +58,11 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("professional-basin-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
   await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
+  await expect(page.getByTestId("plan-parking-module-detail").first()).toBeVisible();
+  await expect(page.getByTestId("plan-parking-ada-symbol").first()).toBeVisible();
+  await expect(page.getByTestId("plan-parking-ada-aisle").first()).toBeVisible();
+  await expect(page.getByTestId("plan-parking-compact-symbol").first()).toBeVisible();
+  await expect(page.getByTestId("plan-parking-aisle-cue").first()).toBeVisible();
   await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-grading-contour-cues").first()).toBeVisible();
   await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
