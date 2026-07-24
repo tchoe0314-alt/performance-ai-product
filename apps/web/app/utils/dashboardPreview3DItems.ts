@@ -473,6 +473,9 @@ export function buildPlacementPreview3DItems({
       const isParking = item.type === "parking";
       const isDrainage = item.type === "basin" || item.type === "inlet" || item.type === "outfall";
       const isUtility = item.type === "hydrant" || item.type === "manhole" || item.type === "utility_corridor";
+      const isLandscape = item.type === "open_space" || item.type === "landscape";
+      const isAmenity = item.type === "amenity";
+      const isLot = item.type === "lot_block" || item.type === "setback_zone" || item.type === "no_build_zone";
       const rawCorridorWidth =
         Number(item.meta?.corridor_width_ft) ||
         Number(item.meta?.width_ft) ||
@@ -494,12 +497,16 @@ export function buildPlacementPreview3DItems({
           ? Math.max(8, Number(item.h ?? 28))
           : isDrainage
             ? 3
-            : isRoad
+          : isRoad
               ? 1.5
               : isParking
                 ? 1
                 : isSidewalk
                   ? 0.4
+                  : isLandscape || isAmenity
+                    ? 0.35
+                    : isLot
+                      ? 0.08
                   : 6,
         z: isDrainage ? -1 : 0,
         geometryType: item.geometryType,
@@ -511,8 +518,14 @@ export function buildPlacementPreview3DItems({
             ? "#bfdbfe"
             : isUtility
               ? "#e9d5ff"
-              : isSidewalk
+          : isSidewalk
                 ? "#d6d3d1"
+                : isLandscape
+                  ? "#a7c77b"
+                  : isAmenity
+                    ? "#eab308"
+                    : isLot
+                      ? "#eef2ff"
                 : isRoad || isParking
                 ? "#cbd5e1"
                 : "#e5e7eb",
@@ -522,12 +535,18 @@ export function buildPlacementPreview3DItems({
           : isParking
             ? "PARKING"
             : isDrainage
-              ? "DRAINAGE"
-              : isUtility
-                ? "UTILITY"
-                : isSidewalk
-                  ? "SIDEWALK"
-                  : "ROAD",
+            ? "DRAINAGE"
+            : isUtility
+              ? "UTILITY"
+              : isSidewalk
+                ? "SIDEWALK"
+                : isLandscape
+                  ? "LANDSCAPE"
+                  : isAmenity
+                    ? "STRUCTURE"
+                    : isLot
+                      ? "CONSTRAINT"
+                    : "ROAD",
         source: confidenceEntry?.source_name || item.source || "workspace object",
         confidence: confidenceEntry?.confidence_band || item.confidence || metaConfidence,
         blockers: [
@@ -535,6 +554,7 @@ export function buildPlacementPreview3DItems({
           ...(confidenceEntry?.next_action ? [confidenceEntry.next_action] : []),
           ...metaBlockers,
         ],
+        meta: item.meta,
       });
     });
   return [...cadEntityPreviewItems3D, ...items];

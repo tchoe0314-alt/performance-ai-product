@@ -24,6 +24,7 @@ export const ADD_MENU_SECTIONS: Array<{
       "pool",
       "amenity",
       "open_space",
+      "landscape",
     ],
   },
   {
@@ -88,6 +89,7 @@ export const SITE_OBJECT_CATALOG: Record<
   pool: { label: "Pool", category: "buildings", defaultW: 50, defaultD: 30, defaultH: 6 },
   amenity: { label: "Amenity Area", category: "buildings", defaultW: 80, defaultD: 40, defaultH: 12 },
   open_space: { label: "Open Space", category: "buildings", defaultW: 120, defaultD: 80, defaultH: 0 },
+  landscape: { label: "Landscape / Tree", category: "buildings", defaultW: 18, defaultD: 18, defaultH: 10 },
   entrance: { label: "Entrance / Access", category: "access", defaultW: 24, defaultD: 24 },
   driveway: { label: "Driveway", category: "access", defaultW: 60, defaultD: 16 },
   road: { label: "Road / Drive Aisle", category: "access", defaultW: 120, defaultD: 28 },

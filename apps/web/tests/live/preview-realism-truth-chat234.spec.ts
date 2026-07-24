@@ -26,7 +26,9 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await expect(page.getByTestId("preview-source-review-object-badge")).toHaveCount(0);
 
     await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
+    await expect(page.getByTestId("plan-road-edge-lines").first()).toBeVisible();
     await expect(page.getByTestId("plan-basin-shelf-cues").first()).toBeVisible();
+    await expect(page.getByTestId("professional-basin-contour-cues").first()).toBeVisible();
     await expect(page.getByTestId("professional-basin-footprint").first()).toBeVisible();
     await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
     await expect(page.getByTestId("professional-building-cues").first()).toBeVisible();
@@ -43,7 +45,7 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
     await expect(canvas.locator("#cad-building-poche")).toHaveCount(1);
     await expect(canvas.locator("#cad-asphalt-light")).toHaveCount(1);
-    await expect(canvas.locator('rect[fill="url(#cad-building-poche)"]').first()).toBeVisible();
+    await expect(canvas.locator('path[fill="url(#cad-building-poche)"]').first()).toBeVisible();
     await expect(canvas.locator('polyline[stroke="url(#cad-asphalt-light)"]').first()).toBeVisible();
 
     const hydrantOverlay = page.locator('div[data-object-overlay][aria-label="Select Hydrant W-12"]').first();

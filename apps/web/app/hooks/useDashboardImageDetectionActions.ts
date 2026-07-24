@@ -71,6 +71,7 @@ const detectedObjectLabels: Record<SiteObjectType, string> = {
   pool: "Detected Pool",
   amenity: "Detected Amenity",
   open_space: "Detected Open Space",
+  landscape: "Detected Landscape",
   entrance: "Detected Entrance",
   driveway: "Detected Driveway",
   road: "Detected Road",

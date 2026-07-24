@@ -5,6 +5,7 @@ import {
   sourceStateLabel,
 } from "../utils/previewGeometryTruth";
 import {
+  architecturalFootprintPath,
   cadHatchPatternForPreviewItem,
   rectCorridorAxis,
   resolvePreviewSvgVisualStyle,
@@ -51,6 +52,10 @@ export function PreviewRectObjects({
             ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
             : null;
           const corridorAxis = visualKind === "road" ? rectCorridorAxis(rect) : null;
+          const buildingFootprintPath =
+            isHighQuality && visualKind === "building" && !isFallbackBounds
+              ? architecturalFootprintPath(rect)
+              : null;
           const cornerRadius =
             visualKind === "road" || visualKind === "parking" || visualKind === "sidewalk"
               ? 0.35
@@ -92,6 +97,28 @@ export function PreviewRectObjects({
                     strokeDasharray={visualStyle.strokeDasharray}
                     opacity={visualStyle.opacity}
                   />
+                  {isHighQuality ? (
+                    <g data-testid="plan-road-edge-lines" opacity={cadReferenceMode ? 0.9 : 0.58}>
+                      {[-0.5, 0.5].map((side) => {
+                        const vertical = Math.abs(corridorAxis.x1 - corridorAxis.x2) < Math.abs(corridorAxis.y1 - corridorAxis.y2);
+                        const offset = corridorAxis.width * 0.16 * side;
+                        return (
+                          <polyline
+                            key={`rect-road-edge-${item.id}-${side}`}
+                            points={
+                              vertical
+                                ? `${corridorAxis.x1 + offset},${corridorAxis.y1} ${corridorAxis.x2 + offset},${corridorAxis.y2}`
+                                : `${corridorAxis.x1},${corridorAxis.y1 + offset} ${corridorAxis.x2},${corridorAxis.y2 + offset}`
+                            }
+                            fill="none"
+                            stroke={cadReferenceMode ? "rgba(248,250,252,0.78)" : "rgba(51,65,85,0.22)"}
+                            strokeWidth={cadReferenceMode ? 0.035 : 0.026}
+                            strokeLinecap="round"
+                          />
+                        );
+                      })}
+                    </g>
+                  ) : null}
                   {isHighQuality && sourceState !== "fallback" ? (
                     <polyline
                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
@@ -123,6 +150,24 @@ export function PreviewRectObjects({
                       stroke="none"
                       opacity={0.72}
                     >
+                      <title>Draft hatch fill, review required.</title>
+                    </path>
+                  ) : null}
+                </>
+              ) : buildingFootprintPath ? (
+                <>
+                  <path
+                    data-testid="professional-building-footprint"
+                    d={buildingFootprintPath}
+                    fill={visualStyle.fill}
+                    stroke={visualStyle.stroke}
+                    strokeWidth={visualStyle.strokeWidth}
+                    strokeLinejoin="round"
+                  >
+                    <title>{sourceStateLabel(sourceState)}</title>
+                  </path>
+                  {hatchFill ? (
+                    <path data-testid="cad-hatch-fill" d={buildingFootprintPath} fill={hatchFill} stroke="none" opacity={0.72}>
                       <title>Draft hatch fill, review required.</title>
                     </path>
                   ) : null}
@@ -205,19 +250,35 @@ export function PreviewRectObjects({
                     strokeWidth={0.05}
                     strokeLinecap="round"
                   />
+                  <g data-testid="professional-basin-contour-cues" opacity={0.78}>
+                    {[0.18, 0.3, 0.42].map((offset, idx) => (
+                      <path
+                        key={`basin-contour-${item.id}-${idx}`}
+                        d={roundedSiteShapePath(
+                          {
+                            left: rect.left + rect.width * offset,
+                            top: rect.top + rect.height * (offset * 0.8),
+                            width: rect.width * (1 - offset * 2),
+                            height: rect.height * (1 - offset * 1.65),
+                          },
+                          "water",
+                        )}
+                        fill="none"
+                        stroke={cadReferenceMode ? "rgba(56,189,248,0.7)" : "rgba(2,132,199,0.24)"}
+                        strokeWidth={cadReferenceMode ? 0.04 : 0.034}
+                      />
+                    ))}
+                  </g>
                 </g>
               ) : null}
               {isHighQuality && visualKind === "building" && !isFallbackBounds ? (
                 <g data-testid="professional-building-cues" opacity={selected ? 0.74 : 0.38}>
-                  <rect
-                    x={rect.left + rect.width * 0.06}
-                    y={rect.top + rect.height * 0.08}
-                    width={rect.width * 0.88}
-                    height={rect.height * 0.84}
-                    rx={0.12}
-                    fill="url(#cad-building-poche)"
-                    stroke="none"
-                  />
+                  <path d={architecturalFootprintPath({
+                    left: rect.left + rect.width * 0.06,
+                    top: rect.top + rect.height * 0.08,
+                    width: rect.width * 0.88,
+                    height: rect.height * 0.84,
+                  })} fill="url(#cad-building-poche)" stroke="none" />
                   <line
                     x1={rect.left + rect.width * 0.43}
                     y1={rect.top + rect.height}

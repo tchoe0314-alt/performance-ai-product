@@ -2024,6 +2024,7 @@ export type SiteObjectType =
   | "pool"
   | "amenity"
   | "open_space"
+  | "landscape"
   | "entrance"
   | "driveway"
   | "road"
@@ -2163,6 +2164,7 @@ export type Preview3DItem = {
   linkedObjectId?: string;
   sourceEntityId?: string;
   unsupported?: boolean;
+  meta?: Record<string, unknown>;
 };
 
 export type GradingEarthworkUx = {

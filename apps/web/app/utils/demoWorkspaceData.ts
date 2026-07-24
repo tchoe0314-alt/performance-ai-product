@@ -589,6 +589,227 @@ export const createDenseSubdivisionCadPlanPlacements = (lot: { w: number; h: num
   ];
 };
 
+export const createUrbanizationCampusPlanPlacements = (lot: { w: number; h: number }): BuildingPlacement[] => {
+  const now = Date.now();
+  const siteW = Math.max(lot.w || 1120, 900);
+  const siteH = Math.max(lot.h || 720, 560);
+  const baseMeta = {
+    dense_concept_generated: true,
+    urbanization_campus_plan: true,
+    draft_review_required: true,
+    construction_release_allowed: false,
+    source_confidence: "user_requested_urbanization_review_geometry",
+  };
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+  const place = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    x: number,
+    y: number,
+    w: number,
+    d: number,
+    extra: Partial<BuildingPlacement> = {},
+  ): BuildingPlacement => ({
+    id: `urban-${id}-${now}`,
+    label,
+    type,
+    w,
+    d,
+    x: clamp(x, 8, siteW - w - 8),
+    y: clamp(y, 8, siteH - d - 8),
+    rotation: 0,
+    locked: false,
+    placed: true,
+    source: "user_confirmed",
+    generated: false,
+    capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
+    systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+    meta: {
+      ...baseMeta,
+      ...(extra.meta ?? {}),
+    },
+    ...extra,
+  });
+  const line = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    geometry: Array<[number, number]>,
+    meta: Record<string, unknown> = {},
+  ) => {
+    const bounds = geometry.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y),
+      }),
+      { minX: siteW, minY: siteH, maxX: 0, maxY: 0 },
+    );
+    return place(
+      id,
+      label,
+      type,
+      bounds.minX,
+      bounds.minY,
+      Math.max(8, bounds.maxX - bounds.minX),
+      Math.max(8, bounds.maxY - bounds.minY),
+      {
+        geometryType: "polyline",
+        geometry,
+        capabilities: { movable: true, resizable: false, rotatable: false, deletable: true },
+        meta: { ...baseMeta, ...meta },
+      },
+    );
+  };
+  const polygon = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    geometry: Array<[number, number]>,
+    meta: Record<string, unknown> = {},
+  ) => {
+    const bounds = geometry.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y),
+      }),
+      { minX: siteW, minY: siteH, maxX: 0, maxY: 0 },
+    );
+    return place(
+      id,
+      label,
+      type,
+      bounds.minX,
+      bounds.minY,
+      Math.max(8, bounds.maxX - bounds.minX),
+      Math.max(8, bounds.maxY - bounds.minY),
+      { geometryType: "polygon", geometry, meta: { ...baseMeta, ...meta } },
+    );
+  };
+  const parcels: BuildingPlacement[] = [];
+  const addParcelRow = (prefix: string, startX: number, startY: number, count: number, cellW: number, cellH: number, skew = 0) => {
+    for (let idx = 0; idx < count; idx += 1) {
+      const x = startX + idx * (cellW + 8);
+      const y = startY + Math.sin(idx * 0.9) * skew;
+      parcels.push(
+        place(`${prefix}-parcel-${idx}`, `${prefix}-${idx + 1}`, "lot_block", x, y, cellW, cellH, {
+          meta: { ...baseMeta, ui_color: "#0f766e", lot_label: `${prefix}-${idx + 1}` },
+        }),
+      );
+      parcels.push(
+        place(`${prefix}-house-${idx}`, `${prefix} BLDG ${idx + 1}`, "building", x + cellW * 0.36, y + cellH * 0.34, cellW * 0.22, cellH * 0.24, {
+          h: 18 + (idx % 3) * 4,
+          meta: { ...baseMeta, cad_solid_symbol: true, roof_profile: idx % 4 === 0 ? "gable" : "flat" },
+        }),
+      );
+    }
+  };
+  addParcelRow("ASVEA", siteW * 0.08, siteH * 0.10, 13, siteW * 0.048, siteH * 0.10, 7);
+  addParcelRow("ORQ", siteW * 0.18, siteH * 0.33, 9, siteW * 0.052, siteH * 0.11, 9);
+  addParcelRow("LAMB", siteW * 0.07, siteH * 0.55, 8, siteW * 0.052, siteH * 0.12, 12);
+  addParcelRow("APROV", siteW * 0.79, siteH * 0.13, 4, siteW * 0.052, siteH * 0.12, 6);
+  addParcelRow("EAST", siteW * 0.72, siteH * 0.38, 6, siteW * 0.047, siteH * 0.10, 7);
+
+  const trees = Array.from({ length: 24 }).map((_, idx) =>
+    place(
+      `tree-${idx}`,
+      `Tree ${idx + 1}`,
+      "landscape",
+      siteW * (0.34 + (idx % 6) * 0.044 + Math.sin(idx) * 0.01),
+      siteH * (0.54 + Math.floor(idx / 6) * 0.07 + Math.cos(idx) * 0.015),
+      16,
+      16,
+      { meta: { ...baseMeta, cad_entity_type: "circle", ui_color: "#365314", landscape_symbol: "tree" } },
+    ),
+  );
+
+  return [
+    ...parcels,
+    line("north-boulevard", "Boulevard Lambramani", "road", [
+      [siteW * 0.06, siteH * 0.08],
+      [siteW * 0.40, siteH * 0.08],
+      [siteW * 0.72, siteH * 0.10],
+      [siteW * 0.93, siteH * 0.15],
+    ], { corridor_width_ft: 36, ui_color: "#a855f7" }),
+    line("inner-loop", "Inner Urbanization Drive", "road", [
+      [siteW * 0.10, siteH * 0.30],
+      [siteW * 0.30, siteH * 0.25],
+      [siteW * 0.66, siteH * 0.25],
+      [siteW * 0.76, siteH * 0.42],
+      [siteW * 0.58, siteH * 0.58],
+      [siteW * 0.23, siteH * 0.55],
+      [siteW * 0.10, siteH * 0.30],
+    ], { corridor_width_ft: 32, ui_color: "#a855f7" }),
+    line("south-avenue", "Av. Los Incas", "road", [
+      [siteW * 0.02, siteH * 0.86],
+      [siteW * 0.24, siteH * 0.78],
+      [siteW * 0.50, siteH * 0.72],
+      [siteW * 0.88, siteH * 0.69],
+    ], { corridor_width_ft: 30, ui_color: "#a855f7" }),
+    polygon("municipal-park", "Municipal Park", "open_space", [
+      [siteW * 0.31, siteH * 0.48],
+      [siteW * 0.54, siteH * 0.44],
+      [siteW * 0.60, siteH * 0.68],
+      [siteW * 0.40, siteH * 0.78],
+      [siteW * 0.26, siteH * 0.66],
+    ], { ui_color: "#84a84a", cad_hatch_enabled: true, cad_hatch_pattern: "landscape" }),
+    polygon("main-plaza", "Central Plaza", "amenity", [
+      [siteW * 0.44, siteH * 0.27],
+      [siteW * 0.64, siteH * 0.28],
+      [siteW * 0.67, siteH * 0.41],
+      [siteW * 0.48, siteH * 0.45],
+    ], { ui_color: "#f59e0b", cad_hatch_enabled: true, cad_hatch_pattern: "diagonal", roof_profile: "plaza" }),
+    place("civic-hall", "Civic Hall", "building", siteW * 0.48, siteH * 0.17, siteW * 0.10, siteH * 0.12, {
+      h: 54,
+      meta: { ...baseMeta, ui_color: "#111827", roof_profile: "tower", hero_massing: true },
+    }),
+    place("library", "Library / Community Building", "building", siteW * 0.68, siteH * 0.25, siteW * 0.12, siteH * 0.12, {
+      h: 34,
+      meta: { ...baseMeta, ui_color: "#374151", roof_profile: "dome", hero_massing: true },
+    }),
+    place("market-hall", "Market Hall", "building", siteW * 0.16, siteH * 0.70, siteW * 0.18, siteH * 0.09, {
+      h: 28,
+      meta: { ...baseMeta, ui_color: "#374151", roof_profile: "gable", hero_massing: true },
+    }),
+    place("linear-building", "Linear Mixed Use", "building", siteW * 0.51, siteH * 0.68, siteW * 0.22, siteH * 0.07, {
+      h: 30,
+      meta: { ...baseMeta, ui_color: "#374151", roof_profile: "flat", hero_massing: true },
+    }),
+    place("west-parking", "West Parking Court", "parking", siteW * 0.11, siteH * 0.42, siteW * 0.11, siteH * 0.08, {
+      stallCount: 34,
+      meta: { ...baseMeta, ui_color: "#f59e0b", cad_hatch_enabled: true, cad_hatch_pattern: "diagonal" },
+    }),
+    place("east-parking", "East Parking Court", "parking", siteW * 0.74, siteH * 0.56, siteW * 0.11, siteH * 0.08, {
+      stallCount: 38,
+      meta: { ...baseMeta, ui_color: "#f59e0b", cad_hatch_enabled: true, cad_hatch_pattern: "diagonal" },
+    }),
+    line("water-network", "Cyan Water Service Network", "utility_corridor", [
+      [siteW * 0.08, siteH * 0.18],
+      [siteW * 0.26, siteH * 0.22],
+      [siteW * 0.56, siteH * 0.20],
+      [siteW * 0.78, siteH * 0.31],
+      [siteW * 0.88, siteH * 0.55],
+    ], { network: "water", ui_color: "#06b6d4" }),
+    line("sanitary-network", "Magenta Sanitary / Parcel Service", "utility_corridor", [
+      [siteW * 0.06, siteH * 0.74],
+      [siteW * 0.26, siteH * 0.62],
+      [siteW * 0.52, siteH * 0.57],
+      [siteW * 0.76, siteH * 0.50],
+    ], { network: "sanitary", ui_color: "#c026d3" }),
+    line("storm-network", "Blue Storm Drainage", "utility_corridor", [
+      [siteW * 0.18, siteH * 0.18],
+      [siteW * 0.35, siteH * 0.33],
+      [siteW * 0.46, siteH * 0.50],
+      [siteW * 0.55, siteH * 0.66],
+    ], { network: "storm", ui_color: "#0284c7" }),
+    ...trees,
+  ];
+};
+
 export const createDemoPlanResponse = (): PlanResponse => ({
   success: true,
   message: "Demo workspace loaded for UI QA.",

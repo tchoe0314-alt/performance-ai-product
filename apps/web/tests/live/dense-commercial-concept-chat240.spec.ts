@@ -136,3 +136,47 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((message) => !message.includes("401") && !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);
 });
+
+test("creates an urbanization campus plan with colored sheet objects and 3D massing", async ({ page }) => {
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Projects" }).first().click();
+  await page.getByRole("button", { name: "New Project" }).first().click();
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+
+  await runChatCommand(
+    page,
+    "make an urbanization campus master plan like this with boulevard roads, parcel rows, civic buildings, plaza, park, trees, parking courts, utilities, and a 3d massing model",
+  );
+
+  const canvas = page.getByTestId("workspace-canvas-shell");
+  await expect(canvas).toContainText(/1120 FT x 720 FT/i, { timeout: 10_000 });
+  await expect(page.locator('[data-cad-object-id][aria-label*="Civic Hall"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Central Plaza"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Municipal Park"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Boulevard Lambramani"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Cyan Water Service Network"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Tree 1"]').first()).toBeVisible();
+  await expect(page.locator("body")).toContainText(/Urbanization\/campus review model created/i);
+  await expect(page.locator("body")).not.toContainText(/site type or land use|which systems to include/i);
+
+  await canvas.getByTestId("preview-quality-high").click();
+  await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
+  await expect(page.getByTestId("plan-road-edge-lines").first()).toBeVisible();
+  await page.getByTestId("preview-mode-3d").click();
+  await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("civil-3d-object-strip")).toContainText(/Civic Hall|Library|Market Hall/i, { timeout: 20_000 });
+
+  const bodyText = await canvas.innerText();
+  expect(bodyText).not.toMatch(/construction-ready|\bstamp\b|\bseal\b|certify|certified|approved for construction|engineer of record/i);
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors.filter((message) => !message.includes("401") && !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);
+});

@@ -35,6 +35,7 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
   CONSTRAINT: { top: "#f8b4a5", side: "#f97360", line: "#9f3412" },
   TERRAIN: { top: "#d7e7c6", side: "#adc894", line: "#5c7f46" },
+  LANDSCAPE: { top: "#a7c77b", side: "#7ca05f", line: "#365314" },
 };
 
 const normalizeLayer = (layer: string) => {
@@ -46,6 +47,7 @@ const normalizeLayer = (layer: string) => {
   if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM")) return "DRAINAGE";
   if (key.includes("UTILITY") || key.includes("WATER") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
   if (key.includes("LOT") || key.includes("EASEMENT") || key.includes("CONSTRAINT") || key.includes("SETBACK")) return "CONSTRAINT";
+  if (key.includes("LANDSCAPE") || key.includes("OPEN") || key.includes("GREEN")) return "LANDSCAPE";
   if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
   if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
   return key || "OBJECT";
@@ -100,6 +102,7 @@ const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
   if (layer === "ROAD" || layer === "PARKING") return 0.055;
   if (layer === "SIDEWALK") return 0.035;
   if (layer === "CONSTRAINT") return 0.06;
+  if (layer === "LANDSCAPE") return 0.08;
   if (layer === "DRAINAGE") return Math.max(1.4, Math.min(Math.abs(item.height || 2.4), 5));
   if (layer === "UTILITY") return Math.max(0.22, Math.min(Math.min(item.w, item.h) * 0.03, 0.7));
   if (layer === "BUILDING") return Math.max(14, Math.min(item.height || Math.min(item.w, item.h) * 0.22, 52));
@@ -107,7 +110,7 @@ const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
 };
 
 const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
-  if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" || layer === "CONSTRAINT") {
+  if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK" || layer === "CONSTRAINT" || layer === "LANDSCAPE") {
     return Math.max(0.025, heightFt);
   }
   return Math.max(heightFt, 0.35);
@@ -140,8 +143,25 @@ export default function Preview3DCanvas({
           confidence: describeConfidence(item.confidence),
           blockers: item.blockers || [],
           source: item.source || "preview object",
+          priority:
+            item.meta?.hero_massing
+              ? -1
+              : normalizeLayer(item.layer) === "BUILDING"
+              ? 0
+              : normalizeLayer(item.layer) === "STRUCTURE"
+                ? 1
+                : normalizeLayer(item.layer) === "LANDSCAPE"
+                  ? 2
+                  : normalizeLayer(item.layer) === "ROAD"
+                    ? 3
+                    : normalizeLayer(item.layer) === "PARKING"
+                      ? 4
+                      : normalizeLayer(item.layer) === "UTILITY"
+                        ? 5
+                        : 9,
         }))
         .filter((item) => item.layer !== "TERRAIN")
+        .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
         .slice(0, 10),
     [items],
   );
@@ -373,6 +393,8 @@ export default function Preview3DCanvas({
         opacity: item.unsupported ? 0.58 : state === "low" ? 0.66 : state === "imported" ? 0.8 : state === "stale" ? 0.72 : layer === "CONSTRAINT" ? 0.36 : 1,
       });
       let renderedCadGeometry = false;
+      const roofProfile = String(item.meta?.roof_profile || "").toLowerCase();
+      const isTreeSymbol = String(item.meta?.landscape_symbol || "").toLowerCase() === "tree";
       const addExactEdges = (mesh: THREE.Mesh, color = palette.line, opacity = 0.62) => {
         const edges = new THREE.LineSegments(
           new THREE.EdgesGeometry(mesh.geometry),
@@ -386,7 +408,24 @@ export default function Preview3DCanvas({
       const simplifyLowConfidencePlanGeometry =
         state === "low" && (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK");
 
-      if (item.unsupported) {
+      if (isTreeSymbol && layer === "LANDSCAPE") {
+        const trunk = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.34, 0.42, 4.2, 8),
+          new THREE.MeshStandardMaterial({ color: "#7c4a23", roughness: 0.82 }),
+        );
+        trunk.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 2.1));
+        trunk.userData = object.userData;
+        object.add(trunk);
+        const crown = new THREE.Mesh(
+          new THREE.SphereGeometry(Math.max(Math.min(item.w, item.h) * 0.34, 2.8), 14, 10),
+          new THREE.MeshStandardMaterial({ color: "#4d7c0f", roughness: 0.9 }),
+        );
+        crown.scale.set(1.08, 0.82, 1.08);
+        crown.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 6.0));
+        crown.userData = object.userData;
+        object.add(crown);
+        renderedCadGeometry = true;
+      } else if (item.unsupported) {
         const placeholder = new THREE.Mesh(
           new THREE.BoxGeometry(Math.max(item.w, 1), 0.7, Math.max(item.h, 1)),
           cadMaterial,
@@ -429,7 +468,7 @@ export default function Preview3DCanvas({
           const mesh = new THREE.Mesh(geometry, cadMaterial);
           mesh.userData = object.userData;
           object.add(mesh);
-          if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK") {
+          if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {
             addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.3 : 0.46);
           }
           if (layer === "PARKING" && state !== "low" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
@@ -643,12 +682,44 @@ export default function Preview3DCanvas({
         object.add(mesh);
 
         if (layer === "BUILDING") {
-          const roof = new THREE.Mesh(
-            new THREE.BoxGeometry(Math.max(item.w * 0.98, 1), 0.18, Math.max(item.h * 0.98, 1)),
-            new THREE.MeshStandardMaterial({ color: "#e5e7eb", roughness: 0.78 }),
-          );
-          roof.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.12));
-          object.add(roof);
+          const roofMaterial = new THREE.MeshStandardMaterial({
+            color: roofProfile === "tower" ? "#111827" : roofProfile === "dome" ? "#6b7280" : "#d1d5db",
+            roughness: 0.78,
+            metalness: roofProfile === "dome" ? 0.03 : 0,
+          });
+          if (roofProfile === "dome") {
+            const dome = new THREE.Mesh(
+              new THREE.SphereGeometry(Math.max(Math.min(item.w, item.h) * 0.36, 4), 32, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+              roofMaterial,
+            );
+            dome.scale.set(1.28, 0.56, 1.0);
+            dome.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.12));
+            object.add(dome);
+          } else if (roofProfile === "gable") {
+            const roof = new THREE.Mesh(
+              new THREE.ConeGeometry(Math.max(Math.min(item.w, item.h) * 0.52, 4), Math.max(Math.min(item.w, item.h) * 0.22, 2.2), 4),
+              roofMaterial,
+            );
+            roof.rotation.y = Math.PI / 4;
+            roof.scale.set(Math.max(item.w / Math.max(item.h, 1), 0.8), 0.75, 1);
+            roof.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + Math.max(Math.min(item.w, item.h) * 0.09, 1.2)));
+            object.add(roof);
+          } else {
+            const roof = new THREE.Mesh(
+              new THREE.BoxGeometry(Math.max(item.w * 0.98, 1), roofProfile === "tower" ? 0.5 : 0.18, Math.max(item.h * 0.98, 1)),
+              roofMaterial,
+            );
+            roof.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.12));
+            object.add(roof);
+            if (roofProfile === "tower") {
+              const spire = new THREE.Mesh(
+                new THREE.ConeGeometry(Math.max(Math.min(item.w, item.h) * 0.12, 1.2), Math.max(heightFt * 0.34, 8), 12),
+                new THREE.MeshStandardMaterial({ color: "#020617", roughness: 0.5 }),
+              );
+              spire.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + Math.max(heightFt * 0.18, 4)));
+              object.add(spire);
+            }
+          }
           addExactEdges(mesh, "#475569", 0.42);
         }
 

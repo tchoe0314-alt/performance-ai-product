@@ -15,6 +15,7 @@ import { parseDashboardDirectSiteSetupCommand } from "../utils/dashboardChatComm
 import {
   createDenseCommercialConceptPlacements,
   createDenseSubdivisionCadPlanPlacements,
+  createUrbanizationCampusPlanPlacements,
 } from "../utils/demoWorkspaceData";
 import { parsePositiveNumber } from "../utils/formatting";
 import type {
@@ -210,7 +211,12 @@ export function useDashboardPowerCommandHandler({
         lower,
       ) ||
         /\b(recreate|copy|like the image|like this image)\b/.test(lower));
-    if (wantsDensePlan) {
+    const wantsCampusPlan =
+      /\b(urbanization|campus|boulevard|plaza|municipal|park|parks|master plan|site model|3d massing|massing|community|civic|trees?)\b/.test(
+        lower,
+      ) &&
+      /\b(plan|site|layout|model|3d|buildings?|roads?|paths?|parking|trees?|plaza|like this|image)\b/.test(lower);
+    if (wantsDensePlan || wantsCampusPlan) {
       return handleCreateDenseCommercialConcept(message);
     }
     const lot = resolveLotBounds();
@@ -340,6 +346,9 @@ export function useDashboardPowerCommandHandler({
       const wantsSubdivisionCadPlan =
         /\b(recreate|copy|like the image|like this image|subdivision|master plan|lots?|parcels?|contours?|cad screenshot|as many)\b/i.test(message) &&
         /\b(image|plan|site|cad|subdivision|lots?|parcels?|contours?|dense|stuff)\b/i.test(message);
+      const wantsUrbanizationCampusPlan =
+        /\b(urbanization|campus|boulevard|plaza|municipal|park|parks|master plan|site model|3d massing|massing|community|civic)\b/i.test(message) &&
+        /\b(plan|site|layout|model|3d|buildings?|roads?|paths?|parking|trees?|plaza|like this|image)\b/i.test(message);
       setSiteAddress(directSiteSetup.address);
       setLotWidth(String(Math.round(directSiteSetup.width)));
       setLotHeight(String(Math.round(directSiteSetup.height)));
@@ -352,21 +361,30 @@ export function useDashboardPowerCommandHandler({
         true,
       );
       if (wantsProgramAfterSiteSetup) {
-        const conceptObjects = (wantsSubdivisionCadPlan
-          ? createDenseSubdivisionCadPlanPlacements({
+        const conceptObjects = (wantsUrbanizationCampusPlan
+          ? createUrbanizationCampusPlanPlacements({
               w: directSiteSetup.width,
               h: directSiteSetup.height,
             })
-          : createDenseCommercialConceptPlacements({
-              w: directSiteSetup.width,
-              h: directSiteSetup.height,
-            })
+          : wantsSubdivisionCadPlan
+            ? createDenseSubdivisionCadPlanPlacements({
+                w: directSiteSetup.width,
+                h: directSiteSetup.height,
+              })
+            : createDenseCommercialConceptPlacements({
+                w: directSiteSetup.width,
+                h: directSiteSetup.height,
+              })
         ).map((item) => ({
           ...item,
           meta: {
             ...(item.meta ?? {}),
             command_created: true,
-            command_source: wantsSubdivisionCadPlan ? "site_setup_subdivision_cad_command" : "site_setup_program_command",
+            command_source: wantsUrbanizationCampusPlan
+              ? "site_setup_urbanization_campus_command"
+              : wantsSubdivisionCadPlan
+                ? "site_setup_subdivision_cad_command"
+                : "site_setup_program_command",
           },
         }));
         setParkingCount("140");
@@ -377,8 +395,10 @@ export function useDashboardPowerCommandHandler({
         markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
         recordRecentChange({
           type: "object_added",
-          label: wantsSubdivisionCadPlan ? "Subdivision CAD plan placed from chat" : "Site program placed from chat",
-          detail: wantsSubdivisionCadPlan
+          label: wantsUrbanizationCampusPlan ? "Urbanization campus plan placed from chat" : wantsSubdivisionCadPlan ? "Subdivision CAD plan placed from chat" : "Site program placed from chat",
+          detail: wantsUrbanizationCampusPlan
+            ? "Parcels, boulevard roads, civic buildings, plaza, park, trees, parking, and service networks were placed from one natural-language command."
+            : wantsSubdivisionCadPlan
             ? "Lots, roads, contours, amenity/drainage core, hatches, utility spines, ponds, and plan symbols were placed from one natural-language command."
             : "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed from one natural-language command.",
         });

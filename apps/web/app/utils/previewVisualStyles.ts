@@ -36,6 +36,7 @@ export function resolvePreviewSvgVisualStyle(
   const reviewConcept = Boolean(item.meta?.generated_review_concept || item.meta?.visual_concept_only);
   const imported = sourceState === "imported";
   const stale = sourceState === "stale";
+  const solidCadSymbol = Boolean(item.meta?.cad_solid_symbol);
   const customStroke =
     typeof item.meta?.ui_color === "string" && /^#[0-9a-f]{6}$/i.test(item.meta.ui_color)
       ? item.meta.ui_color
@@ -107,6 +108,15 @@ export function resolvePreviewSvgVisualStyle(
       opacity: stateOpacity,
     };
   }
+  if (solidCadSymbol) {
+    return {
+      fill: selected ? "rgba(34,211,238,0.36)" : "#020617",
+      stroke: selected ? "#22d3ee" : "#020617",
+      strokeWidth: selected ? 0.11 : 0.05,
+      strokeDasharray: undefined,
+      opacity: 0.98,
+    };
+  }
   if (kind === "road") {
     return { fill: "rgba(71, 85, 105, 0.04)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.14, 0.26), strokeDasharray: dash, opacity: stateOpacity };
   }
@@ -167,6 +177,38 @@ export function roundedSiteShapePath(
     `C ${x + w * 1.04} ${y + h * 0.42} ${x + w * 0.96} ${y + h * 0.78} ${x + w * 0.76} ${y + h * 0.9}`,
     `C ${x + w * 0.54} ${y + h * 1.05} ${x + w * 0.2} ${y + h * 0.94} ${x + w * 0.08} ${y + h * 0.7}`,
     `C ${x - w * 0.04} ${y + h * 0.48} ${x + w * 0.02} ${y + h * 0.28} ${x + w * 0.18} ${y + h * 0.18}`,
+    "Z",
+  ].join(" ");
+}
+
+export function architecturalFootprintPath(rect: { left: number; top: number; width: number; height: number }) {
+  const x = rect.left;
+  const y = rect.top;
+  const w = Math.max(rect.width, 0.1);
+  const h = Math.max(rect.height, 0.1);
+  const notchW = Math.min(w * 0.18, Math.max(0.45, w * 0.08));
+  const notchD = Math.min(h * 0.22, Math.max(0.38, h * 0.1));
+  const entryW = Math.min(w * 0.14, Math.max(0.42, w * 0.07));
+  const entryD = Math.min(h * 0.18, Math.max(0.34, h * 0.08));
+  if (w < 2.2 || h < 1.6) {
+    return `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+  }
+  return [
+    `M ${x} ${y}`,
+    `L ${x + w * 0.42} ${y}`,
+    `L ${x + w * 0.42} ${y + entryD}`,
+    `L ${x + w * 0.42 + entryW} ${y + entryD}`,
+    `L ${x + w * 0.42 + entryW} ${y}`,
+    `L ${x + w} ${y}`,
+    `L ${x + w} ${y + h * 0.48}`,
+    `L ${x + w - notchW} ${y + h * 0.48}`,
+    `L ${x + w - notchW} ${y + h * 0.48 + notchD}`,
+    `L ${x + w} ${y + h * 0.48 + notchD}`,
+    `L ${x + w} ${y + h}`,
+    `L ${x + w * 0.16} ${y + h}`,
+    `L ${x + w * 0.16} ${y + h - entryD}`,
+    `L ${x} ${y + h - entryD}`,
+    `L ${x} ${y}`,
     "Z",
   ].join(" ");
 }

@@ -17,6 +17,11 @@ type PreviewPolylineObjectsProps = {
   sitePointToSvgPercent: (point: [number, number]) => string;
 };
 
+function parseSvgPoint(point: string) {
+  const [x, y] = point.split(",").map((value) => Number(value));
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
 export function PreviewPolylineObjects({
   objects,
   selectedBuildingId,
@@ -49,6 +54,22 @@ export function PreviewPolylineObjects({
             corridorWidthFt && isCorridorLine
               ? Math.max(0.24, Math.min(1.12, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100 * 0.3))
               : visualStyle.strokeWidth;
+          const parsedPoints = points.map(parseSvgPoint).filter((point): point is { x: number; y: number } => Boolean(point));
+          const roadEdgeSegments =
+            isHighQuality && isCorridorLine && parsedPoints.length >= 2
+              ? parsedPoints.slice(0, -1).flatMap((point, idx) => {
+                  const next = parsedPoints[idx + 1];
+                  const dx = next.x - point.x;
+                  const dy = next.y - point.y;
+                  const length = Math.hypot(dx, dy) || 1;
+                  const nx = (-dy / length) * corridorStrokeWidth * 0.34;
+                  const ny = (dx / length) * corridorStrokeWidth * 0.34;
+                  return [
+                    { x1: point.x + nx, y1: point.y + ny, x2: next.x + nx, y2: next.y + ny },
+                    { x1: point.x - nx, y1: point.y - ny, x2: next.x - nx, y2: next.y - ny },
+                  ];
+                })
+              : [];
 
           return (
             <g key={`poly-${item.id}`}>
@@ -63,6 +84,22 @@ export function PreviewPolylineObjects({
                   strokeLinejoin="round"
                   strokeDasharray={sourceState === "fallback" ? "1.4 1" : undefined}
                 />
+              ) : null}
+              {roadEdgeSegments.length ? (
+                <g data-testid="plan-road-edge-lines" opacity={cadReferenceMode ? 0.9 : 0.62}>
+                  {roadEdgeSegments.map((segment, idx) => (
+                    <line
+                      key={`road-edge-${item.id}-${idx}`}
+                      x1={segment.x1}
+                      y1={segment.y1}
+                      x2={segment.x2}
+                      y2={segment.y2}
+                      stroke={cadReferenceMode ? "rgba(248,250,252,0.78)" : "rgba(51,65,85,0.26)"}
+                      strokeWidth={cadReferenceMode ? 0.035 : 0.026}
+                      strokeLinecap="round"
+                    />
+                  ))}
+                </g>
               ) : null}
               {isSelectedPolyline ? (
                 <polyline
