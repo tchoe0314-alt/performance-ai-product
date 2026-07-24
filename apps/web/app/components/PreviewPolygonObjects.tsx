@@ -99,6 +99,8 @@ export function PreviewPolygonObjects({
                     : ([[x, shapeBounds.minY], [x, shapeBounds.maxY]] as Array<[number, number]>);
                 })()
               : [];
+          const isAmenitySurface = item.type === "amenity";
+          const isLandscapeSurface = visualKind === "landscape";
 
           return (
             <g key={`custom-poly-${item.id}`}>
@@ -196,6 +198,55 @@ export function PreviewPolygonObjects({
                   strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
                   strokeLinecap="round"
                 />
+              ) : null}
+              {isHighQuality && isAmenitySurface ? (
+                <g data-testid="plan-plaza-module-lines" opacity={cadReferenceMode ? 0.78 : 0.42} pointerEvents="none">
+                  {Array.from({ length: 6 }).map((_, idx) => {
+                    const t = (idx + 1) / 7;
+                    return (
+                      <line
+                        key={`poly-plaza-x-${item.id}-${idx}`}
+                        x1={bounds.minX + (bounds.maxX - bounds.minX) * t}
+                        y1={bounds.minY + (bounds.maxY - bounds.minY) * 0.1}
+                        x2={bounds.minX + (bounds.maxX - bounds.minX) * t}
+                        y2={bounds.maxY - (bounds.maxY - bounds.minY) * 0.1}
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.5)" : "rgba(120,53,15,0.36)"}
+                        strokeWidth={0.022}
+                      />
+                    );
+                  })}
+                  {Array.from({ length: 4 }).map((_, idx) => {
+                    const t = (idx + 1) / 5;
+                    return (
+                      <line
+                        key={`poly-plaza-y-${item.id}-${idx}`}
+                        x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.08}
+                        y1={bounds.minY + (bounds.maxY - bounds.minY) * t}
+                        x2={bounds.maxX - (bounds.maxX - bounds.minX) * 0.08}
+                        y2={bounds.minY + (bounds.maxY - bounds.minY) * t}
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.5)" : "rgba(120,53,15,0.36)"}
+                        strokeWidth={0.022}
+                      />
+                    );
+                  })}
+                </g>
+              ) : null}
+              {isHighQuality && isLandscapeSurface ? (
+                <g data-testid="plan-landscape-contour-cues" opacity={cadReferenceMode ? 0.74 : 0.48} pointerEvents="none">
+                  {[0.82, 0.64].map((scale, idx) => {
+                    const inset = scalePolygonTowardCenter(geometry, scale);
+                    return inset.length ? (
+                      <polygon
+                        key={`landscape-inner-${item.id}-${idx}`}
+                        points={inset.map(sitePointToSvgPercent).join(" ")}
+                        fill="none"
+                        stroke={cadReferenceMode ? "rgba(34,197,94,0.65)" : "rgba(21,128,61,0.28)"}
+                        strokeWidth={0.03}
+                        strokeDasharray={idx === 1 ? "0.6 0.36" : undefined}
+                      />
+                    ) : null;
+                  })}
+                </g>
               ) : null}
             </g>
           );

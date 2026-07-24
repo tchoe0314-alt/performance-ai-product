@@ -118,7 +118,7 @@ export function resolvePreviewSvgVisualStyle(
     };
   }
   if (kind === "road") {
-    return { fill: "rgba(71, 85, 105, 0.04)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.14, 0.26), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(71, 85, 105, 0.055)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.17, 0.3), strokeDasharray: dash, opacity: Math.max(stateOpacity, 0.78) };
   }
   if (kind === "parking") {
     return { fill: "rgba(226, 232, 240, 0.2)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.13, 0.24), strokeDasharray: dash, opacity: stateOpacity };
@@ -127,16 +127,16 @@ export function resolvePreviewSvgVisualStyle(
     return { fill: "rgba(125, 211, 252, 0.14)", stroke: stateStroke("#0284c7"), strokeWidth: reviewWidth(0.13, 0.24), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "landscape") {
-    return { fill: "rgba(134, 239, 172, 0.1)", stroke: stateStroke("#15803d"), strokeWidth: reviewWidth(0.11, 0.22), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(134, 239, 172, 0.14)", stroke: stateStroke("#15803d"), strokeWidth: reviewWidth(0.13, 0.24), strokeDasharray: dash, opacity: Math.max(stateOpacity, 0.82) };
   }
   if (kind === "sidewalk") {
     return { fill: "rgba(248, 250, 252, 0.2)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.09, 0.18), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "utility") {
-    return { fill: "rgba(37, 99, 235, 0.012)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.055, 0.12), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(37, 99, 235, 0.012)", stroke: stateStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.075, 0.14), strokeDasharray: dash, opacity: Math.max(stateOpacity, 0.82) };
   }
   if (kind === "lot") {
-    return { fill: "rgba(255, 255, 255, 0.06)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.075, 0.15), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(255, 255, 255, 0.04)", stroke: stateStroke("#475569"), strokeWidth: reviewWidth(0.1, 0.18), strokeDasharray: dash, opacity: Math.max(stateOpacity, 0.84) };
   }
   if (kind === "contour") {
     return { fill: "none", stroke: stateStroke("#ca8a04"), strokeWidth: reviewWidth(0.045, 0.08), strokeDasharray: undefined, opacity: 0.86 };

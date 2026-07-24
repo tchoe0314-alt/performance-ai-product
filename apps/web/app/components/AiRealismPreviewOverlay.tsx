@@ -60,14 +60,14 @@ export function AiRealismPreviewOverlay({
           </div>
           <div
             data-testid="ai-realism-source-summary"
-            className="pointer-events-auto absolute left-4 top-16 max-w-[min(26rem,calc(100%-2rem))] rounded-xl border border-white/45 bg-white/82 p-3 text-xs text-slate-700 shadow-lg backdrop-blur"
+            className="pointer-events-auto absolute right-4 top-4 max-w-[min(22rem,calc(100%-2rem))] rounded-xl border border-white/45 bg-white/78 p-3 text-[11px] text-slate-700 shadow-lg backdrop-blur"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">
                   high_quality_ai_render_v1
                 </p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
+                <p className="mt-0.5 text-[10px] text-slate-500">
                   Source summary: {artifact.source_objects_summary.total} review object(s)
                   {Object.keys(artifact.source_objects_summary.counts_by_type).length
                     ? ` across ${Object.entries(artifact.source_objects_summary.counts_by_type)
@@ -112,7 +112,7 @@ export function AiRealismPreviewOverlay({
                 AI visualization is stale. Regenerate from current layout.
               </p>
             ) : null}
-            <dl className="mt-2 grid gap-1">
+            <dl className="mt-2 grid gap-1 leading-snug">
               <div>
                 <dt className="font-semibold text-slate-900">Objects included</dt>
                 <dd data-testid="ai-realism-objects-included" className="text-slate-600">

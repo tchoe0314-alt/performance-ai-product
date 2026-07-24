@@ -56,6 +56,8 @@ export function PreviewRectObjects({
             isHighQuality && visualKind === "building" && !isFallbackBounds
               ? architecturalFootprintPath(rect)
               : null;
+          const isTreeSymbol = String(item.meta?.landscape_symbol || "").toLowerCase() === "tree";
+          const isAmenitySurface = item.type === "amenity";
           const cornerRadius =
             visualKind === "road" || visualKind === "parking" || visualKind === "sidewalk"
               ? 0.35
@@ -269,6 +271,56 @@ export function PreviewRectObjects({
                       />
                     ))}
                   </g>
+                </g>
+              ) : null}
+              {isHighQuality && isTreeSymbol ? (
+                <g data-testid="plan-tree-symbol" opacity={selected ? 0.9 : 0.74} pointerEvents="none">
+                  <circle
+                    cx={rect.left + rect.width / 2}
+                    cy={rect.top + rect.height / 2}
+                    r={Math.max(0.36, Math.min(rect.width, rect.height) * 0.36)}
+                    fill="rgba(77,124,15,0.1)"
+                    stroke="rgba(54,83,20,0.72)"
+                    strokeWidth={0.045}
+                  />
+                  <circle
+                    cx={rect.left + rect.width / 2}
+                    cy={rect.top + rect.height / 2}
+                    r={Math.max(0.08, Math.min(rect.width, rect.height) * 0.08)}
+                    fill="rgba(54,83,20,0.86)"
+                  />
+                </g>
+              ) : null}
+              {isHighQuality && isAmenitySurface ? (
+                <g data-testid="plan-plaza-module-lines" opacity={cadReferenceMode ? 0.78 : 0.36} pointerEvents="none">
+                  {Array.from({ length: 5 }).map((_, idx) => {
+                    const t = (idx + 1) / 6;
+                    return (
+                      <line
+                        key={`plaza-module-x-${item.id}-${idx}`}
+                        x1={rect.left + rect.width * t}
+                        y1={rect.top + rect.height * 0.08}
+                        x2={rect.left + rect.width * t}
+                        y2={rect.top + rect.height * 0.92}
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.5)" : "rgba(120,53,15,0.36)"}
+                        strokeWidth={0.022}
+                      />
+                    );
+                  })}
+                  {Array.from({ length: 3 }).map((_, idx) => {
+                    const t = (idx + 1) / 4;
+                    return (
+                      <line
+                        key={`plaza-module-y-${item.id}-${idx}`}
+                        x1={rect.left + rect.width * 0.08}
+                        y1={rect.top + rect.height * t}
+                        x2={rect.left + rect.width * 0.92}
+                        y2={rect.top + rect.height * t}
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.5)" : "rgba(120,53,15,0.36)"}
+                        strokeWidth={0.022}
+                      />
+                    );
+                  })}
                 </g>
               ) : null}
               {isHighQuality && visualKind === "building" && !isFallbackBounds ? (

@@ -140,6 +140,25 @@ export function PreviewPolylineObjects({
                   opacity={sourceState === "fallback" ? 0.36 : 0.72}
                 />
               ) : null}
+              {isHighQuality && isUtilityLine ? (
+                <g data-testid="plan-utility-node-cues" opacity={isSelectedPolyline ? 0.92 : 0.62} pointerEvents="none">
+                  {points.map((point, idx) => {
+                    const [x, y] = String(point).split(",").map((value) => Number(value));
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                    return (
+                      <circle
+                        key={`utility-plan-node-${item.id}-${idx}`}
+                        cx={x}
+                        cy={y}
+                        r={idx === 0 || idx === points.length - 1 ? 0.28 : 0.22}
+                        fill="#ffffff"
+                        stroke={visualStyle.stroke}
+                        strokeWidth={0.05}
+                      />
+                    );
+                  })}
+                </g>
+              ) : null}
               {isHighQuality && isUtilityLine && isSelectedPolyline ? (
                 <g>
                   {points.map((point, idx) => {

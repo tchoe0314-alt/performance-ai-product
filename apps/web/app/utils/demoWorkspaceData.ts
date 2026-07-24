@@ -376,11 +376,11 @@ export const createDenseSubdivisionCadPlanPlacements = (lot: { w: number; h: num
     generated: false,
     capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
     systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+    ...extra,
     meta: {
       ...baseMeta,
       ...(extra.meta ?? {}),
     },
-    ...extra,
   });
   const line = (
     id: string,

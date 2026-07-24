@@ -83,6 +83,109 @@ export function summarizeAiRealismSourceObjects(sourceObjects: AiRealismSourceOb
   };
 }
 
+function svgEscape(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildAiRealismSvg({
+  sourceObjects,
+  promptSummary,
+  watermark,
+}: {
+  sourceObjects: AiRealismSourceObject[];
+  promptSummary: string;
+  watermark: string;
+}) {
+  const visibleObjects = sourceObjects.filter((item) => item.type !== "site");
+  const bounds = visibleObjects.reduce(
+    (acc, item) => {
+      const points = Array.isArray(item.geometry) && item.geometry.length ? item.geometry : [[item.x, item.y], [item.x + item.w, item.y + item.d]];
+      points.forEach(([x, y]) => {
+        acc.minX = Math.min(acc.minX, x);
+        acc.minY = Math.min(acc.minY, y);
+        acc.maxX = Math.max(acc.maxX, x);
+        acc.maxY = Math.max(acc.maxY, y);
+      });
+      return acc;
+    },
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+  );
+  const safeBounds = Number.isFinite(bounds.minX)
+    ? bounds
+    : { minX: 0, minY: 0, maxX: 1000, maxY: 700 };
+  const sourceW = Math.max(1, safeBounds.maxX - safeBounds.minX);
+  const sourceH = Math.max(1, safeBounds.maxY - safeBounds.minY);
+  const pad = 76;
+  const scale = Math.min((1200 - pad * 2) / sourceW, (760 - pad * 2) / sourceH);
+  const offsetX = (1200 - sourceW * scale) / 2;
+  const offsetY = (760 - sourceH * scale) / 2;
+  const sx = (x: number) => offsetX + (x - safeBounds.minX) * scale;
+  const sy = (y: number) => offsetY + (y - safeBounds.minY) * scale;
+  const rect = (item: AiRealismSourceObject) => ({
+    x: sx(item.x),
+    y: sy(item.y),
+    w: Math.max(4, item.w * scale),
+    h: Math.max(4, item.d * scale),
+  });
+  const pointList = (item: AiRealismSourceObject) =>
+    (item.geometry || []).map(([x, y]) => `${sx(x).toFixed(1)},${sy(y).toFixed(1)}`).join(" ");
+  const drawOrder = [...visibleObjects].sort((a, b) => {
+    const priority = (item: AiRealismSourceObject) => {
+      if (item.type === "lot_block") return 1;
+      if (item.type === "road" || item.type === "driveway") return 2;
+      if (item.type === "open_space" || item.type === "landscape") return 3;
+      if (item.type === "parking") return 4;
+      if (item.type === "utility_corridor") return 5;
+      if (item.type === "building") return 6;
+      if (item.type === "basin" || item.type === "pond") return 7;
+      return 8;
+    };
+    return priority(a) - priority(b);
+  });
+  const objectSvg = drawOrder.map((item) => {
+    const type = String(item.type || "");
+    const r = rect(item);
+    if ((type === "road" || type === "driveway") && item.geometry?.length) {
+      return `<polyline points="${pointList(item)}" fill="none" stroke="#475569" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/><polyline points="${pointList(item)}" fill="none" stroke="#f8fafc" stroke-width="4" stroke-dasharray="24 20" stroke-linecap="round" opacity="0.9"/>`;
+    }
+    if (type === "utility_corridor" && item.geometry?.length) {
+      const color = item.label.toLowerCase().includes("water") ? "#0ea5e9" : item.label.toLowerCase().includes("sanitary") ? "#c026d3" : "#0284c7";
+      return `<polyline points="${pointList(item)}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="10 8" opacity="0.72"/>${(item.geometry || []).map(([x, y]) => `<circle cx="${sx(x).toFixed(1)}" cy="${sy(y).toFixed(1)}" r="4" fill="#fff" stroke="${color}" stroke-width="2"/>`).join("")}`;
+    }
+    if ((type === "open_space" || type === "amenity") && item.geometry?.length) {
+      const fill = type === "amenity" ? "#d7b56b" : "#9fbc72";
+      const stroke = type === "amenity" ? "#a16207" : "#4d7c0f";
+      return `<polygon points="${pointList(item)}" fill="${fill}" fill-opacity="0.5" stroke="${stroke}" stroke-width="3"/><polygon points="${pointList(item)}" fill="url(#land)" opacity="0.28"/>`;
+    }
+    if (type === "lot_block") {
+      return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" rx="6" fill="#f8fafc" fill-opacity="0.52" stroke="#0f766e" stroke-width="2"/>`;
+    }
+    if (type === "parking") {
+      const stalls = Array.from({ length: 10 }).map((_, idx) => {
+        const x = r.x + r.w * (0.12 + idx * 0.084);
+        return `<line x1="${x.toFixed(1)}" y1="${(r.y + r.h * 0.12).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(r.y + r.h * 0.88).toFixed(1)}" stroke="#e2e8f0" stroke-width="2"/>`;
+      }).join("");
+      return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="#475569" fill-opacity="0.42" stroke="#f59e0b" stroke-width="3"/>${stalls}`;
+    }
+    if (type === "building") {
+      const roof = item.label.toLowerCase().includes("civic") ? "#111827" : "#6b7280";
+      return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="#d6c8a8" stroke="#4b5563" stroke-width="3" filter="url(#softShadow)"/><path d="M ${r.x.toFixed(1)} ${(r.y + r.h * 0.12).toFixed(1)} L ${(r.x + r.w).toFixed(1)} ${(r.y + r.h * 0.12).toFixed(1)}" stroke="${roof}" stroke-width="2" opacity="0.6"/>`;
+    }
+    if (type === "basin" || type === "pond") {
+      return `<ellipse cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" rx="${(r.w / 2).toFixed(1)}" ry="${(r.h / 2).toFixed(1)}" fill="#7dd3fc" fill-opacity="0.64" stroke="#0284c7" stroke-width="3"/><ellipse cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" rx="${(r.w * 0.32).toFixed(1)}" ry="${(r.h * 0.28).toFixed(1)}" fill="none" stroke="#0369a1" stroke-width="2" opacity="0.55"/>`;
+    }
+    if (type === "landscape") {
+      return `<circle cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" r="${Math.max(5, Math.min(r.w, r.h) * 0.42).toFixed(1)}" fill="#4d7c0f" fill-opacity="0.46" stroke="#365314" stroke-width="2"/>`;
+    }
+    return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="#94a3b8" fill-opacity="0.32" stroke="#475569" stroke-width="2"/>`;
+  }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="AI visualization generated from current review layout"><defs><linearGradient id="site" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f6f7ef"/><stop offset="0.62" stop-color="#dce8d2"/><stop offset="1" stop-color="#c8dbbd"/></linearGradient><filter id="softShadow"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#334155" flood-opacity="0.15"/></filter><pattern id="land" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)"><path d="M0 30 L30 0" stroke="#5f7f52" stroke-width="1" opacity="0.42"/></pattern></defs><rect width="1200" height="760" fill="#f8fafc"/><rect x="36" y="36" width="1128" height="688" rx="22" fill="url(#site)" stroke="#556651" stroke-width="3"/><rect x="36" y="36" width="1128" height="688" rx="22" fill="url(#land)" opacity="0.32"/>${objectSvg}<text x="58" y="72" fill="#0f172a" font-family="Arial, sans-serif" font-size="22" font-weight="700">AI visualization</text><text x="58" y="100" fill="#334155" font-family="Arial, sans-serif" font-size="14">${svgEscape(promptSummary).slice(0, 150)}</text><rect x="52" y="678" width="1096" height="36" rx="8" fill="rgba(15,23,42,0.66)"/><text x="72" y="701" fill="#fff" font-family="Arial, sans-serif" font-size="15">${svgEscape(watermark)}</text></svg>`;
+}
+
 export function aiRealismMissingInputs({
   sourceObjects,
   hasTerrainSource,
@@ -137,7 +240,7 @@ export function createAiRealismArtifact({
     .filter(Boolean)
     .join(", ");
   const image_data_url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="AI visualization generated from current review layout"><defs><linearGradient id="site" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#eef3ea"/><stop offset="0.58" stop-color="#d9e6d1"/><stop offset="1" stop-color="#c3d7ba"/></linearGradient><filter id="softShadow"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#334155" flood-opacity="0.16"/></filter><pattern id="mown" width="28" height="28" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)"><path d="M0 28 L28 0" stroke="#9caf91" stroke-width="1" opacity="0.22"/></pattern></defs><rect width="1200" height="760" fill="#f8fafc"/><path d="M90 78 L1055 54 L1118 604 L156 690 Z" fill="url(#site)" stroke="#51624d" stroke-width="3"/><path d="M90 78 L1055 54 L1118 604 L156 690 Z" fill="url(#mown)" opacity="0.45"/><path d="M82 650 C250 568 424 590 586 504 C780 400 944 475 1124 390" fill="none" stroke="#3f4650" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/><path d="M82 650 C250 568 424 590 586 504 C780 400 944 475 1124 390" fill="none" stroke="#e7edf1" stroke-width="5" stroke-dasharray="28 24" opacity="0.88"/><path d="M214 210 L420 194 L431 286 L226 304 Z" fill="#cbbf9f" stroke="#6d6659" stroke-width="3" filter="url(#softShadow)"/><path d="M626 170 L844 158 L856 250 L638 264 Z" fill="#cbbf9f" stroke="#6d6659" stroke-width="3" filter="url(#softShadow)"/><path d="M282 510 L468 492 L478 568 L292 588 Z" fill="#cbbf9f" stroke="#6d6659" stroke-width="3" filter="url(#softShadow)"/><g stroke="#f8fafc" stroke-width="3" opacity="0.82">${Array.from({ length: 11 }).map((_, index) => `<line x1="${500 + index * 26}" y1="338" x2="${520 + index * 26}" y2="456"/>`).join("")}</g><path d="M482 330 L812 310 L836 464 L500 486 Z" fill="#4b5563" opacity="0.34" stroke="#374151" stroke-width="2"/><ellipse cx="934" cy="590" rx="126" ry="55" fill="#74c7df" opacity="0.68" stroke="#18799a" stroke-width="3"/><ellipse cx="934" cy="590" rx="82" ry="33" fill="#b7e6ef" opacity="0.44" stroke="#18799a" stroke-width="2"/><path d="M224 408 C344 390 482 388 612 348" fill="none" stroke="#f8fafc" stroke-width="15" opacity="0.86" stroke-linecap="round"/><text x="54" y="66" fill="#0f172a" font-family="Arial, sans-serif" font-size="22" font-weight="700">AI visualization</text><text x="54" y="96" fill="#334155" font-family="Arial, sans-serif" font-size="15">${promptSummary}</text><rect x="48" y="682" width="1104" height="38" rx="8" fill="rgba(15,23,42,0.68)"/><text x="70" y="706" fill="#fff" font-family="Arial, sans-serif" font-size="16">${watermark}</text></svg>`,
+    buildAiRealismSvg({ sourceObjects, promptSummary, watermark }),
   )}`;
   return {
     type: "high_quality_ai_render_v1",
