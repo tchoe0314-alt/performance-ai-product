@@ -26,10 +26,10 @@ type Preview3DCanvasProps = {
 };
 
 const layerPalette: Record<string, { top: string; side: string; line: string }> = {
-  BUILDING: { top: "#f3f4f6", side: "#cbd5e1", line: "#64748b" },
+  BUILDING: { top: "#e7ecf2", side: "#b8c3cf", line: "#475569" },
   STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
-  ROAD: { top: "#aeb7c1", side: "#8d98a5", line: "#f8fafc" },
-  PARKING: { top: "#d7dde3", side: "#b7c0ca", line: "#f8fafc" },
+  ROAD: { top: "#8f9aa6", side: "#6f7b87", line: "#f8fafc" },
+  PARKING: { top: "#c9d1da", side: "#9da9b6", line: "#f8fafc" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
@@ -257,7 +257,7 @@ export default function Preview3DCanvas({
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(previewQuality === "high" ? "#eef5f7" : "#f3f6f8");
+    scene.background = new THREE.Color(previewQuality === "high" ? "#e9f1f4" : "#f3f6f8");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
@@ -282,7 +282,7 @@ export default function Preview3DCanvas({
     controls.update();
     controlsRef.current = controls;
 
-    const ambient = new THREE.HemisphereLight("#ffffff", "#b6c4cf", previewQuality === "high" ? 1.95 : 1.75);
+    const ambient = new THREE.HemisphereLight("#ffffff", "#b6c4cf", previewQuality === "high" ? 1.72 : 1.75);
     scene.add(ambient);
     const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.35 : 1.55);
     sun.position.set(maxSpan * 0.42, maxSpan * 0.95, maxSpan * 0.52);
@@ -329,12 +329,12 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#f3f1e8" : "#d7e7c6",
+      color: terrainState.mode === "fallback" ? "#ebe9dd" : "#d7e7c6",
       roughness: 0.9,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
       transparent: terrainState.mode === "fallback",
-      opacity: terrainState.mode === "fallback" ? 0.96 : 1,
+      opacity: terrainState.mode === "fallback" ? 0.9 : 1,
     });
     const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
     terrain.receiveShadow = true;
@@ -657,11 +657,11 @@ export default function Preview3DCanvas({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
               transparent: true,
               opacity: layer === "PARKING"
-                ? 0.3
+                ? 0.46
                 : layer === "ROAD"
-                  ? 0.78
+                  ? 0.86
                   : state === "low"
-                    ? 0.7
+                ? 0.74
                     : state === "imported"
                       ? 0.84
                       : state === "stale"

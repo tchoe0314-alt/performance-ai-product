@@ -40,10 +40,16 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 56 stalls"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Detention Basin A"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Internal Loop Drive"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Public Frontage Road"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Rear Service Drive"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Public Sanitary Line"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Office Water Service Lateral"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Office Sanitary Lateral"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Outfall OF-1"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Frontage Landscape Buffer"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Contour 1025"]').first()).toBeVisible();
 
   await canvas.getByTestId("preview-quality-high").click();
   await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
@@ -52,6 +58,8 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("professional-basin-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
   await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
+  await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
+  await expect(page.getByTestId("plan-grading-contour-cues").first()).toBeVisible();
   await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
   await expect(page.getByTestId("plan-grading-context-lines")).toHaveCount(0);
   await expect(page.getByTestId("survey-boundary-annotation")).toHaveCount(0);

@@ -48,6 +48,7 @@ export function PreviewPolylineObjects({
           const sourceState = resolveSourceState(item);
           const isCorridorLine = visualKind === "road" || item.type === "driveway";
           const isUtilityLine = visualKind === "utility";
+          const isContourLine = visualKind === "contour";
           const corridorWidthFt =
             firstMetaNumber(item, ["corridor_width_ft", "pavement_width_ft", "width_ft", "road_width_ft"]) ??
             (isCorridorLine ? Math.max(Math.min(item.w, item.d), 18) : null);
@@ -119,7 +120,9 @@ export function PreviewPolylineObjects({
                 fill="none"
                 stroke={visualStyle.stroke}
                 strokeWidth={
-                  isUtilityLine && isHighQuality
+                  isContourLine && isHighQuality
+                    ? 0.035
+                    : isUtilityLine && isHighQuality
                     ? 0.026
                     : isCorridorLine && isHighQuality
                       ? Math.max(0.075, corridorStrokeWidth * 0.06)
@@ -128,8 +131,36 @@ export function PreviewPolylineObjects({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeDasharray={visualStyle.strokeDasharray || (isUtilityLine ? "0.46 0.42" : undefined)}
-                opacity={isUtilityLine && isHighQuality && !isSelectedPolyline ? 0.58 : isUtilityLine && isHighQuality ? 0.78 : visualStyle.opacity}
+                opacity={
+                  isContourLine && isHighQuality
+                    ? 0.62
+                    : isUtilityLine && isHighQuality && !isSelectedPolyline
+                      ? 0.58
+                      : isUtilityLine && isHighQuality
+                        ? 0.78
+                        : visualStyle.opacity
+                }
               />
+              {isHighQuality && isContourLine ? (
+                <g data-testid="plan-grading-contour-cues" pointerEvents="none">
+                  {(() => {
+                    const labelPoint = parsedPoints[Math.min(1, parsedPoints.length - 1)];
+                    if (!labelPoint) return null;
+                    return (
+                      <text
+                        x={labelPoint.x + 0.4}
+                        y={labelPoint.y - 0.35}
+                        fontSize="0.58"
+                        fill={visualStyle.stroke}
+                        fontWeight={700}
+                        opacity={0.66}
+                      >
+                        {String(item.meta?.contour_elevation_ft || item.label || "").replace(/^Contour\\s*/i, "")}
+                      </text>
+                    );
+                  })()}
+                </g>
+              ) : null}
               {isHighQuality && isCorridorLine ? (
                 <polyline
                   points={points.join(" ")}
