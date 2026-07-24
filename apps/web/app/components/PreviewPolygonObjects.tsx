@@ -17,6 +17,7 @@ type PreviewPolygonObjectsProps = {
   objects: BuildingPlacement[];
   selectedBuildingId: string | null;
   isHighQuality: boolean;
+  cadReferenceMode?: boolean;
   sitePointToSvgPercent: (point: [number, number]) => string;
 };
 
@@ -29,6 +30,7 @@ export function PreviewPolygonObjects({
   objects,
   selectedBuildingId,
   isHighQuality,
+  cadReferenceMode = false,
   sitePointToSvgPercent,
 }: PreviewPolygonObjectsProps) {
   return (
@@ -49,6 +51,7 @@ export function PreviewPolygonObjects({
           const visualStyle = resolvePreviewSvgVisualStyle(item, {
             selected: selectedBuildingId === item.id,
             highQuality: isHighQuality,
+            cadReferenceMode,
           });
           const isFallbackBounds = sourceState === "fallback";
           const hatchFill = cadHatchPatternForPreviewItem(item);
@@ -127,13 +130,13 @@ export function PreviewPolygonObjects({
                 </polygon>
               ) : null}
               {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={sourceState === "fallback" ? 0.4 : 0.68}>
+                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : sourceState === "fallback" ? 0.4 : 0.68}>
                   <line
                     x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
                     y1={(bounds.minY + bounds.maxY) / 2}
                     x2={bounds.maxX - (bounds.maxX - bounds.minX) * 0.1}
                     y2={(bounds.minY + bounds.maxY) / 2}
-                    stroke="rgba(71,85,105,0.18)"
+                    stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(71,85,105,0.18)"}
                     strokeWidth={0.022}
                     strokeDasharray="0.42 0.34"
                   />
@@ -148,7 +151,7 @@ export function PreviewPolygonObjects({
                         y1={bounds.minY + (bounds.maxY - bounds.minY) * 0.16}
                         x2={x}
                         y2={bounds.maxY - (bounds.maxY - bounds.minY) * 0.16}
-                        stroke="rgba(71,85,105,0.16)"
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.68)" : "rgba(71,85,105,0.16)"}
                         strokeWidth={0.018}
                       />
                     );
@@ -188,7 +191,7 @@ export function PreviewPolygonObjects({
                 <polyline
                   points={roadAxis.map(sitePointToSvgPercent).join(" ")}
                   fill="none"
-                  stroke="rgba(248,250,252,0.62)"
+                  stroke={cadReferenceMode ? "rgba(248,250,252,0.82)" : "rgba(248,250,252,0.62)"}
                   strokeWidth={0.07}
                   strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
                   strokeLinecap="round"

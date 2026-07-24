@@ -7,6 +7,7 @@ import {
 type PreviewBasePlanGridProps = {
   showMap: boolean;
   isHighQuality: boolean;
+  cadReferenceMode?: boolean;
   siteLocked: boolean;
   hasSurveyOrTerrainEvidence: boolean;
   lotWidth: number;
@@ -23,6 +24,7 @@ const titleBlockLines = [15, 30, 47, 64, 82];
 export function PreviewBasePlanGrid({
   showMap,
   isHighQuality,
+  cadReferenceMode = false,
   siteLocked,
   hasSurveyOrTerrainEvidence,
   lotWidth,
@@ -43,47 +45,47 @@ export function PreviewBasePlanGrid({
           y={0}
           width={100}
           height={100}
-          fill={showMap ? "transparent" : isHighQuality ? "rgba(255,255,255,0.94)" : "transparent"}
+          fill={showMap ? "transparent" : cadReferenceMode && isHighQuality ? "#020617" : isHighQuality ? "rgba(255,255,255,0.94)" : "transparent"}
           stroke="transparent"
           strokeWidth={0}
         />
         {isHighQuality ? (
           <g data-testid="survey-base-plan-frame" pointerEvents="none">
-            <rect x={0.8} y={0.8} width={98.4} height={98.4} fill="none" stroke="#111827" strokeWidth={0.1} />
-            <rect x={84.6} y={0.8} width={14.6} height={98.4} fill="rgba(255,255,255,0.66)" stroke="#111827" strokeWidth={0.065} />
+            <rect x={0.8} y={0.8} width={98.4} height={98.4} fill="none" stroke={cadReferenceMode ? "#f8fafc" : "#111827"} strokeWidth={0.1} />
+            <rect x={84.6} y={0.8} width={14.6} height={98.4} fill={cadReferenceMode ? "rgba(2,6,23,0.88)" : "rgba(255,255,255,0.66)"} stroke={cadReferenceMode ? "#f8fafc" : "#111827"} strokeWidth={0.065} />
             {titleBlockLines.map((y) => (
-              <line key={`sheet-title-line-${y}`} x1={84.6} y1={y} x2={99.2} y2={y} stroke="#111827" strokeWidth={0.05} />
+              <line key={`sheet-title-line-${y}`} x1={84.6} y1={y} x2={99.2} y2={y} stroke={cadReferenceMode ? "#e5e7eb" : "#111827"} strokeWidth={0.05} />
             ))}
-            <text x={91.9} y={6.2} textAnchor="middle" fontSize="0.98" fontWeight={850} fill="#111827">SITE REVIEW</text>
-            <text x={91.9} y={8.0} textAnchor="middle" fontSize="0.76" fontWeight={700} fill="#334155">
-              {hasSurveyOrTerrainEvidence ? "SOURCE EXHIBIT" : "CONCEPT PLAN"}
+            <text x={91.9} y={6.2} textAnchor="middle" fontSize="0.98" fontWeight={850} fill={cadReferenceMode ? "#f8fafc" : "#111827"}>SITE REVIEW</text>
+            <text x={91.9} y={8.0} textAnchor="middle" fontSize="0.76" fontWeight={700} fill={cadReferenceMode ? "#cbd5e1" : "#334155"}>
+              {cadReferenceMode ? "CAD RECREATION" : hasSurveyOrTerrainEvidence ? "SOURCE EXHIBIT" : "CONCEPT PLAN"}
             </text>
-            <text x={91.9} y={11.9} textAnchor="middle" fontSize="0.66" fill="#475569">{Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT</text>
-            <text x={91.9} y={13.4} textAnchor="middle" fontSize="0.62" fill="#475569">
-              {hasSurveyOrTerrainEvidence ? "SOURCE REVIEW" : "NO SURVEY / TOPO SOURCE"}
+            <text x={91.9} y={11.9} textAnchor="middle" fontSize="0.66" fill={cadReferenceMode ? "#cbd5e1" : "#475569"}>{Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT</text>
+            <text x={91.9} y={13.4} textAnchor="middle" fontSize="0.62" fill={cadReferenceMode ? "#94a3b8" : "#475569"}>
+              {cadReferenceMode ? "DRAFT REVIEW GEOMETRY" : hasSurveyOrTerrainEvidence ? "SOURCE REVIEW" : "NO SURVEY / TOPO SOURCE"}
             </text>
-            <text x={86.0} y={33.0} fontSize="0.72" fontWeight={850} fill="#111827">LEGEND</text>
-            <line x1={86.0} y1={34.0} x2={89.8} y2={34.0} stroke="#111827" strokeWidth={0.16} strokeDasharray="1 0.7" />
-            <text x={90.4} y={34.4} fontSize="0.62" fill="#334155">PROPERTY LINE</text>
+            <text x={86.0} y={33.0} fontSize="0.72" fontWeight={850} fill={cadReferenceMode ? "#f8fafc" : "#111827"}>LEGEND</text>
+            <line x1={86.0} y1={34.0} x2={89.8} y2={34.0} stroke={cadReferenceMode ? "#f8fafc" : "#111827"} strokeWidth={0.16} strokeDasharray="1 0.7" />
+            <text x={90.4} y={34.4} fontSize="0.62" fill={cadReferenceMode ? "#cbd5e1" : "#334155"}>PROPERTY LINE</text>
             <line x1={86.0} y1={37.0} x2={89.8} y2={37.0} stroke="#f97316" strokeWidth={0.18} strokeDasharray="1.2 0.8" />
-            <text x={90.4} y={37.4} fontSize="0.62" fill="#334155">STORM</text>
+            <text x={90.4} y={37.4} fontSize="0.62" fill={cadReferenceMode ? "#cbd5e1" : "#334155"}>STORM</text>
             <line x1={86.0} y1={40.0} x2={89.8} y2={40.0} stroke="#16a34a" strokeWidth={0.18} strokeDasharray="1.2 0.8" />
-            <text x={90.4} y={40.4} fontSize="0.62" fill="#334155">SANITARY</text>
+            <text x={90.4} y={40.4} fontSize="0.62" fill={cadReferenceMode ? "#cbd5e1" : "#334155"}>SANITARY</text>
             <line x1={86.0} y1={43.0} x2={89.8} y2={43.0} stroke="#0284c7" strokeWidth={0.18} strokeDasharray="1.2 0.8" />
-            <text x={90.4} y={43.4} fontSize="0.62" fill="#334155">WATER</text>
-            <rect x={86.0} y={45.6} width={3.6} height={1.4} fill="rgba(255,255,255,0.7)" stroke="#111827" strokeWidth={0.1} />
-            <text x={90.4} y={46.7} fontSize="0.62" fill="#334155">BUILDING</text>
-            <text x={86.0} y={68.5} fontSize="0.66" fontWeight={850} fill="#111827">NOTES</text>
-            <text x={86.0} y={70.4} fontSize="0.5" fill="#64748b">
-              {hasSurveyOrTerrainEvidence ? "SOURCE REVIEW ONLY" : "DRAWN / GENERATED CONTEXT"}
+            <text x={90.4} y={43.4} fontSize="0.62" fill={cadReferenceMode ? "#cbd5e1" : "#334155"}>WATER</text>
+            <rect x={86.0} y={45.6} width={3.6} height={1.4} fill={cadReferenceMode ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.7)"} stroke={cadReferenceMode ? "#f8fafc" : "#111827"} strokeWidth={0.1} />
+            <text x={90.4} y={46.7} fontSize="0.62" fill={cadReferenceMode ? "#cbd5e1" : "#334155"}>BUILDING</text>
+            <text x={86.0} y={68.5} fontSize="0.66" fontWeight={850} fill={cadReferenceMode ? "#f8fafc" : "#111827"}>NOTES</text>
+            <text x={86.0} y={70.4} fontSize="0.5" fill={cadReferenceMode ? "#94a3b8" : "#64748b"}>
+              {cadReferenceMode ? "EDITABLE DRAFT PLAN" : hasSurveyOrTerrainEvidence ? "SOURCE REVIEW ONLY" : "DRAWN / GENERATED CONTEXT"}
             </text>
-            <text x={86.0} y={72.0} fontSize="0.5" fill="#64748b">
-              {hasSurveyOrTerrainEvidence ? "FIELD VERIFY" : "ADD SURVEY OR TERRAIN"}
+            <text x={86.0} y={72.0} fontSize="0.5" fill={cadReferenceMode ? "#94a3b8" : "#64748b"}>
+              {cadReferenceMode ? "NOT SURVEY CONTROL" : hasSurveyOrTerrainEvidence ? "FIELD VERIFY" : "ADD SURVEY OR TERRAIN"}
             </text>
-            <text x={86.0} y={87.2} fontSize="0.68" fill="#334155">SHEET</text>
-            <text x={91.8} y={95.5} textAnchor="middle" fontSize="2.72" fontWeight={900} fill="#111827">C1.0</text>
-            <path d="M 92 20 L 92 14 L 90.6 17.2 L 92 16.5 L 93.4 17.2 Z" fill="#111827" />
-            <text x={92} y={22.5} textAnchor="middle" fontSize="1.5" fontWeight={800} fill="#111827">N</text>
+            <text x={86.0} y={87.2} fontSize="0.68" fill={cadReferenceMode ? "#cbd5e1" : "#334155"}>SHEET</text>
+            <text x={91.8} y={95.5} textAnchor="middle" fontSize="2.72" fontWeight={900} fill={cadReferenceMode ? "#f8fafc" : "#111827"}>C1.0</text>
+            <path d="M 92 20 L 92 14 L 90.6 17.2 L 92 16.5 L 93.4 17.2 Z" fill={cadReferenceMode ? "#f8fafc" : "#111827"} />
+            <text x={92} y={22.5} textAnchor="middle" fontSize="1.5" fontWeight={800} fill={cadReferenceMode ? "#f8fafc" : "#111827"}>N</text>
           </g>
         ) : null}
         <rect
@@ -92,7 +94,7 @@ export function PreviewBasePlanGrid({
           width={isHighQuality ? 82.6 : 97.6}
           height={97.6}
           fill={siteLocked && !isHighQuality ? "rgba(16,185,129,0.024)" : "none"}
-          stroke={siteLocked ? (isHighQuality ? "rgba(17,24,39,0.72)" : "rgba(5,150,105,0.62)") : isHighQuality ? "rgba(15,23,42,0.38)" : "rgba(51,65,85,0.36)"}
+          stroke={siteLocked ? (cadReferenceMode && isHighQuality ? "rgba(248,250,252,0.72)" : isHighQuality ? "rgba(17,24,39,0.72)" : "rgba(5,150,105,0.62)") : cadReferenceMode && isHighQuality ? "rgba(248,250,252,0.42)" : isHighQuality ? "rgba(15,23,42,0.38)" : "rgba(51,65,85,0.36)"}
           strokeWidth={siteLocked ? (isHighQuality ? 0.055 : 0.34) : 0.18}
           strokeDasharray={isHighQuality ? "1.7 1.2" : siteLocked ? undefined : "2 1.2"}
         />
@@ -120,11 +122,11 @@ export function PreviewBasePlanGrid({
           </>
         ) : null}
         <title>Local review canvas site extent.</title>
-        <line x1={4} y1={95} x2={4 + planScaleBar.widthPct} y2={95} stroke="#0f172a" strokeWidth={0.34} />
-        <line x1={4} y1={94.1} x2={4} y2={95.9} stroke="#0f172a" strokeWidth={0.22} />
-        <line x1={4 + planScaleBar.widthPct} y1={94.1} x2={4 + planScaleBar.widthPct} y2={95.9} stroke="#0f172a" strokeWidth={0.22} />
-        <text x={4} y={93.1} fontSize="1.25" fill="#0f172a" fontWeight={700}>0</text>
-        <text x={4 + planScaleBar.widthPct} y={93.1} fontSize="1.25" fill="#0f172a" fontWeight={700} textAnchor="end">
+        <line x1={4} y1={95} x2={4 + planScaleBar.widthPct} y2={95} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={0.34} />
+        <line x1={4} y1={94.1} x2={4} y2={95.9} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={0.22} />
+        <line x1={4 + planScaleBar.widthPct} y1={94.1} x2={4 + planScaleBar.widthPct} y2={95.9} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={0.22} />
+        <text x={4} y={93.1} fontSize="1.25" fill={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} fontWeight={700}>0</text>
+        <text x={4 + planScaleBar.widthPct} y={93.1} fontSize="1.25" fill={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} fontWeight={700} textAnchor="end">
           {planScaleBar.lengthFt} FT
         </text>
       </g>

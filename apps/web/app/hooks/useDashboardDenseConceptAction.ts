@@ -1,7 +1,10 @@
 import { useCallback } from "react";
 
 import type { BuildingPlacement, ChatMessage } from "../types";
-import { createDenseCommercialConceptPlacements } from "../utils/demoWorkspaceData";
+import {
+  createDenseCommercialConceptPlacements,
+  createDenseSubdivisionCadPlanPlacements,
+} from "../utils/demoWorkspaceData";
 import type { RecentChange } from "../utils/dashboardTypes";
 import type { ProjectStatusSummary, SidePanelKey, WorkspaceMode } from "../utils/workspaceShell";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
@@ -75,20 +78,28 @@ export function useDashboardDenseConceptAction({
 }: UseDashboardDenseConceptActionInput) {
   return useCallback((message: string) => {
     appendChatMessage("user", message);
+    const lower = message.toLowerCase();
+    const wantsSubdivisionCadPlan =
+      /\b(recreate|copy|like the image|like this image|subdivision|master plan|lots?|parcels?|contours?|cad screenshot|as many)\b/.test(lower) &&
+      /\b(image|plan|site|cad|subdivision|lots?|parcels?|contours?|dense|stuff)\b/.test(lower);
     const createdConceptSite = !hasSiteBoundary();
     if (createdConceptSite) {
-      setLotWidth("1000");
-      setLotHeight("1000");
+      const conceptWidth = wantsSubdivisionCadPlan ? 1200 : 1000;
+      const conceptHeight = wantsSubdivisionCadPlan ? 820 : 1000;
+      setLotWidth(String(conceptWidth));
+      setLotHeight(String(conceptHeight));
       setSiteScaleLocked(true);
       setShowSiteBounds(false);
       setSiteSelectionMode(false);
       setBuildingPlacements((prev) => [
         {
           id: `concept-site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          label: "Concept Site Boundary - 1000 ft x 1000 ft",
+          label: wantsSubdivisionCadPlan
+            ? "Concept Site Boundary - 1200 ft x 820 ft"
+            : "Concept Site Boundary - 1000 ft x 1000 ft",
           type: "site",
-          w: 1000,
-          d: 1000,
+          w: conceptWidth,
+          d: conceptHeight,
           x: 0,
           y: 0,
           rotation: 0,
@@ -105,15 +116,21 @@ export function useDashboardDenseConceptAction({
             engineering_status: "review_required",
             draft_review_required: true,
             construction_release_allowed: false,
-            acres: Number((1_000_000 / SQFT_PER_ACRE).toFixed(3)),
+            acres: Number(((conceptWidth * conceptHeight) / SQFT_PER_ACRE).toFixed(3)),
           },
         },
         ...prev.filter((item) => item.type !== "site"),
       ]);
     }
     clearGeneratedPreview();
-    const lot = createdConceptSite ? { w: 1000, h: 1000 } : resolveLotBounds();
-    const conceptObjects = createDenseCommercialConceptPlacements(lot);
+    const lot = createdConceptSite
+      ? wantsSubdivisionCadPlan
+        ? { w: 1200, h: 820 }
+        : { w: 1000, h: 1000 }
+      : resolveLotBounds();
+    const conceptObjects = wantsSubdivisionCadPlan
+      ? createDenseSubdivisionCadPlanPlacements(lot)
+      : createDenseCommercialConceptPlacements(lot);
     setBuildingPlacements((prev) => {
       const keep = prev.filter((item) => item.type === "site" || !item.meta?.dense_concept_generated);
       return [...keep, ...conceptObjects];
@@ -133,21 +150,27 @@ export function useDashboardDenseConceptAction({
     setFitToSiteRequest((value) => value + 1);
     recordRecentChange({
       type: "object_added",
-      label: "Dense concept plan created",
-      detail: "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed.",
+      label: wantsSubdivisionCadPlan ? "Dense subdivision CAD plan created" : "Dense concept plan created",
+      detail: wantsSubdivisionCadPlan
+        ? "Subdivision lots, roads, contours, amenity core, ponds, utility spines, parking hatches, and feature courts were placed."
+        : "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed.",
     });
     updateProjectStatus({
       state: "needs review",
       area: "setup",
-      title: "Dense review concept created",
-      detail: createdConceptSite
+      title: wantsSubdivisionCadPlan ? "Dense subdivision review plan created" : "Dense review concept created",
+      detail: wantsSubdivisionCadPlan
+        ? "Created a dense editable CAD-style subdivision plan with lots, streets, contours, amenity/drainage space, hatching, and utilities. It is draft review geometry."
+        : createdConceptSite
         ? "Created a 1000 ft by 1000 ft concept site and placed coherent editable building, parking, drainage, utilities, access, and sidewalk objects."
         : "Placed a coherent editable concept with building, parking, drainage, utilities, access, and sidewalk objects.",
       nextAction: "Edit the objects directly, then run Generate when the layout looks right.",
     });
     appendChatMessage(
       "assistant",
-      createdConceptSite
+      wantsSubdivisionCadPlan
+        ? "Created a dense editable CAD-style subdivision review plan with lot blocks, collector roads, internal loop roads, yellow contour linework, central amenity/drainage space, blue/red hatched plan areas, ponds, storm/water/sanitary corridors, and feature nodes. It is draft review geometry, not survey/control or construction evidence."
+        : createdConceptSite
         ? "Created a dense editable review concept on a 1000 ft by 1000 ft concept site: office building, two parking fields, detention basin, loop drive, driveway, sidewalk/ADA route, public water, public sanitary, storm sewer, inlets, outfall, hydrants, and sanitary manhole. Everything is draft review geometry and can be edited before Generate."
         : "Created a dense editable review concept: office building, two parking fields, detention basin, loop drive, driveway, sidewalk/ADA route, public water, public sanitary, storm sewer, inlets, outfall, hydrants, and sanitary manhole. Everything is draft review geometry and can be edited before Generate.",
       "status",

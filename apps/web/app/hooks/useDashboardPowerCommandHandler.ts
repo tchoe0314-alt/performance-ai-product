@@ -12,7 +12,10 @@ import type {
   GenerateFlowSummary,
 } from "../utils/dashboardDataTypes";
 import { parseDashboardDirectSiteSetupCommand } from "../utils/dashboardChatCommandParsing";
-import { createDenseCommercialConceptPlacements } from "../utils/demoWorkspaceData";
+import {
+  createDenseCommercialConceptPlacements,
+  createDenseSubdivisionCadPlanPlacements,
+} from "../utils/demoWorkspaceData";
 import { parsePositiveNumber } from "../utils/formatting";
 import type {
   CadToolRequestForPreview,
@@ -334,6 +337,9 @@ export function useDashboardPowerCommandHandler({
       const wantsProgramAfterSiteSetup =
         /\b(office|building|parking|spaces|stalls|basin|detention|pond|storm|water|sanitary|sewer|sidewalk|ada|driveway|road|grading|drainage|utilities|utility)\b/i.test(message) &&
         /\b(add|include|create|make|generate|design|layout|put|place|with)\b/i.test(message);
+      const wantsSubdivisionCadPlan =
+        /\b(recreate|copy|like the image|like this image|subdivision|master plan|lots?|parcels?|contours?|cad screenshot|as many)\b/i.test(message) &&
+        /\b(image|plan|site|cad|subdivision|lots?|parcels?|contours?|dense|stuff)\b/i.test(message);
       setSiteAddress(directSiteSetup.address);
       setLotWidth(String(Math.round(directSiteSetup.width)));
       setLotHeight(String(Math.round(directSiteSetup.height)));
@@ -346,15 +352,21 @@ export function useDashboardPowerCommandHandler({
         true,
       );
       if (wantsProgramAfterSiteSetup) {
-        const conceptObjects = createDenseCommercialConceptPlacements({
-          w: directSiteSetup.width,
-          h: directSiteSetup.height,
-        }).map((item) => ({
+        const conceptObjects = (wantsSubdivisionCadPlan
+          ? createDenseSubdivisionCadPlanPlacements({
+              w: directSiteSetup.width,
+              h: directSiteSetup.height,
+            })
+          : createDenseCommercialConceptPlacements({
+              w: directSiteSetup.width,
+              h: directSiteSetup.height,
+            })
+        ).map((item) => ({
           ...item,
           meta: {
             ...(item.meta ?? {}),
             command_created: true,
-            command_source: "site_setup_program_command",
+            command_source: wantsSubdivisionCadPlan ? "site_setup_subdivision_cad_command" : "site_setup_program_command",
           },
         }));
         setParkingCount("140");
@@ -365,8 +377,10 @@ export function useDashboardPowerCommandHandler({
         markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
         recordRecentChange({
           type: "object_added",
-          label: "Site program placed from chat",
-          detail: "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed from one natural-language command.",
+          label: wantsSubdivisionCadPlan ? "Subdivision CAD plan placed from chat" : "Site program placed from chat",
+          detail: wantsSubdivisionCadPlan
+            ? "Lots, roads, contours, amenity/drainage core, hatches, utility spines, ponds, and plan symbols were placed from one natural-language command."
+            : "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed from one natural-language command.",
         });
       }
       setShowSiteBounds(false);

@@ -338,6 +338,257 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
   ];
 };
 
+export const createDenseSubdivisionCadPlanPlacements = (lot: { w: number; h: number }): BuildingPlacement[] => {
+  const now = Date.now();
+  const siteW = Math.max(lot.w || 1200, 800);
+  const siteH = Math.max(lot.h || 820, 620);
+  const baseMeta = {
+    dense_concept_generated: true,
+    subdivision_cad_recreation: true,
+    dense_subdivision_cad_plan: true,
+    cad_reference_recreation: true,
+    draft_review_required: true,
+    construction_release_allowed: false,
+    source_confidence: "user_requested_cad_style_review_geometry",
+  };
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+  const place = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    x: number,
+    y: number,
+    w: number,
+    d: number,
+    extra: Partial<BuildingPlacement> = {},
+  ): BuildingPlacement => ({
+    id: `subdiv-${id}-${now}`,
+    label,
+    type,
+    w,
+    d,
+    x: clamp(x, 8, siteW - w - 8),
+    y: clamp(y, 8, siteH - d - 8),
+    rotation: 0,
+    locked: false,
+    placed: true,
+    source: "user_confirmed",
+    generated: false,
+    capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
+    systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+    meta: {
+      ...baseMeta,
+      ...(extra.meta ?? {}),
+    },
+    ...extra,
+  });
+  const line = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    geometry: Array<[number, number]>,
+    meta: Record<string, unknown> = {},
+  ) => {
+    const bounds = geometry.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y),
+      }),
+      { minX: siteW, minY: siteH, maxX: 0, maxY: 0 },
+    );
+    return place(
+      id,
+      label,
+      type,
+      bounds.minX,
+      bounds.minY,
+      Math.max(8, bounds.maxX - bounds.minX),
+      Math.max(8, bounds.maxY - bounds.minY),
+      {
+        geometryType: "polyline",
+        geometry,
+        capabilities: { movable: true, resizable: false, rotatable: false, deletable: true },
+        meta,
+      },
+    );
+  };
+  const polygon = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    geometry: Array<[number, number]>,
+    meta: Record<string, unknown> = {},
+  ) => {
+    const bounds = geometry.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y),
+      }),
+      { minX: siteW, minY: siteH, maxX: 0, maxY: 0 },
+    );
+    return place(
+      id,
+      label,
+      type,
+      bounds.minX,
+      bounds.minY,
+      Math.max(8, bounds.maxX - bounds.minX),
+      Math.max(8, bounds.maxY - bounds.minY),
+      {
+        geometryType: "polygon",
+        geometry,
+        meta,
+      },
+    );
+  };
+
+  const lots: BuildingPlacement[] = [];
+  const addLotBlock = (prefix: string, startX: number, startY: number, cols: number, rows: number, cellW: number, cellH: number, gap = 5) => {
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const offset = row % 2 ? cellW * 0.12 : 0;
+        lots.push(
+          place(
+            `${prefix}-${row}-${col}`,
+            `${prefix}${row + 1}-${col + 1}`,
+            "lot_block",
+            startX + col * (cellW + gap) + offset,
+            startY + row * (cellH + gap),
+            cellW,
+            cellH,
+            { meta: { ...baseMeta, lot_label: `${prefix}${row + 1}-${col + 1}` } },
+          ),
+        );
+      }
+    }
+  };
+
+  addLotBlock("B", siteW * 0.16, siteH * 0.08, 13, 3, siteW * 0.038, siteH * 0.044);
+  addLotBlock("C", siteW * 0.73, siteH * 0.17, 5, 6, siteW * 0.044, siteH * 0.048);
+  addLotBlock("D", siteW * 0.68, siteH * 0.42, 7, 5, siteW * 0.042, siteH * 0.044);
+  addLotBlock("E", siteW * 0.05, siteH * 0.20, 5, 7, siteW * 0.047, siteH * 0.046);
+  addLotBlock("F", siteW * 0.08, siteH * 0.63, 6, 4, siteW * 0.045, siteH * 0.042);
+  addLotBlock("G", siteW * 0.42, siteH * 0.72, 6, 3, siteW * 0.046, siteH * 0.044);
+  addLotBlock("H", siteW * 0.30, siteH * 0.30, 6, 5, siteW * 0.041, siteH * 0.042);
+
+  const contours = Array.from({ length: 13 }).map((_, idx) => {
+    const y = siteH * (0.02 + idx * 0.075);
+    return line(
+      `contour-${idx}`,
+      `Contour ${710 - idx * 5}`,
+      "custom",
+      [
+        [siteW * 0.02, y + Math.sin(idx) * siteH * 0.02],
+        [siteW * 0.18, y + siteH * 0.06 + Math.cos(idx) * siteH * 0.018],
+        [siteW * 0.36, y + siteH * 0.015],
+        [siteW * 0.56, y + siteH * 0.07],
+        [siteW * 0.78, y + siteH * 0.025],
+        [siteW * 0.98, y + siteH * 0.08 + Math.sin(idx * 1.8) * siteH * 0.02],
+      ],
+      { preview_kind: "contour", ui_color: "#ca8a04", dense_concept_generated: true },
+    );
+  });
+
+  return [
+    ...lots,
+    line("north-collector", "North Collector Road", "road", [
+      [siteW * 0.02, siteH * 0.10],
+      [siteW * 0.22, siteH * 0.08],
+      [siteW * 0.58, siteH * 0.05],
+      [siteW * 0.96, siteH * 0.03],
+    ], { corridor_width_ft: 34, dense_concept_generated: true }),
+    line("west-collector", "West Collector Road", "road", [
+      [siteW * 0.06, siteH * 0.08],
+      [siteW * 0.06, siteH * 0.95],
+    ], { corridor_width_ft: 30, dense_concept_generated: true }),
+    line("east-collector", "East Edge Road", "road", [
+      [siteW * 0.90, siteH * 0.04],
+      [siteW * 0.93, siteH * 0.26],
+      [siteW * 0.88, siteH * 0.62],
+      [siteW * 0.82, siteH * 0.95],
+    ], { corridor_width_ft: 32, dense_concept_generated: true }),
+    line("main-loop", "Central Loop Road", "road", [
+      [siteW * 0.18, siteH * 0.24],
+      [siteW * 0.41, siteH * 0.20],
+      [siteW * 0.69, siteH * 0.22],
+      [siteW * 0.82, siteH * 0.38],
+      [siteW * 0.69, siteH * 0.62],
+      [siteW * 0.42, siteH * 0.64],
+      [siteW * 0.18, siteH * 0.52],
+      [siteW * 0.18, siteH * 0.24],
+    ], { corridor_width_ft: 30, dense_concept_generated: true }),
+    line("south-diagonal", "South Diagonal Road", "road", [
+      [siteW * 0.04, siteH * 0.86],
+      [siteW * 0.32, siteH * 0.78],
+      [siteW * 0.58, siteH * 0.72],
+      [siteW * 0.82, siteH * 0.68],
+    ], { corridor_width_ft: 28, dense_concept_generated: true }),
+    polygon("central-park", "Central Amenity Green", "open_space", [
+      [siteW * 0.38, siteH * 0.31],
+      [siteW * 0.58, siteH * 0.27],
+      [siteW * 0.68, siteH * 0.42],
+      [siteW * 0.61, siteH * 0.58],
+      [siteW * 0.39, siteH * 0.59],
+      [siteW * 0.31, siteH * 0.45],
+    ], { ui_color: "#16a34a", dense_concept_generated: true }),
+    polygon("amenity-plaza", "Amenity Plaza / Clubhouse", "amenity", [
+      [siteW * 0.45, siteH * 0.40],
+      [siteW * 0.54, siteH * 0.37],
+      [siteW * 0.58, siteH * 0.47],
+      [siteW * 0.50, siteH * 0.53],
+      [siteW * 0.42, siteH * 0.48],
+    ], { ui_color: "#64748b", dense_concept_generated: true }),
+    place("north-blue-hatch", "North Blue Hatched Parking", "parking", siteW * 0.43, siteH * 0.27, siteW * 0.14, siteH * 0.046, {
+      stallCount: 36,
+      meta: { ...baseMeta, cad_hatch_enabled: true, cad_hatch_pattern: "diagonal", ui_color: "#2563eb" },
+    }),
+    place("south-blue-hatch", "South Blue Hatched Parking", "parking", siteW * 0.49, siteH * 0.60, siteW * 0.16, siteH * 0.05, {
+      stallCount: 42,
+      meta: { ...baseMeta, cad_hatch_enabled: true, cad_hatch_pattern: "diagonal", ui_color: "#2563eb" },
+    }),
+    place("red-feature-a", "Red Feature Court A", "no_build_zone", siteW * 0.57, siteH * 0.27, siteW * 0.09, siteH * 0.042, {
+      meta: { ...baseMeta, ui_color: "#dc2626", cad_hatch_enabled: true },
+    }),
+    place("red-feature-b", "Red Feature Court B", "no_build_zone", siteW * 0.49, siteH * 0.43, siteW * 0.06, siteH * 0.06, {
+      meta: { ...baseMeta, ui_color: "#dc2626", cad_hatch_enabled: true },
+    }),
+    place("pond-a", "Amenity Pond A", "basin", siteW * 0.34, siteH * 0.58, siteW * 0.052, siteH * 0.042, {
+      meta: { ...baseMeta, normal_pool_elevation_ft: 688.2, bottom_elevation_ft: 684.1 },
+    }),
+    place("pond-b", "Amenity Pond B", "basin", siteW * 0.61, siteH * 0.35, siteW * 0.055, siteH * 0.042, {
+      meta: { ...baseMeta, normal_pool_elevation_ft: 689.4, bottom_elevation_ft: 685.8 },
+    }),
+    line("storm-trunk", "Storm Trunk Sewer", "utility_corridor", [
+      [siteW * 0.36, siteH * 0.34],
+      [siteW * 0.52, siteH * 0.43],
+      [siteW * 0.63, siteH * 0.56],
+      [siteW * 0.70, siteH * 0.65],
+    ], { network: "storm", dense_concept_generated: true }),
+    line("water-loop", "Water Main Loop", "utility_corridor", [
+      [siteW * 0.28, siteH * 0.22],
+      [siteW * 0.68, siteH * 0.22],
+      [siteW * 0.78, siteH * 0.43],
+      [siteW * 0.58, siteH * 0.65],
+      [siteW * 0.28, siteH * 0.58],
+      [siteW * 0.28, siteH * 0.22],
+    ], { network: "water", dense_concept_generated: true }),
+    line("sanitary-spine", "Sanitary Sewer Spine", "utility_corridor", [
+      [siteW * 0.20, siteH * 0.72],
+      [siteW * 0.40, siteH * 0.67],
+      [siteW * 0.64, siteH * 0.61],
+      [siteW * 0.82, siteH * 0.56],
+    ], { network: "sanitary", dense_concept_generated: true }),
+    place("feature-ring", "Roundabout Feature", "amenity", siteW * 0.34, siteH * 0.50, siteW * 0.045, siteH * 0.045, {
+      meta: { ...baseMeta, cad_entity_type: "circle", cad_radius: 28 },
+    }),
+    ...contours,
+  ];
+};
+
 export const createDemoPlanResponse = (): PlanResponse => ({
   success: true,
   message: "Demo workspace loaded for UI QA.",

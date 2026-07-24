@@ -9,6 +9,7 @@ type PreviewPolylineObjectsProps = {
   objects: BuildingPlacement[];
   selectedBuildingId: string | null;
   isHighQuality: boolean;
+  cadReferenceMode?: boolean;
   currentSiteSize: {
     width: number;
     height: number;
@@ -20,6 +21,7 @@ export function PreviewPolylineObjects({
   objects,
   selectedBuildingId,
   isHighQuality,
+  cadReferenceMode = false,
   currentSiteSize,
   sitePointToSvgPercent,
 }: PreviewPolylineObjectsProps) {
@@ -34,6 +36,7 @@ export function PreviewPolylineObjects({
           const visualStyle = resolvePreviewSvgVisualStyle(item, {
             selected: selectedBuildingId === item.id,
             highQuality: isHighQuality,
+            cadReferenceMode,
           });
           const isSelectedPolyline = selectedBuildingId === item.id;
           const sourceState = resolveSourceState(item);
@@ -54,8 +57,8 @@ export function PreviewPolylineObjects({
                   data-testid="plan-road-corridor"
                   points={points.join(" ")}
                   fill="none"
-                  stroke={sourceState === "fallback" ? "rgba(100,116,139,0.12)" : "rgba(15, 23, 42, 0.052)"}
-                  strokeWidth={corridorStrokeWidth}
+                  stroke={cadReferenceMode ? "rgba(248,250,252,0.18)" : sourceState === "fallback" ? "rgba(100,116,139,0.12)" : "rgba(15, 23, 42, 0.052)"}
+                  strokeWidth={cadReferenceMode ? Math.max(0.24, corridorStrokeWidth * 0.72) : corridorStrokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeDasharray={sourceState === "fallback" ? "1.4 1" : undefined}
@@ -93,8 +96,8 @@ export function PreviewPolylineObjects({
                 <polyline
                   points={points.join(" ")}
                   fill="none"
-                  stroke="url(#cad-asphalt-light)"
-                  strokeWidth={Math.max(0.036, corridorStrokeWidth * 0.085)}
+                  stroke={cadReferenceMode ? "rgba(248,250,252,0.82)" : "url(#cad-asphalt-light)"}
+                  strokeWidth={cadReferenceMode ? Math.max(0.035, corridorStrokeWidth * 0.05) : Math.max(0.036, corridorStrokeWidth * 0.085)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={sourceState === "fallback" ? 0.36 : 0.72}

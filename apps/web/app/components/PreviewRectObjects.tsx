@@ -23,6 +23,7 @@ type PreviewRectObjectsProps = {
   objects: BuildingPlacement[];
   selectedBuildingId: string | null;
   isHighQuality: boolean;
+  cadReferenceMode?: boolean;
   mapAnchoredRectPercent: (item: BuildingPlacement) => PreviewRect;
 };
 
@@ -30,6 +31,7 @@ export function PreviewRectObjects({
   objects,
   selectedBuildingId,
   isHighQuality,
+  cadReferenceMode = false,
   mapAnchoredRectPercent,
 }: PreviewRectObjectsProps) {
   return (
@@ -40,7 +42,7 @@ export function PreviewRectObjects({
           const rect = mapAnchoredRectPercent(item);
           const selected = selectedBuildingId === item.id;
           const visualKind = resolvePreviewVisualKind(item);
-          const visualStyle = resolvePreviewSvgVisualStyle(item, { selected, highQuality: isHighQuality });
+          const visualStyle = resolvePreviewSvgVisualStyle(item, { selected, highQuality: isHighQuality, cadReferenceMode });
           const hatchFill = cadHatchPatternForPreviewItem(item);
           const sourceState = resolveSourceState(item);
           const isFallbackBounds = sourceState === "fallback";
@@ -227,13 +229,13 @@ export function PreviewRectObjects({
                 </g>
               ) : null}
               {isHighQuality && visualKind === "parking" && hasParkingGeometryEvidence(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={sourceState === "fallback" ? 0.42 : 0.72}>
+                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : sourceState === "fallback" ? 0.42 : 0.72}>
                   <line
                     x1={rect.left + rect.width * 0.08}
                     y1={rect.top + rect.height * 0.5}
                     x2={rect.left + rect.width * 0.92}
                     y2={rect.top + rect.height * 0.5}
-                    stroke="rgba(71,85,105,0.18)"
+                    stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(71,85,105,0.18)"}
                     strokeWidth={0.022}
                     strokeDasharray="0.42 0.34"
                   />
@@ -246,7 +248,7 @@ export function PreviewRectObjects({
                         y1={rect.top + rect.height * 0.16}
                         x2={x}
                         y2={rect.top + rect.height * 0.84}
-                        stroke="rgba(71,85,105,0.16)"
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.68)" : "rgba(71,85,105,0.16)"}
                         strokeWidth={0.018}
                       />
                     );
@@ -276,6 +278,20 @@ export function PreviewRectObjects({
                     strokeDasharray="1.2 0.9"
                   />
                 )
+              ) : null}
+              {cadReferenceMode && isHighQuality && visualKind === "lot" && rect.width >= 1.8 && rect.height >= 1.2 ? (
+                <text
+                  x={rect.left + rect.width / 2}
+                  y={rect.top + rect.height / 2 + 0.26}
+                  textAnchor="middle"
+                  fontSize={Math.max(0.42, Math.min(0.72, rect.height * 0.18))}
+                  fontWeight={800}
+                  fill="#f8fafc"
+                  opacity={0.95}
+                  pointerEvents="none"
+                >
+                  {String(item.label || "").slice(0, 7)}
+                </text>
               ) : null}
             </g>
           );

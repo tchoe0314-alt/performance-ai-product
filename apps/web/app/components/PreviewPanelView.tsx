@@ -834,6 +834,16 @@ export default function PreviewPanel({
     }),
     [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers],
   );
+  const cadReferenceMode = useMemo(
+    () =>
+      visibleCadObjects.some(
+        (item) =>
+          item.meta?.cad_reference_recreation ||
+          item.meta?.dense_subdivision_cad_plan ||
+          item.meta?.subdivision_cad_recreation,
+      ),
+    [visibleCadObjects],
+  );
 
   const canvasCompositionSignature = useMemo(
     () => buildCanvasCompositionSignature(visibleCadObjects),
@@ -2676,6 +2686,7 @@ export default function PreviewPanel({
                     hasTerrainSurfaceEvidence: Boolean(hasSourceBackedSurfaceEvidence && hasGradingSurface),
                     showMap,
                     isHighQuality,
+                    cadReferenceMode,
                     lotWidth,
                     lotHeight,
                     planScaleBar,

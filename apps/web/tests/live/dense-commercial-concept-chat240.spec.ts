@@ -98,38 +98,36 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
 
   const canvas = page.getByTestId("workspace-canvas-shell");
   await expect(canvas).toContainText(/site locked/i, { timeout: 10_000 });
-  await expect(canvas).toContainText(/1000 FT x 1000 FT/i);
-  await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 84 stalls"]').first()).toBeVisible();
-  await expect(page.locator('[data-cad-object-id][aria-label*="Detention Basin A"]').first()).toBeVisible();
-  await expect(page.locator('[data-cad-object-id][aria-label*="Internal Loop Drive"]').first()).toBeVisible();
-  await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first()).toBeVisible();
-  await expect(page.locator('[data-cad-object-id][aria-label*="Public Sanitary Line"]').first()).toBeVisible();
-  await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
-  await expect(page.locator('[data-cad-object-id][aria-label*="Hydrant W-1"]').first()).toBeVisible();
+  await expect(canvas).toContainText(/1200 FT x 820 FT/i);
+  await expect(page.locator('[data-cad-object-id][aria-label*="B1-1"]').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-cad-object-id][aria-label*="Central Loop Road"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Central Amenity Green"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="North Blue Hatched Parking"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Red Feature Court A"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Contour 710"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Water Main Loop"]').first()).toBeVisible();
 
-  await expect(page.locator("body")).toContainText(/Dense review concept created/i);
+  await expect(page.locator("body")).toContainText(/Dense subdivision review plan created/i);
   await expect(page.locator("body")).not.toContainText(/site type or land use|which systems to include/i);
 
   const actionStrip = page.getByTestId("dense-concept-action-strip");
   await expect(actionStrip).toBeVisible();
-  await expect(actionStrip).toContainText(/17 editable draft objects/i);
+  await expect(actionStrip).toContainText(/editable draft objects/i);
   await expect(actionStrip.getByRole("button", { name: "Generate" })).toBeVisible();
   await expect(actionStrip.getByRole("button", { name: "Deliver" })).toBeVisible();
   await actionStrip.getByRole("button", { name: "High quality" }).click();
   await actionStrip.getByRole("button", { name: "Edit objects" }).click();
-  await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf");
+  await expect(page.getByTestId("object-manager-panel")).toContainText("Central Amenity Green");
   await expect(actionStrip).toBeVisible();
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const objectPanel = page.getByTestId("object-manager-panel");
-  await expect(objectPanel).toContainText("Office Building - 28,000 sf");
-  await expect(objectPanel).toContainText("Internal Loop Drive");
-  await expect(objectPanel).toContainText("Public Water Line");
-  await expect(objectPanel).toContainText("Outfall OF-1");
+  await expect(objectPanel).toContainText("Central Loop Road");
+  await expect(objectPanel).toContainText("Contour 710");
+  await expect(objectPanel).toContainText("Water Main Loop");
+  await expect(objectPanel).toContainText("B1-1");
 
   await canvas.getByTestId("preview-quality-high").click();
-  await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
   await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
 

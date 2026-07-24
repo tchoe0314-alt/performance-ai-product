@@ -43,6 +43,7 @@ type PreviewPlanCanvasLayersProps = {
   hasTerrainSurfaceEvidence: boolean;
   showMap: boolean;
   isHighQuality: boolean;
+  cadReferenceMode: boolean;
   lotWidth: number;
   lotHeight: number;
   planScaleBar: PlanScaleBar;
@@ -87,6 +88,7 @@ export function PreviewPlanCanvasLayers({
   hasTerrainSurfaceEvidence,
   showMap,
   isHighQuality,
+  cadReferenceMode,
   lotWidth,
   lotHeight,
   planScaleBar,
@@ -142,6 +144,7 @@ export function PreviewPlanCanvasLayers({
           <PreviewBasePlanGrid
             showMap={showMap}
             isHighQuality={isHighQuality}
+            cadReferenceMode={cadReferenceMode}
             siteLocked={siteLocked}
             hasSurveyOrTerrainEvidence={hasSurveyOrTerrainEvidence}
             lotWidth={lotWidth}
@@ -153,6 +156,7 @@ export function PreviewPlanCanvasLayers({
             objects={visibleCadObjects}
             selectedBuildingId={selectedBuildingId}
             isHighQuality={isHighQuality}
+            cadReferenceMode={cadReferenceMode}
             currentSiteSize={currentSiteSize}
             sitePointToSvgPercent={sitePointToSvgPercent}
           />
@@ -160,12 +164,14 @@ export function PreviewPlanCanvasLayers({
             objects={visibleCadObjects}
             selectedBuildingId={selectedBuildingId}
             isHighQuality={isHighQuality}
+            cadReferenceMode={cadReferenceMode}
             mapAnchoredRectPercent={mapAnchoredRectPercent}
           />
           <PreviewPolygonObjects
             objects={visibleCadObjects}
             selectedBuildingId={selectedBuildingId}
             isHighQuality={isHighQuality}
+            cadReferenceMode={cadReferenceMode}
             sitePointToSvgPercent={sitePointToSvgPercent}
           />
           <PreviewCadMarkers
