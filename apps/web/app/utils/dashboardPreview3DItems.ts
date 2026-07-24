@@ -18,6 +18,60 @@ type PreviewLayerFlags = {
 
 type LotBounds = { w: number; h: number };
 
+function normalizePreview3DLayer(layer: unknown) {
+  const key = String(layer || "").toUpperCase();
+  if (key.includes("BUILDING") || key.includes("PAD")) return "BUILDING";
+  if (key.includes("PARK")) return "PARKING";
+  if (key.includes("SIDEWALK") || key.includes("WALK")) return "SIDEWALK";
+  if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM") || key.includes("POND")) return "DRAINAGE";
+  if (key.includes("UTILITY") || key.includes("WATER") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
+  if (key.includes("LOT") || key.includes("EASEMENT") || key.includes("CONSTRAINT") || key.includes("SETBACK")) return "CONSTRAINT";
+  if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
+  if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
+  return key || "OBJECT";
+}
+
+function preview3DOverlapRatio(a: Preview3DItem, b: Preview3DItem) {
+  const ax1 = a.x;
+  const ay1 = a.y;
+  const ax2 = a.x + Math.max(a.w, 0);
+  const ay2 = a.y + Math.max(a.h, 0);
+  const bx1 = b.x;
+  const by1 = b.y;
+  const bx2 = b.x + Math.max(b.w, 0);
+  const by2 = b.y + Math.max(b.h, 0);
+  const ix = Math.max(0, Math.min(ax2, bx2) - Math.max(ax1, bx1));
+  const iy = Math.max(0, Math.min(ay2, by2) - Math.max(ay1, by1));
+  const intersection = ix * iy;
+  const smallerArea = Math.max(1, Math.min(Math.max(a.w, 0) * Math.max(a.h, 0), Math.max(b.w, 0) * Math.max(b.h, 0)));
+  return intersection / smallerArea;
+}
+
+function mergePlacementLedPreview3DItems(backendItems: Preview3DItem[], placementItems: Preview3DItem[]) {
+  if (!backendItems.length) return placementItems;
+  if (!placementItems.length) return backendItems;
+
+  const merged = [...placementItems];
+  const existingIds = new Set(merged.map((item) => String(item.id || "")));
+  backendItems.forEach((item) => {
+    const id = String(item.id || "");
+    const layer = normalizePreview3DLayer(item.layer);
+    if (id && existingIds.has(id)) return;
+    const isTerrainEvidence = layer === "TERRAIN" && (item.terrainSample || /terrain|elevation/i.test(String(item.label || item.source || "")));
+    if (!isTerrainEvidence) {
+      const duplicate = merged.some((candidate) => {
+        const candidateLayer = normalizePreview3DLayer(candidate.layer);
+        if (candidateLayer !== layer) return false;
+        return preview3DOverlapRatio(item, candidate) >= 0.58;
+      });
+      if (duplicate) return;
+    }
+    merged.push(item);
+    if (id) existingIds.add(id);
+  });
+  return merged;
+}
+
 function readGradingMeta(backendResult: PlanResponse | null | undefined): Record<string, unknown> | null {
   return (
     (backendResult?.final_plan?.meta as { grading?: Record<string, unknown> } | undefined)?.grading ??
@@ -70,16 +124,8 @@ export function buildDashboardPreview3DView({
     cadEntityPreviewItems3D: cadEntityPreview.items3D,
     sourceConfidenceByObjectId,
   });
-  const supplementalPlacement3DItems = preview3DItems.length
-    ? preview3DPlacementItems.filter((item) => {
-        const layer = String(item.layer || "").toUpperCase();
-        if (!["ROAD", "SIDEWALK", "UTILITY"].includes(layer)) return false;
-        const itemId = String(item.id || "");
-        return !preview3DItems.some((existing) => String(existing.id || "") === itemId);
-      })
-    : [];
   const preview3DEffectiveItems = preview3DItems.length
-    ? [...preview3DItems, ...supplementalPlacement3DItems]
+    ? mergePlacementLedPreview3DItems(preview3DItems, preview3DPlacementItems)
     : preview3DAnnotationItems.length
       ? preview3DAnnotationItems
       : preview3DPlacementItems;

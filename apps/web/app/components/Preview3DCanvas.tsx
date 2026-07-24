@@ -28,8 +28,8 @@ type Preview3DCanvasProps = {
 const layerPalette: Record<string, { top: string; side: string; line: string }> = {
   BUILDING: { top: "#f3f4f6", side: "#cbd5e1", line: "#64748b" },
   STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
-  ROAD: { top: "#687381", side: "#566171", line: "#e5e7eb" },
-  PARKING: { top: "#7b8490", side: "#687381", line: "#f1f5f9" },
+  ROAD: { top: "#aeb7c1", side: "#8d98a5", line: "#f8fafc" },
+  PARKING: { top: "#c9d1da", side: "#a8b2bf", line: "#f8fafc" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
@@ -331,6 +331,21 @@ export default function Preview3DCanvas({
       const heightFt = displayHeightForLayer(item, layer);
       const baseY = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
       const state = confidenceState(item);
+      const minPlanDimension = Math.min(Math.max(item.w, 0), Math.max(item.h, 0));
+      const maxPlanDimension = Math.max(Math.max(item.w, 0), Math.max(item.h, 0));
+      const planArea = Math.max(item.w, 0) * Math.max(item.h, 0);
+      const isDraftedPlanDetail =
+        (item.geometryType === "polyline" || item.geometryType === "polygon") &&
+        minPlanDimension > 0 &&
+        minPlanDimension < 18 &&
+        (layer === "OBJECT" || layer === "PARKING" || layer === "ROAD");
+      const isSmallPavementDetail =
+        (layer === "PARKING" || layer === "ROAD") &&
+        minPlanDimension > 0 &&
+        (minPlanDimension < 28 || planArea < 2800 || (maxPlanDimension > 0 && maxPlanDimension / Math.max(minPlanDimension, 1) > 5));
+      if (layer === "PARKING" && item.geometryType === "polyline") return;
+      if (isDraftedPlanDetail && !item.corridorWidth) return;
+      if (isSmallPavementDetail && !item.corridorWidth) return;
       const object = new THREE.Group();
       object.userData = {
         itemId: id,
@@ -344,7 +359,15 @@ export default function Preview3DCanvas({
       };
 
       const cadMaterial = new THREE.MeshStandardMaterial({
-        color: state === "blocked" ? "#dc2626" : state === "low" ? "#94a3b8" : item.unsupported ? "#f59e0b" : palette.top,
+        color: state === "blocked"
+          ? "#dc2626"
+          : state === "low" && (layer === "ROAD" || layer === "PARKING")
+            ? "#c9d1da"
+            : state === "low"
+              ? "#94a3b8"
+              : item.unsupported
+                ? "#f59e0b"
+                : palette.top,
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
         transparent: item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
         opacity: item.unsupported ? 0.58 : state === "low" ? 0.66 : state === "imported" ? 0.8 : state === "stale" ? 0.72 : layer === "CONSTRAINT" ? 0.36 : 1,
@@ -360,6 +383,9 @@ export default function Preview3DCanvas({
         edges.scale.copy(mesh.scale);
         object.add(edges);
       };
+      const simplifyLowConfidencePlanGeometry =
+        state === "low" && (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK");
+
       if (item.unsupported) {
         const placeholder = new THREE.Mesh(
           new THREE.BoxGeometry(Math.max(item.w, 1), 0.7, Math.max(item.h, 1)),
@@ -375,7 +401,12 @@ export default function Preview3DCanvas({
         outline.position.copy(placeholder.position);
         object.add(outline);
         renderedCadGeometry = true;
-      } else if ((item.geometryType === "polyline" || item.geometryType === "polygon") && Array.isArray(item.geometry) && item.geometry.length >= 2) {
+      } else if (
+        !simplifyLowConfidencePlanGeometry &&
+        (item.geometryType === "polyline" || item.geometryType === "polygon") &&
+        Array.isArray(item.geometry) &&
+        item.geometry.length >= 2
+      ) {
         const points = item.geometry.map(([x, y]) => toScene(x, y, baseY + 0.55));
         if (item.geometryType === "polygon" && points.length >= 3) {
           const shape = new THREE.Shape();
@@ -398,11 +429,13 @@ export default function Preview3DCanvas({
           const mesh = new THREE.Mesh(geometry, cadMaterial);
           mesh.userData = object.userData;
           object.add(mesh);
-          addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.42 : 0.62);
-          if (layer === "PARKING" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
-            const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: state === "low" ? 0.34 : 0.58 });
+          if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK") {
+            addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.3 : 0.46);
+          }
+          if (layer === "PARKING" && state !== "low" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
+            const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.34 });
             const bounds = new THREE.Box3().setFromObject(mesh);
-            const stripeCount = Math.max(3, Math.min(14, Math.floor((bounds.max.x - bounds.min.x) / 9)));
+            const stripeCount = Math.max(2, Math.min(7, Math.floor((bounds.max.x - bounds.min.x) / 18)));
             for (let stripeIndex = 1; stripeIndex < stripeCount; stripeIndex += 1) {
               const x = bounds.min.x + ((bounds.max.x - bounds.min.x) * stripeIndex) / stripeCount;
               const line = new THREE.Line(
@@ -445,7 +478,9 @@ export default function Preview3DCanvas({
             segment.rotation.y = -Math.atan2(dy, dx);
             segment.userData = object.userData;
             object.add(segment);
-            addExactEdges(segment, layer === "ROAD" ? "#94a3b8" : palette.line, layer === "ROAD" ? 0.12 : 0.32);
+            if (layer !== "ROAD" || state !== "low") {
+              addExactEdges(segment, layer === "ROAD" ? "#94a3b8" : palette.line, layer === "ROAD" ? 0.1 : 0.32);
+            }
             if (layer === "ROAD" && state !== "low") {
               const centerline = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints([
@@ -575,14 +610,21 @@ export default function Preview3DCanvas({
         object.add(outline);
       } else {
         const geometry = new THREE.BoxGeometry(Math.max(item.w, 1), heightFt, Math.max(item.h, 1));
-        const material = new THREE.MeshStandardMaterial({
-          color: previewQuality === "high" ? palette.top : item.color || palette.top,
-          roughness: layer === "ROAD" || layer === "PARKING" ? 0.72 : 0.58,
-          metalness: 0.02,
-        });
+        const flatPlanSurface = layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK";
+        const material = flatPlanSurface
+          ? new THREE.MeshBasicMaterial({
+              color: previewQuality === "high" ? palette.top : item.color || palette.top,
+              transparent: state === "low" || state === "imported" || state === "stale",
+              opacity: state === "low" ? 0.7 : state === "imported" ? 0.84 : state === "stale" ? 0.74 : 1,
+            })
+          : new THREE.MeshStandardMaterial({
+              color: previewQuality === "high" ? palette.top : item.color || palette.top,
+              roughness: 0.58,
+              metalness: 0.02,
+            });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = previewQuality === "high" && layer === "BUILDING";
-        mesh.receiveShadow = true;
+        mesh.receiveShadow = layer !== "ROAD" && layer !== "PARKING" && layer !== "SIDEWALK";
         mesh.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt / 2));
         mesh.userData = object.userData;
         object.add(mesh);
@@ -597,40 +639,13 @@ export default function Preview3DCanvas({
           addExactEdges(mesh, "#475569", 0.42);
         }
 
-        if (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK") {
+        if ((layer === "ROAD" || layer === "SIDEWALK") && state !== "low") {
           const stripe = new THREE.LineSegments(
             new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w * 0.96, 1), 0.08, Math.max(item.h * 0.96, 1))),
             new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.78 }),
           );
           stripe.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.08));
           object.add(stripe);
-          if (layer === "PARKING" && item.w >= 48 && item.h >= 34) {
-            const stallMaterial = new THREE.LineBasicMaterial({
-              color: "#f8fafc",
-              transparent: true,
-              opacity: 0.54,
-            });
-            const stallCount = Math.max(4, Math.min(18, Math.floor(item.w / 10)));
-            for (let stripeIndex = 1; stripeIndex < stallCount; stripeIndex += 1) {
-              const x = item.x + (item.w * stripeIndex) / stallCount;
-              const stall = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  toScene(x, item.y + item.h * 0.10, baseY + heightFt + 0.14),
-                  toScene(x, item.y + item.h * 0.90, baseY + heightFt + 0.14),
-                ]),
-                stallMaterial,
-              );
-              object.add(stall);
-            }
-            const aisle = new THREE.Line(
-              new THREE.BufferGeometry().setFromPoints([
-                toScene(item.x + item.w * 0.05, item.y + item.h * 0.5, baseY + heightFt + 0.15),
-                toScene(item.x + item.w * 0.95, item.y + item.h * 0.5, baseY + heightFt + 0.15),
-              ]),
-              new THREE.LineBasicMaterial({ color: "#dbeafe", transparent: true, opacity: 0.62 }),
-            );
-            object.add(aisle);
-          }
         }
       }
 

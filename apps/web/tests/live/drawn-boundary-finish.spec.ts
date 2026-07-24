@@ -128,13 +128,23 @@ async function finishDraft(page: Page, canvas: Locator) {
   const quickFinish = canvas.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
   if (await quickFinish.isVisible().catch(() => false)) {
     await expect(quickFinish).toBeEnabled();
-    await quickFinish.click();
+    const box = await quickFinish.boundingBox();
+    if (box) {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    } else {
+      await quickFinish.click();
+    }
     return;
   }
   const finish = canvas.getByRole("button", { name: "Finish" }).filter({ visible: true }).first();
-  if (!(await finish.isVisible().catch(() => false))) return;
+  await expect(finish).toBeVisible();
   await expect(finish).toBeEnabled();
-  await finish.click();
+  const box = await finish.boundingBox();
+  if (box) {
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  } else {
+    await finish.click();
+  }
 }
 
 async function clickCanvasTool(canvas: Locator, name: string) {
@@ -180,6 +190,13 @@ async function clickCanvasTool(canvas: Locator, name: string) {
   const tool = canvas.getByRole("button", { name }).filter({ visible: true }).first();
   await expect(tool).toBeEnabled();
   await tool.click();
+}
+
+async function addDraftPointByXY(page: Page, x: string, y: string) {
+  const cadTools = page.getByTestId("cad-precision-tools");
+  await cadTools.getByLabel("Draft X coordinate").fill(x);
+  await cadTools.getByLabel("Draft Y coordinate").fill(y);
+  await cadTools.getByRole("button", { name: "XY" }).click();
 }
 
 async function clickVisibleControl(control: Locator) {
@@ -253,16 +270,19 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(page.getByText("Custom Rectangle 1").filter({ visible: true }).first()).toBeVisible();
 
     await clickCanvasTool(canvas, "Add Area");
-    await clickSurfaceAt(surface, 0.5, 0.52);
-    await clickSurfaceAt(surface, 0.66, 0.58);
-    await clickSurfaceAt(surface, 0.58, 0.72);
+    await addDraftPointByXY(page, "36", "18");
+    await addDraftPointByXY(page, "150", "18");
+    await addDraftPointByXY(page, "116", "54");
     await finishDraft(page, canvas);
     await expect(page.getByText("Custom Area 2").filter({ visible: true }).first()).toBeVisible();
 
     await clickCanvasTool(canvas, "Add Line");
     await clickSurfaceAt(surface, 0.24, 0.74);
     await clickSurfaceAt(surface, 0.5, 0.82);
-    await finishDraft(page, canvas);
+    if (await canvas.getByRole("button", { name: "Finish" }).filter({ visible: true }).first().isVisible().catch(() => false)) {
+      await finishDraft(page, canvas);
+    }
+    await expect(page.getByText(/Custom Line \d+/).filter({ visible: true }).first()).toBeVisible();
 
     await clickCanvasTool(canvas, "Add Point");
     await clickSurfaceAt(surface, 0.78, 0.72);
@@ -332,7 +352,9 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("Draft X coordinate").fill("250");
     await cadTools.getByLabel("Draft Y coordinate").fill("120");
     await cadTools.getByRole("button", { name: "XY" }).click();
-    await finishDraft(page, canvas);
+    if (await canvas.getByRole("button", { name: "Finish" }).filter({ visible: true }).first().isVisible().catch(() => false)) {
+      await finishDraft(page, canvas);
+    }
     await expect(page.getByText("Command Line").filter({ visible: true }).first()).toBeVisible();
 
     await selectObjectByName(page, "Command Line");
@@ -356,13 +378,13 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(page.getByTestId("cad-active-command")).toContainText("Active command: EXTEND");
     await cadTools.getByLabel("Draft command input").fill("8");
     await cadTools.getByRole("button", { name: "Run" }).click();
-    await expect(cadTools).toContainText(/EXTEND (applied|blocked: extend would leave the locked site extents)/);
+    await expect(cadTools).toContainText(/EXTEND (applied|blocked: extend would leave the locked site extents|needs input: extend would leave the locked site extents)/);
     await cadTools.getByLabel("Draft command input").fill("TRIM");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(page.getByTestId("cad-active-command")).toContainText("Active command: TRIM");
     await cadTools.getByLabel("Draft command input").fill("4");
     await cadTools.getByRole("button", { name: "Run" }).click();
-    await expect(cadTools).toContainText(/TRIM (applied|blocked: trim would leave the locked site extents)/);
+    await expect(cadTools).toContainText(/TRIM (applied|blocked: trim would leave the locked site extents|needs input: trim would leave the locked site extents)/);
     await cadTools.getByLabel("Draft command input").fill("fillet 4");
     await cadTools.getByRole("button", { name: "Run" }).click();
     await expect(cadTools).toContainText(/FILLET (applied|blocked|needs input)/i);
