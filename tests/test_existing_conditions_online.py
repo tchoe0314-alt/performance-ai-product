@@ -332,7 +332,15 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/42/query", urls)
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/3/query", urls)
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/SanitarySewerNetwork/MapServer/10/query", urls)
-        self.assertEqual(report["configured_provider_count"], 8)
+        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer/7/query", urls)
+        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer/3/query", urls)
+        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer/4/query", urls)
+        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/46/query", urls)
+        utility_children = result["source_results"]["existing_utilities"]["child_sources"]
+        self.assertEqual(len(utility_children), 5)
+        self.assertTrue(any(item["provider"] == "Sarpy County stormwater gravity mains" for item in utility_children))
+        self.assertTrue(any(item["provider"] == "Sarpy County waterlines" for item in utility_children))
+        self.assertEqual(report["configured_provider_count"], 12)
         self.assertTrue(all(item["review_required"] for item in report["sources"]))
 
     def test_austin_provider_pack_selects_local_queryable_sources(self) -> None:

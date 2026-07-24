@@ -349,6 +349,42 @@ def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any 
             jurisdiction_level="utility",
             notes="Partial public sanitary layer only; does not replace utility-owner records, one-call locates, or field verification.",
         ),
+        build_arcgis_provider_record(
+            source_type="utilities",
+            service_url="https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer",
+            layer_id=7,
+            name="Sarpy County stormwater gravity mains",
+            jurisdiction=sarpy,
+            jurisdiction_level="utility",
+            notes="Public stormwater gravity-main context only; does not replace survey, CCTV/as-built records, utility-owner clearance, or field verification.",
+        ),
+        build_arcgis_provider_record(
+            source_type="utilities",
+            service_url="https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer",
+            layer_id=3,
+            name="Sarpy County stormwater inlets",
+            jurisdiction=sarpy,
+            jurisdiction_level="utility",
+            notes="Public storm inlet context only; inlet locations and rim/invert data require source review and field/survey confirmation.",
+        ),
+        build_arcgis_provider_record(
+            source_type="utilities",
+            service_url="https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer",
+            layer_id=4,
+            name="Sarpy County stormwater discharge points",
+            jurisdiction=sarpy,
+            jurisdiction_level="utility",
+            notes="Public storm discharge-point context only; outfall availability and tailwater assumptions require review.",
+        ),
+        build_arcgis_provider_record(
+            source_type="utilities",
+            service_url="https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer",
+            layer_id=46,
+            name="Sarpy County waterlines",
+            jurisdiction=sarpy,
+            jurisdiction_level="utility",
+            notes="Public waterline context only; does not replace utility-owner records, hydrant flow testing, locates, or material/pressure confirmation.",
+        ),
         ]
         gaps = [
             {
@@ -360,6 +396,16 @@ def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any 
                     "Configure a queryable contour service URL/API or import contours before reporting contour candidates."
                 ),
                 "source_url": "https://tiles.arcgis.com/tiles/OiG7dbwhQEWoy77N/arcgis/rest/services/Contours_Metro/VectorTileServer",
+            },
+            {
+                "source_type": "elevation",
+                "label": "terrain surface / LiDAR",
+                "status": "known_source_needs_raster_import",
+                "message": (
+                    "Nebraska/Sarpy LiDAR and DEM sources are known, but Civora currently uses USGS point elevation for online context. "
+                    "Import DEM/LiDAR/contours or configure a raster/tile elevation pipeline before treating terrain as a surface."
+                ),
+                "source_url": "https://gis.ne.gov/portal/home/item.html?id=4aeda92955de4a388588f523e4fe1f28",
             }
         ]
         packs.append(_pack_record("gretna_ne_sarpy_county", "Gretna/Sarpy County, NE provider pack", sarpy, providers, gaps))

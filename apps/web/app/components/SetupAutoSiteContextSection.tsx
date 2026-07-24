@@ -109,7 +109,7 @@ export function SetupAutoSiteContextSection({
     : "nothing usable yet";
   const missingSummary = autoSiteContextFlowSummary.missingLabels.length
     ? autoSiteContextFlowSummary.missingLabels.slice(0, 4).join(", ")
-    : "none reported";
+    : "source evidence not available yet";
 
   return (
     <DisclosurePanel
@@ -132,7 +132,7 @@ export function SetupAutoSiteContextSection({
           {autoExistingConditionsStatus.status === "blocked"
             ? sourceGuidanceMessage
             : autoSiteContextFlowSummary.candidateCount
-              ? `${autoSiteContextFlowSummary.candidateCount} source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available for review. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
+              ? `${autoSiteContextFlowSummary.candidateCount} source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available for review. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`
               : `No source candidates found yet. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}
         </p>
         <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-xs text-emerald-900" data-testid="auto-site-context-plain-summary">
@@ -209,7 +209,7 @@ export function SetupAutoSiteContextSection({
             {onlineFoundSources.length ? onlineFoundSources.map((source) => source.label || source.key).join(", ") : "No usable features yet"}
           </span>
           <span data-testid="auto-site-context-missing">
-            {autoSiteContextFlowSummary.missingLabels.length ? autoSiteContextFlowSummary.missingLabels.join(", ") : "None reported"}
+            {autoSiteContextFlowSummary.missingLabels.length ? autoSiteContextFlowSummary.missingLabels.join(", ") : "Source evidence not available yet"}
           </span>
         </div>
         <button

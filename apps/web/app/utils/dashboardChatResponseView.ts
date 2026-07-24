@@ -126,7 +126,7 @@ export function buildDashboardAutoSiteContextMessage(autoSiteContextRows: AutoSi
       : "Found inside the site: no usable source candidates yet.",
     missingRows.length
       ? `Missing or unavailable: ${missingRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
-      : "Missing or unavailable: none reported by the current source check.",
+      : "Missing or unavailable: source evidence not available yet.",
     assumedRows.length
       ? `Assumed/inferred: ${assumedRows.map((row) => `${row.title} (${row.detail})`).join("; ")}.`
       : "",
@@ -203,7 +203,7 @@ export function buildDashboardWhatChangedMessage({
       ? `Last Review Package: created ${reviewPackageFlowSummary.outputs_created.join(", ")}; missing ${reviewPackageFlowSummary.missing.slice(0, 3).join("; ") || "none recorded"}.`
       : "No review package summary has been made yet.",
     autoSiteContextFlowSummary.candidateCount > 0 || autoSiteContextFlowSummary.missingLabels.length
-      ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review candidate(s); missing ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
+      ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review candidate(s); missing ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`
       : "Auto Site Context has no recorded candidates yet.",
     planSheetRevisionCount ? `Sheet revisions: ${planSheetRevisionCount}.` : "No sheet revision entries recorded yet.",
   ].join("\n");

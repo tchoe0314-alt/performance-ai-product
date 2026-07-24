@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from .common import safe_dict, safe_float, safe_list, safe_str
+from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .existing_conditions import REQUIRED_GIS_LAYERS
 from .gis_provider_registry import (
     build_provider_registry,
@@ -268,6 +268,62 @@ def fetch_unconfigured_gis_source(*, source_type: str, label: str) -> Dict[str, 
             f"No {label} GIS source is configured.",
             "Configure/import an official source before detection.",
         ],
+    }
+
+
+def _aggregate_layer_results(*, source_type: str, layer_name: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    records = [safe_dict(item) for item in safe_list(results) if safe_dict(item)]
+    if not records:
+        return fetch_unconfigured_gis_source(source_type=source_type, label=layer_name)
+    features: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    providers: List[str] = []
+    provider_ids: List[str] = []
+    sources: List[str] = []
+    child_records: List[Dict[str, Any]] = []
+    for record in records:
+        warnings.extend(safe_list(record.get("warnings")))
+        provider = safe_str(record.get("provider"))
+        provider_id = safe_str(record.get("provider_id"))
+        source = safe_str(record.get("source"))
+        if provider:
+            providers.append(provider)
+        if provider_id:
+            provider_ids.append(provider_id)
+        if source:
+            sources.append(source)
+        child_records.append(
+            {
+                "source": source,
+                "source_type": safe_str(record.get("source_type")),
+                "status": safe_str(record.get("status")),
+                "success": bool(record.get("success")),
+                "provider": provider,
+                "provider_id": provider_id,
+                "feature_count": safe_int(record.get("feature_count"), 0),
+                "warnings": safe_list(record.get("warnings")),
+            }
+        )
+        if record.get("success"):
+            features.extend(safe_list(safe_dict(record.get("geojson")).get("features")))
+    success = any(bool(record.get("success")) for record in records)
+    feature_count = len(features)
+    status = "ready" if success else safe_str(records[0].get("status"), "missing")
+    if success and feature_count == 0:
+        status = "ready_empty"
+    return {
+        "success": success,
+        "source": ", ".join(list(dict.fromkeys(sources))[:4]),
+        "source_type": source_type,
+        "status": status,
+        "layer_name": layer_name,
+        "feature_count": feature_count,
+        "geojson": {"type": "FeatureCollection", "features": features},
+        "provider": ", ".join(list(dict.fromkeys(providers))[:4]) or source_type,
+        "provider_id": ", ".join(list(dict.fromkeys(provider_ids))[:4]),
+        "child_sources": child_records,
+        "warnings": list(dict.fromkeys(safe_str(item) for item in warnings if safe_str(item))),
+        "truth_label": "Public GIS context layers; verify against jurisdiction records, utility-owner records, locates, and survey before relying on them.",
     }
 
 
@@ -876,24 +932,44 @@ def fetch_online_existing_conditions(
         source_results["zoning"] = zoning
         layer_imports.append(zoning)
     if include_utilities:
-        utilities_provider = selected_provider(registry, "utilities")
-        utilities_arcgis = safe_dict(utilities_provider.get("arcgis"))
-        utilities_url = safe_str(utilities_arcgis.get("service_url") or utilities_service_url)
-        utilities_layer = int(utilities_arcgis.get("layer_id", utilities_layer_id) or 0)
-        if safe_str(utilities_url):
+        utilities_providers = providers_for_source_type(registry, "utilities")
+        utility_results: List[Dict[str, Any]] = []
+        if utilities_providers:
+            for utilities_provider in utilities_providers:
+                utilities_arcgis = safe_dict(utilities_provider.get("arcgis"))
+                utilities_url = safe_str(utilities_arcgis.get("service_url"))
+                utilities_layer = int(utilities_arcgis.get("layer_id", 0) or 0)
+                if not utilities_url:
+                    continue
+                utility_result = fetch_arcgis_layer_geojson(
+                    service_url=utilities_url,
+                    layer_id=utilities_layer,
+                    bbox=working_bbox,
+                    source_type="configured_existing_utilities_arcgis",
+                    layer_name="existing_utilities",
+                    provider=utilities_provider,
+                    session=session,
+                )
+                utility_results.append(utility_result)
+                layer_imports.append(utility_result)
+            utilities = _aggregate_layer_results(
+                source_type="configured_existing_utilities_arcgis",
+                layer_name="existing_utilities",
+                results=utility_results,
+            )
+        elif safe_str(utilities_service_url):
             utilities = fetch_arcgis_layer_geojson(
-                service_url=utilities_url,
-                layer_id=utilities_layer,
+                service_url=utilities_service_url,
+                layer_id=utilities_layer_id,
                 bbox=working_bbox,
                 source_type="configured_existing_utilities_arcgis",
                 layer_name="existing_utilities",
-                provider=utilities_provider,
                 session=session,
             )
+            layer_imports.append(utilities)
         else:
             utilities = _missing_configured_source(registry=registry, source_type="utilities", result_source_type="configured_existing_utilities_arcgis", label="existing utilities")
         source_results["existing_utilities"] = utilities
-        layer_imports.append(utilities)
     if include_contours:
         contours_provider = selected_provider(registry, "contours")
         contours_arcgis = safe_dict(contours_provider.get("arcgis"))

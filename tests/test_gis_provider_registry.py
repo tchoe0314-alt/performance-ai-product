@@ -93,14 +93,21 @@ class GisProviderRegistryTests(unittest.TestCase):
         registry = build_provider_registry(include_builtin=False, providers=providers)
         gaps = target_market_known_gaps(address="20525 Margo St, Gretna, NE", lat=41.185240483552, lng=-96.237022515225)
 
-        self.assertEqual(registry["configured_provider_count"], 4)
+        self.assertEqual(registry["configured_provider_count"], 8)
         self.assertEqual(providers_for_source_type(registry, "parcels")[0]["arcgis"]["layer_id"], 0)
         self.assertEqual(providers_for_source_type(registry, "buildings")[0]["arcgis"]["layer_id"], 42)
         self.assertEqual(providers_for_source_type(registry, "roads_row")[0]["arcgis"]["layer_id"], 3)
-        self.assertEqual(providers_for_source_type(registry, "utilities")[0]["arcgis"]["layer_id"], 10)
+        utility_names = {item["name"] for item in providers_for_source_type(registry, "utilities")}
+        utility_layers = {item["arcgis"]["layer_id"] for item in providers_for_source_type(registry, "utilities")}
+        self.assertIn("Sarpy County sanitary gravity mains", utility_names)
+        self.assertIn("Sarpy County stormwater gravity mains", utility_names)
+        self.assertIn("Sarpy County stormwater inlets", utility_names)
+        self.assertIn("Sarpy County stormwater discharge points", utility_names)
+        self.assertIn("Sarpy County waterlines", utility_names)
+        self.assertTrue({3, 4, 7, 10, 46}.issubset(utility_layers))
         self.assertTrue(all(item["review_required"] and not item["survey_backed"] for item in registry["providers"]))
-        self.assertIn("VectorTileServer", gaps[0]["source_url"])
-        self.assertIn("queryable", gaps[0]["message"])
+        self.assertTrue(any("VectorTileServer" in item.get("source_url", "") for item in gaps))
+        self.assertTrue(any("raster/tile elevation pipeline" in item.get("message", "") for item in gaps))
 
     def test_provider_pack_selection_supports_multiple_markets(self) -> None:
         gretna = provider_packs_for_location(address="20525 Margo St, Gretna, NE", lat=41.185240483552, lng=-96.237022515225)

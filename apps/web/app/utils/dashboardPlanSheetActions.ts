@@ -407,7 +407,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
       const activeSheetId = current.activeSheetId || sheets[0]?.id || "";
       const activeSheet = sheets.find((sheet) => sheet.id === activeSheetId) ?? sheets[0];
       const sourceNote = autoSiteContextFlowSummary.candidateCount
-        ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review-required source candidate(s). Missing: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "none reported"}.`
+        ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review-required source candidate(s). Missing: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`
         : `Auto Site Context: no accepted source candidates. Missing: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`;
       const existingSourceNote = activeSheet?.annotations.some((item) => item.text.startsWith("Auto Site Context:"));
       const nextSheets = sheets.map((sheet) =>
@@ -431,7 +431,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
                   title: "Review Package Source Summary",
                   rows: [
                     ["Review candidates", String(autoSiteContextFlowSummary.candidateCount)],
-                    ["Missing sources", autoSiteContextFlowSummary.missingLabels.join(", ") || "None reported"],
+                    ["Missing sources", autoSiteContextFlowSummary.missingLabels.join(", ") || "Source evidence not available yet"],
                     ["Package status", summary.blocked ? "Needs package inputs" : "Review package created"],
                   ] as Array<[string, string]>,
                 },
@@ -598,7 +598,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
     <table>
       <tr><td>Review candidates</td><td>${autoSiteContextFlowSummary.candidateCount}</td></tr>
       <tr><td>Candidate sources</td><td>${escapeHtml(autoSiteContextFlowSummary.candidateLabels.join(", ") || "None recorded")}</td></tr>
-      <tr><td>Missing sources</td><td>${escapeHtml(autoSiteContextFlowSummary.missingLabels.join(", ") || "None reported")}</td></tr>
+      <tr><td>Missing sources</td><td>${escapeHtml(autoSiteContextFlowSummary.missingLabels.join(", ") || "Source evidence not available yet")}</td></tr>
       <tr><td>Status</td><td>${escapeHtml(autoSiteContextFlowSummary.status)}</td></tr>
     </table>
     <h2>Plot Styles</h2>
