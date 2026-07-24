@@ -332,14 +332,26 @@ export function PreviewRectObjects({
                     width: rect.width * 0.88,
                     height: rect.height * 0.84,
                   })} fill="url(#cad-building-poche)" stroke="none" />
-                  <line
-                    x1={rect.left + rect.width * 0.43}
-                    y1={rect.top + rect.height}
-                    x2={rect.left + rect.width * 0.57}
-                    y2={rect.top + rect.height}
-                    stroke="rgba(15,23,42,0.62)"
-                    strokeWidth={0.065}
-                  />
+                  <g data-testid="plan-building-entry-cues">
+                    <line
+                      x1={rect.left + rect.width * 0.43}
+                      y1={rect.top + rect.height}
+                      x2={rect.left + rect.width * 0.57}
+                      y2={rect.top + rect.height}
+                      stroke="rgba(15,23,42,0.62)"
+                      strokeWidth={0.065}
+                      strokeLinecap="round"
+                    />
+                    <line
+                      x1={rect.left + rect.width * 0.5}
+                      y1={rect.top + rect.height * 0.14}
+                      x2={rect.left + rect.width * 0.5}
+                      y2={rect.top + rect.height * 0.86}
+                      stroke="rgba(15,23,42,0.16)"
+                      strokeWidth={0.026}
+                      strokeDasharray="0.5 0.34"
+                    />
+                  </g>
                 </g>
               ) : null}
               {isHighQuality && visualKind === "parking" && hasParkingGeometryEvidence(item) ? (

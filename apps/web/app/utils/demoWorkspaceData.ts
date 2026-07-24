@@ -225,6 +225,7 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
     generated: false,
     capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
     systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+    ...extra,
     meta: {
       dense_concept_generated: true,
       draft_review_required: true,
@@ -232,7 +233,6 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
       source_confidence: "user_confirmed_review_geometry",
       ...(extra.meta ?? {}),
     },
-    ...extra,
   });
   const line = (
     id: string,
@@ -266,26 +266,117 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
       },
     );
   };
+  const polygon = (
+    id: string,
+    label: string,
+    type: SiteObjectType,
+    geometry: Array<[number, number]>,
+    extra: Partial<BuildingPlacement> = {},
+  ) => {
+    const bounds = geometry.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y),
+      }),
+      { minX: siteW, minY: siteH, maxX: 0, maxY: 0 },
+    );
+    return place(
+      id,
+      label,
+      type,
+      bounds.minX,
+      bounds.minY,
+      Math.max(10, bounds.maxX - bounds.minX),
+      Math.max(10, bounds.maxY - bounds.minY),
+      {
+        geometryType: "polygon",
+        geometry,
+        ...extra,
+        meta: {
+          dense_concept_generated: true,
+          true_footprint_geometry: true,
+          ...(extra.meta ?? {}),
+        },
+      },
+    );
+  };
+  const notchedBuilding = (
+    x: number,
+    y: number,
+    w: number,
+    d: number,
+    entrySide: "north" | "south" = "south",
+  ): Array<[number, number]> => {
+    const entry = Math.min(w * 0.14, 34);
+    const notch = Math.min(d * 0.2, 18);
+    const wing = Math.min(w * 0.16, 38);
+    if (entrySide === "north") {
+      return [
+        [x, y],
+        [x + w * 0.42, y],
+        [x + w * 0.42, y + notch],
+        [x + w * 0.42 + entry, y + notch],
+        [x + w * 0.42 + entry, y],
+        [x + w, y],
+        [x + w, y + d * 0.55],
+        [x + w - wing, y + d * 0.55],
+        [x + w - wing, y + d * 0.55 + notch],
+        [x + w, y + d * 0.55 + notch],
+        [x + w, y + d],
+        [x, y + d],
+      ];
+    }
+    return [
+      [x, y],
+      [x + w, y],
+      [x + w, y + d],
+      [x + w * 0.58 + entry, y + d],
+      [x + w * 0.58 + entry, y + d - notch],
+      [x + w * 0.58, y + d - notch],
+      [x + w * 0.58, y + d],
+      [x, y + d],
+      [x, y + d * 0.46 + notch],
+      [x + wing, y + d * 0.46 + notch],
+      [x + wing, y + d * 0.46],
+      [x, y + d * 0.46],
+    ];
+  };
   const buildingW = Math.min(205, siteW * 0.22);
   const buildingD = Math.min(86, siteH * 0.09);
   const parkingW = Math.min(310, siteW * 0.32);
   const parkingD = Math.min(118, siteH * 0.12);
   return [
-    place("office-main", "Office Building - 28,000 sf", "office_building", siteW * 0.38, siteH * 0.18, buildingW, buildingD, {
+    polygon("office-main", "Office Building - 28,000 sf", "office_building", notchedBuilding(siteW * 0.38, siteH * 0.18, buildingW, buildingD), {
       h: 34,
-      meta: { requested_area_sf: 28000, dense_concept_generated: true },
+      meta: { requested_area_sf: 28000, dense_concept_generated: true, roof_profile: "flat", entrance_side: "south" },
     }),
-    place("office-flex", "Future Flex / Service Pad", "building", siteW * 0.16, siteH * 0.21, buildingW * 0.72, buildingD * 0.7, {
+    polygon("office-flex", "Future Flex / Service Pad", "building", notchedBuilding(siteW * 0.16, siteH * 0.21, buildingW * 0.72, buildingD * 0.7, "north"), {
       h: 24,
-      meta: { dense_concept_generated: true },
+      meta: { dense_concept_generated: true, roof_profile: "flat", service_pad: true },
     }),
     place("parking-north", "Parking Field - 84 stalls", "parking", siteW * 0.34, siteH * 0.34, parkingW, parkingD, {
       stallCount: 84,
-      meta: { requested_stalls: 84, parkingCapacity: 96, parkingModuleCols: 12, parkingModuleRows: 4, dense_concept_generated: true },
+      meta: {
+        requested_stalls: 84,
+        parkingCapacity: 96,
+        parkingModuleCols: 12,
+        parkingModuleRows: 4,
+        parkingParams: { stallWidth: 9, stallDepth: 18, aisleWidth: 24, loading: "double", adaCount: 5 },
+        dense_concept_generated: true,
+      },
     }),
     place("parking-south", "Parking Field - 56 stalls", "parking", siteW * 0.20, siteH * 0.63, parkingW * 0.86, parkingD * 0.92, {
       stallCount: 56,
-      meta: { requested_stalls: 56, parkingCapacity: 64, parkingModuleCols: 8, parkingModuleRows: 4, dense_concept_generated: true },
+      meta: {
+        requested_stalls: 56,
+        parkingCapacity: 64,
+        parkingModuleCols: 8,
+        parkingModuleRows: 4,
+        parkingParams: { stallWidth: 9, stallDepth: 18, aisleWidth: 24, loading: "double", adaCount: 3 },
+        dense_concept_generated: true,
+      },
     }),
     place("basin", "Detention Basin A", "basin", siteW * 0.68, siteH * 0.66, siteW * 0.18, siteH * 0.12, {
       meta: { normal_pool_elevation_ft: 1012.4, bottom_elevation_ft: 1007.2, dense_concept_generated: true },
@@ -335,6 +426,18 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
     place("hydrant-a", "Hydrant W-1", "hydrant", siteW * 0.24, siteH * 0.31, 10, 10, { meta: { dense_concept_generated: true } }),
     place("hydrant-b", "Hydrant W-2", "hydrant", siteW * 0.70, siteH * 0.43, 10, 10, { meta: { dense_concept_generated: true } }),
     place("manhole-a", "Sanitary Manhole SS-1", "manhole", siteW * 0.52, siteH * 0.82, 12, 12, { meta: { network: "sanitary", dense_concept_generated: true } }),
+    ...Array.from({ length: 16 }).map((_, idx) =>
+      place(
+        `landscape-tree-${idx}`,
+        `Parking Island Tree ${idx + 1}`,
+        "landscape",
+        siteW * (0.26 + (idx % 8) * 0.055),
+        siteH * (0.58 + Math.floor(idx / 8) * 0.095),
+        12,
+        12,
+        { meta: { dense_concept_generated: true, landscape_symbol: "tree", ui_color: "#365314" } },
+      ),
+    ),
   ];
 };
 
@@ -625,11 +728,11 @@ export const createUrbanizationCampusPlanPlacements = (lot: { w: number; h: numb
     generated: false,
     capabilities: { movable: true, resizable: true, rotatable: true, deletable: true },
     systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+    ...extra,
     meta: {
       ...baseMeta,
       ...(extra.meta ?? {}),
     },
-    ...extra,
   });
   const line = (
     id: string,

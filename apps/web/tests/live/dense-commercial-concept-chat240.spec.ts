@@ -47,6 +47,7 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
 
   await canvas.getByTestId("preview-quality-high").click();
   await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
+  await expect(page.getByTestId("plan-building-entry-cues").first()).toBeVisible();
   await expect(page.getByTestId("professional-parking-field").first()).toBeVisible();
   await expect(page.getByTestId("professional-basin-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
@@ -171,14 +172,17 @@ test("creates an urbanization campus plan with colored sheet objects and 3D mass
   await canvas.getByTestId("preview-quality-high").click();
   await expect(canvas).toContainText(/Plan Sheet/i);
   await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
+  await expect(page.getByTestId("plan-building-entry-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-edge-lines").first()).toBeVisible();
   await expect(page.getByTestId("plan-tree-symbol").first()).toBeVisible();
   await expect(page.getByTestId("plan-plaza-module-lines").first()).toBeVisible();
   await expect(page.getByTestId("plan-utility-node-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
   await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][data-semantic-layer="lots"]').first()).toBeVisible();
   await page.getByTestId("preview-layer-toggle-lots").click();
   await expect(page.locator('svg [data-semantic-layer="lots"]')).toHaveCount(0);
+  await expect(page.locator('[data-cad-object-id][data-semantic-layer="lots"]')).toHaveCount(0);
   await expect(page.locator('[data-cad-object-id][aria-label*="Civic Hall"]').first()).toBeVisible();
   await page.getByTestId("preview-layer-show-all").click();
   await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();

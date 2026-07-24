@@ -100,13 +100,14 @@ export function PreviewPolygonObjects({
                     : ([[x, shapeBounds.minY], [x, shapeBounds.maxY]] as Array<[number, number]>);
                 })()
               : [];
+          const isBuildingSurface = visualKind === "building";
           const isAmenitySurface = item.type === "amenity";
           const isLandscapeSurface = visualKind === "landscape";
 
           return (
             <g key={`custom-poly-${item.id}`} data-semantic-layer={semanticLayerForPlacement(item)}>
               <polygon
-                data-testid="plan-polygon-object"
+                data-testid={isBuildingSurface ? "professional-building-footprint" : "plan-polygon-object"}
                 points={points.join(" ")}
                 fill={isFallbackBounds ? "rgba(248,250,252,0.035)" : visualStyle.fill}
                 stroke={visualStyle.stroke}
@@ -199,6 +200,35 @@ export function PreviewPolygonObjects({
                   strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
                   strokeLinecap="round"
                 />
+              ) : null}
+              {isHighQuality && isBuildingSurface ? (
+                <g data-testid="plan-building-entry-cues" opacity={cadReferenceMode ? 0.86 : 0.52} pointerEvents="none">
+                  <polyline
+                    points={innerPolygonPoints}
+                    fill="none"
+                    stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(15,23,42,0.2)"}
+                    strokeWidth={cadReferenceMode ? 0.04 : 0.032}
+                    strokeLinejoin="round"
+                  />
+                  <line
+                    x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.42}
+                    y1={bounds.maxY}
+                    x2={bounds.minX + (bounds.maxX - bounds.minX) * 0.58}
+                    y2={bounds.maxY}
+                    stroke={cadReferenceMode ? "rgba(248,250,252,0.9)" : "rgba(15,23,42,0.42)"}
+                    strokeWidth={cadReferenceMode ? 0.055 : 0.045}
+                    strokeLinecap="round"
+                  />
+                  <line
+                    x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.5}
+                    y1={bounds.minY + (bounds.maxY - bounds.minY) * 0.14}
+                    x2={bounds.minX + (bounds.maxX - bounds.minX) * 0.5}
+                    y2={bounds.minY + (bounds.maxY - bounds.minY) * 0.86}
+                    stroke={cadReferenceMode ? "rgba(248,250,252,0.32)" : "rgba(15,23,42,0.12)"}
+                    strokeWidth={0.024}
+                    strokeDasharray="0.5 0.34"
+                  />
+                </g>
               ) : null}
               {isHighQuality && isAmenitySurface ? (
                 <g data-testid="plan-plaza-module-lines" opacity={cadReferenceMode ? 0.78 : 0.42} pointerEvents="none">

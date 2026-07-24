@@ -2,6 +2,11 @@ import type { Dispatch, MouseEvent as ReactMouseEvent, MutableRefObject, Ref, Se
 
 import type { BuildingPlacement } from "../types";
 import { resolveSourceState } from "../utils/previewGeometryTruth";
+import type { PreviewSemanticLayer } from "../utils/previewSemanticLayers";
+import {
+  isPreviewSemanticLayerVisible,
+  semanticLayerForPlacement,
+} from "../utils/previewSemanticLayers";
 import {
   getPreviewObjectBorderColor,
   getPreviewObjectOutlineColor,
@@ -39,6 +44,7 @@ type LastRectEdit = {
 
 type PreviewEditableObjectHitTargetsProps = {
   visibleCadObjects: BuildingPlacement[];
+  semanticLayerVisibility?: Partial<Record<PreviewSemanticLayer, boolean>>;
   previewInteraction: "static" | "edit";
   siteLocked: boolean;
   showSiteBounds: boolean;
@@ -104,6 +110,7 @@ type PreviewEditableObjectHitTargetsProps = {
 
 export function PreviewEditableObjectHitTargets({
   visibleCadObjects,
+  semanticLayerVisibility = {},
   previewInteraction,
   siteLocked,
   showSiteBounds,
@@ -162,6 +169,9 @@ export function PreviewEditableObjectHitTargets({
     <>
       {visibleCadObjects
         .filter((item) => {
+          if (!isPreviewSemanticLayerVisible(semanticLayerForPlacement(item), semanticLayerVisibility)) {
+            return false;
+          }
           const editableSiteBox =
             item.type === "site" && previewInteraction === "edit" && !siteLocked && showSiteBounds && !showMap;
           return (
@@ -203,6 +213,7 @@ export function PreviewEditableObjectHitTargets({
               key={item.id}
               data-object-overlay
               data-cad-object-id={item.id}
+              data-semantic-layer={semanticLayerForPlacement(item)}
               aria-label={`Select ${item.label || item.type || "Draft object"}`}
               data-preview-quality={previewQuality}
               data-visual-kind={visualKind}

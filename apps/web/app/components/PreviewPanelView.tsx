@@ -2746,6 +2746,7 @@ export default function PreviewPanel({
                   },
                   editableObjectHitTargetsProps: {
                     visibleCadObjects,
+                    semanticLayerVisibility,
                     previewInteraction,
                     siteLocked: Boolean(siteLocked),
                     showSiteBounds,

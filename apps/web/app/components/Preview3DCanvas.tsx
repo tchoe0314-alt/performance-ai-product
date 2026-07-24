@@ -720,6 +720,44 @@ export default function Preview3DCanvas({
               object.add(spire);
             }
           }
+          if (previewQuality === "high") {
+            const longSideIsX = item.w >= item.h;
+            const entry = new THREE.Mesh(
+              new THREE.BoxGeometry(
+                Math.max(longSideIsX ? item.w * 0.18 : item.w * 0.22, 3),
+                0.34,
+                Math.max(longSideIsX ? item.h * 0.12 : item.h * 0.18, 2.2),
+              ),
+              new THREE.MeshStandardMaterial({ color: "#e5e7eb", roughness: 0.82, metalness: 0.01 }),
+            );
+            entry.position.copy(
+              toScene(
+                item.x + item.w / 2,
+                item.y + item.h - Math.max(item.h * 0.04, 1.2),
+                baseY + 0.34,
+              ),
+            );
+            entry.userData = object.userData;
+            object.add(entry);
+
+            const roofLineMaterial = new THREE.LineBasicMaterial({ color: "#64748b", transparent: true, opacity: 0.28 });
+            const roofInset = Math.min(Math.max(Math.min(item.w, item.h) * 0.08, 1.2), 6);
+            const yTop = baseY + heightFt + 0.36;
+            const roofLines = new THREE.LineSegments(
+              new THREE.BufferGeometry().setFromPoints([
+                toScene(item.x + roofInset, item.y + roofInset, yTop),
+                toScene(item.x + item.w - roofInset, item.y + roofInset, yTop),
+                toScene(item.x + item.w - roofInset, item.y + roofInset, yTop),
+                toScene(item.x + item.w - roofInset, item.y + item.h - roofInset, yTop),
+                toScene(item.x + item.w - roofInset, item.y + item.h - roofInset, yTop),
+                toScene(item.x + roofInset, item.y + item.h - roofInset, yTop),
+                toScene(item.x + roofInset, item.y + item.h - roofInset, yTop),
+                toScene(item.x + roofInset, item.y + roofInset, yTop),
+              ]),
+              roofLineMaterial,
+            );
+            object.add(roofLines);
+          }
           addExactEdges(mesh, "#475569", 0.42);
         }
 
