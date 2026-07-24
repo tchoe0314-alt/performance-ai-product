@@ -65,7 +65,7 @@ export function PreviewRectObjects({
                     points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                     fill="none"
                     stroke={visualStyle.fill}
-                    strokeWidth={Math.max(0.22, corridorAxis.width * 0.34)}
+                    strokeWidth={Math.max(0.18, corridorAxis.width * 0.3)}
                     strokeLinecap="round"
                     opacity={Math.min(0.72, visualStyle.opacity)}
                   >
@@ -76,7 +76,7 @@ export function PreviewRectObjects({
                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                       fill="none"
                       stroke="url(#cad-asphalt-light)"
-                      strokeWidth={Math.max(0.05, corridorAxis.width * 0.1)}
+                      strokeWidth={Math.max(0.038, corridorAxis.width * 0.085)}
                       strokeLinecap="round"
                       opacity={sourceState === "fallback" ? 0.28 : 0.75}
                     />
@@ -85,7 +85,7 @@ export function PreviewRectObjects({
                     points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                     fill="none"
                     stroke={visualStyle.stroke}
-                    strokeWidth={Math.max(0.08, visualStyle.strokeWidth)}
+                    strokeWidth={Math.max(0.06, visualStyle.strokeWidth)}
                     strokeLinecap="round"
                     strokeDasharray={visualStyle.strokeDasharray}
                     opacity={visualStyle.opacity}
@@ -95,7 +95,7 @@ export function PreviewRectObjects({
                       points={`${corridorAxis.x1},${corridorAxis.y1} ${corridorAxis.x2},${corridorAxis.y2}`}
                       fill="none"
                       stroke="rgba(248,250,252,0.7)"
-                      strokeWidth={0.045}
+                      strokeWidth={0.034}
                       strokeDasharray={item.type === "driveway" ? undefined : "1.25 1"}
                       strokeLinecap="round"
                     />

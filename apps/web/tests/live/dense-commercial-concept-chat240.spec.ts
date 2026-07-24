@@ -55,6 +55,8 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("plan-grading-context-lines")).toHaveCount(0);
   await expect(page.getByTestId("survey-boundary-annotation")).toHaveCount(0);
   await expect(page.getByTestId("survey-spot-elevation")).toHaveCount(0);
+  await expect(page.getByTestId("survey-utility-callout")).toHaveCount(0);
+  await page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first().click();
   await expect(page.getByTestId("survey-utility-callout").first()).toBeVisible();
   await expect(canvas).toContainText(/concept plan/i);
   await expect(canvas).toContainText(/no survey \/ topo source/i);

@@ -44,7 +44,7 @@ export function PreviewPolylineObjects({
             (isCorridorLine ? Math.max(Math.min(item.w, item.d), 18) : null);
           const corridorStrokeWidth =
             corridorWidthFt && isCorridorLine
-              ? Math.max(0.26, Math.min(1.25, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100 * 0.34))
+              ? Math.max(0.24, Math.min(1.12, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100 * 0.3))
               : visualStyle.strokeWidth;
 
           return (
@@ -54,7 +54,7 @@ export function PreviewPolylineObjects({
                   data-testid="plan-road-corridor"
                   points={points.join(" ")}
                   fill="none"
-                  stroke={sourceState === "fallback" ? "rgba(100,116,139,0.16)" : "rgba(15, 23, 42, 0.075)"}
+                  stroke={sourceState === "fallback" ? "rgba(100,116,139,0.12)" : "rgba(15, 23, 42, 0.052)"}
                   strokeWidth={corridorStrokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -79,22 +79,22 @@ export function PreviewPolylineObjects({
                 stroke={visualStyle.stroke}
                 strokeWidth={
                   isUtilityLine && isHighQuality
-                    ? 0.032
+                    ? 0.026
                     : isCorridorLine && isHighQuality
-                      ? Math.max(0.1, corridorStrokeWidth * 0.07)
+                      ? Math.max(0.075, corridorStrokeWidth * 0.06)
                       : visualStyle.strokeWidth
                 }
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeDasharray={visualStyle.strokeDasharray || (isUtilityLine ? "0.46 0.42" : undefined)}
-                opacity={isUtilityLine && isHighQuality ? 0.72 : visualStyle.opacity}
+                opacity={isUtilityLine && isHighQuality && !isSelectedPolyline ? 0.58 : isUtilityLine && isHighQuality ? 0.78 : visualStyle.opacity}
               />
               {isHighQuality && isCorridorLine ? (
                 <polyline
                   points={points.join(" ")}
                   fill="none"
                   stroke="url(#cad-asphalt-light)"
-                  strokeWidth={Math.max(0.045, corridorStrokeWidth * 0.1)}
+                  strokeWidth={Math.max(0.036, corridorStrokeWidth * 0.085)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={sourceState === "fallback" ? 0.36 : 0.72}

@@ -36,7 +36,25 @@ export function UtilityCoordinationDock({ rows, summary }: UtilityCoordinationDo
   const highlightedReroute = (rows.find((row) => row.status === "conflict") ?? rows[0])?.rerouteOptions.join(" · ");
 
   return (
-    <div className="civora-coordination-dock mb-3 grid gap-3 xl:grid-cols-[1.1fr_1.4fr_1fr]">
+    <details className="civora-coordination-dock mb-3 rounded-2xl border border-slate-200 bg-white/82 shadow-sm backdrop-blur-xl">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold text-slate-900 marker:hidden">
+        <span className="flex min-w-0 items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-slate-400" />
+          <span className="truncate">
+            Coordination {summary.conflictCount ? `${summary.conflictCount} conflicts` : summary.watchCount ? `${summary.watchCount} watch items` : "clear"}
+          </span>
+        </span>
+        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+          summary.status === "conflict"
+            ? "bg-red-50 text-red-700"
+            : summary.status === "watch"
+              ? "bg-amber-50 text-amber-700"
+              : "bg-emerald-50 text-emerald-700"
+        }`}>
+          {summary.status}
+        </span>
+      </summary>
+      <div className="grid gap-3 border-t border-slate-200/70 p-3 xl:grid-cols-[1.1fr_1.4fr_1fr]">
       <section className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm" data-testid="utility-conflict-viewer">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -145,6 +163,7 @@ export function UtilityCoordinationDock({ rows, summary }: UtilityCoordinationDo
           </p>
         </div>
       </section>
-    </div>
+      </div>
+    </details>
   );
 }

@@ -29,7 +29,7 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   BUILDING: { top: "#f3f4f6", side: "#cbd5e1", line: "#64748b" },
   STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
   ROAD: { top: "#aeb7c1", side: "#8d98a5", line: "#f8fafc" },
-  PARKING: { top: "#c9d1da", side: "#a8b2bf", line: "#f8fafc" },
+  PARKING: { top: "#d7dde3", side: "#b7c0ca", line: "#f8fafc" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
@@ -616,8 +616,18 @@ export default function Preview3DCanvas({
         const material = flatPlanSurface
           ? new THREE.MeshBasicMaterial({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
-              transparent: state === "low" || state === "imported" || state === "stale",
-              opacity: state === "low" ? 0.7 : state === "imported" ? 0.84 : state === "stale" ? 0.74 : 1,
+              transparent: true,
+              opacity: layer === "PARKING"
+                ? 0.3
+                : layer === "ROAD"
+                  ? 0.78
+                  : state === "low"
+                    ? 0.7
+                    : state === "imported"
+                      ? 0.84
+                      : state === "stale"
+                        ? 0.74
+                        : 0.86,
             })
           : new THREE.MeshStandardMaterial({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
@@ -627,7 +637,8 @@ export default function Preview3DCanvas({
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = previewQuality === "high" && layer === "BUILDING";
         mesh.receiveShadow = layer !== "ROAD" && layer !== "PARKING" && layer !== "SIDEWALK";
-        mesh.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt / 2));
+        const visualLift = flatPlanSurface ? 0.18 : 0;
+        mesh.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + visualLift + heightFt / 2));
         mesh.userData = object.userData;
         object.add(mesh);
 
@@ -646,8 +657,23 @@ export default function Preview3DCanvas({
             new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w * 0.96, 1), 0.08, Math.max(item.h * 0.96, 1))),
             new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.78 }),
           );
-          stripe.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 0.08));
+          stripe.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + visualLift + heightFt + 0.08));
           object.add(stripe);
+        }
+        if (layer === "PARKING" && previewQuality === "high" && item.w >= 70 && item.h >= 42) {
+          const stallMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.18 });
+          const stallCount = Math.min(8, Math.max(4, Math.floor(item.w / 34)));
+          for (let stallIndex = 1; stallIndex < stallCount; stallIndex += 1) {
+            const x = item.x + (item.w * stallIndex) / stallCount;
+            const stallLine = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints([
+                toScene(x, item.y + item.h * 0.12, baseY + visualLift + heightFt + 0.1),
+                toScene(x, item.y + item.h * 0.88, baseY + visualLift + heightFt + 0.1),
+              ]),
+              stallMaterial,
+            );
+            object.add(stallLine);
+          }
         }
       }
 
