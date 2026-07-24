@@ -23,6 +23,25 @@ function parseSvgPoint(point: string) {
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 }
 
+function shortPerpendicularTick(
+  point: { x: number; y: number },
+  prev: { x: number; y: number },
+  next: { x: number; y: number },
+  length: number,
+) {
+  const dx = next.x - prev.x;
+  const dy = next.y - prev.y;
+  const span = Math.hypot(dx, dy) || 1;
+  const nx = (-dy / span) * length;
+  const ny = (dx / span) * length;
+  return {
+    x1: point.x - nx,
+    y1: point.y - ny,
+    x2: point.x + nx,
+    y2: point.y + ny,
+  };
+}
+
 export function PreviewPolylineObjects({
   objects,
   selectedBuildingId,
@@ -47,6 +66,7 @@ export function PreviewPolylineObjects({
           const isSelectedPolyline = selectedBuildingId === item.id;
           const sourceState = resolveSourceState(item);
           const isCorridorLine = visualKind === "road" || item.type === "driveway";
+          const isDriveway = item.type === "driveway";
           const isUtilityLine = visualKind === "utility";
           const isContourLine = visualKind === "contour";
           const corridorWidthFt =
@@ -80,7 +100,7 @@ export function PreviewPolylineObjects({
                   data-testid="plan-road-corridor"
                   points={points.join(" ")}
                   fill="none"
-                  stroke={cadReferenceMode ? "rgba(248,250,252,0.18)" : sourceState === "fallback" ? "rgba(100,116,139,0.12)" : "rgba(15, 23, 42, 0.052)"}
+                  stroke={cadReferenceMode ? "rgba(248,250,252,0.18)" : sourceState === "fallback" ? "rgba(100,116,139,0.13)" : "rgba(15, 23, 42, 0.095)"}
                   strokeWidth={cadReferenceMode ? Math.max(0.24, corridorStrokeWidth * 0.72) : corridorStrokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -88,7 +108,7 @@ export function PreviewPolylineObjects({
                 />
               ) : null}
               {roadEdgeSegments.length ? (
-                <g data-testid="plan-road-edge-lines" opacity={cadReferenceMode ? 0.9 : 0.62}>
+                <g data-testid="plan-road-edge-lines" opacity={cadReferenceMode ? 0.9 : 0.74}>
                   {roadEdgeSegments.map((segment, idx) => (
                     <line
                       key={`road-edge-${item.id}-${idx}`}
@@ -96,8 +116,8 @@ export function PreviewPolylineObjects({
                       y1={segment.y1}
                       x2={segment.x2}
                       y2={segment.y2}
-                      stroke={cadReferenceMode ? "rgba(248,250,252,0.78)" : "rgba(51,65,85,0.26)"}
-                      strokeWidth={cadReferenceMode ? 0.035 : 0.026}
+                      stroke={cadReferenceMode ? "rgba(248,250,252,0.78)" : "rgba(51,65,85,0.34)"}
+                      strokeWidth={cadReferenceMode ? 0.035 : 0.032}
                       strokeLinecap="round"
                     />
                   ))}
@@ -141,6 +161,19 @@ export function PreviewPolylineObjects({
                         : visualStyle.opacity
                 }
               />
+              {isHighQuality && isUtilityLine ? (
+                <polyline
+                  data-testid="plan-utility-pipe-halo"
+                  points={points.join(" ")}
+                  fill="none"
+                  stroke={visualStyle.stroke}
+                  strokeWidth={0.22}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray={visualStyle.strokeDasharray || "0.46 0.42"}
+                  opacity={isSelectedPolyline ? 0.16 : 0.08}
+                />
+              ) : null}
               {isHighQuality && isContourLine ? (
                 <g data-testid="plan-grading-contour-cues" pointerEvents="none">
                   {(() => {
@@ -165,12 +198,33 @@ export function PreviewPolylineObjects({
                 <polyline
                   points={points.join(" ")}
                   fill="none"
-                  stroke={cadReferenceMode ? "rgba(248,250,252,0.82)" : "url(#cad-asphalt-light)"}
-                  strokeWidth={cadReferenceMode ? Math.max(0.035, corridorStrokeWidth * 0.05) : Math.max(0.036, corridorStrokeWidth * 0.085)}
+                  stroke={cadReferenceMode ? "rgba(248,250,252,0.82)" : isDriveway ? "rgba(255,255,255,0.38)" : "url(#cad-asphalt-light)"}
+                  strokeWidth={cadReferenceMode ? Math.max(0.035, corridorStrokeWidth * 0.05) : Math.max(0.045, corridorStrokeWidth * 0.095)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={sourceState === "fallback" ? 0.36 : 0.72}
                 />
+              ) : null}
+              {isHighQuality && isCorridorLine && parsedPoints.length >= 3 ? (
+                <g data-testid="plan-road-tie-ticks" opacity={cadReferenceMode ? 0.8 : 0.42} pointerEvents="none">
+                  {parsedPoints.slice(1, -1).map((point, idx) => {
+                    const prev = parsedPoints[idx];
+                    const next = parsedPoints[idx + 2];
+                    const tick = shortPerpendicularTick(point, prev, next, Math.max(0.18, corridorStrokeWidth * 0.16));
+                    return (
+                      <line
+                        key={`road-tick-${item.id}-${idx}`}
+                        x1={tick.x1}
+                        y1={tick.y1}
+                        x2={tick.x2}
+                        y2={tick.y2}
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(15,23,42,0.38)"}
+                        strokeWidth={0.03}
+                        strokeLinecap="round"
+                      />
+                    );
+                  })}
+                </g>
               ) : null}
               {isHighQuality && isUtilityLine ? (
                 <g data-testid="plan-utility-node-cues" opacity={isSelectedPolyline ? 0.92 : 0.62} pointerEvents="none">

@@ -65,6 +65,8 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("plan-parking-aisle-cue").first()).toBeVisible();
   await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-grading-contour-cues").first()).toBeVisible();
+  await expect(page.getByTestId("plan-road-tie-ticks").first()).toBeVisible();
+  await expect(page.getByTestId("plan-utility-pipe-halo").first()).toBeVisible();
   await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
   await expect(page.getByTestId("plan-grading-context-lines")).toHaveCount(0);
   await expect(page.getByTestId("survey-boundary-annotation")).toHaveCount(0);
