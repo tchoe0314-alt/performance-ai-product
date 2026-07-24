@@ -471,6 +471,40 @@ export default function Preview3DCanvas({
           if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {
             addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.3 : 0.46);
           }
+          if (layer === "BUILDING" && previewQuality === "high") {
+            const roofY = baseY + displayDepth + 0.2;
+            const roofInset = Math.min(Math.max(Math.min(item.w, item.h) * 0.08, 1.4), 8);
+            const roofLines = new THREE.LineSegments(
+              new THREE.BufferGeometry().setFromPoints([
+                toScene(item.x + roofInset, item.y + roofInset, roofY),
+                toScene(item.x + item.w - roofInset, item.y + roofInset, roofY),
+                toScene(item.x + item.w - roofInset, item.y + roofInset, roofY),
+                toScene(item.x + item.w - roofInset, item.y + item.h - roofInset, roofY),
+                toScene(item.x + item.w - roofInset, item.y + item.h - roofInset, roofY),
+                toScene(item.x + roofInset, item.y + item.h - roofInset, roofY),
+                toScene(item.x + roofInset, item.y + item.h - roofInset, roofY),
+                toScene(item.x + roofInset, item.y + roofInset, roofY),
+              ]),
+              new THREE.LineBasicMaterial({ color: "#475569", transparent: true, opacity: 0.36 }),
+            );
+            object.add(roofLines);
+            const entry = new THREE.Mesh(
+              new THREE.BoxGeometry(Math.max(item.w * 0.14, 4), 0.28, Math.max(item.h * 0.08, 2.2)),
+              new THREE.MeshStandardMaterial({ color: "#e5e7eb", roughness: 0.86 }),
+            );
+            entry.position.copy(toScene(item.x + item.w / 2, item.y + item.h - Math.max(item.h * 0.04, 1.4), baseY + 0.24));
+            entry.userData = object.userData;
+            object.add(entry);
+          }
+          if (layer === "DRAINAGE" && previewQuality === "high") {
+            const water = new THREE.Mesh(
+              new THREE.BoxGeometry(Math.max(item.w * 0.58, 1), 0.045, Math.max(item.h * 0.46, 1)),
+              new THREE.MeshStandardMaterial({ color: "#7dd3fc", roughness: 0.18, transparent: true, opacity: 0.48 }),
+            );
+            water.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + displayDepth + 0.08));
+            water.userData = object.userData;
+            object.add(water);
+          }
           if (layer === "PARKING" && state !== "low" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
             const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.34 });
             const bounds = new THREE.Box3().setFromObject(mesh);
