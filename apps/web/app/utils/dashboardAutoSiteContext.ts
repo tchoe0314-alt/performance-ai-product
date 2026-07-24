@@ -42,6 +42,18 @@ const missingMatches = (value: unknown, terms: string[]) => {
   return matchesSourceTerms(record, terms);
 };
 
+const childSourceProviderLabels = (source: Record<string, unknown> | undefined) => {
+  const children = Array.isArray(source?.child_sources) ? source.child_sources : [];
+  return uniqueStrings(
+    children
+      .map((child) => {
+        const record = child && typeof child === "object" ? (child as Record<string, unknown>) : {};
+        return readable(record.provider || record.source_type || "");
+      })
+      .filter(Boolean),
+  );
+};
+
 export const buildAutoSiteContextFlowSummary = ({
   autoContext,
   onlineDiscovery,
@@ -119,15 +131,36 @@ export const buildAutoSiteContextRows = ({
   const missingRecords = Array.isArray((onlineDiscovery as Record<string, unknown>).missing_sources)
     ? ((onlineDiscovery as Record<string, unknown>).missing_sources as unknown[])
     : [];
+  const surveyControl = (onlineDiscovery as Record<string, unknown>).survey_control && typeof (onlineDiscovery as Record<string, unknown>).survey_control === "object"
+    ? ((onlineDiscovery as Record<string, unknown>).survey_control as Record<string, unknown>)
+    : {};
+  const hasSurveyControl = Boolean(surveyControl.survey_control_satisfied);
+  const hasDiscovery = Boolean(onlineDiscovery.version || onlineDiscovery.status || onlineDiscoverySources.length || missingRecords.length);
   const categories = [
+    { key: "survey_control", title: "Survey / control", terms: ["survey", "control", "benchmark", "datum"] },
     { key: "parcel", title: "Parcel / site boundary", terms: ["parcel", "boundary", "site"] },
     { key: "roads", title: "Roads / ROW", terms: ["road", "row", "right of way", "frontage", "drive"] },
     { key: "buildings", title: "Buildings", terms: ["building", "footprint", "structure"] },
     { key: "terrain", title: "Terrain / elevation", terms: ["terrain", "elevation", "dem", "lidar", "contour", "grading"] },
+    { key: "drainage", title: "Drainage / stormwater", terms: ["drainage", "storm", "stormwater", "inlet", "outfall", "discharge", "flood"] },
     { key: "flood_wetlands", title: "Flood / wetlands", terms: ["flood", "wetland", "constraint"] },
-    { key: "utilities", title: "Utilities", terms: ["utility", "utilities", "water", "sanitary", "storm", "sewer"] },
+    { key: "utilities", title: "Utilities", terms: ["utility", "utilities", "water", "waterline", "sanitary", "sewer"] },
   ];
   return categories.map((category) => {
+    if (category.key === "survey_control") {
+      return {
+        key: category.key,
+        title: category.title,
+        status: hasSurveyControl ? "found" : hasDiscovery ? "missing" : "not_checked",
+        count: hasSurveyControl ? 1 : 0,
+        provider: readable(surveyControl.provider || surveyControl.source || ""),
+        detail: hasSurveyControl
+          ? "Survey/control evidence is attached for review."
+          : hasDiscovery
+            ? "Online address/GIS context does not satisfy survey, boundary control, benchmark, datum, or utility-locate evidence."
+            : "Not checked yet. Apply an address or upload survey/control evidence.",
+      };
+    }
     const source = onlineDiscoverySources.find((item) => matchesSourceTerms(item as Record<string, unknown>, category.terms));
     const intelligenceFound = siteIntelligenceFound.filter((item) => matchesSourceTerms(item, category.terms));
     const intelligenceMissing = siteIntelligenceMissing.filter((item) => matchesSourceTerms(item, category.terms));
@@ -165,17 +198,27 @@ export const buildAutoSiteContextRows = ({
             ? intelligenceMissing.map((item) => readable(item.label || item.source_type || item.status)).join("; ")
             : "";
     const provider = readable(source?.provider || source?.agency || source?.source_type || "");
+    const childProviders = childSourceProviderLabels(source as Record<string, unknown> | undefined);
+    const providerText = childProviders.length
+      ? ` from ${childProviders.slice(0, 3).join(", ")}${childProviders.length > 3 ? `, plus ${childProviders.length - 3} more` : ""}`
+      : provider
+        ? ` from ${provider}`
+        : "";
     const detail =
       status === "found"
-        ? `${count} review candidate${count === 1 ? "" : "s"}${provider ? ` from ${provider}` : ""}.`
+        ? `${count} review candidate${count === 1 ? "" : "s"}${providerText}.`
         : status === "outside"
           ? `${intelligenceOutside.length} candidate${intelligenceOutside.length === 1 ? "" : "s"} found outside the active site.`
           : status === "assumed"
             ? category.key === "terrain" && hasAssumedTerrainSlope
               ? `Using explicit ${assumedTerrainSlopePct || "8"}% assumed slope until survey/terrain is added.`
+              : category.key === "drainage"
+                ? "Drainage direction is inferred/assumed from limited context until a terrain surface, storm source, or survey/control evidence is added."
               : "Context is inferred/assumed and needs review."
             : status === "missing"
-              ? blocker || `${category.title} source returned no usable features or is not configured.`
+              ? category.key === "drainage" && childProviders.length
+                ? `Checked ${childProviders.slice(0, 4).join(", ")}${childProviders.length > 4 ? `, plus ${childProviders.length - 4} more` : ""}; no usable drainage features were returned inside/near the active site.`
+                : blocker || `${category.title} source returned no usable features or is not configured.`
               : "Not checked yet. Apply an address and create/lock a site.";
     return {
       key: category.key,

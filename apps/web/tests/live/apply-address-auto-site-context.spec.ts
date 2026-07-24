@@ -106,10 +106,23 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
             { key: "road_row", label: "road/ROW data", provider: "Test Roads", candidate_count: 1, review_required: true, blockers: ["review-required"] },
             { key: "building_footprints", label: "building footprints", provider: "Test Buildings", candidate_count: 1, review_required: true, blockers: ["review-required"] },
             { key: "terrain_dem_lidar", label: "terrain/DEM/LiDAR", provider: "USGS 3DEP EPQS", candidate_count: 1, review_required: true, blockers: ["not survey"] },
-            { key: "public_utilities", label: "public utility layers", provider: "", candidate_count: 0, review_required: true, blockers: ["No existing utilities GIS source is configured."] },
+            {
+              key: "public_utilities",
+              label: "public utility layers",
+              provider: "Test Stormwater, Test Water, Test Sanitary",
+              candidate_count: 0,
+              review_required: true,
+              blockers: ["Configured utility providers checked but returned no features inside the active site."],
+              child_sources: [
+                { provider: "Test stormwater inlets", feature_count: 0, status: "ready_empty" },
+                { provider: "Test stormwater discharge points", feature_count: 0, status: "ready_empty" },
+                { provider: "Test sanitary mains", feature_count: 0, status: "ready_empty" },
+                { provider: "Test waterlines", feature_count: 0, status: "ready_empty" },
+              ],
+            },
           ],
           missing_sources: [
-            { key: "public_utilities", label: "public utility layers", missing: ["No existing utilities GIS source is configured."] },
+            { key: "public_utilities", label: "public utility layers", missing: ["Configured utility providers checked but returned no features inside the active site."] },
           ],
           survey_control: { survey_control_satisfied: false },
           review_required: true,
@@ -183,8 +196,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-buildings")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-terrain")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-status-survey_control")).toContainText("needs source");
+  await expect(page.getByTestId("auto-site-context-detail-survey_control")).toContainText("does not satisfy survey");
+  await expect(page.getByTestId("auto-site-context-status-drainage")).toContainText(/needs source|assumed/);
+  await expect(page.getByTestId("auto-site-context-detail-drainage")).toContainText(/stormwater|drainage|assumed/i);
   await expect(page.getByTestId("auto-site-context-status-utilities")).toContainText("needs source");
-  await expect(page.getByTestId("auto-site-context-detail-utilities")).toContainText("No existing utilities GIS source is configured");
+  await expect(page.getByTestId("auto-site-context-detail-utilities")).toContainText(/utility providers checked|Test stormwater/i);
   await expect(page.getByTestId("site-intelligence-summary")).toBeVisible();
   await expect(page.getByTestId("site-intelligence-one-sentence")).toContainText("Found road/ROW");
   await expect(page.getByTestId("site-intelligence-found-count")).toContainText("Found 3");
