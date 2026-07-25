@@ -123,6 +123,17 @@ const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
   return Math.max(heightFt, 0.35);
 };
 
+const flatPlanOpacity = (layer: string, state: string) => {
+  if (layer === "LOT") return 0.018;
+  if (layer === "PARKING") return state === "low" ? 0.09 : 0.062;
+  if (layer === "ROAD") return state === "low" ? 0.42 : 0.34;
+  if (layer === "SIDEWALK") return state === "low" ? 0.3 : 0.22;
+  if (state === "low") return 0.5;
+  if (state === "imported") return 0.58;
+  if (state === "stale") return 0.5;
+  return 0.62;
+};
+
 export default function Preview3DCanvas({
   items,
   previewQuality = "standard",
@@ -276,8 +287,8 @@ export default function Preview3DCanvas({
 
     const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 5000);
     const maxSpan = Math.max(modelBounds.spanX, modelBounds.spanY);
-    camera.position.set(maxSpan * 0.62, maxSpan * 0.48, maxSpan * 0.66);
-    camera.zoom = previewQuality === "high" ? 1.12 : 1.04;
+    camera.position.set(maxSpan * 0.5, maxSpan * 0.42, maxSpan * 0.54);
+    camera.zoom = previewQuality === "high" ? 1.1 : 1.08;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
 
@@ -287,7 +298,7 @@ export default function Preview3DCanvas({
     controls.enableZoom = true;
     controls.minDistance = Math.max(maxSpan * 0.14, 25);
     controls.maxDistance = Math.max(maxSpan * 2.6, 300);
-    controls.target.set(0, 0, 0);
+    controls.target.set(0, 0, previewQuality === "high" ? maxSpan * 0.12 : 0);
     controls.update();
     controlsRef.current = controls;
 
@@ -351,6 +362,33 @@ export default function Preview3DCanvas({
     terrain.receiveShadow = true;
     root.add(terrain);
 
+    if (previewQuality === "high") {
+      const terrainLineMaterial = new THREE.LineBasicMaterial({
+        color: terrainState.mode === "fallback" ? "#cbd5d1" : "#7a9d67",
+        transparent: true,
+        opacity: terrainState.mode === "fallback" ? 0.16 : 0.34,
+      });
+      const referenceCount = terrainState.mode === "fallback" ? 4 : 7;
+      for (let lineIndex = 1; lineIndex < referenceCount; lineIndex += 1) {
+        const t = lineIndex / referenceCount;
+        const y = modelBounds.minY + modelBounds.spanY * t;
+        const wave = terrainState.mode === "fallback" ? 0 : Math.sin(t * Math.PI * 2) * modelBounds.spanY * 0.018;
+        const points = [
+          toScene(modelBounds.minX, y + wave, 0.08),
+          toScene(modelBounds.minX + modelBounds.spanX * 0.25, y - wave * 0.45, 0.1),
+          toScene(modelBounds.minX + modelBounds.spanX * 0.55, y + wave * 0.75, 0.1),
+          toScene(modelBounds.maxX, y - wave, 0.08),
+        ];
+        const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.06);
+        root.add(
+          new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(curve.getPoints(32)),
+            terrainLineMaterial,
+          ),
+        );
+      }
+    }
+
     const pickables: THREE.Object3D[] = [];
     let visibleLabelCount = 0;
     const maxVisibleLabels = selectedItemId ? 1 : 0;
@@ -389,12 +427,17 @@ export default function Preview3DCanvas({
         sourceEntityId: item.sourceEntityId,
       };
 
+      const isFlatPlanLayer = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK";
       const cadMaterial = new THREE.MeshStandardMaterial({
         color: layer === "LOT" ? palette.top : state === "blocked" ? "#dc2626" : item.unsupported ? "#f59e0b" : palette.top,
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
-        transparent: item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
-        opacity: layer === "LOT"
-          ? 0.035
+        transparent: isFlatPlanLayer || item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
+        depthWrite: !isFlatPlanLayer,
+        polygonOffset: isFlatPlanLayer,
+        polygonOffsetFactor: isFlatPlanLayer ? -1 : 0,
+        polygonOffsetUnits: isFlatPlanLayer ? -1 : 0,
+        opacity: isFlatPlanLayer
+          ? flatPlanOpacity(layer, state)
           : item.unsupported
           ? 0.62
           : state === "low"
@@ -514,6 +557,20 @@ export default function Preview3DCanvas({
             entry.position.copy(toScene(item.x + item.w / 2, item.y + item.h - Math.max(item.h * 0.04, 1.4), baseY + 0.24));
             entry.userData = object.userData;
             object.add(entry);
+            const roofUnitMaterial = new THREE.MeshStandardMaterial({ color: "#94a3b8", roughness: 0.78, metalness: 0.02 });
+            [
+              { x: item.x + item.w * 0.34, y: item.y + item.h * 0.42, w: 0.09, h: 0.08 },
+              { x: item.x + item.w * 0.62, y: item.y + item.h * 0.58, w: 0.11, h: 0.07 },
+            ].forEach((unit) => {
+              if (Math.min(item.w, item.h) < 22) return;
+              const roofUnit = new THREE.Mesh(
+                new THREE.BoxGeometry(Math.max(item.w * unit.w, 3.2), 1.15, Math.max(item.h * unit.h, 2.4)),
+                roofUnitMaterial,
+              );
+              roofUnit.position.copy(toScene(unit.x, unit.y, roofY + 0.72));
+              roofUnit.userData = object.userData;
+              object.add(roofUnit);
+            });
           }
           if (layer === "DRAINAGE" && previewQuality === "high") {
             const water = new THREE.Mesh(
@@ -707,21 +764,11 @@ export default function Preview3DCanvas({
           ? new THREE.MeshBasicMaterial({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
               transparent: true,
-	              opacity: layer === "LOT"
-                ? 0.03
-                : layer === "PARKING"
-                ? 0.08
-                : layer === "ROAD"
-                  ? 0.5
-                  : layer === "SIDEWALK"
-                    ? 0.46
-                    : state === "low"
-                      ? 0.62
-                      : state === "imported"
-                        ? 0.7
-                        : state === "stale"
-                          ? 0.62
-                          : 0.74,
+              depthWrite: false,
+              polygonOffset: true,
+              polygonOffsetFactor: -1,
+              polygonOffsetUnits: -1,
+              opacity: flatPlanOpacity(layer, state),
             })
           : new THREE.MeshStandardMaterial({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
@@ -796,6 +843,7 @@ export default function Preview3DCanvas({
             object.add(entry);
 
             const roofLineMaterial = new THREE.LineBasicMaterial({ color: "#64748b", transparent: true, opacity: 0.28 });
+            const facadeLineMaterial = new THREE.LineBasicMaterial({ color: "#475569", transparent: true, opacity: 0.18 });
             const roofInset = Math.min(Math.max(Math.min(item.w, item.h) * 0.08, 1.2), 6);
             const yTop = baseY + heightFt + 0.36;
             const roofLines = new THREE.LineSegments(
@@ -812,6 +860,36 @@ export default function Preview3DCanvas({
               roofLineMaterial,
             );
             object.add(roofLines);
+            const facadeBandY = baseY + heightFt * 0.62;
+            const facadeLines = new THREE.LineSegments(
+              new THREE.BufferGeometry().setFromPoints([
+                toScene(item.x, item.y + 0.04, facadeBandY),
+                toScene(item.x + item.w, item.y + 0.04, facadeBandY),
+                toScene(item.x + item.w - 0.04, item.y, facadeBandY),
+                toScene(item.x + item.w - 0.04, item.y + item.h, facadeBandY),
+                toScene(item.x + item.w, item.y + item.h - 0.04, facadeBandY),
+                toScene(item.x, item.y + item.h - 0.04, facadeBandY),
+                toScene(item.x + 0.04, item.y + item.h, facadeBandY),
+                toScene(item.x + 0.04, item.y, facadeBandY),
+              ]),
+              facadeLineMaterial,
+            );
+            object.add(facadeLines);
+            if (Math.min(item.w, item.h) >= 24) {
+              const roofUnitMaterial = new THREE.MeshStandardMaterial({ color: "#94a3b8", roughness: 0.8, metalness: 0.02 });
+              [
+                { x: item.x + item.w * 0.36, y: item.y + item.h * 0.42, w: 0.08, h: 0.08 },
+                { x: item.x + item.w * 0.64, y: item.y + item.h * 0.58, w: 0.1, h: 0.07 },
+              ].forEach((unit) => {
+                const roofUnit = new THREE.Mesh(
+                  new THREE.BoxGeometry(Math.max(item.w * unit.w, 3.2), 1.08, Math.max(item.h * unit.h, 2.4)),
+                  roofUnitMaterial,
+                );
+                roofUnit.position.copy(toScene(unit.x, unit.y, yTop + 0.72));
+                roofUnit.userData = object.userData;
+                object.add(roofUnit);
+              });
+            }
           }
           addExactEdges(mesh, "#334155", state === "low" ? 0.54 : 0.66);
         }
