@@ -475,7 +475,8 @@ export function buildPlacementPreview3DItems({
       const isUtility = item.type === "hydrant" || item.type === "manhole" || item.type === "utility_corridor";
       const isLandscape = item.type === "open_space" || item.type === "landscape";
       const isAmenity = item.type === "amenity";
-      const isLot = item.type === "lot_block" || item.type === "setback_zone" || item.type === "no_build_zone";
+      const isLotBlock = item.type === "lot_block";
+      const isConstraint = item.type === "setback_zone" || item.type === "no_build_zone";
       const rawCorridorWidth =
         Number(item.meta?.corridor_width_ft) ||
         Number(item.meta?.width_ft) ||
@@ -505,7 +506,7 @@ export function buildPlacementPreview3DItems({
                   ? 0.4
                   : isLandscape || isAmenity
                     ? 0.35
-                    : isLot
+                    : isLotBlock || isConstraint
                       ? 0.08
                   : 6,
         z: isDrainage ? -1 : 0,
@@ -524,7 +525,9 @@ export function buildPlacementPreview3DItems({
                   ? "#a7c77b"
                   : isAmenity
                     ? "#eab308"
-                    : isLot
+                    : isLotBlock
+                      ? "#f8fafc"
+                      : isConstraint
                       ? "#eef2ff"
                 : isRoad || isParking
                 ? "#cbd5e1"
@@ -544,8 +547,10 @@ export function buildPlacementPreview3DItems({
                   ? "LANDSCAPE"
                   : isAmenity
                     ? "STRUCTURE"
-                    : isLot
-                      ? "CONSTRAINT"
+                    : isLotBlock
+                      ? "LOT"
+                      : isConstraint
+                        ? "CONSTRAINT"
                     : "ROAD",
         source: confidenceEntry?.source_name || item.source || "workspace object",
         confidence: confidenceEntry?.confidence_band || item.confidence || metaConfidence,

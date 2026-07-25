@@ -93,10 +93,10 @@ export function PreviewBasePlanGrid({
           y={1.2}
           width={isHighQuality ? 82.6 : 97.6}
           height={97.6}
-          fill={siteLocked && !isHighQuality ? "rgba(16,185,129,0.024)" : "none"}
-          stroke={siteLocked ? (cadReferenceMode && isHighQuality ? "rgba(248,250,252,0.72)" : isHighQuality ? "rgba(17,24,39,0.72)" : "rgba(5,150,105,0.62)") : cadReferenceMode && isHighQuality ? "rgba(248,250,252,0.42)" : isHighQuality ? "rgba(15,23,42,0.38)" : "rgba(51,65,85,0.36)"}
-          strokeWidth={siteLocked ? (isHighQuality ? 0.055 : 0.34) : 0.18}
-          strokeDasharray={isHighQuality ? "1.7 1.2" : siteLocked ? undefined : "2 1.2"}
+          fill="none"
+          stroke={siteLocked ? (cadReferenceMode && isHighQuality ? "rgba(248,250,252,0.52)" : isHighQuality ? "rgba(15,23,42,0.42)" : "rgba(51,65,85,0.42)") : cadReferenceMode && isHighQuality ? "rgba(248,250,252,0.34)" : isHighQuality ? "rgba(15,23,42,0.28)" : "rgba(51,65,85,0.28)"}
+          strokeWidth={siteLocked ? (isHighQuality ? 0.04 : 0.18) : 0.12}
+          strokeDasharray={isHighQuality ? "1.9 1.35" : siteLocked ? undefined : "2 1.2"}
         />
         {siteLocked ? (
           <>
@@ -122,9 +122,9 @@ export function PreviewBasePlanGrid({
           </>
         ) : null}
         <title>Local review canvas site extent.</title>
-        <line x1={4} y1={95} x2={4 + planScaleBar.widthPct} y2={95} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={0.34} />
-        <line x1={4} y1={94.1} x2={4} y2={95.9} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={0.22} />
-        <line x1={4 + planScaleBar.widthPct} y1={94.1} x2={4 + planScaleBar.widthPct} y2={95.9} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={0.22} />
+        <line x1={4} y1={95} x2={4 + planScaleBar.widthPct} y2={95} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={isHighQuality ? 0.22 : 0.3} />
+        <line x1={4} y1={94.1} x2={4} y2={95.9} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={isHighQuality ? 0.15 : 0.2} />
+        <line x1={4 + planScaleBar.widthPct} y1={94.1} x2={4 + planScaleBar.widthPct} y2={95.9} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={isHighQuality ? 0.15 : 0.2} />
         <text x={4} y={93.1} fontSize="1.25" fill={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} fontWeight={700}>0</text>
         <text x={4 + planScaleBar.widthPct} y={93.1} fontSize="1.25" fill={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} fontWeight={700} textAnchor="end">
           {planScaleBar.lengthFt} FT

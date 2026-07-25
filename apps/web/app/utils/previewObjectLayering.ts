@@ -13,7 +13,6 @@ export function resolvePreviewObjectHitZIndex({
   visualKind: string;
   selected?: boolean;
 }) {
-  if (selected) return 86;
   if (item.type === "site") return 18;
   const sourceState = resolveSourceState(item);
   const area = Math.max(rectPct.width * rectPct.height, 0.01);
@@ -43,7 +42,8 @@ export function resolvePreviewObjectHitZIndex({
             ? 8
             : 0;
   const stateBoost = sourceState === "fallback" ? -8 : sourceState === "blocked" ? 4 : 0;
-  return Math.max(22, Math.min(84, Math.round(42 + compactShapeBoost + kindBoost + stateBoost)));
+  const selectedBoost = selected ? 4 : 0;
+  return Math.max(22, Math.min(84, Math.round(42 + compactShapeBoost + kindBoost + stateBoost + selectedBoost)));
 }
 
 export function previewRectIntersectsViewport(rectPct: PreviewOverlayBounds) {

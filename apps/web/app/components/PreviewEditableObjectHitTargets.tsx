@@ -207,7 +207,7 @@ export function PreviewEditableObjectHitTargets({
             drawMode === "select" &&
             (!isSite || (previewInteraction === "edit" && !siteLocked));
           const hitZIndex = resolveObjectHitZIndex(item, rectPct, isSelected);
-          const overlayZIndex = isSelected ? Math.max(hitZIndex, 120) : hitZIndex;
+          const overlayZIndex = hitZIndex;
           return (
             <div
               key={item.id}

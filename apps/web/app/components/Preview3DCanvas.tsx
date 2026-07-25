@@ -29,8 +29,8 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   BUILDING: { top: "#e7ecf2", side: "#b8c3cf", line: "#475569" },
   STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
   ROAD: { top: "#8f9aa6", side: "#6f7b87", line: "#f8fafc" },
-  PARKING: { top: "#c9d1da", side: "#9da9b6", line: "#f8fafc" },
-  LOT: { top: "#f8fafc", side: "#e2e8f0", line: "#64748b" },
+  PARKING: { top: "#e5e9ee", side: "#bac4cf", line: "#f8fafc" },
+  LOT: { top: "#f8fafc", side: "#e2e8f0", line: "#94a3b8" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
@@ -41,6 +41,7 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
 
 const normalizeLayer = (layer: string) => {
   const key = String(layer || "").toUpperCase();
+  if (/\b[A-Z]\d{1,2}-\d{1,3}\b/.test(key) || /\bLOT\s*\d/.test(key) || /\bBLOCK\s*\d/.test(key)) return "LOT";
   if (key.includes("BUILDING") || key.includes("PAD")) return "BUILDING";
   if (key.includes("STRUCTURE")) return "STRUCTURE";
   if (key.includes("PARK")) return "PARKING";
@@ -100,6 +101,9 @@ const createTextSprite = (label: string, color = "#0f172a") => {
 const getItemId = (item: Preview3DItem, index: number) =>
   item.id || `${normalizeLayer(item.layer).toLowerCase()}-${item.label.replace(/\W+/g, "-").toLowerCase()}-${index}`;
 
+const preview3DLayerText = (item: Preview3DItem) =>
+  `${item.layer || ""} ${item.label || ""} ${item.entityType || ""} ${item.source || ""} ${String(item.meta?.cad_layer || "")} ${String(item.meta?.layer || "")}`;
+
 const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
   if (layer === "ROAD" || layer === "PARKING") return 0.055;
   if (layer === "SIDEWALK") return 0.035;
@@ -142,24 +146,24 @@ export default function Preview3DCanvas({
         .map((item, index) => ({
           id: getItemId(item, index),
           label: item.label,
-          layer: normalizeLayer(item.layer),
+          layer: normalizeLayer(preview3DLayerText(item)),
           confidence: describeConfidence(item.confidence),
           blockers: item.blockers || [],
           source: item.source || "preview object",
           priority:
             item.meta?.hero_massing
               ? -1
-              : normalizeLayer(item.layer) === "BUILDING"
+              : normalizeLayer(preview3DLayerText(item)) === "BUILDING"
               ? 0
-              : normalizeLayer(item.layer) === "STRUCTURE"
+              : normalizeLayer(preview3DLayerText(item)) === "STRUCTURE"
                 ? 1
-                : normalizeLayer(item.layer) === "LANDSCAPE"
+                : normalizeLayer(preview3DLayerText(item)) === "LANDSCAPE"
                   ? 2
-                  : normalizeLayer(item.layer) === "ROAD"
+                  : normalizeLayer(preview3DLayerText(item)) === "ROAD"
                     ? 3
-                    : normalizeLayer(item.layer) === "PARKING"
+                    : normalizeLayer(preview3DLayerText(item)) === "PARKING"
                       ? 4
-                      : normalizeLayer(item.layer) === "UTILITY"
+                      : normalizeLayer(preview3DLayerText(item)) === "UTILITY"
                         ? 5
                         : 9,
         }))
@@ -351,7 +355,7 @@ export default function Preview3DCanvas({
     let visibleLabelCount = 0;
     const maxVisibleLabels = selectedItemId ? 1 : 0;
     items.forEach((item, index) => {
-      const layer = normalizeLayer(item.layer);
+      const layer = normalizeLayer(preview3DLayerText(item));
       if (layer === "TERRAIN") return;
       const id = getItemId(item, index);
       const palette = layerPalette[layer] || { top: item.color || "#cbd5e1", side: item.color || "#94a3b8", line: "#f8fafc" };
@@ -390,7 +394,7 @@ export default function Preview3DCanvas({
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
         transparent: item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
         opacity: layer === "LOT"
-          ? 0.06
+          ? 0.035
           : item.unsupported
           ? 0.62
           : state === "low"
@@ -482,7 +486,7 @@ export default function Preview3DCanvas({
           mesh.userData = object.userData;
           object.add(mesh);
           if (layer === "LOT") {
-            addExactEdges(mesh, palette.line, 0.5);
+            addExactEdges(mesh, palette.line, 0.24);
           } else if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {
             addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.42 : 0.58);
           }
@@ -582,11 +586,11 @@ export default function Preview3DCanvas({
           const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
           const tubeRadius =
             layer === "ROAD"
-              ? Math.max(5, Math.min(Number(item.corridorWidth ?? 28) / 2, 21))
+              ? Math.max(4, Math.min(Number(item.corridorWidth ?? 28) / 2, 18))
               : layer === "SIDEWALK"
                 ? Math.max(1.8, Math.min(Number(item.corridorWidth ?? 6) / 2, 6))
                 : layer === "UTILITY"
-                  ? 0.42
+                  ? 0.22
                   : Math.max(Math.min(item.w, item.h) * 0.012, 0.22);
           const tube = new THREE.Mesh(
             new THREE.TubeGeometry(curve, Math.max(points.length * 10, 10), tubeRadius, 8, false),
@@ -703,19 +707,21 @@ export default function Preview3DCanvas({
           ? new THREE.MeshBasicMaterial({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
               transparent: true,
-              opacity: layer === "LOT"
-                ? 0.08
+	              opacity: layer === "LOT"
+                ? 0.03
                 : layer === "PARKING"
-                ? 0.46
+                ? 0.08
                 : layer === "ROAD"
-                  ? 0.86
-                  : state === "low"
-                ? 0.74
-                    : state === "imported"
-                      ? 0.84
-                      : state === "stale"
-                        ? 0.74
-                        : 0.86,
+                  ? 0.5
+                  : layer === "SIDEWALK"
+                    ? 0.46
+                    : state === "low"
+                      ? 0.62
+                      : state === "imported"
+                        ? 0.7
+                        : state === "stale"
+                          ? 0.62
+                          : 0.74,
             })
           : new THREE.MeshStandardMaterial({
               color: previewQuality === "high" ? palette.top : item.color || palette.top,
@@ -813,7 +819,7 @@ export default function Preview3DCanvas({
         if (layer === "LOT") {
           const lotLine = new THREE.LineSegments(
             new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(item.w * 0.98, 1), 0.08, Math.max(item.h * 0.98, 1))),
-            new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.46 }),
+	            new THREE.LineBasicMaterial({ color: palette.line, transparent: true, opacity: 0.24 }),
           );
           lotLine.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + visualLift + heightFt + 0.08));
           object.add(lotLine);
