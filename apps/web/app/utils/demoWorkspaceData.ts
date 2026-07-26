@@ -910,6 +910,24 @@ export const createUrbanizationCampusPlanPlacements = (lot: { w: number; h: numb
       { meta: { ...baseMeta, cad_entity_type: "circle", ui_color: "#365314", landscape_symbol: "tree" } },
     ),
   );
+  const contours = Array.from({ length: 9 }).map((_, idx) => {
+    const y = siteH * (0.13 + idx * 0.085);
+    const elevation = 720 - idx * 3;
+    return line(
+      `campus-contour-${idx}`,
+      `Contour ${elevation}`,
+      "custom",
+      [
+        [siteW * 0.03, y + Math.sin(idx * 0.7) * siteH * 0.018],
+        [siteW * 0.20, y + siteH * 0.026],
+        [siteW * 0.42, y - siteH * 0.012],
+        [siteW * 0.61, y + siteH * 0.022],
+        [siteW * 0.82, y - siteH * 0.006],
+        [siteW * 0.97, y + Math.cos(idx * 0.8) * siteH * 0.018],
+      ],
+      { preview_kind: "contour", ui_color: "#ca8a04", contour_elevation_ft: elevation },
+    );
+  });
 
   return [
     ...parcels,
@@ -991,6 +1009,7 @@ export const createUrbanizationCampusPlanPlacements = (lot: { w: number; h: numb
       [siteW * 0.55, siteH * 0.66],
     ], { network: "storm", ui_color: "#0284c7" }),
     ...trees,
+    ...contours,
   ];
 };
 

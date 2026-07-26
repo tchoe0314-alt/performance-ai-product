@@ -135,6 +135,7 @@ export function WorkspaceCanvasArea({
           ) : null}
           <DenseConceptActionStrip
             active={denseConceptActive}
+            previewMode={previewMode}
             rightRailCollapsed={rightRailCollapsed}
             objectCount={denseConceptObjectCount}
             onEditObjects={() => onOpenPanel("objects")}

@@ -220,11 +220,19 @@ export default function Preview3DCanvas({
     );
     const terrainZValues = sourceSamples.map((item) => Number(item.z));
     const terrainZRange = terrainZValues.length ? Math.max(...terrainZValues) - Math.min(...terrainZValues) : 0;
+    const hasReviewContourSamples = sourceSamples.some((item) => /review contour/i.test(String(item.source || "")));
     if (!sourceSamples.length) {
       return {
         label: "Flat site fallback - terrain source missing",
         detail: "No preview elevation samples were supplied; no terrain is inferred.",
         mode: "fallback" as const,
+      };
+    }
+    if (hasReviewContourSamples && terrainZRange >= 0.5) {
+      return {
+        label: "Review contour surface - not survey control",
+        detail: `${sourceSamples.length} contour-derived visual sample(s); use for review visualization only.`,
+        mode: "terrain" as const,
       };
     }
     if (!hasTerrainSource || !hasGradingSurface || terrainZRange < 0.5) {
@@ -640,21 +648,44 @@ export default function Preview3DCanvas({
             }
           });
         } else {
-          const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
-          const tubeRadius =
-            layer === "ROAD"
-              ? Math.max(4, Math.min(Number(item.corridorWidth ?? 28) / 2, 18))
-              : layer === "SIDEWALK"
-                ? Math.max(1.8, Math.min(Number(item.corridorWidth ?? 6) / 2, 6))
-                : layer === "UTILITY"
-                  ? 0.22
+          if (layer === "UTILITY") {
+            const utilityPoints = item.geometry.map(([x, y]) => toScene(x, y, baseY + 0.18));
+            const utilityLine = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints(utilityPoints),
+              new THREE.LineBasicMaterial({
+                color: palette.side,
+                transparent: true,
+                opacity: previewQuality === "high" ? 0.38 : 0.32,
+              }),
+            );
+            utilityLine.userData = object.userData;
+            object.add(utilityLine);
+            if (previewQuality === "high") {
+              utilityPoints.forEach((point, pointIndex) => {
+                const node = new THREE.Mesh(
+                  new THREE.SphereGeometry(pointIndex === 0 || pointIndex === utilityPoints.length - 1 ? 0.42 : 0.28, 10, 8),
+                  new THREE.MeshStandardMaterial({ color: palette.side, roughness: 0.72, transparent: true, opacity: 0.58 }),
+                );
+                node.position.copy(point);
+                node.userData = object.userData;
+                object.add(node);
+              });
+            }
+          } else {
+            const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.01);
+            const tubeRadius =
+              layer === "ROAD"
+                ? Math.max(4, Math.min(Number(item.corridorWidth ?? 28) / 2, 18))
+                : layer === "SIDEWALK"
+                  ? Math.max(1.8, Math.min(Number(item.corridorWidth ?? 6) / 2, 6))
                   : Math.max(Math.min(item.w, item.h) * 0.012, 0.22);
-          const tube = new THREE.Mesh(
-            new THREE.TubeGeometry(curve, Math.max(points.length * 10, 10), tubeRadius, 8, false),
-            cadMaterial,
-          );
-          tube.userData = object.userData;
-          object.add(tube);
+            const tube = new THREE.Mesh(
+              new THREE.TubeGeometry(curve, Math.max(points.length * 10, 10), tubeRadius, 8, false),
+              cadMaterial,
+            );
+            tube.userData = object.userData;
+            object.add(tube);
+          }
           if (layer === "ROAD") {
             const centerline = new THREE.Line(
               new THREE.BufferGeometry().setFromPoints(points.map((point) => point.clone().add(new THREE.Vector3(0, 0.12, 0)))),
@@ -1082,6 +1113,13 @@ export default function Preview3DCanvas({
       <div ref={mountRef} className="h-full w-full touch-none" data-testid="civil-3d-canvas-mount" />
       <div className="pointer-events-none absolute bottom-4 left-4 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm">
         Review visualization only | visual mode does not mutate canonical geometry
+      </div>
+      <div
+        className="pointer-events-none absolute left-4 top-4 max-w-[min(330px,calc(100%-2rem))] rounded-xl border border-slate-200 bg-white/88 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur"
+        data-testid="civil-3d-terrain-state"
+        title={terrainState.detail}
+      >
+        {terrainState.label}
       </div>
       <div className="pointer-events-none absolute right-4 top-20 rounded-full bg-slate-900/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white sm:top-4">
         Orbit | Pan | Zoom

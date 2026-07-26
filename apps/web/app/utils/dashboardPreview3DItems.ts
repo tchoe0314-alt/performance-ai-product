@@ -18,6 +18,60 @@ type PreviewLayerFlags = {
 
 type LotBounds = { w: number; h: number };
 
+function contourElevationForPlacement(item: BuildingPlacement, fallbackIndex: number) {
+  const metaElevation = Number((item.meta as { contour_elevation_ft?: number | string } | undefined)?.contour_elevation_ft);
+  if (Number.isFinite(metaElevation)) return metaElevation;
+  const labelMatch = String(item.label || "").match(/(-?\d+(?:\.\d+)?)/);
+  if (labelMatch) {
+    const labelElevation = Number(labelMatch[1]);
+    if (Number.isFinite(labelElevation)) return labelElevation;
+  }
+  return 1000 - fallbackIndex * 2;
+}
+
+function buildReviewContourTerrainSamples(buildingPlacements: BuildingPlacement[]): Preview3DItem[] {
+  const contourObjects = buildingPlacements.filter(
+    (item) =>
+      item.placed &&
+      item.geometryType === "polyline" &&
+      Array.isArray(item.geometry) &&
+      String((item.meta as { preview_kind?: unknown } | undefined)?.preview_kind || "").toLowerCase() === "contour",
+  );
+  if (contourObjects.length < 2) return [];
+
+  const elevations = contourObjects.map((item, index) => contourElevationForPlacement(item, index));
+  const minElevation = Math.min(...elevations);
+  const maxElevation = Math.max(...elevations);
+  const elevationRange = Math.max(maxElevation - minElevation, 1);
+  const verticalScale = Math.min(18, Math.max(5, elevationRange * 0.32));
+
+  return contourObjects.flatMap((item, contourIndex) => {
+    const points = (item.geometry || []) as Array<[number, number]>;
+    const elevation = elevations[contourIndex];
+    const z = ((elevation - minElevation) / elevationRange - 0.5) * verticalScale;
+    const stride = Math.max(1, Math.floor(points.length / 4));
+    return points
+      .filter((_, pointIndex) => pointIndex % stride === 0 || pointIndex === points.length - 1)
+      .slice(0, 5)
+      .map(([x, y], pointIndex) => ({
+        id: `review-contour-terrain-${contourIndex + 1}-${pointIndex + 1}`,
+        x,
+        y,
+        w: 1,
+        h: 1,
+        height: 0.1,
+        z,
+        color: "#d9f99d",
+        label: `Review contour ${Math.round(elevation)}`,
+        layer: "TERRAIN",
+        source: "review contour geometry",
+        confidence: "visual contour review only",
+        blockers: ["not survey control"],
+        terrainSample: true,
+      }));
+  });
+}
+
 function normalizePreview3DLayer(layer: unknown) {
   const key = String(layer || "").toUpperCase();
   if (key.includes("BUILDING") || key.includes("PAD")) return "BUILDING";
@@ -456,6 +510,7 @@ export function buildPlacementPreview3DItems({
       layer: "TERRAIN",
     });
   }
+  items.push(...buildReviewContourTerrainSamples(buildingPlacements));
   buildingPlacements
     .filter((item) => item.type !== "site" && item.placed)
     .forEach((item) => {

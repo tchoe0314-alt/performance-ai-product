@@ -203,6 +203,7 @@ test("creates an urbanization campus plan with colored sheet objects and 3D mass
   await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();
   await page.getByTestId("preview-mode-3d").click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("civil-3d-terrain-state")).toContainText(/review contour surface/i);
   await expect(page.getByTestId("civil-3d-object-strip")).toContainText(/Civic Hall|Library|Market Hall/i, { timeout: 20_000 });
 
   const bodyText = await canvas.innerText();
