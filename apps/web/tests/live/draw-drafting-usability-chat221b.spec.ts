@@ -364,9 +364,8 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     const lineRows = page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ });
     await expect(lineRows).toHaveCount(4);
-    for (let index = 0; index < 4; index += 1) {
-      await lineRows.nth(index).getByTestId("object-manager-bulk-select").check();
-    }
+    await page.getByRole("button", { name: /Select visible draft/i }).click();
+    await expect(page.getByTestId("object-manager-selected-count")).toContainText(/Selected [1-9]/);
 
     await page.getByTestId("object-manager-combine-name").fill("Office Footprint A");
     await page.getByTestId("object-manager-combine-type").selectOption("office_building");

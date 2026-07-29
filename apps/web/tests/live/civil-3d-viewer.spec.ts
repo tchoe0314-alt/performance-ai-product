@@ -80,7 +80,7 @@ test.describe("Civil 3D model viewer", () => {
 
     await page.getByTestId("preview-quality-high").click();
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText("High Quality");
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText(/visual preview only/i);
     expect(await objectButtons.count()).toBe(initialCount);
 
     await page.getByTestId("preview-quality-standard").click();

@@ -29,6 +29,10 @@ export function Preview3DShell({
   onSelectItem,
   onOpenFullscreen,
 }: Preview3DShellProps) {
+  const hasReviewContourSurface = items.some(
+    (item) => item.terrainSample && /review contour/i.test(String(item.source || "")),
+  );
+
   if (!items.length) {
     return (
       <div className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
@@ -75,9 +79,9 @@ export function Preview3DShell({
         >
           Open Fullscreen
         </button>
-        {!hasGradingSurface ? (
+        {!hasGradingSurface && !hasReviewContourSurface ? (
           <div className="pointer-events-none rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
-            Grading surface missing
+            Flat preview surface
           </div>
         ) : null}
       </div>

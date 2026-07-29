@@ -72,7 +72,23 @@ export function runObjectManagerCombineSelected({
     actions.reportObjectActionBlocker("Combine needs input: selected objects are locked or source-only.");
     return;
   }
-  const semanticArea = selectedObjectsToSemanticArea(editable);
+  let effectiveEditable = editable;
+  let semanticArea = selectedObjectsToSemanticArea(effectiveEditable);
+  if (!semanticArea.valid && editable.length > 1) {
+    const customLineworkEditable = editable.filter(
+      (item) =>
+        item.geometryType === "polyline" &&
+        (item.type === "custom" || /^custom line/i.test(String(item.label || ""))),
+    );
+    const lineworkEditable = customLineworkEditable.length >= 3
+      ? customLineworkEditable
+      : editable.filter((item) => item.geometryType === "polyline");
+    const lineworkArea = selectedObjectsToSemanticArea(lineworkEditable);
+    if (lineworkArea.valid && lineworkArea.geometry.length >= 3) {
+      effectiveEditable = lineworkEditable;
+      semanticArea = lineworkArea;
+    }
+  }
   if (!semanticArea.valid || semanticArea.geometry.length < 3) {
     actions.reportObjectActionBlocker(`Combine needs input: ${semanticArea.blockers[0] || "selected geometry does not form one closed area."}`);
     return;
@@ -132,19 +148,19 @@ export function runObjectManagerCombineSelected({
       semantic_source_mode: semanticArea.sourceMode,
       canonical_object_type: nextType,
       footprint_area_sf: semanticAreaSf,
-      combined_from_object_ids: editable.map((item) => item.id),
-      combined_from_labels: editable.map((item) => item.label),
-      combined_source_count: editable.length,
-      affected_systems: actions.systemsImpactedByPlacement({ ...editable[0], type: nextType }),
+      combined_from_object_ids: effectiveEditable.map((item) => item.id),
+      combined_from_labels: effectiveEditable.map((item) => item.label),
+      combined_source_count: effectiveEditable.length,
+      affected_systems: actions.systemsImpactedByPlacement({ ...effectiveEditable[0], type: nextType }),
     },
   };
   const undo: DraftUndoAction = {
     action: "combine",
     object: combinedObject,
-    hiddenSources: editable.map(cloneBuildingPlacementForUndo),
+    hiddenSources: effectiveEditable.map(cloneBuildingPlacementForUndo),
     label: "combine objects",
   };
-  const editableIds = new Set(editable.map((item) => item.id));
+  const editableIds = new Set(effectiveEditable.map((item) => item.id));
   const nextPlacements = [
     ...buildingPlacementsRef.current.map((item) =>
       editableIds.has(item.id)
@@ -172,12 +188,12 @@ export function runObjectManagerCombineSelected({
   actions.recordRecentChange({
     type: "object_added",
     label: "Objects combined",
-    detail: `${editable.length} drawn objects were combined into ${nextLabel}. Source pieces were hidden, not deleted.`,
+    detail: `${effectiveEditable.length} drawn objects were combined into ${nextLabel}. Source pieces were hidden, not deleted.`,
     undo,
   });
   const message = semanticArea.sourceMode === "program_group_bounds"
-    ? `Combined ${editable.length} drawn objects into ${nextLabel}. Group bounds area: ${formatDraftMeasure(semanticAreaSf, "sf")}.`
-    : `Combined ${editable.length} drawn geometry piece${editable.length === 1 ? "" : "s"} into ${nextLabel} as a semantic ${SITE_OBJECT_CATALOG[nextType]?.label ?? "object"}. Area: ${formatDraftMeasure(semanticAreaSf, "sf")}.`;
+    ? `Combined ${effectiveEditable.length} drawn objects into ${nextLabel}. Group bounds area: ${formatDraftMeasure(semanticAreaSf, "sf")}.`
+    : `Combined ${effectiveEditable.length} drawn geometry piece${effectiveEditable.length === 1 ? "" : "s"} into ${nextLabel} as a semantic ${SITE_OBJECT_CATALOG[nextType]?.label ?? "object"}. Area: ${formatDraftMeasure(semanticAreaSf, "sf")}.`;
   actions.setObjectManagerStatusMessage(message);
   actions.setStatusMessage(message);
   actions.appendChatMessage("assistant", `${message} Source pieces are hidden, preserved for trace, and the new object is review-required.`, "status");

@@ -152,8 +152,16 @@ export default function Preview3DCanvas({
   const selectedRef = useRef<string | null | undefined>(selectedItemId);
   const [picked, setPicked] = useState<PickedObject | null>(null);
   const objectChips = useMemo(
-    () =>
-      items
+    () => {
+      const hasReviewContourSurface = items.some(
+        (item) => item.terrainSample && /review contour/i.test(String(item.source || "")),
+      );
+      return items
+        .filter((item) => {
+          if (item.terrainSample) return false;
+          if (hasReviewContourSurface && /grading surface missing/i.test(String(item.label || ""))) return false;
+          return true;
+        })
         .map((item, index) => ({
           id: getItemId(item, index),
           label: item.label,
@@ -168,19 +176,22 @@ export default function Preview3DCanvas({
               ? 0
               : normalizeLayer(preview3DLayerText(item)) === "STRUCTURE"
                 ? 1
-                : normalizeLayer(preview3DLayerText(item)) === "LANDSCAPE"
+                : normalizeLayer(preview3DLayerText(item)) === "DRAINAGE"
                   ? 2
-                  : normalizeLayer(preview3DLayerText(item)) === "ROAD"
-                    ? 3
+                : normalizeLayer(preview3DLayerText(item)) === "LANDSCAPE"
+                  ? 3
+                : normalizeLayer(preview3DLayerText(item)) === "ROAD"
+                    ? 4
                     : normalizeLayer(preview3DLayerText(item)) === "PARKING"
-                      ? 4
+                      ? 5
                       : normalizeLayer(preview3DLayerText(item)) === "UTILITY"
-                        ? 5
+                        ? 6
                         : 9,
         }))
         .filter((item) => item.layer !== "TERRAIN")
         .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
-        .slice(0, 10),
+        .slice(0, 6);
+    },
     [items],
   );
 
@@ -1014,9 +1025,12 @@ export default function Preview3DCanvas({
         }
       }
 
+      const suppressContradictoryGradingBadge =
+        terrainState.mode === "terrain" && /grading surface missing/i.test(String(item.label || ""));
       const needsBadge =
-        object.userData.blockers.length > 0 ||
-        /low|missing|review/i.test(String(object.userData.confidence));
+        !suppressContradictoryGradingBadge &&
+        (object.userData.blockers.length > 0 ||
+        /low|missing|review/i.test(String(object.userData.confidence)));
       if (needsBadge && visibleLabelCount < maxVisibleLabels) {
         const sprite = createTextSprite(needsBadge ? `${item.label} | review` : item.label, needsBadge ? "#b45309" : "#0f172a");
         sprite.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 8));
@@ -1125,7 +1139,10 @@ export default function Preview3DCanvas({
         Orbit | Pan | Zoom
       </div>
       {objectChips.length ? (
-        <div className="absolute right-4 top-32 z-[90] flex max-h-36 w-[min(238px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/88 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
+        <div className="absolute right-4 top-32 z-[90] flex max-h-36 w-[min(218px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/76 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
+          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            Objects
+          </p>
           {objectChips.map((object) => (
             <button
               key={object.id}
@@ -1134,7 +1151,7 @@ export default function Preview3DCanvas({
               className={`min-w-0 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition ${
                 selectedItemId === object.id
                   ? "border-amber-300 bg-amber-50 text-amber-800"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border-slate-200/80 bg-white/74 text-slate-700 hover:bg-white"
               }`}
             >
               <span className="block truncate">{object.label}</span>

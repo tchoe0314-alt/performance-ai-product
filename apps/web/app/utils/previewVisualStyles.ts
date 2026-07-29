@@ -110,11 +110,11 @@ export function resolvePreviewSvgVisualStyle(
   }
   if (solidCadSymbol) {
     return {
-      fill: selected ? "rgba(34,211,238,0.36)" : "#020617",
-      stroke: selected ? "#22d3ee" : "#020617",
-      strokeWidth: selected ? 0.11 : 0.05,
+      fill: selected ? "rgba(34,211,238,0.28)" : "rgba(51,65,85,0.7)",
+      stroke: selected ? "#22d3ee" : "rgba(15,23,42,0.78)",
+      strokeWidth: selected ? 0.1 : 0.038,
       strokeDasharray: undefined,
-      opacity: 0.98,
+      opacity: 0.78,
     };
   }
   if (kind === "road") {
@@ -145,7 +145,7 @@ export function resolvePreviewSvgVisualStyle(
     return { fill: "rgba(248, 113, 113, 0.08)", stroke: stateStroke("#dc2626"), strokeWidth: reviewWidth(0.075, 0.14), strokeDasharray: dash, opacity: stateOpacity };
   }
   if (kind === "building") {
-    return { fill: "rgba(255, 255, 255, 0.62)", stroke: stateStroke("#111827"), strokeWidth: reviewWidth(0.13, 0.22), strokeDasharray: dash, opacity: stateOpacity };
+    return { fill: "rgba(255, 255, 255, 0.64)", stroke: stateStroke("#334155"), strokeWidth: reviewWidth(0.105, 0.19), strokeDasharray: dash, opacity: stateOpacity };
   }
   return { fill: "rgba(248, 250, 252, 0.028)", stroke: stateStroke("#64748b"), strokeWidth: reviewWidth(0.085, 0.18), strokeDasharray: dash, opacity: stateOpacity };
 }
