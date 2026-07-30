@@ -130,13 +130,16 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
 
   await page.getByRole("button", { name: "Setup" }).first().click();
   await expect(page.getByTestId("setup-address-truth")).toBeVisible();
-  await page.getByLabel("Type project address").fill("20525 Margo St, Gretna, NE");
+  await page
+    .getByLabel("Type project address")
+    .fill("20525 Margo St Gretna NE and it is 1000ft by 1000 ft with the address as the center point");
+  await expect(page.getByLabel("Type project address")).toHaveValue("20525 Margo St Gretna NE");
   const siteBoxSection = page.getByTestId("setup-site-box-controls");
   if (!(await siteBoxSection.evaluate((node) => node.hasAttribute("open")))) {
     await siteBoxSection.locator("summary").click();
   }
-  await page.getByLabel("Site width in feet").fill("1000");
-  await page.getByLabel("Site depth in feet").fill("1000");
+  await expect(page.getByLabel("Site width in feet")).toHaveValue("1000");
+  await expect(page.getByLabel("Site depth in feet")).toHaveValue("1000");
   await page.getByTestId("create-centered-site-button").click();
 
   await page.getByRole("button", { name: "Setup" }).first().click();

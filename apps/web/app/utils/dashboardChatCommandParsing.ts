@@ -142,6 +142,7 @@ export function parseDashboardDirectSiteSetupCommand(
       .replace(/^\b(?:with|using|at|centered\s+(?:at|on)|centred\s+(?:at|on))\b\s*/i, "")
       .replace(/^(?:is|it'?s|it is|gonna|going to be|will be|should be)\b\s*/i, "")
       .replace(/\b(?:as|for|with)?\s*(?:the\s+)?(?:center|centre)(?:\s+point)?\b.*$/i, "")
+      .replace(/\b(?:and\s+)?(?:it'?s|it is|its|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
       .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
       .replace(/[.,;:]+$/g, "")
       .trim();
@@ -176,6 +177,7 @@ export function parseDashboardDirectSiteSetupCommand(
   if (!address && currentAddress && /\baddress\b/i.test(afterSize)) {
     address = currentAddress;
   }
+  address = cleanAddressCandidate(address).replace(/\b(?:and\s+)?(?:it'?s|it is|its)\s*$/i, "").trim();
   if (address.length < 6 || !/\d/.test(address)) return null;
   return { address, width, height };
 }

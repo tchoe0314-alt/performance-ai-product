@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 
 import { DashboardHomePanel } from "../components/DashboardHomePanel";
@@ -10,6 +10,7 @@ import type {
   ProjectRecord,
 } from "../types";
 import type { AddressSuggestion } from "../utils/dashboardDataTypes";
+import { parseDashboardDirectSiteSetupCommand } from "../utils/dashboardChatCommandParsing";
 import type { SidePanelKey } from "../utils/workspaceShell";
 
 type DashboardHomePanelProps = ComponentProps<typeof DashboardHomePanel>;
@@ -334,6 +335,17 @@ export function useDashboardStartPanelProps({
     workflowReviewDashboard,
   ]);
 
+  const handleSiteAddressChange = useCallback((value: string) => {
+    const parsed = parseDashboardDirectSiteSetupCommand(value, siteAddress.trim());
+    if (parsed && !siteScaleLocked) {
+      onSiteAddressChange(parsed.address);
+      onLotWidthChange(String(Math.round(parsed.width)));
+      onLotHeightChange(String(Math.round(parsed.height)));
+      return;
+    }
+    onSiteAddressChange(value);
+  }, [onLotHeightChange, onLotWidthChange, onSiteAddressChange, siteAddress, siteScaleLocked]);
+
   const siteSetupPanelProps = useMemo<SiteSetupPanelProps>(() => ({
     address: {
       pendingAddressEdit,
@@ -347,7 +359,7 @@ export function useDashboardStartPanelProps({
       addressSuggestions,
       autoExistingConditionsStatus,
       siteAddressInputRef,
-      onSiteAddressChange,
+      onSiteAddressChange: handleSiteAddressChange,
       onSelectedAddressSuggestionChange,
       onAddressSuggestionsChange,
       onSaveSiteAddress,
@@ -438,7 +450,7 @@ export function useDashboardStartPanelProps({
     onReviewFoundContext,
     onSaveSiteAddress,
     onSelectedAddressSuggestionChange,
-    onSiteAddressChange,
+    handleSiteAddressChange,
     onStartBlankSite,
     onStartSiteBoundaryDraw,
     onUnlockSite,
