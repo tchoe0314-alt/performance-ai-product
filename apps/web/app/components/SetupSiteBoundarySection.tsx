@@ -76,18 +76,6 @@ export function SetupSiteBoundarySection({
           {oversizedSiteMessage}
         </p>
       ) : null}
-      <button
-        type="button"
-        onClick={() => {
-          onLotWidthChange("1000");
-          onLotHeightChange("1000");
-        }}
-        disabled={siteScaleLocked}
-        className="mt-3 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-        data-testid="use-1000-site-size"
-      >
-        Use 1000 ft x 1000 ft
-      </button>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -105,6 +93,18 @@ export function SetupSiteBoundarySection({
           {siteScaleLocked ? "Change Boundary" : "Lock Boundary"}
         </button>
       </div>
+      <button
+        type="button"
+        onClick={() => {
+          onLotWidthChange("1000");
+          onLotHeightChange("1000");
+        }}
+        disabled={siteScaleLocked}
+        className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+        data-testid="use-1000-site-size"
+      >
+        Use 1000 ft x 1000 ft
+      </button>
       <button
         type="button"
         onClick={onCreateCenteredSite}
