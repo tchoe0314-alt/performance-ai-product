@@ -333,7 +333,6 @@ export function DeliverPanel({
       </DisclosurePanel>
 
       <DisclosurePanel
-        defaultOpen
         testId="deliver-review-sheet-preview"
         title="Review sheet preview"
         subtitle="Open only when you want sheet layout details"

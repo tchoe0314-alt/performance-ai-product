@@ -95,12 +95,17 @@ export function handlePreviewCadToolRequest({
   onSetPreviewMode("2d");
   onSetPreviewInteraction("edit");
 
-  const activateDrawMode = (mode: DrawMode, label: string, autoFinishPointCount: number | null = null) => {
+  const clearDraftDrawState = () => {
     if (draftPointsRef) draftPointsRef.current = [];
     setDraftPoints([]);
     setDraftPreviewPoint(null);
-    setDrawAutoFinishPointCount(autoFinishPointCount);
+    setDrawAutoFinishPointCount(null);
     setCadActiveCommand(null);
+  };
+
+  const activateDrawMode = (mode: DrawMode, label: string, autoFinishPointCount: number | null = null) => {
+    clearDraftDrawState();
+    setDrawAutoFinishPointCount(autoFinishPointCount);
     onSelectBuilding(null);
     setManagedObjectId(null);
     setHoveredObjectId(null);
@@ -116,13 +121,10 @@ export function handlePreviewCadToolRequest({
     );
   };
 
-  switch (cadToolRequest.tool) {
+    switch (cadToolRequest.tool) {
     case "select":
+      clearDraftDrawState();
       setDrawMode("select");
-      if (draftPointsRef) draftPointsRef.current = [];
-      setDraftPoints([]);
-      setDraftPreviewPoint(null);
-      setDrawAutoFinishPointCount(null);
       pushCadCommandFeedback("SELECT", "info", "SELECT tool active. Click an object on the canvas or choose one from the object list.");
       break;
     case "line":
@@ -141,14 +143,20 @@ export function handlePreviewCadToolRequest({
       activateDrawMode("point", "POINT");
       break;
     case "circle":
+      clearDraftDrawState();
+      setDrawMode("select");
       setCadCommandDraft(`CIRCLE ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 25`);
       pushCadCommandFeedback("CIRCLE", "info", "CIRCLE command loaded. Adjust center/radius in the command line, then press Run.");
       break;
     case "arc":
+      clearDraftDrawState();
+      setDrawMode("select");
       setCadCommandDraft(`ARC ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 40 0 90`);
       pushCadCommandFeedback("ARC", "info", "ARC command loaded. Adjust center/radius/start/end in the command line, then press Run.");
       break;
     case "text":
+      clearDraftDrawState();
+      setDrawMode("select");
       setCadCommandDraft(`TEXT ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} note`);
       pushCadCommandFeedback("TEXT", "info", "TEXT command loaded. Edit the point and note text, then press Run.");
       break;
