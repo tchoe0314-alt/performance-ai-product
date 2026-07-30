@@ -383,22 +383,24 @@ export function useDashboardGenerateSystemAction({
       }
       if (!token) {
         const summary = blockedSummary(
-          "backend/auth session is required to run Generate on the hosted website",
-          "Sign in/connect backend, or keep editing the local review layout before running Generate.",
+          "backend/auth session is required for hosted engineering generation",
+          "Keep editing this local review layout, or sign in before running backend generation.",
         );
         recordGenerateSummary(summary);
         updateProjectStatus({
-          state: "blocked",
+          state: conceptCount ? "needs review" : "blocked",
           area: "generate",
-          title: "Generate needs sign-in",
-          detail: "Hosted Generate needs a signed-in backend session. No backend request was sent.",
+          title: conceptCount ? "Local draft concepts added" : "Generate needs sign-in",
+          detail: conceptCount
+            ? "Civora added local review concept geometry. Backend engineering generation needs a signed-in session."
+            : "Hosted engineering generation needs a signed-in backend session. No backend request was sent.",
           nextAction: summary.next_action,
         });
         appendChatMessage(
           "assistant",
           conceptCount
-            ? `I added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"} to the canvas. Hosted Generate still needs a signed-in backend session before an engineering request can run.`
-            : "Generate needs a signed-in backend session on the hosted website. I did not send an engineering request; keep editing locally or sign in/connect backend to run Generate.",
+            ? `I added ${conceptCount} visible review concept object${conceptCount === 1 ? "" : "s"} to the canvas. Sign in when you want backend engineering generation; this local layout remains review-only.`
+            : "Generate needs a signed-in backend session for backend engineering generation. I did not send an engineering request; keep editing locally or sign in to run Generate.",
           "status",
         );
         return;

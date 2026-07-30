@@ -111,7 +111,7 @@ export function useDashboardSiteSetupUtilityActions({
     setShowSiteBounds(false);
     setSiteSelectionMode(false);
     setPreviewMode("2d");
-    setPreviewQuality("high");
+    setPreviewQuality("standard");
     setPreviewInteraction("static");
     setActiveWorkspaceMode("canvas");
     setActiveSidePanel(null);

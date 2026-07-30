@@ -131,6 +131,7 @@ export function GeneratePanel({
         <button
           type="button"
           data-testid="generate-main-action"
+          aria-label="Generate systems"
           onClick={() => {
             if (missingSite) {
               onStatusMessageChange("Generate needs a locked site boundary in Setup first.");

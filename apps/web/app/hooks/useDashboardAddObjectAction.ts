@@ -78,6 +78,7 @@ type UseDashboardAddObjectActionInput = {
   setPlacementModeEnabled: StateSetter<boolean>;
   setPreviewInteraction: StateSetter<"static" | "edit">;
   setPreviewMode: StateSetter<"2d" | "3d">;
+  setPreviewQuality: StateSetter<"standard" | "high">;
 };
 
 export function useDashboardAddObjectAction({
@@ -113,6 +114,7 @@ export function useDashboardAddObjectAction({
   setPlacementModeEnabled,
   setPreviewInteraction,
   setPreviewMode,
+  setPreviewQuality,
 }: UseDashboardAddObjectActionInput) {
   return useCallback(
     (
@@ -170,6 +172,7 @@ export function useDashboardAddObjectAction({
       setActivePlacementId(autoPlaced ? null : nextPlacement.id);
       setPlacementModeEnabled(!autoPlaced);
       setPreviewMode("2d");
+      setPreviewQuality("standard");
       setPreviewInteraction(autoPlaced ? "static" : "edit");
       recordDraftUndoAction({ action: "add", object: nextPlacement });
       recordRecentChange({
@@ -217,6 +220,7 @@ export function useDashboardAddObjectAction({
       setPlacementModeEnabled,
       setPreviewInteraction,
       setPreviewMode,
+      setPreviewQuality,
     ],
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import type { BuildingPlacement } from "../types";
 import type { CadToolRequest, DrawMode } from "../utils/cadToolTypes";
@@ -16,6 +16,7 @@ type PreviewCadToolRequestEffectArgs = {
   cadOffsetDistance: string;
   selectedDeletableObject: BuildingPlacement | null;
   setDraftPoints: (points: Array<[number, number]>) => void;
+  draftPointsRef?: MutableRefObject<Array<[number, number]>>;
   setDraftPreviewPoint: (point: [number, number] | null) => void;
   setDrawAutoFinishPointCount: (count: number | null) => void;
   setCadActiveCommand: (command: CadActiveCommand | null) => void;
@@ -71,6 +72,7 @@ export function usePreviewCadToolRequestEffect({
   cadOffsetDistance,
   selectedDeletableObject,
   setDraftPoints,
+  draftPointsRef,
   setDraftPreviewPoint,
   setDrawAutoFinishPointCount,
   setCadActiveCommand,
@@ -115,6 +117,7 @@ export function usePreviewCadToolRequestEffect({
       cadOffsetDistance,
       selectedDeletableObject,
       setDraftPoints,
+      draftPointsRef,
       setDraftPreviewPoint,
       setDrawAutoFinishPointCount,
       setCadActiveCommand,
@@ -154,6 +157,7 @@ export function usePreviewCadToolRequestEffect({
     cadOffsetDistance,
     cadToolRequest,
     changeSelectedPolylineState,
+    draftPointsRef,
     filletSelectedCadObject,
     insertCadSymbol,
     joinSelectedCadObjects,

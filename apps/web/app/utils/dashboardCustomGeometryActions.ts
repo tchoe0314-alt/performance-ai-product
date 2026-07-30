@@ -20,6 +20,7 @@ export type DashboardCustomGeometryActions = {
   setPlacementModeEnabled: StateSetter<boolean>;
   setPreviewInteraction: (value: "static" | "edit") => void;
   setPreviewMode: (value: "2d" | "3d") => void;
+  setPreviewQuality: (value: "standard" | "high") => void;
   setSelectedObjectIds: StateSetter<string[]>;
   setStatusMessage: (message: string) => void;
 };
@@ -152,6 +153,7 @@ export function runDashboardCreateCustomGeometry({
   actions.setSelectedObjectIds([nextPlacement.id]);
   actions.setPlacementModeEnabled(false);
   actions.setPreviewMode("2d");
+  actions.setPreviewQuality("standard");
   actions.setPreviewInteraction("edit");
   actions.markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
   actions.setStatusMessage("Custom geometry added as user-authored project geometry. Regenerate systems only after reviewing impacts.");

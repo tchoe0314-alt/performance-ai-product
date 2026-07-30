@@ -78,7 +78,7 @@ export function SetupAddressSection({
             onSelectedAddressSuggestionChange(null);
           }}
           placeholder="123 Main St, City, State"
-          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 focus:border-slate-400 focus:outline-none"
+          className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm font-semibold normal-case tracking-normal text-slate-900 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.65)] placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100"
         />
       </label>
       {addressSuggestions.length && !siteScaleLocked ? (
@@ -107,7 +107,8 @@ export function SetupAddressSection({
         type="button"
         onClick={onSaveSiteAddress}
         disabled={!siteAddress.trim() || onlineDiscoveryBusy}
-        className="mt-3 w-full rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+        aria-label={siteAddress.trim() ? "Apply address" : "Enter address first"}
+        className="mt-3 w-full rounded-xl border border-blue-600 bg-blue-600 px-3 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_14px_28px_-22px_rgba(37,99,235,0.9)] transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
       >
         {onlineDiscoveryBusy ? "Applying address..." : siteAddress.trim() ? "Apply Address" : "Enter Address First"}
       </button>

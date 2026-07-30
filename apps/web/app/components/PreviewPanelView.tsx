@@ -1838,6 +1838,7 @@ export default function PreviewPanel({
     cadOffsetDistance,
     selectedDeletableObject,
     setDraftPoints,
+    draftPointsRef,
     setDraftPreviewPoint,
     setDrawAutoFinishPointCount,
     setCadActiveCommand,

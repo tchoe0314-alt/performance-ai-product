@@ -35,6 +35,7 @@ type UseDashboardPlacementActionHandlersInput = {
   setPlacementModeEnabled: StateSetter<boolean>;
   setPreviewInteraction: (value: PreviewInteraction) => void;
   setPreviewMode: (value: PreviewMode) => void;
+  setPreviewQuality: (value: "standard" | "high") => void;
   setSelectedObjectIds: StateSetter<string[]>;
   setStatusMessage: (message: string) => void;
   siteScaleLocked: boolean;
@@ -61,6 +62,7 @@ export function useDashboardPlacementActionHandlers({
   setPlacementModeEnabled,
   setPreviewInteraction,
   setPreviewMode,
+  setPreviewQuality,
   setSelectedObjectIds,
   setStatusMessage,
   siteScaleLocked,
@@ -88,6 +90,7 @@ export function useDashboardPlacementActionHandlers({
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
+    setPreviewQuality,
     setSelectedObjectIds,
     setStatusMessage,
     systemsImpactedByPlacement,
@@ -106,6 +109,7 @@ export function useDashboardPlacementActionHandlers({
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
+    setPreviewQuality,
     setSelectedObjectIds,
     setStatusMessage,
     systemsImpactedByPlacement,
@@ -148,6 +152,7 @@ export function useDashboardPlacementActionHandlers({
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
+    setPreviewQuality,
     setSelectedObjectIds,
     setStatusMessage,
   }), [
@@ -161,6 +166,7 @@ export function useDashboardPlacementActionHandlers({
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
+    setPreviewQuality,
     setSelectedObjectIds,
     setStatusMessage,
   ]);

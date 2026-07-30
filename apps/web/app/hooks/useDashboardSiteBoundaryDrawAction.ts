@@ -56,6 +56,7 @@ type UseDashboardSiteBoundaryDrawActionInput = {
   setShowSiteBounds: StateSetter<boolean>;
   setSiteScaleLocked: StateSetter<boolean>;
   setSiteSelectionMode: StateSetter<boolean>;
+  setPreviewQuality: (value: "standard" | "high") => void;
   setStatusMessage: (message: string) => void;
   siteName: string;
   units: string;
@@ -95,6 +96,7 @@ export function useDashboardSiteBoundaryDrawAction({
   setShowSiteBounds,
   setSiteScaleLocked,
   setSiteSelectionMode,
+  setPreviewQuality,
   setStatusMessage,
   siteName,
   units,
@@ -188,6 +190,7 @@ export function useDashboardSiteBoundaryDrawAction({
       setSiteScaleLocked(true);
       setShowSiteBounds(false);
       setSiteSelectionMode(false);
+      setPreviewQuality("standard");
       setFitToSiteRequest((value) => value + 1);
       setBuildingPlacements(nextPlacements);
       markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
@@ -292,6 +295,7 @@ export function useDashboardSiteBoundaryDrawAction({
       setShowSiteBounds,
       setSiteScaleLocked,
       setSiteSelectionMode,
+      setPreviewQuality,
       setStatusMessage,
       siteName,
       units,

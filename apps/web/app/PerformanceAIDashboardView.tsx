@@ -1535,6 +1535,7 @@ function PerformanceAIDashboardView({
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
+    setPreviewQuality,
   });
 
   const {
@@ -1744,6 +1745,7 @@ function PerformanceAIDashboardView({
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
+    setPreviewQuality,
     setSelectedObjectIds,
     setStatusMessage,
     siteScaleLocked,
@@ -1784,6 +1786,7 @@ function PerformanceAIDashboardView({
     setShowSiteBounds,
     setSiteScaleLocked,
     setSiteSelectionMode,
+    setPreviewQuality,
     setStatusMessage,
     siteName,
     units,

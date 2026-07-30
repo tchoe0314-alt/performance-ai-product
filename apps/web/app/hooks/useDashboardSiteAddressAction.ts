@@ -145,7 +145,7 @@ export function useDashboardSiteAddressAction({
         autoExistingRunKeyRef.current = "";
         setActiveWorkspaceMode("setup");
         setActiveSidePanel("site_existing");
-        const message = "Sign in/connect backend to apply address. Address saved locally; online geocode/source lookup needs sign-in/backend connection.";
+        const message = "Address saved locally. Live geocode and source lookup need sign-in/backend access; you can still create a site, draw, and review this local layout.";
         setAutoExistingConditionsStatus({
           status: "blocked",
           message,
@@ -157,7 +157,7 @@ export function useDashboardSiteAddressAction({
           area: "setup",
           title: "Address applied locally",
           detail: message,
-          nextAction: "Lock the site boundary for layout, or sign in/connect backend to geocode and fetch source context.",
+          nextAction: "Create or lock the site boundary, then draw or generate from the local layout.",
         });
         return;
       }
@@ -408,7 +408,7 @@ export function useDashboardSiteAddressAction({
         }
         setSiteAddress(trimmed);
         setShowSiteBounds(preserveLockedSite ? false : true);
-        setPreviewQuality("high");
+        setPreviewQuality("standard");
         setSiteSelectionMode(preserveLockedSite ? false : true);
         setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
         autoExistingRunKeyRef.current = "";

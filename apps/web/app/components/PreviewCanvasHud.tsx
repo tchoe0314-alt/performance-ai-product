@@ -42,7 +42,7 @@ export function PreviewCanvasHud({
 }: PreviewCanvasHudProps) {
   return (
     <>
-      <div className="pointer-events-none absolute left-4 top-4 z-[45] flex items-start gap-2">
+      <div className="pointer-events-none absolute left-4 top-16 z-[45] flex items-start gap-2 max-md:top-20">
         <div
           aria-label="Plan north arrow"
           data-testid="plan-north-arrow"

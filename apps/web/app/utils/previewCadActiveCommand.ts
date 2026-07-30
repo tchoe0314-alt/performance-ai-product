@@ -18,6 +18,7 @@ type HandlePreviewCadToolRequestContext = {
   cadOffsetDistance: string;
   selectedDeletableObject: BuildingPlacement | null;
   setDraftPoints: (points: Array<[number, number]>) => void;
+  draftPointsRef?: { current: Array<[number, number]> };
   setDraftPreviewPoint: (point: [number, number] | null) => void;
   setDrawAutoFinishPointCount: (count: number | null) => void;
   setCadActiveCommand: (command: CadActiveCommand | null) => void;
@@ -58,6 +59,7 @@ export function handlePreviewCadToolRequest({
   cadOffsetDistance,
   selectedDeletableObject,
   setDraftPoints,
+  draftPointsRef,
   setDraftPreviewPoint,
   setDrawAutoFinishPointCount,
   setCadActiveCommand,
@@ -94,6 +96,7 @@ export function handlePreviewCadToolRequest({
   onSetPreviewInteraction("edit");
 
   const activateDrawMode = (mode: DrawMode, label: string, autoFinishPointCount: number | null = null) => {
+    if (draftPointsRef) draftPointsRef.current = [];
     setDraftPoints([]);
     setDraftPreviewPoint(null);
     setDrawAutoFinishPointCount(autoFinishPointCount);
@@ -116,6 +119,7 @@ export function handlePreviewCadToolRequest({
   switch (cadToolRequest.tool) {
     case "select":
       setDrawMode("select");
+      if (draftPointsRef) draftPointsRef.current = [];
       setDraftPoints([]);
       setDraftPreviewPoint(null);
       setDrawAutoFinishPointCount(null);
