@@ -484,18 +484,22 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickVisibleControl(cadTools.getByRole("button", { name: "Insert" }));
     await expect(page.getByTestId("cad-symbol").first()).toBeVisible();
 
-    await cadTools.getByLabel("Draft object name").fill("Draft Utility Review Area");
-    await cadTools.getByLabel("Draft object type").fill("custom");
-    await cadTools.getByLabel("Draft object layer property").fill("C-UTIL");
+    await cadTools.getByLabel("Draft object name").fill("Existing Building A");
+    await cadTools.getByLabel("Classify selected outline as").selectOption("building");
+    await cadTools.getByLabel("Draft object layer property").fill("C-BLDG");
     await cadTools.getByLabel("Draft source note").fill("manual field sketch");
     await cadTools.getByLabel("Draft review note").fill("verify before engineering use");
-    await cadTools.getByRole("button", { name: "Apply" }).click();
-    await expect(page.getByTestId("object-manager-row").filter({ hasText: "Draft Utility Review Area" }).first()).toBeVisible();
+    await cadTools.getByRole("button", { name: "Apply outline classification and properties" }).click();
+    const classifiedRow = page.getByTestId("object-manager-row").filter({ hasText: "Existing Building A" }).first();
+    await expect(classifiedRow).toBeVisible();
+    await expect(classifiedRow.getByTestId("object-manager-type")).toHaveValue("building");
+    await expect(page.locator('[data-object-overlay][aria-label="Select Existing Building A"]').first()).toBeVisible();
 
-    const utilityLayerToggle = cadTools.locator("button").filter({ hasText: /^C-UTIL$/ }).first();
-    await utilityLayerToggle.click();
-    await utilityLayerToggle.click();
-    await expect(page.locator('[data-object-overlay][aria-label="Select Draft Utility Review Area"]').first()).toBeVisible();
+    const buildingLayerToggle = cadTools.locator("button").filter({ hasText: /^C-BLDG$/ }).first();
+    await buildingLayerToggle.click();
+    await expect(page.locator('[data-object-overlay][aria-label="Select Existing Building A"]').first()).toHaveCount(0);
+    await buildingLayerToggle.click();
+    await expect(page.locator('[data-object-overlay][aria-label="Select Existing Building A"]').first()).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);

@@ -5,7 +5,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-import type { BuildingPlacement } from "../types";
+import type { BuildingPlacement, SiteObjectType } from "../types";
 import { CadPrecisionDock } from "./CadPrecisionDock";
 import { Preview2DCanvasShell } from "./Preview2DCanvasShell";
 import { Preview3DShell } from "./Preview3DShell";
@@ -145,6 +145,7 @@ import { usePreviewCadLineworkCommands } from "./usePreviewCadLineworkCommands";
 import { usePreviewCadTransformCommands } from "./usePreviewCadTransformCommands";
 import { usePreviewCadWindowSelection } from "./usePreviewCadWindowSelection";
 import { usePreviewDraftGeometry } from "./usePreviewDraftGeometry";
+import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
 const HIGH_QUALITY_DRAWING_VIEWPORT = {
   left: 1.2,
@@ -289,7 +290,7 @@ export default function PreviewPanel({
   const [cadPropertyDraft, setCadPropertyDraft] = useState({
     id: "",
     name: "",
-    type: "",
+    type: "custom" as SiteObjectType,
     layer: "C-DRAFT",
     elevation: "",
     material: "",
@@ -1512,12 +1513,14 @@ export default function PreviewPanel({
     }
     const safeName = cadPropertyDraft.name.trim() || selectedCadObject.label || "Draft object";
     const safeLayer = cadPropertyDraft.layer.trim().toUpperCase() || "C-DRAFT";
-    const safeType = cadPropertyDraft.type.trim() || selectedCadObject.type || "custom";
+    const safeType = cadPropertyDraft.type || selectedCadObject.type || "custom";
+    const classification = SITE_OBJECT_CATALOG[safeType];
     updateCadObject(
       selectedCadObject,
       {
         label: safeName,
-        type: safeType as BuildingPlacement["type"],
+        type: safeType,
+        use: classification?.use ?? selectedCadObject.use,
         meta: {
           ...(selectedCadObject.meta ?? {}),
           cad_layer: safeLayer,
@@ -1534,6 +1537,7 @@ export default function PreviewPanel({
             source: cadPropertyDraft.source.trim() || "manual_drawn",
             review_note: cadPropertyDraft.reviewNote.trim(),
           },
+          category: classification?.category ?? selectedCadObject.meta?.category ?? "advanced",
           engineering_status: "draft_review_required",
           review_status: "engineer_review_required",
         },

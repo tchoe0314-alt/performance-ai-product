@@ -16,9 +16,10 @@ import {
   Scissors,
 } from "lucide-react";
 
-import type { BuildingPlacement } from "../types";
+import type { BuildingPlacement, SiteObjectType } from "../types";
 import type { CadDimensionMode, CadSymbolKind } from "../utils/cadToolTypes";
 import type { CadSnapKind } from "../utils/cadGeometryKernel";
+import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
 type CadPoint = { x: number; y: number };
 type CadHistoryEntry = {
@@ -60,7 +61,7 @@ type CadActiveCommand =
 type CadPropertyDraft = {
   id: string;
   name: string;
-  type: string;
+  type: SiteObjectType;
   layer: string;
   elevation: string;
   material: string;
@@ -198,6 +199,12 @@ export function CadPrecisionDock({
   applyCadProperties,
 }: CadPrecisionDockProps) {
   if (!visible) return null;
+  const classificationOptions = Object.entries(SITE_OBJECT_CATALOG)
+    .filter(([type]) => type !== "site")
+    .map(([type, definition]) => ({
+      value: type as SiteObjectType,
+      label: definition.label,
+    }));
 
   return (
     <div
@@ -492,12 +499,23 @@ export function CadPrecisionDock({
         <div className="mt-3 grid grid-cols-2 gap-2">
           <input aria-label="Draft symbol attribute ID" value={cadPropertyDraft.id} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, id: event.target.value }))} placeholder="ID" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
           <input aria-label="Draft object name" value={cadPropertyDraft.name} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <input aria-label="Draft object type" value={cadPropertyDraft.type} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, type: event.target.value }))} placeholder="Type" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          <select
+            aria-label="Classify selected outline as"
+            value={cadPropertyDraft.type}
+            onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, type: event.target.value as SiteObjectType }))}
+            className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+          >
+            {classificationOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <input aria-label="Draft object layer property" value={cadPropertyDraft.layer} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, layer: event.target.value }))} placeholder="Layer" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
           <input aria-label="Draft symbol elevation attribute" value={cadPropertyDraft.elevation} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, elevation: event.target.value }))} placeholder="Elevation" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
           <input aria-label="Draft symbol material attribute" value={cadPropertyDraft.material} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, material: event.target.value }))} placeholder="Material" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
           <input aria-label="Draft symbol size attribute" value={cadPropertyDraft.size} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, size: event.target.value }))} placeholder="Size" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
-          <button type="button" aria-label="Apply draft symbol properties" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply</button>
+          <button type="button" aria-label="Apply outline classification and properties" onClick={applyCadProperties} disabled={!selectedCadObject} className="h-9 rounded-md border border-slate-900 bg-slate-950 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40">Apply classification</button>
         </div>
         <div className="mt-3 grid gap-2">
           <input aria-label="Draft symbol source attribute" value={cadPropertyDraft.source} onChange={(event) => setCadPropertyDraft((prev) => ({ ...prev, source: event.target.value }))} placeholder="Source" className="h-9 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700" />
