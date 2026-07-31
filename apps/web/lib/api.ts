@@ -195,6 +195,29 @@ export async function postJson<T>(
   return readJsonResponse<T>(response);
 }
 
+export async function postJsonWithTimeout<T>(
+  path: string,
+  body: unknown,
+  options: RequestOptions = {},
+  timeoutMs = 60000,
+): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await postJson<T>(path, body, { ...options, signal: options.signal ?? controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new CivoraApiError(
+        "Source lookup took too long. The site stayed editable; retry source discovery or continue with manual/survey evidence.",
+        "request_failed",
+      );
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export async function patchJson<T>(
   path: string,
   body: unknown,

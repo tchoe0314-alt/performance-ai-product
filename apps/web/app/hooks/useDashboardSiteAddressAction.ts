@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 
-import { postJson } from "../../lib/api";
+import { postJson, postJsonWithTimeout } from "../../lib/api";
 import type { BuildingPlacement, LocalGisProviderRegistry, ProjectInput, ProjectRecord, SiteInputs } from "../types";
 import {
   hasAddressCoordinates,
@@ -340,7 +340,7 @@ export function useDashboardSiteAddressAction({
             : undefined;
         let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
         try {
-          onlineFetch = await postJson<OnlineExistingConditionsFetchResponse>(
+          onlineFetch = await postJsonWithTimeout<OnlineExistingConditionsFetchResponse>(
             "/api/existing-conditions/fetch-online",
             {
               address: geocode.display_name,
@@ -358,6 +358,7 @@ export function useDashboardSiteAddressAction({
               provider_registry: localGisProviderRegistry,
             },
             { token },
+            60000,
           );
         } catch (error) {
           onlineFetch = {

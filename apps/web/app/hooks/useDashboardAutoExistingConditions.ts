@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 
-import { postJson } from "../../lib/api";
+import { postJsonWithTimeout } from "../../lib/api";
 import type { BuildingPlacement, ProjectInput, ProjectRecord, SiteInputs, SurveySlopeResponse } from "../types";
 import type { AutoExistingConditionsUiStatus, OnlineExistingConditionsFetchResponse } from "../utils/dashboardDataTypes";
 import { buildAssumedSlopeEstimate, type SystemGenerationTarget } from "../utils/workflowConstants";
@@ -162,7 +162,7 @@ export function useDashboardAutoExistingConditions({
       try {
         let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
         try {
-          onlineFetch = await postJson<OnlineExistingConditionsFetchResponse>(
+          onlineFetch = await postJsonWithTimeout<OnlineExistingConditionsFetchResponse>(
             "/api/existing-conditions/fetch-online",
             {
               address: address || geocode?.display_name || "Locked site",
@@ -190,6 +190,7 @@ export function useDashboardAutoExistingConditions({
               provider_registry: currentSiteInputs.local_gis_provider_registry_v1 ?? siteInputs?.local_gis_provider_registry_v1 ?? {},
             },
             { token },
+            60000,
           );
         } catch (error) {
           onlineFetch = {
