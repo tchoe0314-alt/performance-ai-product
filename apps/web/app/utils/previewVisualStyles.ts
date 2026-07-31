@@ -52,38 +52,38 @@ export function resolvePreviewSvgVisualStyle(
     reviewConcept ? (selected ? selectedWidth * 0.78 : normal * 0.82) : selected ? selectedWidth : normal;
 
   if (options.highQuality && options.cadReferenceMode) {
-    const cadStroke = (fallback: string) => (selected ? "#22d3ee" : blocked ? "#fb7185" : customStroke ?? fallback);
+    const cadStroke = (fallback: string) => (selected ? "#0f766e" : blocked ? "#dc2626" : customStroke ?? fallback);
     if (kind === "road") {
-      return { fill: "rgba(255,255,255,0.09)", stroke: cadStroke("#f8fafc"), strokeWidth: reviewWidth(0.055, 0.13), strokeDasharray: undefined, opacity: 0.98 };
+      return { fill: "rgba(71,85,105,0.035)", stroke: cadStroke("#334155"), strokeWidth: reviewWidth(0.072, 0.14), strokeDasharray: undefined, opacity: 0.98 };
     }
     if (kind === "parking") {
-      return { fill: "rgba(37,99,235,0.38)", stroke: cadStroke("#f8fafc"), strokeWidth: reviewWidth(0.055, 0.12), strokeDasharray: undefined, opacity: 0.98 };
+      return { fill: "rgba(37,99,235,0.1)", stroke: cadStroke("#334155"), strokeWidth: reviewWidth(0.06, 0.12), strokeDasharray: undefined, opacity: 0.98 };
     }
     if (kind === "water") {
-      return { fill: "rgba(56,189,248,0.22)", stroke: cadStroke("#38bdf8"), strokeWidth: reviewWidth(0.055, 0.12), strokeDasharray: undefined, opacity: 0.98 };
+      return { fill: "rgba(56,189,248,0.18)", stroke: cadStroke("#0284c7"), strokeWidth: reviewWidth(0.06, 0.12), strokeDasharray: undefined, opacity: 0.98 };
     }
     if (kind === "landscape") {
-      return { fill: "rgba(34,197,94,0.16)", stroke: cadStroke("#22c55e"), strokeWidth: reviewWidth(0.055, 0.12), strokeDasharray: undefined, opacity: 0.98 };
+      return { fill: "rgba(34,197,94,0.13)", stroke: cadStroke("#15803d"), strokeWidth: reviewWidth(0.058, 0.12), strokeDasharray: undefined, opacity: 0.98 };
     }
     if (kind === "sidewalk") {
-      return { fill: "rgba(255,255,255,0.02)", stroke: cadStroke("#e5e7eb"), strokeWidth: reviewWidth(0.04, 0.1), strokeDasharray: undefined, opacity: 0.94 };
+      return { fill: "rgba(148,163,184,0.035)", stroke: cadStroke("#64748b"), strokeWidth: reviewWidth(0.045, 0.1), strokeDasharray: undefined, opacity: 0.94 };
     }
     if (kind === "utility") {
       return { fill: "none", stroke: cadStroke(utilityStrokeColor(item)), strokeWidth: reviewWidth(0.07, 0.14), strokeDasharray: "1.05 0.48", opacity: 0.98 };
     }
     if (kind === "lot") {
-      return { fill: "rgba(255,255,255,0.01)", stroke: cadStroke("#f8fafc"), strokeWidth: reviewWidth(0.045, 0.1), strokeDasharray: undefined, opacity: 0.98 };
+      return { fill: "rgba(15,23,42,0.012)", stroke: cadStroke("#475569"), strokeWidth: reviewWidth(0.05, 0.1), strokeDasharray: undefined, opacity: 0.98 };
     }
     if (kind === "contour") {
-      return { fill: "none", stroke: cadStroke("#facc15"), strokeWidth: reviewWidth(0.06, 0.1), strokeDasharray: undefined, opacity: 0.95 };
+      return { fill: "none", stroke: cadStroke("#b45309"), strokeWidth: reviewWidth(0.055, 0.1), strokeDasharray: undefined, opacity: 0.9 };
     }
     if (kind === "constraint") {
-      return { fill: "rgba(239,68,68,0.36)", stroke: cadStroke("#ef4444"), strokeWidth: reviewWidth(0.055, 0.12), strokeDasharray: "0.8 0.34", opacity: 0.98 };
+      return { fill: "rgba(239,68,68,0.16)", stroke: cadStroke("#dc2626"), strokeWidth: reviewWidth(0.06, 0.12), strokeDasharray: "0.8 0.34", opacity: 0.98 };
     }
     if (kind === "building") {
-      return { fill: "rgba(255,255,255,0.05)", stroke: cadStroke("#f8fafc"), strokeWidth: reviewWidth(0.06, 0.14), strokeDasharray: undefined, opacity: 0.98 };
+      return { fill: solidCadSymbol ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.38)", stroke: cadStroke("#111827"), strokeWidth: reviewWidth(0.075, 0.15), strokeDasharray: undefined, opacity: 0.98 };
     }
-    return { fill: "rgba(255,255,255,0.02)", stroke: cadStroke("#e5e7eb"), strokeWidth: reviewWidth(0.05, 0.12), strokeDasharray: undefined, opacity: 0.95 };
+    return { fill: "rgba(15,23,42,0.02)", stroke: cadStroke("#475569"), strokeWidth: reviewWidth(0.055, 0.12), strokeDasharray: undefined, opacity: 0.95 };
   }
 
   if (!options.highQuality) {

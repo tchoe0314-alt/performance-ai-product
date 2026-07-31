@@ -204,6 +204,10 @@ test("creates an urbanization campus plan with colored sheet objects and 3D mass
   await page.getByTestId("preview-mode-3d").click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("civil-3d-terrain-state")).toContainText(/review contour surface/i);
+  await expect(page.getByTestId("civil-3d-massing-summary")).toContainText(/3D massing:/i);
+  const massingText = await page.getByTestId("civil-3d-massing-summary").innerText();
+  const verticalCount = Number(massingText.match(/(\d+)\s+vertical/i)?.[1] ?? 0);
+  expect(verticalCount).toBeGreaterThan(8);
   await expect(page.getByTestId("civil-3d-object-strip")).toContainText(/Civic Hall|Library|Market Hall/i, { timeout: 20_000 });
 
   const bodyText = await canvas.innerText();

@@ -110,9 +110,10 @@ const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
   if (layer === "LOT") return 0.025;
   if (layer === "CONSTRAINT") return 0.06;
   if (layer === "LANDSCAPE") return 0.08;
-  if (layer === "DRAINAGE") return Math.max(1.4, Math.min(Math.abs(item.height || 2.4), 5));
+  if (layer === "DRAINAGE") return Math.max(2.8, Math.min(Math.abs(item.height || 4.2) * 1.35, 9));
   if (layer === "UTILITY") return Math.max(0.22, Math.min(Math.min(item.w, item.h) * 0.03, 0.7));
-  if (layer === "BUILDING") return Math.max(14, Math.min(item.height || Math.min(item.w, item.h) * 0.22, 52));
+  if (layer === "STRUCTURE") return Math.max(20, Math.min((item.height || Math.min(item.w, item.h) * 0.26) * 1.75, 88));
+  if (layer === "BUILDING") return Math.max(30, Math.min((item.height || Math.min(item.w, item.h) * 0.22) * 1.85, 104));
   return Math.max(0.35, Math.min(item.height || 1, 8));
 };
 
@@ -134,6 +135,14 @@ const flatPlanOpacity = (layer: string, state: string) => {
   if (state === "stale") return 0.5;
   return 0.62;
 };
+
+const isDenseConceptLot = (item: Preview3DItem) =>
+  Boolean(
+    item.meta?.dense_subdivision_cad_plan ||
+      item.meta?.urbanization_campus_plan ||
+      item.meta?.subdivision_cad_recreation ||
+      item.meta?.cad_reference_recreation,
+  );
 
 export default function Preview3DCanvas({
   items,
@@ -195,6 +204,18 @@ export default function Preview3DCanvas({
     },
     [items],
   );
+  const massingStats = useMemo(() => {
+    const visibleObjects = items.filter((item) => !item.terrainSample);
+    const vertical = visibleObjects.filter((item) => {
+      const layer = normalizeLayer(preview3DLayerText(item));
+      return layer === "BUILDING" || layer === "STRUCTURE" || (layer === "LOT" && isDenseConceptLot(item));
+    }).length;
+    const civilFlat = visibleObjects.filter((item) => {
+      const layer = normalizeLayer(preview3DLayerText(item));
+      return ["ROAD", "PARKING", "LOT", "SIDEWALK", "UTILITY", "DRAINAGE"].includes(layer);
+    }).length;
+    return { vertical, civilFlat };
+  }, [items]);
 
   const selectObject = (object: (typeof objectChips)[number]) => {
     onSelectItem?.(object.id);
@@ -307,8 +328,8 @@ export default function Preview3DCanvas({
 
     const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 5000);
     const maxSpan = Math.max(modelBounds.spanX, modelBounds.spanY);
-    camera.position.set(maxSpan * 0.5, maxSpan * 0.42, maxSpan * 0.54);
-    camera.zoom = previewQuality === "high" ? 1.1 : 1.08;
+    camera.position.set(maxSpan * 0.46, maxSpan * 0.34, maxSpan * 0.72);
+    camera.zoom = previewQuality === "high" ? 1.18 : 1.08;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
 
@@ -318,7 +339,7 @@ export default function Preview3DCanvas({
     controls.enableZoom = true;
     controls.minDistance = Math.max(maxSpan * 0.14, 25);
     controls.maxDistance = Math.max(maxSpan * 2.6, 300);
-    controls.target.set(0, 0, previewQuality === "high" ? maxSpan * 0.12 : 0);
+    controls.target.set(0, previewQuality === "high" ? maxSpan * 0.035 : 0, previewQuality === "high" ? maxSpan * 0.08 : 0);
     controls.update();
     controlsRef.current = controls;
 
@@ -944,6 +965,35 @@ export default function Preview3DCanvas({
           );
           lotLine.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + visualLift + heightFt + 0.08));
           object.add(lotLine);
+          if (previewQuality === "high" && isDenseConceptLot(item) && Math.min(item.w, item.h) >= 18) {
+            const houseW = Math.max(item.w * 0.42, 8);
+            const houseD = Math.max(item.h * 0.34, 7);
+            const houseH = Math.max(Math.min(item.w, item.h) * 0.34, 10);
+            const house = new THREE.Mesh(
+              new THREE.BoxGeometry(houseW, houseH, houseD),
+              new THREE.MeshStandardMaterial({
+                color: "#e5e7eb",
+                roughness: 0.76,
+                metalness: 0.01,
+              }),
+            );
+            house.position.copy(toScene(item.x + item.w * 0.52, item.y + item.h * 0.5, baseY + houseH / 2 + 0.14));
+            house.userData = {
+              ...object.userData,
+              source: "visual massing for dense concept lot; not source-detected building evidence",
+            };
+            object.add(house);
+            addExactEdges(house, "#475569", 0.34);
+            const roof = new THREE.Mesh(
+              new THREE.ConeGeometry(Math.max(Math.min(houseW, houseD) * 0.64, 4), Math.max(houseH * 0.24, 2.4), 4),
+              new THREE.MeshStandardMaterial({ color: "#cbd5e1", roughness: 0.82 }),
+            );
+            roof.rotation.y = Math.PI / 4;
+            roof.scale.set(Math.max(houseW / Math.max(houseD, 1), 0.8), 0.58, 1);
+            roof.position.copy(toScene(item.x + item.w * 0.52, item.y + item.h * 0.5, baseY + houseH + Math.max(houseH * 0.08, 1)));
+            roof.userData = house.userData;
+            object.add(roof);
+          }
         }
         if (layer === "ROAD" || layer === "SIDEWALK") {
           const stripe = new THREE.LineSegments(
@@ -1139,6 +1189,14 @@ export default function Preview3DCanvas({
       <div className="pointer-events-none absolute right-4 top-20 rounded-full bg-slate-900/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white sm:top-4">
         Orbit | Pan | Zoom
       </div>
+      {previewQuality === "high" ? (
+        <div
+          className="pointer-events-none absolute left-4 top-20 max-w-[min(330px,calc(100%-2rem))] rounded-xl border border-slate-200 bg-white/88 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur sm:top-16"
+          data-testid="civil-3d-massing-summary"
+        >
+          3D massing: {massingStats.vertical} vertical / {massingStats.civilFlat} civil layers
+        </div>
+      ) : null}
       {objectChips.length ? (
         <div className="absolute right-4 top-32 z-[90] flex max-h-36 w-[min(218px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/76 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
           <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">

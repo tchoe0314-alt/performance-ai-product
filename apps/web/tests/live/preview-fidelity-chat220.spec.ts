@@ -63,6 +63,7 @@ test.describe("Chat 220 preview fidelity", () => {
 
     await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("civil-3d-canvas-mount").locator("canvas")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("civil-3d-massing-summary")).toContainText(/3D massing:/);
     await page.getByTestId("civil-3d-object-strip").getByRole("button", { name: /Detention Basin A/i }).click();
     await expect(page.getByTestId("civil-3d-selection-popover")).toContainText("Detention Basin A");
 
