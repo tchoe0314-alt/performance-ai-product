@@ -489,7 +489,17 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("Draft object layer property").fill("C-BLDG");
     await cadTools.getByLabel("Draft source note").fill("manual field sketch");
     await cadTools.getByLabel("Draft review note").fill("verify before engineering use");
-    await cadTools.getByRole("button", { name: "Apply outline classification and properties" }).click();
+    const applyClassification = cadTools.getByRole("button", { name: "Apply outline classification and properties" });
+    await applyClassification.scrollIntoViewIfNeeded();
+    await expect.poll(
+      () => applyClassification.evaluate((button) => {
+        const rect = button.getBoundingClientRect();
+        const hitTarget = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hitTarget === button || Boolean(hitTarget && button.contains(hitTarget));
+      }),
+      { message: "The visible classification button must own its mouse hit target." },
+    ).toBe(true);
+    await applyClassification.click();
     const classifiedRow = page.getByTestId("object-manager-row").filter({ hasText: "Existing Building A" }).first();
     await expect(classifiedRow).toBeVisible();
     await expect(classifiedRow.getByTestId("object-manager-type")).toHaveValue("building");
