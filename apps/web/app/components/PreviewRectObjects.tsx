@@ -48,8 +48,8 @@ export function PreviewRectObjects({
           const hatchFill = cadHatchPatternForPreviewItem(item);
           const sourceState = resolveSourceState(item);
           const isFallbackBounds = sourceState === "fallback";
-          const fallbackFill = "rgba(248,250,252,0.012)";
-          const fallbackStroke = isHighQuality ? "rgba(100,116,139,0.22)" : "rgba(100,116,139,0.28)";
+          const fallbackFill = "rgba(248,250,252,0.006)";
+          const fallbackStroke = isHighQuality ? "rgba(100,116,139,0.13)" : "rgba(100,116,139,0.22)";
           const useShapePath = ["water", "landscape", "sidewalk"].includes(visualKind);
           const shapePath = useShapePath
             ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
@@ -327,13 +327,7 @@ export function PreviewRectObjects({
                 </g>
               ) : null}
               {isHighQuality && visualKind === "building" && !isFallbackBounds ? (
-                <g data-testid="professional-building-cues" opacity={selected ? 0.74 : 0.38}>
-                  <path d={architecturalFootprintPath({
-                    left: rect.left + rect.width * 0.06,
-                    top: rect.top + rect.height * 0.08,
-                    width: rect.width * 0.88,
-                    height: rect.height * 0.84,
-                  })} fill="url(#cad-building-poche)" stroke="none" />
+                <g data-testid="professional-building-cues" opacity={selected ? 0.72 : 0.28}>
                   <g data-testid="plan-building-entry-cues">
                     <line
                       x1={rect.left + rect.width * 0.43}
@@ -352,6 +346,22 @@ export function PreviewRectObjects({
                       stroke="rgba(15,23,42,0.16)"
                       strokeWidth={0.026}
                       strokeDasharray="0.5 0.34"
+                    />
+                    <line
+                      x1={rect.left + rect.width * 0.12}
+                      y1={rect.top + rect.height * 0.18}
+                      x2={rect.left + rect.width * 0.88}
+                      y2={rect.top + rect.height * 0.18}
+                      stroke="rgba(15,23,42,0.12)"
+                      strokeWidth={0.02}
+                    />
+                    <line
+                      x1={rect.left + rect.width * 0.12}
+                      y1={rect.top + rect.height * 0.82}
+                      x2={rect.left + rect.width * 0.88}
+                      y2={rect.top + rect.height * 0.82}
+                      stroke="rgba(15,23,42,0.1)"
+                      strokeWidth={0.018}
                     />
                   </g>
                 </g>

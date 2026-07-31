@@ -66,13 +66,14 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-grading-contour-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-tie-ticks").first()).toBeVisible();
-  await expect(page.getByTestId("plan-utility-pipe-halo").first()).toBeVisible();
+  await expect(page.getByTestId("plan-utility-pipe-halo")).toHaveCount(0);
   await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
   await expect(page.getByTestId("plan-grading-context-lines")).toHaveCount(0);
   await expect(page.getByTestId("survey-boundary-annotation")).toHaveCount(0);
   await expect(page.getByTestId("survey-spot-elevation")).toHaveCount(0);
   await expect(page.getByTestId("survey-utility-callout")).toHaveCount(0);
-  await page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first().click();
+  await page.locator('[data-cad-object-hit-id][aria-label*="Public Water Line"]').first().click();
+  await expect(page.getByTestId("plan-utility-pipe-halo").first()).toBeVisible();
   await expect(page.getByTestId("survey-utility-callout").first()).toBeVisible();
   await expect(canvas).toContainText(/concept plan/i);
   await expect(canvas).toContainText(/no survey \/ topo source/i);
@@ -191,6 +192,8 @@ test("creates an urbanization campus plan with colored sheet objects and 3D mass
   await expect(page.getByTestId("plan-road-edge-lines").first()).toBeVisible();
   await expect(page.getByTestId("plan-tree-symbol").first()).toBeVisible();
   await expect(page.getByTestId("plan-plaza-module-lines").first()).toBeVisible();
+  await expect(page.getByTestId("plan-utility-node-cues")).toHaveCount(0);
+  await page.locator('[data-cad-object-hit-id][aria-label*="Cyan Water Service Network"]').first().click();
   await expect(page.getByTestId("plan-utility-node-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
   await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();

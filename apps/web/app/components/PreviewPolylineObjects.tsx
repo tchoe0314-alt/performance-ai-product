@@ -161,17 +161,17 @@ export function PreviewPolylineObjects({
                         : visualStyle.opacity
                 }
               />
-              {isHighQuality && isUtilityLine ? (
+              {isHighQuality && isUtilityLine && (isSelectedPolyline || cadReferenceMode) ? (
                 <polyline
                   data-testid="plan-utility-pipe-halo"
                   points={points.join(" ")}
                   fill="none"
                   stroke={visualStyle.stroke}
-                  strokeWidth={0.22}
+                  strokeWidth={isSelectedPolyline ? 0.16 : 0.1}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeDasharray={visualStyle.strokeDasharray || "0.46 0.42"}
-                  opacity={isSelectedPolyline ? 0.16 : 0.08}
+                  opacity={isSelectedPolyline ? 0.14 : 0.055}
                 />
               ) : null}
               {isHighQuality && isContourLine ? (
@@ -226,8 +226,8 @@ export function PreviewPolylineObjects({
                   })}
                 </g>
               ) : null}
-              {isHighQuality && isUtilityLine ? (
-                <g data-testid="plan-utility-node-cues" opacity={isSelectedPolyline ? 0.92 : 0.62} pointerEvents="none">
+              {isHighQuality && isUtilityLine && (isSelectedPolyline || cadReferenceMode) ? (
+                <g data-testid="plan-utility-node-cues" opacity={isSelectedPolyline ? 0.88 : 0.42} pointerEvents="none">
                   {points.map((point, idx) => {
                     const [x, y] = String(point).split(",").map((value) => Number(value));
                     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
@@ -236,10 +236,10 @@ export function PreviewPolylineObjects({
                         key={`utility-plan-node-${item.id}-${idx}`}
                         cx={x}
                         cy={y}
-                        r={idx === 0 || idx === points.length - 1 ? 0.28 : 0.22}
+                        r={idx === 0 || idx === points.length - 1 ? 0.2 : 0.16}
                         fill="#ffffff"
                         stroke={visualStyle.stroke}
-                        strokeWidth={0.05}
+                        strokeWidth={0.04}
                       />
                     );
                   })}

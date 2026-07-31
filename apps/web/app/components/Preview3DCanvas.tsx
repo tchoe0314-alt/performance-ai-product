@@ -793,13 +793,23 @@ export default function Preview3DCanvas({
         rim.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, 0));
         object.add(rim);
       } else if (layer === "UTILITY") {
-        const geometry = new THREE.CapsuleGeometry(0.46, Math.max(item.w, item.h), 6, 12);
+        const horizontal = item.w >= item.h;
+        const geometry = new THREE.BoxGeometry(
+          Math.max(horizontal ? item.w : 0.72, 0.72),
+          0.055,
+          Math.max(horizontal ? 0.72 : item.h, 0.72),
+        );
         const utility = new THREE.Mesh(
           geometry,
-          new THREE.MeshStandardMaterial({ color: palette.side, roughness: 0.6, metalness: 0.02 }),
+          new THREE.MeshStandardMaterial({
+            color: palette.side,
+            roughness: 0.72,
+            metalness: 0,
+            transparent: true,
+            opacity: previewQuality === "high" ? 0.42 : 0.34,
+          }),
         );
-        utility.rotation.z = Math.PI / 2;
-        utility.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, Math.max(baseY, 1.5)));
+        utility.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 0.12));
         utility.userData = object.userData;
         object.add(utility);
       } else if (layer === "CONSTRAINT") {

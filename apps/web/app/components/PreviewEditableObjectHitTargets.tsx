@@ -208,6 +208,47 @@ export function PreviewEditableObjectHitTargets({
             (!isSite || (previewInteraction === "edit" && !siteLocked));
           const hitZIndex = resolveObjectHitZIndex(item, rectPct, isSelected);
           const overlayZIndex = hitZIndex;
+          const useSegmentHitTargets =
+            allowItemInteraction &&
+            isPolyline &&
+            visualKind === "utility" &&
+            Array.isArray(item.geometry) &&
+            item.geometry.length >= 2 &&
+            rectPct.width > 0 &&
+            rectPct.height > 0;
+          const polylineBounds = useSegmentHitTargets
+            ? (item.geometry as Array<[number, number]>).reduce(
+                (bounds, [x, y]) => ({
+                  minX: Math.min(bounds.minX, x),
+                  minY: Math.min(bounds.minY, y),
+                  maxX: Math.max(bounds.maxX, x),
+                  maxY: Math.max(bounds.maxY, y),
+                }),
+                {
+                  minX: Number.POSITIVE_INFINITY,
+                  minY: Number.POSITIVE_INFINITY,
+                  maxX: Number.NEGATIVE_INFINITY,
+                  maxY: Number.NEGATIVE_INFINITY,
+                },
+              )
+            : null;
+          const localPolylinePoints =
+            useSegmentHitTargets && polylineBounds
+              ? (item.geometry as Array<[number, number]>).map(([x, y]) => {
+                  const spanX = Math.max(polylineBounds.maxX - polylineBounds.minX, 1);
+                  const spanY = Math.max(polylineBounds.maxY - polylineBounds.minY, 1);
+                  return {
+                    x: ((x - polylineBounds.minX) / spanX) * 100,
+                    y: ((y - polylineBounds.minY) / spanY) * 100,
+                  };
+                })
+              : [];
+          const overlayPointerClass =
+            useSegmentHitTargets
+              ? "pointer-events-none"
+              : allowItemInteraction
+                ? passiveOverlayPointerEvents
+                : "pointer-events-none";
           return (
             <div
               key={item.id}
@@ -219,7 +260,7 @@ export function PreviewEditableObjectHitTargets({
               data-visual-kind={visualKind}
               data-source-state={sourceState}
               data-hit-priority={hitZIndex}
-              className={`${allowItemInteraction ? passiveOverlayPointerEvents : "pointer-events-none"} absolute z-[30]`}
+              className={`${overlayPointerClass} absolute z-[30]`}
               style={{
                 left: `${rectPct.left}%`,
                 top: `${rectPct.top}%`,
@@ -256,6 +297,52 @@ export function PreviewEditableObjectHitTargets({
                 onSelectBuilding(item.id);
               }}
             >
+              {useSegmentHitTargets
+                ? localPolylinePoints.slice(0, -1).map((point, segmentIndex) => {
+                    const next = localPolylinePoints[segmentIndex + 1];
+                    if (!next) return null;
+                    const dx = next.x - point.x;
+                    const dy = next.y - point.y;
+                    const length = Math.max(Math.hypot(dx, dy), 1);
+                    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+                    return (
+                      <button
+                        key={`polyline-hit-${item.id}-${segmentIndex}`}
+                        type="button"
+                        data-cad-object-hit-id={item.id}
+                        aria-label={`Select ${item.label || item.type || "Draft object"} segment ${segmentIndex + 1}`}
+                        className="pointer-events-auto absolute appearance-none border-0 p-0"
+                        style={{
+                          left: `${point.x}%`,
+                          top: `${point.y}%`,
+                          width: `${length}%`,
+                          height: "12%",
+                          minHeight: "12px",
+                          transform: `translateY(-50%) rotate(${angle}deg)`,
+                          transformOrigin: "left center",
+                          backgroundColor: "rgba(15,23,42,0.001)",
+                          cursor: caps.movable ? "grab" : "default",
+                        }}
+                        onMouseDown={(event) => {
+                          if (drawingOwnsCanvasHits || !allowItemInteraction) return;
+                          event.stopPropagation();
+                          setSelectedVertex(null);
+                          onSelectBuilding(item.id);
+                        }}
+                        onMouseEnter={() => {
+                          if (drawingOwnsCanvasHits || !allowItemInteraction) return;
+                          setHoveredObjectId(item.id);
+                        }}
+                        onClick={(event) => {
+                          if (drawingOwnsCanvasHits || !allowItemInteraction) return;
+                          event.stopPropagation();
+                          setSelectedVertex(null);
+                          onSelectBuilding(item.id);
+                        }}
+                      />
+                    );
+                  })
+                : null}
               <PreviewRectObjectChrome
                 showBox={showBox}
                 showBoxChrome={showBoxChrome}
