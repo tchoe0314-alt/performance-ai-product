@@ -59,7 +59,7 @@ PERFORMANCE_AI_RESUME_PENDING_JOBS=true
 PERFORMANCE_AI_RESUME_POLL_SECONDS=1
 ```
 
-The services must use the same production database and storage configuration. The Docker image starts Gunicorn for `web`/`combined` and `backend.scripts.run_job_worker` for `worker`.
+The services must use the same production database and storage configuration. The Docker image starts Gunicorn for `web`/`combined` and `backend.scripts.run_job_worker` for `worker`. The worker exposes a minimal `/api/health` endpoint on `PORT` so Railway can verify the worker without exposing job payloads or user data.
 
 
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
