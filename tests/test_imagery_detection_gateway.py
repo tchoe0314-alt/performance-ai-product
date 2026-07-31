@@ -1,6 +1,9 @@
 import os
 import unittest
+from io import BytesIO
 from unittest.mock import patch
+
+from PIL import Image, ImageDraw
 
 from backend.scripts.imagery_detection_gateway import (
     build_mapbox_static_image_url,
@@ -11,8 +14,10 @@ from backend.scripts.imagery_detection_gateway import (
 
 
 class _Response:
-    def __init__(self, payload):
+    def __init__(self, payload, *, content=b"", headers=None):
         self.payload = payload
+        self.content = content
+        self.headers = headers or {}
 
     def raise_for_status(self):
         return None
@@ -35,6 +40,25 @@ class _GenericSession:
                 ]
             }
         )
+
+
+class _CivoraImageSession:
+    def __init__(self):
+        self.calls = []
+        image = Image.new("RGB", (256, 256), (112, 150, 96))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((24, 24, 74, 66), fill=(38, 38, 38))
+        draw.rectangle((102, 28, 158, 82), fill=(45, 45, 45))
+        draw.rectangle((0, 186, 256, 218), fill=(95, 95, 95))
+        draw.rectangle((42, 108, 188, 158), fill=(165, 165, 165))
+        draw.ellipse((196, 40, 238, 82), fill=(40, 120, 190))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        self.content = buffer.getvalue()
+
+    def get(self, url, timeout=None):
+        self.calls.append({"url": url, "timeout": timeout, "method": "get"})
+        return _Response({}, content=self.content, headers={"content-type": "image/png"})
 
 
 class _RoboflowSession:
@@ -138,6 +162,25 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
         self.assertEqual(result["status"], "detected")
         self.assertEqual({item["kind"] for item in result["detections"]}, {"building", "tree"})
         self.assertIn("api_key=rf-key", session.calls[0]["url"])
+
+    def test_gateway_can_run_civora_local_detector_without_external_model(self) -> None:
+        session = _CivoraImageSession()
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "civora",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+            },
+            clear=False,
+        ):
+            result = run_detection_gateway({"image_url": "https://imagery.example/source.png"}, session=session)
+
+        kinds = {item["kind"] for item in result["detections"]}
+
+        self.assertEqual(result["provider"], "civora_heuristic")
+        self.assertEqual(result["status"], "detected")
+        self.assertTrue(kinds.intersection({"building", "road", "parking", "basin", "open_space"}))
+        self.assertTrue(all(item["provider"] == "civora_heuristic" for item in result["detections"]))
 
 
 if __name__ == "__main__":

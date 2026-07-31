@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
@@ -107,7 +108,10 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
             missing=["source_image_or_static_imagery"],
             warnings=["No imagery source URL could be created for detection."],
         )
-    if provider == "roboflow":
+    if provider in {"civora", "civora_heuristic", "local"}:
+        detections = _call_civora_detector(image_url=image_url, session=session)
+        provider = "civora_heuristic"
+    elif provider == "roboflow":
         response = _call_roboflow(image_url=image_url, session=session)
         detections = normalize_roboflow_response(response, source_url=image_url, provider="roboflow")
     else:
@@ -163,6 +167,58 @@ def _call_roboflow(*, image_url: str, session: Any) -> Dict[str, Any]:
         response = session.post(f"{endpoint}{sep}{urlencode({'api_key': api_key, 'image': image_url})}", timeout=60)
     response.raise_for_status()
     return _dict(response.json())
+
+
+def _call_civora_detector(*, image_url: str, session: Any) -> List[Dict[str, Any]]:
+    try:
+        from vision.feature_detection_engine import FeatureDetectionEngine
+    except Exception as exc:  # pragma: no cover - import guard
+        raise RuntimeError("Civora detector could not import FeatureDetectionEngine.") from exc
+    response = session.get(image_url, timeout=60)
+    response.raise_for_status()
+    content = getattr(response, "content", b"")
+    if not content:
+        raise ValueError("Source image response was empty.")
+    suffix = ".jpg"
+    content_type = str(getattr(response, "headers", {}).get("content-type", "")).lower()
+    if "png" in content_type:
+        suffix = ".png"
+    elif "webp" in content_type:
+        suffix = ".webp"
+    with tempfile.NamedTemporaryFile(prefix="civora-imagery-", suffix=suffix, delete=False) as handle:
+        handle.write(content)
+        temp_path = handle.name
+    try:
+        result = FeatureDetectionEngine(max_size=int(os.getenv("CIVORA_GATEWAY_CIVORA_MAX_SIZE", "768") or "768")).detect(temp_path)
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+    detections: List[Dict[str, Any]] = []
+    for index, detection in enumerate(result.detections):
+        detections.append(
+            {
+                "detection_id": f"civora_{index + 1}",
+                "kind": _normalize_kind(detection.kind),
+                "bbox": list(detection.bbox),
+                "geometry": {
+                    "type": "Polygon" if detection.geometry_type == "polygon" else "LineString" if detection.geometry_type == "polyline" else "GeometryCollection",
+                    "coordinates": [detection.geometry] if detection.geometry_type == "polygon" else detection.geometry,
+                } if detection.geometry else None,
+                "confidence": detection.confidence,
+                "source_url": image_url,
+                "provider": "civora_heuristic",
+                "properties": {
+                    "geometry_type": detection.geometry_type,
+                    "detector_message": result.message,
+                    "detector_warnings": result.warnings,
+                    "image_width": result.image_width,
+                    "image_height": result.image_height,
+                },
+            }
+        )
+    return detections
 
 
 def _call_generic_detector(*, payload: Dict[str, Any], image_url: str, session: Any) -> Dict[str, Any]:

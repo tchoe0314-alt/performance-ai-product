@@ -524,7 +524,7 @@ class FeatureDetectionEngine:
         rect_points = [(int(round(x)), int(round(y))) for x, y in rect_world.tolist()]
 
         # Only accept rectangle if polygon is already roughly rectangular.
-        poly_area = abs(self._polygon_area(seq))
+        poly_area = abs(FeatureDetectionEngine._polygon_area(seq))
         rect_area = float(width * height)
         if rect_area <= 0:
             return points

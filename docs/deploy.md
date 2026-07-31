@@ -68,6 +68,22 @@ Supported `kind` values include `building`, `road`, `driveway`, `parking`, `side
 
 The repo includes a deployable gateway at `backend/scripts/imagery_detection_gateway.py` for providers that need a source image instead of an address/bbox. Run it as a separate service and point `CIVORA_IMAGERY_DETECTION_URL` at `/detect`.
 
+Built-in Civora detector gateway:
+
+```bash
+python3 -m uvicorn backend.scripts.imagery_detection_gateway:app --host 0.0.0.0 --port 8090
+```
+
+```bash
+CIVORA_GATEWAY_DETECTOR_KIND=civora
+CIVORA_GATEWAY_MAPBOX_TOKEN=your_mapbox_token
+CIVORA_GATEWAY_MAPBOX_STYLE=mapbox/satellite-v9
+CIVORA_GATEWAY_IMAGE_SIZE=1024x1024
+CIVORA_GATEWAY_CIVORA_MAX_SIZE=768
+```
+
+This mode downloads the source image and runs Civora's built-in heuristic detector. It is useful immediately for visual candidate extraction and QA demos, but it is still approximate. Use it as a baseline while collecting labeled aerial/site-plan examples for a trained model.
+
 Generic detector gateway:
 
 ```bash
