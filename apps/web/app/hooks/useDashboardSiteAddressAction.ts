@@ -2,7 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 
 import { postJson } from "../../lib/api";
-import type { BuildingPlacement, LocalGisProviderRegistry, ProjectInput, ProjectRecord } from "../types";
+import type { BuildingPlacement, LocalGisProviderRegistry, ProjectInput, ProjectRecord, SiteInputs } from "../types";
 import {
   hasAddressCoordinates,
   type AddressSuggestion,
@@ -55,6 +55,36 @@ type UseDashboardSiteAddressActionOptions = {
   token: string | null;
   updateProjectStatus: UpdateProjectStatus;
 };
+
+function clearAddressSourceContext(siteInputs: SiteInputs): SiteInputs {
+  const next = { ...(siteInputs ?? {}) };
+  delete next.geocode;
+  delete next.location_context;
+  delete next.online_existing_conditions_discovery_v1;
+  delete next.map_feature_detection_report_v1;
+  delete next.existing_conditions_package;
+  delete next.auto_existing_conditions_v1;
+  delete next.slope_estimate;
+  return next;
+}
+
+function clearLatestResultSourceContext(latestResult: ProjectRecord["latest_result"] | undefined) {
+  if (!latestResult?.final_plan) return latestResult;
+  const meta: Record<string, unknown> = { ...(latestResult.final_plan.meta ?? {}) };
+  delete meta.location_context;
+  delete meta.online_existing_conditions_discovery_v1;
+  delete meta.map_feature_detection_report_v1;
+  delete meta.existing_conditions_package;
+  delete meta.existing_conditions_summary;
+  delete meta.auto_existing_conditions_v1;
+  return {
+    ...latestResult,
+    final_plan: {
+      ...latestResult.final_plan,
+      meta,
+    },
+  };
+}
 
 export function useDashboardSiteAddressAction({
   autoExistingRunKeyRef,
@@ -167,8 +197,22 @@ export function useDashboardSiteAddressAction({
         address: trimmed || undefined,
       };
       if (!trimmed) {
+        const clearedSiteInputs = clearAddressSourceContext(nextSiteInputs);
+        delete clearedSiteInputs.address;
+        const clearedLatestResult = clearLatestResultSourceContext(currentProject?.latest_result);
+        const clearedProjectInput: ProjectInput = {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: clearedSiteInputs,
+          },
+        };
         setSelectedAddressSuggestion(null);
         setAddressSuggestions([]);
+        setSiteAddress("");
         autoExistingRunKeyRef.current = "";
         setAutoExistingConditionsStatus({
           status: "waiting",
@@ -176,18 +220,20 @@ export function useDashboardSiteAddressAction({
           candidateCount: 0,
           missing: [],
         });
+        setCurrentProject((project) =>
+          project
+            ? {
+                ...project,
+                project_input: clearedProjectInput,
+                latest_result: clearedLatestResult,
+                updated_at: Date.now() / 1000,
+              }
+            : project,
+        );
         await saveProject({
           silent: true,
-          projectInputOverride: {
-            ...currentInput,
-            input_mode: "user",
-            strict_mode: false,
-            allow_ai_fill_for_blanks: false,
-            meta: {
-              ...(currentInput?.meta ?? {}),
-              site_inputs: nextSiteInputs,
-            },
-          },
+          projectInputOverride: clearedProjectInput,
+          latestResultOverride: clearedLatestResult,
         });
         updateProjectStatus({
           state: "needs review",
@@ -207,6 +253,28 @@ export function useDashboardSiteAddressAction({
           detail: "Civora is geocoding the address and checking available source context.",
           nextAction: "Wait for source candidates or an exact provider/auth blocker.",
         });
+        const runningSiteInputs = clearAddressSourceContext(nextSiteInputs);
+        runningSiteInputs.address = trimmed;
+        const runningProjectInput: ProjectInput = {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: runningSiteInputs,
+          },
+        };
+        setCurrentProject((project) =>
+          project
+            ? {
+                ...project,
+                project_input: runningProjectInput,
+                latest_result: clearLatestResultSourceContext(project.latest_result),
+                updated_at: Date.now() / 1000,
+              }
+            : project,
+        );
         let geocode = selectedAddressSuggestion;
         if (!hasAddressCoordinates(geocode)) {
           geocode = await postJson<AddressSuggestion>("/api/geocode", { address: trimmed }, { token });

@@ -186,6 +186,7 @@ export function useDashboardAutoExistingConditions({
               include_utilities: true,
               include_contours: true,
               include_elevation: true,
+              include_imagery_detection: true,
               provider_registry: currentSiteInputs.local_gis_provider_registry_v1 ?? siteInputs?.local_gis_provider_registry_v1 ?? {},
             },
             { token },
