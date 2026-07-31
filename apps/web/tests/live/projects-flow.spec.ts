@@ -277,6 +277,61 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByText(/Could not restore saved workspace/i)).toHaveCount(0);
   });
 
+  test("keeps a new workspace clean when an older save finishes late", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    await mockShell(page, store);
+    const saveGateControl: { release?: () => void } = {};
+    const saveGate = new Promise<void>((resolve) => {
+      saveGateControl.release = resolve;
+    });
+    let markSaveStarted: (() => void) | null = null;
+    const saveStarted = new Promise<void>((resolve) => {
+      markSaveStarted = resolve;
+    });
+    await page.route("**/api/projects", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      markSaveStarted?.();
+      await saveGate;
+      const payload = route.request().postDataJSON() as {
+        name?: string;
+        project_input?: Record<string, unknown>;
+      };
+      const project: SavedProject = {
+        project_id: "late-save-project",
+        name: payload.name || "Untitled Project",
+        updated_at: Math.floor(Date.now() / 1000),
+        project_input: payload.project_input ?? {},
+        latest_result: null,
+      };
+      store.set(project.project_id, project);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, project }),
+      });
+    });
+
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Save Project" }).click();
+    await saveStarted;
+    await page.getByRole("button", { name: "New Project" }).click();
+    saveGateControl.release?.();
+    await page.waitForTimeout(250);
+
+    await openProjects(page);
+    await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
+    await expect(page.getByTestId("project-drawer-detail")).toContainText(
+      "Save Project will persist this clean workspace",
+    );
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("civora.activeProjectId")))
+      .toBeNull();
+  });
+
   test("restores requested chat program as actionable placement tray objects", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     store.set("requested-program-project", {

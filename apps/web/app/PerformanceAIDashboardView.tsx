@@ -2667,6 +2667,7 @@ function PerformanceAIDashboardView({
     isSeededDemoProjectId,
     payloadPreview,
     projectId,
+    projectLoadRequestRef,
     resolvedProjectIdRef,
     setBusy,
     setCurrentProject,

@@ -30,6 +30,7 @@ type UseDashboardProjectSaveOptions = {
   isSeededDemoProjectId: (projectId: string | null) => boolean;
   payloadPreview: ProjectInput;
   projectId: string;
+  projectLoadRequestRef: MutableRefObject<number>;
   resolvedProjectIdRef: MutableRefObject<string>;
   setBusy: StateSetter<boolean>;
   setCurrentProject: StateSetter<ProjectRecord | null>;
@@ -53,6 +54,7 @@ export function useDashboardProjectSave({
   isSeededDemoProjectId,
   payloadPreview,
   projectId,
+  projectLoadRequestRef,
   resolvedProjectIdRef,
   setBusy,
   setCurrentProject,
@@ -152,6 +154,7 @@ export function useDashboardProjectSave({
         };
     const latestResultToSave =
       latestResultOverride !== undefined ? latestResultOverride : undefined;
+    const workspaceGeneration = projectLoadRequestRef.current;
     try {
       const requestBody: Record<string, unknown> = {
         project_id: effectiveProjectId,
@@ -170,6 +173,9 @@ export function useDashboardProjectSave({
         requestBody,
         { token },
       );
+      if (projectLoadRequestRef.current !== workspaceGeneration) {
+        return null;
+      }
       resolvedProjectIdRef.current = data.project.project_id;
       setProjectId(data.project.project_id);
       setCurrentProject(data.project);
@@ -214,6 +220,7 @@ export function useDashboardProjectSave({
     isSeededDemoProjectId,
     payloadPreview,
     projectId,
+    projectLoadRequestRef,
     resolvedProjectIdRef,
     setBusy,
     setCurrentProject,
