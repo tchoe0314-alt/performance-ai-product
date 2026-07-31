@@ -4,7 +4,8 @@ import hashlib
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
-from .common import safe_dict, safe_float, safe_list, safe_str
+from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
+from .imagery_object_detection import build_imagery_object_detection_report
 
 
 REPORT_VERSION = "map_feature_detection_report_v1"
@@ -81,7 +82,18 @@ IMAGE_KIND_FEATURE_TYPES = {
     "water": "water/pond/basin",
     "vegetation": "vegetation/tree_area",
     "tree_area": "vegetation/tree_area",
+    "tree": "vegetation/tree_area",
+    "trees": "vegetation/tree_area",
+    "landscape": "vegetation/tree_area",
     "constraint": "constraint_area",
+    "utility": "utility",
+    "utilities": "utility",
+    "inlet": "utility",
+    "outfall": "utility",
+    "manhole": "utility",
+    "hydrant": "utility",
+    "building_footprint": "building_footprint",
+    "road_or_drive": "road_or_drive",
 }
 
 DRAFT_OBJECT_TYPES = {
@@ -159,6 +171,7 @@ def build_map_feature_detection_report(
     location_context: Optional[Dict[str, Any]] = None,
     gis_layers: Optional[Dict[str, Any]] = None,
     image_detections: Optional[List[Dict[str, Any]]] = None,
+    imagery_object_detection_report: Optional[Dict[str, Any]] = None,
     inferred_candidates: Optional[List[Dict[str, Any]]] = None,
     source_results: Optional[Dict[str, Any]] = None,
     configured_sources: Optional[Dict[str, Any]] = None,
@@ -167,7 +180,15 @@ def build_map_feature_detection_report(
     candidates: List[Dict[str, Any]] = []
     outside_site_candidates: List[Dict[str, Any]] = []
     blockers: List[Dict[str, Any]] = []
-    source_discovery = build_source_discovery(source_results=source_results, configured_sources=configured_sources, gis_layers=gis_layers)
+    imagery_report = safe_dict(imagery_object_detection_report)
+    if not imagery_report and image_detections is not None:
+        imagery_report = build_imagery_object_detection_report(detections=image_detections, provider="uploaded_or_supplied_imagery")
+    source_discovery = build_source_discovery(
+        source_results=source_results,
+        configured_sources=configured_sources,
+        gis_layers=gis_layers,
+        imagery_object_detection_report=imagery_report,
+    )
     layers = safe_dict(gis_layers)
     boundary = safe_dict(active_site_boundary)
 
@@ -232,7 +253,26 @@ def build_map_feature_detection_report(
             )
         )
 
-    for idx, detection in enumerate(safe_list(image_detections)):
+    combined_image_detections = safe_list(image_detections)
+    for detection in safe_list(imagery_report.get("detections")):
+        rec = safe_dict(detection)
+        if not rec:
+            continue
+        combined_image_detections.append(
+            {
+                "kind": rec.get("kind") or rec.get("feature_type"),
+                "geometry": rec.get("geometry"),
+                "bbox": rec.get("bbox"),
+                "confidence": rec.get("confidence"),
+                "source_url": rec.get("source_url"),
+                "image_url": rec.get("source_image"),
+                "source": rec.get("provider"),
+                "image_path": rec.get("source_image"),
+                "properties": rec.get("properties"),
+            }
+        )
+
+    for idx, detection in enumerate(combined_image_detections):
         rec = safe_dict(detection)
         kind = safe_str(rec.get("kind") or rec.get("feature_type") or rec.get("type"))
         feature_type = IMAGE_KIND_FEATURE_TYPES.get(kind, kind if kind in FEATURE_TYPES else "")
@@ -247,7 +287,7 @@ def build_map_feature_detection_report(
                 confidence=confidence,
                 source_url=safe_str(rec.get("source_url") or rec.get("image_url")),
                 source_name=safe_str(rec.get("evidence_source") or rec.get("source") or rec.get("image_path"), "uploaded_map_snapshot"),
-                blockers=["Map imagery detection is approximate and must be confirmed/classified before it can affect engineering objects."],
+                    blockers=["Imagery/object detection is approximate visual context and must be reviewed before it can affect project objects."],
                 review_required=True,
                 acceptance_status="pending",
                 seed=f"image:{idx}:{kind}:{rec.get('bbox')}:{rec.get('geometry')}",
@@ -264,6 +304,17 @@ def build_map_feature_detection_report(
                 "next_action": "Upload a map image, configure/import GIS sources, or draw existing features manually.",
             }
         )
+    if imagery_report:
+        imagery_status = safe_str(imagery_report.get("status"))
+        if imagery_status in {"not_configured", "source_missing", "failed", "ready_empty"}:
+            blockers.append(
+                {
+                    "code": f"imagery_object_detection_{imagery_status}",
+                    "source_type": "imagery_object_detection",
+                    "message": safe_str(imagery_report.get("message"), "Imagery/object detection did not return visual candidates."),
+                    "next_action": "Connect imagery/object-detection source access or upload a source image if visual detection is needed.",
+                }
+            )
     for key, source in source_discovery.items():
         rec = safe_dict(source)
         if rec.get("configured"):
@@ -277,6 +328,8 @@ def build_map_feature_detection_report(
             }
         )
     for key, result in safe_dict(source_results).items():
+        if key == "imagery_object_detection":
+            continue
         rec = safe_dict(result)
         if rec and not rec.get("success") and safe_str(rec.get("status")) not in {"skipped"}:
             blockers.append(
@@ -306,6 +359,7 @@ def build_map_feature_detection_report(
         "candidate_count": len(candidates),
         "outside_site_candidates": outside_site_candidates,
         "outside_site_candidate_count": len(outside_site_candidates),
+        "imagery_object_detection_report_v1": imagery_report or build_imagery_object_detection_report(status="not_configured"),
         "blockers": blockers,
         "trusted_canonical_object_count": 0,
         "construction_release_allowed": False,
@@ -376,6 +430,7 @@ def build_source_discovery(
     source_results: Optional[Dict[str, Any]] = None,
     configured_sources: Optional[Dict[str, Any]] = None,
     gis_layers: Optional[Dict[str, Any]] = None,
+    imagery_object_detection_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     configured = safe_dict(configured_sources)
     results = safe_dict(source_results)
@@ -407,6 +462,23 @@ def build_source_discovery(
             "candidate_type": spec["candidate_type"],
             "blocker": "" if is_configured else f"No configured {spec['label']} source is available.",
             "next_action": "" if is_configured else f"Configure/import a {spec['label']} GIS source before detecting {spec['label']} features.",
+        }
+    imagery = safe_dict(imagery_object_detection_report)
+    if imagery:
+        imagery_count = safe_int(imagery.get("detection_count"))
+        imagery_status = safe_str(imagery.get("status"), "not_configured")
+        configured_imagery = imagery_status not in {"", "not_configured"}
+        discovery["imagery_object_detection"] = {
+            "source_type": "imagery_object_detection",
+            "label": "imagery/object detection",
+            "configured": configured_imagery,
+            "status": "ready" if imagery_count > 0 else "configured_no_features" if configured_imagery else "missing_source",
+            "feature_count": imagery_count,
+            "source_url": safe_str(imagery.get("source_url")),
+            "source_name": safe_str(imagery.get("provider"), "imagery_object_detection"),
+            "candidate_type": "image_detected_candidate",
+            "blocker": "" if imagery_count > 0 else safe_str(imagery.get("message"), "Imagery/object detection returned no visual candidates."),
+            "next_action": "" if imagery_count > 0 else "Connect imagery/object-detection source access or upload a source image.",
         }
     return discovery
 

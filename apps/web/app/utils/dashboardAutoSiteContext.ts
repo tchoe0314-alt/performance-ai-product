@@ -42,6 +42,51 @@ const missingMatches = (value: unknown, terms: string[]) => {
   return matchesSourceTerms(record, terms);
 };
 
+const featureCandidateLabels = (autoContext: Record<string, unknown>) => {
+  const candidates = Array.isArray(autoContext.feature_candidates) ? autoContext.feature_candidates : [];
+  const counts = new Map<string, number>();
+  candidates.forEach((candidate) => {
+    const record = candidate && typeof candidate === "object" ? (candidate as Record<string, unknown>) : {};
+    const raw = readable(record.feature_type || record.kind || record.type || "");
+    if (!raw) return;
+    const label = raw
+      .replace("Building Footprint", "Buildings")
+      .replace("Road Or Drive", "Roads / ROW")
+      .replace("Parcel Or Site Boundary", "Parcel / Site Boundary")
+      .replace("Vegetation/Tree Area", "Trees / Landscape")
+      .replace("Water/Pond/Basin", "Water / Basin");
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  });
+  return Array.from(counts.entries()).map(([label, count]) => `${label} (${count})`);
+};
+
+const imageryDetectionSummary = (autoContext: Record<string, unknown>) => {
+  const report =
+    autoContext.imagery_object_detection_report_v1 && typeof autoContext.imagery_object_detection_report_v1 === "object"
+      ? (autoContext.imagery_object_detection_report_v1 as Record<string, unknown>)
+      : {};
+  const nested =
+    autoContext.map_feature_detection_report_v1 && typeof autoContext.map_feature_detection_report_v1 === "object"
+      ? ((autoContext.map_feature_detection_report_v1 as Record<string, unknown>).imagery_object_detection_report_v1 as Record<string, unknown> | undefined)
+      : undefined;
+  const rec = Object.keys(report).length ? report : nested && typeof nested === "object" ? nested : {};
+  const count = Number(rec.detection_count ?? 0);
+  const status = String(rec.status ?? "");
+  const missing = Array.isArray(rec.missing) ? rec.missing.map(String).filter(Boolean) : [];
+  return {
+    count,
+    status,
+    label: count > 0 ? `Imagery scan (${count})` : "",
+    missingLabel:
+      status && count <= 0
+        ? status === "not_configured"
+          ? "imagery object detection"
+          : `imagery scan: ${readable(status)}`
+        : "",
+    missing,
+  };
+};
+
 const childSourceProviderLabels = (source: Record<string, unknown> | undefined) => {
   const children = Array.isArray(source?.child_sources) ? source.child_sources : [];
   return uniqueStrings(
@@ -70,6 +115,9 @@ const sourceNextStepForCategory = (key: string) => {
   if (key === "buildings") {
     return "Connect a building-footprint source or upload a site plan/image before treating buildings as source-backed context.";
   }
+  if (key === "imagery") {
+    return "Connect an imagery/object-detection provider or upload a site image/map snapshot before relying on visual feature detection.";
+  }
   if (key === "roads") {
     return "Connect ROW/road centerline data or confirm frontage manually before relying on driveway/access assumptions.";
   }
@@ -92,11 +140,15 @@ export const buildAutoSiteContextFlowSummary = ({
   autoExistingConditionsStatus: AutoExistingConditionsUiStatus;
 }): AutoSiteContextFlowSummary => {
   const discoverySources = Array.isArray(onlineDiscovery.sources) ? onlineDiscovery.sources : [];
+  const featureLabels = featureCandidateLabels(autoContext);
+  const imagerySummary = imageryDetectionSummary(autoContext);
   const candidateLabels = uniqueStrings([
     ...discoverySources
       .filter((source) => Number(source.candidate_count ?? 0) > 0)
       .map((source) => source.label || source.key || source.source_type),
-    Number(autoContext.candidate_count ?? 0) > 0 ? "Auto Site Context source candidates" : "",
+    ...featureLabels,
+    imagerySummary.label,
+    Number(autoContext.candidate_count ?? 0) > 0 && !featureLabels.length ? "Auto Site Context source candidates" : "",
   ]).slice(0, 8);
   const discoveryMissing = Array.isArray((onlineDiscovery as Record<string, unknown>).missing_sources)
     ? ((onlineDiscovery as Record<string, unknown>).missing_sources as unknown[])
@@ -113,6 +165,7 @@ export const buildAutoSiteContextFlowSummary = ({
       return source;
     }),
     ...(Array.isArray(autoContext.missing_sources) ? autoContext.missing_sources : []),
+    imagerySummary.missingLabel,
   ]).slice(0, 8);
   const candidateCount = Math.max(
     Number(autoContext.candidate_count ?? 0),
@@ -123,7 +176,7 @@ export const buildAutoSiteContextFlowSummary = ({
   const status = String(autoContext.status || onlineDiscovery.status || autoExistingConditionsStatus.status || "waiting");
   const message =
     candidateCount > 0
-      ? `Apply Address found ${candidateCount} review-required source candidate${candidateCount === 1 ? "" : "s"} that Generate can use as context.`
+      ? `Apply Address found ${candidateCount} review-required source candidate${candidateCount === 1 ? "" : "s"}${imagerySummary.status ? `; imagery scan: ${imagerySummary.count > 0 ? `${imagerySummary.count} visual candidate${imagerySummary.count === 1 ? "" : "s"}` : readable(imagerySummary.status)}` : ""}.`
       : missingLabels.length
         ? `Apply Address found no usable source candidates yet. Sources still needed: ${missingLabels.slice(0, 3).join(", ")}.`
         : autoExistingConditionsStatus.message || "Auto Site Context has not produced review candidates yet.";
@@ -169,6 +222,7 @@ export const buildAutoSiteContextRows = ({
     { key: "parcel", title: "Parcel / site boundary", terms: ["parcel", "boundary", "site"] },
     { key: "roads", title: "Roads / ROW", terms: ["road", "row", "right of way", "frontage", "drive"] },
     { key: "buildings", title: "Buildings", terms: ["building", "footprint", "structure"] },
+    { key: "imagery", title: "Imagery scan", terms: ["imagery", "image", "object detection", "visual"] },
     { key: "terrain", title: "Terrain / elevation", terms: ["terrain", "elevation", "dem", "lidar", "contour", "grading"] },
     { key: "drainage", title: "Drainage / stormwater", terms: ["drainage", "storm", "stormwater", "inlet", "outfall", "discharge", "flood"] },
     { key: "flood_wetlands", title: "Flood / wetlands", terms: ["flood", "wetland", "constraint"] },

@@ -16,6 +16,7 @@ from .gis_provider_registry import (
     target_market_known_gaps,
     target_market_provider_records,
 )
+from .imagery_object_detection import fetch_imagery_object_detection
 from .map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
 from .standards_discovery import discover_standards_sources
 
@@ -42,6 +43,11 @@ DISCOVERY_SOURCE_SPECS = {
         "label": "building footprints",
         "result_keys": ("building_footprints",),
         "layer_keys": ("building_footprints",),
+    },
+    "imagery_object_detection": {
+        "label": "imagery/object detection",
+        "result_keys": ("imagery_object_detection",),
+        "layer_keys": (),
     },
     "road_row": {
         "label": "road/ROW data",
@@ -567,7 +573,9 @@ def build_online_existing_conditions_discovery_report(
             continue
 
         result_records = [safe_dict(results.get(item)) for item in spec.get("result_keys", ()) if safe_dict(results.get(item))]
-        if key == "terrain_dem_lidar":
+        if key == "imagery_object_detection":
+            count = sum(safe_int(result.get("detection_count")) for result in result_records)
+        elif key == "terrain_dem_lidar":
             count = sum(
                 _candidate_count_for_source(source_key=key, result=result, gis_layers=layers, layer_keys=())
                 for result in result_records
@@ -739,6 +747,10 @@ def fetch_online_existing_conditions(
     include_utilities: bool = True,
     include_contours: bool = True,
     include_elevation: bool = True,
+    include_imagery_detection: bool = True,
+    imagery_detection_provider_url: str = "",
+    imagery_detection_provider_token: str = "",
+    imagery_detection_provider_name: str = "",
     standards_jurisdiction: Optional[Dict[str, Any]] = None,
     provider_registry: Optional[Dict[str, Any]] = None,
     active_site_boundary: Optional[Dict[str, Any]] = None,
@@ -991,6 +1003,20 @@ def fetch_online_existing_conditions(
         layer_imports.append(contours)
 
     online_layers = online_import_to_gis_layers(*layer_imports)
+    imagery_detection = fetch_imagery_object_detection(
+        address=address,
+        bbox=working_bbox,
+        location_context=location_context,
+        active_site_boundary=active_site_boundary,
+        provider_url=imagery_detection_provider_url,
+        provider_token=imagery_detection_provider_token,
+        provider_name=imagery_detection_provider_name,
+        session=session,
+    ) if include_imagery_detection else fetch_imagery_object_detection(
+        provider_name="skipped",
+        session=session,
+    )
+    source_results["imagery_object_detection"] = imagery_detection
     warnings.extend(safe_list(online_layers.get("warnings")))
     dem_lidar = {
         "ready": bool(elevation.get("success")),
@@ -1022,6 +1048,7 @@ def fetch_online_existing_conditions(
         gis_layers=online_layers.get("gis_layers"),
         source_results=source_results,
         active_site_boundary=active_site_boundary,
+        imagery_object_detection_report=imagery_detection,
     )
     discovery_report = build_online_existing_conditions_discovery_report(
         source_results=source_results,

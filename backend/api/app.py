@@ -506,6 +506,7 @@ class ExistingConditionsOnlineFetchPayload(BaseModel):
     include_utilities: bool = True
     include_contours: bool = True
     include_elevation: bool = True
+    include_imagery_detection: bool = True
     active_site_boundary: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1252,6 +1253,7 @@ def fetch_existing_conditions_online(
         include_utilities=payload.include_utilities,
         include_contours=payload.include_contours,
         include_elevation=payload.include_elevation,
+        include_imagery_detection=payload.include_imagery_detection,
         active_site_boundary=payload.active_site_boundary,
     )
 

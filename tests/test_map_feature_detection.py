@@ -164,6 +164,52 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertEqual(by_source["image_detected_candidate"]["acceptance_status"], "pending")
         self.assertTrue(by_source["image_detected_candidate"]["needs_user_confirmation"])
         self.assertTrue(by_source["image_detected_candidate"]["review_required"])
+        self.assertEqual(report["imagery_object_detection_report_v1"]["detection_count"], 1)
+
+    def test_imagery_object_detection_report_adds_visual_building_road_and_tree_candidates(self) -> None:
+        report = build_map_feature_detection_report(
+            imagery_object_detection_report={
+                "version": "imagery_object_detection_report_v1",
+                "status": "detected",
+                "provider": "test_segmentation_model",
+                "detection_count": 3,
+                "detections": [
+                    {
+                        "kind": "building",
+                        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [30, 0], [30, 20], [0, 0]]]},
+                        "confidence": 0.86,
+                        "source_url": "https://imagery.example/tile",
+                    },
+                    {"kind": "road", "bbox": [0, 40, 100, 12], "confidence": 0.74},
+                    {"kind": "tree", "bbox": [80, 80, 10, 10], "confidence": 0.68},
+                ],
+            }
+        )
+
+        types = {candidate["feature_type"] for candidate in report["feature_candidates"]}
+
+        self.assertEqual(report["source_discovery"]["imagery_object_detection"]["status"], "ready")
+        self.assertIn("building_footprint", types)
+        self.assertIn("road_or_drive", types)
+        self.assertIn("vegetation/tree_area", types)
+        self.assertTrue(all(candidate["source_type"] == "image_detected_candidate" for candidate in report["feature_candidates"]))
+        self.assertTrue(all(candidate["review_required"] for candidate in report["feature_candidates"]))
+
+    def test_unconfigured_imagery_detector_reports_missing_without_fake_candidates(self) -> None:
+        report = build_map_feature_detection_report(
+            imagery_object_detection_report={
+                "version": "imagery_object_detection_report_v1",
+                "status": "not_configured",
+                "provider": "unconfigured",
+                "detection_count": 0,
+                "detections": [],
+                "missing": ["imagery_object_detection_provider"],
+            }
+        )
+
+        self.assertEqual(report["feature_candidates"], [])
+        self.assertEqual(report["source_discovery"]["imagery_object_detection"]["status"], "missing_source")
+        self.assertIn("imagery_object_detection_not_configured", {item["code"] for item in report["blockers"]})
 
     def test_pending_candidate_remains_pending_until_explicit_workflow_action(self) -> None:
         report = build_map_feature_detection_report(

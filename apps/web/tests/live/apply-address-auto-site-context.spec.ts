@@ -100,11 +100,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
         online_existing_conditions_discovery_v1: {
           version: "online_existing_conditions_discovery_v1",
           status: "candidates_found",
-          candidate_count: 4,
+          candidate_count: 5,
           sources: [
             { key: "parcel_site_boundary", label: "parcel/site boundary", provider: "Test Parcels", candidate_count: 1, review_required: true, blockers: ["review-required"] },
             { key: "road_row", label: "road/ROW data", provider: "Test Roads", candidate_count: 1, review_required: true, blockers: ["review-required"] },
             { key: "building_footprints", label: "building footprints", provider: "Test Buildings", candidate_count: 1, review_required: true, blockers: ["review-required"] },
+            { key: "imagery_object_detection", label: "imagery/object detection", provider: "Test Imagery Detector", candidate_count: 1, review_required: true, blockers: ["visual review only"] },
             { key: "terrain_dem_lidar", label: "terrain/DEM/LiDAR", provider: "USGS 3DEP EPQS", candidate_count: 1, review_required: true, blockers: ["not survey"] },
             {
               key: "public_utilities",
@@ -149,13 +150,23 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
         },
         map_feature_detection_report_v1: {
           version: "map_feature_detection_report_v1",
-          candidate_count: 4,
+          candidate_count: 5,
           feature_candidates: [
             { candidate_id: "parcel-1", feature_type: "parcel_or_site_boundary", source_type: "official_gis", source_name: "Test Parcels", evidence_source: "Test Parcels", confidence: 0.88, review_required: true, acceptance_status: "pending" },
             { candidate_id: "road-1", feature_type: "road_or_drive", source_type: "official_gis", source_name: "Test Roads", evidence_source: "Test Roads", confidence: 0.88, review_required: true, acceptance_status: "pending" },
             { candidate_id: "building-1", feature_type: "building_footprint", source_type: "official_gis", source_name: "Test Buildings", evidence_source: "Test Buildings", confidence: 0.88, review_required: true, acceptance_status: "pending" },
+            { candidate_id: "image-building-1", feature_type: "building_footprint", source_type: "image_detected_candidate", source_name: "Test Imagery Detector", evidence_source: "Test Imagery Detector", confidence: 0.62, review_required: true, acceptance_status: "pending" },
             { candidate_id: "terrain-1", feature_type: "terrain", source_type: "official_gis", source_name: "USGS 3DEP EPQS", evidence_source: "USGS 3DEP EPQS", confidence: 0.72, review_required: true, acceptance_status: "pending" },
           ],
+          imagery_object_detection_report_v1: {
+            version: "imagery_object_detection_report_v1",
+            status: "detected",
+            provider: "Test Imagery Detector",
+            detection_count: 1,
+            detections: [{ detection_id: "image-building-1", kind: "building", confidence: 0.62 }],
+            review_required: true,
+            truth_label: "Imagery/object detection creates visual review candidates only.",
+          },
         },
         existing_conditions_package: { status: "review_required", production_ready: false },
         existing_conditions_summary: { production_ready: false },
@@ -195,6 +206,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-status-parcel")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-buildings")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-status-imagery")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-detail-imagery")).toContainText(/Test Imagery Detector|1 review candidate/i);
   await expect(page.getByTestId("auto-site-context-status-terrain")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-survey_control")).toContainText("needs source");
   await expect(page.getByTestId("auto-site-context-detail-survey_control")).toContainText("does not satisfy survey");
@@ -231,4 +244,5 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   expect(fetchOnlineCalled).toBeTruthy();
   expect(JSON.stringify(savedProjectInput)).toContain("online_existing_conditions_discovery_v1");
   expect(JSON.stringify(savedProjectInput)).toContain("site_intelligence_summary_v1");
+  expect(JSON.stringify(savedProjectInput)).toContain("imagery_object_detection_report_v1");
 });

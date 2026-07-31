@@ -415,6 +415,7 @@ def fetch_existing_conditions_online(
     include_utilities: bool = True,
     include_contours: bool = True,
     include_elevation: bool = True,
+    include_imagery_detection: bool = True,
     active_site_boundary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     registry = build_provider_registry(providers=(provider_registry or {}).get("providers") if provider_registry else None)
@@ -445,6 +446,10 @@ def fetch_existing_conditions_online(
         include_utilities=include_utilities,
         include_contours=include_contours,
         include_elevation=include_elevation,
+        include_imagery_detection=include_imagery_detection,
+        imagery_detection_provider_url=str(os.getenv("CIVORA_IMAGERY_DETECTION_URL") or ""),
+        imagery_detection_provider_token=str(os.getenv("CIVORA_IMAGERY_DETECTION_TOKEN") or ""),
+        imagery_detection_provider_name=str(os.getenv("CIVORA_IMAGERY_DETECTION_PROVIDER") or ""),
         provider_registry=registry,
         active_site_boundary=active_site_boundary,
     )

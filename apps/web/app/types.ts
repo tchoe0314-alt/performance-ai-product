@@ -1153,6 +1153,7 @@ export type PlanMeta = {
     feature_candidates?: Array<Record<string, unknown>>;
     outside_site_candidate_count?: number;
     outside_site_candidates?: Array<Record<string, unknown>>;
+    imagery_object_detection_report_v1?: Record<string, unknown>;
   };
   online_existing_conditions_discovery_v1?: OnlineExistingConditionsDiscovery;
   local_gis_provider_registry_v1?: LocalGisProviderRegistry;
@@ -1368,6 +1369,7 @@ export type SiteInputs = {
     feature_candidates?: Array<Record<string, unknown>>;
     outside_site_candidate_count?: number;
     outside_site_candidates?: Array<Record<string, unknown>>;
+    imagery_object_detection_report_v1?: Record<string, unknown>;
   };
   candidate_review_inbox_v1?: CandidateReviewInbox;
   existing_conditions_package?: Record<string, unknown>;

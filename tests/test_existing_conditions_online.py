@@ -56,6 +56,26 @@ class _RoutingSession:
         return _Response({"type": "FeatureCollection", "features": [{"id": "A", "properties": {}, "geometry": {"type": "Polygon", "coordinates": []}}]})
 
 
+class _ImageryRoutingSession(_RoutingSession):
+    def post(self, url, json=None, headers=None, timeout=None):
+        self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout, "method": "post"})
+        return _Response(
+            {
+                "status": "detected",
+                "provider": "test_imagery_detector",
+                "source_url": "https://imagery.example/source",
+                "detections": [
+                    {
+                        "kind": "building",
+                        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [20, 0], [20, 16], [0, 0]]]},
+                        "confidence": 0.82,
+                    },
+                    {"kind": "parking", "bbox": [30, 10, 40, 20], "confidence": 0.7},
+                ],
+            }
+        )
+
+
 class _GretnaRoutingSession:
     def __init__(self):
         self.calls = []
@@ -540,6 +560,55 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertTrue(all(item["review_required"] for item in feature_report["feature_candidates"]))
         self.assertTrue(all(item["acceptance_status"] == "pending" for item in feature_report["feature_candidates"]))
         self.assertFalse(any(item["canonical_object_allowed"] for item in feature_report["feature_candidates"]))
+
+    def test_online_fetch_can_merge_configured_imagery_object_detection_candidates(self) -> None:
+        session = _ImageryRoutingSession()
+        result = fetch_online_existing_conditions(
+            address="1 Main St",
+            parcel_service_url="https://county.example/arcgis/rest/services/Parcels/MapServer",
+            roads_service_url="https://county.example/arcgis/rest/services/Roads/MapServer",
+            imagery_detection_provider_url="https://imagery.example/detect",
+            imagery_detection_provider_token="secret-token",
+            imagery_detection_provider_name="test_imagery_detector",
+            session=session,
+        )
+
+        feature_report = result["map_feature_detection_report_v1"]
+        imagery_report = feature_report["imagery_object_detection_report_v1"]
+        source_discovery = feature_report["source_discovery"]
+        types = {candidate["feature_type"] for candidate in feature_report["feature_candidates"]}
+        post_calls = [call for call in session.calls if call.get("method") == "post"]
+
+        self.assertEqual(imagery_report["status"], "detected")
+        self.assertEqual(imagery_report["detection_count"], 2)
+        self.assertEqual(source_discovery["imagery_object_detection"]["status"], "ready")
+        self.assertIn("building_footprint", types)
+        self.assertIn("parking_area", types)
+        self.assertTrue(post_calls)
+        self.assertEqual(post_calls[0]["headers"]["Authorization"], "Bearer secret-token")
+        self.assertTrue(all(item["review_required"] for item in feature_report["feature_candidates"]))
+
+    def test_online_fetch_reports_unconfigured_imagery_without_synthesizing_detections(self) -> None:
+        result = fetch_online_existing_conditions(
+            address="1 Main St",
+            include_parcels=False,
+            include_building_footprints=False,
+            include_roads=False,
+            include_floodplain=False,
+            include_wetlands=False,
+            include_elevation=False,
+            include_utilities=False,
+            include_contours=False,
+            session=_RoutingSession(),
+        )
+
+        feature_report = result["map_feature_detection_report_v1"]
+        imagery_report = feature_report["imagery_object_detection_report_v1"]
+
+        self.assertEqual(imagery_report["status"], "not_configured")
+        self.assertEqual(imagery_report["detection_count"], 0)
+        self.assertEqual(feature_report["feature_candidates"], [])
+        self.assertIn("imagery_object_detection_provider", imagery_report["missing"])
 
     def test_online_discovery_does_not_satisfy_survey_or_control(self) -> None:
         result = fetch_online_existing_conditions(

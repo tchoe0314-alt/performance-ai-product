@@ -286,6 +286,7 @@ export function useDashboardSiteAddressAction({
               include_utilities: true,
               include_contours: true,
               include_elevation: true,
+              include_imagery_detection: true,
               provider_registry: localGisProviderRegistry,
             },
             { token },
