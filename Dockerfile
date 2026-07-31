@@ -20,4 +20,4 @@ ENV MPLCONFIGDIR=/tmp/mplconfig
 
 EXPOSE 8002
 
-CMD ["sh", "-c", "mkdir -p \"$PERFORMANCE_AI_STORAGE_DIR\" \"$MPLCONFIGDIR\" && gunicorn backend.api.app:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8002} --workers ${WEB_CONCURRENCY:-1} --timeout ${WEB_TIMEOUT_SECONDS:-60} --graceful-timeout 15 --keep-alive 5 --max-requests ${WEB_MAX_REQUESTS:-80} --max-requests-jitter 20 --access-logfile /dev/null --error-logfile - --log-level warning"]
+CMD ["sh", "-c", "mkdir -p \"$PERFORMANCE_AI_STORAGE_DIR\" \"$MPLCONFIGDIR\" && gunicorn backend.api.app:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8002} --workers ${WEB_CONCURRENCY:-2} --timeout ${WEB_TIMEOUT_SECONDS:-60} --graceful-timeout 15 --keep-alive 5 --max-requests ${WEB_MAX_REQUESTS:-80} --max-requests-jitter 20 --access-logfile /dev/null --error-logfile - --log-level warning"]
