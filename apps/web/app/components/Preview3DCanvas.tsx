@@ -26,17 +26,17 @@ type Preview3DCanvasProps = {
 };
 
 const layerPalette: Record<string, { top: string; side: string; line: string }> = {
-  BUILDING: { top: "#e7ecf2", side: "#b8c3cf", line: "#475569" },
-  STRUCTURE: { top: "#e7dbc6", side: "#c6a978", line: "#8a6d3b" },
-  ROAD: { top: "#8f9aa6", side: "#6f7b87", line: "#f8fafc" },
-  PARKING: { top: "#e5e9ee", side: "#bac4cf", line: "#f8fafc" },
+  BUILDING: { top: "#dfe6ee", side: "#9aa8b8", line: "#334155" },
+  STRUCTURE: { top: "#dcc79f", side: "#b58d4f", line: "#735426" },
+  ROAD: { top: "#7f8a96", side: "#65717e", line: "#f8fafc" },
+  PARKING: { top: "#d9dee5", side: "#aeb8c4", line: "#f8fafc" },
   LOT: { top: "#f8fafc", side: "#e2e8f0", line: "#94a3b8" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
   CONSTRAINT: { top: "#f8b4a5", side: "#f97360", line: "#9f3412" },
   TERRAIN: { top: "#d7e7c6", side: "#adc894", line: "#5c7f46" },
-  LANDSCAPE: { top: "#a7c77b", side: "#7ca05f", line: "#365314" },
+  LANDSCAPE: { top: "#93bb64", side: "#6f944f", line: "#365314" },
 };
 
 const normalizeLayer = (layer: string) => {
@@ -125,9 +125,10 @@ const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
 
 const flatPlanOpacity = (layer: string, state: string) => {
   if (layer === "LOT") return 0.018;
-  if (layer === "PARKING") return state === "low" ? 0.09 : 0.062;
-  if (layer === "ROAD") return state === "low" ? 0.42 : 0.34;
+  if (layer === "PARKING") return state === "low" ? 0.13 : 0.12;
+  if (layer === "ROAD") return state === "low" ? 0.5 : 0.46;
   if (layer === "SIDEWALK") return state === "low" ? 0.3 : 0.22;
+  if (layer === "LANDSCAPE") return state === "low" ? 0.24 : 0.3;
   if (state === "low") return 0.5;
   if (state === "imported") return 0.58;
   if (state === "stale") return 0.5;
@@ -370,7 +371,7 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#f1eee5" : "#d7e7c6",
+      color: terrainState.mode === "fallback" ? "#f3efe5" : "#e5efcf",
       roughness: 0.9,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
@@ -383,9 +384,9 @@ export default function Preview3DCanvas({
 
     if (previewQuality === "high") {
       const terrainLineMaterial = new THREE.LineBasicMaterial({
-        color: terrainState.mode === "fallback" ? "#cbd5d1" : "#7a9d67",
+        color: terrainState.mode === "fallback" ? "#cbd5d1" : "#6f8f54",
         transparent: true,
-        opacity: terrainState.mode === "fallback" ? 0.16 : 0.34,
+        opacity: terrainState.mode === "fallback" ? 0.12 : 0.24,
       });
       const referenceCount = terrainState.mode === "fallback" ? 4 : 7;
       for (let lineIndex = 1; lineIndex < referenceCount; lineIndex += 1) {
@@ -446,7 +447,7 @@ export default function Preview3DCanvas({
         sourceEntityId: item.sourceEntityId,
       };
 
-      const isFlatPlanLayer = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK";
+      const isFlatPlanLayer = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK" || layer === "LANDSCAPE";
       const cadMaterial = new THREE.MeshStandardMaterial({
         color: layer === "LOT" ? palette.top : state === "blocked" ? "#dc2626" : item.unsupported ? "#f59e0b" : palette.top,
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
