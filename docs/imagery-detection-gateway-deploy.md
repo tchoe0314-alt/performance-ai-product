@@ -16,6 +16,12 @@ It does not create survey/control evidence, utility locates, professional accept
 
 Create a second Railway service from the same GitHub repo.
 
+Set the Railway config file path to:
+
+```text
+railway.imagery-gateway.toml
+```
+
 Use:
 
 ```text
