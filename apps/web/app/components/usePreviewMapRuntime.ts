@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import mapboxgl from "mapbox-gl";
 
@@ -117,6 +117,7 @@ export function usePreviewMapRuntime({
   alignToRoadRequest,
   onSetSiteRotationDeg,
 }: PreviewMapRuntimeOptions) {
+  const lastFittedSiteKeyRef = useRef("");
   useEffect(() => {
     if (!mapAvailable || !mapOverlayEnabled) return;
     if (!mapContainerRef.current || mapRef.current) return;
@@ -464,16 +465,19 @@ export function usePreviewMapRuntime({
   }, [fullscreenMapRef, mapBearing, mapPitch, mapRef, previewFullscreenOpen, showMap]);
 
   useEffect(() => {
-    if (!mapAvailable) return;
+    if (!mapAvailable || !mapLoaded) return;
     if (!geocode?.lng || !geocode?.lat) return;
+    if (lotWidth > 0 && lotHeight > 0) return;
     const center: [number, number] = [geocode.lng, geocode.lat];
     mapRef.current?.flyTo({ center, zoom: 17 });
     fullscreenMapRef.current?.flyTo({ center, zoom: 17 });
-  }, [fullscreenMapRef, geocode?.lat, geocode?.lng, mapAvailable, mapRef]);
+  }, [fullscreenMapRef, geocode?.lat, geocode?.lng, lotHeight, lotWidth, mapAvailable, mapLoaded, mapRef]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current || !geocode?.lat || !geocode?.lng) return;
-    if (!fitToSiteRequest || !lotWidth || !lotHeight) return;
+    if (!lotWidth || !lotHeight) return;
+    const fitKey = `${geocode.lat.toFixed(7)}:${geocode.lng.toFixed(7)}:${lotWidth}:${lotHeight}:${fitToSiteRequest ?? "auto"}`;
+    if (lastFittedSiteKeyRef.current === fitKey) return;
     const corners = [
       siteToLatLng(0, 0),
       siteToLatLng(lotWidth, 0),
@@ -485,7 +489,8 @@ export function usePreviewMapRuntime({
       (acc, coord) => acc.extend(coord),
       new mapboxgl.LngLatBounds(corners[0], corners[0]),
     );
-    mapRef.current.fitBounds(bounds, { padding: 80, duration: 650 });
+    lastFittedSiteKeyRef.current = fitKey;
+    mapRef.current.fitBounds(bounds, { padding: 80, duration: fitToSiteRequest ? 650 : 0 });
   }, [siteToLatLng, fitToSiteRequest, geocode?.lat, geocode?.lng, lotHeight, lotWidth, mapAvailable, mapLoaded, mapRef]);
 
   useEffect(() => {

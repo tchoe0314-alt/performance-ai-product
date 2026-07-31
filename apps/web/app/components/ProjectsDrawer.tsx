@@ -135,17 +135,8 @@ export function ProjectsDrawer({
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center">
           <p className="text-sm font-semibold text-slate-900">No saved projects yet.</p>
           <p className="mt-1 text-xs text-slate-500">
-            Start clean, then Save Project when this draft should be restored later.
+            Use New Project above to start clean, then Save Project when this draft should be restored later.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              void onNewProject();
-            }}
-            className="mt-3 rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-semibold text-white"
-          >
-            New Project
-          </button>
         </div>
       )}
     </div>

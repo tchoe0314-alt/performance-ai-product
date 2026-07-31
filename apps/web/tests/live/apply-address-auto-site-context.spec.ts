@@ -303,6 +303,35 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await page.getByLabel("Type project address").fill("1 Main St, Test City, TX");
   await page.getByRole("button", { name: "Apply address" }).click();
 
+  await expect
+    .poll(
+      () => page.evaluate(() => Boolean((window as unknown as Record<string, unknown>).__civoraMapOverlayEnabled)),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const viewport = (window as unknown as Record<string, unknown>).__civoraMapViewport;
+          if (!viewport || typeof viewport !== "object") return null;
+          return Number((viewport as { lat?: unknown }).lat);
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeCloseTo(32.8, 3);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const viewport = (window as unknown as Record<string, unknown>).__civoraMapViewport;
+          if (!viewport || typeof viewport !== "object") return null;
+          return Number((viewport as { lng?: unknown }).lng);
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeCloseTo(-96.8, 3);
+
   await expect(page.getByTestId("auto-site-context-summary")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary");
   await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");

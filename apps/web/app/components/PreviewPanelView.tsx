@@ -394,6 +394,7 @@ export default function PreviewPanel({
   const [compactViewport, setCompactViewport] = useState(false);
   const lastMapResizeRef = useRef<number>(0);
   const [mapOverlayEnabled, setMapOverlayEnabled] = useState(false);
+  const autoEnabledMapLocationRef = useRef("");
   const [mapLocked, setMapLocked] = useState(false);
   const mapDragRef = useRef<{ x: number; y: number } | null>(null);
   const mapDragActiveRef = useRef(false);
@@ -498,6 +499,15 @@ export default function PreviewPanel({
   } as const;
   const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
   useEffect(() => {
+    const lat = Number(geocode?.lat);
+    const lng = Number(geocode?.lng);
+    if (!mapboxToken || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const locationKey = `${lat.toFixed(7)}:${lng.toFixed(7)}`;
+    if (autoEnabledMapLocationRef.current === locationKey) return;
+    autoEnabledMapLocationRef.current = locationKey;
+    setMapOverlayEnabled(true);
+  }, [geocode?.lat, geocode?.lng, mapboxToken]);
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
     const update = () => setCompactViewport(query.matches);
@@ -534,7 +544,15 @@ export default function PreviewPanel({
     debugWindow.__civoraMapOverlayEnabled = mapOverlayEnabled;
     debugWindow.__civoraPreviewQuality = previewQuality;
     debugWindow.__civoraMapLoaded = mapLoaded;
-  }, [geocode, mapLoaded, mapOverlayEnabled, showMap, previewQuality]);
+    const activeMapCenter = mapRef.current?.getCenter();
+    debugWindow.__civoraMapViewport = activeMapCenter
+      ? {
+          lat: activeMapCenter.lat,
+          lng: activeMapCenter.lng,
+          zoom: mapRef.current?.getZoom() ?? null,
+        }
+      : null;
+  }, [geocode, mapLoaded, mapOverlayEnabled, mapRevision, mapRef, showMap, previewQuality]);
   const selectedObject = useMemo(
     () =>
       findPreviewSelectedObject({

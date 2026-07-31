@@ -129,6 +129,36 @@ export function useDashboardProjectLoad({
         void loadJobRef.current?.(activeJobId);
       }
     } catch (error) {
+      const errorStatus =
+        typeof error === "object" && error !== null && "status" in error
+          ? Number((error as { status?: unknown }).status)
+          : undefined;
+      const missingProject =
+        errorStatus === 404 ||
+        (error instanceof Error && /project not found/i.test(error.message));
+      if (missingProject) {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+        }
+        resolvedProjectIdRef.current = "";
+        setCurrentProject(null);
+        setProjectId("");
+        setWorkspaceRestoreState("idle");
+        setProjectDrawerNotice(
+          "The previously saved project no longer exists. Started a clean unsaved workspace.",
+        );
+        updateProjectStatus({
+          state: "ready",
+          area: "projects",
+          title: "Clean workspace ready",
+          detail: "The stale saved-project reference was cleared from this browser.",
+          nextAction: "Start a new project or open another saved project.",
+        });
+        measureCivoraInteractionAfterPaint("projects.drawer.open_project.missing", loadStartedAt, {
+          projectId: id,
+        });
+        return;
+      }
       setWorkspaceRestoreState("failed");
       const message =
         error instanceof Error ? `Could not restore saved workspace: ${error.message}` : "Could not restore saved workspace.";

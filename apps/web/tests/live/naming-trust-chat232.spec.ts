@@ -58,6 +58,13 @@ test.describe("Chat 232 naming and trust copy", () => {
     await expect(sidebar).not.toContainText(/object manager/i);
     await expect(sidebar).not.toContainText(/project health/i);
     await expect(sidebar).not.toContainText(/analyze/i);
+
+    await page.getByTestId("header-chat-button").click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Conversation and assisted workflow control");
+    await expect(sidebar.getByRole("button", { name: /^Deliver$/ })).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     await expectNoOverflow(page);
   });
 

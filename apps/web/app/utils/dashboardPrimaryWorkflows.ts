@@ -22,8 +22,8 @@ export const PRIMARY_WORKFLOW_GROUPS: Record<PrimaryWorkflowKey, SidePanelKey[]>
     "system_utilities",
     "system_landscape",
   ],
-  analyze: ["analysis", "quantities", "jobs", "catalogs"],
-  deliver: ["deliverables", "reports", "settings", "chat"],
+  analyze: ["analysis", "quantities", "jobs", "catalogs", "chat"],
+  deliver: ["deliverables", "reports", "settings"],
 };
 
 export function resolveActivePrimaryWorkflowKey({

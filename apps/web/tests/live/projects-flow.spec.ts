@@ -256,6 +256,27 @@ async function openSetup(page: Page) {
 }
 
 test.describe("project drawer reliability", () => {
+  test("clears a stale saved-project reference and exposes one new-project action", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    await mockShell(page, store);
+    await page.addInitScript(() => {
+      window.localStorage.setItem("civora.activeProjectId", "deleted-project");
+    });
+
+    await openApp(page);
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("civora.activeProjectId")))
+      .toBeNull();
+
+    await openProjects(page);
+    await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
+    await expect(page.getByTestId("project-drawer-detail")).toContainText(
+      "Started a clean unsaved workspace",
+    );
+    await expect(page.getByRole("button", { name: "New Project" })).toHaveCount(1);
+    await expect(page.getByText(/Could not restore saved workspace/i)).toHaveCount(0);
+  });
+
   test("restores requested chat program as actionable placement tray objects", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     store.set("requested-program-project", {
@@ -414,15 +435,13 @@ test.describe("project drawer reliability", () => {
       await dialog.accept();
     });
     await openProjects(page);
-    const deleteRequest = page.waitForRequest((request) =>
-      request.method() === "DELETE" && request.url().includes(`/api/projects/${firstProjectId}`),
-    );
+    const deleteRequest = page.waitForRequest((request) => request.method() === "DELETE");
     await expect(page.getByRole("button", { name: "Delete project Untitled Project" }).first()).toBeVisible();
     await page.getByRole("button", { name: "Delete project Untitled Project" }).first().click({ force: true });
-    await deleteRequest;
+    const deletedProjectId = decodeURIComponent(new URL((await deleteRequest).url()).pathname.split("/").pop() ?? "");
     await openProjects(page);
     await expect(page.getByTestId("project-drawer-detail")).toContainText("Project deleted.");
-    expect(store.has(firstProjectId)).toBe(false);
+    expect(store.has(deletedProjectId)).toBe(false);
 
     await page.route("**/api/projects", async (route) => {
       if (route.request().method() === "POST") {
