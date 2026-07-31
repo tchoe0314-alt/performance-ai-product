@@ -2869,6 +2869,7 @@ function PerformanceAIDashboardView({
     resetWorkspaceStateRef,
     resolvedProjectIdRef,
     restoredActiveProjectRef,
+    suppressProjectAutoLoadRef,
     setBackendResult,
     setCurrentProject,
     setIssues,
@@ -2971,41 +2972,40 @@ function PerformanceAIDashboardView({
     }
   }, [analysisSelectedIssueId]);
 
-  const persistSiteRotation = useCallback(
-    async (nextValue: number) => {
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        site_rotation_deg: nextValue,
-      };
-      await saveProject({
-        silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-          },
-        },
-      });
-    },
-    [currentProject, payloadPreview, saveProject],
-  );
-
   const scheduleRotationSave = useCallback(
     (nextValue: number) => {
+      const activeProjectId = resolvedProjectIdRef.current;
+      if (!activeProjectId || currentProject?.project_id !== activeProjectId) return;
+      const workspaceGeneration = projectLoadRequestRef.current;
+      const currentInput = currentProject.project_input ?? payloadPreview;
       if (rotationSaveTimeoutRef.current) {
         window.clearTimeout(rotationSaveTimeoutRef.current);
       }
       rotationSaveTimeoutRef.current = window.setTimeout(() => {
-        void persistSiteRotation(nextValue);
         rotationSaveTimeoutRef.current = null;
+        if (projectLoadRequestRef.current !== workspaceGeneration) return;
+        if (resolvedProjectIdRef.current !== activeProjectId) return;
+        const nextSiteInputs = {
+          ...(currentInput?.meta?.site_inputs ?? {}),
+          site_rotation_deg: nextValue,
+        };
+        void saveProject({
+          silent: true,
+          projectIdOverride: activeProjectId,
+          projectInputOverride: {
+            ...currentInput,
+            input_mode: "user",
+            strict_mode: false,
+            allow_ai_fill_for_blanks: false,
+            meta: {
+              ...(currentInput?.meta ?? {}),
+              site_inputs: nextSiteInputs,
+            },
+          },
+        });
       }, 400);
     },
-    [persistSiteRotation],
+    [currentProject, payloadPreview, saveProject],
   );
 
   useEffect(() => {
@@ -3844,6 +3844,8 @@ function PerformanceAIDashboardView({
     removeProjectSummary,
     resetWorkspaceState,
     resolvedProjectIdRef,
+    restoredActiveProjectRef,
+    rotationSaveTimeoutRef,
     scaleSaveTimeoutRef,
     setActiveJobId,
     setActiveSidePanel,

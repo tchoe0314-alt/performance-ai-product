@@ -436,6 +436,9 @@ test.describe("project drawer reliability", () => {
 
     await openProjects(page);
     await page.getByRole("button", { name: "New Project" }).click();
+    await page.evaluate(() => {
+      window.localStorage.setItem("civora.activeProjectId", "mapped-project");
+    });
     await page.waitForTimeout(1_500);
 
     await expect(page.getByTestId("project-status-summary")).toContainText(
@@ -446,9 +449,7 @@ test.describe("project drawer reliability", () => {
     );
     await openProjects(page);
     await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
-    await expect
-      .poll(() => page.evaluate(() => window.localStorage.getItem("civora.activeProjectId")))
-      .toBeNull();
+    await expect(page.getByTestId("project-drawer-state")).not.toContainText("Restored saved workspace");
     expect(store.size).toBe(1);
   });
 

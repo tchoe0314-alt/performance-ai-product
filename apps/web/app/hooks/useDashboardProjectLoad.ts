@@ -27,6 +27,7 @@ type UseDashboardProjectLoadOptions = {
   resetWorkspaceStateRef: MutableRefObject<(() => void) | null>;
   resolvedProjectIdRef: MutableRefObject<string>;
   restoredActiveProjectRef: MutableRefObject<boolean>;
+  suppressProjectAutoLoadRef: MutableRefObject<boolean>;
   setBackendResult: StateSetter<PlanResponse | null>;
   setCurrentProject: StateSetter<ProjectRecord | null>;
   setIssues: StateSetter<Issue[]>;
@@ -57,6 +58,7 @@ export function useDashboardProjectLoad({
   resetWorkspaceStateRef,
   resolvedProjectIdRef,
   restoredActiveProjectRef,
+  suppressProjectAutoLoadRef,
   setBackendResult,
   setCurrentProject,
   setIssues,
@@ -71,6 +73,7 @@ export function useDashboardProjectLoad({
 }: UseDashboardProjectLoadOptions) {
   const loadProject = useCallback(async (id: string) => {
     if (!token) return;
+    restoredActiveProjectRef.current = true;
     const loadStartedAt = markCivoraInteraction();
     autosaveSuspendRef.current = true;
     if (chatAutosaveTimeoutRef.current !== null) {
@@ -188,6 +191,7 @@ export function useDashboardProjectLoad({
     projectLoadRequestRef,
     resetWorkspaceStateRef,
     resolvedProjectIdRef,
+    restoredActiveProjectRef,
     setBackendResult,
     setCurrentProject,
     setIssues,
@@ -202,7 +206,12 @@ export function useDashboardProjectLoad({
   ]);
 
   useEffect(() => {
-    if (!token || effectiveDemoWorkspaceEnabled || restoredActiveProjectRef.current) return;
+    if (
+      !token ||
+      effectiveDemoWorkspaceEnabled ||
+      restoredActiveProjectRef.current ||
+      suppressProjectAutoLoadRef.current
+    ) return;
     if (currentProject?.project_id || projectId) return;
     if (typeof window === "undefined") return;
     const savedProjectId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
@@ -215,6 +224,7 @@ export function useDashboardProjectLoad({
     loadProject,
     projectId,
     restoredActiveProjectRef,
+    suppressProjectAutoLoadRef,
     token,
   ]);
 

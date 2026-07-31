@@ -37,6 +37,8 @@ type UseDashboardProjectActionsOptions = {
   removeProjectSummary: (projectIdToRemove: string) => void;
   resetWorkspaceState: () => void;
   resolvedProjectIdRef: MutableRefObject<string>;
+  restoredActiveProjectRef: MutableRefObject<boolean>;
+  rotationSaveTimeoutRef: MutableRefObject<number | null>;
   scaleSaveTimeoutRef: MutableRefObject<number | null>;
   setActiveJobId: Dispatch<SetStateAction<string>>;
   setActiveSidePanel: Dispatch<SetStateAction<SidePanelKey | null>>;
@@ -130,6 +132,8 @@ export function useDashboardProjectActions({
   removeProjectSummary,
   resetWorkspaceState,
   resolvedProjectIdRef,
+  restoredActiveProjectRef,
+  rotationSaveTimeoutRef,
   scaleSaveTimeoutRef,
   setActiveJobId,
   setActiveSidePanel,
@@ -202,6 +206,7 @@ export function useDashboardProjectActions({
     projectLoadRequestRef.current += 1;
     projectResultLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
+    restoredActiveProjectRef.current = true;
     autosaveSuspendRef.current = true;
     if (chatAutosaveTimeoutRef.current !== null) {
       window.clearTimeout(chatAutosaveTimeoutRef.current);
@@ -214,6 +219,10 @@ export function useDashboardProjectActions({
     if (scaleSaveTimeoutRef.current !== null) {
       window.clearTimeout(scaleSaveTimeoutRef.current);
       scaleSaveTimeoutRef.current = null;
+    }
+    if (rotationSaveTimeoutRef.current !== null) {
+      window.clearTimeout(rotationSaveTimeoutRef.current);
+      rotationSaveTimeoutRef.current = null;
     }
     draftProjectPromiseRef.current = null;
     resolvedProjectIdRef.current = "";
@@ -299,6 +308,11 @@ export function useDashboardProjectActions({
     measureCivoraInteractionAfterPaint("projects.drawer.new_project", newProjectStartedAt);
     draftProjectPromiseRef.current = null;
     window.setTimeout(() => {
+      try {
+        window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+      } catch {
+        // Ignore local storage failures.
+      }
       suppressProjectAutoLoadRef.current = false;
       autosaveSuspendRef.current = false;
     }, 0);
@@ -313,6 +327,8 @@ export function useDashboardProjectActions({
     projectResultLoadRequestRef,
     resetWorkspaceState,
     resolvedProjectIdRef,
+    restoredActiveProjectRef,
+    rotationSaveTimeoutRef,
     scaleSaveTimeoutRef,
     setActiveJobId,
     setActiveSidePanel,
