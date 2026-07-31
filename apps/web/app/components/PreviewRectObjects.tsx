@@ -48,6 +48,8 @@ export function PreviewRectObjects({
           const hatchFill = cadHatchPatternForPreviewItem(item);
           const sourceState = resolveSourceState(item);
           const isFallbackBounds = sourceState === "fallback";
+          const fallbackFill = "rgba(248,250,252,0.012)";
+          const fallbackStroke = isHighQuality ? "rgba(100,116,139,0.22)" : "rgba(100,116,139,0.28)";
           const useShapePath = ["water", "landscape", "sidewalk"].includes(visualKind);
           const shapePath = useShapePath
             ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
@@ -137,10 +139,10 @@ export function PreviewRectObjects({
                 <>
                   <path
                     d={shapePath}
-                    fill={isFallbackBounds ? "rgba(248,250,252,0.04)" : visualStyle.fill}
-                    stroke={visualStyle.stroke}
-                    strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
-                    strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
+                    fill={isFallbackBounds ? fallbackFill : visualStyle.fill}
+                    stroke={isFallbackBounds ? fallbackStroke : visualStyle.stroke}
+                    strokeWidth={isFallbackBounds ? 0.05 : visualStyle.strokeWidth}
+                    strokeDasharray={isFallbackBounds ? "0.7 1.25" : visualStyle.strokeDasharray}
                     strokeLinejoin="round"
                   >
                     <title>{sourceStateLabel(sourceState)}</title>
@@ -190,10 +192,10 @@ export function PreviewRectObjects({
                     width={rect.width}
                     height={rect.height}
                     rx={isFallbackBounds ? 0.18 : cornerRadius}
-                    fill={isFallbackBounds ? "rgba(248,250,252,0.035)" : visualStyle.fill}
-                    stroke={visualStyle.stroke}
-                    strokeWidth={isFallbackBounds ? 0.2 : visualStyle.strokeWidth}
-                    strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
+                    fill={isFallbackBounds ? fallbackFill : visualStyle.fill}
+                    stroke={isFallbackBounds ? fallbackStroke : visualStyle.stroke}
+                    strokeWidth={isFallbackBounds ? 0.05 : visualStyle.strokeWidth}
+                    strokeDasharray={isFallbackBounds ? "0.7 1.25" : visualStyle.strokeDasharray}
                     strokeLinejoin="round"
                   >
                     <title>{sourceStateLabel(sourceState)}</title>
@@ -354,8 +356,8 @@ export function PreviewRectObjects({
                   </g>
                 </g>
               ) : null}
-              {isHighQuality && visualKind === "parking" && hasParkingGeometryEvidence(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : sourceState === "fallback" ? 0.42 : 0.72}>
+              {isHighQuality && visualKind === "parking" && !isFallbackBounds && hasParkingGeometryEvidence(item) ? (
+                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : 0.72}>
                   <line
                     x1={rect.left + rect.width * 0.08}
                     y1={rect.top + rect.height * 0.5}

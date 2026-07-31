@@ -55,6 +55,8 @@ export function PreviewPolygonObjects({
             cadReferenceMode,
           });
           const isFallbackBounds = sourceState === "fallback";
+          const fallbackFill = "rgba(248,250,252,0.012)";
+          const fallbackStroke = isHighQuality ? "rgba(100,116,139,0.22)" : "rgba(100,116,139,0.28)";
           const hatchFill = cadHatchPatternForPreviewItem(item);
           const geometry = (item.geometry || []) as Array<[number, number]>;
           const bounds = points.reduce(
@@ -109,32 +111,22 @@ export function PreviewPolygonObjects({
               <polygon
                 data-testid={isBuildingSurface ? "professional-building-footprint" : "plan-polygon-object"}
                 points={points.join(" ")}
-                fill={isFallbackBounds ? "rgba(248,250,252,0.035)" : visualStyle.fill}
-                stroke={visualStyle.stroke}
-                strokeWidth={isFallbackBounds ? 0.13 : visualStyle.strokeWidth}
-                strokeDasharray={isFallbackBounds ? "1.2 1" : visualStyle.strokeDasharray}
+                fill={isFallbackBounds ? fallbackFill : visualStyle.fill}
+                stroke={isFallbackBounds ? fallbackStroke : visualStyle.stroke}
+                strokeWidth={isFallbackBounds ? 0.05 : visualStyle.strokeWidth}
+                strokeDasharray={isFallbackBounds ? "0.7 1.25" : visualStyle.strokeDasharray}
                 opacity={visualStyle.opacity}
                 strokeLinejoin="round"
               >
                 <title>{sourceStateLabel(sourceState)}</title>
               </polygon>
-              {isFallbackBounds ? (
-                <polyline
-                  points={points.join(" ")}
-                  fill="none"
-                  stroke="#94a3b8"
-                  strokeWidth={0.05}
-                  strokeDasharray="0.4 1.2"
-                  opacity={0.5}
-                />
-              ) : null}
               {hatchFill ? (
                 <polygon data-testid="cad-hatch-fill" points={points.join(" ")} fill={hatchFill} stroke="none" opacity={0.72}>
                   <title>Draft hatch fill, review required.</title>
                 </polygon>
               ) : null}
-              {isHighQuality && visualKind === "parking" && supportsParkingModuleRendering(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : sourceState === "fallback" ? 0.4 : 0.68}>
+              {isHighQuality && visualKind === "parking" && !isFallbackBounds && supportsParkingModuleRendering(item) ? (
+                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : 0.68}>
                   <line
                     x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
                     y1={(bounds.minY + bounds.maxY) / 2}
