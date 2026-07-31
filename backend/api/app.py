@@ -1049,7 +1049,7 @@ def root() -> Dict[str, str]:
 
 
 @app.get("/api/health")
-def health(_rate_limit: None = Depends(rate_limit("health"))) -> Dict[str, Any]:
+def health() -> Dict[str, Any]:
     deployment = _deployment_metadata()
     support = _support_metadata()
     return {
