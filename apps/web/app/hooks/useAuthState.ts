@@ -98,6 +98,7 @@ export default function useAuthState({
   const handleAuth = useCallback(async () => {
     setAuthLoading(true);
     setAuthError("");
+    setAuthStatusError("");
     try {
       const path =
         authMode === "register" ? "/api/auth/register" : "/api/auth/login";

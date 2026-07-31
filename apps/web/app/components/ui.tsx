@@ -94,14 +94,16 @@ export function SmallButton({
 
 export function Field({
   label,
+  htmlFor,
   children,
 }: {
   label: string;
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <label className="civora-muted-label">
+      <label className="civora-muted-label" htmlFor={htmlFor}>
         {label}
       </label>
       {children}

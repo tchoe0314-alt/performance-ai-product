@@ -118,7 +118,14 @@ function formatNetworkError(error: unknown): Error {
   return new CivoraApiError("Backend unreachable. Check the backend URL and retry.", "backend_unreachable");
 }
 
-async function readJsonResponse<T>(response: Response): Promise<T> {
+type ReadJsonResponseOptions = {
+  preserveUnauthorizedDetail?: boolean;
+};
+
+async function readJsonResponse<T>(
+  response: Response,
+  options: ReadJsonResponseOptions = {},
+): Promise<T> {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -129,7 +136,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
           ? payload.message
           : `Request failed with status ${response.status}`;
     const detail =
-      response.status === 401
+      response.status === 401 && !options.preserveUnauthorizedDetail
         ? "Session expired. Sign in again."
         : response.status === 403
           ? rawDetail || "This account does not have access to that action."
@@ -141,7 +148,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
                 ? rawDetail || "Rate limited. Wait about a minute, then try again."
                 : rawDetail;
     const kind: ApiErrorKind =
-      response.status === 401
+      response.status === 401 && !options.preserveUnauthorizedDetail
         ? "auth_expired"
         : response.status === 403
           ? "api_blocked"
@@ -192,7 +199,9 @@ export async function postJson<T>(
   } catch (error) {
     throw formatNetworkError(error);
   }
-  return readJsonResponse<T>(response);
+  return readJsonResponse<T>(response, {
+    preserveUnauthorizedDetail: path === "/api/auth/login",
+  });
 }
 
 export async function postJsonWithTimeout<T>(

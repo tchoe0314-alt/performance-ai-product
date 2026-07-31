@@ -83,6 +83,32 @@ async function mockGeocode(page: Page) {
 }
 
 test.describe("Chat 223B empty/error/loading/recovery states", () => {
+  test("login reports invalid credentials instead of an expired session", async ({ page }) => {
+    await page.route("**/api/auth/status", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, account_setup: "configured" }),
+      });
+    });
+    await page.route("**/api/auth/login", async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Invalid email or password." }),
+      });
+    });
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Sign In Mode" }).click();
+    await page.getByLabel("Email", { exact: true }).fill("engineer@example.com");
+    await page.getByLabel("Password", { exact: true }).fill("incorrect-password");
+    await page.getByRole("button", { name: "Sign In", exact: true }).click();
+
+    await expect(page.getByText("Invalid email or password.")).toBeVisible();
+    await expect(page.getByText("Session expired. Sign in again.")).toHaveCount(0);
+  });
+
   test("auth distinguishes expired session from unavailable backend", async ({ page }) => {
     await page.route("**/api/auth/status", async (route) => {
       await route.fulfill({

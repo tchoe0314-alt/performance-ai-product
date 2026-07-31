@@ -189,25 +189,28 @@ export default function AuthScreen({
                 </div>
               ) : null}
               {authMode === "register" ? (
-                <Field label="Name">
+                <Field label="Name" htmlFor="civora-auth-name">
                   <TextInput
+                    id="civora-auth-name"
                     value={authName}
                     onChange={(e) => onAuthNameChange(e.target.value)}
                     placeholder="Jane Engineer"
                   />
                 </Field>
               ) : null}
-              <Field label="Email">
+              <Field label="Email" htmlFor="civora-auth-email">
                 <TextInput
+                  id="civora-auth-email"
                   value={authEmail}
                   onChange={(e) => onAuthEmailChange(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="email"
                 />
               </Field>
-              <Field label="Password">
+              <Field label="Password" htmlFor="civora-auth-password">
                 <div className="relative">
                   <TextInput
+                    id="civora-auth-password"
                     type={showPassword ? "text" : "password"}
                     value={authPassword}
                     onChange={(e) => onAuthPasswordChange(e.target.value)}
