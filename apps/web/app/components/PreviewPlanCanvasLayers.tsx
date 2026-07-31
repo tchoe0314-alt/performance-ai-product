@@ -137,8 +137,9 @@ export function PreviewPlanCanvasLayers({
         height: overlayBoundsResolved.height,
       }}
     >
-      {!siteLocked && (showSiteBounds || drawMode === "site") ? (
+      {!showMap && !siteLocked && (showSiteBounds || drawMode === "site") ? (
         <div
+          data-testid="local-site-bounds-overlay"
           className={`absolute inset-0 rounded-[16px] border border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
           style={viewportTransformStyle}
         />

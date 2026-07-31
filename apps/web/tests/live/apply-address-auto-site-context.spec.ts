@@ -331,6 +331,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
       { timeout: 30_000 },
     )
     .toBeCloseTo(-96.8, 3);
+  await expect(page.getByTestId("local-site-bounds-overlay")).toHaveCount(0);
 
   await expect(page.getByTestId("auto-site-context-summary")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary");
