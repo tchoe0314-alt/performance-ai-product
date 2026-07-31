@@ -144,6 +144,15 @@ const isDenseConceptLot = (item: Preview3DItem) =>
       item.meta?.cad_reference_recreation,
   );
 
+function stableUnitValue(seed: string, offset = 0) {
+  let hash = 2166136261 + offset;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
 export default function Preview3DCanvas({
   items,
   previewQuality = "standard",
@@ -210,11 +219,17 @@ export default function Preview3DCanvas({
       const layer = normalizeLayer(preview3DLayerText(item));
       return layer === "BUILDING" || layer === "STRUCTURE" || (layer === "LOT" && isDenseConceptLot(item));
     }).length;
+    const buildingDetail = visibleObjects.reduce((count, item) => {
+      const layer = normalizeLayer(preview3DLayerText(item));
+      if (layer === "BUILDING") return count + 1;
+      if (layer === "LOT" && isDenseConceptLot(item) && Math.min(item.w, item.h) >= 18) return count + 1;
+      return count;
+    }, 0);
     const civilFlat = visibleObjects.filter((item) => {
       const layer = normalizeLayer(preview3DLayerText(item));
       return ["ROAD", "PARKING", "LOT", "SIDEWALK", "UTILITY", "DRAINAGE"].includes(layer);
     }).length;
-    return { vertical, civilFlat };
+    return { vertical, civilFlat, buildingDetail };
   }, [items]);
 
   const selectObject = (object: (typeof objectChips)[number]) => {
@@ -360,6 +375,99 @@ export default function Preview3DCanvas({
     const centerY = modelBounds.minY + modelBounds.spanY / 2;
     const toScene = (x: number, y: number, z = 0) =>
       new THREE.Vector3(x - centerX, z, y - centerY);
+      const addBuildingDetailCues = (
+      object: THREE.Group,
+      item: Preview3DItem,
+      baseY: number,
+      heightFt: number,
+      options: { smallLot?: boolean } = {},
+    ) => {
+        const width = Math.max(item.w, 1);
+      const depth = Math.max(item.h, 1);
+      const topY = baseY + heightFt;
+      const minDim = Math.min(width, depth);
+      const maxDim = Math.max(width, depth);
+      const facadeColor = options.smallLot ? "#64748b" : "#334155";
+      const lineOpacity = options.smallLot ? 0.2 : 0.32;
+      const facadeLineMaterial = new THREE.LineBasicMaterial({
+        color: facadeColor,
+        transparent: true,
+        opacity: lineOpacity,
+      });
+      const addLine = (from: THREE.Vector3, to: THREE.Vector3) => {
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), facadeLineMaterial);
+        line.name = "civil-3d-building-facade-cue";
+        object.add(line);
+      };
+
+      const plinth = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 1.025, 0.18, depth * 1.025),
+        new THREE.MeshStandardMaterial({
+          color: "#cbd5e1",
+          roughness: 0.88,
+          transparent: true,
+          opacity: options.smallLot ? 0.24 : 0.38,
+        }),
+      );
+      plinth.position.copy(toScene(item.x + width / 2, item.y + depth / 2, baseY + 0.09));
+      plinth.userData = object.userData;
+      plinth.name = "civil-3d-building-plinth";
+      object.add(plinth);
+
+      if (!options.smallLot) {
+        const parapetHeight = Math.max(0.42, Math.min(heightFt * 0.035, 2.2));
+        const parapetMaterial = new THREE.MeshStandardMaterial({
+          color: "#e2e8f0",
+          roughness: 0.82,
+          metalness: 0.01,
+        });
+        [
+          { x: item.x + width / 2, y: item.y + depth * 0.03, w: width * 0.98, d: Math.max(depth * 0.035, 0.8) },
+          { x: item.x + width / 2, y: item.y + depth * 0.97, w: width * 0.98, d: Math.max(depth * 0.035, 0.8) },
+          { x: item.x + width * 0.03, y: item.y + depth / 2, w: Math.max(width * 0.035, 0.8), d: depth * 0.98 },
+          { x: item.x + width * 0.97, y: item.y + depth / 2, w: Math.max(width * 0.035, 0.8), d: depth * 0.98 },
+        ].forEach((rail, railIndex) => {
+          const parapet = new THREE.Mesh(new THREE.BoxGeometry(rail.w, parapetHeight, rail.d), parapetMaterial);
+          parapet.position.copy(toScene(rail.x, rail.y, topY + parapetHeight / 2 + 0.05));
+          parapet.userData = object.userData;
+          parapet.name = `civil-3d-building-parapet-${railIndex + 1}`;
+          object.add(parapet);
+        });
+      }
+
+      const bandCount = options.smallLot ? 1 : Math.max(2, Math.min(5, Math.floor(heightFt / 18)));
+      for (let band = 1; band <= bandCount; band += 1) {
+        const z = baseY + (heightFt * band) / (bandCount + 1);
+        addLine(toScene(item.x + width * 0.04, item.y + depth * 0.01, z), toScene(item.x + width * 0.96, item.y + depth * 0.01, z));
+        addLine(toScene(item.x + width * 0.99, item.y + depth * 0.04, z), toScene(item.x + width * 0.99, item.y + depth * 0.96, z));
+        if (!options.smallLot && maxDim >= 42) {
+          addLine(toScene(item.x + width * 0.04, item.y + depth * 0.99, z), toScene(item.x + width * 0.96, item.y + depth * 0.99, z));
+        }
+      }
+
+      const bayCount = options.smallLot ? 2 : Math.max(3, Math.min(10, Math.floor(width / 18)));
+      for (let bay = 1; bay < bayCount; bay += 1) {
+        const x = item.x + (width * bay) / bayCount;
+        addLine(toScene(x, item.y + depth * 0.01, baseY + heightFt * 0.18), toScene(x, item.y + depth * 0.01, topY - heightFt * 0.12));
+      }
+      const sideBayCount = options.smallLot ? 1 : Math.max(2, Math.min(8, Math.floor(depth / 18)));
+      for (let bay = 1; bay < sideBayCount; bay += 1) {
+        const y = item.y + (depth * bay) / sideBayCount;
+        addLine(toScene(item.x + width * 0.99, y, baseY + heightFt * 0.18), toScene(item.x + width * 0.99, y, topY - heightFt * 0.12));
+      }
+
+      if (!options.smallLot && minDim >= 20) {
+        const canopyMaterial = new THREE.MeshStandardMaterial({ color: "#cbd5e1", roughness: 0.74, metalness: 0.02 });
+        const canopy = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(width * 0.22, 5), 0.32, Math.max(depth * 0.055, 1.6)),
+          canopyMaterial,
+        );
+        canopy.position.copy(toScene(item.x + width / 2, item.y + depth + Math.max(depth * 0.012, 0.6), baseY + Math.max(heightFt * 0.16, 5)));
+        canopy.userData = object.userData;
+        canopy.name = "civil-3d-building-entry-canopy";
+        object.add(canopy);
+      }
+    };
 
     const terrainGeometry =
       terrainState.mode === "terrain"
@@ -576,6 +684,7 @@ export default function Preview3DCanvas({
           }
           if (layer === "BUILDING" && previewQuality === "high") {
             const roofY = baseY + displayDepth + 0.2;
+            addBuildingDetailCues(object, item, baseY, displayDepth);
             const roofInset = Math.min(Math.max(Math.min(item.w, item.h) * 0.08, 1.4), 8);
             const roofLines = new THREE.LineSegments(
               new THREE.BufferGeometry().setFromPoints([
@@ -897,6 +1006,7 @@ export default function Preview3DCanvas({
             }
           }
           if (previewQuality === "high") {
+            addBuildingDetailCues(object, item, baseY, heightFt);
             const longSideIsX = item.w >= item.h;
             const entry = new THREE.Mesh(
               new THREE.BoxGeometry(
@@ -976,31 +1086,54 @@ export default function Preview3DCanvas({
           lotLine.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + visualLift + heightFt + 0.08));
           object.add(lotLine);
           if (previewQuality === "high" && isDenseConceptLot(item) && Math.min(item.w, item.h) >= 18) {
-            const houseW = Math.max(item.w * 0.42, 8);
-            const houseD = Math.max(item.h * 0.34, 7);
-            const houseH = Math.max(Math.min(item.w, item.h) * 0.34, 10);
+            const unitSeed = `${item.id || item.label || "lot"}-${index}`;
+            const widthJitter = 0.34 + stableUnitValue(unitSeed, 1) * 0.18;
+            const depthJitter = 0.28 + stableUnitValue(unitSeed, 2) * 0.14;
+            const heightJitter = 0.28 + stableUnitValue(unitSeed, 3) * 0.18;
+            const houseW = Math.max(item.w * widthJitter, 7.5);
+            const houseD = Math.max(item.h * depthJitter, 6.5);
+            const houseH = Math.max(Math.min(item.w, item.h) * heightJitter, 8);
+            const houseX = item.x + item.w * (0.44 + stableUnitValue(unitSeed, 4) * 0.16);
+            const houseY = item.y + item.h * (0.42 + stableUnitValue(unitSeed, 5) * 0.16);
+            const bodyTint = stableUnitValue(unitSeed, 6);
             const house = new THREE.Mesh(
               new THREE.BoxGeometry(houseW, houseH, houseD),
               new THREE.MeshStandardMaterial({
-                color: "#e5e7eb",
+                color: bodyTint > 0.66 ? "#e7ded2" : bodyTint > 0.33 ? "#e5e7eb" : "#dbe3ea",
                 roughness: 0.76,
                 metalness: 0.01,
               }),
             );
-            house.position.copy(toScene(item.x + item.w * 0.52, item.y + item.h * 0.5, baseY + houseH / 2 + 0.14));
+            house.position.copy(toScene(houseX, houseY, baseY + houseH / 2 + 0.14));
             house.userData = {
               ...object.userData,
               source: "visual massing for dense concept lot; not source-detected building evidence",
             };
             object.add(house);
             addExactEdges(house, "#475569", 0.34);
+            addBuildingDetailCues(
+              object,
+              {
+                ...item,
+                x: houseX - houseW / 2,
+                y: houseY - houseD / 2,
+                w: houseW,
+                h: houseD,
+              },
+              baseY,
+              houseH,
+              { smallLot: true },
+            );
             const roof = new THREE.Mesh(
               new THREE.ConeGeometry(Math.max(Math.min(houseW, houseD) * 0.64, 4), Math.max(houseH * 0.24, 2.4), 4),
-              new THREE.MeshStandardMaterial({ color: "#cbd5e1", roughness: 0.82 }),
+              new THREE.MeshStandardMaterial({
+                color: stableUnitValue(unitSeed, 7) > 0.55 ? "#cbd5e1" : "#b7c0cb",
+                roughness: 0.82,
+              }),
             );
             roof.rotation.y = Math.PI / 4;
             roof.scale.set(Math.max(houseW / Math.max(houseD, 1), 0.8), 0.58, 1);
-            roof.position.copy(toScene(item.x + item.w * 0.52, item.y + item.h * 0.5, baseY + houseH + Math.max(houseH * 0.08, 1)));
+            roof.position.copy(toScene(houseX, houseY, baseY + houseH + Math.max(houseH * 0.08, 1)));
             roof.userData = house.userData;
             object.add(roof);
           }
@@ -1204,7 +1337,7 @@ export default function Preview3DCanvas({
           className="pointer-events-none absolute left-4 top-20 max-w-[min(330px,calc(100%-2rem))] rounded-xl border border-slate-200 bg-white/88 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur sm:top-16"
           data-testid="civil-3d-massing-summary"
         >
-          3D massing: {massingStats.vertical} vertical / {massingStats.civilFlat} civil layers
+          3D massing: {massingStats.vertical} vertical / {massingStats.civilFlat} civil layers / {massingStats.buildingDetail} detailed buildings
         </div>
       ) : null}
       {objectChips.length ? (
