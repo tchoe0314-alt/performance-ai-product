@@ -20,4 +20,4 @@ ENV MPLCONFIGDIR=/tmp/mplconfig
 
 EXPOSE 8002
 
-CMD ["sh", "-c", "mkdir -p \"$PERFORMANCE_AI_STORAGE_DIR\" \"$MPLCONFIGDIR\" && uvicorn backend.api.app:app --host 0.0.0.0 --port ${PORT:-8002}"]
+CMD ["sh", "-c", "mkdir -p \"$PERFORMANCE_AI_STORAGE_DIR\" \"$MPLCONFIGDIR\" && uvicorn backend.api.app:app --host 0.0.0.0 --port ${PORT:-8002} --workers ${WEB_CONCURRENCY:-2}"]
