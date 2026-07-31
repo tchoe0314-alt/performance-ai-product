@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import httpx
+from anyio import to_thread
 
 from parsers.chat_intent_parser import assess_design_readiness, decide_chat_message
 from backend.application.design_workflows import (
@@ -982,7 +983,12 @@ def _log_runtime_event(event: str, **fields: Any) -> None:
 
 
 @app.on_event("startup")
-def _register_job_handlers() -> None:
+async def _register_job_handlers() -> None:
+    try:
+        thread_limit = int(os.getenv("CIVORA_ANYIO_THREAD_LIMIT") or "8")
+        to_thread.current_default_thread_limiter().total_tokens = max(2, min(16, thread_limit))
+    except Exception:
+        pass
     log_memory("startup_begin")
     _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
     _log_mapbox_token_config()
