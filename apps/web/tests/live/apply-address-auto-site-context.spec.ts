@@ -46,6 +46,14 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   let savedProjectInput: Record<string, unknown> | null = null;
   let fetchOnlineCalled = false;
   const candidateStatuses: Record<string, "pending" | "accepted" | "rejected"> = {};
+  let markOnlineFetchStarted: () => void = () => undefined;
+  let releaseOnlineFetch: () => void = () => undefined;
+  const onlineFetchStarted = new Promise<void>((resolve) => {
+    markOnlineFetchStarted = resolve;
+  });
+  const onlineFetchRelease = new Promise<void>((resolve) => {
+    releaseOnlineFetch = resolve;
+  });
 
   await page.route("**/api/auth/status", async (route) => {
     await route.fulfill({
@@ -200,6 +208,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
 
   await page.route("**/api/existing-conditions/fetch-online", async (route) => {
     fetchOnlineCalled = true;
+    markOnlineFetchStarted();
+    await onlineFetchRelease;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -302,6 +312,16 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   }
   await page.getByLabel("Type project address").fill("1 Main St, Test City, TX");
   await page.getByRole("button", { name: "Apply address" }).click();
+
+  await onlineFetchStarted;
+  await page.getByRole("button", { name: "Draw" }).first().click();
+  await expect(page.getByTestId("object-manager-panel")).toBeVisible();
+  releaseOnlineFetch();
+  await expect
+    .poll(() => JSON.stringify(savedProjectInput), { timeout: 30_000 })
+    .toContain("online_existing_conditions_discovery_v1");
+  await expect(page.getByTestId("object-manager-panel")).toBeVisible();
+  await page.getByRole("button", { name: "Setup" }).first().click();
 
   if (process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
     await expect

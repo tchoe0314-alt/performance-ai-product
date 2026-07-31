@@ -456,8 +456,6 @@ export function useDashboardSiteAddressAction({
           nextSiteInputs.site_boundary_source = "dimensions";
         }
         setAddressSuggestions([]);
-        setActiveWorkspaceMode("setup");
-        setActiveSidePanel("site_existing");
         const latestResultOverride =
           currentProject?.latest_result?.final_plan
             ? {
