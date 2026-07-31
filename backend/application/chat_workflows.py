@@ -3478,6 +3478,9 @@ def _online_discovery_chat_response(
             utilities_layer_id=int(os.getenv("CIVORA_EXISTING_UTILITIES_ARCGIS_LAYER_ID") or "0"),
             contours_service_url=safe_str(os.getenv("CIVORA_CONTOURS_ARCGIS_SERVICE_URL")),
             contours_layer_id=int(os.getenv("CIVORA_CONTOURS_ARCGIS_LAYER_ID") or "0"),
+            imagery_detection_provider_url=safe_str(os.getenv("CIVORA_IMAGERY_DETECTION_URL")),
+            imagery_detection_provider_token=safe_str(os.getenv("CIVORA_IMAGERY_DETECTION_TOKEN")),
+            imagery_detection_provider_name=safe_str(os.getenv("CIVORA_IMAGERY_DETECTION_PROVIDER")),
             provider_registry=_provider_registry_from_record(record),
         )
         discovery = _safe_dict(result.get("online_existing_conditions_discovery_v1"))

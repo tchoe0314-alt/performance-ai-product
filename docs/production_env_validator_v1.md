@@ -68,6 +68,9 @@ Public beta/production operational blockers:
 - `CIVORA_OCR_LANG`
 - `CIVORA_PDF_RENDERER`
 - `CIVORA_GIS_PROVIDER_REGISTRY_URL`
+- `CIVORA_IMAGERY_DETECTION_PROVIDER`
+- `CIVORA_IMAGERY_DETECTION_URL`
+- `CIVORA_IMAGERY_DETECTION_TOKEN`
 
 Missing optional providers become warnings by default. They become blockers when the selected mode or explicit requirement flag makes them necessary.
 

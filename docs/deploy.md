@@ -28,6 +28,9 @@ OPENAI_API_KEY=your_real_key
 PERFORMANCE_AI_STORAGE_DIR=/data
 CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app,https://civoraai.com,https://www.civoraai.com
 MAPBOX_TOKEN=your_backend_mapbox_token
+CIVORA_IMAGERY_DETECTION_PROVIDER=your_detector_name
+CIVORA_IMAGERY_DETECTION_URL=https://your-detector.example.com/detect
+CIVORA_IMAGERY_DETECTION_TOKEN=your_detector_bearer_token
 CIVORA_MAX_IMAGE_UPLOAD_BYTES=10485760
 CIVORA_MAX_SURVEY_UPLOAD_BYTES=5242880
 CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES=26214400
@@ -43,6 +46,25 @@ CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=false
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
 For a self-hosted local model worker, set `CIVORA_AI_PROVIDER=ollama` and configure `CIVORA_OLLAMA_BASE_URL`.
 If `MAPBOX_TOKEN` is missing or rejected, `/api/geocode` should return a structured blocked response instead of `500`; address lookup remains review context only and is not survey, boundary, or control evidence.
+
+If `CIVORA_IMAGERY_DETECTION_URL` is configured, Apply Address also sends the address/geocode, search bbox, active site boundary, and requested candidate types to that endpoint. The detector should return JSON like:
+
+```json
+{
+  "status": "detected",
+  "provider": "aerial-object-detector",
+  "source_url": "https://imagery-source.example/tile-or-scene",
+  "detections": [
+    {
+      "kind": "building",
+      "geometry": { "type": "Polygon", "coordinates": [] },
+      "confidence": 0.82
+    }
+  ]
+}
+```
+
+Supported `kind` values include `building`, `road`, `driveway`, `parking`, `sidewalk`, `tree`, `vegetation`, `basin`, `pond`, `utility`, `inlet`, `outfall`, `manhole`, and `hydrant`. These detections become visual review candidates only. If this provider is missing, Apply Address still uses GIS/provider candidates and uploaded map/image detection, but it must not invent buildings from an address alone.
 
 Do not set `CORS_ALLOW_ORIGINS=*` for private alpha or production. The backend only permits wildcard CORS in local/development mode.
 

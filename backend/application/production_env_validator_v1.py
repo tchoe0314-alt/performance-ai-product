@@ -66,6 +66,9 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_PDF_RENDERER", "ocr_pdf", (), optional=True, description="PDF preview renderer hint."),
     EnvVarSpec("CIVORA_GIS_PROVIDER_REGISTRY_URL", "gis", (), optional=True, description="Source registry for GIS providers."),
     EnvVarSpec("CIVORA_REQUIRE_GIS_PROVIDERS", "gis", (), optional=True, description="Promote missing GIS providers to blockers in stricter modes."),
+    EnvVarSpec("CIVORA_IMAGERY_DETECTION_PROVIDER", "imagery_detection", (), optional=True, description="Name of imagery/object detection provider."),
+    EnvVarSpec("CIVORA_IMAGERY_DETECTION_URL", "imagery_detection", (), optional=True, description="Backend endpoint for address/site imagery object detection."),
+    EnvVarSpec("CIVORA_IMAGERY_DETECTION_TOKEN", "imagery_detection", (), optional=True, secret=True, description="Bearer token for imagery/object detection provider."),
     EnvVarSpec("PORT", "railway", (), optional=True, description="Railway-provided port. Backend must bind to it."),
     EnvVarSpec("RAILWAY_PUBLIC_DOMAIN", "railway", (), optional=True, description="Railway public domain."),
     EnvVarSpec("VERCEL", "vercel", (), optional=True, description="Set by Vercel builds."),
@@ -338,6 +341,8 @@ def validate_production_env_v1(
 
     if not env.get("CIVORA_OCR_ENGINE"):
         warnings.append(_issue("warning", "ocr_engine_missing", "OCR/PDF extraction provider is not configured; PDF workflows should degrade gracefully.", env_vars=["CIVORA_OCR_ENGINE"]))
+    if not env.get("CIVORA_IMAGERY_DETECTION_URL"):
+        warnings.append(_issue("warning", "imagery_detection_missing", "Imagery/object detection provider is not configured; Apply Address will use GIS/provider candidates and uploaded-image detection only.", env_vars=["CIVORA_IMAGERY_DETECTION_URL", "CIVORA_IMAGERY_DETECTION_PROVIDER"]))
 
     status = "blocked" if blockers else "warning" if warnings else "ready"
     diagnostics = {
