@@ -21,6 +21,8 @@ type UseDashboardScaleSaveSchedulerInput = {
   detectionScaleFeet: string;
   detectionScalePixels: string;
   payloadPreview: PlanRequestPayload;
+  projectLoadRequestRef: MutableRefObject<number>;
+  resolvedProjectIdRef: MutableRefObject<string>;
   saveProjectRef: SaveProjectRef;
   scaleSaveTimeoutRef: MutableRefObject<number | null>;
   siteScaleLocked: boolean;
@@ -31,6 +33,8 @@ export function useDashboardScaleSaveScheduler({
   detectionScaleFeet,
   detectionScalePixels,
   payloadPreview,
+  projectLoadRequestRef,
+  resolvedProjectIdRef,
   saveProjectRef,
   scaleSaveTimeoutRef,
   siteScaleLocked,
@@ -39,12 +43,20 @@ export function useDashboardScaleSaveScheduler({
     (ftPerPx: number, source: "mapbox" | "manual" | "approximate") => {
       if (scaleSaveTimeoutRef.current !== null) {
         window.clearTimeout(scaleSaveTimeoutRef.current);
+        scaleSaveTimeoutRef.current = null;
       }
+      const activeProjectId = resolvedProjectIdRef.current || currentProject?.project_id || "";
+      if (!activeProjectId) return;
+      const workspaceGeneration = projectLoadRequestRef.current;
       const currentInput = currentProject?.project_input ?? payloadPreview;
       scaleSaveTimeoutRef.current = window.setTimeout(() => {
+        scaleSaveTimeoutRef.current = null;
+        if (projectLoadRequestRef.current !== workspaceGeneration) return;
+        if (resolvedProjectIdRef.current !== activeProjectId) return;
         if (!saveProjectRef.current) return;
         void saveProjectRef.current({
           silent: true,
+          projectIdOverride: activeProjectId,
           projectInputOverride: {
             ...currentInput,
             input_mode: "user",
@@ -67,6 +79,16 @@ export function useDashboardScaleSaveScheduler({
         });
       }, 600);
     },
-    [currentProject, detectionScaleFeet, detectionScalePixels, payloadPreview, saveProjectRef, scaleSaveTimeoutRef, siteScaleLocked],
+    [
+      currentProject,
+      detectionScaleFeet,
+      detectionScalePixels,
+      payloadPreview,
+      projectLoadRequestRef,
+      resolvedProjectIdRef,
+      saveProjectRef,
+      scaleSaveTimeoutRef,
+      siteScaleLocked,
+    ],
   );
 }

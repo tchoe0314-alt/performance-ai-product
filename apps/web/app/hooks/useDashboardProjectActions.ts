@@ -37,6 +37,7 @@ type UseDashboardProjectActionsOptions = {
   removeProjectSummary: (projectIdToRemove: string) => void;
   resetWorkspaceState: () => void;
   resolvedProjectIdRef: MutableRefObject<string>;
+  scaleSaveTimeoutRef: MutableRefObject<number | null>;
   setActiveJobId: Dispatch<SetStateAction<string>>;
   setActiveSidePanel: Dispatch<SetStateAction<SidePanelKey | null>>;
   setAssumptions: Dispatch<SetStateAction<Assumption[]>>;
@@ -129,6 +130,7 @@ export function useDashboardProjectActions({
   removeProjectSummary,
   resetWorkspaceState,
   resolvedProjectIdRef,
+  scaleSaveTimeoutRef,
   setActiveJobId,
   setActiveSidePanel,
   setAssumptions,
@@ -208,6 +210,10 @@ export function useDashboardProjectActions({
     if (controlAutosaveTimeoutRef.current !== null) {
       window.clearTimeout(controlAutosaveTimeoutRef.current);
       controlAutosaveTimeoutRef.current = null;
+    }
+    if (scaleSaveTimeoutRef.current !== null) {
+      window.clearTimeout(scaleSaveTimeoutRef.current);
+      scaleSaveTimeoutRef.current = null;
     }
     draftProjectPromiseRef.current = null;
     resolvedProjectIdRef.current = "";
@@ -292,8 +298,8 @@ export function useDashboardProjectActions({
     });
     measureCivoraInteractionAfterPaint("projects.drawer.new_project", newProjectStartedAt);
     draftProjectPromiseRef.current = null;
-    suppressProjectAutoLoadRef.current = false;
     window.setTimeout(() => {
+      suppressProjectAutoLoadRef.current = false;
       autosaveSuspendRef.current = false;
     }, 0);
   }, [
@@ -307,6 +313,7 @@ export function useDashboardProjectActions({
     projectResultLoadRequestRef,
     resetWorkspaceState,
     resolvedProjectIdRef,
+    scaleSaveTimeoutRef,
     setActiveJobId,
     setActiveSidePanel,
     setAssumptions,

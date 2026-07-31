@@ -398,6 +398,60 @@ test.describe("project drawer reliability", () => {
     );
   });
 
+  test("keeps a new workspace clean when an opened map schedules a delayed scale save", async ({ page }) => {
+    test.skip(
+      !process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+      "Mapbox token is required to exercise the live map scale-save callback.",
+    );
+    const store = new Map<string, SavedProject>();
+    store.set("mapped-project", {
+      project_id: "mapped-project",
+      name: "Mapped Project",
+      updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        meta: {
+          site_inputs: {
+            address: "20525 Margo St, Gretna, NE",
+            geocode: { lat: 41.142, lng: -96.244 },
+          },
+        },
+        manual_fields: { lot: { x: 0, y: 0, w: 1000, h: 1000 } },
+      },
+      latest_result: null,
+    });
+    await mockShell(page, store);
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Mapped Project" }).click();
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() =>
+            Boolean((window as unknown as Record<string, unknown>).__civoraMapOverlayEnabled),
+          ),
+        { timeout: 30_000 },
+      )
+      .toBe(true);
+    await expect(page.locator(".mapboxgl-canvas")).toBeVisible({ timeout: 30_000 });
+
+    await openProjects(page);
+    await page.getByRole("button", { name: "New Project" }).click();
+    await page.waitForTimeout(1_500);
+
+    await expect(page.getByTestId("project-status-summary")).toContainText(
+      "Ready: Clean workspace ready",
+    );
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(
+      "Local site coordinates",
+    );
+    await openProjects(page);
+    await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("civora.activeProjectId")))
+      .toBeNull();
+    expect(store.size).toBe(1);
+  });
+
   test("ignores address discovery that finishes after New Project", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     await mockShell(page, store);

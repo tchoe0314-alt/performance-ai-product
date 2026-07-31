@@ -1807,6 +1807,8 @@ function PerformanceAIDashboardView({
     detectionScaleFeet,
     detectionScalePixels,
     payloadPreview,
+    projectLoadRequestRef,
+    resolvedProjectIdRef,
     saveProjectRef,
     scaleSaveTimeoutRef,
     siteScaleLocked,
@@ -2683,10 +2685,10 @@ function PerformanceAIDashboardView({
   });
 
   useEffect(() => {
-    const activeProjectId =
-      resolvedProjectIdRef.current || projectId || currentProject?.project_id || "";
-    if (!token || !activeProjectId || !currentProject) return;
+    const activeProjectId = resolvedProjectIdRef.current;
+    if (!token || !activeProjectId || currentProject?.project_id !== activeProjectId) return;
     if (autosaveSuspendRef.current) return;
+    const workspaceGeneration = projectLoadRequestRef.current;
     const savedThread = Array.isArray(currentProject?.project_input?.meta?.chat_thread)
       ? currentProject.project_input.meta.chat_thread
       : [];
@@ -2711,18 +2713,26 @@ function PerformanceAIDashboardView({
       window.clearTimeout(chatAutosaveTimeoutRef.current);
     }
     chatAutosaveTimeoutRef.current = window.setTimeout(() => {
+      chatAutosaveTimeoutRef.current = null;
+      if (projectLoadRequestRef.current !== workspaceGeneration) return;
+      if (resolvedProjectIdRef.current !== activeProjectId) return;
       void saveProject({ silent: true, projectIdOverride: activeProjectId });
     }, 700);
   }, [chatMessages, prompt, token, projectId, currentProject]);
 
   useEffect(() => {
-    if (!token || !currentProject?.project_id) return;
+    const activeProjectId = resolvedProjectIdRef.current;
+    if (!token || !activeProjectId || currentProject?.project_id !== activeProjectId) return;
     if (autosaveSuspendRef.current) return;
+    const workspaceGeneration = projectLoadRequestRef.current;
     if (controlAutosaveTimeoutRef.current !== null) {
       window.clearTimeout(controlAutosaveTimeoutRef.current);
     }
     controlAutosaveTimeoutRef.current = window.setTimeout(() => {
-      void saveProject({ silent: true });
+      controlAutosaveTimeoutRef.current = null;
+      if (projectLoadRequestRef.current !== workspaceGeneration) return;
+      if (resolvedProjectIdRef.current !== activeProjectId) return;
+      void saveProject({ silent: true, projectIdOverride: activeProjectId });
     }, 700);
   }, [
     token,
@@ -3834,6 +3844,7 @@ function PerformanceAIDashboardView({
     removeProjectSummary,
     resetWorkspaceState,
     resolvedProjectIdRef,
+    scaleSaveTimeoutRef,
     setActiveJobId,
     setActiveSidePanel,
     setAssumptions,
