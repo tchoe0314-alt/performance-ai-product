@@ -11,6 +11,11 @@ import hashlib
 import threading
 from typing import Any, Dict, List, Optional
 
+try:
+    threading.stack_size(int(os.getenv("CIVORA_THREAD_STACK_BYTES") or str(512 * 1024)))
+except (RuntimeError, ValueError):
+    pass
+
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
