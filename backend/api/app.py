@@ -56,7 +56,6 @@ from backend.application.file_workflows import (
     upload_image_file as application_upload_image_file,
     upload_survey_file as application_upload_survey_file,
 )
-from backend.application.health_workflows import health_response as application_health_response
 from backend.application.memory_logging import (
     current_rss_mb,
     log_memory,
@@ -1051,23 +1050,59 @@ def root() -> Dict[str, str]:
 
 @app.get("/api/health")
 def health(_rate_limit: None = Depends(rate_limit("health"))) -> Dict[str, Any]:
-    connection = DB.connect()
-    try:
-        user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
-    finally:
-        connection.close()
-    runtime_payload = _runtime_debug_payload()
-    return application_health_response(
-        app_name=APP_NAME,
-        app_version=APP_VERSION,
-        product_mode=PRODUCT_MODE,
-        user_count=user_count,
-        storage=DB.storage_kind,
-        runtime_monitoring=runtime_payload["monitoring"],
-        release_guard=runtime_payload["construction_release_guard"],
-        deployment=_deployment_metadata(),
-        support=_support_metadata(),
-    )
+    deployment = _deployment_metadata()
+    support = _support_metadata()
+    return {
+        "success": True,
+        "message": "Civora AI backend is running.",
+        "app_name": APP_NAME,
+        "version": APP_VERSION,
+        "product_mode": PRODUCT_MODE,
+        "launch_stage": "private_alpha" if str(PRODUCT_MODE).strip().lower() != "production" else PRODUCT_MODE,
+        "review_only": str(PRODUCT_MODE).strip().lower() != "production",
+        "auth_enabled": True,
+        "storage": DB.storage_kind,
+        "deployment": {
+            "frontend_status": str(deployment.get("frontend_status") or "unknown"),
+            "backend_status": "online",
+            "api_status": "configured" if deployment.get("api_base_url") else "missing_url",
+            "api_base_url": str(deployment.get("api_base_url") or ""),
+            "auth_status": "enabled",
+            "queue_status": "not_checked_on_liveness",
+            "build_status": "known" if deployment.get("build_version") else "unknown",
+            "build_version": str(deployment.get("build_version") or APP_VERSION),
+            "commit_sha": str(deployment.get("commit_sha") or ""),
+            "commit_ref": str(deployment.get("commit_ref") or ""),
+            "environment": str(deployment.get("environment") or ""),
+            "provider": str(deployment.get("provider") or ""),
+            "user_safe_messages": [
+                "Backend liveness is reachable. Detailed queue/runtime evidence is available from the authenticated runtime endpoint."
+            ],
+        },
+        "support": {
+            "support_contact_configured": bool(support.get("support_contact_configured")),
+            "support_contact": str(support.get("support_contact") or "support@civora.ai").strip(),
+            "bug_report_configured": bool(support.get("bug_report_configured")),
+            "bug_report_url": str(support.get("bug_report_url") or "").strip(),
+        },
+        "alpha_review_guard": {
+            "review_only": str(PRODUCT_MODE).strip().lower() != "production",
+            "construction_release_enabled": False,
+            "construction_release_blocked": True,
+            "truth_label": "Civora outputs remain review-only unless separately released through professional review gates.",
+        },
+        "operational_summary": {
+            "status": "healthy",
+            "mode": PRODUCT_MODE,
+            "review_only": str(PRODUCT_MODE).strip().lower() != "production",
+            "auth_enabled": True,
+            "storage": DB.storage_kind,
+            "ready_for_ui": True,
+            "runtime_details_endpoint": "/api/debug/runtime",
+            "ready_for_public_launch": False,
+            "public_beta_blocked": True,
+        },
+    }
 
 
 @app.get("/api/debug/runtime")
