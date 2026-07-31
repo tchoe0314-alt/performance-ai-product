@@ -218,7 +218,47 @@ def _call_civora_detector(*, image_url: str, session: Any) -> List[Dict[str, Any
                 },
             }
         )
-    return detections
+    return _filter_civora_detections(detections)
+
+
+def _filter_civora_detections(detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    filtered: List[Dict[str, Any]] = []
+    priority = {
+        "building": 11,
+        "basin": 10,
+        "pool": 9,
+        "road": 8,
+        "parking": 8,
+        "sidewalk": 7,
+        "driveway": 6,
+        "tree": 3,
+        "open_space": 2,
+    }
+    for detection in detections:
+        bbox = _bbox_list(detection.get("bbox"))
+        props = _dict(detection.get("properties"))
+        image_width = float(props.get("image_width") or 0)
+        image_height = float(props.get("image_height") or 0)
+        kind = str(detection.get("kind") or "")
+        if bbox and image_width and image_height:
+            area_ratio = (bbox[2] * bbox[3]) / max(image_width * image_height, 1.0)
+            if area_ratio > 0.45 and kind not in {"road"}:
+                continue
+            if area_ratio > 0.32 and kind in {"parking", "open_space"}:
+                continue
+            detection.setdefault("properties", {})["area_ratio"] = round(area_ratio, 4)
+        duplicate = False
+        for kept in filtered:
+            if _bbox_iou(bbox, _bbox_list(kept.get("bbox"))) < 0.72:
+                continue
+            kept_kind = str(kept.get("kind") or "")
+            if priority.get(kind, 0) > priority.get(kept_kind, 0):
+                kept.update(detection)
+            duplicate = True
+            break
+        if not duplicate:
+            filtered.append(detection)
+    return filtered[:24]
 
 
 def _call_generic_detector(*, payload: Dict[str, Any], image_url: str, session: Any) -> Dict[str, Any]:
@@ -280,7 +320,7 @@ def _normalize_kind(value: str) -> str:
         return "sidewalk"
     if "tree" in text or "vegetation" in text or "landscape" in text:
         return "tree"
-    if "pond" in text or "basin" in text or "water" in text:
+    if "pond" in text or "basin" in text or "water" in text or "pool" in text:
         return "basin"
     if "inlet" in text:
         return "inlet"
@@ -293,6 +333,30 @@ def _normalize_kind(value: str) -> str:
     if "utility" in text:
         return "utility"
     return text.replace(" ", "_")
+
+
+def _bbox_list(value: Any) -> List[float]:
+    if not isinstance(value, list) or len(value) < 4:
+        return []
+    try:
+        return [float(value[0]), float(value[1]), float(value[2]), float(value[3])]
+    except Exception:
+        return []
+
+
+def _bbox_iou(a: List[float], b: List[float]) -> float:
+    if len(a) < 4 or len(b) < 4:
+        return 0.0
+    ax1, ay1, aw, ah = a
+    bx1, by1, bw, bh = b
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    intersection = iw * ih
+    union = aw * ah + bw * bh - intersection
+    return intersection / union if union > 0 else 0.0
 
 
 def _dict(value: Any) -> Dict[str, Any]:
