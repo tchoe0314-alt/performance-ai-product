@@ -25,6 +25,10 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   });
 
   await page.route("**/api/jobs**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/jobs/source-context") {
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "fallback" }) });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -178,6 +182,10 @@ test("chat can create the same centered site from natural language", async ({ pa
   });
 
   await page.route("**/api/jobs**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/jobs/source-context") {
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "fallback" }) });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",

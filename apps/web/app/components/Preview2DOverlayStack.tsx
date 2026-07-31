@@ -61,7 +61,11 @@ export function Preview2DOverlayStack({
         data-draft-point-count={draftPointCount}
         aria-label="Drawing surface"
         className={`absolute inset-0 ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
-          drawMode !== "select" && drawMode !== "pan" ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"
+          drawMode === "select"
+            ? "pointer-events-none"
+            : drawMode === "pan"
+              ? "pointer-events-auto cursor-grab active:cursor-grabbing"
+              : "pointer-events-auto cursor-crosshair"
         }`}
       />
       <div

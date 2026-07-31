@@ -127,6 +127,12 @@ export function handlePreviewCadToolRequest({
       setDrawMode("select");
       pushCadCommandFeedback("SELECT", "info", "SELECT tool active. Click an object on the canvas or choose one from the object list.");
       break;
+    case "pan":
+      clearDraftDrawState();
+      onSetPreviewInteraction("static");
+      setDrawMode("pan");
+      pushCadCommandFeedback("PAN", "info", "PAN tool active. Drag the canvas to move the current view.");
+      break;
     case "line":
       activateDrawMode("polyline", "LINE", 2);
       break;

@@ -5,6 +5,7 @@ export const DASHBOARD_CAD_TOOL_GROUPS: DrawCadToolGroup[] = [
     title: "Draw",
     tools: [
       { label: "Select", tool: "select", hint: "Pick objects" },
+      { label: "Pan", tool: "pan", hint: "Drag view" },
       { label: "Line", tool: "line", hint: "2+ points" },
       { label: "Polyline", tool: "polyline", hint: "Connected line" },
       { label: "Area", tool: "area", hint: "Closed polygon" },

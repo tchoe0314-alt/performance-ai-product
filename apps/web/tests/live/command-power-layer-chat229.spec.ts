@@ -269,7 +269,9 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("projects-drawer")).toHaveCount(0);
 
     await runCommand(page, "draw site boundary");
-    await expect(page.getByTestId("draw-site-boundary-toolbar")).toBeVisible();
+    await expect(page.getByTestId("draw-active-tool")).toContainText(/site/i);
+    await expect(page.getByTestId("canvas-quick-finish")).toBeVisible();
+    await expect(page.getByTestId("canvas-quick-cancel")).toBeVisible();
 
     await runCommand(page, "add 28000 sf office building");
     const officeOverlay = page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first();

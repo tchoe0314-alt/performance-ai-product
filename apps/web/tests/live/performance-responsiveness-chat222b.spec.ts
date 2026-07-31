@@ -225,17 +225,44 @@ test.describe("Chat 222B performance and responsiveness", () => {
     await measureVisible(
       page,
       "draw controls clickable",
-      () => canvas.getByTestId("preview-interaction-edit").click(),
-      canvas.getByRole("button", { name: "Add Line" }),
+      async () => {
+        await canvas.getByTestId("preview-interaction-edit").click();
+        await page.keyboard.press("D");
+      },
+      page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-line"),
     );
-    await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
-    await page.getByRole("button", { name: "Pan" }).filter({ visible: true }).first().click();
-    const canvasBox = await canvas.boundingBox();
-    expect(canvasBox).toBeTruthy();
-    if (canvasBox) {
-      await page.mouse.move(canvasBox.x + canvasBox.width * 0.52, canvasBox.y + canvasBox.height * 0.52);
+    await expect(page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-line")).toBeEnabled();
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-pan").click();
+    const drawingSurface = page.getByTestId("preview-drawing-surface");
+    await expect(drawingSurface).toHaveAttribute("data-draw-mode", "pan");
+    await expect(drawingSurface).toHaveCSS("pointer-events", "auto");
+    const drawingSurfaceBox = await drawingSurface.boundingBox();
+    expect(drawingSurfaceBox).toBeTruthy();
+    if (drawingSurfaceBox) {
+      const viewport = page.viewportSize();
+      expect(viewport).toBeTruthy();
+      const visibleLeft = Math.max(drawingSurfaceBox.x, 0);
+      const visibleTop = Math.max(drawingSurfaceBox.y, 0);
+      const visibleRight = Math.min(drawingSurfaceBox.x + drawingSurfaceBox.width, viewport?.width ?? Infinity);
+      const visibleBottom = Math.min(drawingSurfaceBox.y + drawingSurfaceBox.height, viewport?.height ?? Infinity);
+      expect(visibleRight - visibleLeft).toBeGreaterThan(100);
+      expect(visibleBottom - visibleTop).toBeGreaterThan(100);
+      const dragStart = {
+        x: visibleLeft + (visibleRight - visibleLeft) * 0.52,
+        y: visibleTop + (visibleBottom - visibleTop) * 0.52,
+      };
+      const hitTarget = await page.evaluate(({ x, y }) => {
+        const element = document.elementFromPoint(x, y) as HTMLElement | null;
+        return element?.closest<HTMLElement>("[data-testid]")?.dataset.testid ?? null;
+      }, dragStart);
+      expect(hitTarget).toBe("preview-drawing-surface");
+      await page.mouse.move(dragStart.x, dragStart.y);
       await page.mouse.down();
-      await page.mouse.move(canvasBox.x + canvasBox.width * 0.62, canvasBox.y + canvasBox.height * 0.58, { steps: 12 });
+      await page.mouse.move(
+        Math.min(dragStart.x + Math.min(drawingSurfaceBox.width * 0.1, 100), visibleRight - 10),
+        Math.min(dragStart.y + Math.min(drawingSurfaceBox.height * 0.06, 50), visibleBottom - 10),
+        { steps: 12 },
+      );
       await page.mouse.up();
     }
     await expect.poll(

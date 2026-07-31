@@ -153,7 +153,6 @@ export function usePreview2DShellHandlers({
       const target = event.target as HTMLElement | null;
       if (
         drawMode !== "select" &&
-        drawMode !== "pan" &&
         !target?.closest?.("button,input,textarea,select,[role='button'],[data-no-window-select]")
       ) {
         if (handleDrawPointer(event, overlayBoundsResolved)) {

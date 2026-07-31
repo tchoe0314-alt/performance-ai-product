@@ -14,7 +14,7 @@ test("Templates panel remains reachable after component extraction", async ({ pa
 
   const sources = page.getByTestId("setup-survey-terrain-card");
   if (!(await sources.evaluate((element) => element.hasAttribute("open")))) {
-    await sources.locator("summary").click();
+    await sources.locator(":scope > summary").click();
   }
   await sources.getByRole("button", { name: /^Import$/ }).click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText("Import inputs");
@@ -24,7 +24,7 @@ test("Templates panel remains reachable after component extraction", async ({ pa
 
   const sourceTools = page.getByText("Detailed source evidence and import tools").locator("xpath=ancestor::details[1]");
   if (!(await sourceTools.evaluate((element) => element.hasAttribute("open")))) {
-    await sourceTools.locator("summary").click();
+    await sourceTools.locator(":scope > summary").click();
   }
   await sourceTools.getByRole("button", { name: "Templates" }).click();
 

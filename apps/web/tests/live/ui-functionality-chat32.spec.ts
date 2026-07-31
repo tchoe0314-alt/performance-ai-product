@@ -45,10 +45,14 @@ test.describe("Chat 32 UI functionality QA", () => {
     expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
 
     await canvas.getByTestId("preview-interaction-edit").click();
-    await expect(canvas.getByRole("button", { name: "Add Line" })).toBeEnabled();
-    await expect(canvas.getByRole("button", { name: "Add Area" })).toBeEnabled();
-    await expect(canvas.getByRole("button", { name: "Add Box" })).toBeEnabled();
-    await expect(canvas.getByRole("button", { name: "Add Point" })).toBeEnabled();
+    await page.getByTestId("left-sidebar").getByRole("button", { name: "Draw", exact: true }).click();
+    const drawTools = page.getByTestId("draw-cad-tools-section");
+    await expect(drawTools).toBeVisible();
+    await expect(drawTools.getByTestId("cad-tool-pan")).toBeEnabled();
+    await expect(drawTools.getByTestId("cad-tool-line")).toBeEnabled();
+    await expect(drawTools.getByTestId("cad-tool-area")).toBeEnabled();
+    await expect(drawTools.getByTestId("cad-tool-box")).toBeEnabled();
+    await expect(drawTools.getByTestId("cad-tool-point")).toBeEnabled();
   });
 
   test("chat answers common QA commands without claiming construction readiness", async ({ page }) => {

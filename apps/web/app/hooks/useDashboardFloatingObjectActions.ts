@@ -9,8 +9,8 @@ type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: Cha
 type UseDashboardFloatingObjectActionsOptions = {
   appendChatMessage: AppendChatMessage;
   handleOpenPanelFromDrawer: (panel: SidePanelKey) => void;
+  onCloseSidePanel: () => void;
   selectedBuilding: BuildingPlacement | null;
-  setActiveSidePanel: StateSetter<SidePanelKey | null>;
   setFocusObjectId: StateSetter<string | null>;
   setMoveEditFeedback: (message: string) => void;
   setPlacementModeEnabled: StateSetter<boolean>;
@@ -22,8 +22,8 @@ type UseDashboardFloatingObjectActionsOptions = {
 export function useDashboardFloatingObjectActions({
   appendChatMessage,
   handleOpenPanelFromDrawer,
+  onCloseSidePanel,
   selectedBuilding,
-  setActiveSidePanel,
   setFocusObjectId,
   setMoveEditFeedback,
   setPlacementModeEnabled,
@@ -66,8 +66,8 @@ export function useDashboardFloatingObjectActions({
       return;
     }
     setFocusObjectId(selectedBuilding.id);
-    setActiveSidePanel(null);
-  }, [selectedBuilding, setActiveSidePanel, setFocusObjectId]);
+    onCloseSidePanel();
+  }, [onCloseSidePanel, selectedBuilding, setFocusObjectId]);
 
   const handleOpenFloatingObjectDetails = useCallback(() => {
     handleOpenPanelFromDrawer("details");

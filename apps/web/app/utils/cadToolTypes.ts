@@ -2,6 +2,7 @@ export type DrawMode = "select" | "pan" | "site" | "polyline" | "polygon" | "rec
 
 export type CadToolName =
   | "select"
+  | "pan"
   | "line"
   | "polyline"
   | "area"

@@ -17,6 +17,7 @@ type DashboardObjectManagerPanelProps = {
   handleObjectManagerSelect: (id: string) => void;
   setPlacementModeEnabled: Dispatch<SetStateAction<boolean>>;
   setFocusObjectId: Dispatch<SetStateAction<string | null>>;
+  onCloseSidePanel: () => void;
   handleObjectManagerCopy: (item: BuildingPlacement) => void;
   handleObjectManagerTransform: (item: BuildingPlacement, transform: ObjectManagerTransform) => void;
   handleObjectManagerDelete: (item: BuildingPlacement) => void;
@@ -120,6 +121,7 @@ export function DashboardObjectManagerPanel({
   handleObjectManagerSelect,
   setPlacementModeEnabled,
   setFocusObjectId,
+  onCloseSidePanel,
   handleObjectManagerCopy,
   handleObjectManagerTransform,
   handleObjectManagerDelete,
@@ -291,6 +293,7 @@ export function DashboardObjectManagerPanel({
         },
         onFocus: (item) => {
           setFocusObjectId(item.id);
+          onCloseSidePanel();
         },
         onCopy: handleObjectManagerCopy,
         onRotate: (item) => handleObjectManagerTransform(item, "rotate"),
@@ -452,6 +455,7 @@ export function DashboardObjectManagerPanel({
         onToggleLock: handleToggleBuildingLock,
         onFocus: (objectId) => {
           setFocusObjectId(objectId);
+          onCloseSidePanel();
         },
         onInspect: handleOpenDetailsPanel,
         onCopy: handleObjectManagerCopy,

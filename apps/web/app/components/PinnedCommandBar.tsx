@@ -85,7 +85,7 @@ export default function PinnedCommandBar({
     <div
       data-testid="floating-command-bar"
       data-command-bar-id="pinned-civora-command-bar"
-      className="civora-motion-command-bar fixed right-2 top-[4.75rem] z-[120] w-[min(30rem,calc(100vw-1rem))] rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:right-4 sm:top-20"
+      className="civora-motion-command-bar fixed bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] left-1/2 z-[120] w-[min(30rem,calc(100vw-1rem))] -translate-x-1/2 rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)]"
     >
       {isWorking ? (
         <div className="mb-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">

@@ -18,7 +18,6 @@ import {
   normalizeGeometryPoints,
 } from "../utils/objectGeometry";
 import type { DisciplineToggle } from "../types";
-import type { SidePanelKey } from "../utils/workspaceShell";
 
 type ModelReviewPanelProps = ComponentProps<typeof ModelReviewPanel>;
 type DashboardDetailsPanelProps = ComponentProps<typeof DashboardDetailsPanel>;
@@ -60,7 +59,7 @@ type UseDashboardReviewUtilityPanelPropsInput = {
   onObjectManagerSelect: (id: string) => void;
   onPlacementModeEnabledChange: Dispatch<SetStateAction<boolean>>;
   onFocusObjectIdChange: Dispatch<SetStateAction<string | null>>;
-  onActiveSidePanelChange: (panel: SidePanelKey | null) => void;
+  onCloseSidePanel: () => void;
   onObjectManagerCopy: ComponentProps<typeof SelectedObjectInspectorPanel>["onCopy"];
   onObjectManagerPaste: ComponentProps<typeof SelectedObjectInspectorPanel>["onPaste"];
   onObjectManagerTransform: ComponentProps<typeof SelectedObjectInspectorPanel>["onTransform"];
@@ -112,7 +111,7 @@ export function useDashboardReviewUtilityPanelProps({
   onObjectManagerSelect,
   onPlacementModeEnabledChange,
   onFocusObjectIdChange,
-  onActiveSidePanelChange,
+  onCloseSidePanel,
   onObjectManagerCopy,
   onObjectManagerPaste,
   onObjectManagerTransform,
@@ -195,7 +194,7 @@ export function useDashboardReviewUtilityPanelProps({
         }}
         onFocus={(item) => {
           onFocusObjectIdChange(item.id);
-          onActiveSidePanelChange(null);
+          onCloseSidePanel();
         }}
         onCopy={onObjectManagerCopy}
         onPaste={onObjectManagerPaste}
@@ -213,7 +212,7 @@ export function useDashboardReviewUtilityPanelProps({
     objectClipboardCount,
     objectManagerStatusMessage,
     onActivePlacementIdChange,
-    onActiveSidePanelChange,
+    onCloseSidePanel,
     onAlignObjectVertexToPrevious,
     onDeleteObjectVertex,
     onFocusObjectIdChange,

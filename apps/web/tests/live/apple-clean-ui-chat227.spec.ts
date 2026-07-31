@@ -37,8 +37,8 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await expect(page.getByTestId("header-chat-button")).toBeVisible();
     await expect(page.getByTestId("header-projects-button")).toBeVisible();
     await expect(page.getByRole("button", { name: "Search unavailable" })).toHaveCount(0);
-    await expect(page.getByTestId("preview-inner-mode-2d").filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByTestId("preview-inner-quality-high").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-2d")).toBeVisible();
+    await expect(page.getByTestId("workspace-canvas-shell").getByTestId("preview-quality-high")).toBeVisible();
 
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
     expect(await visibleButtonCount(page, /^Deliver$/)).toBe(1);
@@ -59,12 +59,12 @@ test.describe("Chat 227 Apple-clean UI", () => {
     if (await showSidebar.isVisible().catch(() => false)) {
       await showSidebar.click();
     }
-    await expect(page.getByTitle("Projects")).toBeVisible();
-    await page.getByTitle("Projects").click();
+    await expect(page.getByTestId("header-projects-button-mobile")).toBeVisible();
+    await page.getByTestId("header-projects-button-mobile").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await page.getByRole("button", { name: "Minimize" }).click();
-    await expect(page.getByTitle("Chat")).toBeVisible();
-    await page.getByTitle("Chat").click();
+    await expect(page.getByTestId("header-chat-button-mobile")).toBeVisible();
+    await page.getByTestId("header-chat-button-mobile").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

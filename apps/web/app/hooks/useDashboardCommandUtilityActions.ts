@@ -66,12 +66,17 @@ export function useDashboardCommandUtilityActions({
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
     setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
-    window.requestAnimationFrame(() => {
+    const focusMountedInput = (attempt = 0) => {
+      const referencedInput = commandInputRef.current;
       const input =
-        commandInputRef.current ??
+        (referencedInput?.isConnected ? referencedInput : null) ??
         (document.querySelector(
           '[data-testid="civora-command-input"], textarea[placeholder="Ask Civora..."], textarea[placeholder^="Message Civora"]',
         ) as HTMLTextAreaElement | null);
+      if (!input && attempt < 4) {
+        window.requestAnimationFrame(() => focusMountedInput(attempt + 1));
+        return;
+      }
       if (!input) {
         updateProjectStatus({
           state: "blocked",
@@ -84,7 +89,8 @@ export function useDashboardCommandUtilityActions({
       }
       input.focus();
       input.select();
-    });
+    };
+    window.requestAnimationFrame(() => focusMountedInput());
   }, [
     commandInputRef,
     setCadToolRequest,

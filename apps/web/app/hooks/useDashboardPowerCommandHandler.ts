@@ -520,7 +520,7 @@ export function useDashboardPowerCommandHandler({
       handleStartSiteBoundaryDraw();
       setCommandBarExpanded(false);
       appendChatMessage("assistant", "Site boundary drawing is active. Draw the boundary on the canvas; it remains review-required until locked.", "status");
-      return true;
+      return "panel";
     }
     if (/^add water line$/.test(normalized)) {
       appendChatMessage("user", message);
@@ -609,21 +609,21 @@ export function useDashboardPowerCommandHandler({
         detail: canonicalWorkspaceBlockers.length ? canonicalWorkspaceBlockers[0] : "No current needs-input items are recorded in the active workspace.",
         nextAction: canonicalWorkspaceBlockers.length ? "Review the needs-input panel and fix the first item." : "Continue setup, generate, or deliver from the current workspace.",
       });
-      return true;
+      return "panel";
     }
     if (/^generate$/.test(normalized)) {
       appendChatMessage("user", message);
       handleOpenSidePanel("generate");
       appendChatMessage("assistant", "Running Generate from the locked site. I will show visible review concepts on the canvas and exact needs if a system cannot run.", "status");
       void handleGenerateSystem("full");
-      return true;
+      return "panel";
     }
     if (/^(make review package|create review package)$/.test(normalized)) {
       appendChatMessage("user", message);
       handleOpenSidePanel("deliverables");
       void handleMakeReviewPackage();
       appendChatMessage("assistant", "Opened Deliver and created/updated the review package summary. It remains review-only.", "status");
-      return true;
+      return "panel";
     }
     if (/^what changed\??$/.test(normalized)) {
       appendChatMessage("user", message);

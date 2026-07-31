@@ -139,10 +139,19 @@ async function drawPlanObjects(page: Page, suffix: string) {
 }
 
 async function exerciseObjectManager(page: Page) {
-  const panel = page.getByTestId("object-manager-panel");
+  let panel = page.getByTestId("object-manager-panel");
   await expect(panel).toBeVisible({ timeout: 20_000 });
   await expect(panel).toContainText(/Office|Parking|Driveway/i);
   await clickLikeHuman(page, page.getByTestId("preview-object-manager-focus"), "Focus selected object");
+
+  // Focus intentionally closes the side panel so the selected object owns the
+  // canvas. Reopen Draw before continuing with Object Manager edits, just as a
+  // user would.
+  await expect(panel).toBeHidden({ timeout: 10_000 });
+  await openPanel(page, /^Draw$/, /Draw & Objects|Object Manager|Tools/i);
+  panel = page.getByTestId("object-manager-panel");
+  await expect(panel).toBeVisible({ timeout: 20_000 });
+
   await clickLikeHuman(page, page.getByTestId("preview-object-manager-visibility"), "Hide selected object");
   await expect(panel).toContainText(/Hidden|Visible/i);
   await clickLikeHuman(page, page.getByTestId("preview-object-manager-visibility"), "Show selected object");

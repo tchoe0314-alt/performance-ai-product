@@ -232,8 +232,12 @@ test("Generate immediately sees newly combined semantic objects", async ({ page 
   await openFreshMargoProject(page, { requireFullProgramObjects: false });
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
 
-  const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
-  const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field" }).first();
+  const officeRow = page
+    .getByLabel("Rename Office Building - 28,000 sf", { exact: true })
+    .locator("xpath=ancestor::*[@data-testid='object-manager-row'][1]");
+  const parkingRow = page
+    .getByLabel("Rename Parking Field - 84 stalls", { exact: true })
+    .locator("xpath=ancestor::*[@data-testid='object-manager-row'][1]");
   await officeRow.getByTestId("object-manager-bulk-select").check();
   await parkingRow.getByTestId("object-manager-bulk-select").check();
   await page.getByTestId("object-manager-combine-name").fill("Combined Site Program");

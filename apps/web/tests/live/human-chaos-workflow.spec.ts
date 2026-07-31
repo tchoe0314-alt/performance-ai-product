@@ -132,11 +132,20 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
   await shot(page, testInfo, "04-drawn-plan");
 
   await timed("object manager random edits", async () => {
-    await expect(page.getByTestId("object-manager-panel")).toContainText("Office Test Building");
+    let objectManager = page.getByTestId("object-manager-panel");
+    await expect(objectManager).toContainText("Office Test Building");
     await humanClick(page.getByTestId("preview-object-manager-focus"), "Focus selected object");
+
+    // Focus gives the selected object the full canvas and closes Draw. Reopen
+    // the panel before performing the remaining Object Manager actions.
+    await expect(objectManager).toBeHidden({ timeout: 10_000 });
+    await openPanel(page, /^Draw$/, /Draw|Object Manager|Tools/i);
+    objectManager = page.getByTestId("object-manager-panel");
+    await expect(objectManager).toBeVisible({ timeout: 10_000 });
+
     const visibility = page.getByTestId("preview-object-manager-visibility").filter({ visible: true }).first();
     await humanClick(visibility, "Hide selected object");
-    await expect(page.getByTestId("object-manager-panel")).toContainText(/Hidden|Visible/i);
+    await expect(objectManager).toContainText(/Hidden|Visible/i);
     await humanClick(visibility, "Show selected object");
     await page.getByTestId("preview-object-manager-color").filter({ visible: true }).first().evaluate((input: HTMLInputElement) => {
       input.value = "#2563eb";

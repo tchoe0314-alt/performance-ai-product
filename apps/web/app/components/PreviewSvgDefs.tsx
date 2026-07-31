@@ -7,9 +7,6 @@ export function PreviewSvgDefs() {
       <pattern id="cad-hatch-diagonal" patternUnits="userSpaceOnUse" width="2.4" height="2.4" patternTransform="rotate(45)">
         <line x1="0" y1="0" x2="0" y2="2.4" stroke="rgba(15,23,42,0.34)" strokeWidth="0.16" />
       </pattern>
-      <pattern id="cad-building-poche" patternUnits="userSpaceOnUse" width="3.8" height="3.8" patternTransform="rotate(45)">
-        <line x1="0" y1="0" x2="0" y2="3.8" stroke="rgba(15,23,42,0.09)" strokeWidth="0.07" />
-      </pattern>
       <pattern id="cad-asphalt-light" patternUnits="userSpaceOnUse" width="4.2" height="4.2">
         <path d="M 0 4.2 L 4.2 0" stroke="rgba(51,65,85,0.045)" strokeWidth="0.07" />
         <path d="M 2.1 4.2 L 4.2 2.1" stroke="rgba(51,65,85,0.032)" strokeWidth="0.055" />

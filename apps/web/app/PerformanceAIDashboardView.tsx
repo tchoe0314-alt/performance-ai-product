@@ -4744,8 +4744,8 @@ function PerformanceAIDashboardView({
   } = useDashboardFloatingObjectActions({
     appendChatMessage,
     handleOpenPanelFromDrawer,
+    onCloseSidePanel: handleCloseSidePanel,
     selectedBuilding,
-    setActiveSidePanel,
     setFocusObjectId,
     setMoveEditFeedback,
     setPlacementModeEnabled,
@@ -5528,7 +5528,7 @@ function PerformanceAIDashboardView({
     onObjectManagerSelect: handleObjectManagerSelect,
     onPlacementModeEnabledChange: setPlacementModeEnabled,
     onFocusObjectIdChange: setFocusObjectId,
-    onActiveSidePanelChange: setActiveSidePanel,
+    onCloseSidePanel: handleCloseSidePanel,
     onObjectManagerCopy: handleObjectManagerCopy,
     onObjectManagerPaste: handleObjectManagerPaste,
     onObjectManagerTransform: handleObjectManagerTransform,
@@ -5961,6 +5961,7 @@ function PerformanceAIDashboardView({
                     handleObjectManagerSelect={handleObjectManagerSelect}
                     setPlacementModeEnabled={setPlacementModeEnabled}
                     setFocusObjectId={setFocusObjectId}
+                    onCloseSidePanel={handleCloseSidePanel}
                     handleObjectManagerCopy={handleObjectManagerCopy}
                     handleObjectManagerTransform={handleObjectManagerTransform}
                     handleObjectManagerDelete={handleObjectManagerDelete}

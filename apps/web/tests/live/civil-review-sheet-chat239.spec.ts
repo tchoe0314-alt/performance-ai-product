@@ -32,6 +32,11 @@ test.describe("Civil review sheet deliverable", () => {
     await openPanel(page, /^Deliver$/, /Review package/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();
 
+    const reviewSheetDetails = page.getByTestId("deliver-review-sheet-preview");
+    if (!(await reviewSheetDetails.evaluate((node) => node.hasAttribute("open")))) {
+      await reviewSheetDetails.locator(":scope > summary").click();
+    }
+
     const sheet = page.getByTestId("civil-review-sheet-preview");
     await expect(sheet).toBeVisible({ timeout: 10_000 });
     await expect(sheet).toContainText(/Civil Review Sheet/i);

@@ -58,8 +58,42 @@ export const selectedObjectsToSemanticArea = (items: BuildingPlacement[], tolera
   const segments: Array<[[number, number], [number, number]]> = [];
   const blockers: string[] = [];
   const areaItems: BuildingPlacement[] = [];
+  const semanticAreaTypes = new Set<SiteObjectType>([
+    "building",
+    "retail_building",
+    "multifamily_building",
+    "industrial_building",
+    "office_building",
+    "pad",
+    "pool",
+    "amenity",
+    "open_space",
+    "parking",
+    "basin",
+    "landscape",
+    "no_build_zone",
+    "setback_zone",
+    "lot_block",
+  ]);
   items.forEach((item) => {
     const geometry = normalizeGeometryPoints(item.geometry);
+    if (item.type && semanticAreaTypes.has(item.type) && item.w > 0 && item.d > 0) {
+      const x = item.x ?? 0;
+      const y = item.y ?? 0;
+      areaItems.push({
+        ...item,
+        geometryType: "polygon",
+        geometry: geometry && geometry.length >= 3
+          ? geometry
+          : [
+              [x, y],
+              [x + item.w, y],
+              [x + item.w, y + item.d],
+              [x, y + item.d],
+            ],
+      });
+      return;
+    }
     if (item.geometryType === "polyline" && geometry && geometry.length >= 2) {
       geometry.slice(1).forEach((pt, index) => segments.push([geometry[index], pt]));
       return;
