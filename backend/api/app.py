@@ -1046,8 +1046,8 @@ async def root() -> Dict[str, str]:
 
 @app.get("/api/health")
 async def health() -> Dict[str, Any]:
-    deployment = _deployment_metadata()
-    support = _support_metadata()
+    commit_sha = _first_env_value("CIVORA_BUILD_VERSION", "VERCEL_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA")[:12] or APP_VERSION
+    api_base_url = _public_api_base_url()
     return {
         "success": True,
         "message": "Civora AI backend is running.",
@@ -1059,27 +1059,27 @@ async def health() -> Dict[str, Any]:
         "auth_enabled": True,
         "storage": DB.storage_kind,
         "deployment": {
-            "frontend_status": str(deployment.get("frontend_status") or "unknown"),
+            "frontend_status": "unknown",
             "backend_status": "online",
-            "api_status": "configured" if deployment.get("api_base_url") else "missing_url",
-            "api_base_url": str(deployment.get("api_base_url") or ""),
+            "api_status": "configured" if api_base_url else "missing_url",
+            "api_base_url": api_base_url,
             "auth_status": "enabled",
             "queue_status": "not_checked_on_liveness",
-            "build_status": "known" if deployment.get("build_version") else "unknown",
-            "build_version": str(deployment.get("build_version") or APP_VERSION),
-            "commit_sha": str(deployment.get("commit_sha") or ""),
-            "commit_ref": str(deployment.get("commit_ref") or ""),
-            "environment": str(deployment.get("environment") or ""),
-            "provider": str(deployment.get("provider") or ""),
+            "build_status": "known" if commit_sha else "unknown",
+            "build_version": commit_sha,
+            "commit_sha": commit_sha,
+            "commit_ref": _first_env_value("VERCEL_GIT_COMMIT_REF", "RAILWAY_GIT_BRANCH", "RENDER_GIT_BRANCH", "GIT_BRANCH"),
+            "environment": _first_env_value("VERCEL_ENV", "RAILWAY_ENVIRONMENT_NAME", "RENDER_SERVICE_TYPE", "CIVORA_ENVIRONMENT", "NODE_ENV"),
+            "provider": "vercel" if os.getenv("VERCEL") else "railway" if os.getenv("RAILWAY_ENVIRONMENT") else "render" if os.getenv("RENDER") else "",
             "user_safe_messages": [
                 "Backend liveness is reachable. Detailed queue/runtime evidence is available from the authenticated runtime endpoint."
             ],
         },
         "support": {
-            "support_contact_configured": bool(support.get("support_contact_configured")),
-            "support_contact": str(support.get("support_contact") or "support@civora.ai").strip(),
-            "bug_report_configured": bool(support.get("bug_report_configured")),
-            "bug_report_url": str(support.get("bug_report_url") or "").strip(),
+            "support_contact_configured": bool(_first_env_value("CIVORA_SUPPORT_CONTACT_URL", "CIVORA_SUPPORT_EMAIL", "CIVORA_SUPPORT_CONTACT")),
+            "support_contact": _first_env_value("CIVORA_SUPPORT_CONTACT_URL", "CIVORA_SUPPORT_EMAIL", "CIVORA_SUPPORT_CONTACT") or "support@civora.ai",
+            "bug_report_configured": bool(_first_env_value("CIVORA_BUG_REPORT_URL", "CIVORA_BUG_REPORT_FORM_URL")),
+            "bug_report_url": _first_env_value("CIVORA_BUG_REPORT_URL", "CIVORA_BUG_REPORT_FORM_URL"),
         },
         "alpha_review_guard": {
             "review_only": str(PRODUCT_MODE).strip().lower() != "production",
