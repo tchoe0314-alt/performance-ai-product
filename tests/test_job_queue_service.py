@@ -734,6 +734,34 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertTrue(detail["can_retry"])
         self.assertEqual(detail["timeline"][-1]["id"], "cancelled")
 
+    def test_cancel_review_hold_job_marks_cancelled_immediately(self):
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "cancel at review hold"},
+        )
+        self.queue._update_job_state(
+            created["job_id"],
+            status="awaiting_approval",
+            result={
+                "job_progress": {
+                    "stage": "Awaiting Approval",
+                    "detail": "Layout stage completed.",
+                    "progress": 60,
+                }
+            },
+            error=None,
+        )
+
+        cancelled = self.queue.cancel_job(user_id=self.user_id, job_id=created["job_id"])
+
+        self.assertIsNotNone(cancelled)
+        self.assertEqual(cancelled["status"], "cancelled")
+        detail = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail["status"], "cancelled")
+        self.assertEqual(detail["timeline"][-1]["id"], "cancelled")
+
     def test_retry_failed_job_creates_linked_queued_job_from_original_payload(self):
         connection = self.db.connect()
         try:

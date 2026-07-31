@@ -518,7 +518,11 @@ class JobQueueService:
                 max(0, int(((record.get("result") or {}).get("job_progress") or {}).get("progress") or 0)),
             )
         )
-        next_status = "cancelled" if record["status"] == "queued" else "cancelling"
+        next_status = (
+            "cancelled"
+            if record["status"] in {"queued", "awaiting_approval"}
+            else "cancelling"
+        )
         error = "Cancelled by user."
         self._update_job_state(job_id, status=next_status, result=result, error=error)
         updated = self.get_job(user_id=user_id, job_id=job_id)
