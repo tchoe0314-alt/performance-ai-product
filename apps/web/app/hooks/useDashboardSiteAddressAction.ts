@@ -86,6 +86,25 @@ function clearLatestResultSourceContext(latestResult: ProjectRecord["latest_resu
   };
 }
 
+function buildCenteredSiteBounds(lat: number, lng: number, widthFt: number, heightFt: number) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || widthFt <= 0 || heightFt <= 0) return null;
+  const metersPerFoot = 0.3048;
+  const metersPerDegLat = 111320;
+  const metersPerDegLng = Math.max(1, 111320 * Math.cos((lat * Math.PI) / 180));
+  const halfHeightDeg = ((heightFt * metersPerFoot) / 2) / metersPerDegLat;
+  const halfWidthDeg = ((widthFt * metersPerFoot) / 2) / metersPerDegLng;
+  return {
+    north: lat + halfHeightDeg,
+    south: lat - halfHeightDeg,
+    east: lng + halfWidthDeg,
+    west: lng - halfWidthDeg,
+    center_lat: lat,
+    center_lng: lng,
+    width_ft: widthFt,
+    height_ft: heightFt,
+  };
+}
+
 export function useDashboardSiteAddressAction({
   autoExistingRunKeyRef,
   clearGeneratedPreview,
@@ -320,6 +339,12 @@ export function useDashboardSiteAddressAction({
             truth_label:
               "Address/geocode is location context only; it is not a site boundary, survey, control, or final reliance source.",
           };
+        if (preserveLockedSite && overrideSiteWidth && overrideSiteHeight) {
+          const centeredBounds = buildCenteredSiteBounds(geocode.lat, geocode.lng, overrideSiteWidth, overrideSiteHeight);
+          if (centeredBounds) {
+            nextSiteInputs.viewport_bounds = centeredBounds;
+          }
+        }
         const activeViewportBounds = (nextSiteInputs.viewport_bounds ?? {}) as {
           west?: number;
           south?: number;
