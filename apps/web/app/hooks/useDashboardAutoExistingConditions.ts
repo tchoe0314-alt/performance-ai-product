@@ -190,7 +190,7 @@ export function useDashboardAutoExistingConditions({
               provider_registry: currentSiteInputs.local_gis_provider_registry_v1 ?? siteInputs?.local_gis_provider_registry_v1 ?? {},
             },
             { token },
-            60000,
+            90000,
           );
         } catch (error) {
           onlineFetch = {

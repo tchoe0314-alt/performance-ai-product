@@ -358,7 +358,7 @@ export function useDashboardSiteAddressAction({
               provider_registry: localGisProviderRegistry,
             },
             { token },
-            60000,
+            90000,
           );
         } catch (error) {
           onlineFetch = {
