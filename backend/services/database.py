@@ -99,7 +99,12 @@ class Database:
                 raise RuntimeError(
                     "Postgres storage requires psycopg. Add psycopg[binary] to backend dependencies."
                 ) from exc
-            connection = psycopg.connect(self.database_url, autocommit=False)
+            raw_timeout = str(os.getenv("CIVORA_DATABASE_CONNECT_TIMEOUT_SECONDS") or "5").strip()
+            try:
+                connect_timeout = max(1.0, float(raw_timeout or 5))
+            except Exception:
+                connect_timeout = 5.0
+            connection = psycopg.connect(self.database_url, autocommit=False, connect_timeout=connect_timeout)
             return _PostgresConnection(connection)
 
         connection = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
