@@ -970,7 +970,7 @@ def _log_runtime_event(event: str, **fields: Any) -> None:
                 "event": event,
                 "pid": os.getpid(),
                 "uptime_seconds": round(time.time() - START_TIME, 3),
-                "rss_mb": _runtime_debug_payload()["rss_mb"],
+                "rss_mb": round(current_rss_mb(), 1),
                 **fields,
             }
         ),
