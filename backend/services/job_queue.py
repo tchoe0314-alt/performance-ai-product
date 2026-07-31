@@ -89,6 +89,7 @@ class JobQueueService:
         *,
         heartbeat_interval_sec: float = 10.0,
         worker_count: Optional[int] = None,
+        resume_poll_interval_sec: Optional[float] = None,
     ) -> None:
         self.db = db
         self._queue: Queue[str] = Queue()
@@ -105,6 +106,10 @@ class JobQueueService:
         self._resume_pending_jobs = resume_setting not in {"0", "false", "no", "off"}
         self._workers: List[threading.Thread] = []
         self._heartbeat_interval_sec = max(0.5, float(heartbeat_interval_sec or 10.0))
+        if resume_poll_interval_sec is None:
+            resume_poll_interval_sec = self._env_float("PERFORMANCE_AI_RESUME_POLL_SECONDS", 30.0)
+        self._resume_poll_interval_sec = max(0.5, float(resume_poll_interval_sec or 30.0))
+        self._last_resume_poll_at = 0.0
         self._job_timeout_seconds = self._env_float("CIVORA_JOB_TIMEOUT_SECONDS", 900.0)
         self._failure_window_seconds = self._env_float("CIVORA_JOB_FAILURE_WINDOW_SECONDS", 3600.0)
         self._ensure_workers_alive()
@@ -968,10 +973,14 @@ class JobQueueService:
     def _run_worker(self) -> None:
         while True:
             try:
-                job_id = self._queue.get(timeout=0.25)
+                job_id = self._queue.get(timeout=0.5)
             except Empty:
                 if not self._resume_pending_jobs:
                     continue
+                now = _now()
+                if now - self._last_resume_poll_at < self._resume_poll_interval_sec:
+                    continue
+                self._last_resume_poll_at = now
                 job_id = self._find_next_pending_job_id()
                 if not job_id:
                     continue

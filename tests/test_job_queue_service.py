@@ -18,7 +18,7 @@ class JobQueueServiceTest(unittest.TestCase):
         self.auth = AuthStore(self.db)
         registered = self.auth.register_user(email="u1@example.com", password="password123", name="U1")
         self.user_id = registered["user"]["user_id"]
-        self.queue = JobQueueService(self.db, heartbeat_interval_sec=0.5)
+        self.queue = JobQueueService(self.db, heartbeat_interval_sec=0.5, resume_poll_interval_sec=0.5)
 
     def tearDown(self) -> None:
         self.queue.db = Database(Path(tempfile.gettempdir()) / "civora_job_queue_teardown.db")
