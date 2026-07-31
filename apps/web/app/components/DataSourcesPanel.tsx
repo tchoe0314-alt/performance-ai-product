@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { useState, type RefObject } from "react";
 
 import type {
   CandidateReviewInbox,
@@ -232,8 +232,30 @@ export function DataSourcesPanel({
   mapSnapshotUploadInputRef,
   onUploadImage,
 }: DataSourcesPanelProps) {
+  const pendingCandidateCount = Number(candidateReviewCounts.pending ?? 0);
+  const [detectedItemsOpen, setDetectedItemsOpen] = useState(true);
+
   return (
     <div className="space-y-4">
+      <details
+        open={detectedItemsOpen}
+        onToggle={(event) => setDetectedItemsOpen(event.currentTarget.open)}
+        className="rounded-2xl border border-slate-200 bg-white p-4"
+        data-testid="detected-items-review"
+      >
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          Detected Items · {pendingCandidateCount} To Review
+        </summary>
+        <SourceDataReviewPanel
+          capabilityRows={capabilityAuditRows}
+          onlineDiscoveryStatus={onlineDiscoveryStatus}
+          onlineDiscoveryRan={onlineDiscoveryRan}
+          onlineDiscoverySources={onlineDiscoverySources}
+          candidateCounts={candidateReviewCounts}
+          candidateItems={candidateReviewItems}
+          onCandidateDecision={(candidateId, decision) => onCandidateDecision(candidateId, decision)}
+        />
+      </details>
       <details className="rounded-2xl border border-slate-200 bg-white p-4">
         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
           Detailed source evidence and import tools
@@ -276,15 +298,6 @@ export function DataSourcesPanel({
             onWhatChanged={onWhatChanged}
             onAskUnreadable={onAskUnreadable}
             onInvalidMove={onInvalidPlanPdfMove}
-          />
-          <SourceDataReviewPanel
-            capabilityRows={capabilityAuditRows}
-            onlineDiscoveryStatus={onlineDiscoveryStatus}
-            onlineDiscoveryRan={onlineDiscoveryRan}
-            onlineDiscoverySources={onlineDiscoverySources}
-            candidateCounts={candidateReviewCounts}
-            candidateItems={candidateReviewItems}
-            onCandidateDecision={(candidateId, decision) => onCandidateDecision(candidateId, decision)}
           />
           <div>
             <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">

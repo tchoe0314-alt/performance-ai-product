@@ -42,6 +42,25 @@ CIVORA_ROLLBACK_OWNER=release-owner@example.com
 CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN=false
 ```
 
+For hosted environments, run long work outside the request-serving API:
+
+```text
+# API service
+CIVORA_PROCESS_ROLE=web
+CIVORA_DEDICATED_WORKER_ENABLED=true
+PERFORMANCE_AI_JOB_WORKERS=0
+DATABASE_URL=<shared Railway Postgres URL>
+
+# Worker service built from the same Dockerfile/revision
+CIVORA_PROCESS_ROLE=worker
+PERFORMANCE_AI_JOB_WORKERS=1
+DATABASE_URL=<the same shared Railway Postgres URL>
+PERFORMANCE_AI_RESUME_PENDING_JOBS=true
+PERFORMANCE_AI_RESUME_POLL_SECONDS=1
+```
+
+The services must use the same production database and storage configuration. The Docker image starts Gunicorn for `web`/`combined` and `backend.scripts.run_job_worker` for `worker`.
+
 
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
 For a self-hosted local model worker, set `CIVORA_AI_PROVIDER=ollama` and configure `CIVORA_OLLAMA_BASE_URL`.

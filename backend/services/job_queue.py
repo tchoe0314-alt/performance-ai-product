@@ -101,7 +101,7 @@ class JobQueueService:
                 worker_count = int(raw_worker_count) if raw_worker_count else 1
             except Exception:
                 worker_count = 1
-        self._worker_count = max(1, int(worker_count or 1))
+        self._worker_count = max(0, int(worker_count if worker_count is not None else 1))
         resume_setting = str(os.getenv("PERFORMANCE_AI_RESUME_PENDING_JOBS") or "true").strip().lower()
         self._resume_pending_jobs = resume_setting not in {"0", "false", "no", "off"}
         self._workers: List[threading.Thread] = []
@@ -125,6 +125,8 @@ class JobQueueService:
             return default
 
     def _ensure_workers_alive(self) -> None:
+        if self._worker_count <= 0:
+            return
         with self._lock:
             self._workers = [worker for worker in self._workers if worker.is_alive()]
             while len(self._workers) < self._worker_count:
@@ -140,7 +142,7 @@ class JobQueueService:
     def register_handler(self, job_type: str, runner: JobRunner) -> None:
         self._handlers[job_type] = runner
         self._ensure_workers_alive()
-        if self._resume_pending_jobs:
+        if self._worker_count > 0 and self._resume_pending_jobs:
             self._enqueue_pending_jobs(job_type)
 
     def runtime_stats(self) -> Dict[str, Any]:
@@ -150,6 +152,7 @@ class JobQueueService:
         return {
             "worker_count": self._worker_count,
             "alive_workers": alive_workers,
+            "execution_mode": "external_worker" if self._worker_count == 0 else "in_process",
             "queued_in_memory": self._queue.qsize(),
             "resume_pending_jobs": self._resume_pending_jobs,
             "registered_handlers": sorted(self._handlers.keys()),
@@ -213,13 +216,13 @@ class JobQueueService:
         ]
         warnings: List[str] = []
         status = "healthy"
-        if alive_workers < self._worker_count:
+        if self._worker_count > 0 and alive_workers < self._worker_count:
             status = "critical"
             warnings.append("worker_count_below_configured")
         if stale_jobs:
             status = "critical"
             warnings.append("stale_or_timed_out_jobs_present")
-        elif counts.get("queued", 0) > 0 and alive_workers == 0:
+        elif self._worker_count > 0 and counts.get("queued", 0) > 0 and alive_workers == 0:
             status = "critical"
             warnings.append("queued_jobs_without_workers")
         elif recent_failed:
@@ -308,7 +311,7 @@ class JobQueueService:
         finally:
             connection.close()
 
-        if job_type in self._handlers:
+        if self._worker_count > 0 and job_type in self._handlers:
             self._queue.put(record["job_id"])
         return self._job_summary(record)
 
@@ -539,7 +542,8 @@ class JobQueueService:
         self._update_job_state(job_id, status="queued", result=result, error=None)
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
-        self._queue.put(job_id)
+        if self._worker_count > 0:
+            self._queue.put(job_id)
         return summary
 
     def retry_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
@@ -600,7 +604,8 @@ class JobQueueService:
         self._update_job_state(job_id, status="queued", result=result, error=None)
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
-        self._queue.put(job_id)
+        if self._worker_count > 0:
+            self._queue.put(job_id)
         return summary
 
     def _enqueue_pending_jobs(self, job_type: str) -> None:

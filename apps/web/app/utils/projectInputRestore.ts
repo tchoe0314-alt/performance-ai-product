@@ -6,7 +6,7 @@ import type {
   SiteObjectType,
 } from "../types";
 import { isCustomGeometryMode, normalizeGeometryPoints } from "./objectGeometry";
-import { requestedProgramToPendingPlacements } from "./siteObjectCatalog";
+import { requestedProgramToPendingPlacements, SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
 
 const numberFrom = (value: unknown) =>
   typeof value === "number" ? value : value !== undefined ? Number(value) : NaN;
@@ -16,10 +16,198 @@ const isSupportedPlacementSource = (value: unknown) =>
   value === "manual_drawn" ||
   value === "inferred" ||
   value === "detected_from_image" ||
+  value === "detected_from_gis" ||
   value === "user_confirmed";
 
 const readSystemDependencies = (value: unknown) =>
   Array.isArray(value) ? (value as BuildingPlacement["systemDependencies"]) : undefined;
+
+const acceptedDraftType = (value: unknown): SiteObjectType => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const mapped: Record<string, SiteObjectType> = {
+    building: "building",
+    building_footprint: "building",
+    road: "road",
+    road_or_drive: "road",
+    road_row: "road",
+    parking: "parking",
+    parking_area: "parking",
+    parking_object: "parking",
+    sidewalk: "sidewalk",
+    basin: "basin",
+    open_space: "open_space",
+    constraint_area: "no_build_zone",
+    floodplain_wetland_constraint: "no_build_zone",
+    existing_utility: "utility_corridor",
+    utility: "utility_corridor",
+    parcel_site_boundary: "lot_block",
+    site_boundary_candidate: "lot_block",
+    terrain_candidate: "custom",
+    terrain_dem: "custom",
+  };
+  return mapped[normalized] ?? "custom";
+};
+
+const acceptedDraftDependencies = (
+  type: SiteObjectType,
+): BuildingPlacement["systemDependencies"] => {
+  if (["building", "office_building", "retail_building", "multifamily_building", "industrial_building"].includes(type)) {
+    return ["parking", "grading", "drainage", "utilities"];
+  }
+  if (["road", "driveway", "parking", "sidewalk"].includes(type)) {
+    return ["roads", "parking", "grading", "drainage"];
+  }
+  if (["basin", "outfall", "inlet", "manhole"].includes(type)) return ["drainage"];
+  if (type === "utility_corridor" || type === "hydrant") return ["utilities"];
+  return ["roads", "parking", "grading", "drainage", "utilities"];
+};
+
+const geoJsonCoordinatePairs = (geometry: Record<string, unknown>): Array<[number, number]> => {
+  const rawCoordinates = geometry.coordinates;
+  if (!Array.isArray(rawCoordinates)) return [];
+  const geometryType = String(geometry.type ?? "").toLowerCase();
+  let coordinates: unknown[] = rawCoordinates;
+  if (geometryType === "polygon") {
+    coordinates = Array.isArray(rawCoordinates[0]) ? (rawCoordinates[0] as unknown[]) : [];
+  } else if (geometryType === "multipolygon") {
+    const firstPolygon = Array.isArray(rawCoordinates[0]) ? (rawCoordinates[0] as unknown[]) : [];
+    coordinates = Array.isArray(firstPolygon[0]) ? (firstPolygon[0] as unknown[]) : [];
+  } else if (geometryType === "point") {
+    coordinates = [rawCoordinates];
+  }
+  return coordinates
+    .map((value) => {
+      if (!Array.isArray(value) || value.length < 2) return null;
+      const x = Number(value[0]);
+      const y = Number(value[1]);
+      return Number.isFinite(x) && Number.isFinite(y) ? ([x, y] as [number, number]) : null;
+    })
+    .filter((value): value is [number, number] => Boolean(value));
+};
+
+const acceptedDraftGeometry = ({
+  geometry,
+  lot,
+  viewportBounds,
+}: {
+  geometry: Record<string, unknown>;
+  lot: { w?: number; h?: number };
+  viewportBounds: SiteInputs["viewport_bounds"];
+}) => {
+  const coordinates = geoJsonCoordinatePairs(geometry);
+  if (!coordinates.length) return null;
+  const west = Number(viewportBounds?.west);
+  const east = Number(viewportBounds?.east);
+  const south = Number(viewportBounds?.south);
+  const north = Number(viewportBounds?.north);
+  const lotWidth = Number(lot.w ?? viewportBounds?.width_ft);
+  const lotHeight = Number(lot.h ?? viewportBounds?.height_ft);
+  const canProject =
+    Number.isFinite(west) &&
+    Number.isFinite(east) &&
+    Number.isFinite(south) &&
+    Number.isFinite(north) &&
+    east > west &&
+    north > south &&
+    Number.isFinite(lotWidth) &&
+    Number.isFinite(lotHeight) &&
+    lotWidth > 0 &&
+    lotHeight > 0;
+  const localCoordinateSpace = ["local", "site", "feet", "ft"].includes(
+    String(geometry.coordinate_space ?? geometry.units ?? "").trim().toLowerCase(),
+  );
+  if (!canProject && !localCoordinateSpace) return null;
+  const points = canProject
+    ? coordinates.map(
+        ([lng, lat]) =>
+          [
+            ((lng - west) / (east - west)) * lotWidth,
+            ((north - lat) / (north - south)) * lotHeight,
+          ] as [number, number],
+      )
+    : coordinates;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const geometryType = String(geometry.type ?? "").toLowerCase();
+  return {
+    points,
+    x: minX,
+    y: minY,
+    w: Math.max(4, maxX - minX),
+    d: Math.max(4, maxY - minY),
+    geometryType:
+      geometryType.includes("polygon")
+        ? ("polygon" as const)
+        : geometryType.includes("line")
+          ? ("polyline" as const)
+          : ("point" as const),
+  };
+};
+
+export const buildAcceptedCandidatePlacements = ({
+  projectInput,
+  siteInputs,
+}: {
+  projectInput: ProjectInput;
+  siteInputs: SiteInputs;
+}): BuildingPlacement[] => {
+  const manualFields = projectInput.manual_fields ?? {};
+  const lot = (manualFields.lot ?? {}) as { w?: number; h?: number };
+  return (siteInputs.candidate_review_accepted_drafts_v1 ?? [])
+    .flatMap((raw, index): BuildingPlacement[] => {
+      if (!raw || typeof raw !== "object") return [];
+      const record = raw as Record<string, unknown>;
+      const type = acceptedDraftType(record.object_type ?? record.feature_type);
+      const defaults = SITE_OBJECT_CATALOG[type] ?? SITE_OBJECT_CATALOG.custom;
+      const geometry =
+        record.geometry && typeof record.geometry === "object"
+          ? acceptedDraftGeometry({
+              geometry: record.geometry as Record<string, unknown>,
+              lot,
+              viewportBounds: siteInputs.viewport_bounds,
+            })
+          : null;
+      const sourceCandidateId = String(record.source_candidate_id ?? record.candidate_id ?? `accepted-${index + 1}`);
+      const sourceType = String(record.source_type ?? "");
+      const source =
+        sourceType.includes("image") || sourceType.includes("imagery")
+          ? "detected_from_image"
+          : "detected_from_gis";
+      const placement: BuildingPlacement = {
+        id: String(record.object_id ?? `draft_${sourceCandidateId}`),
+        label: String(record.label ?? record.source_name ?? `${defaults.label} candidate`),
+        type,
+        x: geometry?.x,
+        y: geometry?.y,
+        w: geometry?.w ?? defaults.defaultW,
+        d: geometry?.d ?? defaults.defaultD,
+        h: defaults.defaultH,
+        placed: Boolean(geometry),
+        source,
+        confidence:
+          typeof record.confidence === "number" ? Math.max(0, Math.min(1, record.confidence)) : undefined,
+        confirmed: true,
+        geometryType: geometry?.geometryType,
+        geometry: geometry?.points,
+        systemDependencies: acceptedDraftDependencies(type),
+        meta: {
+          accepted_source_candidate: true,
+          source_candidate_id: sourceCandidateId,
+          source_type: record.source_type,
+          source_url: record.source_url,
+          source_name: record.source_name,
+          source_geometry: record.geometry,
+          review_required: true,
+          acceptance_status: "accepted",
+        },
+      };
+      return [placement];
+    });
+};
 
 const parseBuildingPlacements = (
   manualFields: ManualFields,
@@ -258,6 +446,12 @@ export const buildProjectInputPlacements = ({
   const baseRestoredPlacements = siteObjectPlacements.length
     ? siteObjectPlacements
     : [...restoredSiteBoundary, ...parsedPlacements, ...pondPlacements, ...inletPlacements];
-  const requestedProgramPlacements = requestedProgramToPendingPlacements(requestedProgram, baseRestoredPlacements);
-  return [...baseRestoredPlacements, ...requestedProgramPlacements];
+  const acceptedCandidatePlacements = buildAcceptedCandidatePlacements({ projectInput, siteInputs });
+  const acceptedCandidateIds = new Set(acceptedCandidatePlacements.map((item) => item.id));
+  const restoredWithAccepted = [
+    ...baseRestoredPlacements.filter((item) => !acceptedCandidateIds.has(item.id)),
+    ...acceptedCandidatePlacements,
+  ];
+  const requestedProgramPlacements = requestedProgramToPendingPlacements(requestedProgram, restoredWithAccepted);
+  return [...restoredWithAccepted, ...requestedProgramPlacements];
 };

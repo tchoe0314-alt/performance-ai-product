@@ -1,11 +1,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 
-import { postJsonWithTimeout } from "../../lib/api";
 import type { BuildingPlacement, ProjectInput, ProjectRecord, SiteInputs, SurveySlopeResponse } from "../types";
 import type { AutoExistingConditionsUiStatus, OnlineExistingConditionsFetchResponse } from "../utils/dashboardDataTypes";
 import { buildAssumedSlopeEstimate, type SystemGenerationTarget } from "../utils/workflowConstants";
 import { parsePositiveNumber } from "../utils/formatting";
+import { runQueuedSourceContextLookup } from "../utils/sourceContextJobs";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
 
 type SaveProject = (options?: {
@@ -162,9 +162,10 @@ export function useDashboardAutoExistingConditions({
       try {
         let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
         try {
-          onlineFetch = await postJsonWithTimeout<OnlineExistingConditionsFetchResponse>(
-            "/api/existing-conditions/fetch-online",
-            {
+          onlineFetch = await runQueuedSourceContextLookup({
+            projectId,
+            token,
+            request: {
               address: address || geocode?.display_name || "Locked site",
               bbox: viewportFootprint?.bounds
                 ? {
@@ -189,9 +190,15 @@ export function useDashboardAutoExistingConditions({
               include_imagery_detection: true,
               provider_registry: currentSiteInputs.local_gis_provider_registry_v1 ?? siteInputs?.local_gis_provider_registry_v1 ?? {},
             },
-            { token },
-            90000,
-          );
+            onProgress: (job) => {
+              setAutoExistingConditionsStatus({
+                status: "running",
+                message: job.stage_detail || "Checking site sources in the background...",
+                candidateCount: 0,
+                missing: [],
+              });
+            },
+          });
         } catch (error) {
           onlineFetch = {
             success: false,
@@ -273,6 +280,10 @@ export function useDashboardAutoExistingConditions({
             onlineFetch?.map_feature_detection_report_v1 ?? currentSiteInputs.map_feature_detection_report_v1,
           existing_conditions_package:
             onlineFetch?.existing_conditions_package ?? currentSiteInputs.existing_conditions_package,
+          candidate_review_inbox_v1:
+            onlineFetch?.candidate_review_inbox_v1 ?? currentSiteInputs.candidate_review_inbox_v1,
+          source_context_detection_coverage_v1:
+            onlineFetch?.source_context_detection_coverage_v1 ?? currentSiteInputs.source_context_detection_coverage_v1,
           auto_existing_conditions_v1: autoExistingConditions,
           ...(slopeEstimateOverride
             ? {
@@ -307,6 +318,8 @@ export function useDashboardAutoExistingConditions({
                     map_feature_detection_report_v1: onlineFetch?.map_feature_detection_report_v1,
                     existing_conditions_package: onlineFetch?.existing_conditions_package,
                     existing_conditions_summary: onlineFetch?.existing_conditions_summary,
+                    candidate_review_inbox_v1: onlineFetch?.candidate_review_inbox_v1,
+                    source_context_detection_coverage_v1: onlineFetch?.source_context_detection_coverage_v1,
                     auto_existing_conditions_v1: autoExistingConditions,
                   },
                 },

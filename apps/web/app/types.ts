@@ -1159,6 +1159,7 @@ export type PlanMeta = {
   local_gis_provider_registry_v1?: LocalGisProviderRegistry;
   existing_conditions_package?: Record<string, unknown>;
   existing_conditions_summary?: Record<string, unknown>;
+  source_context_detection_coverage_v1?: Record<string, unknown>;
   candidate_rule_report?: {
     candidate_count?: number;
     candidate_rules?: Array<Record<string, unknown>>;
@@ -1372,7 +1373,10 @@ export type SiteInputs = {
     imagery_object_detection_report_v1?: Record<string, unknown>;
   };
   candidate_review_inbox_v1?: CandidateReviewInbox;
+  candidate_review_accepted_drafts_v1?: Array<Record<string, unknown>>;
+  candidate_review_rejected_v1?: Array<Record<string, unknown>>;
   existing_conditions_package?: Record<string, unknown>;
+  source_context_detection_coverage_v1?: Record<string, unknown>;
   auto_existing_conditions_v1?: Record<string, unknown>;
   viewport_bounds?: {
     north?: number;

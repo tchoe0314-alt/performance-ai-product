@@ -87,6 +87,13 @@ def fetch_imagery_object_detection(
             "outfall",
             "manhole",
             "hydrant",
+            "fence",
+            "wall",
+            "pole",
+            "sign",
+            "retaining_wall",
+            "ditch",
+            "swale",
         ],
         "truth_mode": "review_candidates_only",
     }

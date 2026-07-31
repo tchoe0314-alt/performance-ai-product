@@ -71,7 +71,7 @@ export function SelectedObjectCard({
                 />
               </label>
               <label className="flex flex-col gap-1 font-medium text-slate-500">
-                Layer / type
+                Classify outline as
                 <select
                   value={selectedObject.type ?? "custom"}
                   aria-label={`Layer type selected object ${selectedObject.label}`}

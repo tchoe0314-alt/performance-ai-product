@@ -233,6 +233,59 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"], "Authentication required.")
 
+    def test_railway_web_role_requires_shared_postgres_and_confirmed_worker(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CIVORA_PROCESS_ROLE": "web",
+                "PERFORMANCE_AI_JOB_WORKERS": "0",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+            },
+            deployment_target="railway",
+        )
+
+        codes = {item["code"] for item in report["blockers"]}
+        self.assertIn("split_queue_requires_postgres", codes)
+        self.assertIn("dedicated_worker_not_confirmed", codes)
+
+    def test_railway_web_role_accepts_shared_postgres_and_confirmed_worker(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CIVORA_PROCESS_ROLE": "web",
+                "CIVORA_DEDICATED_WORKER_ENABLED": "true",
+                "PERFORMANCE_AI_JOB_WORKERS": "0",
+                "DATABASE_URL": "postgresql://user:password@example.com:5432/civora",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+            },
+            deployment_target="railway",
+        )
+
+        codes = {item["code"] for item in report["blockers"]}
+        self.assertNotIn("split_queue_requires_postgres", codes)
+        self.assertNotIn("dedicated_worker_not_confirmed", codes)
+        self.assertNotIn("web_process_has_local_workers", codes)
+
+    def test_worker_role_requires_positive_worker_count(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CIVORA_PROCESS_ROLE": "worker",
+                "PERFORMANCE_AI_JOB_WORKERS": "0",
+                "DATABASE_URL": "postgresql://user:password@example.com:5432/civora",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+            },
+            deployment_target="railway",
+        )
+
+        self.assertIn("worker_process_has_no_workers", {item["code"] for item in report["blockers"]})
+
 
 if __name__ == "__main__":
     unittest.main()

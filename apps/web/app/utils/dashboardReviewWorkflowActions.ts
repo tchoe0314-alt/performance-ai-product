@@ -52,7 +52,7 @@ export async function runDashboardCandidateReviewDecision({
   const activeProjectId = projectId || currentProjectId;
   if (!token || !activeProjectId) {
     setStatusMessage("Save or load a project before reviewing candidates.");
-    return;
+    return null;
   }
   try {
     setStatusMessage(`${action === "accept" ? "Accepting" : action === "reject" ? "Rejecting" : "Keeping"} candidate...`);
@@ -92,8 +92,10 @@ export async function runDashboardCandidateReviewDecision({
           ? "Candidate rejected and preserved in the audit trail."
           : "Candidate kept pending.",
     );
+    return data.project ?? null;
   } catch (error) {
     setStatusMessage(error instanceof Error ? error.message : "Candidate review update failed.");
+    return null;
   }
 }
 

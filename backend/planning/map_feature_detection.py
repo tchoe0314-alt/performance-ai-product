@@ -92,6 +92,13 @@ IMAGE_KIND_FEATURE_TYPES = {
     "outfall": "utility",
     "manhole": "utility",
     "hydrant": "utility",
+    "pole": "utility",
+    "sign": "constraint_area",
+    "fence": "constraint_area",
+    "wall": "constraint_area",
+    "retaining_wall": "constraint_area",
+    "ditch": "water/pond/basin",
+    "swale": "water/pond/basin",
     "building_footprint": "building_footprint",
     "road_or_drive": "road_or_drive",
 }

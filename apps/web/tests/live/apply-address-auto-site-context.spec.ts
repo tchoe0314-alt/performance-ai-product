@@ -3,9 +3,49 @@ import { expect, test } from "@playwright/test";
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
+function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejected"> = {}) {
+  const candidates = [
+    {
+      candidate_id: "building-1",
+      candidate_type: "building_footprint",
+      label: "Detected building footprint",
+      source: "Test Buildings",
+      provider: "Test Buildings",
+      confidence: 0.88,
+      object_count: 1,
+    },
+    {
+      candidate_id: "road-1",
+      candidate_type: "road_row",
+      label: "Detected road / right-of-way",
+      source: "Test Roads",
+      provider: "Test Roads",
+      confidence: 0.88,
+      object_count: 1,
+    },
+  ].map((candidate) => ({
+    ...candidate,
+    status: statuses[candidate.candidate_id] ?? "pending",
+    review_required: true,
+    blocker_review_reason: "Confirm this source-backed candidate before using it as a project draft.",
+  }));
+  return {
+    version: "candidate_review_inbox_v1",
+    candidate_count: candidates.length,
+    counts: {
+      accepted: candidates.filter((candidate) => candidate.status === "accepted").length,
+      rejected: candidates.filter((candidate) => candidate.status === "rejected").length,
+      pending: candidates.filter((candidate) => candidate.status === "pending").length,
+    },
+    candidates,
+    review_required: true,
+  };
+}
+
 test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   let savedProjectInput: Record<string, unknown> | null = null;
   let fetchOnlineCalled = false;
+  const candidateStatuses: Record<string, "pending" | "accepted" | "rejected"> = {};
 
   await page.route("**/api/auth/status", async (route) => {
     await route.fulfill({
@@ -30,6 +70,17 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   });
 
   await page.route("**/api/jobs**", async (route) => {
+    if (
+      route.request().method() === "POST" &&
+      new URL(route.request().url()).pathname === "/api/jobs/source-context"
+    ) {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Queue endpoint unavailable during rolling deployment." }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -85,6 +136,64 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           coordinates: { lat: 32.8, lng: -96.8 },
           truth_label: "Address/geocode is location context only.",
         },
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/*/candidate-review", async (route) => {
+    const payload = route.request().postDataJSON() as {
+      candidate_ids?: string[];
+      action?: "accept" | "reject" | "pending";
+    };
+    for (const candidateId of payload.candidate_ids ?? []) {
+      candidateStatuses[candidateId] =
+        payload.action === "accept" ? "accepted" : payload.action === "reject" ? "rejected" : "pending";
+    }
+    const projectInput = JSON.parse(JSON.stringify(savedProjectInput ?? {})) as {
+      meta?: { site_inputs?: Record<string, unknown> };
+    };
+    projectInput.meta = projectInput.meta ?? {};
+    projectInput.meta.site_inputs = {
+      ...(projectInput.meta.site_inputs ?? {}),
+      candidate_review_inbox_v1: candidateInbox(candidateStatuses),
+      candidate_review_accepted_drafts_v1:
+        candidateStatuses["building-1"] === "accepted"
+          ? [
+              {
+                object_id: "draft_building-1",
+                object_type: "building",
+                source_candidate_id: "building-1",
+                source_type: "official_gis",
+                source_name: "Test Buildings",
+                confidence: 0.88,
+                geometry: {
+                  type: "Polygon",
+                  coordinates: [[
+                    [-96.8002, 32.8002],
+                    [-96.7998, 32.8002],
+                    [-96.7998, 32.7998],
+                    [-96.8002, 32.7998],
+                    [-96.8002, 32.8002],
+                  ]],
+                },
+              },
+            ]
+          : [],
+    };
+    savedProjectInput = projectInput as Record<string, unknown>;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        project: {
+          project_id: "pw-project",
+          name: "Playwright Project",
+          project_input: projectInput,
+          latest_result: null,
+          has_result: false,
+        },
+        candidate_review_inbox_v1: candidateInbox(candidateStatuses),
       }),
     });
   });
@@ -168,6 +277,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
             truth_label: "Imagery/object detection creates visual review candidates only.",
           },
         },
+        candidate_review_inbox_v1: candidateInbox(),
         existing_conditions_package: { status: "review_required", production_ready: false },
         existing_conditions_summary: { production_ready: false },
       }),
@@ -224,6 +334,25 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("site-intelligence-frontage")).toContainText("west side");
   await expect(page.getByTestId("site-intelligence-driveway")).toContainText("starting suggestion");
   await expect(page.getByTestId("site-intelligence-grading")).toContainText("not a grading surface");
+
+  await page.getByTestId("review-found-context").click();
+  const detectedItems = page.getByTestId("detected-items-review");
+  await expect(detectedItems).toBeVisible();
+  await expect(detectedItems).toContainText("Detected Items · 2 To Review");
+  const buildingCandidate = detectedItems.locator('[data-candidate-id="building-1"]');
+  await buildingCandidate.getByRole("button", { name: "Accept" }).click();
+  await expect(detectedItems).toContainText("Detected Items · 1 To Review");
+  const roadCandidate = detectedItems.locator('[data-candidate-id="road-1"]');
+  await roadCandidate.getByRole("button", { name: "Reject" }).click();
+  await expect(detectedItems).toContainText("Detected Items · 0 To Review");
+  await expect(detectedItems).toContainText("Accepted");
+  await expect(detectedItems).toContainText("Rejected");
+
+  await page.getByRole("button", { name: "Draw" }).first().click();
+  await expect(page.getByTestId("object-manager-panel")).toContainText("Test Buildings");
+  await expect(
+    page.getByTestId("object-manager-row").filter({ hasText: "Test Buildings" }).first(),
+  ).toContainText(/Building|GIS review candidate/i);
 
   await page.getByTestId("header-chat-button").click();
   const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");

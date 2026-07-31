@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Protocol
 
@@ -9,7 +10,7 @@ from backend.application.design_workflows import (
     new_workflow_id,
     now_ts,
 )
-from backend.planning.common import blocker_explanations, construction_package_record
+from backend.planning.common import blocker_explanations, construction_package_record, safe_dict
 from backend.planning.candidate_review_inbox import (
     apply_candidate_review_decision,
     build_candidate_review_inbox,
@@ -973,6 +974,40 @@ def _project_final_plan_meta(record: Dict[str, Any]) -> Dict[str, Any]:
     return dict(final_plan.get("meta") or {})
 
 
+def _project_candidate_review_meta(record: Dict[str, Any]) -> Dict[str, Any]:
+    project_input = safe_dict(record.get("project_input"))
+    input_meta = safe_dict(project_input.get("meta"))
+    site_inputs = safe_dict(input_meta.get("site_inputs"))
+    final_meta = _project_final_plan_meta(record)
+    return {
+        **site_inputs,
+        **final_meta,
+        "map_feature_detection_report_v1": (
+            final_meta.get("map_feature_detection_report_v1")
+            or site_inputs.get("map_feature_detection_report_v1")
+        ),
+        "candidate_review_inbox_v1": (
+            final_meta.get("candidate_review_inbox_v1")
+            or site_inputs.get("candidate_review_inbox_v1")
+        ),
+        "candidate_review_decisions_v1": (
+            final_meta.get("candidate_review_decisions_v1")
+            or site_inputs.get("candidate_review_decisions_v1")
+            or []
+        ),
+        "candidate_review_accepted_drafts_v1": (
+            final_meta.get("candidate_review_accepted_drafts_v1")
+            or site_inputs.get("candidate_review_accepted_drafts_v1")
+            or []
+        ),
+        "candidate_review_rejected_v1": (
+            final_meta.get("candidate_review_rejected_v1")
+            or site_inputs.get("candidate_review_rejected_v1")
+            or []
+        ),
+    }
+
+
 def get_project_candidate_review_inbox(
     *,
     project_store: ProjectStoreProtocol,
@@ -982,7 +1017,7 @@ def get_project_candidate_review_inbox(
     record = project_store.get_project(user_id=user_id, project_id=project_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    meta = _project_final_plan_meta(record)
+    meta = _project_candidate_review_meta(record)
     inbox = dict(meta.get("candidate_review_inbox_v1") or build_candidate_review_inbox(meta))
     return {
         "success": True,
@@ -1141,9 +1176,7 @@ def review_project_candidates(
         raise HTTPException(status_code=404, detail="Project not found.")
     latest_result = dict(record.get("latest_result") or {})
     final_plan = dict(latest_result.get("final_plan") or {})
-    if not final_plan:
-        raise HTTPException(status_code=400, detail="Selected project has no saved planner result.")
-    meta = dict(final_plan.get("meta") or {})
+    meta = _project_candidate_review_meta(record)
     try:
         decision = apply_candidate_review_decision(
             meta,
@@ -1159,12 +1192,27 @@ def review_project_candidates(
         updated_meta,
         project_input=dict(record.get("project_input") or {}),
     )
-    final_plan["meta"] = updated_meta
-    latest_result["final_plan"] = final_plan
-    latest_result = _with_progress_timeline_result(
-        latest_result,
-        project_input=dict(record.get("project_input") or {}),
-    )
+    project_input = deepcopy(safe_dict(record.get("project_input")))
+    input_meta = deepcopy(safe_dict(project_input.get("meta")))
+    site_inputs = deepcopy(safe_dict(input_meta.get("site_inputs")))
+    for key in (
+        "candidate_review_inbox_v1",
+        "candidate_review_decisions_v1",
+        "candidate_review_accepted_drafts_v1",
+        "candidate_review_rejected_v1",
+        "source_confidence_map_v1",
+    ):
+        if key in updated_meta:
+            site_inputs[key] = deepcopy(updated_meta[key])
+    input_meta["site_inputs"] = site_inputs
+    project_input["meta"] = input_meta
+    if final_plan:
+        final_plan["meta"] = updated_meta
+        latest_result["final_plan"] = final_plan
+        latest_result = _with_progress_timeline_result(
+            latest_result,
+            project_input=project_input,
+        )
     saved = project_store.save_project(
         user_id=user_id,
         project_id=project_id,
@@ -1172,7 +1220,7 @@ def review_project_candidates(
         description=record.get("description", ""),
         session_id=record.get("session_id"),
         tags=record.get("tags", []),
-        project_input=record.get("project_input", {}),
+        project_input=project_input,
         latest_result=latest_result,
         session_state=record.get("session_state", {}),
         metadata=record.get("metadata", {}),

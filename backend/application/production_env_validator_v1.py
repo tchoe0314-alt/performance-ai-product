@@ -34,6 +34,11 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_CRON_SECRET", "auth", (), optional=True, secret=True, description="Secret for scheduled backend maintenance routes."),
     EnvVarSpec("DATABASE_URL", "storage", (), optional=True, secret=True, description="Postgres URL. SQLite is allowed for private alpha."),
     EnvVarSpec("PERFORMANCE_AI_STORAGE_DIR", "storage", ("private_alpha", "public_beta", "production"), description="Persistent upload/artifact directory."),
+    EnvVarSpec("CIVORA_PROCESS_ROLE", "queue", (), optional=True, description="Runtime process role: combined, web, or worker."),
+    EnvVarSpec("CIVORA_DEDICATED_WORKER_ENABLED", "queue", (), optional=True, description="Confirms that a separately deployed worker consumes queued jobs."),
+    EnvVarSpec("PERFORMANCE_AI_JOB_WORKERS", "queue", (), optional=True, description="In-process job worker count. Use 0 for a web-only service."),
+    EnvVarSpec("PERFORMANCE_AI_RESUME_PENDING_JOBS", "queue", (), optional=True, description="Enables database polling for queued jobs."),
+    EnvVarSpec("PERFORMANCE_AI_RESUME_POLL_SECONDS", "queue", (), optional=True, description="Database queue polling interval."),
     EnvVarSpec("MAPBOX_TOKEN", "mapbox", (), optional=True, secret=True, description="Backend Mapbox token for geocode and terrain lookups."),
     EnvVarSpec("NEXT_PUBLIC_MAPBOX_TOKEN", "mapbox", (), optional=True, description="Frontend Mapbox token for map rendering."),
     EnvVarSpec("CIVORA_AI_PROVIDER", "ai", ("public_beta", "production"), description="AI provider: none, openai, ollama, or local."),
@@ -259,6 +264,77 @@ def validate_production_env_v1(
         warnings.append(_issue("warning", "production_sqlite_storage", "DATABASE_URL is missing; backend will use SQLite/local storage.", env_vars=["DATABASE_URL"]))
     if mode in PRODUCTION_MODES and storage_dir and storage_dir.startswith("./"):
         warnings.append(_issue("warning", "relative_storage_dir", "Persistent storage should use an absolute mounted path on deploy platforms.", env_vars=["PERFORMANCE_AI_STORAGE_DIR"]))
+
+    process_role = str(env.get("CIVORA_PROCESS_ROLE") or "combined").strip().lower()
+    dedicated_worker_enabled = _truthy(env.get("CIVORA_DEDICATED_WORKER_ENABLED"))
+    raw_worker_count = str(env.get("PERFORMANCE_AI_JOB_WORKERS") or ("0" if process_role == "web" else "1")).strip()
+    try:
+        worker_count = int(raw_worker_count)
+    except ValueError:
+        worker_count = -1
+        blockers.append(
+            _issue(
+                "blocker",
+                "invalid_job_worker_count",
+                "PERFORMANCE_AI_JOB_WORKERS must be a non-negative integer.",
+                env_vars=["PERFORMANCE_AI_JOB_WORKERS"],
+            )
+        )
+    if process_role not in {"combined", "web", "worker"}:
+        blockers.append(
+            _issue(
+                "blocker",
+                "invalid_process_role",
+                "CIVORA_PROCESS_ROLE must be combined, web, or worker.",
+                env_vars=["CIVORA_PROCESS_ROLE"],
+            )
+        )
+    elif worker_count >= 0:
+        if process_role == "web" and worker_count != 0:
+            blockers.append(
+                _issue(
+                    "blocker",
+                    "web_process_has_local_workers",
+                    "A web-only process must set PERFORMANCE_AI_JOB_WORKERS=0.",
+                    env_vars=["CIVORA_PROCESS_ROLE", "PERFORMANCE_AI_JOB_WORKERS"],
+                )
+            )
+        if process_role == "worker" and worker_count < 1:
+            blockers.append(
+                _issue(
+                    "blocker",
+                    "worker_process_has_no_workers",
+                    "A worker process must set PERFORMANCE_AI_JOB_WORKERS to at least 1.",
+                    env_vars=["CIVORA_PROCESS_ROLE", "PERFORMANCE_AI_JOB_WORKERS"],
+                )
+            )
+    if target in {"railway", "render", "split"} and process_role in {"web", "worker"} and not database_url:
+        blockers.append(
+            _issue(
+                "blocker",
+                "split_queue_requires_postgres",
+                "Separate web and worker services require a shared Postgres DATABASE_URL; local SQLite cannot coordinate across services.",
+                env_vars=["CIVORA_PROCESS_ROLE", "DATABASE_URL"],
+            )
+        )
+    if target in {"railway", "render", "split"} and process_role == "web" and not dedicated_worker_enabled:
+        blockers.append(
+            _issue(
+                "blocker",
+                "dedicated_worker_not_confirmed",
+                "The web service queues source-context jobs but no dedicated worker deployment is confirmed.",
+                env_vars=["CIVORA_PROCESS_ROLE", "CIVORA_DEDICATED_WORKER_ENABLED"],
+            )
+        )
+    if target in {"railway", "render", "split"} and process_role == "combined":
+        warnings.append(
+            _issue(
+                "warning",
+                "combined_web_worker_process",
+                "Long source-context jobs share the request service. Use separate web and worker services with shared Postgres for reliable hosted discovery.",
+                env_vars=["CIVORA_PROCESS_ROLE", "CIVORA_DEDICATED_WORKER_ENABLED", "DATABASE_URL"],
+            )
+        )
 
     ai_provider = str(env.get("CIVORA_AI_PROVIDER") or env.get("CIVORA_LLM_PROVIDER") or "none").strip().lower()
     if ai_provider == "openai" and not str(env.get("OPENAI_API_KEY") or "").strip():

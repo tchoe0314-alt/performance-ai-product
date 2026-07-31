@@ -35,5 +35,16 @@ That means:
 - `backend/services/database.py` owns the SQLite schema and connection setup
 - `backend/services/auth_store.py` manages local beta users and bearer tokens
 - `backend/services/project_store.py` stores user-scoped projects and latest planner results
-- `backend/services/job_queue.py` persists queued jobs and runs them with an in-process worker
+- `backend/services/job_queue.py` persists queued jobs and can run them in-process or through a dedicated worker service
 - `apps/web/app/page.tsx` is the current beta dashboard for auth, projects, jobs, review, and planner controls
+
+## Hosted background work
+
+Use separate web and worker services when source detection, GIS, PDF analysis, generation, or exports are enabled:
+
+- Web service: `CIVORA_PROCESS_ROLE=web`, `CIVORA_DEDICATED_WORKER_ENABLED=true`, `PERFORMANCE_AI_JOB_WORKERS=0`
+- Worker service: `CIVORA_PROCESS_ROLE=worker`, `PERFORMANCE_AI_JOB_WORKERS=1`, `PERFORMANCE_AI_RESUME_POLL_SECONDS=1`
+- Both services must use the same Postgres `DATABASE_URL`; process-local SQLite cannot coordinate a hosted split queue.
+- Both services must share the same production database and persistent storage configuration.
+
+The web service accepts and polls jobs but does not execute heavy handlers. The worker service claims persisted jobs atomically, publishes progress, and saves results. `combined` remains the local-development default.

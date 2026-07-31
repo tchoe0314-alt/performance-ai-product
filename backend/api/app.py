@@ -90,6 +90,10 @@ from backend.application.job_workflows import (
     revise_existing_job as application_revise_existing_job,
     retry_existing_job as application_retry_existing_job,
 )
+from backend.application.source_context_workflows import (
+    build_source_context_job_runner as application_build_source_context_job_runner,
+    queue_source_context_job as application_queue_source_context_job,
+)
 from backend.application.project_workflows import (
     artifact_summary as application_artifact_summary,
     delete_project_record as application_delete_project_record,
@@ -272,10 +276,11 @@ def rate_limit(bucket: str):
     return dependency
 
 
+PROCESS_ROLE = str(os.getenv("CIVORA_PROCESS_ROLE") or "combined").strip().lower()
 DB = Database(DB_PATH)
 AUTH_STORE = AuthStore(DB)
 PROJECT_STORE = ProjectStore(DB)
-JOB_QUEUE = JobQueueService(DB)
+JOB_QUEUE = JobQueueService(DB, worker_count=0 if PROCESS_ROLE == "web" else None)
 ARTIFACTS = ArtifactService(ARTIFACT_DIR)
 
 try:
@@ -511,6 +516,11 @@ class ExistingConditionsOnlineFetchPayload(BaseModel):
     include_elevation: bool = True
     include_imagery_detection: bool = True
     active_site_boundary: Dict[str, Any] = Field(default_factory=dict)
+
+
+class QueueSourceContextPayload(BaseModel):
+    project_id: Optional[str] = None
+    request: ExistingConditionsOnlineFetchPayload
 
 
 class LocalGisProviderRegistryPayload(BaseModel):
@@ -982,16 +992,7 @@ def _log_runtime_event(event: str, **fields: Any) -> None:
     )
 
 
-@app.on_event("startup")
-async def _register_job_handlers() -> None:
-    try:
-        thread_limit = int(os.getenv("CIVORA_ANYIO_THREAD_LIMIT") or "2")
-        to_thread.current_default_thread_limiter().total_tokens = max(1, min(8, thread_limit))
-    except Exception:
-        pass
-    log_memory("startup_begin")
-    _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
-    _log_mapbox_token_config()
+def register_job_handlers() -> None:
     JOB_QUEUE.register_handler(
         "orchestrate",
         application_build_orchestrate_job_runner(
@@ -1042,6 +1043,27 @@ async def _register_job_handlers() -> None:
             update_job_progress=JOB_QUEUE.update_job_progress,
         ),
     )
+    JOB_QUEUE.register_handler(
+        "source_context",
+        application_build_source_context_job_runner(
+            project_store=PROJECT_STORE,
+            update_job_progress=JOB_QUEUE.update_job_progress,
+            fetch_source_context=application_fetch_existing_conditions_online,
+        ),
+    )
+
+
+@app.on_event("startup")
+async def _register_job_handlers() -> None:
+    try:
+        thread_limit = int(os.getenv("CIVORA_ANYIO_THREAD_LIMIT") or "2")
+        to_thread.current_default_thread_limiter().total_tokens = max(1, min(8, thread_limit))
+    except Exception:
+        pass
+    log_memory("startup_begin")
+    _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
+    _log_mapbox_token_config()
+    register_job_handlers()
     log_memory("startup_complete")
 
 
@@ -1297,6 +1319,21 @@ def fetch_existing_conditions_online(
         include_elevation=payload.include_elevation,
         include_imagery_detection=payload.include_imagery_detection,
         active_site_boundary=payload.active_site_boundary,
+    )
+
+
+@app.post("/api/jobs/source-context")
+def queue_source_context_job(
+    payload: QueueSourceContextPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("geocode")),
+) -> Dict[str, Any]:
+    return application_queue_source_context_job(
+        project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        project_id=payload.project_id,
+        request_payload=_model_to_dict(payload.request),
     )
 
 

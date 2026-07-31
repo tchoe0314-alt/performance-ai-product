@@ -300,7 +300,9 @@ export function useDashboardChatSendHandlers({
       const handledPowerCommand = tryHandlePowerCommand(trimmed);
       if (handledPowerCommand) {
         setPrompt("");
-        keepChatVisible();
+        if (handledPowerCommand !== "panel") {
+          keepChatVisible();
+        }
         return;
       }
       const routeToOrchestrator = shouldRouteToOrchestrator(trimmed);

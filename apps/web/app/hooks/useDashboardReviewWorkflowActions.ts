@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
-import type { PlanResponse, ProjectRecord } from "../types";
+import type { BuildingPlacement, PlanResponse, ProjectRecord, SiteInputs } from "../types";
+import { buildAcceptedCandidatePlacements } from "../utils/projectInputRestore";
 import {
   runDashboardCandidateReviewDecision,
   runDashboardDesignAlternativesAction,
@@ -16,6 +17,7 @@ type DashboardReviewWorkflowActionsOptions = {
   setActiveSidePanel: StateSetter<SidePanelKey | null>;
   setActiveWorkspaceMode: StateSetter<WorkspaceMode>;
   setBackendResult: StateSetter<PlanResponse | null>;
+  setBuildingPlacements: StateSetter<BuildingPlacement[]>;
   setCurrentProject: StateSetter<ProjectRecord | null>;
   setStatusMessage: StateSetter<string>;
   token: string;
@@ -28,13 +30,14 @@ export function useDashboardReviewWorkflowActions({
   setActiveSidePanel,
   setActiveWorkspaceMode,
   setBackendResult,
+  setBuildingPlacements,
   setCurrentProject,
   setStatusMessage,
   token,
 }: DashboardReviewWorkflowActionsOptions) {
   const handleCandidateReviewDecision = useCallback(
     async (candidateId: string, action: "accept" | "reject" | "pending") => {
-      await runDashboardCandidateReviewDecision({
+      const updatedProject = await runDashboardCandidateReviewDecision({
         action,
         candidateId,
         currentProjectId,
@@ -44,8 +47,30 @@ export function useDashboardReviewWorkflowActions({
         setStatusMessage,
         token,
       });
+      if (updatedProject?.project_input) {
+        const updatedSiteInputs = (updatedProject.project_input.meta?.site_inputs ?? {}) as SiteInputs;
+        const acceptedPlacements = buildAcceptedCandidatePlacements({
+          projectInput: updatedProject.project_input,
+          siteInputs: updatedSiteInputs,
+        });
+        const acceptedIds = new Set(acceptedPlacements.map((item) => item.id));
+        setBuildingPlacements((previous) => [
+          ...previous.filter(
+            (item) => !item.meta?.accepted_source_candidate && !acceptedIds.has(item.id),
+          ),
+          ...acceptedPlacements,
+        ]);
+      }
     },
-    [currentProjectId, projectId, setBackendResult, setCurrentProject, setStatusMessage, token],
+    [
+      currentProjectId,
+      projectId,
+      setBackendResult,
+      setBuildingPlacements,
+      setCurrentProject,
+      setStatusMessage,
+      token,
+    ],
   );
 
   const handleDesignAlternativesAction = useCallback(

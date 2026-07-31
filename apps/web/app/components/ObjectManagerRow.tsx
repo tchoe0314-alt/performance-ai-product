@@ -160,7 +160,7 @@ export function ObjectManagerRow({
             />
           </label>
           <label className="col-span-2 flex flex-col gap-1">
-            Layer / type
+            Classify as
             <select
               value={item.type ?? "custom"}
               aria-label={`Layer type ${item.label}`}

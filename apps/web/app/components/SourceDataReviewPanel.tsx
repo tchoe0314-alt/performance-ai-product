@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { CandidateReviewItem, OnlineExistingConditionsSource } from "../types";
 import { sourceStatusLabel } from "../utils/dashboardDataTypes";
 import type { CapabilityExposure } from "../utils/dashboardTypes";
@@ -35,6 +37,9 @@ export function SourceDataReviewPanel({
   onCandidateDecision: (candidateId: string, decision: CandidateReviewDecision) => void;
 }) {
   const dataCapabilityRows = capabilityRows.filter((item) => DATA_CAPABILITY_KEYS.has(item.key));
+  const [visibleCandidateCount, setVisibleCandidateCount] = useState(8);
+  const visibleCandidates = candidateItems.slice(0, visibleCandidateCount);
+  const hiddenCandidateCount = Math.max(0, candidateItems.length - visibleCandidates.length);
 
   return (
     <>
@@ -116,10 +121,15 @@ export function SourceDataReviewPanel({
         </div>
         <div className="mt-3 space-y-2">
           {candidateItems.length ? (
-            candidateItems.slice(0, 8).map((candidate) => {
+            visibleCandidates.map((candidate) => {
               const status = candidate.status === "accepted" || candidate.status === "rejected" ? candidate.status : "pending";
               return (
-                <div key={candidate.candidate_id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <div
+                  key={candidate.candidate_id}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+                  data-testid="detected-item-candidate"
+                  data-candidate-id={candidate.candidate_id}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-800">{candidate.label || candidate.candidate_type || "Candidate"}</p>
@@ -190,6 +200,16 @@ export function SourceDataReviewPanel({
             </p>
           )}
         </div>
+        {hiddenCandidateCount ? (
+          <button
+            type="button"
+            onClick={() => setVisibleCandidateCount((current) => Math.min(candidateItems.length, current + 20))}
+            className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            data-testid="show-more-detected-items"
+          >
+            Show {Math.min(20, hiddenCandidateCount)} more detected item{Math.min(20, hiddenCandidateCount) === 1 ? "" : "s"}
+          </button>
+        ) : null}
       </div>
     </>
   );

@@ -238,6 +238,46 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "completed")
 
+    def test_web_only_queue_is_completed_by_separate_worker_service(self):
+        web_queue = JobQueueService(self.db, worker_count=0)
+        web_queue.register_handler(
+            "source_context_external_test",
+            lambda job: {"success": True, "processed_by": "web"},
+        )
+        created = web_queue.submit_job(
+            user_id=self.user_id,
+            job_type="source_context_external_test",
+            payload={"address": "20525 Margo St"},
+        )
+
+        self.assertEqual(created["status"], "queued")
+        self.assertEqual(web_queue.runtime_stats()["execution_mode"], "external_worker")
+        self.assertEqual(web_queue.runtime_stats()["alive_workers"], 0)
+
+        worker_queue = JobQueueService(
+            self.db,
+            worker_count=1,
+            heartbeat_interval_sec=0.5,
+            resume_poll_interval_sec=0.05,
+        )
+        worker_queue.register_handler(
+            "source_context_external_test",
+            lambda job: {"success": True, "processed_by": "dedicated_worker"},
+        )
+
+        deadline = time.time() + 3.0
+        record = None
+        while time.time() < deadline:
+            record = web_queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(record["result"]["processed_by"], "dedicated_worker")
+        worker_queue._resume_pending_jobs = False
+
     def test_list_jobs_restarts_worker_if_thread_dies(self):
         self.queue._workers = []
         jobs = self.queue.list_jobs(user_id=self.user_id)

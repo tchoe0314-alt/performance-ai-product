@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 
-import { postJson, postJsonWithTimeout } from "../../lib/api";
+import { postJson } from "../../lib/api";
 import type { BuildingPlacement, LocalGisProviderRegistry, ProjectInput, ProjectRecord, SiteInputs } from "../types";
 import {
   hasAddressCoordinates,
@@ -10,6 +10,7 @@ import {
   type OnlineExistingConditionsFetchResponse,
 } from "../utils/dashboardDataTypes";
 import { panelErrorMessage } from "../utils/dashboardStatus";
+import { runQueuedSourceContextLookup } from "../utils/sourceContextJobs";
 import type { ProjectStatusSummary, SidePanelKey, WorkspaceMode } from "../utils/workspaceShell";
 
 type SaveProject = (options?: {
@@ -33,7 +34,6 @@ type UseDashboardSiteAddressActionOptions = {
   currentProject: ProjectRecord | null;
   localGisProviderRegistry: LocalGisProviderRegistry;
   payloadPreview: ProjectInput;
-  runAutoExistingConditionsAfterSiteLock: (projectInputOverride?: ProjectInput) => Promise<void>;
   saveProject: SaveProject;
   selectedAddressSuggestion: AddressSuggestion | null;
   setActiveSidePanel: Dispatch<SetStateAction<SidePanelKey | null>>;
@@ -63,6 +63,8 @@ function clearAddressSourceContext(siteInputs: SiteInputs): SiteInputs {
   delete next.online_existing_conditions_discovery_v1;
   delete next.map_feature_detection_report_v1;
   delete next.existing_conditions_package;
+  delete next.candidate_review_inbox_v1;
+  delete next.source_context_detection_coverage_v1;
   delete next.auto_existing_conditions_v1;
   delete next.slope_estimate;
   return next;
@@ -76,6 +78,8 @@ function clearLatestResultSourceContext(latestResult: ProjectRecord["latest_resu
   delete meta.map_feature_detection_report_v1;
   delete meta.existing_conditions_package;
   delete meta.existing_conditions_summary;
+  delete meta.candidate_review_inbox_v1;
+  delete meta.source_context_detection_coverage_v1;
   delete meta.auto_existing_conditions_v1;
   return {
     ...latestResult,
@@ -112,7 +116,6 @@ export function useDashboardSiteAddressAction({
   currentProject,
   localGisProviderRegistry,
   payloadPreview,
-  runAutoExistingConditionsAfterSiteLock,
   saveProject,
   selectedAddressSuggestion,
   setActiveSidePanel,
@@ -363,14 +366,27 @@ export function useDashboardSiteAddressAction({
                 north: Number(activeViewportBounds.north),
               }
             : undefined;
+        const sourceBounds =
+          activeSiteBoundary ??
+          buildCenteredSiteBounds(
+            geocode.lat,
+            geocode.lng,
+            overrideSiteWidth && overrideSiteWidth > 0 ? overrideSiteWidth : 1000,
+            overrideSiteHeight && overrideSiteHeight > 0 ? overrideSiteHeight : 1000,
+          ) ??
+          undefined;
+        if (sourceBounds && !activeSiteBoundary) {
+          nextSiteInputs.viewport_bounds = sourceBounds;
+        }
         let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
         try {
-          onlineFetch = await postJsonWithTimeout<OnlineExistingConditionsFetchResponse>(
-            "/api/existing-conditions/fetch-online",
-            {
+          onlineFetch = await runQueuedSourceContextLookup({
+            projectId: currentProject?.project_id,
+            token,
+            request: {
               address: geocode.display_name,
-              bbox: activeSiteBoundary,
-              active_site_boundary: activeSiteBoundary ?? {},
+              bbox: sourceBounds,
+              active_site_boundary: sourceBounds ?? {},
               include_floodplain: true,
               include_wetlands: true,
               include_parcels: true,
@@ -382,9 +398,15 @@ export function useDashboardSiteAddressAction({
               include_imagery_detection: true,
               provider_registry: localGisProviderRegistry,
             },
-            { token },
-            90000,
-          );
+            onProgress: (job) => {
+              setAutoExistingConditionsStatus({
+                status: "running",
+                message: job.stage_detail || "Checking roads, buildings, terrain, constraints, and utilities in the background...",
+                candidateCount: 0,
+                missing: [],
+              });
+            },
+          });
         } catch (error) {
           onlineFetch = {
             success: false,
@@ -414,6 +436,12 @@ export function useDashboardSiteAddressAction({
         if (onlineFetch?.existing_conditions_package) {
           nextSiteInputs.existing_conditions_package = onlineFetch.existing_conditions_package;
         }
+        if (onlineFetch?.candidate_review_inbox_v1) {
+          nextSiteInputs.candidate_review_inbox_v1 = onlineFetch.candidate_review_inbox_v1;
+        }
+        if (onlineFetch?.source_context_detection_coverage_v1) {
+          nextSiteInputs.source_context_detection_coverage_v1 = onlineFetch.source_context_detection_coverage_v1;
+        }
         nextSiteInputs.site_alignment_locked = preserveLockedSite ? true : false;
         if (preserveLockedSite) {
           nextSiteInputs.site_boundary_state = "locked_canonical";
@@ -435,6 +463,8 @@ export function useDashboardSiteAddressAction({
                     map_feature_detection_report_v1: onlineFetch?.map_feature_detection_report_v1,
                     existing_conditions_package: onlineFetch?.existing_conditions_package,
                     existing_conditions_summary: onlineFetch?.existing_conditions_summary,
+                    candidate_review_inbox_v1: onlineFetch?.candidate_review_inbox_v1,
+                    source_context_detection_coverage_v1: onlineFetch?.source_context_detection_coverage_v1,
                   },
                 },
               }
@@ -554,9 +584,6 @@ export function useDashboardSiteAddressAction({
           missing: lookupUnavailable ? (providerAbsent ? ["source providers"] : ["provider lookup"]) : [],
         });
         setSelectedAddressSuggestion(geocode);
-        if (preserveLockedSite || siteScaleLocked) {
-          void runAutoExistingConditionsAfterSiteLock(nextProjectInput);
-        }
       } catch (error) {
         const message = `Geocode failed: ${panelErrorMessage(error, "Check the address or retry after the backend responds.")}`;
         setAutoExistingConditionsStatus({
@@ -583,7 +610,6 @@ export function useDashboardSiteAddressAction({
       currentProject,
       localGisProviderRegistry,
       payloadPreview,
-      runAutoExistingConditionsAfterSiteLock,
       saveProject,
       selectedAddressSuggestion,
       setActiveSidePanel,

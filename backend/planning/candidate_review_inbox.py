@@ -512,13 +512,34 @@ def apply_candidate_review_decision(
             draft = _accepted_draft_from_candidate(candidate, accepted_by=reviewer)
             accepted_drafts = [item for item in accepted_drafts if safe_str(safe_dict(item).get("source_candidate_id")) != safe_str(candidate.get("candidate_id"))]
             accepted_drafts.append(draft)
+            rejected = [
+                item
+                for item in rejected
+                if safe_str(safe_dict(item).get("candidate_id")) != safe_str(candidate.get("candidate_id"))
+            ]
         elif normalized_action == "reject":
+            accepted_drafts = [
+                item
+                for item in accepted_drafts
+                if safe_str(safe_dict(item).get("source_candidate_id")) != safe_str(candidate.get("candidate_id"))
+            ]
             rec = deepcopy(candidate)
             rec["status"] = "rejected"
             rec["rejection_reason"] = reason
             rec["audit_trail"] = safe_list(rec.get("audit_trail")) + [audit]
             rejected = [item for item in rejected if safe_str(safe_dict(item).get("candidate_id")) != safe_str(candidate.get("candidate_id"))]
             rejected.append(rec)
+        else:
+            accepted_drafts = [
+                item
+                for item in accepted_drafts
+                if safe_str(safe_dict(item).get("source_candidate_id")) != safe_str(candidate.get("candidate_id"))
+            ]
+            rejected = [
+                item
+                for item in rejected
+                if safe_str(safe_dict(item).get("candidate_id")) != safe_str(candidate.get("candidate_id"))
+            ]
     updated_meta["candidate_review_decisions_v1"] = decisions
     updated_meta["candidate_review_accepted_drafts_v1"] = accepted_drafts
     updated_meta["candidate_review_rejected_v1"] = rejected

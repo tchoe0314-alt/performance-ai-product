@@ -1,4 +1,4 @@
-import type { OnlineExistingConditionsDiscovery } from "../types";
+import type { CandidateReviewInbox, OnlineExistingConditionsDiscovery } from "../types";
 import type { SystemGenerationTarget } from "./workflowConstants";
 
 export type AddressSuggestion = {
@@ -23,6 +23,8 @@ export type OnlineExistingConditionsFetchResponse = {
   existing_conditions_package?: Record<string, unknown>;
   existing_conditions_summary?: Record<string, unknown>;
   canonical_existing_conditions?: Record<string, unknown>;
+  candidate_review_inbox_v1?: CandidateReviewInbox;
+  source_context_detection_coverage_v1?: Record<string, unknown>;
   warnings?: string[];
 };
 export type AutoExistingConditionsUiStatus = {
