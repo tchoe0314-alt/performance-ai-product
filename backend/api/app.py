@@ -60,8 +60,6 @@ from backend.application.memory_logging import (
     current_rss_mb,
     log_memory,
     peak_rss_mb,
-    record_process_shutdown,
-    record_process_start,
     runtime_monitoring_snapshot,
     runtime_process_monitoring_snapshot,
 )
@@ -981,7 +979,6 @@ def _log_runtime_event(event: str, **fields: Any) -> None:
 @app.on_event("startup")
 def _register_job_handlers() -> None:
     log_memory("startup_begin")
-    record_process_start(state_dir=STORAGE_DIR, start_time=START_TIME, instance_id=RUNTIME_INSTANCE_ID)
     _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
     _log_mapbox_token_config()
     JOB_QUEUE.register_handler(
@@ -1039,7 +1036,6 @@ def _register_job_handlers() -> None:
 
 @app.on_event("shutdown")
 def _log_shutdown() -> None:
-    record_process_shutdown(state_dir=STORAGE_DIR, instance_id=RUNTIME_INSTANCE_ID)
     _log_runtime_event("shutdown")
 
 
