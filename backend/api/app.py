@@ -1040,12 +1040,12 @@ def _log_shutdown() -> None:
 
 
 @app.get("/")
-def root() -> Dict[str, str]:
+async def root() -> Dict[str, str]:
     return {"status": "ok"}
 
 
 @app.get("/api/health")
-def health() -> Dict[str, Any]:
+async def health() -> Dict[str, Any]:
     deployment = _deployment_metadata()
     support = _support_metadata()
     return {
