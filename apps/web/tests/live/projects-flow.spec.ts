@@ -322,6 +322,9 @@ test.describe("project drawer reliability", () => {
     saveGateControl.release?.();
     await page.waitForTimeout(250);
 
+    await expect(page.getByTestId("project-status-summary")).toContainText(
+      "Ready: Clean workspace ready",
+    );
     await openProjects(page);
     await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
     await expect(page.getByTestId("project-drawer-detail")).toContainText(
@@ -330,6 +333,119 @@ test.describe("project drawer reliability", () => {
     await expect
       .poll(() => page.evaluate(() => window.localStorage.getItem("civora.activeProjectId")))
       .toBeNull();
+  });
+
+  test("ignores a saved result that finishes loading after New Project", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    store.set("older-project", {
+      project_id: "older-project",
+      name: "Older Project",
+      updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        meta: {
+          site_inputs: {
+            address: "20525 Margo St, Gretna, NE",
+            geocode: { lat: 41.142, lng: -96.244 },
+            map_feature_detection_report_v1: { candidate_count: 14 },
+          },
+        },
+        manual_fields: { lot: { x: 0, y: 0, w: 1000, h: 1000 } },
+      },
+      latest_result: {
+        success: true,
+        final_plan: { meta: { location_context: { address: "20525 Margo St, Gretna, NE" } } },
+      },
+      has_result: true,
+    });
+    await mockShell(page, store);
+    const resultGateControl: { release?: () => void } = {};
+    const resultGate = new Promise<void>((resolve) => {
+      resultGateControl.release = resolve;
+    });
+    let markResultStarted: (() => void) | null = null;
+    const resultStarted = new Promise<void>((resolve) => {
+      markResultStarted = resolve;
+    });
+    await page.route("**/api/projects/older-project/result", async (route) => {
+      markResultStarted?.();
+      await resultGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          project_id: "older-project",
+          latest_result: store.get("older-project")?.latest_result ?? {},
+        }),
+      });
+    });
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Older Project" }).click();
+    await resultStarted;
+    await page.getByRole("button", { name: "New Project" }).click();
+    resultGateControl.release?.();
+    await page.waitForTimeout(300);
+
+    await expect(page.getByTestId("project-status-summary")).toContainText(
+      "Ready: Clean workspace ready",
+    );
+    await openSetup(page);
+    await expect(page.getByLabel("Type project address")).toHaveValue("");
+    await expect(page.getByTestId("auto-site-context-summary")).toContainText("Found 0");
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(
+      "Local site coordinates",
+    );
+  });
+
+  test("ignores address discovery that finishes after New Project", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    await mockShell(page, store);
+    const geocodeGateControl: { release?: () => void } = {};
+    const geocodeGate = new Promise<void>((resolve) => {
+      geocodeGateControl.release = resolve;
+    });
+    let markGeocodeStarted: (() => void) | null = null;
+    const geocodeStarted = new Promise<void>((resolve) => {
+      markGeocodeStarted = resolve;
+    });
+    await page.route("**/api/geocode", async (route) => {
+      markGeocodeStarted?.();
+      await geocodeGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          status: "ready",
+          lat: 41.142,
+          lng: -96.244,
+          display_name: "20525 Margo St, Gretna, NE",
+          provider: "test_geocoder",
+          confidence: 0.95,
+        }),
+      });
+    });
+
+    await openApp(page);
+    await openSetup(page);
+    await page.getByLabel("Type project address").fill("20525 Margo St, Gretna, NE");
+    await page.getByRole("button", { name: "Apply address" }).click();
+    await geocodeStarted;
+    await openProjects(page);
+    await page.getByRole("button", { name: "New Project" }).click();
+    geocodeGateControl.release?.();
+    await page.waitForTimeout(300);
+
+    await expect(page.getByTestId("project-status-summary")).toContainText(
+      "Ready: Clean workspace ready",
+    );
+    await openSetup(page);
+    await expect(page.getByLabel("Type project address")).toHaveValue("");
+    await expect(page.getByTestId("auto-site-context-summary")).toContainText("Found 0");
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(
+      "Local site coordinates",
+    );
   });
 
   test("restores requested chat program as actionable placement tray objects", async ({ page }) => {

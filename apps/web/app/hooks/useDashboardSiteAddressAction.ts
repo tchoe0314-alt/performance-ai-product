@@ -34,6 +34,7 @@ type UseDashboardSiteAddressActionOptions = {
   currentProject: ProjectRecord | null;
   localGisProviderRegistry: LocalGisProviderRegistry;
   payloadPreview: ProjectInput;
+  projectLoadRequestRef: MutableRefObject<number>;
   saveProject: SaveProject;
   selectedAddressSuggestion: AddressSuggestion | null;
   setActiveSidePanel: Dispatch<SetStateAction<SidePanelKey | null>>;
@@ -116,6 +117,7 @@ export function useDashboardSiteAddressAction({
   currentProject,
   localGisProviderRegistry,
   payloadPreview,
+  projectLoadRequestRef,
   saveProject,
   selectedAddressSuggestion,
   setActiveSidePanel,
@@ -139,6 +141,8 @@ export function useDashboardSiteAddressAction({
 }: UseDashboardSiteAddressActionOptions) {
   return useCallback(
     async (addressOverride?: string, options?: SaveSiteAddressOptions) => {
+      const workspaceGeneration = projectLoadRequestRef.current;
+      const workspaceIsCurrent = () => projectLoadRequestRef.current === workspaceGeneration;
       const trimmed = (addressOverride ?? siteAddress).trim();
       const preserveLockedSite = Boolean(options?.preserveLockedSite);
       const overrideSiteWidth = options?.siteWidth;
@@ -257,6 +261,7 @@ export function useDashboardSiteAddressAction({
           projectInputOverride: clearedProjectInput,
           latestResultOverride: clearedLatestResult,
         });
+        if (!workspaceIsCurrent()) return;
         updateProjectStatus({
           state: "needs review",
           area: "setup",
@@ -301,6 +306,7 @@ export function useDashboardSiteAddressAction({
         if (!hasAddressCoordinates(geocode)) {
           geocode = await postJson<AddressSuggestion>("/api/geocode", { address: trimmed }, { token });
         }
+        if (!workspaceIsCurrent()) return;
         if (!hasAddressCoordinates(geocode)) {
           const geocodeMessage =
             geocode?.message ||
@@ -408,6 +414,7 @@ export function useDashboardSiteAddressAction({
             },
           });
         } catch (error) {
+          if (!workspaceIsCurrent()) return;
           onlineFetch = {
             success: false,
             status: "fetch_failed",
@@ -424,6 +431,7 @@ export function useDashboardSiteAddressAction({
             },
           };
         }
+        if (!workspaceIsCurrent()) return;
         if (onlineFetch?.online_existing_conditions_discovery_v1) {
           nextSiteInputs.online_existing_conditions_discovery_v1 = onlineFetch.online_existing_conditions_discovery_v1;
           if (onlineFetch.online_existing_conditions_discovery_v1.local_gis_provider_registry_v1) {
@@ -502,6 +510,7 @@ export function useDashboardSiteAddressAction({
           projectInputOverride: nextProjectInput,
           latestResultOverride,
         });
+        if (!workspaceIsCurrent()) return;
         if (preserveLockedSite) {
           setSiteScaleLocked(true);
           setShowSiteBounds(false);
@@ -585,6 +594,7 @@ export function useDashboardSiteAddressAction({
         });
         setSelectedAddressSuggestion(geocode);
       } catch (error) {
+        if (!workspaceIsCurrent()) return;
         const message = `Geocode failed: ${panelErrorMessage(error, "Check the address or retry after the backend responds.")}`;
         setAutoExistingConditionsStatus({
           status: "blocked",
@@ -610,6 +620,7 @@ export function useDashboardSiteAddressAction({
       currentProject,
       localGisProviderRegistry,
       payloadPreview,
+      projectLoadRequestRef,
       saveProject,
       selectedAddressSuggestion,
       setActiveSidePanel,

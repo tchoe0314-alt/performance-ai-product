@@ -2932,12 +2932,12 @@ function PerformanceAIDashboardView({
     lotWidthValue: parsePositiveNumber(lotWidth),
     payloadPreview,
     saveProject,
-    setStatusMessage,
     setSurveyDiagnostics,
     setSurveyFileName,
     setSurveyPoints,
     setSurveyPreviewPoints,
     setSourceEffectRows,
+    setStatusMessage,
     setSurveyUploadMessage,
     token,
     useSurveyForGrading,
@@ -3304,6 +3304,7 @@ function PerformanceAIDashboardView({
     currentProject,
     localGisProviderRegistry,
     payloadPreview,
+    projectLoadRequestRef,
     saveProject,
     selectedAddressSuggestion,
     setActiveSidePanel,
@@ -3362,6 +3363,7 @@ function PerformanceAIDashboardView({
     options?: { silent?: boolean; track?: boolean },
   ) => {
     if (!token) return;
+    const workspaceGeneration = projectLoadRequestRef.current;
     if (effectiveDemoWorkspaceEnabled || isSeededDemoProjectId(payload.project_id)) {
       return;
     }
@@ -3384,6 +3386,7 @@ function PerformanceAIDashboardView({
       const data = await postJson<PreviewResponse>("/api/preview", previewPayload, {
         token,
       });
+      if (projectLoadRequestRef.current !== workspaceGeneration) return;
       setPlanPreviewUrl(data.preview_image_data_url);
       setPlanPreviewProjectId(projectId || currentProject?.project_id || null);
       setPlanPreviewSummary(data.summary ?? null);
@@ -3392,7 +3395,7 @@ function PerformanceAIDashboardView({
         setStatusMessage("Plan preview generated.");
       }
     } finally {
-      if (options?.track) {
+      if (options?.track && projectLoadRequestRef.current === workspaceGeneration) {
         setPreviewRefreshing(false);
         setPreviewRefreshNote(null);
       }
@@ -3512,6 +3515,7 @@ function PerformanceAIDashboardView({
     fileName,
     planPreviewUrl,
     projectId,
+    projectLoadRequestRef,
     projectResultLoadRequestRef,
     requestPreviewInBackground,
     resolvedProjectIdRef,
@@ -3824,6 +3828,7 @@ function PerformanceAIDashboardView({
     draftProjectPromiseRef,
     projectId,
     projectLoadRequestRef,
+    projectResultLoadRequestRef,
     projects,
     refreshProjects,
     removeProjectSummary,
@@ -3876,7 +3881,6 @@ function PerformanceAIDashboardView({
     setSidePanelVisible,
     setSiteName,
     setSiteNameAuto,
-    setStatusMessage,
     setSurveyDiagnostics,
     setSurveyFileName,
     setSurveyPoints,

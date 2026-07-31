@@ -31,6 +31,7 @@ type UseDashboardProjectActionsOptions = {
   draftProjectPromiseRef: MutableRefObject<Promise<ProjectRecord | null> | null>;
   projectId: string;
   projectLoadRequestRef: MutableRefObject<number>;
+  projectResultLoadRequestRef: MutableRefObject<number>;
   projects: ProjectSummary[];
   refreshProjects: (token: string) => Promise<void>;
   removeProjectSummary: (projectIdToRemove: string) => void;
@@ -83,7 +84,6 @@ type UseDashboardProjectActionsOptions = {
   setSidePanelVisible: Dispatch<SetStateAction<boolean>>;
   setSiteName: Dispatch<SetStateAction<string>>;
   setSiteNameAuto: Dispatch<SetStateAction<boolean>>;
-  setStatusMessage: (message: string) => void;
   setSurveyDiagnostics: Dispatch<SetStateAction<{
     fileType?: string;
     parseSuccess?: boolean;
@@ -123,6 +123,7 @@ export function useDashboardProjectActions({
   draftProjectPromiseRef,
   projectId,
   projectLoadRequestRef,
+  projectResultLoadRequestRef,
   projects,
   refreshProjects,
   removeProjectSummary,
@@ -175,7 +176,6 @@ export function useDashboardProjectActions({
   setSidePanelVisible,
   setSiteName,
   setSiteNameAuto,
-  setStatusMessage,
   setSurveyDiagnostics,
   setSurveyFileName,
   setSurveyPoints,
@@ -198,6 +198,7 @@ export function useDashboardProjectActions({
     const newProjectStartedAt = markCivoraInteraction();
     debugLog("new-project-start");
     projectLoadRequestRef.current += 1;
+    projectResultLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
     autosaveSuspendRef.current = true;
     if (chatAutosaveTimeoutRef.current !== null) {
@@ -282,7 +283,13 @@ export function useDashboardProjectActions({
     }
     setWorkspaceRestoreState("idle");
     setProjectDrawerNotice("Unsaved draft. Save Project will persist this clean workspace.");
-    setStatusMessage("Started a new project.");
+    updateProjectStatus({
+      state: "ready",
+      area: "projects",
+      title: "Clean workspace ready",
+      detail: "Started a new unsaved project with no address, boundary, source context, objects, or generated results.",
+      nextAction: "Open Setup to apply an address or define the site boundary.",
+    });
     measureCivoraInteractionAfterPaint("projects.drawer.new_project", newProjectStartedAt);
     draftProjectPromiseRef.current = null;
     suppressProjectAutoLoadRef.current = false;
@@ -297,6 +304,7 @@ export function useDashboardProjectActions({
     debugLog,
     draftProjectPromiseRef,
     projectLoadRequestRef,
+    projectResultLoadRequestRef,
     resetWorkspaceState,
     resolvedProjectIdRef,
     setActiveJobId,
@@ -346,7 +354,6 @@ export function useDashboardProjectActions({
     setSidePanelVisible,
     setSiteName,
     setSiteNameAuto,
-    setStatusMessage,
     setSurveyDiagnostics,
     setSurveyFileName,
     setSurveyPoints,
@@ -362,6 +369,7 @@ export function useDashboardProjectActions({
     setWorkspaceChromeMinimized,
     setWorkspaceRestoreState,
     suppressProjectAutoLoadRef,
+    updateProjectStatus,
   ]);
 
   const handleDeleteProject = useCallback(async (projectIdToDelete: string) => {

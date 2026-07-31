@@ -19,6 +19,7 @@ type UseDashboardProjectResultLoaderOptions = {
   fileName: string;
   planPreviewUrl: string;
   projectId: string;
+  projectLoadRequestRef: MutableRefObject<number>;
   projectResultLoadRequestRef: MutableRefObject<number>;
   requestPreviewInBackground: (
     request: PreviewRequest,
@@ -45,6 +46,7 @@ export function useDashboardProjectResultLoader({
   fileName,
   planPreviewUrl,
   projectId,
+  projectLoadRequestRef,
   projectResultLoadRequestRef,
   requestPreviewInBackground,
   resolvedProjectIdRef,
@@ -58,6 +60,7 @@ export function useDashboardProjectResultLoader({
 }: UseDashboardProjectResultLoaderOptions) {
   const loadProjectResultInBackground = useCallback((project: ProjectRecord) => {
     if (!token) return;
+    const workspaceGeneration = projectLoadRequestRef.current;
     const requestId = projectResultLoadRequestRef.current + 1;
     projectResultLoadRequestRef.current = requestId;
     void getJson<{ project_id: string; latest_result: PlanResponse }>(
@@ -65,7 +68,10 @@ export function useDashboardProjectResultLoader({
       { token },
     )
       .then((data) => {
-        if (projectResultLoadRequestRef.current !== requestId) {
+        if (
+          projectResultLoadRequestRef.current !== requestId ||
+          projectLoadRequestRef.current !== workspaceGeneration
+        ) {
           return;
         }
         const latestResult = data.latest_result ?? {};
@@ -119,6 +125,9 @@ export function useDashboardProjectResultLoader({
         }
       })
       .catch((error) => {
+        if (projectLoadRequestRef.current !== workspaceGeneration) {
+          return;
+        }
         setStatusMessage(
           error instanceof Error ? error.message : "Project result load failed.",
         );
@@ -130,6 +139,7 @@ export function useDashboardProjectResultLoader({
     fileName,
     planPreviewUrl,
     projectId,
+    projectLoadRequestRef,
     projectResultLoadRequestRef,
     requestPreviewInBackground,
     resolvedProjectIdRef,

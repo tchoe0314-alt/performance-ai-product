@@ -35,7 +35,9 @@ export function buildProjectTruthLabels({
             ? "Project saved; restore available after reload"
             : currentProject?.project_id
               ? "Project saved; restore status pending"
-              : "Restore unavailable";
+              : token
+                ? "Unsaved project"
+                : "Restore unavailable";
 
   const projectDrawerStateLabel =
     effectiveDemoWorkspaceEnabled

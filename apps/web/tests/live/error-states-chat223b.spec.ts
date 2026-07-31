@@ -33,6 +33,17 @@ async function mockSignedInShell(page: Page) {
     });
   });
   await page.route("**/api/jobs**", async (route) => {
+    if (
+      route.request().method() === "POST" &&
+      new URL(route.request().url()).pathname === "/api/jobs/source-context"
+    ) {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Queue endpoint unavailable in this focused fixture." }),
+      });
+      return;
+    }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, jobs: [] }) });
   });
   await page.route("**/api/projects", async (route) => {
@@ -147,7 +158,9 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await addressDetails.getByLabel("Type project address").fill("1 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
 
-    await expect(page.getByTestId("apply-address-status")).toContainText("Sign in/connect backend to apply address.");
+    await expect(page.getByTestId("apply-address-status")).toContainText(
+      "Address saved locally. Live geocode and source lookup need sign-in/backend access",
+    );
   });
 
   test("Auto Site Context separates provider failure from successful no-feature results", async ({ page }) => {

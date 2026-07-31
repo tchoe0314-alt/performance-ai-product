@@ -88,8 +88,12 @@ export function useDashboardJobLoader({
 }: UseDashboardJobLoaderOptions) {
   const loadJob = useCallback(async (id: string) => {
     if (!token) return;
+    const workspaceGeneration = projectLoadRequestRef.current;
     try {
       const data = await getJson<{ job: JobSummary }>(`/api/jobs/${id}`, { token });
+      if (projectLoadRequestRef.current !== workspaceGeneration) {
+        return;
+      }
       const job = data.job;
       const jobProjectId = String(job.project_id || "").trim();
       const activeJobProjectSignature = `${job.job_id}:${jobProjectId}`;
@@ -372,6 +376,9 @@ export function useDashboardJobLoader({
         );
       }
     } catch (error) {
+      if (projectLoadRequestRef.current !== workspaceGeneration) {
+        return;
+      }
       const message = `Job refresh failed: ${panelErrorMessage(error, "Could not refresh job detail.")}`;
       setJobsPanelStatusMessage(message);
       setStatusMessage(message);
