@@ -66,6 +66,35 @@ If `CIVORA_IMAGERY_DETECTION_URL` is configured, Apply Address also sends the ad
 
 Supported `kind` values include `building`, `road`, `driveway`, `parking`, `sidewalk`, `tree`, `vegetation`, `basin`, `pond`, `utility`, `inlet`, `outfall`, `manhole`, and `hydrant`. These detections become visual review candidates only. If this provider is missing, Apply Address still uses GIS/provider candidates and uploaded map/image detection, but it must not invent buildings from an address alone.
 
+The repo includes a deployable gateway at `backend/scripts/imagery_detection_gateway.py` for providers that need a source image instead of an address/bbox. Run it as a separate service and point `CIVORA_IMAGERY_DETECTION_URL` at `/detect`.
+
+Generic detector gateway:
+
+```bash
+python3 -m uvicorn backend.scripts.imagery_detection_gateway:app --host 0.0.0.0 --port 8090
+```
+
+```bash
+CIVORA_GATEWAY_DETECTOR_KIND=generic
+CIVORA_GATEWAY_MAPBOX_TOKEN=your_mapbox_token
+CIVORA_GATEWAY_MAPBOX_STYLE=mapbox/satellite-v9
+CIVORA_GATEWAY_IMAGE_SIZE=1024x1024
+CIVORA_GATEWAY_GENERIC_DETECTOR_URL=https://your-detector.example.com/detect
+CIVORA_GATEWAY_GENERIC_DETECTOR_TOKEN=your_detector_token
+```
+
+Roboflow-style gateway:
+
+```bash
+CIVORA_GATEWAY_DETECTOR_KIND=roboflow
+CIVORA_GATEWAY_MAPBOX_TOKEN=your_mapbox_token
+ROBOFLOW_API_URL=https://serverless.roboflow.com/your-model/your-version
+ROBOFLOW_API_KEY=your_roboflow_key
+ROBOFLOW_IMAGE_MODE=url_param
+```
+
+The gateway creates a static imagery URL from the active bbox/site boundary, calls the configured detector, normalizes labels such as building roof, road, parking, tree canopy, basin/pond, inlet/outfall/manhole/hydrant, and returns Civora-compatible visual candidates. Confirm Mapbox/imagery/detector terms allow this use before enabling it for real projects.
+
 Do not set `CORS_ALLOW_ORIGINS=*` for private alpha or production. The backend only permits wildcard CORS in local/development mode.
 
 For a temporary pilot QA session where a local frontend must call the live backend, set both variables explicitly on the backend:
