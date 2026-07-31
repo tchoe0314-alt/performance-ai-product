@@ -16,6 +16,14 @@ It does not create survey/control evidence, utility locates, professional accept
 
 Create a second Railway service from the same GitHub repo.
 
+If Railway will not let you edit the config path because the settings are view-only, point the imagery gateway service at this branch instead:
+
+```text
+codex/railway-imagery-gateway-service
+```
+
+On that branch, the default `railway.toml` already points to `Dockerfile.imagery-gateway` and `/health`.
+
 Set the Railway config file path to:
 
 ```text
