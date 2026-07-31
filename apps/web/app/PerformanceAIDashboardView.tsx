@@ -4930,7 +4930,6 @@ function PerformanceAIDashboardView({
     handleToggleSiteLock,
     imageName,
     mapSnapshotPath,
-    onCloseChatPanel: handleCloseSidePanel,
     onOpenChatPanel: () => handleOpenSidePanel("chat"),
     pendingClarification,
     prompt,
