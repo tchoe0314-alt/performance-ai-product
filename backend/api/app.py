@@ -985,8 +985,8 @@ def _log_runtime_event(event: str, **fields: Any) -> None:
 @app.on_event("startup")
 async def _register_job_handlers() -> None:
     try:
-        thread_limit = int(os.getenv("CIVORA_ANYIO_THREAD_LIMIT") or "8")
-        to_thread.current_default_thread_limiter().total_tokens = max(2, min(16, thread_limit))
+        thread_limit = int(os.getenv("CIVORA_ANYIO_THREAD_LIMIT") or "2")
+        to_thread.current_default_thread_limiter().total_tokens = max(1, min(8, thread_limit))
     except Exception:
         pass
     log_memory("startup_begin")
