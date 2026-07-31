@@ -286,6 +286,25 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
 
         self.assertIn("worker_process_has_no_workers", {item["code"] for item in report["blockers"]})
 
+    def test_hosted_combined_service_can_externalize_only_source_context(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CIVORA_PROCESS_ROLE": "combined",
+                "CIVORA_DEDICATED_WORKER_ENABLED": "true",
+                "CIVORA_DISABLED_JOB_TYPES": "source_context",
+                "PERFORMANCE_AI_JOB_WORKERS": "1",
+                "DATABASE_URL": "postgresql://user:password@example.com:5432/civora",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+            },
+            deployment_target="railway",
+        )
+
+        warning_codes = {item["code"] for item in report["warnings"]}
+        self.assertNotIn("combined_web_worker_process", warning_codes)
+
 
 if __name__ == "__main__":
     unittest.main()

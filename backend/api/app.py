@@ -9,7 +9,7 @@ import urllib.parse
 from collections import deque
 import hashlib
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 try:
     threading.stack_size(int(os.getenv("CIVORA_THREAD_STACK_BYTES") or str(512 * 1024)))
@@ -992,8 +992,28 @@ def _log_runtime_event(event: str, **fields: Any) -> None:
     )
 
 
+def _configured_job_types(variable_name: str, env: Optional[Mapping[str, str]] = None) -> set[str]:
+    source = env if env is not None else os.environ
+    return {
+        item.strip()
+        for item in str(source.get(variable_name) or "").split(",")
+        if item.strip()
+    }
+
+
+def _job_handler_is_enabled(job_type: str, env: Optional[Mapping[str, str]] = None) -> bool:
+    enabled = _configured_job_types("CIVORA_ENABLED_JOB_TYPES", env)
+    disabled = _configured_job_types("CIVORA_DISABLED_JOB_TYPES", env)
+    return (not enabled or job_type in enabled) and job_type not in disabled
+
+
+def _register_job_handler(job_type: str, runner: Callable[[Dict[str, Any]], Dict[str, Any]]) -> None:
+    if _job_handler_is_enabled(job_type):
+        JOB_QUEUE.register_handler(job_type, runner)
+
+
 def register_job_handlers() -> None:
-    JOB_QUEUE.register_handler(
+    _register_job_handler(
         "orchestrate",
         application_build_orchestrate_job_runner(
             project_store=PROJECT_STORE,
@@ -1004,14 +1024,14 @@ def register_job_handlers() -> None:
             final_plan_from_result=application_final_plan_from_result,
         ),
     )
-    JOB_QUEUE.register_handler(
+    _register_job_handler(
         "drainage_only",
         application_build_drainage_job_runner(
             project_store=PROJECT_STORE,
             update_job_progress=JOB_QUEUE.update_job_progress,
         ),
     )
-    JOB_QUEUE.register_handler(
+    _register_job_handler(
         "export_dxf",
         application_build_artifact_export_job_runner(
             artifact_service=ARTIFACTS,
@@ -1023,7 +1043,7 @@ def register_job_handlers() -> None:
             export_kind="dxf",
         ),
     )
-    JOB_QUEUE.register_handler(
+    _register_job_handler(
         "export_report",
         application_build_artifact_export_job_runner(
             artifact_service=ARTIFACTS,
@@ -1035,7 +1055,7 @@ def register_job_handlers() -> None:
             export_kind="report",
         ),
     )
-    JOB_QUEUE.register_handler(
+    _register_job_handler(
         "plan_pdf_analysis",
         application_build_plan_pdf_analysis_job_runner(
             upload_dir=UPLOAD_DIR,
@@ -1043,7 +1063,7 @@ def register_job_handlers() -> None:
             update_job_progress=JOB_QUEUE.update_job_progress,
         ),
     )
-    JOB_QUEUE.register_handler(
+    _register_job_handler(
         "source_context",
         application_build_source_context_job_runner(
             project_store=PROJECT_STORE,

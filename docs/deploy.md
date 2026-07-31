@@ -46,20 +46,22 @@ For hosted environments, run long work outside the request-serving API:
 
 ```text
 # API service
-CIVORA_PROCESS_ROLE=web
+CIVORA_PROCESS_ROLE=combined
 CIVORA_DEDICATED_WORKER_ENABLED=true
-PERFORMANCE_AI_JOB_WORKERS=0
+CIVORA_DISABLED_JOB_TYPES=source_context
+PERFORMANCE_AI_JOB_WORKERS=1
 DATABASE_URL=<shared Railway Postgres URL>
 
 # Worker service built from the same Dockerfile/revision
 CIVORA_PROCESS_ROLE=worker
+CIVORA_ENABLED_JOB_TYPES=source_context
 PERFORMANCE_AI_JOB_WORKERS=1
 DATABASE_URL=<the same shared Railway Postgres URL>
 PERFORMANCE_AI_RESUME_PENDING_JOBS=true
 PERFORMANCE_AI_RESUME_POLL_SECONDS=1
 ```
 
-The services must use the same production database and storage configuration. The Docker image starts Gunicorn for `web`/`combined` and `backend.scripts.run_job_worker` for `worker`. The worker exposes a minimal `/api/health` endpoint on `PORT` so Railway can verify the worker without exposing job payloads or user data.
+The services must use the same production database. The API keeps its mounted-storage jobs local and disables only `source_context`; the dedicated worker allows only `source_context`, so it never claims PDF or export jobs whose files live on the API volume. The Docker image starts Gunicorn for `web`/`combined` and `backend.scripts.run_job_worker` for `worker`. The worker exposes a minimal `/api/health` endpoint on `PORT` so Railway can verify it without exposing job payloads or user data.
 
 
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.

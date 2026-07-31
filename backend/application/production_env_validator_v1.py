@@ -36,6 +36,8 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("PERFORMANCE_AI_STORAGE_DIR", "storage", ("private_alpha", "public_beta", "production"), description="Persistent upload/artifact directory."),
     EnvVarSpec("CIVORA_PROCESS_ROLE", "queue", (), optional=True, description="Runtime process role: combined, web, or worker."),
     EnvVarSpec("CIVORA_DEDICATED_WORKER_ENABLED", "queue", (), optional=True, description="Confirms that a separately deployed worker consumes queued jobs."),
+    EnvVarSpec("CIVORA_ENABLED_JOB_TYPES", "queue", (), optional=True, description="Comma-separated allowlist of job handlers for this service."),
+    EnvVarSpec("CIVORA_DISABLED_JOB_TYPES", "queue", (), optional=True, description="Comma-separated denylist of job handlers for this service."),
     EnvVarSpec("PERFORMANCE_AI_JOB_WORKERS", "queue", (), optional=True, description="In-process job worker count. Use 0 for a web-only service."),
     EnvVarSpec("PERFORMANCE_AI_RESUME_PENDING_JOBS", "queue", (), optional=True, description="Enables database polling for queued jobs."),
     EnvVarSpec("PERFORMANCE_AI_RESUME_POLL_SECONDS", "queue", (), optional=True, description="Database queue polling interval."),
@@ -267,6 +269,17 @@ def validate_production_env_v1(
 
     process_role = str(env.get("CIVORA_PROCESS_ROLE") or "combined").strip().lower()
     dedicated_worker_enabled = _truthy(env.get("CIVORA_DEDICATED_WORKER_ENABLED"))
+    enabled_job_types = {
+        item.strip()
+        for item in str(env.get("CIVORA_ENABLED_JOB_TYPES") or "").split(",")
+        if item.strip()
+    }
+    disabled_job_types = {
+        item.strip()
+        for item in str(env.get("CIVORA_DISABLED_JOB_TYPES") or "").split(",")
+        if item.strip()
+    }
+    source_context_externalized = dedicated_worker_enabled and "source_context" in disabled_job_types
     raw_worker_count = str(env.get("PERFORMANCE_AI_JOB_WORKERS") or ("0" if process_role == "web" else "1")).strip()
     try:
         worker_count = int(raw_worker_count)
@@ -326,7 +339,16 @@ def validate_production_env_v1(
                 env_vars=["CIVORA_PROCESS_ROLE", "CIVORA_DEDICATED_WORKER_ENABLED"],
             )
         )
-    if target in {"railway", "render", "split"} and process_role == "combined":
+    if process_role == "worker" and enabled_job_types and "source_context" not in enabled_job_types:
+        warnings.append(
+            _issue(
+                "warning",
+                "worker_does_not_handle_source_context",
+                "The dedicated worker allowlist does not include source_context; hosted source detection may remain unavailable.",
+                env_vars=["CIVORA_ENABLED_JOB_TYPES"],
+            )
+        )
+    if target in {"railway", "render", "split"} and process_role == "combined" and not source_context_externalized:
         warnings.append(
             _issue(
                 "warning",
