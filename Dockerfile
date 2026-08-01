@@ -25,4 +25,4 @@ ENV MPLCONFIGDIR=/tmp/mplconfig
 
 EXPOSE 8002
 
-CMD ["sh", "-c", "mkdir -p \"$PERFORMANCE_AI_STORAGE_DIR\" \"$MPLCONFIGDIR\" && if [ \"${CIVORA_PROCESS_ROLE:-combined}\" = \"worker\" ]; then exec python -m backend.scripts.run_job_worker; else exec gunicorn backend.api.app:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8002} --workers ${WEB_CONCURRENCY:-2} --timeout ${WEB_TIMEOUT_SECONDS:-35} --graceful-timeout 10 --keep-alive 3 --max-requests ${WEB_MAX_REQUESTS:-12} --max-requests-jitter 4 --access-logfile /dev/null --error-logfile - --log-level warning; fi"]
+CMD ["sh", "scripts/start_backend_service.sh"]
