@@ -159,6 +159,70 @@ class ProjectStoreFastPathTests(unittest.TestCase):
             "Denver Review",
         )
 
+    def test_stale_autosave_cannot_rollback_candidate_decision(self) -> None:
+        saved = self._saved_project()
+        stale_project_input = self.store.get_project_shell(
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+        )["project_input"]
+        review_project_candidates(
+            project_store=self.store,
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+            candidate_ids=["building-1"],
+            action="accept",
+            reviewer_id=self.user_id,
+        )
+
+        save_project_record(
+            project_store=self.store,
+            user_id=self.user_id,
+            payload_data={
+                "project_id": saved["project_id"],
+                "name": "Untitled Project",
+                "project_input": stale_project_input,
+                "metadata": {"source": "late_autosave"},
+            },
+        )
+
+        shell = self.store.get_project_shell(
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+        )
+        site_inputs = shell["project_input"]["meta"]["site_inputs"]
+        self.assertEqual(site_inputs["candidate_review_inbox_v1"]["counts"]["accepted"], 1)
+        self.assertEqual(site_inputs["candidate_review_inbox_v1"]["counts"]["pending"], 0)
+        self.assertEqual(len(site_inputs["candidate_review_decisions_v1"]), 1)
+
+    def test_new_address_can_replace_candidate_review_state(self) -> None:
+        saved = self._saved_project()
+        review_project_candidates(
+            project_store=self.store,
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+            candidate_ids=["building-1"],
+            action="accept",
+            reviewer_id=self.user_id,
+        )
+        new_site_inputs = self._site_inputs()
+        new_site_inputs["address"] = "20525 Margo St, Gretna, NE 68028"
+
+        self.store.save_project_shell(
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+            name="Untitled Project",
+            project_input={"meta": {"site_inputs": new_site_inputs}},
+        )
+
+        shell = self.store.get_project_shell(
+            user_id=self.user_id,
+            project_id=saved["project_id"],
+        )
+        site_inputs = shell["project_input"]["meta"]["site_inputs"]
+        self.assertEqual(site_inputs["address"], "20525 Margo St, Gretna, NE 68028")
+        self.assertEqual(site_inputs["candidate_review_inbox_v1"]["counts"]["pending"], 1)
+        self.assertNotIn("candidate_review_decisions_v1", site_inputs)
+
 
 if __name__ == "__main__":
     unittest.main()

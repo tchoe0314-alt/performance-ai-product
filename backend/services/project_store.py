@@ -108,6 +108,62 @@ def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any]) -> 
     return merged
 
 
+_CANDIDATE_REVIEW_STATE_KEYS = (
+    "candidate_review_inbox_v1",
+    "candidate_review_decisions_v1",
+    "candidate_review_accepted_drafts_v1",
+    "candidate_review_rejected_v1",
+    "source_confidence_map_v1",
+)
+
+
+def _site_inputs(project_input: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(dict(project_input.get("meta") or {}).get("site_inputs") or {})
+
+
+def _candidate_review_progress(site_inputs: Dict[str, Any]) -> int:
+    decisions = list(site_inputs.get("candidate_review_decisions_v1") or [])
+    if decisions:
+        return len(decisions)
+    counts = dict(dict(site_inputs.get("candidate_review_inbox_v1") or {}).get("counts") or {})
+    return int(counts.get("accepted") or 0) + int(counts.get("rejected") or 0)
+
+
+def _preserve_newer_candidate_review_state(
+    existing: Dict[str, Any],
+    incoming: Dict[str, Any],
+    merged: Dict[str, Any],
+) -> Dict[str, Any]:
+    existing_site_inputs = _site_inputs(existing)
+    incoming_site_inputs = _site_inputs(incoming)
+    incoming_address = str(incoming_site_inputs.get("address") or "").strip().lower()
+    existing_address = str(existing_site_inputs.get("address") or "").strip().lower()
+    if incoming_address and existing_address and incoming_address != existing_address:
+        reset_site_inputs = _site_inputs(merged)
+        for key in _CANDIDATE_REVIEW_STATE_KEYS:
+            if key in incoming_site_inputs:
+                reset_site_inputs[key] = incoming_site_inputs[key]
+            else:
+                reset_site_inputs.pop(key, None)
+        reset_meta = dict(merged.get("meta") or {})
+        reset_meta["site_inputs"] = reset_site_inputs
+        reset = dict(merged)
+        reset["meta"] = reset_meta
+        return reset
+    if _candidate_review_progress(existing_site_inputs) <= _candidate_review_progress(incoming_site_inputs):
+        return merged
+
+    protected_site_inputs = _site_inputs(merged)
+    for key in _CANDIDATE_REVIEW_STATE_KEYS:
+        if key in existing_site_inputs:
+            protected_site_inputs[key] = existing_site_inputs[key]
+    protected_meta = dict(merged.get("meta") or {})
+    protected_meta["site_inputs"] = protected_site_inputs
+    protected = dict(merged)
+    protected["meta"] = protected_meta
+    return protected
+
+
 PROJECT_ROLES = ("owner", "admin", "editor", "reviewer", "viewer")
 ROLE_RANK = {role: index for index, role in enumerate(("viewer", "reviewer", "editor", "admin", "owner"))}
 
@@ -495,6 +551,11 @@ class ProjectStore:
                 if incoming_project_input
                 else existing_project_input
             )
+            merged_project_input = _preserve_newer_candidate_review_state(
+                existing_project_input,
+                incoming_project_input,
+                merged_project_input,
+            )
             project_name = _project_name(name, merged_project_input)
             updated_at = _now()
             resolved_organization_id = organization_id or row["organization_id"]
@@ -578,6 +639,11 @@ class ProjectStore:
             incoming_latest_result = existing_latest_result
         if existing_project_input and incoming_project_input:
             incoming_project_input = _merge_project_input(existing_project_input, incoming_project_input)
+            incoming_project_input = _preserve_newer_candidate_review_state(
+                existing_project_input,
+                dict(project_input or {}),
+                incoming_project_input,
+            )
         elif existing_project_input and not incoming_project_input:
             incoming_project_input = existing_project_input
         record = {

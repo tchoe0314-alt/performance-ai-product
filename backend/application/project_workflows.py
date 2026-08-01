@@ -1335,10 +1335,7 @@ def save_project_record(
         payload_metadata = dict(payload_data.get("metadata") or {})
         metadata = dict(existing_shell.get("metadata") or {})
         metadata.update(payload_metadata)
-        project_input = _merge_project_input(
-            dict(existing_shell.get("project_input") or {}),
-            dict(payload_data.get("project_input") or {}),
-        )
+        project_input = dict(payload_data.get("project_input") or {})
         try:
             record = shell_saver(
                 user_id=user_id,
