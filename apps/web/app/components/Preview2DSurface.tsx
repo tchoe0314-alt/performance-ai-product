@@ -87,6 +87,7 @@ export function Preview2DSurface({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           ref={previewImageRef}
+          data-testid="generated-plan-preview"
           src={planPreviewUrl}
           alt="Generated plan preview"
           className={`pointer-events-none h-full w-full object-contain ${
@@ -99,7 +100,9 @@ export function Preview2DSurface({
           Add objects to start building the site. Then click Place and drop them here.
         </div>
       ) : null}
-      {overlayBoundsResolved && previewMode === "2d" ? <Preview2DOverlayStack {...overlayStackProps} /> : null}
+      {overlayBoundsResolved && previewMode === "2d" && !showGeneratedPlan ? (
+        <Preview2DOverlayStack {...overlayStackProps} />
+      ) : null}
       {cadWindowSelect ? (
         <div
           data-testid="cad-window-select-marquee"

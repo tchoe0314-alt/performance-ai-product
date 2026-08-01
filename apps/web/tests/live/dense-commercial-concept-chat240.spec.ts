@@ -128,14 +128,7 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
   await expect(page.locator("body")).not.toContainText(/site type or land use|which systems to include/i);
 
   const actionStrip = page.getByTestId("dense-concept-action-strip");
-  await expect(actionStrip).toBeVisible();
-  await expect(actionStrip).toContainText(/editable draft objects/i);
-  await expect(actionStrip.getByRole("button", { name: "Generate" })).toBeVisible();
-  await expect(actionStrip.getByRole("button", { name: "Deliver" })).toBeVisible();
-  await actionStrip.getByRole("button", { name: "High quality" }).click();
-  await actionStrip.getByRole("button", { name: "Edit objects" }).click();
-  await expect(page.getByTestId("object-manager-panel")).toContainText("Central Amenity Green");
-  await expect(actionStrip).toBeVisible();
+  await expect(actionStrip).toHaveCount(0);
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const objectPanel = page.getByTestId("object-manager-panel");

@@ -134,7 +134,7 @@ export function WorkspaceCanvasArea({
             />
           ) : null}
           <DenseConceptActionStrip
-            active={denseConceptActive}
+            active={denseConceptActive && previewQuality === "standard"}
             previewMode={previewMode}
             rightRailCollapsed={rightRailCollapsed}
             objectCount={denseConceptObjectCount}
