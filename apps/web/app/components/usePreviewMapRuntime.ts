@@ -128,8 +128,8 @@ export function usePreviewMapRuntime({
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [-95.9345, 41.2565],
       zoom: 16,
-      pitch: mapPitch,
-      bearing: mapBearing,
+      pitch: 0,
+      bearing: 0,
       attributionControl: false,
     });
     mapRef.current = map;
@@ -157,9 +157,6 @@ export function usePreviewMapRuntime({
             maxzoom: 14,
           });
         }
-        if (mapPitch > 0) {
-          map.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
-        }
       } catch (error) {
         setMapError(error instanceof Error ? error.message : "Map terrain setup failed");
       }
@@ -172,9 +169,10 @@ export function usePreviewMapRuntime({
       if (mapRef.current !== map) return;
       map.remove();
       mapRef.current = null;
+      lastFittedSiteKeyRef.current = "";
       setMapLoaded(false);
     };
-  }, [mapAvailable, mapBearing, mapContainerRef, mapOverlayEnabled, mapPitch, mapRef, mapboxToken, setMapError, setMapLoaded, setMapRevision]);
+  }, [mapAvailable, mapContainerRef, mapOverlayEnabled, mapRef, mapboxToken, setMapError, setMapLoaded, setMapRevision]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;

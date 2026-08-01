@@ -376,6 +376,35 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
         { timeout: 30_000 },
       )
       .toBeCloseTo(-96.8, 3);
+
+    const canvas = page.getByTestId("workspace-canvas-shell");
+    await canvas.getByTestId("preview-quality-high").click();
+    await expect(page.getByText("Creating AI realism", { exact: true })).toHaveCount(0);
+    await canvas.getByTestId("preview-mode-3d").click();
+    await expect(canvas).toContainText(/3D Model|3D geometry not ready yet/i);
+    await canvas.getByTestId("preview-mode-2d").click();
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const viewport = (window as unknown as Record<string, unknown>).__civoraMapViewport;
+            if (!viewport || typeof viewport !== "object") return null;
+            return Number((viewport as { lat?: unknown }).lat);
+          }),
+        { timeout: 30_000 },
+      )
+      .toBeCloseTo(32.8, 3);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const viewport = (window as unknown as Record<string, unknown>).__civoraMapViewport;
+            if (!viewport || typeof viewport !== "object") return null;
+            return Number((viewport as { lng?: unknown }).lng);
+          }),
+        { timeout: 30_000 },
+      )
+      .toBeCloseTo(-96.8, 3);
     await expect(page.getByTestId("local-site-bounds-overlay")).toHaveCount(0);
   } else {
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Local site coordinates");

@@ -35,18 +35,18 @@ export function useDashboardPreviewModeState({
       }
       if (value === "high") {
         updateProjectStatus({
-          state: "working",
+          state: "ready",
           area: "ai realism",
-          title: "Creating AI realism",
-          detail: "Civora is switching to high-quality visual preview mode.",
-          nextAction: "Review the preview panel for provider, object, or layout blockers.",
+          title: "Plan Sheet view on",
+          detail: "High-quality visual styling is on. AI Visualization remains separate and off until selected.",
+          nextAction: "Review the plan view or turn on AI Visualization for a visual concept.",
         });
       } else {
         updateProjectStatus({
           state: "ready",
           area: "ai realism",
-          title: "AI realism off",
-          detail: "Returned to Standard preview quality.",
+          title: "Draft view on",
+          detail: "Returned to the standard drafting preview.",
           nextAction: "Continue drafting or open Generate when ready.",
         });
       }
