@@ -413,6 +413,7 @@ class ArtifactPayload(BaseModel):
     render_labels: Optional[bool] = None
     preview_layers: Optional[List[str]] = None
     preview_mode: Optional[str] = None
+    export_scope: str = "construction"
 
 
 class QueueArtifactExportPayload(ArtifactPayload):
@@ -2425,6 +2426,7 @@ def export_dxf(
         project_id=payload.project_id,
         result_data=result_data,
         filename_stem=payload.filename_stem,
+        export_scope=payload.export_scope,
     )
     return FileResponse(
         path,

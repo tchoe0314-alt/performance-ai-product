@@ -4076,6 +4076,8 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         if safe_text(item)
     ]
     release_review = safe_dict(meta.get("release_review"))
+    export_scope = safe_text(meta.get("export_scope"), "construction").lower()
+    review_export = export_scope == "review"
     release_status = safe_text(release_review.get("release_status") or meta.get("release_status"), "").lower()
     release_ready_value = release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready")
     release_blockers = _release_truth_blockers(plan, meta, release_review)
@@ -4099,7 +4101,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     if construction_required and construction_package and construction_package.get("release_allowed") is False:
         release_blockers.append("construction_package_blocked")
     release_blockers = list(dict.fromkeys(item for item in release_blockers if item))
-    release_output_blocking = bool(release_blockers)
+    release_output_blocking = bool(release_blockers) and not review_export
     warnings: List[str] = []
     if canonical_profiles and not any(name.startswith("PROFILE") for name in layout_names):
         warnings.append("Canonical profiles exist but no profile layouts were exported.")
@@ -4137,20 +4139,40 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         warnings.append("Export is blocked because one or more canonical outputs are dirty, stale, invalid, or cache-only.")
     if release_output_blocking:
         warnings.append("Export is blocked because the final plan release review is not production-ready.")
-    concept_output_blocking = bool(concept_engineering_sources)
+    elif review_export and release_blockers:
+        warnings.append("Review export includes unresolved release findings; it is not a construction deliverable.")
+    concept_output_blocking = bool(concept_engineering_sources) and not review_export
     export_blocked = stale_output_blocking or release_output_blocking or concept_output_blocking
+    review_findings = list(
+        dict.fromkeys(
+            release_blockers
+            + (["concept_or_fallback_engineering_sources"] if concept_engineering_sources else [])
+        )
+    )
     blocked_reasons = list(
         dict.fromkeys(
             stale_blocking_reasons
-            + release_blockers
+            + (release_blockers if release_output_blocking else [])
             + (["concept_or_fallback_engineering_sources"] if concept_output_blocking else [])
         )
     )
     blocked_reason_details = blocker_explanations(blocked_reasons)
     release_blocker_details = blocker_explanations(release_blockers)
-    production_export_ready = not warnings and canonical_id_traceability_ready and not export_blocked
+    production_export_ready = (
+        not review_export
+        and not warnings
+        and canonical_id_traceability_ready
+        and not export_blocked
+    )
     return {
         **model_refs,
+        "export_scope": export_scope,
+        "review_only": review_export,
+        "review_export_ready": review_export and not stale_output_blocking,
+        "review_findings": review_findings,
+        "construction_release_allowed": (
+            not review_export and construction_required and production_export_ready
+        ),
         "success": not warnings,
         "ready": not warnings,
         "production_export_ready": production_export_ready,

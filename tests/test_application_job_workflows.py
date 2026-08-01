@@ -355,6 +355,46 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(result["job_progress"]["progress"], 100)
         self.assertGreaterEqual(len(updates), 3)
 
+    def test_dxf_export_job_runner_passes_explicit_review_scope(self):
+        captured = {}
+
+        def result_from_payload(**kwargs):
+            return {"final_plan": {"project_name": "Review DXF", "meta": {}}}
+
+        class ArtifactService:
+            pass
+
+        class PathLike:
+            name = "review-export.dxf"
+
+        def export_dxf_artifact(**kwargs):
+            captured.update(kwargs)
+            return PathLike()
+
+        runner = build_artifact_export_job_runner(
+            artifact_service=ArtifactService(),
+            project_store=FakeProjectStore(),
+            update_job_progress=lambda *args, **kwargs: None,
+            result_from_payload=result_from_payload,
+            export_dxf_artifact=export_dxf_artifact,
+            export_report_artifact=lambda **kwargs: PathLike(),
+            export_kind="dxf",
+        )
+
+        result = runner(
+            {
+                "job_id": "job_review_dxf",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"filename_stem": "review-export", "export_scope": "review"},
+            }
+        )
+
+        self.assertEqual(captured["export_scope"], "review")
+        self.assertEqual(result["artifact"]["export_scope"], "review")
+        self.assertTrue(result["artifact"]["review_only"])
+        self.assertFalse(result["artifact"]["construction_release_allowed"])
+
     def test_retry_existing_job_requeues_from_failed_job(self):
         queue = FakeJobQueue()
         response = retry_existing_job(

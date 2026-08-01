@@ -2688,6 +2688,7 @@ def build_artifact_export_job_runner(
         user_id = safe_str(job.get("user_id"))
         project_id = safe_str(job.get("project_id")) or payload.get("project_id")
         filename_stem = payload.get("filename_stem")
+        export_scope = safe_str(payload.get("export_scope"), "construction").lower()
         if job_id:
             update_job_progress(
                 job_id,
@@ -2716,6 +2717,7 @@ def build_artifact_export_job_runner(
                 project_id=project_id,
                 result_data=result_data,
                 filename_stem=filename_stem,
+                export_scope=export_scope,
             )
         else:
             path = export_report_artifact(
@@ -2741,6 +2743,7 @@ def build_artifact_export_job_runner(
                 "download_path": f"/api/artifacts/{path.name}",
                 "review_only": True,
                 "construction_release_allowed": False,
+                "export_scope": export_scope if kind == "dxf" else "review",
             },
             "job_progress": {
                 "stage": f"{kind.upper()} Export Ready",

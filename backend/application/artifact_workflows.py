@@ -1073,6 +1073,7 @@ def export_dxf_artifact(
     project_id: Optional[str],
     result_data: Dict[str, Any],
     filename_stem: Optional[str] = None,
+    export_scope: str = "construction",
 ) -> Path:
     result_data = _enrich_result_data_from_project(
         result_data,
@@ -1082,7 +1083,15 @@ def export_dxf_artifact(
     )
     final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
     final_meta = dict(final_plan.get("meta") or {})
-    if final_plan_requires_construction_release(final_plan):
+    normalized_export_scope = str(export_scope or "construction").strip().lower()
+    if normalized_export_scope not in {"review", "construction"}:
+        raise HTTPException(status_code=400, detail="Unsupported DXF export scope.")
+    final_meta["export_scope"] = normalized_export_scope
+    if normalized_export_scope == "review":
+        final_meta["review_only"] = True
+        final_meta["construction_release_allowed"] = False
+    final_plan["meta"] = final_meta
+    if normalized_export_scope == "construction" and final_plan_requires_construction_release(final_plan):
         construction_blockers = construction_release_blockers_from_meta(
             final_meta,
             requires_construction_release=True,
@@ -1123,7 +1132,7 @@ def export_dxf_artifact(
         raise HTTPException(
             status_code=409,
             detail=(
-                "DXF export is blocked because the final plan is not production-export-ready: "
+                f"DXF {normalized_export_scope} export is blocked because the model contains unsafe or stale output: "
                 + ", ".join(blocked_reasons or ["export_audit_blocked"])
             ),
         )

@@ -1843,6 +1843,69 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertIn("construction_readiness_missing", str(ctx.exception.detail))
         self.assertIsNone(service.dxf_export)
 
+    def test_export_dxf_artifact_allows_explicit_review_scope_with_release_findings(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        result_data = {
+            "final_plan": {
+                "project_name": "Review Exchange DXF",
+                "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [1, 0]]}],
+                "meta": {
+                    "construction_readiness": {"ready": False},
+                    "construction_package": {"release_allowed": False},
+                },
+            }
+        }
+
+        path = export_dxf_artifact(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data=result_data,
+            filename_stem="review-exchange",
+            export_scope="review",
+        )
+
+        self.assertEqual(path.name, "unit-plan.dxf")
+        exported_meta = service.dxf_export["final_plan"]["meta"]
+        audit = exported_meta["export_audit"]
+        self.assertEqual(audit["export_scope"], "review")
+        self.assertTrue(audit["review_only"])
+        self.assertTrue(audit["review_export_ready"])
+        self.assertFalse(audit["construction_release_allowed"])
+        self.assertFalse(audit["production_export_ready"])
+        self.assertFalse(audit["export_blocked"])
+        self.assertIn("construction_readiness_blocked", audit["review_findings"])
+
+    def test_export_dxf_artifact_review_scope_still_blocks_stale_model_output(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        result_data = {
+            "final_plan": {
+                "project_name": "Stale Review DXF",
+                "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [1, 0]]}],
+                "meta": {
+                    "system_dirty_state": {"grading": {"state": "stale"}},
+                },
+            }
+        }
+
+        with self.assertRaises(HTTPException) as ctx:
+            export_dxf_artifact(
+                artifact_service=service,
+                project_store=store,
+                user_id="u1",
+                project_id="p1",
+                result_data=result_data,
+                filename_stem="stale-review",
+                export_scope="review",
+            )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("stale_output_grading", str(ctx.exception.detail))
+        self.assertIsNone(service.dxf_export)
+
     def test_export_dxf_artifact_blocks_release_review_missing_deliverables(self):
         service = FakeArtifactService()
         store = FakeProjectStore()

@@ -197,11 +197,13 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     failureLabel,
     queuedLabel,
     chatLabel,
+    exportScope,
   }: {
     endpoint: string;
     failureLabel: string;
     queuedLabel: string;
     chatLabel: string;
+    exportScope?: "review" | "construction";
   }) => {
     const blockReason = getExportBlockReason();
     if (blockReason) {
@@ -218,7 +220,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     try {
       const queued = await postJson<{ job: JobSummary }>(
         endpoint,
-        artifactPayload,
+        exportScope ? { ...artifactPayload, export_scope: exportScope } : artifactPayload,
         { token },
       );
       setActiveJobId(queued.job.job_id);
@@ -244,6 +246,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       failureLabel: "DXF export",
       queuedLabel: "DXF review export",
       chatLabel: "DXF review export",
+      exportScope: "review",
     });
 
   const handleExportReport = () =>
