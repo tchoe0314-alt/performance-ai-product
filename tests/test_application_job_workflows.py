@@ -1024,7 +1024,14 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                 "job_type": "orchestrate",
                 "user_id": "u1",
                 "project_id": "p1",
-                "payload": {"prompt_text": "run"},
+                "payload": {
+                    "prompt_text": "run",
+                    "meta": {
+                        "orchestrator_meta": {
+                            "runtime_approved_stages": ["storm_pipes"],
+                        }
+                    },
+                },
             }
         )
 
@@ -1035,6 +1042,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             dict(orchestrator_meta.get("runtime_resume") or {}).get("stage_statuses"),
             {"layout": "complete"},
         )
+        self.assertEqual(seen_meta.get("runtime_approved_stages"), ["storm_pipes"])
 
     def test_build_orchestrate_job_runner_restores_runtime_continue_from_final_plan_checkpoint(self):
         yielded_final_plan = {

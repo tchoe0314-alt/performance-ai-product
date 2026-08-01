@@ -1358,6 +1358,17 @@ def build_orchestrate_job_runner(
             requested_batch_limit = 1
         orchestrator_meta["runtime_phase_batch_limit"] = requested_batch_limit
         run_meta["orchestrator_meta"] = orchestrator_meta
+        approved_stages = [
+            str(item).strip()
+            for item in list(orchestrator_meta.get("runtime_approved_stages") or [])
+            if str(item).strip()
+        ]
+        if approved_stages:
+            # PlannerOrchestratorRequest.meta is wrapped once more as
+            # parsed.meta.orchestrator_meta. Mirror runtime controls at this
+            # level so an approved no-output checkpoint is not lost inside a
+            # nested orchestrator_meta object.
+            run_meta["runtime_approved_stages"] = approved_stages[-20:]
         run_meta["runtime_phase_batch_limit"] = requested_batch_limit
         run_payload["meta"] = run_meta
         run_signature = inspect.signature(run_orchestration)
