@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import type { JobSummary } from "../types";
 
@@ -9,8 +9,8 @@ type UseJobPollingOptions = {
   activeJobId: string;
   visibleActiveJob: JobSummary | null;
   visibleActiveJobStale: boolean;
-  onLoadJob: (jobId: string) => void;
-  onRefreshJobs: (token: string, options?: { suppressError?: boolean; force?: boolean }) => void;
+  onLoadJob: (jobId: string) => Promise<void> | void;
+  onRefreshJobs: (token: string, options?: { suppressError?: boolean; force?: boolean }) => Promise<void> | void;
   setJobClockMs: (value: number) => void;
   setActiveJobId: (value: string) => void;
   currentProjectActiveJob: JobSummary | null;
@@ -31,16 +31,44 @@ export default function useJobPolling({
   onStatusMessage,
   lastStaleJobWarningRef,
 }: UseJobPollingOptions) {
+  const pollInFlightRef = useRef(false);
+  const loadJobRef = useRef(onLoadJob);
+  const refreshJobsRef = useRef(onRefreshJobs);
+
+  useEffect(() => {
+    loadJobRef.current = onLoadJob;
+  }, [onLoadJob]);
+
+  useEffect(() => {
+    refreshJobsRef.current = onRefreshJobs;
+  }, [onRefreshJobs]);
+
   useEffect(() => {
     if (!token || !activeJobId) return;
-    onLoadJob(activeJobId);
-    onRefreshJobs(token, { suppressError: true, force: true });
+    const normalizedStatus = String(visibleActiveJob?.status || "").toLowerCase();
+    if (normalizedStatus && !["queued", "running", "cancelling"].includes(normalizedStatus)) {
+      return;
+    }
+
+    const poll = async () => {
+      if (pollInFlightRef.current) return;
+      pollInFlightRef.current = true;
+      try {
+        await Promise.allSettled([
+          Promise.resolve(loadJobRef.current(activeJobId)),
+          Promise.resolve(refreshJobsRef.current(token, { suppressError: true, force: true })),
+        ]);
+      } finally {
+        pollInFlightRef.current = false;
+      }
+    };
+
+    void poll();
     const interval = window.setInterval(() => {
-      onLoadJob(activeJobId);
-      onRefreshJobs(token, { suppressError: true, force: true });
-    }, 3000);
+      void poll();
+    }, 4000);
     return () => window.clearInterval(interval);
-  }, [token, activeJobId, onLoadJob, onRefreshJobs]);
+  }, [token, activeJobId, visibleActiveJob?.status]);
 
   useEffect(() => {
     if (!currentProjectActiveJob) {

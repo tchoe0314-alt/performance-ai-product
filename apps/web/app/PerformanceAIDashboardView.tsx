@@ -3553,14 +3553,9 @@ function PerformanceAIDashboardView({
       name: currentProject?.name || siteName || "Untitled Project",
     } as ProjectRecord;
 
-    loadProjectResultInBackground(targetProject);
-    const interval = window.setInterval(() => {
-      loadProjectResultInBackground(targetProject);
-    }, 2500);
-    return () => window.clearInterval(interval);
+    loadProjectResultInBackgroundRef.current?.(targetProject);
   }, [
     token,
-    planPreviewUrl,
     visibleActiveJob?.status,
     visibleActiveJob?.project_id,
     currentProject?.project_id,
