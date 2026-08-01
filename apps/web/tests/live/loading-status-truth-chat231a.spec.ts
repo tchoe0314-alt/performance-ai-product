@@ -159,6 +159,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByTestId("shortcuts-help-overlay")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("shortcuts-help-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("civora-command-input")).not.toBeFocused();
 
     await page.keyboard.press("G");
     await expect(page.getByTestId("project-status-summary")).toContainText(/Ready/i);

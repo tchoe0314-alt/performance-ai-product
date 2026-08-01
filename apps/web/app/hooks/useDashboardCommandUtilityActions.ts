@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import type { RefObject } from "react";
 
 import type { ChatMessage } from "../types";
@@ -59,25 +59,69 @@ export function useDashboardCommandUtilityActions({
   setWorkspaceChromeMinimized,
   updateProjectStatus,
 }: UseDashboardCommandUtilityActionsInput) {
+  const commandFocusRequestRef = useRef(0);
+
   const focusCommandInput = useCallback(() => {
+    const focusRequestId = commandFocusRequestRef.current + 1;
+    commandFocusRequestRef.current = focusRequestId;
     setShortcutsOverlayOpen(false);
     setCommandBarExpanded(true);
     setWorkspaceChromeMinimized(true);
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
     setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
+    let focusCancelled = false;
+    let selectedOnFocus = false;
+    let stableFocusFrames = 0;
+    const cleanupFocusListeners = () => {
+      window.removeEventListener("keydown", cancelFocusOnEscape, true);
+      window.removeEventListener("pointerdown", cancelFocusOnOutsidePointer, true);
+    };
+    const cancelFocusOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      focusCancelled = true;
+      cleanupFocusListeners();
+    };
+    const cancelFocusOnOutsidePointer = (event: PointerEvent) => {
+      const input = commandInputRef.current;
+      if (input && event.target === input) return;
+      focusCancelled = true;
+      cleanupFocusListeners();
+    };
+    window.addEventListener("keydown", cancelFocusOnEscape, true);
+    window.addEventListener("pointerdown", cancelFocusOnOutsidePointer, true);
     const focusMountedInput = (attempt = 0) => {
+      if (focusCancelled || commandFocusRequestRef.current !== focusRequestId) {
+        cleanupFocusListeners();
+        return;
+      }
       const referencedInput = commandInputRef.current;
       const input =
         (referencedInput?.isConnected ? referencedInput : null) ??
         (document.querySelector(
-          '[data-testid="civora-command-input"], textarea[placeholder="Ask Civora..."], textarea[placeholder^="Message Civora"]',
+          '[data-testid="civora-command-input"]',
         ) as HTMLTextAreaElement | null);
-      if (!input && attempt < 4) {
+      if (input) {
+        if (document.activeElement !== input) {
+          input.focus({ preventScroll: true });
+          stableFocusFrames = 0;
+        } else {
+          stableFocusFrames += 1;
+        }
+        if (!selectedOnFocus) {
+          input.select();
+          selectedOnFocus = true;
+        }
+        if (stableFocusFrames >= 3) {
+          cleanupFocusListeners();
+          return;
+        }
+      }
+      if (attempt < 24) {
         window.requestAnimationFrame(() => focusMountedInput(attempt + 1));
         return;
       }
-      if (!input) {
+      if (!input || document.activeElement !== input) {
         updateProjectStatus({
           state: "blocked",
           area: "chat",
@@ -85,12 +129,10 @@ export function useDashboardCommandUtilityActions({
           detail: "Command input is not mounted.",
           nextAction: "Open the chat panel or return to the canvas, then try / again.",
         });
-        return;
       }
-      input.focus();
-      input.select();
+      cleanupFocusListeners();
     };
-    window.requestAnimationFrame(() => focusMountedInput());
+    focusMountedInput();
   }, [
     commandInputRef,
     setCadToolRequest,
@@ -120,6 +162,16 @@ export function useDashboardCommandUtilityActions({
   }, [appendChatMessage, updateProjectStatus]);
 
   const cancelActiveCommandState = useCallback(() => {
+    commandFocusRequestRef.current += 1;
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLElement &&
+      (activeElement.tagName === "INPUT" ||
+        activeElement.tagName === "TEXTAREA" ||
+        activeElement.isContentEditable)
+    ) {
+      activeElement.blur();
+    }
     setShortcutsOverlayOpen(false);
     setPlacementModeEnabled(false);
     setActivePlacementId(null);

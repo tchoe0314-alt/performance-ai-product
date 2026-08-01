@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { Loader2, MessageSquareText, SendHorizonal } from "lucide-react";
 
 import type { PlanToolMode } from "../types";
@@ -65,21 +64,6 @@ export default function PinnedCommandBar({
         ["View", commandContext.view],
       ].filter(([, value]) => Boolean(value))
     : [];
-
-  useEffect(() => {
-    if (isWorking) return;
-    const focusInput = () => {
-      const input = commandInputRef?.current;
-      if (!input) return;
-      input.focus();
-      input.select();
-    };
-    const frame = window.requestAnimationFrame(() => {
-      focusInput();
-      window.setTimeout(focusInput, 0);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [commandInputRef, isWorking]);
 
   return (
     <div

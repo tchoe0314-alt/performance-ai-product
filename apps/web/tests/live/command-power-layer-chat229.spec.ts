@@ -119,6 +119,11 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(panel).toContainText("Object Manager");
     await expect(panel).not.toContainText(/construction-ready|approved for construction/i);
 
+    const chatInput = page.getByRole("textbox", {
+      name: "Message Civora AI with what you want to create or change...",
+    });
+    await chatInput.focus();
+    await expect(chatInput).toBeFocused();
     await runCommand(page, "what am I looking at?");
     await page.getByRole("button", { name: "Open Civora chat history" }).click();
     await expect(panel).toContainText("The preview is a review canvas", { timeout: 5_000 });
