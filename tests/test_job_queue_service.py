@@ -1015,6 +1015,10 @@ class JobQueueServiceTest(unittest.TestCase):
         queued_detail = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
         self.assertIsNotNone(queued_detail)
         self.assertEqual(
+            queued_detail["payload"]["meta"]["orchestrator_meta"]["runtime_approved_stages"],
+            ["layout"],
+        )
+        self.assertEqual(
             queued_detail["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"],
             "layout",
         )

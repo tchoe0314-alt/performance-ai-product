@@ -9681,6 +9681,11 @@ def _run_model_first_workflow(
         parsed_meta = safe_dict(parsed.get("meta"))
         orchestrator_meta = safe_dict(parsed_meta.get("orchestrator_meta"))
         resume_payload = safe_dict(orchestrator_meta.get("runtime_resume"))
+        approved_stage_names = {
+            safe_str(item)
+            for item in safe_list(orchestrator_meta.get("runtime_approved_stages"))
+            if safe_str(item)
+        }
         checkpoint_plan = safe_dict(resume_payload.get("final_plan"))
         checkpoint_meta = safe_dict(checkpoint_plan.get("meta"))
         stage_statuses = safe_dict(
@@ -9694,7 +9699,10 @@ def _run_model_first_workflow(
         resumed: set[str] = set()
 
         def _stage_is_resumable(stage_name: str) -> bool:
-            return lower_text(stage_statuses.get(stage_name)) in resumable_statuses
+            return (
+                lower_text(stage_statuses.get(stage_name)) in resumable_statuses
+                or stage_name in approved_stage_names
+            )
 
         def _record_resumed_stage(stage_name: str, message: str) -> None:
             manager.mark_system_complete(stage_name, message)
@@ -9703,6 +9711,7 @@ def _run_model_first_workflow(
                 True,
                 message,
                 resumed_from_checkpoint=True,
+                approved_checkpoint=stage_name in approved_stage_names,
                 completeness=lower_text(stage_statuses.get(stage_name)) or "complete",
             )
             resumed.add(stage_name)

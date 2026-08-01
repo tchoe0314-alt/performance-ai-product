@@ -560,10 +560,24 @@ class JobQueueService:
         result = dict(record.get("result") or {})
         checkpoint = dict(dict(result.get("metadata") or {}).get("runtime_phase_checkpoint") or {})
         stage_name = str(checkpoint.get("stage_name") or "").strip()
+        payload = dict(record.get("payload") or {})
+        payload_meta = dict(payload.get("meta") or {})
+        orchestrator_meta = dict(payload_meta.get("orchestrator_meta") or {})
+        approved_stages = [
+            str(item).strip()
+            for item in list(orchestrator_meta.get("runtime_approved_stages") or [])
+            if str(item).strip()
+        ]
+        if stage_name and stage_name not in approved_stages:
+            approved_stages.append(stage_name)
+        orchestrator_meta["runtime_approved_stages"] = approved_stages[-20:]
+        payload_meta["orchestrator_meta"] = orchestrator_meta
+        payload["meta"] = payload_meta
         detail = (
             f"Approval received. Queued the next engineering phase after {stage_name or 'the saved'} checkpoint."
         )
         result.update(_job_progress_payload("Queued Next Phase", detail, 64))
+        self._update_job_payload(job_id, payload)
         self._update_job_state(job_id, status="queued", result=result, error=None)
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
