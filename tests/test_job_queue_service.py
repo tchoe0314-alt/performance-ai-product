@@ -22,8 +22,16 @@ class JobQueueServiceTest(unittest.TestCase):
         self.queue = JobQueueService(self.db, heartbeat_interval_sec=0.5, resume_poll_interval_sec=0.5)
 
     def tearDown(self) -> None:
-        self.queue.db = Database(Path(tempfile.gettempdir()) / "civora_job_queue_teardown.db")
+        self.queue.shutdown()
         self.tmpdir.cleanup()
+
+    def test_shutdown_stops_in_process_workers(self):
+        self.assertTrue(any(worker.is_alive() for worker in self.queue._workers))
+
+        self.queue.shutdown()
+
+        self.assertTrue(self.queue._shutdown_event.is_set())
+        self.assertFalse(any(worker.is_alive() for worker in self.queue._workers))
 
     def test_list_jobs_returns_full_records(self):
         ProjectStore(self.db).save_project(

@@ -96,6 +96,7 @@ class JobQueueService:
         self._queue: Queue[str] = Queue()
         self._handlers: Dict[str, JobRunner] = {}
         self._lock = threading.Lock()
+        self._shutdown_event = threading.Event()
         raw_worker_count = str(os.getenv("PERFORMANCE_AI_JOB_WORKERS") or "").strip()
         if worker_count is None:
             try:
@@ -132,7 +133,7 @@ class JobQueueService:
             return default
 
     def _ensure_workers_alive(self) -> None:
-        if self._worker_count <= 0:
+        if self._worker_count <= 0 or self._shutdown_event.is_set():
             return
         with self._lock:
             self._workers = [worker for worker in self._workers if worker.is_alive()]
@@ -145,6 +146,16 @@ class JobQueueService:
                 )
                 worker.start()
                 self._workers.append(worker)
+
+    def shutdown(self, *, timeout_seconds: float = 2.0) -> None:
+        """Stop in-process workers before their database or process context is torn down."""
+
+        self._shutdown_event.set()
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        for worker in list(self._workers):
+            remaining = max(0.0, deadline - time.monotonic())
+            worker.join(timeout=remaining)
+        self._workers = [worker for worker in self._workers if worker.is_alive()]
 
     def register_handler(self, job_type: str, runner: JobRunner) -> None:
         self._handlers[job_type] = runner
@@ -1076,10 +1087,12 @@ class JobQueueService:
         }
 
     def _run_worker(self) -> None:
-        while True:
+        while not self._shutdown_event.is_set():
             try:
                 job_id = self._queue.get(timeout=0.5)
             except Empty:
+                if self._shutdown_event.is_set():
+                    break
                 if not self._resume_pending_jobs:
                     continue
                 if self._resume_poll_interval_sec <= 0:
