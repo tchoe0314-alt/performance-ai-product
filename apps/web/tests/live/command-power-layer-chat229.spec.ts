@@ -52,6 +52,11 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("command-context-chips")).toContainText(/Layer/i);
     await expect(page.getByTestId("command-context-chips")).toContainText(/View/i);
 
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("civora-command-input")).not.toBeFocused();
+    await page.keyboard.press("G");
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
+
     await page.locator("body").click({ position: { x: 20, y: 20 } });
     await page.keyboard.press("?");
     await expect(page.getByTestId("shortcuts-help-overlay")).toBeVisible();

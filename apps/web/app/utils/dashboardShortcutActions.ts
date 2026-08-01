@@ -82,6 +82,15 @@ export function runDashboardCancelActiveTool({
   setCadToolRequestSelect: () => void;
   updateProjectStatus: UpdateProjectStatus;
 }) {
+  const activeElement = document.activeElement;
+  if (
+    activeElement instanceof HTMLElement &&
+    (activeElement.tagName === "INPUT" ||
+      activeElement.tagName === "TEXTAREA" ||
+      activeElement.isContentEditable)
+  ) {
+    activeElement.blur();
+  }
   if (shortcutsOverlayOpen) {
     setShortcutsOverlayOpen(false);
     return;
