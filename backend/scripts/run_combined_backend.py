@@ -8,26 +8,25 @@ import time
 from collections.abc import Mapping
 
 
-DEFAULT_EXTERNAL_JOB_TYPES = ("orchestrate", "source_context")
-
-
-def _csv_values(raw: str | None) -> list[str]:
-    return [item.strip() for item in str(raw or "").split(",") if item.strip()]
+EXTERNAL_JOB_TYPES = (
+    "drainage_only",
+    "export_dxf",
+    "export_report",
+    "orchestrate",
+    "plan_pdf_analysis",
+    "source_context",
+)
 
 
 def build_process_environments(
     source: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     base = dict(source or os.environ)
-    external_types = _csv_values(base.get("CIVORA_COMBINED_EXTERNAL_JOB_TYPES"))
-    if not external_types:
-        external_types = list(DEFAULT_EXTERNAL_JOB_TYPES)
-
     worker_env = dict(base)
     worker_env.update(
         {
             "CIVORA_PROCESS_ROLE": "worker",
-            "CIVORA_ENABLED_JOB_TYPES": ",".join(external_types),
+            "CIVORA_ENABLED_JOB_TYPES": ",".join(EXTERNAL_JOB_TYPES),
             "CIVORA_DISABLED_JOB_TYPES": "",
             "CIVORA_WORKER_HEALTH_ENABLED": "false",
             "PERFORMANCE_AI_JOB_WORKERS": str(base.get("CIVORA_EXTERNAL_JOB_WORKERS") or "1"),
@@ -38,17 +37,15 @@ def build_process_environments(
         }
     )
 
-    web_disabled = list(dict.fromkeys(_csv_values(base.get("CIVORA_DISABLED_JOB_TYPES")) + external_types))
     web_env = dict(base)
     web_env.update(
         {
-            "CIVORA_PROCESS_ROLE": "combined",
+            "CIVORA_PROCESS_ROLE": "web",
             "CIVORA_DEDICATED_WORKER_ENABLED": "true",
-            "CIVORA_DISABLED_JOB_TYPES": ",".join(web_disabled),
+            "PERFORMANCE_AI_JOB_WORKERS": "0",
         }
     )
     web_env.pop("CIVORA_ENABLED_JOB_TYPES", None)
-    web_env.setdefault("PERFORMANCE_AI_JOB_WORKERS", "1")
     return web_env, worker_env
 
 
