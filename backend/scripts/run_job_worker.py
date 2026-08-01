@@ -72,18 +72,26 @@ def main() -> int:
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     register_job_handlers()
-    health_server = build_health_server(JOB_QUEUE)
-    health_thread = threading.Thread(
-        target=health_server.serve_forever,
-        name="civora-worker-health",
-        daemon=True,
-    )
-    health_thread.start()
+    health_enabled = str(os.getenv("CIVORA_WORKER_HEALTH_ENABLED") or "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    health_server = build_health_server(JOB_QUEUE) if health_enabled else None
+    health_thread = None
+    if health_server is not None:
+        health_thread = threading.Thread(
+            target=health_server.serve_forever,
+            name="civora-worker-health",
+            daemon=True,
+        )
+        health_thread.start()
     print(
         {
             "event": "civora_job_worker_ready",
             "registered_handlers": JOB_QUEUE.runtime_stats().get("registered_handlers"),
-            "health_port": health_server.server_port,
+            "health_port": health_server.server_port if health_server is not None else None,
         },
         flush=True,
     )
@@ -91,9 +99,11 @@ def main() -> int:
         while not stopping:
             time.sleep(1)
     finally:
-        health_server.shutdown()
-        health_server.server_close()
-        health_thread.join(timeout=3)
+        if health_server is not None:
+            health_server.shutdown()
+            health_server.server_close()
+        if health_thread is not None:
+            health_thread.join(timeout=3)
     print({"event": "civora_job_worker_stopped"}, flush=True)
     return 0
 

@@ -283,6 +283,61 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["result"]["processed_by"], "dedicated_worker")
         worker_queue._resume_pending_jobs = False
 
+    def test_web_queue_continuation_waits_for_external_worker_when_handler_is_disabled(self):
+        web_queue = JobQueueService(self.db, worker_count=1)
+        created = web_queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate_external_test",
+            payload={"prompt_text": "review checkpoint"},
+        )
+        checkpoint_result = {
+            "metadata": {
+                "runtime_phase_checkpoint": {
+                    "stage_name": "grading",
+                    "message": "Grading checkpoint saved.",
+                }
+            },
+            "job_progress": {
+                "stage": "Awaiting Approval",
+                "detail": "Review grading before continuing.",
+                "progress": 60,
+            },
+        }
+        web_queue._update_job_state(
+            created["job_id"],
+            status="awaiting_approval",
+            result=checkpoint_result,
+            error=None,
+        )
+
+        continued = web_queue.continue_job(user_id=self.user_id, job_id=created["job_id"])
+        self.assertIsNotNone(continued)
+        self.assertEqual(continued["status"], "queued")
+        self.assertEqual(web_queue._queue.qsize(), 0)
+
+        worker_queue = JobQueueService(
+            self.db,
+            worker_count=1,
+            resume_poll_interval_sec=0.05,
+        )
+        worker_queue.register_handler(
+            "orchestrate_external_test",
+            lambda job: {"success": True, "processed_by": "isolated_worker", "job_id": job["job_id"]},
+        )
+
+        deadline = time.time() + 3.0
+        record = None
+        while time.time() < deadline:
+            record = web_queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(record["result"]["processed_by"], "isolated_worker")
+        worker_queue._resume_pending_jobs = False
+
     def test_list_jobs_restarts_worker_if_thread_dies(self):
         self.queue._workers = []
         jobs = self.queue.list_jobs(user_id=self.user_id)

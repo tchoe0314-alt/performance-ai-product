@@ -27,6 +27,14 @@ if [ "$role" = "web" ]; then
     --log-level warning
 fi
 
+combined_process_isolation="${CIVORA_COMBINED_PROCESS_ISOLATION:-auto}"
+if [ "$role" = "combined" ] && [ -n "${DATABASE_URL:-}" ] && [ "$combined_process_isolation" != "0" ] && [ "$combined_process_isolation" != "false" ]; then
+  # Hosted Postgres deployments can safely share queued job state across
+  # processes. Keep CPU-heavy orchestration out of the request process so
+  # authentication, projects, and job controls remain responsive during runs.
+  exec python -m backend.scripts.run_combined_backend
+fi
+
 # Combined mode owns in-process job threads. Keep exactly one stable Gunicorn
 # process so request recycling or competing process-local queues cannot kill or
 # duplicate a long-running engineering job.

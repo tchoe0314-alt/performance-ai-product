@@ -567,7 +567,7 @@ class JobQueueService:
         self._update_job_state(job_id, status="queued", result=result, error=None)
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
-        if self._worker_count > 0:
+        if self._worker_count > 0 and str(record.get("job_type") or "") in self._handlers:
             self._enqueue_after_api_acknowledgement(job_id)
         return summary
 
@@ -629,7 +629,7 @@ class JobQueueService:
         self._update_job_state(job_id, status="queued", result=result, error=None)
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
-        if self._worker_count > 0:
+        if self._worker_count > 0 and str(record.get("job_type") or "") in self._handlers:
             self._enqueue_after_api_acknowledgement(job_id)
         return summary
 

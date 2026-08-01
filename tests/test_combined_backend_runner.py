@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from backend.scripts.run_combined_backend import build_process_environments, build_web_command
+
+
+def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> None:
+    web_env, worker_env = build_process_environments(
+        {
+            "DATABASE_URL": "postgresql://example.invalid/civora",
+            "CIVORA_DISABLED_JOB_TYPES": "custom_disabled",
+            "PORT": "8123",
+        }
+    )
+
+    assert web_env["CIVORA_PROCESS_ROLE"] == "combined"
+    assert set(web_env["CIVORA_DISABLED_JOB_TYPES"].split(",")) == {
+        "custom_disabled",
+        "orchestrate",
+        "source_context",
+    }
+    assert "export_report" not in web_env["CIVORA_DISABLED_JOB_TYPES"]
+    assert worker_env["CIVORA_PROCESS_ROLE"] == "worker"
+    assert worker_env["CIVORA_ENABLED_JOB_TYPES"] == "orchestrate,source_context"
+    assert worker_env["CIVORA_WORKER_HEALTH_ENABLED"] == "false"
+
+
+def test_combined_runner_builds_stable_single_web_process() -> None:
+    command = build_web_command({"PORT": "8123", "WEB_TIMEOUT_SECONDS": "42"})
+
+    assert command[0] == "gunicorn"
+    assert command[command.index("--bind") + 1] == "0.0.0.0:8123"
+    assert command[command.index("--workers") + 1] == "1"
+    assert command[command.index("--timeout") + 1] == "42"
+    assert command[command.index("--max-requests") + 1] == "0"

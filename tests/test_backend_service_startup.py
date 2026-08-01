@@ -38,7 +38,11 @@ def test_combined_service_keeps_one_stable_worker_process(tmp_path: Path) -> Non
     output = _run_startup(
         tmp_path,
         role="combined",
-        extra_env={"WEB_CONCURRENCY": "8", "WEB_MAX_REQUESTS": "12"},
+        extra_env={
+            "WEB_CONCURRENCY": "8",
+            "WEB_MAX_REQUESTS": "12",
+            "CIVORA_COMBINED_PROCESS_ISOLATION": "false",
+        },
     )
     assert output.startswith("gunicorn\n")
     assert "--workers\n1\n" in output
@@ -61,3 +65,12 @@ def test_web_service_keeps_configurable_request_workers(tmp_path: Path) -> None:
 def test_worker_service_runs_dedicated_job_worker(tmp_path: Path) -> None:
     output = _run_startup(tmp_path, role="worker")
     assert output == "python\n-m\nbackend.scripts.run_job_worker\n"
+
+
+def test_postgres_combined_service_uses_process_isolated_runner(tmp_path: Path) -> None:
+    output = _run_startup(
+        tmp_path,
+        role="combined",
+        extra_env={"DATABASE_URL": "postgresql://example.invalid/civora"},
+    )
+    assert output == "python\n-m\nbackend.scripts.run_combined_backend\n"
