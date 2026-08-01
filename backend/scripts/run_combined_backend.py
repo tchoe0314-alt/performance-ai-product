@@ -47,10 +47,11 @@ def build_process_environments(
             "CIVORA_PROCESS_ROLE": "web",
             "CIVORA_DEDICATED_WORKER_ENABLED": "true",
             "PERFORMANCE_AI_JOB_WORKERS": "0",
-            "CIVORA_DATABASE_POOL_MIN_SIZE": "1",
+            "CIVORA_DATABASE_POOL_MIN_SIZE": "2",
             "CIVORA_DATABASE_POOL_MAX_SIZE": str(
-                base.get("CIVORA_WEB_DATABASE_POOL_MAX_SIZE") or "3"
+                base.get("CIVORA_WEB_DATABASE_POOL_MAX_SIZE") or "6"
             ),
+            "CIVORA_ANYIO_THREAD_LIMIT": str(base.get("CIVORA_ANYIO_THREAD_LIMIT") or "8"),
         }
     )
     web_env.pop("CIVORA_ENABLED_JOB_TYPES", None)

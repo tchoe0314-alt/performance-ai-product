@@ -96,6 +96,30 @@ class DatabasePoolTests(unittest.TestCase):
         connection.commit.assert_called_once_with()
         connection.close.assert_called_once_with()
 
+    def test_pool_runtime_stats_exposes_only_operational_counters(self) -> None:
+        database = Database.__new__(Database)
+        database.storage_kind = "postgres"
+        database._postgres_pool = mock.Mock()
+        database._postgres_pool.get_stats.return_value = {
+            "pool_size": 6,
+            "pool_available": 4,
+            "requests_waiting": 1,
+            "requests_errors": 2,
+            "connections_num": 99,
+        }
+
+        self.assertEqual(
+            database.pool_runtime_stats(),
+            {
+                "status": "available",
+                "storage": "postgres",
+                "pool_size": 6,
+                "pool_available": 4,
+                "requests_waiting": 1,
+                "requests_errors": 2,
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

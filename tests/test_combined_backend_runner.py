@@ -18,7 +18,9 @@ def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> 
 
     assert web_env["CIVORA_PROCESS_ROLE"] == "web"
     assert web_env["PERFORMANCE_AI_JOB_WORKERS"] == "0"
-    assert web_env["CIVORA_DATABASE_POOL_MAX_SIZE"] == "3"
+    assert web_env["CIVORA_DATABASE_POOL_MIN_SIZE"] == "2"
+    assert web_env["CIVORA_DATABASE_POOL_MAX_SIZE"] == "6"
+    assert web_env["CIVORA_ANYIO_THREAD_LIMIT"] == "8"
     assert web_env["CIVORA_DISABLED_JOB_TYPES"] == "custom_disabled"
     assert worker_env["CIVORA_PROCESS_ROLE"] == "worker"
     assert set(worker_env["CIVORA_ENABLED_JOB_TYPES"].split(",")) == {

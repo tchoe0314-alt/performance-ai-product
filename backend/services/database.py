@@ -165,6 +165,24 @@ class Database:
         connection.execute("PRAGMA foreign_keys = ON;")
         return connection
 
+    def pool_runtime_stats(self) -> dict[str, Any]:
+        if self.storage_kind != "postgres":
+            return {"status": "not_applicable", "storage": self.storage_kind}
+        if self._postgres_pool is None:
+            return {"status": "unavailable", "storage": self.storage_kind}
+        try:
+            raw = dict(self._postgres_pool.get_stats() or {})
+        except Exception:
+            return {"status": "unavailable", "storage": self.storage_kind}
+        return {
+            "status": "available",
+            "storage": self.storage_kind,
+            "pool_size": int(raw.get("pool_size") or 0),
+            "pool_available": int(raw.get("pool_available") or 0),
+            "requests_waiting": int(raw.get("requests_waiting") or 0),
+            "requests_errors": int(raw.get("requests_errors") or 0),
+        }
+
     def _initialize(self) -> None:
         sqlite_schema = """
         PRAGMA journal_mode=WAL;
