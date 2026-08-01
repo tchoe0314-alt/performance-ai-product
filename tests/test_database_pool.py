@@ -1,3 +1,4 @@
+import threading
 import unittest
 from unittest import mock
 
@@ -63,6 +64,37 @@ class DatabasePoolTests(unittest.TestCase):
 
         pool.getconn.assert_called_once_with(timeout=10.0)
         pool.putconn.assert_called_once_with(raw_connection)
+
+    def test_existing_project_summary_column_skips_startup_backfill(self) -> None:
+        database = Database.__new__(Database)
+        database.storage_kind = "postgres"
+        database._lock = threading.Lock()
+        connection = mock.Mock()
+        database.connect = mock.Mock(return_value=connection)
+        database._get_table_columns = mock.Mock(return_value={"project_id", "has_result"})
+
+        database._ensure_project_summary_columns()
+
+        connection.execute.assert_not_called()
+        connection.commit.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
+    def test_new_project_summary_column_runs_one_time_backfill(self) -> None:
+        database = Database.__new__(Database)
+        database.storage_kind = "postgres"
+        database._lock = threading.Lock()
+        connection = mock.Mock()
+        database.connect = mock.Mock(return_value=connection)
+        database._get_table_columns = mock.Mock(return_value={"project_id"})
+
+        database._ensure_project_summary_columns()
+
+        statements = [str(call.args[0]) for call in connection.execute.call_args_list]
+        self.assertEqual(len(statements), 2)
+        self.assertIn("ALTER TABLE projects ADD COLUMN", statements[0])
+        self.assertIn("UPDATE projects", statements[1])
+        connection.commit.assert_called_once_with()
+        connection.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

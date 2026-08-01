@@ -496,28 +496,30 @@ class Database:
             connection = self.connect()
             try:
                 columns = self._get_table_columns("projects")
+                added_has_result = "has_result" not in columns
                 if self.storage_kind == "postgres":
-                    if "has_result" not in columns:
+                    if added_has_result:
                         connection.execute(
                             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS has_result INTEGER NOT NULL DEFAULT 0"
                         )
                 else:
-                    if "has_result" not in columns:
+                    if added_has_result:
                         connection.execute(
                             "ALTER TABLE projects ADD COLUMN has_result INTEGER NOT NULL DEFAULT 0"
                         )
-                connection.execute(
-                    """
-                    UPDATE projects
-                    SET has_result = CASE
-                        WHEN latest_result_json IS NOT NULL
-                             AND latest_result_json != ''
-                             AND latest_result_json != '{}'
-                        THEN 1
-                        ELSE 0
-                    END
-                    """
-                )
+                if added_has_result:
+                    connection.execute(
+                        """
+                        UPDATE projects
+                        SET has_result = CASE
+                            WHEN latest_result_json IS NOT NULL
+                                 AND latest_result_json != ''
+                                 AND latest_result_json != '{}'
+                            THEN 1
+                            ELSE 0
+                        END
+                        """
+                    )
                 connection.commit()
             finally:
                 connection.close()
