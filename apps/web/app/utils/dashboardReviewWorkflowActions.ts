@@ -75,12 +75,30 @@ export async function runDashboardCandidateReviewDecision({
       },
       { token },
     );
-    if (data.project) {
-      setCurrentProject(data.project);
-      if (data.project.latest_result) {
-        setBackendResult(data.project.latest_result);
+    const updatedProject = data.project
+      ? {
+          ...data.project,
+          project_input: data.candidate_review_inbox_v1
+            ? {
+                ...(data.project.project_input ?? {}),
+                meta: {
+                  ...(data.project.project_input?.meta ?? {}),
+                  site_inputs: {
+                    ...(data.project.project_input?.meta?.site_inputs ?? {}),
+                    candidate_review_inbox_v1: data.candidate_review_inbox_v1,
+                  },
+                },
+              }
+            : data.project.project_input,
+        }
+      : null;
+    if (updatedProject) {
+      setCurrentProject(updatedProject);
+      if (updatedProject.latest_result) {
+        setBackendResult(updatedProject.latest_result);
       }
-    } else if (data.candidate_review_inbox_v1) {
+    }
+    if (data.candidate_review_inbox_v1) {
       patchPlanMeta(setBackendResult, {
         candidate_review_inbox_v1: data.candidate_review_inbox_v1,
       });
@@ -92,7 +110,7 @@ export async function runDashboardCandidateReviewDecision({
           ? "Candidate rejected and preserved in the audit trail."
           : "Candidate kept pending.",
     );
-    return data.project ?? null;
+    return updatedProject;
   } catch (error) {
     setStatusMessage(error instanceof Error ? error.message : "Candidate review update failed.");
     return null;
@@ -166,7 +184,8 @@ export async function runDashboardDesignAlternativesAction({
       if (data.project.latest_result) {
         setBackendResult(data.project.latest_result);
       }
-    } else if (data.design_alternatives_v1) {
+    }
+    if (data.design_alternatives_v1) {
       patchPlanMeta(setBackendResult, {
         design_alternatives_v1: data.design_alternatives_v1,
       });

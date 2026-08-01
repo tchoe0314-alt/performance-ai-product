@@ -189,6 +189,16 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           : [],
     };
     savedProjectInput = projectInput as Record<string, unknown>;
+    const responseProjectInput = JSON.parse(JSON.stringify(projectInput)) as {
+      meta?: { site_inputs?: Record<string, unknown> };
+    };
+    responseProjectInput.meta = responseProjectInput.meta ?? {};
+    responseProjectInput.meta.site_inputs = {
+      ...(responseProjectInput.meta.site_inputs ?? {}),
+      // The top-level inbox is the authoritative decision response. Keep the
+      // project snapshot stale here to prove the UI reconciles both payloads.
+      candidate_review_inbox_v1: candidateInbox(),
+    };
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -197,7 +207,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
         project: {
           project_id: "pw-project",
           name: "Playwright Project",
-          project_input: projectInput,
+          project_input: responseProjectInput,
           latest_result: null,
           has_result: false,
         },
@@ -398,6 +408,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   const buildingCandidate = detectedItems.locator('[data-candidate-id="building-1"]');
   await buildingCandidate.getByRole("button", { name: "Accept" }).click();
   await expect(detectedItems).toContainText("Detected Items · 1 To Review");
+  await expect(buildingCandidate).toContainText(/accepted/i);
+  await expect(buildingCandidate.getByRole("button", { name: "Accept" })).toBeDisabled();
   const roadCandidate = detectedItems.locator('[data-candidate-id="road-1"]');
   await roadCandidate.getByRole("button", { name: "Reject" }).click();
   await expect(detectedItems).toContainText("Detected Items · 0 To Review");
