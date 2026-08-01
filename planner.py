@@ -9770,6 +9770,28 @@ def _run_model_first_workflow(
                 manager.project.meta["cross_sections"] = deepcopy(cross_sections)
                 _record_resumed_stage("sheets", "Restored sheet state from saved checkpoint.")
 
+        # Some valid stages intentionally produce no canonical geometry. A
+        # storm-pipe phase with no inlet records is one example. Its accepted
+        # completion state must still resume, or each approval reruns the same
+        # no-output stage forever instead of advancing to the next phase.
+        for stage_name in (
+            "layout",
+            "grading",
+            "drainage",
+            "storm_pipes",
+            "sanitary",
+            "utility_network",
+            "coordination_resolution",
+            "earthwork",
+            "sheets",
+            "qa",
+        ):
+            if _stage_is_resumable(stage_name) and stage_name not in resumed:
+                _record_resumed_stage(
+                    stage_name,
+                    f"Restored accepted {stage_name.replace('_', ' ')} state from saved checkpoint; no canonical geometry was required.",
+                )
+
         if resumed:
             ctx.record_assumption(
                 f"Resumed saved engineering phases from checkpoint state: {', '.join(sorted(resumed))}."

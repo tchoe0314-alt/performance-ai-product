@@ -68,6 +68,27 @@ class _PostgresConnection:
             return
         self._closed = True
         if self._pool is not None:
+            try:
+                # psycopg starts a transaction for reads when autocommit is
+                # disabled. Return only idle connections to the shared pool so
+                # read-heavy auth/project polling cannot accumulate open
+                # transactions while an engineering worker is writing.
+                transaction_status = getattr(
+                    getattr(self._connection, "info", None),
+                    "transaction_status",
+                    None,
+                )
+                if transaction_status is not None and str(transaction_status).upper() not in {
+                    "0",
+                    "IDLE",
+                    "TRANSACTIONSTATUS.IDLE",
+                }:
+                    self._connection.rollback()
+            except Exception:
+                try:
+                    self._connection.rollback()
+                except Exception:
+                    pass
             self._pool.putconn(self._connection)
             return
         self._connection.close()

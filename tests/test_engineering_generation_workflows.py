@@ -43,6 +43,38 @@ def _blocker_inputs(plan: dict, name: str) -> set[str]:
 
 
 class EngineeringGenerationWorkflowTests(unittest.TestCase):
+    def test_runtime_resume_advances_past_accepted_stage_without_geometry(self) -> None:
+        payload = _supported_minimal_payload()
+        checkpoint = planner.build_plan(deepcopy(payload))
+        checkpoint_meta = checkpoint.setdefault("meta", {})
+        statuses = checkpoint_meta.setdefault("stage_completeness", {}).setdefault("statuses", {})
+        statuses.update(
+            {
+                "layout": "complete",
+                "grading": "complete",
+                "drainage": "complete",
+                "storm_pipes": "assumed",
+            }
+        )
+        checkpoint_meta.pop("storm_pipes", None)
+
+        resumed_payload = deepcopy(payload)
+        resumed_payload["meta"] = {
+            "orchestrator_meta": {
+                "runtime_resume": {
+                    "final_plan": checkpoint,
+                    "stage_statuses": statuses,
+                },
+                "runtime_phase_batch_limit": 1,
+            },
+            "runtime_phase_batch_limit": 1,
+        }
+
+        resumed = planner.build_plan(resumed_payload)
+        runtime_checkpoint = resumed["meta"]["runtime_phase_checkpoint"]
+        self.assertEqual(runtime_checkpoint["stage_name"], "sanitary")
+        self.assertTrue(runtime_checkpoint["yielded"])
+
     def test_supported_minimal_site_outputs_are_canonical_and_review_required(self) -> None:
         plan = planner.build_plan(_supported_minimal_payload())
         review = _review(plan)

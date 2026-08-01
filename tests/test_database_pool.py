@@ -1,5 +1,6 @@
 import unittest
 from unittest import mock
+from types import SimpleNamespace
 
 from backend.services.database import Database, _PostgresConnection
 
@@ -15,6 +16,26 @@ class DatabasePoolTests(unittest.TestCase):
 
         pool.putconn.assert_called_once_with(raw_connection)
         raw_connection.close.assert_not_called()
+
+    def test_pooled_connection_rolls_back_open_transaction_before_return(self) -> None:
+        raw_connection = mock.Mock()
+        raw_connection.info = SimpleNamespace(transaction_status="INTRANS")
+        pool = mock.Mock()
+
+        _PostgresConnection(raw_connection, pool=pool).close()
+
+        raw_connection.rollback.assert_called_once_with()
+        pool.putconn.assert_called_once_with(raw_connection)
+
+    def test_pooled_connection_does_not_roll_back_idle_connection(self) -> None:
+        raw_connection = mock.Mock()
+        raw_connection.info = SimpleNamespace(transaction_status="IDLE")
+        pool = mock.Mock()
+
+        _PostgresConnection(raw_connection, pool=pool).close()
+
+        raw_connection.rollback.assert_not_called()
+        pool.putconn.assert_called_once_with(raw_connection)
 
     def test_pool_uses_configured_bounds_and_waits_until_ready(self) -> None:
         database = Database.__new__(Database)
