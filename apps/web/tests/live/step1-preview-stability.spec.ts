@@ -71,7 +71,6 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
     await expect(page.locator(".mapboxgl-canvas")).toBeVisible();
   }
 
-  await canvas.getByTestId("preview-inner-map-toggle").click();
   await canvas.getByTestId("preview-mode-3d").first().hover();
   await canvas.getByTestId("preview-mode-3d").first().click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 10_000 });
@@ -81,7 +80,7 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
   await page.getByRole("button", { name: "Close Fullscreen" }).click();
   await expect(page.getByTestId("civil-3d-fullscreen")).toHaveCount(0);
   await canvas.getByTestId("preview-mode-2d").first().click();
-  await canvas.getByTestId("preview-inner-map-toggle").click();
-  await expect(page.locator(".mapboxgl-canvas")).toHaveCount(1);
+  await expect(page.locator(".mapboxgl-canvas")).toHaveCount(1, { timeout: 20_000 });
   await expect(page.locator(".mapboxgl-canvas")).toBeVisible({ timeout: 20_000 });
+  await expect(canvas.getByTestId("preview-inner-map-toggle")).toContainText("Map On");
 });

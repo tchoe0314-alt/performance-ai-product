@@ -529,6 +529,12 @@ test.describe("project drawer reliability", () => {
     };
     const readCursor = async (point: { x: number; y: number }) => {
       await page.mouse.move(point.x, point.y);
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+          }),
+      );
       await expect(page.getByTestId("canvas-coordinate-readout")).toContainText(/X\s+-?[\d.]+\s+ft\s+\/\s+Y\s+-?[\d.]+\s+ft/i);
       const text = (await page.getByTestId("canvas-coordinate-readout").textContent()) ?? "";
       const match = text.match(/X\s+(-?[\d.]+)\s+ft\s+\/\s+Y\s+(-?[\d.]+)\s+ft/i);

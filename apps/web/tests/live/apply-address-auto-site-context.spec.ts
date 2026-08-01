@@ -381,9 +381,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
     const canvas = page.getByTestId("workspace-canvas-shell");
     await canvas.getByTestId("preview-quality-high").click();
     await expect(page.getByText("Creating AI realism", { exact: true })).toHaveCount(0);
-    await canvas.getByTestId("preview-mode-3d").click();
-    await expect(canvas).toContainText(/3D Model|3D geometry not ready yet/i);
-    await canvas.getByTestId("preview-mode-2d").click();
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await canvas.getByTestId("preview-mode-3d").click();
+      await expect(canvas).toContainText(/3D Model|3D geometry not ready yet/i);
+      await canvas.getByTestId("preview-mode-2d").click();
+      await expect(page.locator(".mapboxgl-canvas")).toHaveCount(1, { timeout: 20_000 });
+      await expect(page.locator(".mapboxgl-canvas")).toBeVisible({ timeout: 20_000 });
+    }
     await expect
       .poll(
         () =>

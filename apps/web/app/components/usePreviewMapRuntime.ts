@@ -120,7 +120,7 @@ export function usePreviewMapRuntime({
 }: PreviewMapRuntimeOptions) {
   const lastFittedSiteKeyRef = useRef("");
   useEffect(() => {
-    if (!mapAvailable || !mapOverlayEnabled) return;
+    if (!mapAvailable || !mapOverlayEnabled || !showMap) return;
     if (!mapContainerRef.current || mapRef.current) return;
     mapboxgl.accessToken = mapboxToken || "";
     const map = new mapboxgl.Map({
@@ -172,7 +172,7 @@ export function usePreviewMapRuntime({
       lastFittedSiteKeyRef.current = "";
       setMapLoaded(false);
     };
-  }, [mapAvailable, mapContainerRef, mapOverlayEnabled, mapRef, mapboxToken, setMapError, setMapLoaded, setMapRevision]);
+  }, [mapAvailable, mapContainerRef, mapOverlayEnabled, mapRef, mapboxToken, setMapError, setMapLoaded, setMapRevision, showMap]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;
