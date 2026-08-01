@@ -97,6 +97,7 @@ export function useDashboardJobLoader({
         return;
       }
       const job = data.job;
+      setJobsPanelStatusMessage("");
       const jobProjectId = String(job.project_id || "").trim();
       const activeJobProjectSignature = `${job.job_id}:${jobProjectId}`;
       const activeTrackedProjectId =

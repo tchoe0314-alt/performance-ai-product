@@ -320,6 +320,10 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     jobsFail = true;
     await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
     await expect(page.getByTestId("jobs-refresh-status")).toContainText("Job refresh failed", { timeout: 30_000 });
+    jobsFail = false;
+    await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
+    await expect(page.getByTestId("jobs-refresh-status")).toContainText("Jobs refreshed.", { timeout: 30_000 });
+    await expect(page.getByTestId("jobs-refresh-status")).not.toContainText("Job refresh failed");
   });
 
   test("export download failures set visible deliver/export status", async ({ page }) => {
