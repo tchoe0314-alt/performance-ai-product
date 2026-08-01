@@ -413,6 +413,7 @@ test.describe("project drawer reliability", () => {
           site_inputs: {
             address: "20525 Margo St, Gretna, NE",
             geocode: { lat: 41.142, lng: -96.244 },
+            site_alignment_locked: true,
           },
         },
         manual_fields: { lot: { x: 0, y: 0, w: 1000, h: 1000 } },
@@ -451,6 +452,136 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
     await expect(page.getByTestId("project-drawer-state")).not.toContainText("Restored saved workspace");
     expect(store.size).toBe(1);
+  });
+
+  test("map-backed drawing converts physical mouse positions to accurate site feet", async ({ page }) => {
+    test.skip(
+      !process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+      "Mapbox token is required to verify physical map pointer coordinates.",
+    );
+    const store = new Map<string, SavedProject>();
+    store.set("mapped-draw-project", {
+      project_id: "mapped-draw-project",
+      name: "Mapped Draw Project",
+      updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        meta: {
+          site_inputs: {
+            address: "20525 Margo St, Gretna, NE",
+            geocode: { lat: 41.142, lng: -96.244 },
+            site_alignment_locked: true,
+          },
+        },
+        manual_fields: { lot: { x: 0, y: 0, w: 1000, h: 1000 } },
+      },
+      latest_result: null,
+    });
+    await mockShell(page, store);
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Mapped Draw Project" }).click();
+    await expect(page.locator(".mapboxgl-canvas")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("canvas-scale-source")).toContainText("LIVE MAP SCALE", { timeout: 30_000 });
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __civoraShowMap?: boolean }).__civoraShowMap))
+      .toBe(true);
+    const mapOverlayTransforms = await page.evaluate(() => ({
+      plan: getComputedStyle(document.querySelector('[data-testid="preview-plan-canvas-svg"]')!).transform,
+      hits: getComputedStyle(document.querySelector('[data-testid="preview-drawing-overlays"]')!).transform,
+    }));
+    expect(mapOverlayTransforms.plan).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+    expect(mapOverlayTransforms.hits).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+
+    const drawButton = page
+      .getByTestId("primary-workflow-sidebar")
+      .getByRole("button", { name: /^Draw\b/i })
+      .filter({ visible: true })
+      .first();
+    if (!(await drawButton.isVisible().catch(() => false))) {
+      await page.getByRole("button", { name: "Open workspace controls" }).click();
+    }
+    await page
+      .getByTestId("primary-workflow-sidebar")
+      .getByRole("button", { name: /^Draw\b/i })
+      .filter({ visible: true })
+      .first()
+      .click();
+
+    const canvas = page.getByTestId("workspace-canvas-shell");
+    const addBox = canvas
+      .getByTestId("canvas-quick-draw-palette")
+      .getByRole("button", { name: "Add Box" })
+      .filter({ visible: true })
+      .first();
+    await expect(addBox).toBeEnabled();
+    await addBox.click();
+
+    const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true }).first();
+    const mapCanvasBox = await mapCanvas.boundingBox();
+    expect(mapCanvasBox).not.toBeNull();
+    const first = {
+      x: mapCanvasBox!.x + mapCanvasBox!.width * 0.4,
+      y: mapCanvasBox!.y + mapCanvasBox!.height * 0.4,
+    };
+    const second = {
+      x: mapCanvasBox!.x + mapCanvasBox!.width * 0.58,
+      y: mapCanvasBox!.y + mapCanvasBox!.height * 0.58,
+    };
+    const readCursor = async (point: { x: number; y: number }) => {
+      await page.mouse.move(point.x, point.y);
+      await expect(page.getByTestId("canvas-coordinate-readout")).toContainText(/X\s+-?[\d.]+\s+ft\s+\/\s+Y\s+-?[\d.]+\s+ft/i);
+      const text = (await page.getByTestId("canvas-coordinate-readout").textContent()) ?? "";
+      const match = text.match(/X\s+(-?[\d.]+)\s+ft\s+\/\s+Y\s+(-?[\d.]+)\s+ft/i);
+      expect(match).not.toBeNull();
+      return { x: Number(match![1]), y: Number(match![2]) };
+    };
+    const firstSitePoint = await readCursor(first);
+    await page.mouse.click(first.x, first.y);
+    const secondSitePoint = await readCursor(second);
+    await page.mouse.click(second.x, second.y);
+    await expect(page.getByText("Custom Rectangle 1").filter({ visible: true }).first()).toBeVisible();
+
+    const scaleText = (await page.getByTestId("canvas-scale-source").textContent()) ?? "";
+    const feetPerPixel = Number(scaleText.match(/([\d.]+)\s+FT\/PX/i)?.[1]);
+    expect(feetPerPixel).toBeGreaterThan(0);
+    const mapViewport = await page.evaluate(() =>
+      (window as unknown as {
+        __civoraMapViewport?: { lat?: number; zoom?: number };
+      }).__civoraMapViewport,
+    );
+    expect(mapViewport?.lat).toEqual(expect.any(Number));
+    expect(mapViewport?.zoom).toEqual(expect.any(Number));
+    const handoff = page
+      .locator('[data-canonical-geometry-handoff="canonical_geometry_handoff_v1"]')
+      .filter({ visible: true })
+      .first();
+    await expect(handoff).toHaveAttribute("data-handoff-valid", "true");
+    const dimensionsText =
+      (await handoff.locator("p").filter({ hasText: /ft\s*x\s*.*ft/i }).first().textContent()) ?? "";
+    const dimensions = dimensionsText.match(/([\d.]+)\s*ft\s*x\s*([\d.]+)\s*ft/i);
+    expect(dimensions).not.toBeNull();
+    const actualWidth = Number(dimensions![1]);
+    const actualDepth = Number(dimensions![2]);
+    const expectedWidth = Math.abs(second.x - first.x) * feetPerPixel;
+    const expectedDepth = Math.abs(second.y - first.y) * feetPerPixel;
+    const pointerWidth = Math.abs(secondSitePoint.x - firstSitePoint.x);
+    const pointerDepth = Math.abs(secondSitePoint.y - firstSitePoint.y);
+    console.info("[map-geometry-proof]", {
+      mapCanvasBox,
+      feetPerPixel,
+      first,
+      second,
+      firstSitePoint,
+      secondSitePoint,
+      actualWidth,
+      actualDepth,
+      expectedWidth,
+      expectedDepth,
+    });
+    expect(Math.abs(actualWidth - pointerWidth)).toBeLessThanOrEqual(6);
+    expect(Math.abs(actualDepth - pointerDepth)).toBeLessThanOrEqual(6);
+    expect(Math.abs(actualWidth - expectedWidth)).toBeLessThanOrEqual(Math.max(8, expectedWidth * 0.03));
+    expect(Math.abs(actualDepth - expectedDepth)).toBeLessThanOrEqual(Math.max(8, expectedDepth * 0.03));
   });
 
   test("ignores address discovery that finishes after New Project", async ({ page }) => {
@@ -625,6 +756,14 @@ test.describe("project drawer reliability", () => {
     await page.getByTestId("header-chat-button").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
     await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("Generate a parking layout note.");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+    await page.getByTestId("civora-command-input").fill("add 140 parking spaces");
+    await page.getByTestId("civora-command-input").press("Enter");
+    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls was added as draft geometry.");
+    await page.getByTestId("header-chat-button").click();
+    await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("Generate a parking layout note.");
 
     await openProjects(page);
     await page.getByRole("button", { name: "Save Project" }).click();
@@ -640,6 +779,9 @@ test.describe("project drawer reliability", () => {
     await openSetup(page);
     await expect(page.getByLabel("Type project address")).toHaveValue("");
     await expect(page.getByText("parcel/site boundary")).not.toBeVisible();
+    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).not.toContainText("Parking Field - 140 stalls");
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
     await page.getByTestId("header-chat-button").click();
     await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toHaveValue("");
 

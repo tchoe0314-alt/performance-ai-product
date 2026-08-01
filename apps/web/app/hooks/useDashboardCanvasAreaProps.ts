@@ -334,10 +334,10 @@ export function useDashboardCanvasAreaProps({
       },
       surveyPoints,
       onMapScaleUpdate: ({ ftPerPx, source }) => {
-        if (siteLocked) return;
         if (!Number.isFinite(ftPerPx) || ftPerPx <= 0) return;
         onMapScaleFtPerPxChange(ftPerPx);
         onMapScaleSourceChange(source);
+        if (siteLocked) return;
         onScheduleScaleSave(ftPerPx, source);
       },
       debugStats: {

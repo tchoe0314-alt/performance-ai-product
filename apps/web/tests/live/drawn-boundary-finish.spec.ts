@@ -268,6 +268,12 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickSurfaceAt(surface, 0.28, 0.5);
     await clickSurfaceAt(surface, 0.44, 0.66);
     await expect(page.getByText("Custom Rectangle 1").filter({ visible: true }).first()).toBeVisible();
+    const rectangleHandoff = page
+      .locator('[data-canonical-geometry-handoff="canonical_geometry_handoff_v1"]')
+      .filter({ visible: true })
+      .first();
+    await expect(rectangleHandoff).toHaveAttribute("data-handoff-valid", "true");
+    await expect(rectangleHandoff).not.toContainText("5.0 ft x 5.0 ft");
 
     await clickCanvasTool(canvas, "Add Area");
     await addDraftPointByXY(page, "36", "18");

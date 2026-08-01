@@ -623,6 +623,7 @@ function PerformanceAIDashboardView({
     recordDraftRedoAction,
     recordDraftUndoAction,
     recordRecentChange,
+    resetDraftHistory,
     redoDraftAction,
     redoDraftActionRef,
     setRecentChangesOpen,
@@ -3749,6 +3750,7 @@ function PerformanceAIDashboardView({
 
   const { resetWorkspaceState } = useDashboardWorkspaceReset({
     debugLog,
+    resetDraftHistory,
     setActiveJobId,
     setActivePlacementId,
     setAddressSuggestions,
@@ -3785,6 +3787,7 @@ function PerformanceAIDashboardView({
     setMapCenterRequest,
     setMapSnapshotPath,
     setMoveEditFeedback,
+    setObjectManagerStatusMessage,
     setPendingClarification,
     setPlacementModeEnabled,
     setPlanPdfElementDraftText,

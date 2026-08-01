@@ -114,7 +114,7 @@ test.describe("Chat 32 UI functionality QA", () => {
 
     await hideSidebarToggle.click();
     await expect(showSidebarToggle).toBeVisible();
-    await expect(sidebar).toHaveAttribute("data-motion-state", "closed");
+    await expect(sidebar).toBeHidden();
     await page.keyboard.press("/");
     await expect(page.getByTestId("floating-command-bar")).toBeVisible();
 

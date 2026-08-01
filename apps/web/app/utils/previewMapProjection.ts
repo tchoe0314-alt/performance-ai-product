@@ -134,3 +134,27 @@ export function mapAnchoredRectPercent({
 export function mapLngLatToSitePoint(lat: number, lng: number, mapAnchor: MapAnchor | null) {
   return mapAnchor ? mapLngLatToSite({ lat, lng }, mapAnchor) : null;
 }
+
+export function measureMapFeetPerPixel(targetMap: mapboxgl.Map | null) {
+  if (!targetMap) return null;
+  const container = targetMap.getContainer();
+  const width = Math.max(container.clientWidth, 1);
+  const height = Math.max(container.clientHeight, 1);
+  const sampleHalfWidthPx = Math.min(50, Math.max(1, width / 4));
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const west = targetMap.unproject([centerX - sampleHalfWidthPx, centerY]);
+  const east = targetMap.unproject([centerX + sampleHalfWidthPx, centerY]);
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const lat1 = toRadians(west.lat);
+  const lat2 = toRadians(east.lat);
+  const deltaLat = lat2 - lat1;
+  const deltaLng = toRadians(east.lng - west.lng);
+  const sinLat = Math.sin(deltaLat / 2);
+  const sinLng = Math.sin(deltaLng / 2);
+  const haversine = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
+  const earthRadiusMeters = 6_378_137;
+  const distanceMeters = 2 * earthRadiusMeters * Math.asin(Math.min(1, Math.sqrt(haversine)));
+  const feetPerPixel = (distanceMeters * 3.28084) / (sampleHalfWidthPx * 2);
+  return Number.isFinite(feetPerPixel) && feetPerPixel > 0 ? feetPerPixel : null;
+}

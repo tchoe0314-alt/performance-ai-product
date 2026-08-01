@@ -197,6 +197,10 @@ function mercatorToLngLat(point: Point2D): [number, number] | null {
   return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
 }
 
+function localMercatorGroundScale(lat: number) {
+  return Math.max(Math.cos((clampMercatorLat(lat) * Math.PI) / 180), 0.01);
+}
+
 export function siteToMapLngLat(point: Point2D, anchor: MapAnchor): [number, number] | null {
   if (resolveCoordinateMode(anchor) !== "map_anchored") return null;
   const center = lngLatToMercator({ lng: anchor.lng, lat: anchor.lat });
@@ -206,9 +210,10 @@ export function siteToMapLngLat(point: Point2D, anchor: MapAnchor): [number, num
   const theta = ((anchor.rotationDeg ?? 0) * Math.PI) / 180;
   const dxRot = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
   const dyRot = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);
+  const groundScale = localMercatorGroundScale(anchor.lat);
   return mercatorToLngLat({
-    x: center.x + dxRot * METERS_PER_FOOT,
-    y: center.y + dyRot * METERS_PER_FOOT,
+    x: center.x + (dxRot * METERS_PER_FOOT) / groundScale,
+    y: center.y + (dyRot * METERS_PER_FOOT) / groundScale,
   });
 }
 
@@ -217,8 +222,9 @@ export function mapLngLatToSite(lngLat: { lat: number; lng: number }, anchor: Ma
   const center = lngLatToMercator({ lng: anchor.lng, lat: anchor.lat });
   const target = lngLatToMercator(lngLat);
   if (!center || !target) return null;
-  const dxFt = (target.x - center.x) * FEET_PER_METER;
-  const dyFt = (target.y - center.y) * FEET_PER_METER;
+  const groundScale = localMercatorGroundScale(anchor.lat);
+  const dxFt = (target.x - center.x) * groundScale * FEET_PER_METER;
+  const dyFt = (target.y - center.y) * groundScale * FEET_PER_METER;
   const theta = -((anchor.rotationDeg ?? 0) * Math.PI) / 180;
   const invDx = dxFt * Math.cos(theta) - dyFt * Math.sin(theta);
   const invDy = dxFt * Math.sin(theta) + dyFt * Math.cos(theta);

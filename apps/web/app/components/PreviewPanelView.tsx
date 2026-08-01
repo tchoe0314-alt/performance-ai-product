@@ -62,6 +62,7 @@ import {
 import {
   buildBalancedPreviewCanvasView,
   buildFocusedPreviewCanvasView,
+  resolvePreviewCanvasView,
 } from "../utils/previewCanvasViewHelpers";
 import { usePreviewObjectManagerModel } from "../utils/previewObjectManager";
 import {
@@ -83,6 +84,7 @@ import {
   buildPreviewMapAnchor,
   mapAnchoredRectPercent as resolveMapAnchoredRectPercent,
   mapLngLatToSitePoint,
+  measureMapFeetPerPixel,
   sitePointToPreviewPercent as resolveSitePointToPreviewPercent,
   siteRectPercent as resolveSiteRectPercent,
 } from "../utils/previewMapProjection";
@@ -129,6 +131,7 @@ import {
   resolvePreviewSelectedDeletableObject,
 } from "../utils/previewViewModel";
 import { buildPreviewInteractionState } from "../utils/previewInteractionState";
+import { normalizePreviewPointerSitePoint } from "../utils/previewPointerGeometry";
 import {
   AI_REALISM_WATERMARK,
   BALANCED_CANVAS_SCALE,
@@ -430,6 +433,10 @@ export default function PreviewPanel({
     mapLocked,
   });
   const { mapAvailable, useLightHighQuality, showMap, showMap3D, mapPitch, allowMapInteraction, showGeneratedPlan, hasLiveObjects, canUse3D, showHover, allowEdits, showQuickDrawPalette, showMobileDrawToolbar, drawingOwnsCanvasHits, overlayPointerEvents, passiveOverlayPointerEvents } = previewInteractionState;
+  const activeCanvasView = useMemo(
+    () => resolvePreviewCanvasView(canvasView, showMap),
+    [canvasView, showMap],
+  );
   const mapBearing = showMap3D ? (typeof siteRotationDeg === "number" ? siteRotationDeg : 0) : 0;
   const hasInteractiveLabels = previewLabels.length > 0 && showGeneratedPlan;
   const {
@@ -519,12 +526,63 @@ export default function PreviewPanel({
     () => buildPreviewCurrentSiteSize(lotWidth, lotHeight),
     [lotHeight, lotWidth],
   );
+  const mapAnchor = useMemo(
+    () => buildPreviewMapAnchor({ geocode, lotWidth, lotHeight, siteRotationDeg }),
+    [geocode, lotHeight, lotWidth, siteRotationDeg],
+  );
+  const planScaleBar = useMemo(() => buildPlanScaleBar(currentSiteSize), [currentSiteSize]);
+  const liveMapFeetPerPixel =
+    showMap && mapLoaded && mapRef.current ? measureMapFeetPerPixel(mapRef.current) : null;
+  const displayedScaleLengthFt = useMemo(
+    () =>
+      showMap && liveMapFeetPerPixel
+        ? Math.max(1, Math.round(liveMapFeetPerPixel * 112))
+        : planScaleBar.lengthFt,
+    [liveMapFeetPerPixel, planScaleBar.lengthFt, showMap],
+  );
+  const activeZoomLabel = showMap
+    ? `MAP ZOOM ${mapRef.current?.getZoom().toFixed(1) ?? "--"}`
+    : `ZOOM ${Math.round(activeCanvasView.scale * 100)}%`;
+  const zoomActiveView = useCallback(
+    (delta: number) => {
+      if (showMap && mapRef.current) {
+        mapRef.current.zoomTo(mapRef.current.getZoom() + delta, { animate: false });
+        return;
+      }
+      userAdjustedCanvasViewRef.current = true;
+      setCanvasView((previous) => ({
+        ...previous,
+        scale: Math.min(Math.max(previous.scale + delta * 0.15, 0.55), 4),
+      }));
+    },
+    [showMap],
+  );
+  const resetActiveView = useCallback(() => {
+    if (!showMap || !mapRef.current || !mapAnchor) {
+      resetCanvasView();
+      return;
+    }
+    const corners = [
+      siteToMapLngLat({ x: 0, y: 0 }, mapAnchor),
+      siteToMapLngLat({ x: lotWidth, y: 0 }, mapAnchor),
+      siteToMapLngLat({ x: lotWidth, y: lotHeight }, mapAnchor),
+      siteToMapLngLat({ x: 0, y: lotHeight }, mapAnchor),
+    ].filter(Boolean) as Array<[number, number]>;
+    if (corners.length !== 4) return;
+    const bounds = corners.reduce(
+      (current, coordinate) => current.extend(coordinate),
+      new mapboxgl.LngLatBounds(corners[0], corners[0]),
+    );
+    mapRef.current.fitBounds(bounds, { padding: 80, duration: 0 });
+  }, [lotHeight, lotWidth, mapAnchor, resetCanvasView, showMap]);
   const isHighQuality = previewQuality === "high";
   const aiRealismProviderConfigured = useMemo(() => isAiRealismProviderConfigured(), []);
-  const planScaleBar = useMemo(() => buildPlanScaleBar(currentSiteSize), [currentSiteSize]);
   const scaleTruthLabel = useMemo(
-    () => buildScaleTruthLabel({ geocode, mapScaleFtPerPx, mapScaleSource }),
-    [geocode, mapScaleFtPerPx, mapScaleSource],
+    () =>
+      liveMapFeetPerPixel
+        ? `LIVE MAP SCALE · ${liveMapFeetPerPixel.toFixed(2)} FT/PX`
+        : buildScaleTruthLabel({ geocode, mapScaleFtPerPx, mapScaleSource }),
+    [geocode, liveMapFeetPerPixel, mapScaleFtPerPx, mapScaleSource],
   );
   const resolveVisualKind = useCallback(resolvePreviewVisualKind, []);
   const hoveredObject = useMemo(
@@ -626,10 +684,10 @@ export default function PreviewPanel({
   const activeHighlightBounds = activeAnnotation?.bounds ?? null;
   const viewportTransformStyle = useMemo(
     () => ({
-      transform: `translate(${canvasView.offsetX}px, ${canvasView.offsetY}px) scale(${canvasView.scale})`,
+      transform: `translate(${activeCanvasView.offsetX}px, ${activeCanvasView.offsetY}px) scale(${activeCanvasView.scale})`,
       transformOrigin: "top left",
     }),
-    [canvasView.offsetX, canvasView.offsetY, canvasView.scale],
+    [activeCanvasView.offsetX, activeCanvasView.offsetY, activeCanvasView.scale],
   );
   const screenToSitePoint = useCallback(
     (
@@ -640,6 +698,20 @@ export default function PreviewPanel({
     ) => {
       if (!containerRef.current) return null;
       const rect = containerRef.current.getBoundingClientRect();
+      if (showMap && mapRef.current && mapAnchor) {
+        const mapRect = mapRef.current.getContainer().getBoundingClientRect();
+        const lngLat = mapRef.current.unproject([clientX - mapRect.left, clientY - mapRect.top]);
+        const rawSitePoint = mapLngLatToSitePoint(lngLat.lat, lngLat.lng, mapAnchor);
+        if (!rawSitePoint) return null;
+        return normalizePreviewPointerSitePoint({
+          rawSitePoint,
+          drawMode,
+          drawingLotWidth,
+          drawingLotHeight,
+          lotWidth,
+          lotHeight,
+        });
+      }
       return resolvePreviewPointerSitePoint({
         clientX,
         clientY,
@@ -650,16 +722,18 @@ export default function PreviewPanel({
         drawingLotHeight,
         lotWidth,
         lotHeight,
-        canvasView,
+        canvasView: activeCanvasView,
       });
     },
     [
-      canvasView,
+      activeCanvasView,
       drawMode,
       drawingLotHeight,
       drawingLotWidth,
       lotHeight,
       lotWidth,
+      mapAnchor,
+      showMap,
     ],
   );
   const applyCursorSitePoint = useCallback((nextPoint: CadPoint | null) => {
@@ -977,7 +1051,7 @@ export default function PreviewPanel({
         { left: rect.left, top: rect.top },
         bounds,
         currentSiteSize,
-        canvasView,
+        activeCanvasView,
       );
       const sitePoint = resolveCadSnapPoint(transformedSitePoint, null);
       const target =
@@ -1102,7 +1176,7 @@ export default function PreviewPanel({
       draggingVertex,
       draggingBuildingId,
       draggingMode,
-      canvasView,
+      activeCanvasView,
       currentSiteSize,
       lotHeight,
       lotWidth,
@@ -1946,7 +2020,7 @@ export default function PreviewPanel({
     userAdjustedCanvasViewRef,
     canvasPanStartedAtRef,
     setCanvasPanStart,
-    canvasView,
+    canvasView: activeCanvasView,
     canDrawObjects,
     screenToSitePoint,
     resolveCadSnapPoint,
@@ -2012,11 +2086,11 @@ export default function PreviewPanel({
       onSelectBuilding(building.id);
       const rect = event.currentTarget.getBoundingClientRect();
       setDragOffset({
-        x: (event.clientX - rect.left) / Math.max(canvasView.scale, 0.1),
-        y: (event.clientY - rect.top) / Math.max(canvasView.scale, 0.1),
+        x: (event.clientX - rect.left) / Math.max(activeCanvasView.scale, 0.1),
+        y: (event.clientY - rect.top) / Math.max(activeCanvasView.scale, 0.1),
       });
     },
-    [allowEdits, canvasView.scale, getEditCapabilities, onSelectBuilding],
+    [activeCanvasView.scale, allowEdits, getEditCapabilities, onSelectBuilding],
   );
 
   const hoverDetails = useMemo(
@@ -2115,10 +2189,6 @@ export default function PreviewPanel({
     }
   }, [debugStats?.enabled, lotHeight, lotWidth, overlayBoundsResolved, renderedCanonicalCount]);
 
-  const mapAnchor = useMemo(
-    () => buildPreviewMapAnchor({ geocode, lotWidth, lotHeight, siteRotationDeg }),
-    [geocode, lotHeight, lotWidth, siteRotationDeg],
-  );
   const coordinateMode = resolveCoordinateMode(mapAnchor);
   const sheetDrawingViewport = isHighQuality && !showMap ? HIGH_QUALITY_DRAWING_VIEWPORT : null;
   const mapPointIntoSheetViewport = useCallback(
@@ -2323,7 +2393,7 @@ export default function PreviewPanel({
     mapRevision,
   });
 
-  const { focusTransform, setFocusTransform } = usePreviewFocusTransform({
+  const { setFocusTransform } = usePreviewFocusTransform({
     focusDetectedId,
     focusObjectId,
     buildingPlacements,
@@ -2349,7 +2419,7 @@ export default function PreviewPanel({
     lotWidth,
     lotHeight,
     draftPoints,
-    canvasView,
+    canvasView: activeCanvasView,
     placementMode,
     showHover,
     hoverPoint,
@@ -2483,7 +2553,7 @@ export default function PreviewPanel({
               canDrawObjects,
               drawObjectsDisabledLabel,
               cursorSitePoint,
-              canvasScale: canvasView.scale,
+              canvasScale: activeCanvasView.scale,
               lastCommandLabel: cadHistory.at(-1)?.label,
               canFinishDraftGeometry,
               finishDraftBlockedReason,
@@ -2717,8 +2787,9 @@ export default function PreviewPanel({
                   siteRotationDeg,
                 },
                 canvasHudProps: {
-                  scaleLengthFt: planScaleBar.lengthFt,
-                  zoomScale: canvasView.scale,
+                  scaleLengthFt: displayedScaleLengthFt,
+                  zoomScale: activeCanvasView.scale,
+                  zoomLabel: activeZoomLabel,
                   lotWidth,
                   lotHeight,
                   scaleTruthLabel,
@@ -2726,22 +2797,15 @@ export default function PreviewPanel({
                   draftPrecisionReadout,
                   activeDrawToolLabel,
                   activeSnapKind: activeSnapPoint?.kind,
-                  onZoomIn: () => {
-                    userAdjustedCanvasViewRef.current = true;
-                    setCanvasView((prev) => ({ ...prev, scale: Math.min(prev.scale + 0.15, 4) }));
-                  },
-                  onZoomOut: () => {
-                    userAdjustedCanvasViewRef.current = true;
-                    setCanvasView((prev) => ({ ...prev, scale: Math.max(prev.scale - 0.15, 0.55) }));
-                  },
-                  onResetView: resetCanvasView,
+                  onZoomIn: () => zoomActiveView(1),
+                  onZoomOut: () => zoomActiveView(-1),
+                  onResetView: resetActiveView,
                 },
                 overlayStackProps: {
                   drawMode,
                   draftPointCount,
                   overlayPointerEvents,
                   viewportTransformStyle,
-                  focusTransform,
                   showMap,
                   mapLocked,
                   previewInteraction,

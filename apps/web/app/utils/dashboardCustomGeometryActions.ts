@@ -84,6 +84,7 @@ export function runDashboardCreateCustomGeometry({
             [maxX, minY],
             [maxX, maxY],
             [minX, maxY],
+            [minX, minY],
           ] as Array<[number, number]>;
         })()
       : validPoints;

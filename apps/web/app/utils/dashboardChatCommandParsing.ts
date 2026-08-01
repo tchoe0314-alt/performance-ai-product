@@ -46,7 +46,9 @@ const CHAT_OBJECT_TYPE_MAP: Record<string, SiteObjectType> = {
 export function parseDashboardObjectCommandIntent(message: string): DashboardObjectCommandIntent | null {
   const lower = message.toLowerCase();
   const parkingCountCommandMatch = lower.match(/\badd\s+(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls)\b/);
-  const officeAreaCommandMatch = lower.match(/\badd\s+(\d{3,8})\s*(?:sf|sq\s*ft|square\s*feet)\s+office\s+building\b/);
+  const officeAreaCommandMatch = lower.match(
+    /\b(?:add|create|place|make|put|include)\b[^\d]{0,48}(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)\s+(?:(?:office\s+)?building|office\s+project)\b/,
+  );
   const addBuildingMatch = lower.match(
     /(add|create|place)\s+(a\s+)?building[^0-9]*?(\d+(\.\d+)?)\s*(ft|feet|')?\s*(x|by)\s*(\d+(\.\d+)?)/,
   );
@@ -72,7 +74,7 @@ export function parseDashboardObjectCommandIntent(message: string): DashboardObj
     return Number.isFinite(stalls) && stalls > 0 ? { kind: "parking_count", stalls } : null;
   }
   if (officeAreaCommandMatch) {
-    const areaSf = Number(officeAreaCommandMatch[1]);
+    const areaSf = Number(officeAreaCommandMatch[1].replace(/,/g, ""));
     return Number.isFinite(areaSf) && areaSf > 0 ? { kind: "office_area", areaSf } : null;
   }
   if (addBuildingMatch) {

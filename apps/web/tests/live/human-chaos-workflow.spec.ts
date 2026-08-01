@@ -32,12 +32,35 @@ async function clickSurface(page: Page, xRatio: number, yRatio: number) {
   const point = await surface.evaluate(
     (element, ratios) => {
       const rect = element.getBoundingClientRect();
-      return { x: rect.left + rect.width * ratios.xRatio, y: rect.top + rect.height * ratios.yRatio };
+      const clamp = (value: number) => Math.max(0.08, Math.min(0.92, value));
+      const candidates: Array<{ x: number; y: number; distance: number }> = [];
+      for (const xOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32]) {
+        for (const yOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24]) {
+          const nextXRatio = clamp(ratios.xRatio + xOffset);
+          const nextYRatio = clamp(ratios.yRatio + yOffset);
+          const x = rect.left + rect.width * nextXRatio;
+          const y = rect.top + rect.height * nextYRatio;
+          const hit = document.elementFromPoint(x, y);
+          const blocked = hit?.closest?.(
+            '[data-object-overlay],button,input,select,textarea,aside,header,[data-testid="cad-precision-tools"],[data-testid="workspace-right-panel"]',
+          );
+          if ((hit === element || element.contains(hit)) && !blocked) {
+            candidates.push({
+              x,
+              y,
+              distance: Math.abs(nextXRatio - ratios.xRatio) + Math.abs(nextYRatio - ratios.yRatio),
+            });
+          }
+        }
+      }
+      candidates.sort((a, b) => a.distance - b.distance);
+      return candidates[0] ?? null;
     },
     { xRatio, yRatio },
   );
-  await page.mouse.move(point.x, point.y, { steps: 8 });
-  await page.mouse.click(point.x, point.y);
+  expect(point, "Expected an exposed drawing-surface point").not.toBeNull();
+  await page.mouse.move(point!.x, point!.y, { steps: 8 });
+  await page.mouse.click(point!.x, point!.y);
 }
 
 async function visibleButtonCount(page: Page) {

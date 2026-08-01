@@ -12,7 +12,6 @@ type Preview2DOverlayStackProps = {
   draftPointCount: number;
   overlayPointerEvents: string;
   viewportTransformStyle: { transform: string };
-  focusTransform: { scale: number; tx: number; ty: number } | null;
   showMap: boolean;
   mapLocked: boolean;
   previewInteraction: "static" | "edit";
@@ -35,7 +34,6 @@ export function Preview2DOverlayStack({
   draftPointCount,
   overlayPointerEvents,
   viewportTransformStyle,
-  focusTransform,
   showMap,
   mapLocked,
   previewInteraction,
@@ -73,11 +71,7 @@ export function Preview2DOverlayStack({
         className={`${overlayPointerEvents} absolute inset-0 z-[15]`}
         style={{
           transformOrigin: "top left",
-          transform: `${viewportTransformStyle.transform}${
-            focusTransform
-              ? ` translate(50%, 50%) scale(${focusTransform.scale}) translate(-${focusTransform.tx * 100}%, -${focusTransform.ty * 100}%)`
-              : ""
-          }`,
+          transform: viewportTransformStyle.transform,
         }}
         onMouseDown={(event) => {
           if (beginCadWindowSelect(event)) return;

@@ -38,6 +38,7 @@ type AnalysisIssue = {
 
 type UseDashboardWorkspaceResetOptions = {
   debugLog: (message: string, details?: Record<string, unknown>) => void;
+  resetDraftHistory: () => void;
   setActiveJobId: Dispatch<SetStateAction<string>>;
   setActivePlacementId: Dispatch<SetStateAction<string | null>>;
   setAddressSuggestions: Dispatch<SetStateAction<AddressSuggestion[]>>;
@@ -74,6 +75,7 @@ type UseDashboardWorkspaceResetOptions = {
   setMapCenterRequest: Dispatch<SetStateAction<number>>;
   setMapSnapshotPath: Dispatch<SetStateAction<string>>;
   setMoveEditFeedback: Dispatch<SetStateAction<string>>;
+  setObjectManagerStatusMessage: Dispatch<SetStateAction<string>>;
   setPendingClarification: Dispatch<SetStateAction<{ question: string; action: string; payload?: Record<string, unknown> } | null>>;
   setPlacementModeEnabled: Dispatch<SetStateAction<boolean>>;
   setPlanPdfElementDraftText: Dispatch<SetStateAction<string>>;
@@ -139,6 +141,7 @@ type UseDashboardWorkspaceResetOptions = {
 
 export function useDashboardWorkspaceReset({
   debugLog,
+  resetDraftHistory,
   setActiveJobId,
   setActivePlacementId,
   setAddressSuggestions,
@@ -175,6 +178,7 @@ export function useDashboardWorkspaceReset({
   setMapCenterRequest,
   setMapSnapshotPath,
   setMoveEditFeedback,
+  setObjectManagerStatusMessage,
   setPendingClarification,
   setPlacementModeEnabled,
   setPlanPdfElementDraftText,
@@ -218,6 +222,7 @@ export function useDashboardWorkspaceReset({
 }: UseDashboardWorkspaceResetOptions) {
   const resetWorkspaceState = useCallback(() => {
     debugLog("reset-workspace");
+    resetDraftHistory();
     setCadToolRequest(null);
     setPlanPreviewUrl("");
     setPlanPreviewProjectId(null);
@@ -273,6 +278,7 @@ export function useDashboardWorkspaceReset({
     setPreviewFullscreenOpen(false);
     setSelectedJobId("");
     setMoveEditFeedback("");
+    setObjectManagerStatusMessage("");
     setJobsPanelStatusMessage("");
     setWorkspaceRestoreState("idle");
     setSiteAddress("");
@@ -302,6 +308,7 @@ export function useDashboardWorkspaceReset({
     setPlanSheetSet(createDefaultPlanSheetSet("Untitled Project"));
   }, [
     debugLog,
+    resetDraftHistory,
     setActiveJobId,
     setActivePlacementId,
     setAddressSuggestions,
@@ -338,6 +345,7 @@ export function useDashboardWorkspaceReset({
     setMapCenterRequest,
     setMapSnapshotPath,
     setMoveEditFeedback,
+    setObjectManagerStatusMessage,
     setPendingClarification,
     setPlacementModeEnabled,
     setPlanPdfElementDraftText,

@@ -37,3 +37,7 @@ export function buildFocusedPreviewCanvasView(
     offsetY: (0.5 - centerY) * 96,
   };
 }
+
+export function resolvePreviewCanvasView(canvasView: PreviewCanvasView, showMap: boolean): PreviewCanvasView {
+  return showMap ? { scale: 1, offsetX: 0, offsetY: 0 } : canvasView;
+}

@@ -15,8 +15,11 @@ async function openWorkspace(page: Page) {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("requestfailed", (request) => {
     const url = request.url();
-    if (!ignoredConsoleError.test(url)) {
-      failedRequests.push(`${request.method()} ${url} ${request.failure()?.errorText || "failed"}`);
+    const failure = request.failure()?.errorText || "failed";
+    const expectedMapReplacementAbort =
+      /api\.mapbox\.com/i.test(url) && /ERR_ABORTED|NS_BINDING_ABORTED/i.test(failure);
+    if (!ignoredConsoleError.test(url) && !expectedMapReplacementAbort) {
+      failedRequests.push(`${request.method()} ${url} ${failure}`);
     }
   });
 

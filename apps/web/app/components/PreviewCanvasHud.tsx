@@ -14,6 +14,7 @@ type DraftPrecisionReadout = {
 type PreviewCanvasHudProps = {
   scaleLengthFt: number;
   zoomScale: number;
+  zoomLabel?: string;
   lotWidth: number;
   lotHeight: number;
   scaleTruthLabel: string;
@@ -29,6 +30,7 @@ type PreviewCanvasHudProps = {
 export function PreviewCanvasHud({
   scaleLengthFt,
   zoomScale,
+  zoomLabel,
   lotWidth,
   lotHeight,
   scaleTruthLabel,
@@ -109,7 +111,7 @@ export function PreviewCanvasHud({
         data-testid="canvas-coordinate-readout"
         className="civora-preview-coordinate-readout pointer-events-none absolute bottom-4 left-4 z-[45] rounded-lg border border-slate-300 bg-white/92 px-3 py-2 font-mono text-[11px] text-slate-700 shadow-sm backdrop-blur"
       >
-        <div>ZOOM {Math.round(zoomScale * 100)}%</div>
+        <div>{zoomLabel ?? `ZOOM ${Math.round(zoomScale * 100)}%`}</div>
         <div>
           SITE {Math.round(lotWidth)} ft x {Math.round(lotHeight)} ft
         </div>

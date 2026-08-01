@@ -12,6 +12,47 @@ export type PreviewPointerSitePoint = {
   relY: number;
 };
 
+export function normalizePreviewPointerSitePoint({
+  rawSitePoint,
+  drawMode,
+  drawingLotWidth,
+  drawingLotHeight,
+  lotWidth,
+  lotHeight,
+}: {
+  rawSitePoint: { x: number; y: number };
+  drawMode: DrawMode;
+  drawingLotWidth: number;
+  drawingLotHeight: number;
+  lotWidth: number;
+  lotHeight: number;
+}): PreviewPointerSitePoint | null {
+  const effectiveLotWidth = drawMode === "site" ? drawingLotWidth : lotWidth;
+  const effectiveLotHeight = drawMode === "site" ? drawingLotHeight : lotHeight;
+  if (!effectiveLotWidth || !effectiveLotHeight) return null;
+  const relX = rawSitePoint.x / Math.max(effectiveLotWidth, 1);
+  const relY = rawSitePoint.y / Math.max(effectiveLotHeight, 1);
+  if (!Number.isFinite(relX) || !Number.isFinite(relY)) return null;
+  const isDrawingMode =
+    drawMode === "site" ||
+    drawMode === "polyline" ||
+    drawMode === "polygon" ||
+    drawMode === "rect" ||
+    drawMode === "point";
+  if (!isDrawingMode && (relX < 0 || relX > 1 || relY < 0 || relY > 1)) return null;
+  const clampedRelX = Math.min(Math.max(relX, 0), 1);
+  const clampedRelY = Math.min(Math.max(relY, 0), 1);
+  const clampedX = Math.min(Math.max(rawSitePoint.x, 0), effectiveLotWidth);
+  const clampedY = Math.min(Math.max(rawSitePoint.y, 0), effectiveLotHeight);
+  const snapStep = drawMode === "point" ? 1 : drawMode === "site" ? 5 : 2;
+  return {
+    x: Math.round(clampedX / snapStep) * snapStep,
+    y: Math.round(clampedY / snapStep) * snapStep,
+    relX: clampedRelX,
+    relY: clampedRelY,
+  };
+}
+
 export function resolvePreviewPointerSitePoint({
   clientX,
   clientY,
@@ -45,25 +86,12 @@ export function resolvePreviewPointerSitePoint({
     { width: effectiveLotWidth, height: effectiveLotHeight },
     canvasView,
   );
-  const relX = rawSitePoint.x / Math.max(effectiveLotWidth, 1);
-  const relY = rawSitePoint.y / Math.max(effectiveLotHeight, 1);
-  if (!Number.isFinite(relX) || !Number.isFinite(relY)) return null;
-  const isDrawingMode =
-    drawMode === "site" ||
-    drawMode === "polyline" ||
-    drawMode === "polygon" ||
-    drawMode === "rect" ||
-    drawMode === "point";
-  if (!isDrawingMode && (relX < 0 || relX > 1 || relY < 0 || relY > 1)) return null;
-  const clampedRelX = Math.min(Math.max(relX, 0), 1);
-  const clampedRelY = Math.min(Math.max(relY, 0), 1);
-  const clampedX = Math.min(Math.max(rawSitePoint.x, 0), effectiveLotWidth);
-  const clampedY = Math.min(Math.max(rawSitePoint.y, 0), effectiveLotHeight);
-  const snapStep = drawMode === "point" ? 1 : drawMode === "site" ? 5 : 2;
-  return {
-    x: Math.round(clampedX / snapStep) * snapStep,
-    y: Math.round(clampedY / snapStep) * snapStep,
-    relX: clampedRelX,
-    relY: clampedRelY,
-  };
+  return normalizePreviewPointerSitePoint({
+    rawSitePoint,
+    drawMode,
+    drawingLotWidth,
+    drawingLotHeight,
+    lotWidth,
+    lotHeight,
+  });
 }

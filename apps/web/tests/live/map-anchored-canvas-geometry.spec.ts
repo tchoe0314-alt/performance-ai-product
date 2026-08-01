@@ -13,6 +13,8 @@ import {
   siteToScreenPoint,
   translateSiteGeometry,
 } from "../../app/utils/geometryTransforms";
+import { resolvePreviewCanvasView } from "../../app/utils/previewCanvasViewHelpers";
+import { normalizePreviewPointerSitePoint } from "../../app/utils/previewPointerGeometry";
 
 type CanonicalObject = {
   id: string;
@@ -56,12 +58,16 @@ function toMercatorMeters(lngLat: [number, number]) {
   };
 }
 
-function mercatorDistanceFeet(a: [number, number], b: [number, number]) {
-  const aMeters = toMercatorMeters(a);
-  const bMeters = toMercatorMeters(b);
-  const dx = bMeters.x - aMeters.x;
-  const dy = bMeters.y - aMeters.y;
-  return Math.hypot(dx, dy) / METERS_PER_FOOT;
+function groundDistanceFeet(a: [number, number], b: [number, number]) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const lat1 = toRadians(a[1]);
+  const lat2 = toRadians(b[1]);
+  const deltaLat = lat2 - lat1;
+  const deltaLng = toRadians(b[0] - a[0]);
+  const sinLat = Math.sin(deltaLat / 2);
+  const sinLng = Math.sin(deltaLng / 2);
+  const haversine = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
+  return (2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(haversine)))) / METERS_PER_FOOT;
 }
 
 function projectMercatorPixels(lngLat: [number, number], center: [number, number], zoom: number) {
@@ -76,6 +82,41 @@ function projectMercatorPixels(lngLat: [number, number], center: [number, number
 }
 
 test.describe("map anchored canvas geometry transforms", () => {
+  test("map-backed overlays use the map viewport instead of the local canvas camera", () => {
+    const localCamera = { scale: 0.58, offsetX: 140, offsetY: 24 };
+
+    expect(resolvePreviewCanvasView(localCamera, false)).toEqual(localCamera);
+    expect(resolvePreviewCanvasView(localCamera, true)).toEqual({
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    });
+  });
+
+  test("map-unprojected points preserve site-foot dimensions and snap consistently", () => {
+    const first = normalizePreviewPointerSitePoint({
+      rawSitePoint: { x: 180.4, y: 220.2 },
+      drawMode: "rect",
+      drawingLotWidth: 1000,
+      drawingLotHeight: 1000,
+      lotWidth: 1000,
+      lotHeight: 1000,
+    });
+    const second = normalizePreviewPointerSitePoint({
+      rawSitePoint: { x: 460.1, y: 370.3 },
+      drawMode: "rect",
+      drawingLotWidth: 1000,
+      drawingLotHeight: 1000,
+      lotWidth: 1000,
+      lotHeight: 1000,
+    });
+
+    expect(first).toMatchObject({ x: 180, y: 220 });
+    expect(second).toMatchObject({ x: 460, y: 370 });
+    expect(second!.x - first!.x).toBe(280);
+    expect(second!.y - first!.y).toBe(150);
+  });
+
   test("camera pan and zoom change projection but not canonical rectangle geometry", () => {
     const building = rectangleBuilding();
     const canonicalBefore = structuredClone(building);
@@ -186,8 +227,8 @@ test.describe("map anchored canvas geometry transforms", () => {
     expect(eastMid).not.toBeNull();
     expect(northMid).not.toBeNull();
     expect(southMid).not.toBeNull();
-    expect(mercatorDistanceFeet(westMid!, eastMid!)).toBeCloseTo(1000, 4);
-    expect(mercatorDistanceFeet(northMid!, southMid!)).toBeCloseTo(1000, 4);
+    expect(groundDistanceFeet(westMid!, eastMid!)).toBeCloseTo(1000, 2);
+    expect(groundDistanceFeet(northMid!, southMid!)).toBeCloseTo(1000, 2);
 
     const recoveredCenter = mapLngLatToSite({ lng: anchor.lng, lat: anchor.lat }, anchor);
     expect(recoveredCenter).not.toBeNull();
@@ -209,7 +250,7 @@ test.describe("map anchored canvas geometry transforms", () => {
 
     expect(left).not.toBeNull();
     expect(right).not.toBeNull();
-    expect(mercatorDistanceFeet(left!, right!)).toBeCloseTo(1000, 4);
+    expect(groundDistanceFeet(left!, right!)).toBeCloseTo(1000, 2);
 
     const leftZoom15 = projectMercatorPixels(left!, center, 15);
     const rightZoom15 = projectMercatorPixels(right!, center, 15);
@@ -219,7 +260,7 @@ test.describe("map anchored canvas geometry transforms", () => {
     const pxAt17 = Math.hypot(rightZoom17.x - leftZoom17.x, rightZoom17.y - leftZoom17.y);
 
     expect(pxAt17 / pxAt15).toBeCloseTo(4, 5);
-    expect(mercatorDistanceFeet(left!, right!)).toBeCloseTo(1000, 4);
+    expect(groundDistanceFeet(left!, right!)).toBeCloseTo(1000, 2);
   });
 
   test("intentional move and resize update canonical coordinates only from edit operations", () => {

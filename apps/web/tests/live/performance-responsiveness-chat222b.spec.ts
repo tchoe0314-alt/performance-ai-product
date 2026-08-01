@@ -255,7 +255,7 @@ test.describe("Chat 222B performance and responsiveness", () => {
         const element = document.elementFromPoint(x, y) as HTMLElement | null;
         return element?.closest<HTMLElement>("[data-testid]")?.dataset.testid ?? null;
       }, dragStart);
-      expect(hitTarget).toBe("preview-drawing-surface");
+      expect(["preview-drawing-surface", "preview-drawing-overlays"]).toContain(hitTarget);
       await page.mouse.move(dragStart.x, dragStart.y);
       await page.mouse.down();
       await page.mouse.move(

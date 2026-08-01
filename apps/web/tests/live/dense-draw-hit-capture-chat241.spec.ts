@@ -27,19 +27,21 @@ async function largestOverlayPoints(page: Page) {
       .map((element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
+        const left = Math.max(rect.left, 0);
+        const top = Math.max(rect.top, 0);
+        const right = Math.min(rect.right, window.innerWidth);
+        const bottom = Math.min(rect.bottom, window.innerHeight);
+        const width = Math.max(0, right - left);
+        const height = Math.max(0, bottom - top);
         return {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-          area: rect.width * rect.height,
+          left,
+          top,
+          width,
+          height,
+          area: width * height,
           visible:
-            rect.width >= 60 &&
-            rect.height >= 40 &&
-            rect.right > 0 &&
-            rect.bottom > 0 &&
-            rect.left < window.innerWidth &&
-            rect.top < window.innerHeight &&
+            width >= 60 &&
+            height >= 40 &&
             style.visibility !== "hidden" &&
             style.display !== "none",
         };
@@ -49,11 +51,11 @@ async function largestOverlayPoints(page: Page) {
     const rect = candidates[0];
     if (!rect) return null;
     return {
-      lineA: { x: rect.left + rect.width * 0.22, y: rect.top + rect.height * 0.32 },
-      lineB: { x: rect.left + rect.width * 0.78, y: rect.top + rect.height * 0.32 },
-      areaA: { x: rect.left + rect.width * 0.22, y: rect.top + rect.height * 0.68 },
-      areaB: { x: rect.left + rect.width * 0.78, y: rect.top + rect.height * 0.68 },
-      areaC: { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.88 },
+      lineA: { x: rect.left + rect.width * 0.22, y: rect.top + rect.height * 0.25 },
+      lineB: { x: rect.left + rect.width * 0.78, y: rect.top + rect.height * 0.25 },
+      areaA: { x: rect.left + rect.width * 0.22, y: rect.top + rect.height * 0.58 },
+      areaB: { x: rect.left + rect.width * 0.78, y: rect.top + rect.height * 0.58 },
+      areaC: { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.82 },
     };
   });
   expect(points, "Expected a large visible existing object overlay to draw over").not.toBeNull();
@@ -85,12 +87,13 @@ test.describe("dense canvas draw hit capture", () => {
     await expect(feedback).toContainText(/LINE created|Custom Line/i);
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ }).first()).toBeVisible();
 
+    const areaPoints = await largestOverlayPoints(page);
     await cadTools.getByTestId("cad-tool-area").click();
     await expect(feedback).toContainText(/AREA tool active|Add Area active/i);
-    await expect.poll(() => pointIsObjectOverlay(page, points.areaA)).toBe(false);
-    await page.mouse.click(points.areaA.x, points.areaA.y);
-    await page.mouse.click(points.areaB.x, points.areaB.y);
-    await page.mouse.click(points.areaC.x, points.areaC.y);
+    await expect.poll(() => pointIsObjectOverlay(page, areaPoints.areaA)).toBe(false);
+    await page.mouse.click(areaPoints.areaA.x, areaPoints.areaA.y);
+    await page.mouse.click(areaPoints.areaB.x, areaPoints.areaB.y);
+    await page.mouse.click(areaPoints.areaC.x, areaPoints.areaC.y);
     await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
     await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
     await expect(feedback).toContainText(/AREA created editable draft geometry for review/);

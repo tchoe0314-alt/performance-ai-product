@@ -83,6 +83,24 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
   });
 
+  test("natural comma-formatted office project wording creates the requested footprint", async ({ page }) => {
+    await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
+
+    await runCommand(page, "Set the site to 1000 ft by 1000 ft with 20525 Margo St Gretna NE as the center point");
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Site Locked/i, { timeout: 8_000 });
+
+    await runCommand(
+      page,
+      "make this a 28,000 sf office project with 140 parking stalls, a detention basin, driveway, sidewalks, public water, sanitary, and storm sewer",
+    );
+
+    await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Basin / Detention"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
+    await expect(page.getByText(/Added and placed 28,000 sf office building/i).first()).toBeVisible({ timeout: 5_000 });
+  });
+
   test("natural grading and drainage context commands create editable review geometry", async ({ page }) => {
     await openDemoWorkspace(page);
 

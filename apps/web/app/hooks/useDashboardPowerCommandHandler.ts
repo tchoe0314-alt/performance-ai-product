@@ -222,9 +222,11 @@ export function useDashboardPowerCommandHandler({
     const lot = resolveLotBounds();
     const requested: Array<() => void> = [];
     const labels: string[] = [];
-    const officeArea = lower.match(/(\d{3,8})\s*(?:sf|sq\s*ft|square\s*feet)\s+(?:office\s+)?building/);
-    if (officeArea || /\boffice building\b/.test(lower)) {
-      const area = officeArea ? Number(officeArea[1]) : null;
+    const officeArea = lower.match(
+      /(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)\s+(?:(?:office\s+)?building|office\s+project)\b/,
+    );
+    if (officeArea || /\boffice\s+(?:building|project)\b/.test(lower)) {
+      const area = officeArea ? Number(officeArea[1].replace(/,/g, "")) : null;
       const depth = area ? Math.round(Math.sqrt(area / 1.8)) : undefined;
       const width = area && depth ? Math.round(area / Math.max(depth, 1)) : undefined;
       requested.push(() => handleAddObject("office_building", {

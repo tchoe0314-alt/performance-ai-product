@@ -35,6 +35,15 @@ export function useDashboardDraftHistoryState() {
     setLastDraftAction(null);
   }, []);
 
+  const resetDraftHistory = useCallback(() => {
+    lastDraftActionRef.current = null;
+    redoDraftActionRef.current = null;
+    setLastDraftAction(null);
+    setRedoDraftAction(null);
+    setRecentChanges([]);
+    setRecentChangesOpen(false);
+  }, []);
+
   const recordRecentChange = useCallback((change: Omit<RecentChange, "id" | "createdAt">) => {
     const nextChange: RecentChange = {
       ...change,
@@ -55,6 +64,7 @@ export function useDashboardDraftHistoryState() {
     recordDraftRedoAction,
     recordDraftUndoAction,
     recordRecentChange,
+    resetDraftHistory,
     redoDraftAction,
     redoDraftActionRef,
     setRecentChangesOpen,

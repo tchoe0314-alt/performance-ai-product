@@ -5,6 +5,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import mapboxgl from "mapbox-gl";
 
 import { siteToRelativePoint, type SiteSize } from "../utils/geometryTransforms";
+import { measureMapFeetPerPixel } from "../utils/previewMapProjection";
 import type { PreviewPanelProps } from "./previewPanelTypes";
 
 type MutableRef<T> = { current: T };
@@ -156,7 +157,9 @@ export function usePreviewMapRuntime({
             maxzoom: 14,
           });
         }
-        map.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+        if (mapPitch > 0) {
+          map.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+        }
       } catch (error) {
         setMapError(error instanceof Error ? error.message : "Map terrain setup failed");
       }
@@ -172,6 +175,21 @@ export function usePreviewMapRuntime({
       setMapLoaded(false);
     };
   }, [mapAvailable, mapBearing, mapContainerRef, mapOverlayEnabled, mapPitch, mapRef, mapboxToken, setMapError, setMapLoaded, setMapRevision]);
+
+  useEffect(() => {
+    if (!mapAvailable || !mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+    try {
+      if (mapPitch > 0 && map.getSource("mapbox-dem")) {
+        map.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      } else if (map.getTerrain()) {
+        map.setTerrain(null);
+      }
+      setMapRevision((value) => value + 1);
+    } catch (error) {
+      setMapError(error instanceof Error ? error.message : "Map terrain mode failed");
+    }
+  }, [mapAvailable, mapLoaded, mapPitch, mapRef, setMapError, setMapRevision]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded) return;
@@ -269,11 +287,8 @@ export function usePreviewMapRuntime({
     const map = mapRef.current;
     const reportScale = () => {
       if (!onMapScaleUpdate) return;
-      const center = map.getCenter();
-      const zoom = map.getZoom();
-      const metersPerPixel = 156543.03392 * Math.cos((center.lat * Math.PI) / 180) / Math.pow(2, zoom);
-      const ftPerPx = metersPerPixel * 3.28084;
-      if (Number.isFinite(ftPerPx)) {
+      const ftPerPx = measureMapFeetPerPixel(map);
+      if (ftPerPx) {
         onMapScaleUpdate({ ftPerPx, source: "mapbox" });
       }
     };
@@ -436,7 +451,9 @@ export function usePreviewMapRuntime({
         tileSize: 512,
         maxzoom: 14,
       });
-      fullscreenMap.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      if (mapPitch > 0) {
+        fullscreenMap.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      }
       fullscreenMap.resize();
       setMapRevision((value) => value + 1);
     });
