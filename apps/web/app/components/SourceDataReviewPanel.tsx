@@ -22,6 +22,7 @@ export function SourceDataReviewPanel({
   onlineDiscoverySources,
   candidateCounts,
   candidateItems,
+  candidateDecisionInFlight,
   onCandidateDecision,
 }: {
   capabilityRows: CapabilityExposure[];
@@ -34,6 +35,10 @@ export function SourceDataReviewPanel({
     pending?: number;
   };
   candidateItems: CandidateReviewItem[];
+  candidateDecisionInFlight: {
+    candidateId: string;
+    action: CandidateReviewDecision;
+  } | null;
   onCandidateDecision: (candidateId: string, decision: CandidateReviewDecision) => void;
 }) {
   const dataCapabilityRows = capabilityRows.filter((item) => DATA_CAPABILITY_KEYS.has(item.key));
@@ -123,12 +128,15 @@ export function SourceDataReviewPanel({
           {candidateItems.length ? (
             visibleCandidates.map((candidate) => {
               const status = candidate.status === "accepted" || candidate.status === "rejected" ? candidate.status : "pending";
+              const candidateBusy = candidateDecisionInFlight?.candidateId === candidate.candidate_id;
+              const anyCandidateBusy = Boolean(candidateDecisionInFlight);
               return (
                 <div
                   key={candidate.candidate_id}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
                   data-testid="detected-item-candidate"
                   data-candidate-id={candidate.candidate_id}
+                  aria-busy={candidateBusy}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -169,26 +177,26 @@ export function SourceDataReviewPanel({
                     <button
                       type="button"
                       onClick={() => onCandidateDecision(candidate.candidate_id, "accept")}
-                      disabled={status === "accepted"}
+                      disabled={status === "accepted" || anyCandidateBusy}
                       className="rounded-lg border border-emerald-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Accept
+                      {candidateBusy && candidateDecisionInFlight?.action === "accept" ? "Saving..." : "Accept"}
                     </button>
                     <button
                       type="button"
                       onClick={() => onCandidateDecision(candidate.candidate_id, "reject")}
-                      disabled={status === "rejected"}
+                      disabled={status === "rejected" || anyCandidateBusy}
                       className="rounded-lg border border-red-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Reject
+                      {candidateBusy && candidateDecisionInFlight?.action === "reject" ? "Saving..." : "Reject"}
                     </button>
                     <button
                       type="button"
                       onClick={() => onCandidateDecision(candidate.candidate_id, "pending")}
-                      disabled={status === "pending"}
+                      disabled={status === "pending" || anyCandidateBusy}
                       className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Pending
+                      {candidateBusy && candidateDecisionInFlight?.action === "pending" ? "Saving..." : "Pending"}
                     </button>
                   </div>
                 </div>

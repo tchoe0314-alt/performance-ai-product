@@ -55,6 +55,22 @@ def _json_loads(value: Any, default: Any) -> Any:
         return default
 
 
+def _project_name(name: Any, project_input: Dict[str, Any]) -> str:
+    requested = str(name or "").strip()
+    if requested and requested.lower() != "untitled project":
+        return requested
+    site_inputs = dict(dict(project_input.get("meta") or {}).get("site_inputs") or {})
+    geocode = dict(site_inputs.get("geocode") or {})
+    address = str(
+        site_inputs.get("address")
+        or geocode.get("display_name")
+        or geocode.get("formatted_address")
+        or ""
+    ).strip()
+    street = address.split(",", 1)[0].strip()
+    return f"{street} Site" if street else "Untitled Project"
+
+
 def _merge_project_input_value(existing: Any, incoming: Any) -> Any:
     if incoming is None:
         return existing
@@ -339,18 +355,194 @@ class ProjectStore:
             connection.close()
 
     def get_project_shell(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
-        record = self.get_project(user_id=user_id, project_id=project_id)
-        if record is None:
-            return None
-        shell = dict(record)
-        shell["latest_result"] = {}
-        return shell
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
+                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
+                       p.project_input_json, p.session_state_json, p.metadata_json,
+                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                """,
+                (user_id, user_id, project_id, user_id, user_id),
+            ).fetchone()
+            return None if row is None else self._shell_row_to_record(row)
+        finally:
+            connection.close()
 
     def get_project_latest_result(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
-        record = self.get_project(user_id=user_id, project_id=project_id)
-        if record is None:
-            return None
-        return dict(record.get("latest_result") or {})
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT p.latest_result_json
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                """,
+                (user_id, project_id, user_id, user_id),
+            ).fetchone()
+            if row is None:
+                return None
+            return dict(_json_loads(row["latest_result_json"], {}) or {})
+        finally:
+            connection.close()
+
+    def update_project_candidate_review_state(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        candidate_state: Dict[str, Any],
+        minimum_role: str = "reviewer",
+    ) -> Dict[str, Any]:
+        """Persist candidate review state without loading or rewriting generated results."""
+
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
+                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
+                       p.project_input_json, p.session_state_json, p.metadata_json,
+                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                """,
+                (user_id, user_id, project_id, user_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Project not found.")
+            role = _normalize_role(
+                row["access_role"],
+                default="owner" if row["user_id"] == user_id else "viewer",
+            )
+            if not _role_allows(role, minimum_role):
+                raise ValueError(f"You do not have {minimum_role} access to that project.")
+
+            project_input = dict(_json_loads(row["project_input_json"], {}) or {})
+            input_meta = dict(project_input.get("meta") or {})
+            site_inputs = dict(input_meta.get("site_inputs") or {})
+            site_inputs.update(_json_safe(candidate_state))
+            input_meta["site_inputs"] = site_inputs
+            project_input["meta"] = input_meta
+            project_name = _project_name(row["name"], project_input)
+            updated_at = _now()
+            connection.execute(
+                "UPDATE projects SET name = ?, project_input_json = ?, updated_at = ? WHERE project_id = ?",
+                (project_name, _json_dumps(project_input), updated_at, project_id),
+            )
+            connection.commit()
+
+            shell_row = dict(row)
+            shell_row["name"] = project_name
+            shell_row["project_input_json"] = _json_dumps(project_input)
+            shell_row["updated_at"] = updated_at
+            record = self._shell_row_to_record(shell_row)
+            record["access_role"] = role
+            return record
+        finally:
+            connection.close()
+
+    def save_project_shell(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        name: str,
+        description: str = "",
+        session_id: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        project_input: Optional[Dict[str, Any]] = None,
+        session_state: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        organization_id: Optional[str] = None,
+        minimum_role: str = "editor",
+    ) -> Dict[str, Any]:
+        """Update project shell state while preserving the generated result in place."""
+
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
+                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
+                       p.project_input_json, p.session_state_json, p.metadata_json,
+                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                """,
+                (user_id, user_id, project_id, user_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Project not found.")
+            role = _normalize_role(
+                row["access_role"],
+                default="owner" if row["user_id"] == user_id else "viewer",
+            )
+            if not _role_allows(role, minimum_role):
+                raise ValueError(f"You do not have {minimum_role} access to that project.")
+
+            existing_project_input = dict(_json_loads(row["project_input_json"], {}) or {})
+            incoming_project_input = dict(project_input or {})
+            merged_project_input = (
+                _merge_project_input(existing_project_input, incoming_project_input)
+                if incoming_project_input
+                else existing_project_input
+            )
+            project_name = _project_name(name, merged_project_input)
+            updated_at = _now()
+            resolved_organization_id = organization_id or row["organization_id"]
+            resolved_tags = list(tags or [])
+            resolved_session_state = dict(session_state or {})
+            resolved_metadata = dict(metadata or {})
+            connection.execute(
+                """
+                UPDATE projects
+                SET organization_id = ?, name = ?, description = ?, updated_at = ?,
+                    session_id = ?, tags_json = ?, project_input_json = ?,
+                    session_state_json = ?, metadata_json = ?
+                WHERE project_id = ?
+                """,
+                (
+                    resolved_organization_id,
+                    project_name,
+                    description or "",
+                    updated_at,
+                    session_id,
+                    _json_dumps(resolved_tags),
+                    _json_dumps(merged_project_input),
+                    _json_dumps(resolved_session_state),
+                    _json_dumps(resolved_metadata),
+                    project_id,
+                ),
+            )
+            connection.commit()
+
+            shell_row = dict(row)
+            shell_row.update(
+                {
+                    "organization_id": resolved_organization_id,
+                    "name": project_name,
+                    "description": description or "",
+                    "updated_at": updated_at,
+                    "session_id": session_id,
+                    "tags_json": _json_dumps(resolved_tags),
+                    "project_input_json": _json_dumps(merged_project_input),
+                    "session_state_json": _json_dumps(resolved_session_state),
+                    "metadata_json": _json_dumps(resolved_metadata),
+                }
+            )
+            record = self._shell_row_to_record(shell_row)
+            record["access_role"] = role
+            return record
+        finally:
+            connection.close()
 
     def save_project(
         self,
@@ -392,7 +584,7 @@ class ProjectStore:
             "project_id": project_id or _new_id("project"),
             "user_id": user_id,
             "organization_id": organization_id or (existing or {}).get("organization_id"),
-            "name": str(name or "").strip() or "Untitled Project",
+            "name": _project_name(name, incoming_project_input),
             "description": description or "",
             "created_at": (existing or {}).get("created_at", now),
             "updated_at": now,
@@ -718,6 +910,25 @@ class ProjectStore:
             "tags": _json_loads(row["tags_json"], []),
             "project_input": _json_loads(row["project_input_json"], {}),
             "latest_result": _json_loads(row["latest_result_json"], {}),
+            "session_state": _json_loads(row["session_state_json"], {}),
+            "metadata": _json_loads(row["metadata_json"], {}),
+            "access_role": _normalize_role(row["access_role"], default="owner") if "access_role" in row.keys() else "owner",
+        }
+
+    def _shell_row_to_record(self, row: Any) -> Dict[str, Any]:
+        return {
+            "project_id": row["project_id"],
+            "user_id": row["user_id"],
+            "organization_id": row["organization_id"] if "organization_id" in row.keys() else None,
+            "name": row["name"],
+            "description": row["description"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "session_id": row["session_id"],
+            "has_result": bool(row["has_result"]),
+            "tags": _json_loads(row["tags_json"], []),
+            "project_input": _json_loads(row["project_input_json"], {}),
+            "latest_result": {},
             "session_state": _json_loads(row["session_state_json"], {}),
             "metadata": _json_loads(row["metadata_json"], {}),
             "access_role": _normalize_role(row["access_role"], default="owner") if "access_role" in row.keys() else "owner",

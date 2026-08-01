@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { BuildingPlacement, PlanResponse, ProjectRecord, SiteInputs } from "../types";
 import { buildAcceptedCandidatePlacements } from "../utils/projectInputRestore";
@@ -35,31 +35,44 @@ export function useDashboardReviewWorkflowActions({
   setStatusMessage,
   token,
 }: DashboardReviewWorkflowActionsOptions) {
+  const [candidateDecisionInFlight, setCandidateDecisionInFlight] = useState<{
+    candidateId: string;
+    action: "accept" | "reject" | "pending";
+  } | null>(null);
+  const candidateDecisionLockRef = useRef(false);
   const handleCandidateReviewDecision = useCallback(
     async (candidateId: string, action: "accept" | "reject" | "pending") => {
-      const updatedProject = await runDashboardCandidateReviewDecision({
-        action,
-        candidateId,
-        currentProjectId,
-        projectId,
-        setBackendResult,
-        setCurrentProject,
-        setStatusMessage,
-        token,
-      });
-      if (updatedProject?.project_input) {
-        const updatedSiteInputs = (updatedProject.project_input.meta?.site_inputs ?? {}) as SiteInputs;
-        const acceptedPlacements = buildAcceptedCandidatePlacements({
-          projectInput: updatedProject.project_input,
-          siteInputs: updatedSiteInputs,
+      if (candidateDecisionLockRef.current) return;
+      candidateDecisionLockRef.current = true;
+      setCandidateDecisionInFlight({ candidateId, action });
+      try {
+        const updatedProject = await runDashboardCandidateReviewDecision({
+          action,
+          candidateId,
+          currentProjectId,
+          projectId,
+          setBackendResult,
+          setCurrentProject,
+          setStatusMessage,
+          token,
         });
-        const acceptedIds = new Set(acceptedPlacements.map((item) => item.id));
-        setBuildingPlacements((previous) => [
-          ...previous.filter(
-            (item) => !item.meta?.accepted_source_candidate && !acceptedIds.has(item.id),
-          ),
-          ...acceptedPlacements,
-        ]);
+        if (updatedProject?.project_input) {
+          const updatedSiteInputs = (updatedProject.project_input.meta?.site_inputs ?? {}) as SiteInputs;
+          const acceptedPlacements = buildAcceptedCandidatePlacements({
+            projectInput: updatedProject.project_input,
+            siteInputs: updatedSiteInputs,
+          });
+          const acceptedIds = new Set(acceptedPlacements.map((item) => item.id));
+          setBuildingPlacements((previous) => [
+            ...previous.filter(
+              (item) => !item.meta?.accepted_source_candidate && !acceptedIds.has(item.id),
+            ),
+            ...acceptedPlacements,
+          ]);
+        }
+      } finally {
+        candidateDecisionLockRef.current = false;
+        setCandidateDecisionInFlight(null);
       }
     },
     [
@@ -103,6 +116,7 @@ export function useDashboardReviewWorkflowActions({
   );
 
   return {
+    candidateDecisionInFlight,
     handleCandidateReviewDecision,
     handleDesignAlternativesAction,
   };

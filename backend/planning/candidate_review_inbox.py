@@ -483,8 +483,12 @@ def apply_candidate_review_decision(
     reviewer_id: str = "",
     reason: str = "",
 ) -> Dict[str, Any]:
-    updated_meta = deepcopy(safe_dict(meta))
-    inbox = build_candidate_review_inbox(updated_meta)
+    # Candidate decisions only mutate the review-state slice. Keeping source
+    # reports and geometry records by reference avoids cloning an entire site
+    # context package for every Accept/Reject click.
+    updated_meta = dict(safe_dict(meta))
+    stored_inbox = safe_dict(updated_meta.get(INBOX_VERSION))
+    inbox = dict(stored_inbox) if safe_list(stored_inbox.get("candidates")) else build_candidate_review_inbox(updated_meta)
     requested = {safe_str(item) for item in candidate_ids if safe_str(item)}
     if not requested:
         raise ValueError("At least one candidate_id is required.")
@@ -543,7 +547,7 @@ def apply_candidate_review_decision(
     updated_meta["candidate_review_decisions_v1"] = decisions
     updated_meta["candidate_review_accepted_drafts_v1"] = accepted_drafts
     updated_meta["candidate_review_rejected_v1"] = rejected
-    updated_meta["candidate_review_inbox_v1"] = _inbox_with_decisions(build_candidate_review_inbox(updated_meta), decisions)
+    updated_meta["candidate_review_inbox_v1"] = _inbox_with_decisions(inbox, decisions)
     return {
         "success": True,
         "action": normalized_action,
@@ -595,14 +599,14 @@ def _inbox_with_decisions(inbox: Dict[str, Any], decisions: List[Any]) -> Dict[s
     counts = {"accepted": 0, "rejected": 0, "pending": 0}
     candidates = []
     for candidate in safe_list(inbox.get("candidates")):
-        rec = deepcopy(safe_dict(candidate))
+        rec = dict(safe_dict(candidate))
         latest = latest_by_id.get(safe_str(rec.get("candidate_id")))
         if latest:
             action = safe_str(latest.get("action"))
             rec["status"] = {"accept": "accepted", "reject": "rejected", "pending": "pending"}.get(action, rec.get("status"))
             rec["accepted_as"] = "project_draft_review_required_evidence" if rec["status"] == "accepted" else ""
             rec["blocker_review_reason"] = safe_str(latest.get("reason")) or rec.get("blocker_review_reason")
-            rec["audit_trail"] = safe_list(rec.get("audit_trail")) + [latest]
+            rec["audit_trail"] = [dict(safe_dict(item)) for item in safe_list(rec.get("audit_trail"))] + [dict(latest)]
         counts[_status(rec.get("status"))] = counts.get(_status(rec.get("status")), 0) + 1
         candidates.append(rec)
     updated = dict(inbox)

@@ -1054,7 +1054,7 @@ function PerformanceAIDashboardView({
     () => buildCadEntityPreview(currentPlanMeta, sourceConfidenceByObjectId),
     [currentPlanMeta, sourceConfidenceByObjectId],
   );
-  const { handleCandidateReviewDecision, handleDesignAlternativesAction } =
+  const { candidateDecisionInFlight, handleCandidateReviewDecision, handleDesignAlternativesAction } =
     useDashboardReviewWorkflowActions({
       currentProjectId: currentProject?.project_id,
       designAlternativeCount: designAlternativeItems.length,
@@ -5190,6 +5190,7 @@ function PerformanceAIDashboardView({
     onlineDiscoverySources,
     candidateReviewCounts,
     candidateReviewItems,
+    candidateDecisionInFlight,
     onCandidateDecision: handleCandidateReviewDecision,
     siteAddress,
     selectedAddressSuggestion,

@@ -48,11 +48,20 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   const candidateStatuses: Record<string, "pending" | "accepted" | "rejected"> = {};
   let markOnlineFetchStarted: () => void = () => undefined;
   let releaseOnlineFetch: () => void = () => undefined;
+  let markCandidateDecisionStarted: () => void = () => undefined;
+  let releaseCandidateDecision: () => void = () => undefined;
+  let delayNextCandidateDecision = true;
   const onlineFetchStarted = new Promise<void>((resolve) => {
     markOnlineFetchStarted = resolve;
   });
   const onlineFetchRelease = new Promise<void>((resolve) => {
     releaseOnlineFetch = resolve;
+  });
+  const candidateDecisionStarted = new Promise<void>((resolve) => {
+    markCandidateDecisionStarted = resolve;
+  });
+  const candidateDecisionRelease = new Promise<void>((resolve) => {
+    releaseCandidateDecision = resolve;
   });
 
   await page.route("**/api/auth/status", async (route) => {
@@ -156,6 +165,11 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
     for (const candidateId of payload.candidate_ids ?? []) {
       candidateStatuses[candidateId] =
         payload.action === "accept" ? "accepted" : payload.action === "reject" ? "rejected" : "pending";
+    }
+    if (delayNextCandidateDecision) {
+      delayNextCandidateDecision = false;
+      markCandidateDecisionStarted();
+      await candidateDecisionRelease;
     }
     const projectInput = JSON.parse(JSON.stringify(savedProjectInput ?? {})) as {
       meta?: { site_inputs?: Record<string, unknown> };
@@ -407,6 +421,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(detectedItems).toContainText("Detected Items · 2 To Review");
   const buildingCandidate = detectedItems.locator('[data-candidate-id="building-1"]');
   await buildingCandidate.getByRole("button", { name: "Accept" }).click();
+  await candidateDecisionStarted;
+  await expect(buildingCandidate.getByRole("button", { name: "Saving..." })).toBeVisible();
+  await expect(detectedItems.getByRole("button", { name: "Reject" }).first()).toBeDisabled();
+  releaseCandidateDecision();
   await expect(detectedItems).toContainText("Detected Items · 1 To Review");
   await expect(buildingCandidate).toContainText(/accepted/i);
   await expect(buildingCandidate.getByRole("button", { name: "Accept" })).toBeDisabled();

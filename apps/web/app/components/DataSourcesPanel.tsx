@@ -77,6 +77,10 @@ export type DataSourcesPanelProps = {
   onlineDiscoverySources: OnlineExistingConditionsSource[];
   candidateReviewCounts: NonNullable<CandidateReviewInbox["counts"]>;
   candidateReviewItems: CandidateReviewItem[];
+  candidateDecisionInFlight: {
+    candidateId: string;
+    action: "accept" | "reject" | "pending";
+  } | null;
   onCandidateDecision: (candidateId: string, decision: "accept" | "reject" | "pending") => void;
   siteAddress: string;
   selectedAddressSuggestion: AddressSuggestion | null;
@@ -180,6 +184,7 @@ export function DataSourcesPanel({
   onlineDiscoverySources,
   candidateReviewCounts,
   candidateReviewItems,
+  candidateDecisionInFlight,
   onCandidateDecision,
   siteAddress,
   selectedAddressSuggestion,
@@ -253,6 +258,7 @@ export function DataSourcesPanel({
           onlineDiscoverySources={onlineDiscoverySources}
           candidateCounts={candidateReviewCounts}
           candidateItems={candidateReviewItems}
+          candidateDecisionInFlight={candidateDecisionInFlight}
           onCandidateDecision={(candidateId, decision) => onCandidateDecision(candidateId, decision)}
         />
       </details>

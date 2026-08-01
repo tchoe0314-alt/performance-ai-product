@@ -42,8 +42,10 @@ class _PostgresResult:
 
 
 class _PostgresConnection:
-    def __init__(self, connection: Any) -> None:
+    def __init__(self, connection: Any, *, pool: Any = None) -> None:
         self._connection = connection
+        self._pool = pool
+        self._closed = False
 
     def execute(self, sql: str, params: Iterable[Any] = ()) -> _PostgresResult:
         cursor = self._connection.cursor()
@@ -62,6 +64,12 @@ class _PostgresConnection:
         self._connection.rollback()
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._pool is not None:
+            self._pool.putconn(self._connection)
+            return
         self._connection.close()
 
     @staticmethod
@@ -89,7 +97,47 @@ class Database:
         self._lock = threading.Lock()
         self.database_url = str(database_url or os.getenv("DATABASE_URL") or "").strip()
         self.storage_kind = "postgres" if self.database_url.startswith(("postgres://", "postgresql://")) else "sqlite"
+        self._postgres_pool: Any = None
         self._initialize()
+        if self.storage_kind == "postgres":
+            self._initialize_postgres_pool()
+
+    @staticmethod
+    def _database_connect_timeout() -> float:
+        raw_timeout = str(os.getenv("CIVORA_DATABASE_CONNECT_TIMEOUT_SECONDS") or "10").strip()
+        try:
+            return max(1.0, float(raw_timeout or 10))
+        except Exception:
+            return 10.0
+
+    def _initialize_postgres_pool(self) -> None:
+        try:
+            from psycopg_pool import ConnectionPool
+        except ImportError as exc:
+            raise RuntimeError(
+                "Postgres storage requires psycopg pooling. Install psycopg[binary,pool]."
+            ) from exc
+        raw_min = str(os.getenv("CIVORA_DATABASE_POOL_MIN_SIZE") or "1").strip()
+        raw_max = str(os.getenv("CIVORA_DATABASE_POOL_MAX_SIZE") or "4").strip()
+        try:
+            min_size = max(1, int(raw_min or 1))
+        except Exception:
+            min_size = 1
+        try:
+            max_size = max(min_size, int(raw_max or 4))
+        except Exception:
+            max_size = max(min_size, 4)
+        connect_timeout = self._database_connect_timeout()
+        self._postgres_pool = ConnectionPool(
+            self.database_url,
+            kwargs={"autocommit": False, "connect_timeout": connect_timeout},
+            min_size=min_size,
+            max_size=max_size,
+            open=True,
+            timeout=max(connect_timeout, 10.0),
+            name="civora-api",
+        )
+        self._postgres_pool.wait(timeout=max(connect_timeout * 2.0, 30.0))
 
     def connect(self) -> Any:
         if self.storage_kind == "postgres":
@@ -99,12 +147,16 @@ class Database:
                 raise RuntimeError(
                     "Postgres storage requires psycopg. Add psycopg[binary] to backend dependencies."
                 ) from exc
-            raw_timeout = str(os.getenv("CIVORA_DATABASE_CONNECT_TIMEOUT_SECONDS") or "5").strip()
-            try:
-                connect_timeout = max(1.0, float(raw_timeout or 5))
-            except Exception:
-                connect_timeout = 5.0
-            connection = psycopg.connect(self.database_url, autocommit=False, connect_timeout=connect_timeout)
+            connect_timeout = self._database_connect_timeout()
+            if self._postgres_pool is not None:
+                connection = self._postgres_pool.getconn(timeout=max(connect_timeout, 10.0))
+                return _PostgresConnection(connection, pool=self._postgres_pool)
+            else:
+                connection = psycopg.connect(
+                    self.database_url,
+                    autocommit=False,
+                    connect_timeout=connect_timeout,
+                )
             return _PostgresConnection(connection)
 
         connection = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)

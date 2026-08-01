@@ -53,6 +53,33 @@ class ProjectStoreProtocol(Protocol):
     def get_project_latest_result(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def update_project_candidate_review_state(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        candidate_state: Dict[str, Any],
+        minimum_role: str = "reviewer",
+    ) -> Dict[str, Any]:
+        ...
+
+    def save_project_shell(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        name: str,
+        description: str,
+        session_id: Optional[str],
+        tags: list[str],
+        project_input: Dict[str, Any],
+        session_state: Dict[str, Any],
+        metadata: Dict[str, Any],
+        organization_id: Optional[str] = None,
+        minimum_role: str = "editor",
+    ) -> Dict[str, Any]:
+        ...
+
     def save_project(
         self,
         *,
@@ -987,25 +1014,40 @@ def _project_candidate_review_meta(record: Dict[str, Any]) -> Dict[str, Any]:
             or site_inputs.get("map_feature_detection_report_v1")
         ),
         "candidate_review_inbox_v1": (
-            final_meta.get("candidate_review_inbox_v1")
-            or site_inputs.get("candidate_review_inbox_v1")
+            site_inputs.get("candidate_review_inbox_v1")
+            or final_meta.get("candidate_review_inbox_v1")
         ),
         "candidate_review_decisions_v1": (
-            final_meta.get("candidate_review_decisions_v1")
-            or site_inputs.get("candidate_review_decisions_v1")
+            site_inputs.get("candidate_review_decisions_v1")
+            or final_meta.get("candidate_review_decisions_v1")
             or []
         ),
         "candidate_review_accepted_drafts_v1": (
-            final_meta.get("candidate_review_accepted_drafts_v1")
-            or site_inputs.get("candidate_review_accepted_drafts_v1")
+            site_inputs.get("candidate_review_accepted_drafts_v1")
+            or final_meta.get("candidate_review_accepted_drafts_v1")
             or []
         ),
         "candidate_review_rejected_v1": (
-            final_meta.get("candidate_review_rejected_v1")
-            or site_inputs.get("candidate_review_rejected_v1")
+            site_inputs.get("candidate_review_rejected_v1")
+            or final_meta.get("candidate_review_rejected_v1")
             or []
         ),
     }
+
+
+def _candidate_review_record(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+) -> Optional[Dict[str, Any]]:
+    shell_getter = getattr(project_store, "get_project_shell", None)
+    shell = shell_getter(user_id=user_id, project_id=project_id) if callable(shell_getter) else None
+    if shell is not None:
+        shell_meta = _project_candidate_review_meta(shell)
+        if shell_meta.get("candidate_review_inbox_v1") or shell_meta.get("map_feature_detection_report_v1"):
+            return shell
+    return project_store.get_project(user_id=user_id, project_id=project_id)
 
 
 def get_project_candidate_review_inbox(
@@ -1014,7 +1056,11 @@ def get_project_candidate_review_inbox(
     user_id: str,
     project_id: str,
 ) -> Dict[str, Any]:
-    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    record = _candidate_review_record(
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+    )
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     meta = _project_candidate_review_meta(record)
@@ -1171,7 +1217,11 @@ def review_project_candidates(
     reason: str = "",
     reviewer_id: str = "",
 ) -> Dict[str, Any]:
-    record = project_store.get_project(user_id=user_id, project_id=project_id)
+    record = _candidate_review_record(
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+    )
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     latest_result = dict(record.get("latest_result") or {})
@@ -1213,19 +1263,39 @@ def review_project_candidates(
             latest_result,
             project_input=project_input,
         )
-    saved = project_store.save_project(
-        user_id=user_id,
-        project_id=project_id,
-        name=record.get("name", "Untitled Project"),
-        description=record.get("description", ""),
-        session_id=record.get("session_id"),
-        tags=record.get("tags", []),
-        project_input=project_input,
-        latest_result=latest_result,
-        session_state=record.get("session_state", {}),
-        metadata=record.get("metadata", {}),
-        minimum_role="reviewer",
-    )
+    candidate_state = {
+        key: updated_meta[key]
+        for key in (
+            "candidate_review_inbox_v1",
+            "candidate_review_decisions_v1",
+            "candidate_review_accepted_drafts_v1",
+            "candidate_review_rejected_v1",
+            "source_confidence_map_v1",
+        )
+        if key in updated_meta
+    }
+    candidate_state_updater = getattr(project_store, "update_project_candidate_review_state", None)
+    if callable(candidate_state_updater):
+        saved = candidate_state_updater(
+            user_id=user_id,
+            project_id=project_id,
+            candidate_state=candidate_state,
+            minimum_role="reviewer",
+        )
+    else:
+        saved = project_store.save_project(
+            user_id=user_id,
+            project_id=project_id,
+            name=record.get("name", "Untitled Project"),
+            description=record.get("description", ""),
+            session_id=record.get("session_id"),
+            tags=record.get("tags", []),
+            project_input=project_input,
+            latest_result=latest_result,
+            session_state=record.get("session_state", {}),
+            metadata=record.get("metadata", {}),
+            minimum_role="reviewer",
+        )
     return {
         "success": True,
         "project_id": project_id,
@@ -1249,6 +1319,43 @@ def save_project_record(
     project_id = payload_data.get("project_id")
     session_id = payload_data.get("session_id")
     session_export = export_session_state(session_id) if export_session_state else {}
+    latest_result_in_payload = "latest_result" in payload_data
+    incoming_latest_result = dict(payload_data.get("latest_result") or {})
+    shell_getter = getattr(project_store, "get_project_shell", None)
+    shell_saver = getattr(project_store, "save_project_shell", None)
+    if (
+        project_id
+        and callable(shell_getter)
+        and callable(shell_saver)
+        and not incoming_latest_result
+    ):
+        existing_shell = shell_getter(user_id=user_id, project_id=project_id)
+        if existing_shell is None:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        payload_metadata = dict(payload_data.get("metadata") or {})
+        metadata = dict(existing_shell.get("metadata") or {})
+        metadata.update(payload_metadata)
+        project_input = _merge_project_input(
+            dict(existing_shell.get("project_input") or {}),
+            dict(payload_data.get("project_input") or {}),
+        )
+        try:
+            record = shell_saver(
+                user_id=user_id,
+                project_id=project_id,
+                organization_id=payload_data.get("organization_id"),
+                name=str(payload_data.get("name") or ""),
+                description=str(payload_data.get("description") or ""),
+                session_id=session_id,
+                tags=list(payload_data.get("tags") or []),
+                project_input=project_input,
+                session_state=dict(session_export or {}),
+                metadata=metadata,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return {"success": True, "project": _record_with_operational_summary(record)}
+
     existing = None
     if project_id:
         existing = project_store.get_project(user_id=user_id, project_id=project_id)
@@ -1264,8 +1371,7 @@ def save_project_record(
             current_existing = refreshed_existing
             metadata = dict(current_existing.get("metadata") or {})
             metadata.update(payload_metadata)
-    latest_result_in_payload = "latest_result" in payload_data
-    latest_result = dict(payload_data.get("latest_result") or {})
+    latest_result = incoming_latest_result
     project_input = dict(payload_data.get("project_input") or {})
     if current_existing and (not latest_result_in_payload or not latest_result):
         existing_latest_result = dict(current_existing.get("latest_result") or {})

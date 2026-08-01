@@ -32,7 +32,7 @@ openai==2.30.0
 packaging==26.0
 pandas==2.3.3
 pillow==11.3.0
-psycopg[binary]==3.2.9
+psycopg[binary,pool]==3.2.9
 pydantic==2.12.5
 pydantic_core==2.41.5
 pypdf==6.4.1

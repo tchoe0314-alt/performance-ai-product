@@ -68,6 +68,7 @@ type UseDashboardDataSourcesPanelPropsInput = {
   onlineDiscoverySources: OnlineExistingConditionsSource[];
   candidateReviewCounts: NonNullable<CandidateReviewInbox["counts"]>;
   candidateReviewItems: CandidateReviewItem[];
+  candidateDecisionInFlight: DataSourcesPanelProps["candidateDecisionInFlight"];
   onCandidateDecision: (candidateId: string, decision: "accept" | "reject" | "pending") => Promise<void>;
   siteAddress: string;
   selectedAddressSuggestion: AddressSuggestion | null;
@@ -162,6 +163,7 @@ export function useDashboardDataSourcesPanelProps({
   onlineDiscoverySources,
   candidateReviewCounts,
   candidateReviewItems,
+  candidateDecisionInFlight,
   onCandidateDecision,
   siteAddress,
   selectedAddressSuggestion,
@@ -268,6 +270,7 @@ export function useDashboardDataSourcesPanelProps({
     onlineDiscoverySources,
     candidateReviewCounts,
     candidateReviewItems,
+    candidateDecisionInFlight,
     onCandidateDecision: (candidateId, decision) => void onCandidateDecision(candidateId, decision),
     siteAddress,
     selectedAddressSuggestion,
@@ -345,6 +348,7 @@ export function useDashboardDataSourcesPanelProps({
     buildingPlacements,
     candidateReviewCounts,
     candidateReviewItems,
+    candidateDecisionInFlight,
     capabilityAuditRows,
     confirmedObjectCounts,
     currentProject?.project_input,

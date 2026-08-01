@@ -51,17 +51,21 @@ CIVORA_DEDICATED_WORKER_ENABLED=true
 CIVORA_DISABLED_JOB_TYPES=source_context
 PERFORMANCE_AI_JOB_WORKERS=1
 DATABASE_URL=<shared Railway Postgres URL>
+CIVORA_DATABASE_POOL_MIN_SIZE=1
+CIVORA_DATABASE_POOL_MAX_SIZE=4
 
 # Worker service built from the same Dockerfile/revision
 CIVORA_PROCESS_ROLE=worker
 CIVORA_ENABLED_JOB_TYPES=source_context
 PERFORMANCE_AI_JOB_WORKERS=1
 DATABASE_URL=<the same shared Railway Postgres URL>
+CIVORA_DATABASE_POOL_MIN_SIZE=1
+CIVORA_DATABASE_POOL_MAX_SIZE=2
 PERFORMANCE_AI_RESUME_PENDING_JOBS=true
 PERFORMANCE_AI_RESUME_POLL_SECONDS=1
 ```
 
-The services must use the same production database. The API keeps its mounted-storage jobs local and disables only `source_context`; the dedicated worker allows only `source_context`, so it never claims PDF or export jobs whose files live on the API volume. The Docker image starts Gunicorn for `web`/`combined` and `backend.scripts.run_job_worker` for `worker`. The worker exposes a minimal `/api/health` endpoint on `PORT` so Railway can verify it without exposing job payloads or user data.
+The services must use the same production database. Each process reuses a bounded Postgres connection pool; keep the combined API pool modest and the single-worker pool smaller unless the database connection limit is raised deliberately. The API keeps its mounted-storage jobs local and disables only `source_context`; the dedicated worker allows only `source_context`, so it never claims PDF or export jobs whose files live on the API volume. The Docker image starts Gunicorn for `web`/`combined` and `backend.scripts.run_job_worker` for `worker`. The worker exposes a minimal `/api/health` endpoint on `PORT` so Railway can verify it without exposing job payloads or user data.
 
 
 For a deployment that avoids paid language calls, set `CIVORA_AI_PROVIDER=none`.
