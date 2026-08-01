@@ -498,6 +498,7 @@ class ExistingConditionsOnlineSourcesPayload(BaseModel):
 class ExistingConditionsOnlineFetchPayload(BaseModel):
     address: str = ""
     bbox: Optional[Dict[str, Any]] = None
+    geocode_context: Dict[str, Any] = Field(default_factory=dict)
     parcel_service_url: str = ""
     parcel_layer_id: int = 0
     building_footprints_service_url: str = ""
@@ -518,6 +519,7 @@ class ExistingConditionsOnlineFetchPayload(BaseModel):
     include_contours: bool = True
     include_elevation: bool = True
     include_imagery_detection: bool = True
+    include_worldwide_context: bool = True
     active_site_boundary: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1322,6 +1324,7 @@ def fetch_existing_conditions_online(
     return application_fetch_existing_conditions_online(
         address=payload.address,
         bbox=payload.bbox,
+        geocode_context=payload.geocode_context,
         parcel_service_url=payload.parcel_service_url,
         parcel_layer_id=payload.parcel_layer_id,
         building_footprints_service_url=payload.building_footprints_service_url,
@@ -1342,6 +1345,7 @@ def fetch_existing_conditions_online(
         include_contours=payload.include_contours,
         include_elevation=payload.include_elevation,
         include_imagery_detection=payload.include_imagery_detection,
+        include_worldwide_context=payload.include_worldwide_context,
         active_site_boundary=payload.active_site_boundary,
     )
 
@@ -1818,6 +1822,37 @@ def _blocked_geocode_response(
     )
 
 
+def _mapbox_jurisdiction(feature: Dict[str, Any]) -> Dict[str, str]:
+    context = feature.get("context") if isinstance(feature.get("context"), list) else []
+    records = [feature, *[item for item in context if isinstance(item, dict)]]
+    jurisdiction = {
+        "country": "",
+        "country_code": "",
+        "region": "",
+        "region_code": "",
+        "place": "",
+        "district": "",
+        "postcode": "",
+    }
+    for record in records:
+        kind = str(record.get("id") or "").split(".", 1)[0]
+        text = str(record.get("text") or "")
+        short_code = str(record.get("short_code") or "")
+        if kind == "country":
+            jurisdiction["country"] = text
+            jurisdiction["country_code"] = short_code.upper()
+        elif kind == "region":
+            jurisdiction["region"] = text
+            jurisdiction["region_code"] = short_code.upper()
+        elif kind == "place":
+            jurisdiction["place"] = text
+        elif kind == "district":
+            jurisdiction["district"] = text
+        elif kind == "postcode":
+            jurisdiction["postcode"] = text
+    return jurisdiction
+
+
 @app.post("/api/geocode", response_model=GeocodeResponse)
 def geocode_address(
     payload: GeocodePayload,
@@ -1893,6 +1928,7 @@ def geocode_address(
             blocker_code="provider_invalid_response",
         )
     display_name = str(first.get("place_name") or address) if isinstance(first, dict) else address
+    jurisdiction = _mapbox_jurisdiction(first) if isinstance(first, dict) else {}
     geocode_record = {
         "success": True,
         "status": "ready",
@@ -1905,6 +1941,9 @@ def geocode_address(
         "provider": "mapbox",
         "source_type": "mapbox_geocoder",
         "source": "https://api.mapbox.com/geocoding/v5/mapbox.places",
+        "confidence": first.get("relevance") if isinstance(first, dict) else None,
+        "jurisdiction": jurisdiction,
+        **jurisdiction,
         "crs": {"epsg": "EPSG:4326", "name": "WGS 84 geographic coordinates", "units": "degrees", "source": "mapbox_geocoder"},
     }
     location_context = location_context_from_geocode(address=address, geocode=geocode_record)
@@ -1913,7 +1952,7 @@ def geocode_address(
         lng=lng,
         display_name=display_name,
         provider="mapbox",
-        confidence=None,
+        confidence=_safe_float(first.get("relevance")) if isinstance(first, dict) and first.get("relevance") is not None else None,
         formatted_address=display_name,
         place_name=display_name,
         normalized_address=display_name,

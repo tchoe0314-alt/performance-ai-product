@@ -280,11 +280,19 @@ export const buildAutoSiteContextRows = ({
             ? intelligenceMissing.map((item) => readable(item.label || item.source_type || item.status)).join("; ")
             : "";
     const provider = readable(source?.provider || source?.agency || source?.source_type || "");
+    const sourceTier = String(source?.source_tier || "");
+    const sourceTierLabel =
+      sourceTier === "community_global"
+        ? "community mapped"
+        : sourceTier === "global_public_context"
+          ? "approximate global context"
+          : "";
+    const attribution = readable(source?.attribution || "");
     const childProviders = childSourceProviderLabels(source as Record<string, unknown> | undefined);
     const providerText = childProviders.length
       ? ` from ${childProviders.slice(0, 3).join(", ")}${childProviders.length > 3 ? `, plus ${childProviders.length - 3} more` : ""}`
       : provider
-        ? ` from ${provider}`
+        ? ` from ${provider}${sourceTierLabel ? ` (${sourceTierLabel})` : ""}${attribution ? ` · ${attribution}` : ""}`
         : "";
     const detail =
       status === "found"

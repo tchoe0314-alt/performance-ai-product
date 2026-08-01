@@ -3338,6 +3338,14 @@ def _summarize_online_discovery(discovery: Dict[str, Any], *, why_source_key: st
     ]
     if packs:
         lines.append("Selected provider pack(s): " + "; ".join(packs[:4]) + ".")
+    source_strategy = _safe_dict(discovery.get("location_source_strategy_v1"))
+    if source_strategy.get("worldwide_fallback_used"):
+        lines.append(
+            f"Worldwide mapped fallback added {int(source_strategy.get('worldwide_fallback_feature_count') or 0)} review candidates where verified local layers were unavailable."
+        )
+    authoritative_gaps = [safe_str(item) for item in _safe_list(source_strategy.get("remaining_authoritative_gaps")) if safe_str(item)]
+    if authoritative_gaps:
+        lines.append("Still needs authoritative project sources: " + "; ".join(authoritative_gaps[:6]) + ".")
     intelligence = _safe_dict(discovery.get("site_intelligence_summary_v1"))
     if intelligence:
         sentence = safe_str(intelligence.get("one_sentence"))
@@ -3570,6 +3578,7 @@ def _provider_registry_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
     if registry:
         built["provider_packs"] = _safe_list(registry.get("provider_packs"))
         built["known_gaps"] = _safe_list(registry.get("known_gaps"))
+        built["worldwide_fallback"] = _safe_dict(registry.get("worldwide_fallback"))
     return built
 
 
@@ -3582,7 +3591,13 @@ def _summarize_provider_registry(registry: Dict[str, Any]) -> str:
         if safe_str(_safe_dict(item).get("label") or _safe_dict(item).get("pack_id"))
     ]
     if not configured:
-        return "No local GIS ArcGIS providers are configured yet. Built-in public context sources may still be listed for floodplain/wetlands, but parcel/building/road/utility/contour providers need local service URLs."
+        worldwide = _safe_dict(registry.get("worldwide_fallback"))
+        fallback_note = (
+            f" Worldwide OpenStreetMap fallback status is {safe_str(worldwide.get('status'), 'available when an address is applied')}; it returned {int(worldwide.get('feature_count') or 0)} mapped features."
+            if worldwide
+            else " Worldwide mapped context can still be checked after a globally geocoded address is applied."
+        )
+        return "No verified local GIS ArcGIS providers are configured for this location." + fallback_note + " Parcel authority, right-of-way, utility records, contours, and survey/control still need local project sources."
     lines = [
         f"Configured GIS providers: {len(configured)} total. These are context sources and remain review-required.",
     ]
@@ -3602,9 +3617,11 @@ def _summarize_provider_registry(registry: Dict[str, Any]) -> str:
 
 def _summarize_national_gis_sources() -> str:
     return (
-        "National GIS fallbacks available for candidate discovery: US Census Geocoder for address/location context; "
-        "USGS 3DEP EPQS for point elevation where available; FEMA NFHL ArcGIS for floodplain context; "
-        "USFWS NWI ArcGIS for wetlands context. These are candidate/review-required context sources only and are not survey/control."
+        "Location-driven source fallbacks available for candidate discovery: Mapbox for worldwide address context; "
+        "OpenStreetMap for worldwide mapped buildings, roads, paths, parking, water, and limited mapped utility context; "
+        "a global DEM point-elevation fallback outside U.S. coverage; and, in the United States, "
+        "US Census Geocoder for address/location context; USGS 3DEP EPQS for point elevation where available; FEMA NFHL ArcGIS for floodplain context; "
+        "USFWS NWI ArcGIS for wetlands context. Coverage varies. These are candidate/review-required context sources only, not survey/control, parcel authority, or utility locates."
     )
 
 

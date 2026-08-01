@@ -25,6 +25,8 @@ FEATURE_TYPES = {
 
 SOURCE_TYPES = {
     "official_gis",
+    "community_mapped",
+    "public_dem",
     "image_detected_candidate",
     "user_drawn",
     "unavailable",
@@ -132,15 +134,35 @@ FEATURE_TYPE_LABELS = {
 
 def location_context_from_geocode(*, address: str = "", geocode: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     rec = safe_dict(geocode)
+    nested_context = safe_dict(rec.get("location_context"))
+    nested_jurisdiction = safe_dict(nested_context.get("jurisdiction"))
+    record_jurisdiction = safe_dict(rec.get("jurisdiction"))
     lat = rec.get("lat")
     lng = rec.get("lng")
+    if lat in (None, ""):
+        nested_lat = safe_dict(nested_context.get("coordinates")).get("lat")
+        lat = nested_lat if nested_lat not in (None, "") else safe_dict(nested_context.get("geocode")).get("lat")
+    if lng in (None, ""):
+        nested_lng = safe_dict(nested_context.get("coordinates")).get("lng")
+        lng = nested_lng if nested_lng not in (None, "") else safe_dict(nested_context.get("geocode")).get("lng")
     matched = safe_str(rec.get("matched_address") or rec.get("display_name") or rec.get("place_name"))
+    if not matched:
+        matched = safe_str(nested_context.get("matched_address") or nested_context.get("normalized_address"))
     normalized = safe_str(rec.get("normalized_address") or rec.get("formatted_address") or matched or address)
     crs = safe_dict(rec.get("crs") or rec.get("coordinate_system")) or {
         "epsg": safe_str(rec.get("epsg"), "EPSG:4326" if lat not in (None, "") and lng not in (None, "") else ""),
         "name": safe_str(rec.get("crs_name"), "WGS 84 geographic coordinates" if lat not in (None, "") and lng not in (None, "") else ""),
         "units": safe_str(rec.get("units"), "degrees" if lat not in (None, "") and lng not in (None, "") else ""),
         "source": safe_str(rec.get("source") or rec.get("source_type") or rec.get("provider")),
+    }
+    jurisdiction = {
+        "country": safe_str(rec.get("country") or record_jurisdiction.get("country") or nested_jurisdiction.get("country") or nested_context.get("country")),
+        "country_code": safe_str(rec.get("country_code") or record_jurisdiction.get("country_code") or nested_jurisdiction.get("country_code") or nested_context.get("country_code")).upper(),
+        "region": safe_str(rec.get("region") or record_jurisdiction.get("region") or nested_jurisdiction.get("region") or nested_context.get("region")),
+        "region_code": safe_str(rec.get("region_code") or record_jurisdiction.get("region_code") or nested_jurisdiction.get("region_code") or nested_context.get("region_code")),
+        "place": safe_str(rec.get("place") or record_jurisdiction.get("place") or nested_jurisdiction.get("place") or nested_context.get("place")),
+        "district": safe_str(rec.get("district") or record_jurisdiction.get("district") or nested_jurisdiction.get("district") or nested_context.get("district")),
+        "postcode": safe_str(rec.get("postcode") or record_jurisdiction.get("postcode") or nested_jurisdiction.get("postcode") or nested_context.get("postcode")),
     }
     return {
         "address": safe_str(address or rec.get("address") or normalized),
@@ -160,6 +182,8 @@ def location_context_from_geocode(*, address: str = "", geocode: Optional[Dict[s
             "status": safe_str(rec.get("status")),
         },
         "confidence": rec.get("confidence"),
+        "jurisdiction": jurisdiction,
+        **jurisdiction,
         "evidence_source": safe_str(rec.get("source") or rec.get("source_type") or rec.get("provider"), "address_geocode"),
         "evidence": [
             {
@@ -219,32 +243,48 @@ def build_map_feature_detection_report(
             rec = safe_dict(feature)
             source = safe_str(rec.get("source_url") or rec.get("source") or safe_dict(raw_layer).get("source_url") or safe_dict(raw_layer).get("source"), "")
             source_name = safe_str(rec.get("source_name") or rec.get("source_type") or safe_dict(raw_layer).get("source_name") or safe_dict(raw_layer).get("source_type"), f"gis_layer:{layer_name}")
+            properties = safe_dict(rec.get("properties"))
+            source_tier = safe_str(rec.get("source_tier") or properties.get("source_tier") or safe_dict(raw_layer).get("source_tier"))
             accepted = _official_source_accepted(rec) or _official_source_accepted(safe_dict(raw_layer))
+            community_mapped = source_tier == "community_global" or "openstreetmap" in source_name.lower()
+            if community_mapped:
+                candidate_source_type = "community_mapped"
+                candidate_confidence = 0.76
+                candidate_blockers = [
+                    "Community-mapped context can be incomplete or outdated and must be checked against authoritative records and project survey before reliance."
+                ]
+                acceptance_status = "pending"
+            else:
+                candidate_source_type = "official_gis"
+                candidate_confidence = 0.95 if accepted else 0.88
+                candidate_blockers = [] if accepted else ["Official GIS source is candidate evidence until the user/licensed engineer accepts the source for this project."]
+                acceptance_status = "accepted" if accepted else "pending"
             add_candidate(
                 _candidate(
                     feature_type=feature_type,
-                    source_type="official_gis",
+                    source_type=candidate_source_type,
                     geometry=rec.get("geometry"),
-                    confidence=0.95 if accepted else 0.88,
+                    confidence=candidate_confidence,
                     source_url=source,
                     source_name=source_name,
-                    blockers=[] if accepted else ["Official GIS source is candidate evidence until the user/licensed engineer accepts the source for this project."],
+                    blockers=candidate_blockers,
                     review_required=True,
-                    acceptance_status="accepted" if accepted else "pending",
+                    acceptance_status=acceptance_status,
                     seed=f"gis:{layer_name}:{idx}:{source or source_name}:{rec.get('id')}",
                     source_feature_id=safe_str(rec.get("id")),
-                    properties=safe_dict(rec.get("properties")),
+                    properties=properties,
                 )
             )
 
     elevation = safe_dict(safe_dict(source_results).get("elevation"))
     if elevation.get("success"):
+        terrain_source_type = "public_dem" if safe_str(elevation.get("source_tier")) == "global_public_context" else "official_gis"
         add_candidate(
             _candidate(
                 feature_type="terrain",
-                source_type="official_gis",
+                source_type=terrain_source_type,
                 geometry={"type": "Point", "coordinates": [safe_float(elevation.get("lng")), safe_float(elevation.get("lat"))]},
-                confidence=0.72,
+                confidence=0.58 if terrain_source_type == "public_dem" else 0.72,
                 source_url=safe_str(elevation.get("source")),
                 source_name=safe_str(elevation.get("source_type"), "usgs_3dep_epqs"),
                 blockers=[safe_str(elevation.get("truth_label"), "Public DEM/elevation context is not a topographic survey.")],
@@ -256,6 +296,8 @@ def build_map_feature_detection_report(
                     "elevation": elevation.get("elevation"),
                     "units": elevation.get("units"),
                     "source_date": elevation.get("source_date"),
+                    "horizontal_resolution": elevation.get("horizontal_resolution"),
+                    "attribution": elevation.get("attribution"),
                 },
             )
         )

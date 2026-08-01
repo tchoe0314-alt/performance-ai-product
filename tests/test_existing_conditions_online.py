@@ -297,6 +297,29 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertTrue(all(bbox["west"] <= point[0] <= bbox["east"] for point in coordinates))
         self.assertTrue(all(bbox["south"] <= point[1] <= bbox["north"] for point in coordinates))
 
+    def test_context_arcgis_queries_clip_crossing_lines_without_shapely(self) -> None:
+        bbox = {"west": -97.0, "south": 32.0, "east": -96.99, "north": 32.01}
+        payload = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "id": "crossing-line",
+                    "properties": {},
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[-98.0, 32.005], [-96.0, 32.005]],
+                    },
+                }
+            ],
+        }
+
+        result = fetch_fema_floodplain(bbox, session=_Session(payload))
+
+        coordinates = result["geojson"]["features"][0]["geometry"]["coordinates"]
+        self.assertEqual(result["geojson"]["features"][0]["geometry"]["type"], "LineString")
+        self.assertAlmostEqual(coordinates[0][0], bbox["west"])
+        self.assertAlmostEqual(coordinates[-1][0], bbox["east"])
+
     def test_parcel_queries_preserve_the_full_candidate_outline(self) -> None:
         bbox = {"west": -97.0, "south": 32.0, "east": -96.99, "north": 32.01}
         payload = {

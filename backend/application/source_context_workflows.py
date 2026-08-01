@@ -206,7 +206,7 @@ def build_source_context_job_runner(
             update_job_progress(
                 job_id,
                 stage="Finding Site Sources",
-                detail="Checking official GIS, terrain, constraints, and imagery sources.",
+                detail="Checking location-appropriate local records, public mapped context, terrain, constraints, and imagery sources.",
                 progress=20,
             )
         result = dict(fetch_source_context(**payload) or {})
@@ -218,6 +218,7 @@ def build_source_context_job_runner(
             "existing_conditions_package": result.get("existing_conditions_package"),
             "existing_conditions_summary": result.get("existing_conditions_summary"),
             "source_context_detection_coverage_v1": coverage,
+            "location_source_strategy_v1": result.get("location_source_strategy_v1"),
         }
         project = (
             project_store.get_project(user_id=user_id, project_id=project_id)

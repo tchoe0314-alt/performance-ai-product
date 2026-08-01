@@ -122,7 +122,20 @@ class ApiReleaseSafetyTest(unittest.TestCase):
                 return None
 
             def json(self) -> dict:
-                return {"features": [{"center": [-96.8, 32.78], "place_name": "Dallas, Texas"}]}
+                return {
+                    "features": [
+                        {
+                            "center": [-96.8, 32.78],
+                            "place_name": "Dallas, Texas, United States",
+                            "relevance": 0.99,
+                            "context": [
+                                {"id": "place.1", "text": "Dallas"},
+                                {"id": "region.1", "text": "Texas", "short_code": "US-TX"},
+                                {"id": "country.1", "text": "United States", "short_code": "us"},
+                            ],
+                        }
+                    ]
+                }
 
         class FakeClient:
             def __init__(self, *args, **kwargs) -> None:
@@ -148,6 +161,9 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertEqual(response.provider, "mapbox")
         self.assertEqual(response.lat, 32.78)
         self.assertEqual(response.lng, -96.8)
+        self.assertEqual(response.location_context["country_code"], "US")
+        self.assertEqual(response.location_context["region"], "Texas")
+        self.assertEqual(response.location_context["place"], "Dallas")
 
     def test_geocode_returns_blocked_response_when_provider_is_missing(self) -> None:
         with patch.object(api_app_module, "_mapbox_token", return_value=(None, "")):

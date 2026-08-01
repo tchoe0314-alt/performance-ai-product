@@ -396,6 +396,7 @@ def fetch_existing_conditions_online(
     *,
     address: str = "",
     bbox: Optional[Dict[str, Any]] = None,
+    geocode_context: Optional[Dict[str, Any]] = None,
     parcel_service_url: str = "",
     parcel_layer_id: int = 0,
     building_footprints_service_url: str = "",
@@ -416,6 +417,7 @@ def fetch_existing_conditions_online(
     include_contours: bool = True,
     include_elevation: bool = True,
     include_imagery_detection: bool = True,
+    include_worldwide_context: bool = True,
     active_site_boundary: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     registry = build_provider_registry(providers=(provider_registry or {}).get("providers") if provider_registry else None)
@@ -424,6 +426,7 @@ def fetch_existing_conditions_online(
     result = fetch_online_existing_conditions(
         address=address,
         bbox=bbox,
+        geocode_context=geocode_context,
         parcel_service_url=parcel_url,
         parcel_layer_id=parcel_layer,
         building_footprints_service_url=building_footprints_service_url or str(os.getenv("CIVORA_BUILDING_FOOTPRINTS_ARCGIS_SERVICE_URL") or ""),
@@ -447,6 +450,7 @@ def fetch_existing_conditions_online(
         include_contours=include_contours,
         include_elevation=include_elevation,
         include_imagery_detection=include_imagery_detection,
+        include_worldwide_context=include_worldwide_context,
         imagery_detection_provider_url=str(os.getenv("CIVORA_IMAGERY_DETECTION_URL") or ""),
         imagery_detection_provider_token=str(os.getenv("CIVORA_IMAGERY_DETECTION_TOKEN") or ""),
         imagery_detection_provider_name=str(os.getenv("CIVORA_IMAGERY_DETECTION_PROVIDER") or ""),
@@ -454,6 +458,7 @@ def fetch_existing_conditions_online(
         active_site_boundary=active_site_boundary,
     )
     canonical = result.get("canonical_existing_conditions") or {}
+    effective_registry = canonical.get("local_gis_provider_registry_v1") or registry
     package_meta = {
         "survey": canonical.get("survey"),
         "gis_layers": canonical.get("gis_layers"),
@@ -462,15 +467,16 @@ def fetch_existing_conditions_online(
         "dem_lidar": canonical.get("dem_lidar"),
         "location_context": result.get("location_context"),
         "online_existing_conditions_discovery_v1": result.get("online_existing_conditions_discovery_v1"),
-        "local_gis_provider_registry_v1": registry,
+        "local_gis_provider_registry_v1": effective_registry,
         "map_feature_detection_report_v1": result.get("map_feature_detection_report_v1"),
+        "location_source_strategy_v1": result.get("location_source_strategy_v1"),
     }
     summary = summarize_existing_conditions({"meta": package_meta})
     package_meta["existing_conditions_summary"] = summary
     result["existing_conditions_summary"] = summary
     if isinstance(result.get("online_existing_conditions_discovery_v1"), dict):
-        result["online_existing_conditions_discovery_v1"]["local_gis_provider_registry_v1"] = registry
-        result["online_existing_conditions_discovery_v1"]["configured_provider_count"] = registry.get("configured_provider_count", 0)
+        result["online_existing_conditions_discovery_v1"]["local_gis_provider_registry_v1"] = effective_registry
+        result["online_existing_conditions_discovery_v1"]["configured_provider_count"] = effective_registry.get("configured_provider_count", 0)
     result["existing_conditions_package"] = build_existing_conditions_package({"meta": package_meta})
     return result
 

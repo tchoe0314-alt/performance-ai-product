@@ -372,7 +372,14 @@ def validate_production_env_v1(
     if _truthy(env.get("CIVORA_REQUIRE_GIS_PROVIDERS")) and not str(env.get("CIVORA_GIS_PROVIDER_REGISTRY_URL") or "").strip():
         blockers.append(_issue("blocker", "gis_registry_missing", "GIS provider registry is required by CIVORA_REQUIRE_GIS_PROVIDERS.", env_vars=["CIVORA_GIS_PROVIDER_REGISTRY_URL"]))
     elif mode == "production" and not str(env.get("CIVORA_GIS_PROVIDER_REGISTRY_URL") or "").strip():
-        warnings.append(_issue("warning", "gis_registry_missing", "GIS provider registry is not configured; GIS features remain manual/import-only.", env_vars=["CIVORA_GIS_PROVIDER_REGISTRY_URL"]))
+        warnings.append(
+            _issue(
+                "warning",
+                "gis_registry_missing",
+                "Verified local GIS provider registry is not configured. Apply Address may still use worldwide community-mapped and public elevation context, but authoritative parcels, right-of-way, utilities, contours, and survey/control remain location-dependent.",
+                env_vars=["CIVORA_GIS_PROVIDER_REGISTRY_URL"],
+            )
+        )
 
     billing_provider = str(env.get("CIVORA_BILLING_PROVIDER") or "none").strip().lower()
     charging_requested = _truthy(env.get("CIVORA_ENABLE_REAL_CHARGING"))

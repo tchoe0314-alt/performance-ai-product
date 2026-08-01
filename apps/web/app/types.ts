@@ -1290,6 +1290,9 @@ export type OnlineExistingConditionsSource = {
   provider?: string;
   confidence?: string | number;
   source_type?: string;
+  source_tier?: string;
+  authoritative?: boolean;
+  attribution?: string;
   status?: string;
   candidate_count?: number;
   review_required?: boolean;
@@ -1312,6 +1315,7 @@ export type OnlineExistingConditionsDiscovery = {
   survey_control?: Record<string, unknown>;
   local_gis_provider_registry_v1?: LocalGisProviderRegistry;
   site_intelligence_summary_v1?: Record<string, unknown>;
+  location_source_strategy_v1?: Record<string, unknown>;
   configured_provider_count?: number;
   review_required?: boolean;
   acceptance_status?: string;

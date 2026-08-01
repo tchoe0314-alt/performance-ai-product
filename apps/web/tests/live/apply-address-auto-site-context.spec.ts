@@ -45,6 +45,7 @@ function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejec
 test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   let savedProjectInput: Record<string, unknown> | null = null;
   let fetchOnlineCalled = false;
+  let fetchOnlineRequest: Record<string, unknown> | null = null;
   const candidateStatuses: Record<string, "pending" | "accepted" | "rejected"> = {};
   let markOnlineFetchStarted: () => void = () => undefined;
   let releaseOnlineFetch: () => void = () => undefined;
@@ -151,6 +152,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
         location_context: {
           address: "1 MAIN ST, TEST CITY, TX",
           coordinates: { lat: 32.8, lng: -96.8 },
+          jurisdiction: {
+            country: "United States",
+            country_code: "US",
+            region: "Texas",
+            place: "Test City",
+          },
           truth_label: "Address/geocode is location context only.",
         },
       }),
@@ -232,6 +239,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
 
   await page.route("**/api/existing-conditions/fetch-online", async (route) => {
     fetchOnlineCalled = true;
+    fetchOnlineRequest = route.request().postDataJSON() as Record<string, unknown>;
     markOnlineFetchStarted();
     await onlineFetchRelease;
     await route.fulfill({
@@ -246,7 +254,17 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           candidate_count: 5,
           sources: [
             { key: "parcel_site_boundary", label: "parcel/site boundary", provider: "Test Parcels", candidate_count: 1, review_required: true, blockers: ["review-required"] },
-            { key: "road_row", label: "road/ROW data", provider: "Test Roads", candidate_count: 1, review_required: true, blockers: ["review-required"] },
+            {
+              key: "road_row",
+              label: "road/ROW data",
+              provider: "OpenStreetMap",
+              candidate_count: 1,
+              source_tier: "community_global",
+              authoritative: false,
+              attribution: "OpenStreetMap contributors, ODbL 1.0",
+              review_required: true,
+              blockers: ["Community-mapped road context; not authoritative ROW."],
+            },
             { key: "building_footprints", label: "building footprints", provider: "Test Buildings", candidate_count: 1, review_required: true, blockers: ["review-required"] },
             { key: "imagery_object_detection", label: "imagery/object detection", provider: "Test Imagery Detector", candidate_count: 1, review_required: true, blockers: ["visual review only"] },
             { key: "terrain_dem_lidar", label: "terrain/DEM/LiDAR", provider: "USGS 3DEP EPQS", candidate_count: 1, review_required: true, blockers: ["not survey"] },
@@ -429,6 +447,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("auto-site-context-source-table")).toBeVisible();
   await expect(page.getByTestId("auto-site-context-status-parcel")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
+  await expect(page.getByTestId("auto-site-context-detail-roads")).toContainText(/community mapped.*OpenStreetMap contributors/);
   await expect(page.getByTestId("auto-site-context-status-buildings")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-imagery")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-detail-imagery")).toContainText(/Test Imagery Detector|1 review candidate/i);
@@ -491,6 +510,17 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("workspace-right-panel")).toContainText("not survey/control");
 
   expect(fetchOnlineCalled).toBeTruthy();
+  expect(fetchOnlineRequest).toMatchObject({
+    include_worldwide_context: true,
+    geocode_context: {
+      lat: 32.8,
+      lng: -96.8,
+      provider: "test_geocoder",
+      location_context: {
+        jurisdiction: { country_code: "US", region: "Texas", place: "Test City" },
+      },
+    },
+  });
   expect(JSON.stringify(savedProjectInput)).toContain("online_existing_conditions_discovery_v1");
   expect(JSON.stringify(savedProjectInput)).toContain("site_intelligence_summary_v1");
   expect(JSON.stringify(savedProjectInput)).toContain("imagery_object_detection_report_v1");

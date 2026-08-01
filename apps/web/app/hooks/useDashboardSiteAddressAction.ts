@@ -425,6 +425,18 @@ export function useDashboardSiteAddressAction({
             request: {
               address: geocode.display_name,
               bbox: sourceBounds,
+              geocode_context: {
+                success: true,
+                status: geocode.status ?? "ready",
+                lat: geocode.lat,
+                lng: geocode.lng,
+                display_name: geocode.display_name,
+                formatted_address: geocode.display_name,
+                provider: geocode.provider ?? "mapbox",
+                confidence: geocode.confidence ?? null,
+                crs: geocode.crs ?? { epsg: "EPSG:4326", units: "degrees" },
+                location_context: geocode.location_context ?? {},
+              },
               active_site_boundary: sourceBounds ?? {},
               include_floodplain: true,
               include_wetlands: true,
@@ -435,6 +447,7 @@ export function useDashboardSiteAddressAction({
               include_contours: true,
               include_elevation: true,
               include_imagery_detection: true,
+              include_worldwide_context: true,
               provider_registry: localGisProviderRegistry,
             },
             onProgress: (job) => {

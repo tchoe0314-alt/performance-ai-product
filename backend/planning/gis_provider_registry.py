@@ -320,9 +320,11 @@ def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any 
     text = safe_str(address).lower()
     loc = safe_dict(location_context)
     if lat in (None, ""):
-        lat = safe_dict(loc.get("coordinates")).get("lat") or safe_dict(loc.get("geocode")).get("lat")
+        nested_lat = safe_dict(loc.get("coordinates")).get("lat")
+        lat = nested_lat if nested_lat not in (None, "") else safe_dict(loc.get("geocode")).get("lat")
     if lng in (None, ""):
-        lng = safe_dict(loc.get("coordinates")).get("lng") or safe_dict(loc.get("geocode")).get("lng")
+        nested_lng = safe_dict(loc.get("coordinates")).get("lng")
+        lng = nested_lng if nested_lng not in (None, "") else safe_dict(loc.get("geocode")).get("lng")
     packs: List[Dict[str, Any]] = []
     point_in_sarpy = _point_in_bbox(lat, lng, SARPY_COUNTY_BBOX)
     address_in_sarpy = "gretna" in text and (" ne" in text or "nebraska" in text)

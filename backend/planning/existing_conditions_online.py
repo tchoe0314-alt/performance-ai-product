@@ -18,6 +18,12 @@ from .gis_provider_registry import (
 from .imagery_object_detection import fetch_imagery_object_detection
 from .map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
 from .standards_discovery import discover_standards_sources
+from .worldwide_source_discovery import (
+    DEFAULT_GLOBAL_ELEVATION_URL,
+    DEFAULT_OVERPASS_URL,
+    fetch_global_elevation_point,
+    fetch_openstreetmap_site_context,
+)
 
 
 CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
@@ -77,6 +83,11 @@ DISCOVERY_SOURCE_SPECS = {
         "label": "official standards source candidates",
         "result_keys": (),
         "layer_keys": (),
+    },
+    "worldwide_mapped_context": {
+        "label": "worldwide mapped site context",
+        "result_keys": ("worldwide_mapped_context",),
+        "layer_keys": ("parking", "sidewalks", "water"),
     },
 }
 
@@ -174,6 +185,172 @@ def _arcgis_geometry_tolerance(bbox: Dict[str, Any], *, preserve_feature_shape: 
     return max(0.0000001, min(0.00005, span / divisor))
 
 
+def _clip_ring_to_bbox(points: List[Any], west: float, south: float, east: float, north: float) -> List[List[float]]:
+    ring = [[safe_float(point[0]), safe_float(point[1])] for point in points if isinstance(point, (list, tuple)) and len(point) >= 2]
+    if len(ring) < 3:
+        return []
+
+    def clip_edge(
+        vertices: List[List[float]],
+        inside: Any,
+        intersection: Any,
+    ) -> List[List[float]]:
+        if not vertices:
+            return []
+        output: List[List[float]] = []
+        previous = vertices[-1]
+        previous_inside = inside(previous)
+        for current in vertices:
+            current_inside = inside(current)
+            if current_inside:
+                if not previous_inside:
+                    output.append(intersection(previous, current))
+                output.append(current)
+            elif previous_inside:
+                output.append(intersection(previous, current))
+            previous = current
+            previous_inside = current_inside
+        return output
+
+    def vertical_intersection(first: List[float], second: List[float], x_value: float) -> List[float]:
+        delta = second[0] - first[0]
+        ratio = 0.0 if abs(delta) < 1e-15 else (x_value - first[0]) / delta
+        return [x_value, first[1] + ratio * (second[1] - first[1])]
+
+    def horizontal_intersection(first: List[float], second: List[float], y_value: float) -> List[float]:
+        delta = second[1] - first[1]
+        ratio = 0.0 if abs(delta) < 1e-15 else (y_value - first[1]) / delta
+        return [first[0] + ratio * (second[0] - first[0]), y_value]
+
+    ring = clip_edge(ring, lambda point: point[0] >= west, lambda first, second: vertical_intersection(first, second, west))
+    ring = clip_edge(ring, lambda point: point[0] <= east, lambda first, second: vertical_intersection(first, second, east))
+    ring = clip_edge(ring, lambda point: point[1] >= south, lambda first, second: horizontal_intersection(first, second, south))
+    ring = clip_edge(ring, lambda point: point[1] <= north, lambda first, second: horizontal_intersection(first, second, north))
+    if len(ring) < 3:
+        return []
+    if ring[0] != ring[-1]:
+        ring.append(list(ring[0]))
+    return ring
+
+
+def _clip_segment_to_bbox(
+    first: List[float],
+    second: List[float],
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+) -> Optional[Tuple[List[float], List[float]]]:
+    x0, y0 = first
+    x1, y1 = second
+    dx = x1 - x0
+    dy = y1 - y0
+    start = 0.0
+    end = 1.0
+    for direction, distance in (
+        (-dx, x0 - west),
+        (dx, east - x0),
+        (-dy, y0 - south),
+        (dy, north - y0),
+    ):
+        if abs(direction) < 1e-15:
+            if distance < 0:
+                return None
+            continue
+        ratio = distance / direction
+        if direction < 0:
+            start = max(start, ratio)
+        else:
+            end = min(end, ratio)
+        if start > end:
+            return None
+    return (
+        [x0 + start * dx, y0 + start * dy],
+        [x0 + end * dx, y0 + end * dy],
+    )
+
+
+def _clip_line_to_bbox(
+    points: List[Any],
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+) -> List[List[List[float]]]:
+    coordinates = [
+        [safe_float(point[0]), safe_float(point[1])]
+        for point in points
+        if isinstance(point, (list, tuple)) and len(point) >= 2
+    ]
+    paths: List[List[List[float]]] = []
+    current: List[List[float]] = []
+    for first, second in zip(coordinates, coordinates[1:]):
+        clipped = _clip_segment_to_bbox(first, second, west, south, east, north)
+        if not clipped:
+            if len(current) >= 2:
+                paths.append(current)
+            current = []
+            continue
+        clipped_start, clipped_end = clipped
+        if all(abs(clipped_start[idx] - clipped_end[idx]) < 1e-12 for idx in (0, 1)):
+            continue
+        if current and all(abs(current[-1][idx] - clipped_start[idx]) < 1e-12 for idx in (0, 1)):
+            if any(abs(current[-1][idx] - clipped_end[idx]) >= 1e-12 for idx in (0, 1)):
+                current.append(clipped_end)
+        else:
+            if len(current) >= 2:
+                paths.append(current)
+            current = [clipped_start, clipped_end]
+    if len(current) >= 2:
+        paths.append(current)
+    return paths
+
+
+def _clip_geometry_without_shapely(geometry: Dict[str, Any], west: float, south: float, east: float, north: float) -> Dict[str, Any]:
+    geometry_type = safe_str(geometry.get("type"))
+    coordinates = geometry.get("coordinates")
+    if geometry_type == "Point":
+        point = safe_list(coordinates)
+        if len(point) >= 2 and west <= safe_float(point[0]) <= east and south <= safe_float(point[1]) <= north:
+            return geometry
+        return {}
+    if geometry_type == "Polygon":
+        rings = safe_list(coordinates)
+        if not rings:
+            return {}
+        outer = _clip_ring_to_bbox(safe_list(rings[0]), west, south, east, north)
+        if not outer:
+            return {}
+        holes = [
+            clipped
+            for ring in rings[1:]
+            if (clipped := _clip_ring_to_bbox(safe_list(ring), west, south, east, north))
+        ]
+        return {"type": "Polygon", "coordinates": [outer, *holes]}
+    if geometry_type == "MultiPolygon":
+        polygons = []
+        for polygon in safe_list(coordinates):
+            clipped = _clip_geometry_without_shapely({"type": "Polygon", "coordinates": polygon}, west, south, east, north)
+            if clipped:
+                polygons.append(clipped["coordinates"])
+        return {"type": "MultiPolygon", "coordinates": polygons} if polygons else {}
+    if geometry_type == "LineString":
+        paths = _clip_line_to_bbox(safe_list(coordinates), west, south, east, north)
+        if len(paths) == 1:
+            return {"type": "LineString", "coordinates": paths[0]}
+        return {"type": "MultiLineString", "coordinates": paths} if paths else {}
+    if geometry_type == "MultiLineString":
+        paths = [
+            path
+            for line in safe_list(coordinates)
+            for path in _clip_line_to_bbox(safe_list(line), west, south, east, north)
+        ]
+        if len(paths) == 1:
+            return {"type": "LineString", "coordinates": paths[0]}
+        return {"type": "MultiLineString", "coordinates": paths} if paths else {}
+    return {}
+
+
 def _clip_geojson_features_to_bbox(payload: Dict[str, Any], bbox: Dict[str, Any]) -> Dict[str, Any]:
     features = safe_list(payload.get("features"))
     if not features:
@@ -184,7 +361,18 @@ def _clip_geojson_features_to_bbox(payload: Dict[str, Any], bbox: Dict[str, Any]
     try:
         from shapely.geometry import box, mapping, shape
     except ImportError:
-        return payload
+        clipped_features: List[Dict[str, Any]] = []
+        for raw_feature in features:
+            feature = safe_dict(raw_feature)
+            geometry = safe_dict(feature.get("geometry"))
+            if not geometry or not geometry.get("coordinates"):
+                clipped_features.append(feature)
+                continue
+            clipped_geometry = _clip_geometry_without_shapely(geometry, west, south, east, north)
+            if not clipped_geometry:
+                continue
+            clipped_features.append({**feature, "geometry": clipped_geometry})
+        return {**payload, "features": clipped_features}
 
     clip_box = box(west, south, east, north)
     clipped_features: List[Dict[str, Any]] = []
@@ -446,6 +634,9 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
     layers.setdefault("zoning", [])
     layers.setdefault("terrain_breaklines", [])
     layers.setdefault("lidar_coverage", [])
+    layers.setdefault("parking", [])
+    layers.setdefault("sidewalks", [])
+    layers.setdefault("water", [])
     warnings: List[str] = []
     sources: List[Dict[str, Any]] = []
     for item in imports:
@@ -458,6 +649,7 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
                 "source_type": safe_str(rec.get("source_type")),
                 "provider": safe_str(rec.get("provider")),
                 "provider_id": safe_str(rec.get("provider_id")),
+                "source_tier": safe_str(rec.get("source_tier")),
                 "success": bool(rec.get("success")),
             }
         )
@@ -479,6 +671,9 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
             "contours": "contours",
             "terrain_breaklines": "terrain_breaklines",
             "lidar_coverage": "lidar_coverage",
+            "parking": "parking",
+            "sidewalks": "sidewalks",
+            "water": "water",
         }
         target = target_map.get(layer_name, "")
         if not target:
@@ -494,6 +689,8 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
                     "source_name": safe_str(rec.get("provider") or rec.get("source_type")),
                     "provider": safe_str(rec.get("provider")),
                     "provider_id": safe_str(rec.get("provider_id")),
+                    "source_tier": safe_str(rec.get("source_tier")),
+                    "attribution": safe_str(rec.get("attribution")),
                 }
             )
     return {
@@ -514,6 +711,10 @@ def _source_blockers(*, label: str, result_records: List[Dict[str, Any]], candid
     blockers: List[str] = []
     if candidate_count:
         blockers.append(f"{label} candidates are review-required and not survey-backed.")
+    if any(safe_str(result.get("source_tier")) == "community_global" for result in result_records):
+        blockers.append(f"{label} includes community-mapped context whose coverage, currency, and positional accuracy can vary.")
+    if any(safe_str(result.get("source_tier")) == "global_public_context" for result in result_records):
+        blockers.append(f"{label} includes approximate global public context, not a surveyed project surface or control source.")
     if not result_records:
         blockers.append(f"{label} source is missing/unavailable.")
     if not candidate_count and any(result.get("success") for result in result_records):
@@ -553,6 +754,11 @@ def _source_record(
         status = "fetch_failed"
     if not success and any(safe_str(item.get("status")) == "unconfigured" for item in result_records):
         status = "unconfigured"
+    source_type = safe_str(first.get("source_type"), key)
+    source_tier = safe_str(first.get("source_tier"))
+    if not source_tier:
+        source_tier = "visual_candidate" if key == "imagery_object_detection" else ("verified_or_official" if success else "unavailable")
+    default_authoritative = source_tier == "verified_or_official" and key != "imagery_object_detection"
     return {
         "key": key,
         "label": label,
@@ -560,7 +766,10 @@ def _source_record(
         "agency": safe_str(first.get("agency") or first.get("layer_name") or first.get("source_type")),
         "provider": safe_str(first.get("provider") or first.get("source_type")),
         "confidence": "candidate" if success else "unavailable",
-        "source_type": safe_str(first.get("source_type"), key),
+        "source_type": source_type,
+        "source_tier": source_tier,
+        "authoritative": bool(first.get("authoritative", default_authoritative)) if success else False,
+        "attribution": safe_str(first.get("attribution")),
         "status": status,
         "candidate_count": candidate_count,
         "review_required": True,
@@ -680,20 +889,24 @@ def build_online_existing_conditions_discovery_report(
         status = "fetch_failed" if failed_sources else "no_sources_found"
     else:
         status = "candidates_found"
+    geocode_result = safe_dict(results.get("geocode"))
+    elevation_result = safe_dict(results.get("elevation"))
+    geocode_source_type = safe_str(geocode_result.get("source_type"), "census_geocoder")
+    elevation_source_type = safe_str(elevation_result.get("source_type"), "usgs_3dep_epqs")
     supported_live_providers = [
         {
-            "key": "census_geocoder",
-            "provider": "US Census Geocoder",
-            "source_url": CENSUS_GEOCODER_URL,
+            "key": geocode_source_type,
+            "provider": safe_str(geocode_result.get("provider"), "Mapbox Geocoding" if "mapbox" in geocode_source_type else "US Census Geocoder"),
+            "source_url": safe_str(geocode_result.get("source"), CENSUS_GEOCODER_URL),
             "supports": ["address/location context"],
-            "status": safe_str(safe_dict(results.get("geocode")).get("status"), "available"),
+            "status": safe_str(geocode_result.get("status"), "available"),
         },
         {
             "key": "usgs_3dep_epqs",
             "provider": "USGS 3DEP EPQS",
             "source_url": USGS_EPQS_URL,
             "supports": ["terrain/DEM point elevation"],
-            "status": safe_str(safe_dict(results.get("elevation")).get("status"), "available"),
+            "status": safe_str(elevation_result.get("status"), "available") if elevation_source_type == "usgs_3dep_epqs" else "available_in_us",
         },
         {
             "key": "fema_nfhl_arcgis",
@@ -708,6 +921,20 @@ def build_online_existing_conditions_discovery_report(
             "source_url": USFWS_WETLANDS_MAPSERVER_URL,
             "supports": ["wetlands/environmental constraints"],
             "status": safe_str(safe_dict(results.get("wetlands")).get("status"), "available"),
+        },
+        {
+            "key": "openstreetmap_overpass",
+            "provider": "OpenStreetMap Overpass",
+            "source_url": DEFAULT_OVERPASS_URL,
+            "supports": ["worldwide mapped buildings, roads, paths, parking, water, and limited mapped utility context"],
+            "status": safe_str(safe_dict(results.get("worldwide_mapped_context")).get("status"), "available_on_global_geocode"),
+        },
+        {
+            "key": "global_dem_point_elevation",
+            "provider": "Open-Meteo elevation / Copernicus DEM",
+            "source_url": DEFAULT_GLOBAL_ELEVATION_URL,
+            "supports": ["worldwide approximate DEM point elevation"],
+            "status": safe_str(elevation_result.get("status"), "available") if elevation_source_type == "global_dem_point_elevation" else "available_fallback",
         },
     ]
     fixture_provider_only_sources = [
@@ -806,6 +1033,16 @@ def _resolve_standards_jurisdiction(
             "state": safe_str(pack_jurisdiction.get("state")),
             "utility_provider": safe_str(pack_jurisdiction.get("utility_provider")),
         }
+    geocoded_jurisdiction = safe_dict(location_context.get("jurisdiction"))
+    if any(safe_str(geocoded_jurisdiction.get(field)) for field in ("place", "district", "region")):
+        return {
+            "city": safe_str(geocoded_jurisdiction.get("place")),
+            "county": safe_str(geocoded_jurisdiction.get("district")),
+            "state": safe_str(geocoded_jurisdiction.get("region")),
+            "country": safe_str(geocoded_jurisdiction.get("country")),
+            "country_code": safe_str(geocoded_jurisdiction.get("country_code")),
+            "utility_provider": "",
+        }
     matched = safe_str(location_context.get("matched_address") or location_context.get("normalized_address"))
     parts = [part.strip() for part in matched.split(",") if part.strip()]
     if len(parts) >= 3:
@@ -818,10 +1055,106 @@ def _resolve_standards_jurisdiction(
     return {}
 
 
+def _result_feature_count(result: Dict[str, Any]) -> int:
+    return len(safe_list(safe_dict(safe_dict(result).get("geojson")).get("features")))
+
+
+def _source_not_applicable(*, source_type: str, label: str, country_code: str) -> Dict[str, Any]:
+    country = safe_str(country_code, "this location")
+    return {
+        "success": False,
+        "status": "outside_provider_scope",
+        "source_type": source_type,
+        "warnings": [f"{label} is not a worldwide provider and does not cover {country}; a local authoritative source is still needed."],
+        "review_required": True,
+    }
+
+
+def _normalized_supplied_geocode(address: str, geocode_context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    geocode = safe_dict(geocode_context)
+    nested = safe_dict(geocode.get("location_context"))
+    nested_coordinates = safe_dict(nested.get("coordinates"))
+    lat = geocode.get("lat") if geocode.get("lat") not in (None, "") else nested_coordinates.get("lat")
+    lng = geocode.get("lng") if geocode.get("lng") not in (None, "") else nested_coordinates.get("lng")
+    if lat in (None, "") or lng in (None, ""):
+        return {}
+    normalized = safe_str(
+        geocode.get("normalized_address")
+        or geocode.get("formatted_address")
+        or geocode.get("display_name")
+        or nested.get("normalized_address")
+        or address
+    )
+    return {
+        **geocode,
+        "success": True,
+        "status": safe_str(geocode.get("status"), "ready"),
+        "lat": safe_float(lat),
+        "lng": safe_float(lng),
+        "address": safe_str(address or normalized),
+        "display_name": safe_str(geocode.get("display_name") or normalized),
+        "formatted_address": safe_str(geocode.get("formatted_address") or normalized),
+        "normalized_address": normalized,
+        "matched_address": safe_str(geocode.get("matched_address") or normalized),
+        "provider": safe_str(geocode.get("provider"), "supplied_geocode"),
+        "source_type": safe_str(geocode.get("source_type"), "supplied_geocode"),
+        "truth_label": "Geocode coordinates locate the source search area only; they do not establish a parcel, boundary, survey, or control point.",
+    }
+
+
+def _location_source_strategy(
+    *,
+    location_context: Dict[str, Any],
+    provider_packs: List[Dict[str, Any]],
+    worldwide_context: Dict[str, Any],
+    source_results: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    jurisdiction = safe_dict(location_context.get("jurisdiction"))
+    pack_ids = [safe_str(safe_dict(pack).get("pack_id")) for pack in provider_packs if safe_str(safe_dict(pack).get("pack_id"))]
+    worldwide_ready = bool(worldwide_context.get("success"))
+    authoritative_gaps: List[str] = []
+    for key, label in (
+        ("parcels", "authoritative parcel/boundary record"),
+        ("building_footprints", "authoritative building-footprint record"),
+        ("roads_row", "authoritative right-of-way record"),
+        ("easements", "recorded easements"),
+        ("zoning", "current jurisdiction zoning"),
+        ("existing_utilities", "utility-owner records and field locates"),
+        ("contours", "authoritative terrain/contour source"),
+        ("floodplain", "applicable authoritative floodplain source"),
+        ("wetlands", "applicable authoritative wetlands/environmental source"),
+    ):
+        result = safe_dict(source_results.get(key))
+        source_tier = safe_str(result.get("source_tier"))
+        if _result_feature_count(result) <= 0 or source_tier == "community_global":
+            authoritative_gaps.append(label)
+    authoritative_gaps.extend(["boundary/topographic survey", "benchmark/datum and project control"])
+    return {
+        "version": "location_source_strategy_v1",
+        "jurisdiction": jurisdiction,
+        "verified_local_pack_ids": pack_ids,
+        "verified_local_pack_found": bool(pack_ids),
+        "worldwide_fallback_status": safe_str(worldwide_context.get("status"), "not_requested"),
+        "worldwide_fallback_feature_count": safe_int(worldwide_context.get("feature_count")),
+        "worldwide_fallback_used": worldwide_ready and safe_int(worldwide_context.get("feature_count")) > 0,
+        "source_priority": [
+            "accepted project survey/control and record documents",
+            "verified local/county/utility records",
+            "applicable national public sources",
+            "worldwide community-mapped context",
+            "imagery-detected candidates",
+        ],
+        "remaining_authoritative_gaps": list(dict.fromkeys(authoritative_gaps)),
+        "review_required": True,
+        "truth_label": "Civora uses the best available location-specific sources without promoting worldwide mapped or imagery context into survey/control evidence.",
+    }
+
+
 def fetch_online_existing_conditions(
     *,
     address: str = "",
     bbox: Optional[Dict[str, Any]] = None,
+    geocode_context: Optional[Dict[str, Any]] = None,
     parcel_service_url: str = "",
     parcel_layer_id: int = 0,
     building_footprints_service_url: str = "",
@@ -848,6 +1181,7 @@ def fetch_online_existing_conditions(
     include_elevation: bool = True,
     include_terrain_context: bool = True,
     include_imagery_detection: bool = True,
+    include_worldwide_context: bool = True,
     imagery_detection_provider_url: str = "",
     imagery_detection_provider_token: str = "",
     imagery_detection_provider_name: str = "",
@@ -860,18 +1194,28 @@ def fetch_online_existing_conditions(
     warnings: List[str] = []
     registry = safe_dict(provider_registry) or build_provider_registry(include_builtin=True)
     working_bbox = safe_dict(bbox)
-    geocode = geocode_address_census(address, session=session) if safe_str(address) else {
-        "success": False,
-        "source_type": "census_geocoder",
-        "status": "skipped",
-        "warnings": ["No address supplied; geocoding skipped."],
-    }
+    supplied_geocode = _normalized_supplied_geocode(address, geocode_context)
+    if supplied_geocode:
+        geocode = supplied_geocode
+    elif safe_str(address):
+        geocode = geocode_address_census(address, session=session)
+    else:
+        geocode = {
+            "success": False,
+            "source_type": "census_geocoder",
+            "status": "skipped",
+            "warnings": ["No address supplied; geocoding skipped."],
+        }
     source_results["geocode"] = geocode
     location_context = location_context_from_geocode(address=address, geocode=geocode)
+    jurisdiction = safe_dict(location_context.get("jurisdiction"))
+    country_code = safe_str(jurisdiction.get("country_code")).upper()
+    is_us_location = country_code in {"US", "USA"} or (not country_code and safe_str(geocode.get("source_type")) == "census_geocoder")
     provider_packs = provider_packs_for_location(
         address=address,
         lat=safe_float(geocode.get("lat")) if geocode.get("success") else None,
         lng=safe_float(geocode.get("lng")) if geocode.get("success") else None,
+        location_context=location_context,
     )
     resolved_standards_jurisdiction = _resolve_standards_jurisdiction(
         explicit=standards_jurisdiction,
@@ -928,12 +1272,22 @@ def fetch_online_existing_conditions(
         }
 
     center_lat, center_lng = bbox_center(working_bbox)
-    elevation = fetch_usgs_elevation_point(center_lat, center_lng, session=session) if include_elevation else {
-        "success": False,
-        "source_type": "usgs_3dep_epqs",
-        "status": "skipped",
-        "warnings": ["Elevation fetch skipped by request."],
-    }
+    if include_elevation:
+        if include_worldwide_context and supplied_geocode and not is_us_location:
+            elevation = fetch_global_elevation_point(center_lat, center_lng, session=session)
+        else:
+            elevation = fetch_usgs_elevation_point(center_lat, center_lng, session=session)
+            if include_worldwide_context and supplied_geocode and not elevation.get("success"):
+                usgs_elevation = elevation
+                elevation = fetch_global_elevation_point(center_lat, center_lng, session=session)
+                source_results["usgs_elevation_attempt"] = usgs_elevation
+    else:
+        elevation = {
+            "success": False,
+            "source_type": "usgs_3dep_epqs",
+            "status": "skipped",
+            "warnings": ["Elevation fetch skipped by request."],
+        }
     source_results["elevation"] = elevation
 
     layer_imports: List[Dict[str, Any]] = []
@@ -949,6 +1303,12 @@ def fetch_online_existing_conditions(
                 layer_name="floodplain",
                 provider=floodplain_provider,
                 session=session,
+            )
+        elif supplied_geocode and not is_us_location:
+            floodplain = _source_not_applicable(
+                source_type="fema_nfhl_arcgis",
+                label="FEMA floodplain",
+                country_code=country_code,
             )
         else:
             floodplain = fetch_fema_floodplain(working_bbox, session=session)
@@ -966,6 +1326,12 @@ def fetch_online_existing_conditions(
                 layer_name="wetlands",
                 provider=wetlands_provider,
                 session=session,
+            )
+        elif supplied_geocode and not is_us_location:
+            wetlands = _source_not_applicable(
+                source_type="usfws_nwi_arcgis",
+                label="USFWS wetlands",
+                country_code=country_code,
             )
         else:
             wetlands = fetch_usfws_wetlands(working_bbox, session=session)
@@ -1141,6 +1507,45 @@ def fetch_online_existing_conditions(
                 source_results[result_key] = aggregated_terrain
                 layer_imports.append(aggregated_terrain)
 
+    worldwide_context: Dict[str, Any] = {}
+    if include_worldwide_context and supplied_geocode:
+        worldwide_context = fetch_openstreetmap_site_context(working_bbox, session=session)
+        source_results["worldwide_mapped_context"] = worldwide_context
+        worldwide_layers = safe_dict(worldwide_context.get("layer_results"))
+        fallback_targets = {
+            "building_footprints": "building_footprints",
+            "roads": "roads_row",
+            "existing_utilities": "existing_utilities",
+        }
+        for layer_name, source_key in fallback_targets.items():
+            fallback_result = safe_dict(worldwide_layers.get(layer_name))
+            existing_result = safe_dict(source_results.get(source_key))
+            if _result_feature_count(existing_result) or not _result_feature_count(fallback_result):
+                continue
+            source_results[f"authoritative_{source_key}"] = existing_result
+            source_results[source_key] = fallback_result
+            layer_imports.append(fallback_result)
+        for layer_name in ("parking", "sidewalks", "water"):
+            fallback_result = safe_dict(worldwide_layers.get(layer_name))
+            if _result_feature_count(fallback_result):
+                layer_imports.append(fallback_result)
+        registry["worldwide_fallback"] = {
+            "provider": "OpenStreetMap",
+            "status": safe_str(worldwide_context.get("status")),
+            "feature_count": safe_int(worldwide_context.get("feature_count")),
+            "source_tier": "community_global",
+            "review_required": True,
+        }
+    elif include_worldwide_context:
+        worldwide_context = {
+            "success": False,
+            "status": "not_requested_without_global_geocode",
+            "source_type": "openstreetmap_overpass",
+            "warnings": ["Worldwide mapped context needs the applied global geocode coordinates supplied by the website."],
+            "review_required": True,
+        }
+        source_results["worldwide_mapped_context"] = worldwide_context
+
     online_layers = online_import_to_gis_layers(*layer_imports)
     imagery_detection = fetch_imagery_object_detection(
         address=address,
@@ -1157,10 +1562,20 @@ def fetch_online_existing_conditions(
     )
     source_results["imagery_object_detection"] = imagery_detection
     warnings.extend(safe_list(online_layers.get("warnings")))
+    source_strategy = _location_source_strategy(
+        location_context=location_context,
+        provider_packs=provider_packs,
+        worldwide_context=worldwide_context,
+        source_results=source_results,
+    )
     dem_lidar = {
         "ready": bool(elevation.get("success")),
         "source": safe_str(elevation.get("source"), "missing"),
         "source_type": safe_str(elevation.get("source_type"), "usgs_3dep_epqs"),
+        "source_tier": safe_str(elevation.get("source_tier")),
+        "provider": safe_str(elevation.get("provider")),
+        "horizontal_resolution": safe_str(elevation.get("horizontal_resolution")),
+        "attribution": safe_str(elevation.get("attribution")),
         "sample_elevation": {
             "lat": center_lat,
             "lng": center_lng,
@@ -1180,10 +1595,19 @@ def fetch_online_existing_conditions(
         "coordinate_system": {"name": "EPSG:4326", "epsg": "EPSG:4326", "units": "degrees", "source": "online_public_sources"},
         "dem_lidar": dem_lidar,
         "sources": [
-            {"key": key, "source_type": safe_str(result.get("source_type")), "status": safe_str(result.get("status")), "success": bool(result.get("success"))}
+            {
+                "key": key,
+                "source_type": safe_str(result.get("source_type")),
+                "source_tier": safe_str(result.get("source_tier")),
+                "provider": safe_str(result.get("provider")),
+                "attribution": safe_str(result.get("attribution")),
+                "status": safe_str(result.get("status")),
+                "success": bool(result.get("success")),
+            }
             for key, result in source_results.items()
         ],
         "local_gis_provider_registry_v1": registry,
+        "location_source_strategy_v1": source_strategy,
     }
     feature_report = build_map_feature_detection_report(
         location_context=location_context,
@@ -1200,15 +1624,23 @@ def fetch_online_existing_conditions(
         provider_registry=registry,
     )
     discovery_report["site_intelligence_summary_v1"] = safe_dict(feature_report.get("site_intelligence_summary_v1"))
+    discovery_report["location_source_strategy_v1"] = source_strategy
+    has_context = bool(
+        online_layers.get("success")
+        or elevation.get("success")
+        or safe_int(imagery_detection.get("detection_count")) > 0
+    )
+    request_succeeded = bool(geocode.get("success") or has_context)
     return {
-        "success": any(bool(result.get("success")) for result in source_results.values()),
+        "success": request_succeeded,
         "source_type": "online_existing_conditions_fetch",
-        "status": "ready_with_context" if any(bool(result.get("success")) for result in source_results.values()) else "no_sources_ready",
+        "status": "ready_with_context" if has_context else ("address_located_no_context" if geocode.get("success") else "no_sources_ready"),
         "bbox": working_bbox,
         "source_results": source_results,
         "location_context": location_context,
         ONLINE_DISCOVERY_VERSION: discovery_report,
         "map_feature_detection_report_v1": feature_report,
+        "location_source_strategy_v1": source_strategy,
         "canonical_existing_conditions": canonical,
         "warnings": warnings,
         "truth_label": "Fetched online public context. This does not replace boundary/topo survey, utility locates, record drawings, or jurisdiction confirmation.",
@@ -1222,6 +1654,8 @@ def build_online_source_urls(address: str = "", bbox: Optional[Dict[str, Any]] =
         "usgs_elevation": USGS_EPQS_URL,
         "fema_nfhl": FEMA_NFHL_MAPSERVER_URL,
         "usfws_wetlands": USFWS_WETLANDS_MAPSERVER_URL,
+        "worldwide_mapped_context": DEFAULT_OVERPASS_URL,
+        "global_point_elevation": DEFAULT_GLOBAL_ELEVATION_URL,
         "parcel_service": safe_str(parcel_service_url) or "unconfigured_county_specific_source",
         "building_footprints_service": "unconfigured_local_or_county_source",
         "roads_row_service": "unconfigured_local_or_county_source",
