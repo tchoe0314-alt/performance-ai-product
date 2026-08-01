@@ -89,6 +89,19 @@ def build_web_command(source: Mapping[str, str] | None = None) -> list[str]:
     ]
 
 
+def build_worker_command(source: Mapping[str, str] | None = None) -> list[str]:
+    env = source or os.environ
+    raw_nice_level = str(env.get("CIVORA_WORKER_NICE_LEVEL") or "10").strip()
+    try:
+        nice_level = min(19, max(0, int(raw_nice_level or 10)))
+    except Exception:
+        nice_level = 10
+    command = [sys.executable, "-m", "backend.scripts.run_job_worker"]
+    if nice_level <= 0:
+        return command
+    return ["nice", "-n", str(nice_level), *command]
+
+
 def _stop_process(process: subprocess.Popen[bytes] | None, *, timeout: float = 10.0) -> None:
     if process is None or process.poll() is not None:
         return
@@ -115,7 +128,7 @@ def main() -> int:
 
     try:
         worker_process = subprocess.Popen(
-            [sys.executable, "-m", "backend.scripts.run_job_worker"],
+            build_worker_command(worker_env),
             env=worker_env,
         )
         web_process = subprocess.Popen(build_web_command(web_env), env=web_env)

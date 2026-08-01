@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from backend.scripts.run_combined_backend import build_process_environments, build_web_command
+from backend.scripts.run_combined_backend import (
+    build_process_environments,
+    build_web_command,
+    build_worker_command,
+)
 
 
 def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> None:
@@ -38,3 +42,17 @@ def test_combined_runner_builds_stable_single_web_process() -> None:
     assert command[command.index("--workers") + 1] == "1"
     assert command[command.index("--timeout") + 1] == "42"
     assert command[command.index("--max-requests") + 1] == "0"
+
+
+def test_combined_runner_lowers_worker_priority_by_default() -> None:
+    command = build_worker_command({})
+
+    assert command[:3] == ["nice", "-n", "10"]
+    assert command[-2:] == ["-m", "backend.scripts.run_job_worker"]
+
+
+def test_combined_runner_allows_explicit_worker_priority_override() -> None:
+    command = build_worker_command({"CIVORA_WORKER_NICE_LEVEL": "0"})
+
+    assert command[0] != "nice"
+    assert command[-2:] == ["-m", "backend.scripts.run_job_worker"]
