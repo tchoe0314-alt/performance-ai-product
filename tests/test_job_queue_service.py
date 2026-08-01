@@ -62,6 +62,55 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(second["duplicate_of"], first["job_id"])
         self.assertEqual(len(self.queue.list_jobs(user_id=self.user_id)), 1)
 
+    def test_submit_job_reuses_active_orchestration_for_same_project(self):
+        ProjectStore(self.db).save_project(
+            user_id=self.user_id,
+            project_id="p1",
+            name="Project 1",
+        )
+        first = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "first layout"},
+            project_id="p1",
+        )
+        second = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "changed chat text", "meta": {"requested_system": "full"}},
+            project_id="p1",
+        )
+
+        self.assertEqual(second["job_id"], first["job_id"])
+        self.assertTrue(second["deduplicated"])
+        self.assertEqual(second["duplicate_of"], first["job_id"])
+        self.assertEqual(len(self.queue.list_jobs(user_id=self.user_id)), 1)
+
+    def test_submit_job_allows_explicit_parallel_orchestration(self):
+        ProjectStore(self.db).save_project(
+            user_id=self.user_id,
+            project_id="p1",
+            name="Project 1",
+        )
+        first = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "first layout"},
+            project_id="p1",
+        )
+        second = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={
+                "prompt_text": "comparison layout",
+                "meta": {"allow_parallel_orchestrate": True},
+            },
+            project_id="p1",
+        )
+
+        self.assertNotEqual(second["job_id"], first["job_id"])
+        self.assertEqual(len(self.queue.list_jobs(user_id=self.user_id)), 2)
+
     def test_job_summary_tolerates_bad_progress_shape(self):
         connection = self.db.connect()
         try:

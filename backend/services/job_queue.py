@@ -789,6 +789,23 @@ class JobQueueService:
                 ).fetchall()
         finally:
             connection.close()
+        payload_meta = dict(target_payload.get("meta") or {})
+        orchestrator_meta = dict(payload_meta.get("orchestrator_meta") or {})
+        allow_parallel_orchestrate = bool(
+            payload_meta.get("allow_parallel_orchestrate")
+            or orchestrator_meta.get("allow_parallel_orchestrate")
+        )
+        if (
+            rows
+            and job_type == "orchestrate"
+            and project_id is not None
+            and not allow_parallel_orchestrate
+        ):
+            # A project can have one staged engineering run at a time. Exact
+            # payload equality is too narrow because autosave/chat metadata can
+            # change while the first run is waiting for review, creating a
+            # second hold that later blocks Deliver.
+            return self._row_to_record(rows[0])
         for row in rows:
             record = self._row_to_record(row)
             if _json_safe(record.get("payload") or {}) == target_payload:
