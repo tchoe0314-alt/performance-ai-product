@@ -60,6 +60,9 @@ test.describe("Generate and Deliver product flow", () => {
     await page.getByRole("button", { name: /Make Review Package/i }).click();
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input/i);
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Auto Site Context source missing|generated system result|model preview|none recorded/i);
+    await expect(page.getByTestId("deliver-review-package-summary")).not.toContainText(
+      /construction readiness blocked|construction release blocked/i,
+    );
     await expect(page.getByTestId("deliver-package-context")).toContainText(/Package includes/i);
     await expect(page.getByTestId("deliver-package-context")).toContainText(/draft object|source candidate|review package only/i);
     await expect(page.getByTestId("plan-sheet-editor")).toContainText(/Review-required/i);

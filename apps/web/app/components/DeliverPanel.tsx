@@ -83,6 +83,31 @@ type DeliverPanelProps = {
   onSmartFixAction: (recommendation: SmartFixRecommendation) => void;
 };
 
+function reviewPackageMissingItemsForDisplay(items: string[]) {
+  const visible: string[] = [];
+  const seen = new Set<string>();
+  for (const rawItem of items) {
+    const item = rawItem.trim();
+    const normalized = item.toLowerCase();
+    if (!item) continue;
+    if (
+      /construction[- ]ready|construction readiness|construction release|stamp|seal|certif|engineer of record|approve construction|submit construction/.test(
+        normalized,
+      )
+    ) {
+      continue;
+    }
+    const displayItem = /model preview|preview.*source package/.test(normalized)
+      ? "Add a model preview linked to reviewed source data."
+      : item;
+    const key = displayItem.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    visible.push(displayItem);
+  }
+  return visible;
+}
+
 export function DeliverPanel({
   reviewPackageFlowSummary,
   planPreviewUrl,
@@ -154,6 +179,10 @@ export function DeliverPanel({
     const source = String(item.source || item.meta?.source || "").toLowerCase();
     return Boolean(item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source));
   }).length;
+  const visiblePackageMissing = reviewPackageMissingItemsForDisplay(reviewPackageFlowSummary?.missing ?? []);
+  const visiblePackageNextAction = visiblePackageMissing.length
+    ? `Review or add: ${visiblePackageMissing.slice(0, 3).join("; ")}`
+    : "Review the package, then export or share it for qualified review.";
 
   return (
     <div className="space-y-3" data-testid="clean-deliver-panel">
@@ -181,7 +210,7 @@ export function DeliverPanel({
           <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${reviewPackageFlowSummary.blocked ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} data-testid="deliver-review-package-summary">
             <p className="font-semibold uppercase tracking-[0.12em]">{reviewPackageFlowSummary.blocked ? "Needs input" : "Package made"}</p>
             <p className="mt-1">Created: {reviewPackageFlowSummary.outputs_created.join(", ") || "none"}</p>
-            <p className="mt-1">Missing: {reviewPackageFlowSummary.missing.slice(0, 4).join("; ") || "none recorded"}</p>
+            <p className="mt-1">Missing: {visiblePackageMissing.slice(0, 4).join("; ") || "none recorded"}</p>
             <div className="mt-2 rounded-lg border border-emerald-200 bg-white/70 px-2.5 py-2 text-emerald-900" data-testid="deliver-package-context">
               <p className="font-semibold">
                 Package includes: {packageContextLabels.length ? packageContextLabels.join(", ") : "no placed drawing objects yet"}{packageContextObjects.length > packageContextLabels.length ? `, plus ${packageContextObjects.length - packageContextLabels.length} more` : ""}
@@ -195,7 +224,7 @@ export function DeliverPanel({
                 </p>
               ) : null}
             </div>
-            <p className="mt-1 font-semibold">Next: {reviewPackageFlowSummary.next_action}</p>
+            <p className="mt-1 font-semibold">Next: {visiblePackageNextAction}</p>
           </div>
         ) : null}
       </PanelCard>
