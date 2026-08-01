@@ -638,7 +638,7 @@ class JobQueueService:
         try:
             rows = connection.execute(
                 """
-                SELECT job_id, status
+                SELECT job_id, status, result_json
                 FROM jobs
                 WHERE job_type = ? AND status IN ('queued', 'running')
                 ORDER BY created_at ASC
@@ -647,6 +647,30 @@ class JobQueueService:
             ).fetchall()
             for row in rows:
                 if row["status"] == "running":
+                    recovered_result = _json_loads(row["result_json"], {})
+                    recovered_checkpoint = dict(
+                        dict(recovered_result.get("metadata") or {}).get("runtime_phase_checkpoint")
+                        or {}
+                    )
+                    if job_type == "orchestrate" and recovered_checkpoint:
+                        checkpoint_stage = str(recovered_checkpoint.get("stage_name") or "saved").replace("_", " ")
+                        connection.execute(
+                            """
+                            UPDATE jobs
+                            SET status = ?, updated_at = ?, error_text = ?, stage = ?, stage_detail = ?, progress = ?
+                            WHERE job_id = ?
+                            """,
+                            (
+                                "awaiting_approval",
+                                _now(),
+                                "Recovered at the last saved checkpoint after process restart.",
+                                "Awaiting Approval",
+                                f"Recovered after restart at the {checkpoint_stage} checkpoint. Review and resume when ready.",
+                                60,
+                                row["job_id"],
+                            ),
+                        )
+                        continue
                     connection.execute(
                         """
                         UPDATE jobs

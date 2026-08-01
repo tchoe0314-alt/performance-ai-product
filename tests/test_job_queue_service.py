@@ -1057,6 +1057,49 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertFalse(started.wait(timeout=0.05))
         self.assertTrue(started.wait(timeout=1.0))
 
+    def test_restart_parks_running_orchestration_at_saved_checkpoint(self):
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                    stage, stage_detail, progress, payload_json, result_json, error_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job_restart_checkpoint",
+                    self.user_id,
+                    "orchestrate",
+                    "running",
+                    1.0,
+                    2.0,
+                    None,
+                    "Sanitary Phase",
+                    "Running sanitary phase.",
+                    64,
+                    "{}",
+                    '{"metadata":{"runtime_phase_checkpoint":{"stage_name":"storm_pipes","yielded":true}}}',
+                    None,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        recovery_queue = JobQueueService(self.db, worker_count=0)
+        recovery_queue._enqueue_pending_jobs("orchestrate")
+
+        record = recovery_queue.get_job_detail(
+            user_id=self.user_id,
+            job_id="job_restart_checkpoint",
+        )
+        self.assertEqual(record["status"], "awaiting_approval")
+        self.assertEqual(record["stage"], "Awaiting Approval")
+        self.assertTrue(record["can_resume"])
+        self.assertTrue(record["resume_feasible"])
+        self.assertEqual(recovery_queue._queue.qsize(), 0)
+
     def test_revise_job_requeues_saved_phase_with_updated_payload(self):
         call_payloads = []
 
