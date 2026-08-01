@@ -201,7 +201,10 @@ export function useDashboardPowerCommandHandler({
   workflowReviewDashboard,
 }: UseDashboardPowerCommandHandlerInput) {
   const tryHandleSiteProgramCommand = useCallback((message: string): boolean => {
-    const lower = message.toLowerCase();
+    const lower = message
+      .toLowerCase()
+      .replace(/\b(?:drveway|drivewy|driveay)\b/g, "driveway")
+      .replace(/\bada\s+walks?\b/g, "ada route");
     if (!/\b(add|create|place|make|include|put|recreate|copy|draft|draw|layout|produce)\b/.test(lower)) return false;
     const wantsDensePlan =
       /\b(dense|full|complete|professional|civil|utility design|site plan|plan sheet|like the image|like this image|recreate|copy this|as many|detailed|realistic)\b/.test(
@@ -223,7 +226,7 @@ export function useDashboardPowerCommandHandler({
     const requested: Array<() => void> = [];
     const labels: string[] = [];
     const officeArea = lower.match(
-      /(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)\s+(?:(?:office\s+)?building|office\s+project)\b/,
+      /(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)\s+(?:(?:office\s+)?building|office(?:\s+project)?)\b/,
     );
     if (officeArea || /\boffice\s+(?:building|project)\b/.test(lower)) {
       const area = officeArea ? Number(officeArea[1].replace(/,/g, "")) : null;
@@ -238,7 +241,7 @@ export function useDashboardPowerCommandHandler({
       }));
       labels.push(area ? `${Math.round(area).toLocaleString()} sf office building` : "office building");
     }
-    const parking = lower.match(/(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls)/);
+    const parking = lower.match(/(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls|spots?)/);
     if (parking || /\bparking\b/.test(lower)) {
       const stalls = parking ? Number(parking[1]) : parsePositiveNumber(parkingCount) ?? 140;
       const fieldWidth = Math.max(260, Math.min((lot.w || 1000) * 0.48, Math.ceil(stalls / 2) * 9 + 36));
@@ -271,7 +274,9 @@ export function useDashboardPowerCommandHandler({
       requested.push(() => handleAddObject("utility_corridor", { label: "Public Water Line", geometryType: "polyline", placed: true, meta: { network: "water", command_created: true } }));
       labels.push("public water line");
     }
-    if (/\b(public sanitary|sanitary|sewer)\b/.test(lower)) {
+    const requestsSanitary = /\b(public sanitary|sanitary(?: sewer)?|wastewater)\b/.test(lower) ||
+      (/\bsewer\b/.test(lower) && !/\bstorm\s+sewer\b/.test(lower));
+    if (requestsSanitary) {
       requested.push(() => handleAddObject("utility_corridor", { label: "Public Sanitary Line", geometryType: "polyline", placed: true, meta: { network: "sanitary", command_created: true } }));
       labels.push("public sanitary line");
     }

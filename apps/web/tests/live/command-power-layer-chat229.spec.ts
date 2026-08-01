@@ -101,6 +101,28 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByText(/Added and placed 28,000 sf office building/i).first()).toBeVisible({ timeout: 5_000 });
   });
 
+  test("messy site-program wording preserves quantities and common drafting typos", async ({ page }) => {
+    await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock&seedDemo=0", { requireLockedSite: false });
+
+    await runCommand(page, "Set the site to 720 ft by 520 ft with 1600 Dodge St Omaha NE as the center point");
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Site Locked/i, { timeout: 8_000 });
+
+    await runCommand(
+      page,
+      "put in a 32,000 sqft office, 165 parking spots, a detention pond, drveway, storm sewer, water, sanitary, and ADA walks",
+    );
+
+    await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 32,000 sf"]').first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 165 stalls"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Basin / Detention"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Driveway"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Sidewalk / ADA Route"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Public Sanitary Line"]').first()).toBeVisible();
+    await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
+    await expect(page.getByText(/32,000 sf office building, 165 parking stalls/i).first()).toBeVisible({ timeout: 5_000 });
+  });
+
   test("natural grading and drainage context commands create editable review geometry", async ({ page }) => {
     await openDemoWorkspace(page);
 
