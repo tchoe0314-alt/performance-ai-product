@@ -49,6 +49,7 @@ type UseDashboardJobLoaderOptions = {
   setCurrentProject: StateSetter<ProjectRecord | null>;
   setJobs: StateSetter<JobSummary[]>;
   setJobsPanelStatusMessage: (message: string) => void;
+  setSelectedJobId: StateSetter<string>;
   setProjectId: StateSetter<string>;
   setSiteName: StateSetter<string>;
   setStatusMessage: (message: string) => void;
@@ -79,6 +80,7 @@ export function useDashboardJobLoader({
   setCurrentProject,
   setJobs,
   setJobsPanelStatusMessage,
+  setSelectedJobId,
   setProjectId,
   setSiteName,
   setStatusMessage,
@@ -86,7 +88,7 @@ export function useDashboardJobLoader({
   token,
   upsertProjectSummary,
 }: UseDashboardJobLoaderOptions) {
-  const loadJob = useCallback(async (id: string) => {
+  const loadJob = useCallback(async (id: string, options?: { selectionOnly?: boolean }) => {
     if (!token) return;
     const workspaceGeneration = projectLoadRequestRef.current;
     try {
@@ -187,6 +189,10 @@ export function useDashboardJobLoader({
         }
         return next;
       });
+      if (options?.selectionOnly) {
+        setJobsPanelStatusMessage("");
+        return;
+      }
       setActiveJobId(job.job_id);
       const previousStatus = lastJobStatusRef.current[job.job_id];
       const normalizedStatus = String(job.status || "").toLowerCase();
@@ -415,9 +421,10 @@ export function useDashboardJobLoader({
 
   const handleSelectJob = useCallback((jobId: string) => {
     if (jobId) {
-      void loadJob(jobId);
+      setSelectedJobId(jobId);
+      void loadJob(jobId, { selectionOnly: true });
     }
-  }, [loadJob]);
+  }, [loadJob, setSelectedJobId]);
 
   return {
     handleSelectJob,

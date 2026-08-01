@@ -56,10 +56,33 @@ export async function runQueuedSourceContextLookup({
   onProgress?.(queued.job);
 
   const deadline = Date.now() + 180000;
+  let lastJob = queued.job;
+  let pollFailureCount = 0;
+  let lastPollError: unknown = null;
   while (Date.now() < deadline) {
-    await wait(1250);
-    const detail = await getJson<{ job: SourceContextJob }>(`/api/jobs/${jobId}`, { token });
-    const job = detail.job;
+    await wait(pollFailureCount ? Math.min(5000, 1250 * (pollFailureCount + 1)) : 1250);
+    let job: SourceContextJob;
+    try {
+      const detail = await getJson<{ job: SourceContextJob }>(`/api/jobs/${jobId}`, { token });
+      job = detail.job;
+      lastJob = job;
+      pollFailureCount = 0;
+      lastPollError = null;
+    } catch (error) {
+      const status = Number((error as { status?: number })?.status || 0);
+      if (status === 401 || status === 403) {
+        throw error;
+      }
+      pollFailureCount += 1;
+      lastPollError = error;
+      onProgress?.({
+        ...lastJob,
+        status: "running",
+        stage: lastJob.stage || "source_context",
+        stage_detail: "Source lookup is still running; reconnecting to its background status...",
+      });
+      continue;
+    }
     onProgress?.(job);
     const status = String(job.status || "").toLowerCase();
     if (status === "completed") {
@@ -75,5 +98,6 @@ export async function runQueuedSourceContextLookup({
       throw new Error("Source lookup was cancelled.");
     }
   }
-  throw new Error("Source lookup is still running. It remains visible in Jobs and can finish in the background.");
+  const lastErrorMessage = lastPollError instanceof Error ? ` Last status check: ${lastPollError.message}` : "";
+  throw new Error(`Source lookup is still running. It remains visible in Jobs and can finish in the background.${lastErrorMessage}`);
 }

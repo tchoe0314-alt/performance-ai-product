@@ -288,6 +288,18 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
               can_retry: false,
               can_resume: false,
             },
+            {
+              job_id: "job-source-complete",
+              job_type: "source_context",
+              status: "completed",
+              progress: 100,
+              stage_detail: "Source lookup complete. 18 items are ready for review.",
+              updated_at: staleUpdatedAt - 10,
+              created_at: staleUpdatedAt - 20,
+              can_cancel: false,
+              can_retry: false,
+              can_resume: false,
+            },
           ],
         }),
       });
@@ -300,6 +312,11 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
     await expect(page.getByTestId("jobs-stale-warning")).toContainText("Backend status is stale", { timeout: 30_000 });
     await expect(page.getByTestId("job-detail-drawer")).toContainText("Running. Civora has not recorded the next stage detail yet.");
+    await page.getByRole("button", {
+      name: "job-source-complete source context completed Source lookup complete. 18 items are ready for review.",
+    }).click();
+    await expect(page.getByTestId("job-detail-drawer")).toContainText("job-source-complete");
+    await expect(page.getByTestId("job-detail-drawer")).toContainText("Source lookup complete. 18 items are ready for review.");
     jobsFail = true;
     await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
     await expect(page.getByTestId("jobs-refresh-status")).toContainText("Job refresh failed", { timeout: 30_000 });

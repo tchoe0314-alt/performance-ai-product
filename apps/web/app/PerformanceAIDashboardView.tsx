@@ -4020,6 +4020,7 @@ function PerformanceAIDashboardView({
     setCurrentProject,
     setJobs,
     setJobsPanelStatusMessage,
+    setSelectedJobId,
     setProjectId,
     setSiteName,
     setStatusMessage,

@@ -490,3 +490,157 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   expect(JSON.stringify(savedProjectInput)).toContain("site_intelligence_summary_v1");
   expect(JSON.stringify(savedProjectInput)).toContain("imagery_object_detection_report_v1");
 });
+
+test("Apply Address recovers when a background source status poll is transiently rate limited", async ({ page }) => {
+  let pollCount = 0;
+
+  await page.route("**/api/auth/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, user_count: 1, registration_allowed: true }),
+    });
+  });
+  await page.route("**/api/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ user: { user_id: "pw-user", email: "pw@example.com", name: "Playwright" } }),
+    });
+  });
+  await page.route("**/api/projects", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, projects: [] }) });
+      return;
+    }
+    const payload = route.request().postDataJSON() as { project_input?: Record<string, unknown> };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        project: {
+          project_id: "pw-project",
+          name: "Transient Poll Project",
+          project_input: payload.project_input ?? {},
+          latest_result: null,
+          has_result: false,
+        },
+      }),
+    });
+  });
+  await page.route("**/api/geocode", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        status: "ready",
+        lat: 41.2587,
+        lng: -95.9378,
+        display_name: "1600 DODGE ST, OMAHA, NE",
+        provider: "test_geocoder",
+      }),
+    });
+  });
+  await page.route("**/api/jobs**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (route.request().method() === "POST" && pathname === "/api/jobs/source-context") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          job: {
+            job_id: "job-transient-source",
+            job_type: "source_context",
+            status: "queued",
+            progress: 0,
+          },
+        }),
+      });
+      return;
+    }
+    if (route.request().method() === "GET" && pathname === "/api/jobs/job-transient-source") {
+      pollCount += 1;
+      if (pollCount === 1) {
+        await route.fulfill({
+          status: 429,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Temporary polling rate limit" }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          job: {
+            job_id: "job-transient-source",
+            job_type: "source_context",
+            status: "completed",
+            progress: 100,
+            result: {
+              success: true,
+              status: "ready_with_context",
+              online_existing_conditions_discovery_v1: {
+                version: "online_existing_conditions_discovery_v1",
+                status: "candidates_found",
+                candidate_count: 1,
+                sources: [
+                  {
+                    key: "building_footprints",
+                    label: "building footprints",
+                    provider: "Test Buildings",
+                    candidate_count: 1,
+                    review_required: true,
+                    blockers: ["review-required"],
+                  },
+                ],
+                missing_sources: [],
+                review_required: true,
+                acceptance_status: "candidate",
+              },
+              map_feature_detection_report_v1: {
+                version: "map_feature_detection_report_v1",
+                candidate_count: 1,
+                feature_candidates: [],
+              },
+            },
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, jobs: [] }),
+    });
+  });
+
+  await page.addInitScript(
+    ([tokenKey, restoreKey, authToken]) => {
+      window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
+    },
+    [TOKEN_KEY, SESSION_RESTORE_KEY, "pw-token"] as const,
+  );
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Setup" }).first().click();
+  const addressSection = page.getByTestId("setup-address-truth");
+  if (!(await addressSection.evaluate((node) => node.hasAttribute("open")))) {
+    await addressSection.locator("summary").click();
+  }
+  await page.getByLabel("Type project address").fill("1600 Dodge St, Omaha, NE");
+  await page.getByRole("button", { name: "Apply address" }).click();
+
+  await expect(page.getByTestId("auto-site-context-candidates")).toContainText("1 source candidate available for review", {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");
+  expect(pollCount).toBeGreaterThanOrEqual(2);
+});
