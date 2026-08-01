@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -213,30 +214,34 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(job["result"], {})
 
     def test_worker_recovers_queued_jobs_from_database_without_in_memory_queue(self):
-        self.queue.register_handler(
-            "orchestrate",
-            lambda job: {"success": True, "result": {"job_id": job["job_id"]}},
-        )
-        created = self.queue.submit_job(
+        web_queue = JobQueueService(self.db, worker_count=0)
+        created = web_queue.submit_job(
             user_id=self.user_id,
             job_type="orchestrate",
             payload={"prompt_text": "demo"},
         )
-
-        drained_job_id = self.queue._queue.get(timeout=1.0)
-        self.assertEqual(drained_job_id, created["job_id"])
-        self.queue._queue.task_done()
+        worker_queue = JobQueueService(
+            self.db,
+            worker_count=1,
+            resume_poll_interval_sec=0.05,
+        )
+        worker_queue.register_handler(
+            "orchestrate",
+            lambda job: {"success": True, "result": {"job_id": job["job_id"]}},
+        )
 
         deadline = time.time() + 3.0
         record = None
         while time.time() < deadline:
-            record = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            record = worker_queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
             if record and record["status"] == "completed":
                 break
             time.sleep(0.05)
 
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "completed")
+        worker_queue._resume_pending_jobs = False
+        worker_queue.db = Database(Path(tempfile.gettempdir()) / "civora_job_queue_recovery_teardown.db")
 
     def test_web_only_queue_is_completed_by_separate_worker_service(self):
         web_queue = JobQueueService(self.db, worker_count=0)
@@ -937,6 +942,28 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "completed")
         self.assertEqual(call_count["value"], 2)
+
+    def test_in_process_worker_start_is_deferred_until_after_queue_acknowledgement(self):
+        started = threading.Event()
+        queue = JobQueueService(
+            self.db,
+            worker_count=1,
+            in_process_start_delay_sec=0.2,
+        )
+        queue.register_handler(
+            "orchestrate",
+            lambda _job: started.set() or {"success": True},
+        )
+
+        submitted = queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "deferred start"},
+        )
+
+        self.assertEqual(submitted["status"], "queued")
+        self.assertFalse(started.wait(timeout=0.05))
+        self.assertTrue(started.wait(timeout=1.0))
 
     def test_revise_job_requeues_saved_phase_with_updated_payload(self):
         call_payloads = []

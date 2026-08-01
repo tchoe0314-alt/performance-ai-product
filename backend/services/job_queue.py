@@ -90,6 +90,7 @@ class JobQueueService:
         heartbeat_interval_sec: float = 10.0,
         worker_count: Optional[int] = None,
         resume_poll_interval_sec: Optional[float] = None,
+        in_process_start_delay_sec: Optional[float] = None,
     ) -> None:
         self.db = db
         self._queue: Queue[str] = Queue()
@@ -109,6 +110,12 @@ class JobQueueService:
         if resume_poll_interval_sec is None:
             resume_poll_interval_sec = self._env_float("PERFORMANCE_AI_RESUME_POLL_SECONDS", 0.0)
         self._resume_poll_interval_sec = max(0.0, float(resume_poll_interval_sec or 0.0))
+        if in_process_start_delay_sec is None:
+            in_process_start_delay_sec = self._env_float(
+                "CIVORA_IN_PROCESS_JOB_START_DELAY_SECONDS",
+                0.25,
+            )
+        self._in_process_start_delay_sec = max(0.0, float(in_process_start_delay_sec or 0.0))
         self._last_resume_poll_at = 0.0
         self._job_timeout_seconds = self._env_float("CIVORA_JOB_TIMEOUT_SECONDS", 900.0)
         self._failure_window_seconds = self._env_float("CIVORA_JOB_FAILURE_WINDOW_SECONDS", 3600.0)
@@ -144,6 +151,20 @@ class JobQueueService:
         self._ensure_workers_alive()
         if self._worker_count > 0 and self._resume_pending_jobs:
             self._enqueue_pending_jobs(job_type)
+
+    def _enqueue_after_api_acknowledgement(self, job_id: str) -> None:
+        if self._worker_count <= 0:
+            return
+        if self._in_process_start_delay_sec <= 0:
+            self._queue.put(job_id)
+            return
+        timer = threading.Timer(
+            self._in_process_start_delay_sec,
+            self._queue.put,
+            args=(job_id,),
+        )
+        timer.daemon = True
+        timer.start()
 
     def runtime_stats(self) -> Dict[str, Any]:
         self._ensure_workers_alive()
@@ -312,7 +333,7 @@ class JobQueueService:
             connection.close()
 
         if self._worker_count > 0 and job_type in self._handlers:
-            self._queue.put(record["job_id"])
+            self._enqueue_after_api_acknowledgement(record["job_id"])
         return self._job_summary(record)
 
     def fail_timed_out_jobs(self) -> int:
@@ -547,7 +568,7 @@ class JobQueueService:
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
         if self._worker_count > 0:
-            self._queue.put(job_id)
+            self._enqueue_after_api_acknowledgement(job_id)
         return summary
 
     def retry_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
@@ -609,7 +630,7 @@ class JobQueueService:
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
         if self._worker_count > 0:
-            self._queue.put(job_id)
+            self._enqueue_after_api_acknowledgement(job_id)
         return summary
 
     def _enqueue_pending_jobs(self, job_type: str) -> None:

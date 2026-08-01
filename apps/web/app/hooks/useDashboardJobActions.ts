@@ -179,6 +179,18 @@ export function useDashboardJobActions({
 
   const handleResumeJob = useCallback(async (jobId: string) => {
     if (!token || !jobId) return;
+    setJobs((current) =>
+      current.map((job) =>
+        job.job_id === jobId
+          ? {
+              ...job,
+              can_resume: false,
+              stage_detail: "Sending approval and preparing the next phase...",
+            }
+          : job,
+      ),
+    );
+    setStatusMessage(`Sending approval for ${jobId}...`);
     try {
       const data = await postJson<{ job: JobSummary }>(
         `/api/jobs/${jobId}/continue`,
@@ -197,6 +209,11 @@ export function useDashboardJobActions({
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not resume job.";
+      setJobs((current) =>
+        current.map((job) =>
+          job.job_id === jobId ? { ...job, can_resume: true } : job,
+        ),
+      );
       setStatusMessage(message);
       pushJobToast({ title: "Resume failed", detail: message, tone: "error" });
     }
@@ -205,6 +222,7 @@ export function useDashboardJobActions({
     pushJobToast,
     refreshJobs,
     setActiveJobId,
+    setJobs,
     setSelectedJobId,
     setStatusMessage,
     token,
