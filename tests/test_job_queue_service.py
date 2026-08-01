@@ -141,6 +141,43 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(job["timeline"][0]["id"], "queued")
         self.assertTrue(job["can_cancel"])
 
+    def test_progress_update_does_not_rewrite_large_result_payload(self):
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={"prompt_text": "large persisted result"},
+        )
+        connection = self.db.connect()
+        try:
+            preserved_result = '{"final_plan":{"large":"payload"},"metadata":{"checkpoint":true}}'
+            connection.execute(
+                "UPDATE jobs SET status = ?, result_json = ? WHERE job_id = ?",
+                ("running", preserved_result, created["job_id"]),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        self.queue.update_job_progress(
+            created["job_id"],
+            stage="Grading Phase",
+            detail="Building proposed surface.",
+            progress=30,
+        )
+
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                "SELECT stage, stage_detail, progress, result_json FROM jobs WHERE job_id = ?",
+                (created["job_id"],),
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertEqual(row["stage"], "Grading Phase")
+        self.assertEqual(row["stage_detail"], "Building proposed surface.")
+        self.assertEqual(row["progress"], 30)
+        self.assertEqual(row["result_json"], preserved_result)
+
     def test_get_job_detail_includes_result_after_completion_only(self):
         connection = self.db.connect()
         try:

@@ -1947,7 +1947,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertFalse(saved_plan["release_ready"])
         self.assertIn("manual_validation_manual_storm_hydraulic_invalid", saved_plan["blockers"])
 
-    def test_build_orchestrate_job_runner_persists_phase_checkpoints_mid_run(self):
+    def test_build_orchestrate_job_runner_persists_only_completed_phase_checkpoints(self):
         store = FakeProjectStore(
             {
                 "user_id": "u1",
@@ -2030,57 +2030,38 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             }
         )
 
-        self.assertGreaterEqual(len(store.save_calls), 5)
+        self.assertGreaterEqual(len(store.save_calls), 3)
         phase_save = store.save_calls[0]
         phase_run = phase_save["metadata"]["workflow"]["runs"][0]
         self.assertEqual(phase_run["job_id"], "job_phase_persist")
-        self.assertEqual(phase_run["phase_checkpoints"]["layout"]["status"], "running")
-        self.assertFalse(phase_run["phase_checkpoints"]["layout"]["ready"])
+        self.assertEqual(phase_run["phase_checkpoints"]["layout"]["status"], "complete")
+        self.assertTrue(phase_run["phase_checkpoints"]["layout"]["ready"])
         self.assertEqual(
             phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"],
-            "running",
+            "complete",
         )
         self.assertEqual(
             phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["layout"],
-            "running",
+            "complete",
         )
         self.assertEqual(
             phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["status"],
-            "running",
+            "partial",
         )
         self.assertEqual(
             phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["completed_phase_count"],
-            0,
+            1,
         )
         second_phase_save = store.save_calls[1]
         second_phase_run = second_phase_save["metadata"]["workflow"]["runs"][0]
-        self.assertEqual(second_phase_run["phase_checkpoints"]["layout"]["status"], "complete")
-        self.assertTrue(second_phase_run["phase_checkpoints"]["layout"]["ready"])
+        self.assertEqual(second_phase_run["phase_checkpoints"]["grading"]["status"], "complete")
+        self.assertTrue(second_phase_run["phase_checkpoints"]["grading"]["ready"])
         self.assertEqual(
-            second_phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["layout"],
+            second_phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["grading"],
             "complete",
         )
         self.assertEqual(
             second_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["completed_phase_count"],
-            1,
-        )
-        third_phase_save = store.save_calls[2]
-        third_phase_run = third_phase_save["metadata"]["workflow"]["runs"][0]
-        self.assertEqual(third_phase_run["phase_checkpoints"]["grading"]["status"], "running")
-        self.assertEqual(
-            third_phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["grading"],
-            "running",
-        )
-        fourth_phase_save = store.save_calls[3]
-        fourth_phase_run = fourth_phase_save["metadata"]["workflow"]["runs"][0]
-        self.assertEqual(fourth_phase_run["phase_checkpoints"]["grading"]["status"], "complete")
-        self.assertTrue(fourth_phase_run["phase_checkpoints"]["grading"]["ready"])
-        self.assertEqual(
-            fourth_phase_save["latest_result"]["final_plan"]["meta"]["stage_completeness"]["statuses"]["grading"],
-            "complete",
-        )
-        self.assertEqual(
-            fourth_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["combined_view"]["completed_phase_count"],
             2,
         )
 
@@ -2369,13 +2350,13 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         )
 
         self.assertGreaterEqual(len(store.save_calls), 2)
-        second_phase_save = store.save_calls[1]
+        completed_phase_save = store.save_calls[0]
         self.assertEqual(
-            second_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"],
+            completed_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["layout"]["status"],
             "complete",
         )
         self.assertEqual(
-            second_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["grading"]["status"],
+            completed_phase_save["latest_result"]["final_plan"]["meta"]["phase_checkpoints"]["grading"]["status"],
             "complete",
         )
         self.assertEqual(store.saved_payload["project_input"], {"prompt_text": "run"})

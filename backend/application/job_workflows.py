@@ -1295,17 +1295,19 @@ def build_orchestrate_job_runner(
                 detail=message,
                 progress=int(progress or 48),
             )
-            _persist_runtime_phase_checkpoint(
-                user_id=user_id,
-                project_id=project_id,
-                job_id=job_id,
-                payload=payload,
-                stage_name=str(stage_name or ""),
-                status=str(status or ""),
-                detail=message,
-                progress=int(progress or 48),
-                checkpoint=checkpoint,
-            )
+            normalized_status = str(status or "").strip().lower()
+            if checkpoint is not None or normalized_status in {"complete", "failed"}:
+                _persist_runtime_phase_checkpoint(
+                    user_id=user_id,
+                    project_id=project_id,
+                    job_id=job_id,
+                    payload=payload,
+                    stage_name=str(stage_name or ""),
+                    status=str(status or ""),
+                    detail=message,
+                    progress=int(progress or 48),
+                    checkpoint=checkpoint,
+                )
 
         if job_id:
             update_job_progress(

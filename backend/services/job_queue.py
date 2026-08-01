@@ -802,14 +802,34 @@ class JobQueueService:
             connection.close()
 
     def update_job_progress(self, job_id: str, *, stage: str, detail: str, progress: int) -> None:
-        current = self._get_job_for_worker(job_id)
-        if current is None:
-            return
-        if current.get("status") in {"cancelling", "cancelled"}:
-            raise JobCancelledError("Cancelled by user.")
-        merged_result = dict(current.get("result") or {})
-        merged_result.update(_job_progress_payload(stage, detail, progress))
-        self._update_job_state(job_id, status="running", result=merged_result, error=None)
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                "SELECT status FROM jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                return
+            if str(row["status"] or "") in {"cancelling", "cancelled"}:
+                raise JobCancelledError("Cancelled by user.")
+            connection.execute(
+                """
+                UPDATE jobs
+                SET updated_at = ?, stage = ?, stage_detail = ?, progress = ?, error_text = ?
+                WHERE job_id = ?
+                """,
+                (
+                    _now(),
+                    str(stage or ""),
+                    str(detail or ""),
+                    _coerce_progress(progress),
+                    None,
+                    job_id,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
 
     def _touch_job_activity(self, job_id: str) -> bool:
         current = self._get_job_for_worker(job_id)
@@ -1115,8 +1135,8 @@ class JobQueueService:
                 current = self._get_job_for_worker(job_id)
                 previous_result = dict((current or {}).get("result") or {})
                 previous_progress = dict(previous_result.get("job_progress") or {})
-                stage = str(previous_progress.get("stage") or (current or {}).get("stage") or "Job Failed")
-                detail = str(previous_progress.get("detail") or (current or {}).get("stage_detail") or "")
+                stage = str((current or {}).get("stage") or previous_progress.get("stage") or "Job Failed")
+                detail = str((current or {}).get("stage_detail") or previous_progress.get("detail") or "")
                 error_text = f"Job failed during {stage}: {str(exc)}"
                 failed_result = dict(previous_result)
                 failed_result.update(
