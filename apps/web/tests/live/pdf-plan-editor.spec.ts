@@ -9,9 +9,14 @@ const API_BASE_URL =
   "http://127.0.0.1:8002";
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
+const defaultPdfFixtureCandidates = [
+  path.resolve(process.cwd(), "backend/fixtures/plan_pdfs/pool-geometric.pdf"),
+  path.resolve(process.cwd(), "../../backend/fixtures/plan_pdfs/pool-geometric.pdf"),
+];
 const POOL_PDF_PATH =
   process.env.CIVORA_PDF_PLAN_FIXTURE ||
-  path.resolve(process.cwd(), "../../backend/fixtures/plan_pdfs/pool-geometric.pdf");
+  defaultPdfFixtureCandidates.find((candidate) => fs.existsSync(candidate)) ||
+  defaultPdfFixtureCandidates[0];
 
 const runId = Date.now();
 const email = process.env.CIVORA_EMAIL || `pdf-plan-${runId}@civora.local`;

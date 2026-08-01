@@ -1,12 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import fs from "node:fs/promises";
-import path from "node:path";
 
 const email = process.env.CIVORA_EMAIL || "";
 const password = process.env.CIVORA_PASSWORD || "";
 const prompt = process.env.CIVORA_PROMPT || "";
 const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 const API_BASE_URL =
   process.env.PLAYWRIGHT_API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -114,17 +113,10 @@ async function waitForComposer(page: Page) {
   return composer;
 }
 
-async function ensureArtifactDir(): Promise<string> {
-  const dir = path.resolve(process.cwd(), "playwright-artifacts");
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
-}
-
-test("live civora flow", async ({ page, request, baseURL }) => {
+test("live civora flow", async ({ page, request, baseURL }, testInfo) => {
   test.skip(!baseURL, "PLAYWRIGHT_BASE_URL is required.");
   test.skip(!email || !password, "CIVORA_EMAIL and CIVORA_PASSWORD are required.");
 
-  const artifactDir = await ensureArtifactDir();
   const loginResponse = await request.post(`${API_BASE_URL.replace(/\/+$/, "")}/api/auth/login`, {
     data: {
       email,
@@ -139,17 +131,18 @@ test("live civora flow", async ({ page, request, baseURL }) => {
   expect(token).toBeTruthy();
 
   await page.addInitScript(
-    ([tokenKey, authToken]) => {
+    ([tokenKey, restoreKey, authToken]) => {
       window.localStorage.setItem(tokenKey, authToken);
+      window.sessionStorage.setItem(restoreKey, "1");
     },
-    [TOKEN_KEY, token] as const,
+    [TOKEN_KEY, SESSION_RESTORE_KEY, token] as const,
   );
 
   await page.goto(baseURL!, { waitUntil: "domcontentloaded" });
   await waitForComposer(page);
 
   await page.screenshot({
-    path: path.join(artifactDir, "civora-app-shell.png"),
+    path: testInfo.outputPath("civora-app-shell.png"),
     fullPage: true,
   });
 
@@ -167,12 +160,13 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     await page.getByRole("button", { name: "Send" }).click();
 
     await expectNoGenericDesignClarification(page);
-    await expect(page.getByText(/Civora AI|Next action|review-required|review context|placed|site/i).last()).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(
+      /Got it|set up|created|placed|review|needs input|next|site boundary/i,
+      { timeout: 30_000 },
+    );
 
     await page.screenshot({
-      path: path.join(artifactDir, "civora-after-prompt.png"),
+      path: testInfo.outputPath("civora-after-prompt.png"),
       fullPage: true,
     });
 
@@ -186,7 +180,7 @@ test("live civora flow", async ({ page, request, baseURL }) => {
     });
 
     await page.screenshot({
-      path: path.join(artifactDir, "civora-after-generate.png"),
+      path: testInfo.outputPath("civora-after-generate.png"),
       fullPage: true,
     });
 
@@ -200,7 +194,7 @@ test("live civora flow", async ({ page, request, baseURL }) => {
       { timeout: 30_000 },
     );
     await page.screenshot({
-      path: path.join(artifactDir, "civora-after-deliver.png"),
+      path: testInfo.outputPath("civora-after-deliver.png"),
       fullPage: true,
     });
   }

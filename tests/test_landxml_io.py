@@ -7,6 +7,20 @@ from backend.planning.landxml_io import build_landxml_pipe_network, import_landx
 
 
 class LandXmlIoTests(unittest.TestCase):
+    def test_import_landxml_rejects_external_entities(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "unsafe.landxml"
+            path.write_text(
+                '<!DOCTYPE LandXML [<!ENTITY local SYSTEM "file:///etc/passwd">]>'
+                '<LandXML><CgPoints><CgPoint name="1">&local;</CgPoint></CgPoints></LandXML>',
+                encoding="utf-8",
+            )
+
+            imported = import_landxml(path)
+
+        self.assertFalse(imported["success"])
+        self.assertTrue(imported["warnings"])
+
     def test_import_landxml_reads_surfaces_alignments_and_pipe_networks(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "civil.landxml"

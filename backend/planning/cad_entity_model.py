@@ -98,7 +98,7 @@ def _stable_id(prefix: str, *parts: Any) -> str:
     seed = "|".join(safe_str(part) for part in parts if safe_str(part))
     if not seed:
         seed = f"{prefix}|cad"
-    return f"{prefix}_{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:12]}"
+    return f"{prefix}_{hashlib.sha1(seed.encode('utf-8'), usedforsecurity=False).hexdigest()[:12]}"
 
 
 def _dedupe(values: Iterable[Any]) -> List[str]:

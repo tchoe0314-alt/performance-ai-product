@@ -5,6 +5,7 @@ import type {
   QuantityExplain,
 } from "../types";
 import {
+  COST_APPLICABLE_QUANTITY_METRICS,
   QUANTITY_METRIC_LABELS,
   QUANTITY_METRIC_ORDER,
   quantityMetricFallbackUnit,
@@ -77,8 +78,14 @@ export function buildDashboardQuantityRows({
           : previousQuantity !== null && currentQuantity !== null
             ? currentQuantity - previousQuantity
             : null;
-      const missingCost = Boolean(pricingGaps[metric]) || !costLine;
-      const traceComplete = Boolean(
+      const costApplicable = Boolean(
+        costLine || pricingGaps[metric] || COST_APPLICABLE_QUANTITY_METRICS.has(metric),
+      );
+      const traceRequired = Boolean(
+        costApplicable || Object.prototype.hasOwnProperty.call(audit, metric) || traceGaps[metric],
+      );
+      const missingCost = costApplicable && (Boolean(pricingGaps[metric]) || !costLine);
+      const traceComplete = !traceRequired || Boolean(
         auditEntry.trace_complete ??
           costLine?.trace_complete ??
           (canonicalIds.length > 0 && !traceGaps[metric]),
@@ -91,7 +98,9 @@ export function buildDashboardQuantityRows({
             ? "stale"
             : costLine?.production_price
               ? "ok"
-              : "review";
+              : costApplicable
+                ? "review"
+                : "reference";
       return {
         metric,
         label: quantityMetricLabel(metric),
@@ -103,15 +112,17 @@ export function buildDashboardQuantityRows({
         sourceLayer: String(auditEntry.source_layer || costLine?.category || "model"),
         method: String(auditEntry.method || auditEntry.formula || "quantity audit"),
         confidence: String(auditEntry.confidence || costLine?.unit_price_source?.confidence || "review"),
+        costApplicable,
+        traceRequired,
         traceComplete,
         delta,
         previousQuantity,
         currentQuantity,
-        costItem: costLine?.item || "Unmapped",
+        costItem: costLine?.item || (costApplicable ? "Unmapped" : "Reference total"),
         unitCost: readNumberOrNull(costLine?.unit_cost),
         amount: readNumberOrNull(costLine?.amount),
         currency: costLine?.currency || "USD",
-        priceSource: costLine?.unit_price_source?.source_name || costLine?.pricing_source || "Missing unit-price mapping",
+        priceSource: costLine?.unit_price_source?.source_name || costLine?.pricing_source || (costApplicable ? "Missing unit-price mapping" : "Not costed separately"),
         priceSourceItemId: costLine?.unit_price_source?.source_item_id || costLine?.unit_price_source_item_id || "",
         productionPrice: Boolean(costLine?.production_price),
         missingCost,

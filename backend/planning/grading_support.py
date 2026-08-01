@@ -14,19 +14,17 @@ from core.config import (
     DEFAULT_PARK_START_ELEV,
     DEFAULT_PARK_SLOPE_Y,
     DEFAULT_ROAD_SLOPE_X,
-    DEFAULT_ROAD_START_ELEV,
     POND_RADIUS,
     SURFACE_PADDING,
     TEXT_HEIGHT_SMALL,
 )
-from core.geometry_core import Point3D, ProjectModel, ZoneType
+from core.geometry_core import ProjectModel, ZoneType
 from engines.contour_engine import contour_segments
 from engines.grading_engine import GradeElement
 from engines.surface_engine import Breakline, GridSurface, SurveyPoint, SurfaceEngine, compare_surfaces, serialize_tin_surface
 from .terrain_provider import build_terrain_surface, normalize_surface
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
-from .field_contract import field_path_is_omitted
 from .production_depth import build_grading_detail_controls
 
 MAX_TERRAIN_GRID_CELLS = 12000

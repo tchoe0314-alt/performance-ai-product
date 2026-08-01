@@ -208,19 +208,40 @@ test.describe("Chat 222B performance and responsiveness", () => {
       });
       return perf;
     }, { timeout: 1_000 }).toBe(backgroundRefreshesBeforeQuality);
-    await measureVisible(
-      page,
-      "mode 3d visible",
-      () => canvas.getByTestId("preview-mode-3d").click(),
-      page.getByTestId("civil-3d-viewer"),
-      8_000,
-    );
+    const mode3DStartedAt = Date.now();
+    await canvas.getByTestId("preview-mode-3d").click();
+    const mode3DFeedback = page
+      .getByTestId("civil-3d-viewer-loading")
+      .or(page.getByTestId("civil-3d-viewer"));
+    await expect(mode3DFeedback).toBeVisible({ timeout: 750 });
+    const mode3DFeedbackMs = Date.now() - mode3DStartedAt;
+    console.info(`[chat222b-timing] mode 3d feedback: ${mode3DFeedbackMs}ms`);
+    expect(mode3DFeedbackMs).toBeLessThanOrEqual(750);
+    await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("civil-3d-canvas-mount").locator("canvas")).toBeVisible({ timeout: 1_000 });
+    const mode3DReadyMs = Date.now() - mode3DStartedAt;
+    console.info(`[chat222b-timing] mode 3d ready: ${mode3DReadyMs}ms`);
+    expect(mode3DReadyMs).toBeLessThanOrEqual(5_000);
     await measureVisible(
       page,
       "mode 2d visible",
       () => canvas.getByTestId("preview-mode-2d").click(),
       page.locator("[data-object-overlay]").first(),
       5_000,
+    );
+    await measureVisible(
+      page,
+      "mode 3d warm visible",
+      () => canvas.getByTestId("preview-mode-3d").click(),
+      page.getByTestId("civil-3d-canvas-mount").locator("canvas"),
+      2_000,
+    );
+    await measureVisible(
+      page,
+      "mode 2d warm visible",
+      () => canvas.getByTestId("preview-mode-2d").click(),
+      page.locator("[data-object-overlay]").first(),
+      2_000,
     );
     await measureVisible(
       page,

@@ -9,7 +9,6 @@ import requests
 from PIL import Image
 
 from engines.surface_engine import GridSurface
-from .common import safe_float
 
 
 def _lat_lng_to_tile(lat: float, lng: float, zoom: int, tile_size: int) -> Tuple[int, int, int, int]:

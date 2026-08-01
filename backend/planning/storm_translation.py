@@ -17,7 +17,6 @@ from backend.planning.common import (
     polyline_length,
     safe_dict,
     safe_float,
-    safe_int,
     safe_list,
     safe_str,
 )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any, Dict, Iterable, Sequence
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 

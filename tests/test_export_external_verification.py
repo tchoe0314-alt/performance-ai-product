@@ -211,6 +211,18 @@ class ExportExternalVerificationTests(unittest.TestCase):
         self.assertFalse(result["construction_release_allowed"])
         self.assertTrue(result["construction_release_blocked"])
 
+    def test_landxml_verification_rejects_external_entities(self) -> None:
+        xml_text = (
+            '<!DOCTYPE LandXML [<!ENTITY local SYSTEM "file:///etc/passwd">]>'
+            '<LandXML><PipeNetwork name="unsafe">&local;</PipeNetwork></LandXML>'
+        )
+
+        result = verify_landxml_export(xml_text)
+
+        self.assertEqual(result["local_parse_status"], "failed")
+        self.assertFalse(result["local_contract_verified"])
+        self.assertIn("landxml_parse_failed", result["failures"])
+
     def test_landxml_contract_rejects_civil3d_or_release_overclaims(self) -> None:
         plan = _plan()
         xml_text = build_landxml_pipe_network(plan, network_name="External Verification")

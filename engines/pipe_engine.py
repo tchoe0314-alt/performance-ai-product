@@ -44,7 +44,7 @@ Notes
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, DefaultDict
+from typing import Any, DefaultDict, Dict, List, Optional, Sequence, Tuple
 from collections import defaultdict
 
 from geometry.geometry_actions import polyline_action, text_action

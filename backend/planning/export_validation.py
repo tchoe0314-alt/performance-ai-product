@@ -287,16 +287,6 @@ def _storm_segments_are_viable(segments: List[Dict[str, Any]]) -> bool:
     return bool(segments) and all(_storm_segment_is_exportable(item) for item in segments)
 
 
-def _utility_segment_is_exportable(segment: Dict[str, Any]) -> bool:
-    rec = safe_dict(segment)
-    route_points = safe_list(rec.get("route_points"))
-    return (
-        len(route_points) >= 2
-        and safe_float(rec.get("cover_start_ft"), 0.0) > 0.0
-        and safe_float(rec.get("cover_end_ft"), 0.0) > 0.0
-    )
-
-
 def _utility_source_is_fallback(utilities: Dict[str, Any], segments: List[Dict[str, Any]]) -> bool:
     summary = safe_dict(utilities)
     if bool(summary.get("fallback_used")):
@@ -312,28 +302,6 @@ def _utility_source_is_fallback(utilities: Dict[str, Any], segments: List[Dict[s
         if segment_source in {"fallback", "utility_fallback", "synthesized"}:
             return True
     return False
-
-
-def utility_summary_is_exportable(utilities: Dict[str, Any]) -> bool:
-    summary = safe_dict(utilities)
-    hooks = safe_dict(summary.get("conflict_hooks"))
-    segments = [safe_dict(item) for item in safe_list(hooks.get("utility_segments")) if safe_dict(item)]
-    if safe_int(summary.get("route_count"), 0) <= 0 or not segments:
-        return False
-    if _utility_source_is_fallback(summary, segments):
-        return False
-    if not all(_utility_segment_is_exportable(item) for item in segments):
-        return False
-    if safe_int(summary.get("shallow_segment_count"), 0) > 0:
-        return False
-    if safe_int(summary.get("gravity_slope_issue_count"), 0) > 0:
-        return False
-    coordination = safe_dict(summary.get("coordination"))
-    if safe_int(coordination.get("utility_related_unresolved_conflict_count"), 0) > 0:
-        return False
-    if coordination and not bool(coordination.get("post_validation_valid", True)):
-        return False
-    return True
 
 
 def grading_export_validation(
@@ -572,7 +540,6 @@ def utility_export_validation(
     hooks = safe_dict(utilities.get("conflict_hooks"))
     segments = safe_list(hooks.get("utility_segments"))
     reasons: List[str] = []
-    utility_exportable = utility_summary_is_exportable(utilities)
     if not bool(utilities.get("success", False)):
         reasons.append("utility_stage_invalid")
     if _utility_source_is_fallback(utilities, [safe_dict(item) for item in segments if safe_dict(item)]):

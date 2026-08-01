@@ -21,7 +21,7 @@ Design intent
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 import math
 
 
@@ -355,7 +355,6 @@ class QuantityEngine:
         if canonical_integrity_blocked:
             warnings.append("Canonical state is dirty, stale, invalid, or cache-only; quantity totals are blocked from production signoff.")
 
-        line_items: List[QuantityLineItem] = []
         quantity_audit: Dict[str, Dict[str, Any]] = {}
 
         counts = {

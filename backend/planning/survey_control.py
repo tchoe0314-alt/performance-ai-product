@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List
 
-from .common import readiness_issue_explanations, safe_dict, safe_float, safe_list, safe_str
+from .common import readiness_issue_explanations, safe_dict, safe_float, safe_str
 
 
 SURVEY_CONTROL_PACKAGE_VERSION = "survey_control_package_v1"

@@ -26,7 +26,7 @@ Design intent
 
 from dataclasses import dataclass, field
 from math import hypot, sqrt
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 from .storm_types import (
     InletCaptureResult,

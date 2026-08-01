@@ -17,6 +17,7 @@ type PickedObject = {
 type Preview3DCanvasProps = {
   items: Preview3DItem[];
   interactive: boolean;
+  fullscreen?: boolean;
   previewQuality?: "standard" | "high";
   selectedItemId?: string | null;
   hasTerrainSource?: boolean;
@@ -155,6 +156,7 @@ function stableUnitValue(seed: string, offset = 0) {
 
 export default function Preview3DCanvas({
   items,
+  fullscreen = false,
   previewQuality = "standard",
   selectedItemId,
   hasTerrainSource = false,
@@ -1314,7 +1316,11 @@ export default function Preview3DCanvas({
 
   return (
     <div
-      className="relative h-[min(600px,calc(100dvh-11rem))] min-h-[360px] w-full min-w-0 overflow-hidden rounded-xl bg-white md:rounded-[20px]"
+      className={`relative w-full min-w-0 overflow-hidden bg-white ${
+        fullscreen
+          ? "h-[100dvh] min-h-0 rounded-none"
+          : "h-[min(600px,calc(100dvh-11rem))] min-h-[360px] rounded-xl md:rounded-[20px]"
+      }`}
       data-testid="civil-3d-viewer"
       onDoubleClick={onOpenFullscreen}
     >

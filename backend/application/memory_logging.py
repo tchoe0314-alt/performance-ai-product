@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import resource
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -40,6 +41,20 @@ def current_rss_mb() -> float:
                         if len(parts) >= 2:
                             return float(parts[1]) / 1024.0
         except OSError:
+            pass
+
+    if os.uname().sysname == "Darwin":
+        try:
+            output = subprocess.run(
+                ["ps", "-o", "rss=", "-p", str(os.getpid())],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+            ).stdout.strip()
+            if output:
+                return float(output.split()[0]) / 1024.0
+        except (OSError, subprocess.SubprocessError, ValueError):
             pass
 
     rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)

@@ -2,6 +2,7 @@ import unittest
 
 from backend.planning.existing_conditions_online import (
     ONLINE_DISCOVERY_VERSION,
+    fetch_arcgis_layer_geojson,
     fetch_configured_parcels,
     fetch_online_existing_conditions,
     fetch_fema_floodplain,
@@ -128,6 +129,8 @@ class _MultiMarketRoutingSession:
                 return _Response({"result": {"addressMatches": [{"matchedAddress": "301 W JEFFERSON ST, PHOENIX, AZ, 85003", "coordinates": {"x": -112.0740, "y": 33.4484}}]}})
             if "Charlotte" in self.address:
                 return _Response({"result": {"addressMatches": [{"matchedAddress": "600 E 4TH ST, CHARLOTTE, NC, 28202", "coordinates": {"x": -80.8431, "y": 35.2271}}]}})
+            if "Omaha" in self.address:
+                return _Response({"result": {"addressMatches": [{"matchedAddress": "1600 DODGE ST, OMAHA, NE, 68102", "coordinates": {"x": -95.9372, "y": 41.2598}}]}})
             return _Response({"result": {"addressMatches": [{"matchedAddress": "100 MAIN ST, MADISON, WI, 53703", "coordinates": {"x": -89.384, "y": 43.074}}]}})
         if "epqs" in url:
             return _Response({"value": {"elevation": 700.0}})
@@ -259,6 +262,75 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertTrue(merged["success"])
         self.assertEqual(len(merged["gis_layers"]["floodplain"]), 1)
         self.assertEqual(len(merged["gis_layers"]["wetlands"]), 1)
+
+    def test_context_arcgis_queries_simplify_and_clip_off_site_geometry(self) -> None:
+        bbox = {"west": -97.0, "south": 32.0, "east": -96.99, "north": 32.01}
+        payload = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "id": "flood-large",
+                    "properties": {"FLD_ZONE": "X"},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [-98.0, 31.0],
+                            [-95.0, 31.0],
+                            [-95.0, 33.0],
+                            [-98.0, 33.0],
+                            [-98.0, 31.0],
+                        ]],
+                    },
+                }
+            ],
+        }
+        session = _Session(payload)
+
+        result = fetch_fema_floodplain(bbox, session=session)
+
+        params = session.calls[0]["params"]
+        self.assertGreater(params["maxAllowableOffset"], 0.0)
+        self.assertEqual(params["geometryPrecision"], 7)
+        self.assertEqual(params["returnZ"], "false")
+        self.assertTrue(result["geometry_clipped_to_query_bbox"])
+        coordinates = result["geojson"]["features"][0]["geometry"]["coordinates"][0]
+        self.assertTrue(all(bbox["west"] <= point[0] <= bbox["east"] for point in coordinates))
+        self.assertTrue(all(bbox["south"] <= point[1] <= bbox["north"] for point in coordinates))
+
+    def test_parcel_queries_preserve_the_full_candidate_outline(self) -> None:
+        bbox = {"west": -97.0, "south": 32.0, "east": -96.99, "north": 32.01}
+        payload = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "id": "parcel-large",
+                    "properties": {},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [-97.01, 31.99],
+                            [-96.98, 31.99],
+                            [-96.98, 32.02],
+                            [-97.01, 32.02],
+                            [-97.01, 31.99],
+                        ]],
+                    },
+                }
+            ],
+        }
+
+        result = fetch_arcgis_layer_geojson(
+            service_url="https://county.example/arcgis/rest/services/Parcels/MapServer",
+            layer_id=0,
+            bbox=bbox,
+            source_type="configured_parcel_arcgis",
+            layer_name="parcels",
+            session=_Session(payload),
+        )
+
+        self.assertFalse(result["geometry_clipped_to_query_bbox"])
+        coordinates = result["geojson"]["features"][0]["geometry"]["coordinates"][0]
+        self.assertLess(coordinates[0][0], bbox["west"])
 
     def test_parcels_are_unconfigured_without_local_service(self) -> None:
         result = fetch_configured_parcels({"west": -97, "south": 32, "east": -96, "north": 33})
@@ -426,6 +498,33 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertIn("No verified queryable Houston/Harris building-footprint provider", " ".join(sources["building_footprints"]["blockers"]))
         self.assertIn("https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/MapServer/0/query", urls)
         self.assertNotIn("building", " ".join(urls).lower())
+
+    def test_omaha_pack_fetches_official_context_and_infers_standards_jurisdiction(self) -> None:
+        session = _MultiMarketRoutingSession("1600 Dodge St, Omaha, NE")
+        result = fetch_online_existing_conditions(address="1600 Dodge St, Omaha, NE", session=session)
+
+        report = result[ONLINE_DISCOVERY_VERSION]
+        sources = {item["key"]: item for item in report["sources"]}
+        urls = [call["url"] for call in session.calls]
+        gis_layers = result["canonical_existing_conditions"]["gis_layers"]
+
+        self.assertEqual(report["provider_packs"][0]["pack_id"], "omaha_douglas_ne")
+        self.assertGreaterEqual(sources["parcel_site_boundary"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["building_footprints"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["road_row"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["public_utilities"]["candidate_count"], 1)
+        self.assertGreaterEqual(sources["terrain_dem_lidar"]["candidate_count"], 3)
+        self.assertGreaterEqual(sources["official_standards"]["candidate_count"], 3)
+        self.assertEqual(sources["official_standards"]["source_url"], "https://dot.nebraska.gov/business-center/design-consultant/rd-manuals/")
+        self.assertEqual(len(gis_layers["terrain_breaklines"]), 1)
+        self.assertEqual(len(gis_layers["lidar_coverage"]), 1)
+        self.assertIn("https://dcgis.org/server/rest/services/vector/Parcels_public/FeatureServer/0/query", urls)
+        self.assertIn("https://dcgis.org/server/rest/services/Hosted/2022_Building_Footprints/FeatureServer/0/query", urls)
+        self.assertIn("https://dcgis.org/server/rest/services/vector/Street_Centerlines/FeatureServer/0/query", urls)
+        self.assertIn("https://dcgis.org/server/rest/services/Hosted/Douglas_County_Zoning_view/FeatureServer/0/query", urls)
+        self.assertIn("https://dcgis.org/server/rest/services/Hosted/Breaklines/FeatureServer/0/query", urls)
+        self.assertIn("https://dcgis.org/server/rest/services/Hosted/Douglas_County_NE_LiDAR_Tiles_view/FeatureServer/4/query", urls)
+        self.assertFalse(report["survey_control"]["survey_control_satisfied"])
 
     def test_federal_fallback_sources_work_without_local_pack(self) -> None:
         session = _MultiMarketRoutingSession("100 Main St, Madison, WI")

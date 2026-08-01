@@ -29,7 +29,7 @@ Design intent
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set, Iterable, Sequence
+from typing import Any, Dict, List, Optional, Tuple, Set, Sequence
 
 from geometry.geometry_actions import circle_action, polyline_action, text_action
 from .surface_engine import GridSurface

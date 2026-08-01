@@ -25,7 +25,6 @@ class LayoutFallbackActionsTests(unittest.TestCase):
 
         multifamily = [item for item in placements if str(item.get("use") or "").lower() == "multifamily"]
         retail = next(item for item in placements if str(item.get("use") or "").lower() == "retail")
-        mf_center_y = sum(float(item["y"]) + float(item["d"]) / 2.0 for item in multifamily) / len(multifamily)
         retail_center_y = float(retail["y"]) + float(retail["d"]) / 2.0
         multifamily_bands = {
             round(float(item["y"]) + float(item["d"]) / 2.0, 1) for item in multifamily

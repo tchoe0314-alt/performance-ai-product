@@ -28,7 +28,7 @@ Design intent
 
 from dataclasses import dataclass, field
 from math import acos, pi, sin
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 from .storm_types import (
     CapacityStatus,

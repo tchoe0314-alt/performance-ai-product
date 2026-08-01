@@ -1105,6 +1105,43 @@ def discover_standards_sources(
             notes="Fallback concept checks only; not a permit authority.",
         )
     ]
+    normalized_city = city_name.lower()
+    normalized_county = county_name.lower()
+    normalized_state = state_name.lower()
+    is_nebraska = normalized_state in {"ne", "nebraska"}
+    is_omaha_douglas = "omaha" in normalized_city or "douglas" in normalized_county
+    if is_nebraska:
+        sources.append(
+            StandardsSource(
+                source_id="ne_dot_roadway_drainage_manuals",
+                name="Nebraska DOT roadway and drainage manuals",
+                scope="state",
+                url="https://dot.nebraska.gov/business-center/design-consultant/rd-manuals/",
+                status="candidate_source",
+                notes="Official NDOT manual index; identify and accept the applicable edition and sections before using extracted rules.",
+            )
+        )
+    if is_nebraska and is_omaha_douglas:
+        sources.extend(
+            [
+                StandardsSource(
+                    source_id="omaha_public_works_2024_standard_specifications",
+                    name="City of Omaha 2024 Standard Specifications for Public Works Construction",
+                    scope="local",
+                    url="https://publicworks.cityofomaha.org/wp-content/uploads/2024/09/2024-Standard-Specification-for-Public-Works-Construction-2.pdf",
+                    status="candidate_source",
+                    notes="Official city publication candidate; exact applicability, amendments, and sections require review and acceptance.",
+                ),
+                StandardsSource(
+                    source_id="omaha_public_works_sewer",
+                    name="City of Omaha Public Works sewer resources",
+                    scope="local",
+                    url="https://publicworks.cityofomaha.org/sewer/",
+                    status="candidate_source",
+                    notes="Official city sewer resource page; linked standards and current requirements require review and acceptance.",
+                ),
+            ]
+        )
     if query_bits:
         encoded = quote_plus(query_bits)
         sources.extend(

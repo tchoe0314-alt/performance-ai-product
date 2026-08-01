@@ -12,7 +12,7 @@ export type ReactiveValidationState = {
   message: string;
 };
 
-export type QuantityReviewStatus = "ok" | "review" | "missing_cost" | "untraced" | "stale";
+export type QuantityReviewStatus = "ok" | "review" | "reference" | "missing_cost" | "untraced" | "stale";
 export type QuantityReviewRow = {
   metric: string;
   label: string;
@@ -24,6 +24,8 @@ export type QuantityReviewRow = {
   sourceLayer: string;
   method: string;
   confidence: string;
+  costApplicable: boolean;
+  traceRequired: boolean;
   traceComplete: boolean;
   delta: number | null;
   previousQuantity: number | null;
@@ -141,6 +143,20 @@ export const QUANTITY_METRIC_LABELS: Record<string, { label: string; unit: strin
 
 export const QUANTITY_METRIC_ORDER = Object.keys(QUANTITY_METRIC_LABELS);
 
+export const COST_APPLICABLE_QUANTITY_METRICS = new Set([
+  "parking_area_sf",
+  "road_area_sf",
+  "sidewalk_area_sf",
+  "pipe_length_ft",
+  "inlet_count",
+  "pond_area_sf",
+  "utility_length_ft",
+  "sanitary_length_ft",
+  "sanitary_manhole_count",
+  "sanitary_service_count",
+  "estimated_parking_stalls",
+]);
+
 export const readNumberOrNull = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -168,6 +184,7 @@ export const statusLabelForQuantityReview = (status: QuantityReviewStatus) => {
   if (status === "untraced") return "Untraced";
   if (status === "stale") return "Delta";
   if (status === "ok") return "Mapped";
+  if (status === "reference") return "Reference";
   return "Review";
 };
 

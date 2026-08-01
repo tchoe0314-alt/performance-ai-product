@@ -7,6 +7,7 @@ import time
 import uuid
 import urllib.parse
 from collections import deque
+from contextlib import asynccontextmanager
 import hashlib
 import threading
 from typing import Any, Callable, Dict, List, Mapping, Optional
@@ -216,7 +217,8 @@ _RATE_LIMIT_DEFAULTS: Dict[str, tuple[int, int]] = {
     "geocode": (30, 60),
     "upload": (20, 60),
     "chat": (60, 60),
-    "planner": (20, 60),
+    "planner": (40, 60),
+    "preview": (120, 60),
     "export": (60, 60),
 }
 _RATE_LIMIT_EVENTS: Dict[str, deque[float]] = {}
@@ -661,10 +663,29 @@ def _queue_request_payload_with_project(
     return project_id, request_payload
 
 
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    try:
+        thread_limit = int(os.getenv("CIVORA_ANYIO_THREAD_LIMIT") or "8")
+        to_thread.current_default_thread_limiter().total_tokens = max(2, min(32, thread_limit))
+    except Exception:
+        pass
+    log_memory("startup_begin")
+    _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
+    _log_mapbox_token_config()
+    register_job_handlers()
+    log_memory("startup_complete")
+    try:
+        yield
+    finally:
+        _log_runtime_event("shutdown")
+
+
 app = FastAPI(
     title="Civora AI Backend",
     version=APP_VERSION,
     description="FastAPI backend for Civora AI orchestration.",
+    lifespan=_app_lifespan,
 )
 
 app.add_middleware(
@@ -1072,25 +1093,6 @@ def register_job_handlers() -> None:
             fetch_source_context=application_fetch_existing_conditions_online,
         ),
     )
-
-
-@app.on_event("startup")
-async def _register_job_handlers() -> None:
-    try:
-        thread_limit = int(os.getenv("CIVORA_ANYIO_THREAD_LIMIT") or "8")
-        to_thread.current_default_thread_limiter().total_tokens = max(2, min(32, thread_limit))
-    except Exception:
-        pass
-    log_memory("startup_begin")
-    _log_runtime_event("startup_runtime", storage_dir=str(STORAGE_DIR), port=os.getenv("PORT"))
-    _log_mapbox_token_config()
-    register_job_handlers()
-    log_memory("startup_complete")
-
-
-@app.on_event("shutdown")
-def _log_shutdown() -> None:
-    _log_runtime_event("shutdown")
 
 
 @app.get("/")
@@ -2380,7 +2382,7 @@ def queue_export_report_job(
 def build_preview(
     payload: ArtifactPayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    _rate_limit: None = Depends(rate_limit("planner")),
+    _rate_limit: None = Depends(rate_limit("preview")),
 ) -> Dict[str, Any]:
     try:
         result_data = _result_from_payload(current_user, payload)

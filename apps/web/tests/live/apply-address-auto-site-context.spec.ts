@@ -347,7 +347,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(page.getByTestId("object-manager-panel")).toBeVisible();
   await page.getByRole("button", { name: "Setup" }).first().click();
 
-  if (process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
+  const runtimeMapToggle = page.getByTestId("preview-inner-map-toggle");
+  if (await runtimeMapToggle.isEnabled()) {
     await expect
       .poll(
         () => page.evaluate(() => Boolean((window as unknown as Record<string, unknown>).__civoraMapOverlayEnabled)),

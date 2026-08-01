@@ -295,6 +295,15 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertEqual(second.status_code, 429)
         self.assertEqual(second.json()["detail"], "Rate limit exceeded for auth. Wait about 60 seconds, then try again.")
 
+    def test_preview_has_a_separate_bounded_rate_limit(self) -> None:
+        preview_limit, preview_window = _RATE_LIMIT_DEFAULTS["preview"]
+        planner_limit, planner_window = _RATE_LIMIT_DEFAULTS["planner"]
+
+        self.assertEqual((preview_limit, preview_window), (120, 60))
+        self.assertEqual((planner_limit, planner_window), (40, 60))
+        self.assertGreater(preview_limit, planner_limit)
+        self.assertLess(preview_limit, 1000)
+
     def test_upload_type_error_names_allowed_extensions(self) -> None:
         upload = UploadFile(filename="site.bmp", file=BytesIO(b"not-an-image"), headers=Headers({"content-type": "image/bmp"}))
 

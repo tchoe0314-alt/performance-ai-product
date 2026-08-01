@@ -19,11 +19,18 @@ class JobQueueServiceTest(unittest.TestCase):
         self.auth = AuthStore(self.db)
         registered = self.auth.register_user(email="u1@example.com", password="password123", name="U1")
         self.user_id = registered["user"]["user_id"]
+        self.additional_queues = []
         self.queue = JobQueueService(self.db, heartbeat_interval_sec=0.5, resume_poll_interval_sec=0.5)
 
     def tearDown(self) -> None:
+        for queue in reversed(self.additional_queues):
+            queue.shutdown()
         self.queue.shutdown()
         self.tmpdir.cleanup()
+
+    def track_queue(self, queue: JobQueueService) -> JobQueueService:
+        self.additional_queues.append(queue)
+        return queue
 
     def test_shutdown_stops_in_process_workers(self):
         self.assertTrue(any(worker.is_alive() for worker in self.queue._workers))
@@ -308,17 +315,17 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(job["result"], {})
 
     def test_worker_recovers_queued_jobs_from_database_without_in_memory_queue(self):
-        web_queue = JobQueueService(self.db, worker_count=0)
+        web_queue = self.track_queue(JobQueueService(self.db, worker_count=0))
         created = web_queue.submit_job(
             user_id=self.user_id,
             job_type="orchestrate",
             payload={"prompt_text": "demo"},
         )
-        worker_queue = JobQueueService(
+        worker_queue = self.track_queue(JobQueueService(
             self.db,
             worker_count=1,
             resume_poll_interval_sec=0.05,
-        )
+        ))
         worker_queue.register_handler(
             "orchestrate",
             lambda job: {"success": True, "result": {"job_id": job["job_id"]}},
@@ -334,11 +341,12 @@ class JobQueueServiceTest(unittest.TestCase):
 
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "completed")
-        worker_queue._resume_pending_jobs = False
-        worker_queue.db = Database(Path(tempfile.gettempdir()) / "civora_job_queue_recovery_teardown.db")
+        self.assertEqual(record["stage"], "Completed")
+        self.assertEqual(record["progress"], 100)
+        self.assertEqual(record["result"]["job_progress"]["progress"], 100)
 
     def test_web_only_queue_is_completed_by_separate_worker_service(self):
-        web_queue = JobQueueService(self.db, worker_count=0)
+        web_queue = self.track_queue(JobQueueService(self.db, worker_count=0))
         web_queue.register_handler(
             "source_context_external_test",
             lambda job: {"success": True, "processed_by": "web"},
@@ -353,12 +361,12 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(web_queue.runtime_stats()["execution_mode"], "external_worker")
         self.assertEqual(web_queue.runtime_stats()["alive_workers"], 0)
 
-        worker_queue = JobQueueService(
+        worker_queue = self.track_queue(JobQueueService(
             self.db,
             worker_count=1,
             heartbeat_interval_sec=0.5,
             resume_poll_interval_sec=0.05,
-        )
+        ))
         worker_queue.register_handler(
             "source_context_external_test",
             lambda job: {"success": True, "processed_by": "dedicated_worker"},
@@ -375,10 +383,9 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "completed")
         self.assertEqual(record["result"]["processed_by"], "dedicated_worker")
-        worker_queue._resume_pending_jobs = False
 
     def test_web_queue_continuation_waits_for_external_worker_when_handler_is_disabled(self):
-        web_queue = JobQueueService(self.db, worker_count=1)
+        web_queue = self.track_queue(JobQueueService(self.db, worker_count=1))
         created = web_queue.submit_job(
             user_id=self.user_id,
             job_type="orchestrate_external_test",
@@ -409,11 +416,11 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(continued["status"], "queued")
         self.assertEqual(web_queue._queue.qsize(), 0)
 
-        worker_queue = JobQueueService(
+        worker_queue = self.track_queue(JobQueueService(
             self.db,
             worker_count=1,
             resume_poll_interval_sec=0.05,
-        )
+        ))
         worker_queue.register_handler(
             "orchestrate_external_test",
             lambda job: {"success": True, "processed_by": "isolated_worker", "job_id": job["job_id"]},
@@ -430,7 +437,6 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "completed")
         self.assertEqual(record["result"]["processed_by"], "isolated_worker")
-        worker_queue._resume_pending_jobs = False
 
     def test_list_jobs_restarts_worker_if_thread_dies(self):
         self.queue._workers = []
@@ -1098,11 +1104,11 @@ class JobQueueServiceTest(unittest.TestCase):
 
     def test_in_process_worker_start_is_deferred_until_after_queue_acknowledgement(self):
         started = threading.Event()
-        queue = JobQueueService(
+        queue = self.track_queue(JobQueueService(
             self.db,
             worker_count=1,
             in_process_start_delay_sec=0.2,
-        )
+        ))
         queue.register_handler(
             "orchestrate",
             lambda _job: started.set() or {"success": True},
@@ -1148,7 +1154,7 @@ class JobQueueServiceTest(unittest.TestCase):
         finally:
             connection.close()
 
-        recovery_queue = JobQueueService(self.db, worker_count=0)
+        recovery_queue = self.track_queue(JobQueueService(self.db, worker_count=0))
         recovery_queue._enqueue_pending_jobs("orchestrate")
 
         record = recovery_queue.get_job_detail(
@@ -1251,7 +1257,7 @@ class JobQueueServiceTest(unittest.TestCase):
             def _find_next_pending_job_id(self):
                 return None
 
-        queue = NoDbScanJobQueueService(self.db)
+        queue = self.track_queue(NoDbScanJobQueueService(self.db))
         call_count = {"value": 0}
 
         def runner(job):

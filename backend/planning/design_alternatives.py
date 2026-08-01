@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import date
 import hashlib
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .common import safe_dict, safe_float, safe_list, safe_str
 
@@ -106,7 +106,7 @@ def _today() -> str:
 
 def _stable_id(*parts: Any) -> str:
     seed = "|".join(safe_str(part) for part in parts if safe_str(part))
-    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
+    digest = hashlib.sha1(seed.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     return f"alt_{digest}"
 
 

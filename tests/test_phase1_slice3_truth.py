@@ -53,7 +53,6 @@ class Phase1Slice3TruthTest(unittest.TestCase):
             solve_conflict_cluster_group=solve_group,
             refresh_conflict_resolved_state=refresh,
             coordination_metric_inc=lambda *_args, **_kwargs: None,
-            restore_coordination_state=lambda *_args, **_kwargs: None,
             restore_full_coordination_state=lambda *_args, **_kwargs: None,
             conflict_cluster_id=lambda _cluster: "C1",
             post_reroute_validations=validate,

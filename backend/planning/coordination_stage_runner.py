@@ -28,7 +28,6 @@ def run_conflict_resolution_stage(
     solve_conflict_cluster_group: Callable[..., Dict[str, Any]],
     refresh_conflict_resolved_state: Callable[..., None],
     coordination_metric_inc: Callable[..., None],
-    restore_coordination_state: Callable[..., None],
     restore_full_coordination_state: Callable[..., None],
     conflict_cluster_id: Callable[[Dict[str, Any]], str],
     post_reroute_validations: Callable[..., Dict[str, Any]],
@@ -93,7 +92,6 @@ def run_conflict_resolution_stage(
         changed = False
         unresolved = []
         for cluster_group in cluster_groups:
-            snapshot = snapshot_coordination_state(project, manager)
             full_snapshot = full_coordination_state_snapshot(project, manager)
             pre_all = detect_coordination_conflicts(project, manager)
             pre_related = cluster_group_remaining_conflicts(pre_all, cluster_group)

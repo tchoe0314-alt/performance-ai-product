@@ -2633,8 +2633,10 @@ export default function PreviewPanel({
               hasTerrainSource={hasTerrainSource}
               hasGradingSurface={hasGradingSurface}
               usingAnnotation3D={usingAnnotation3D}
+              fullscreenOpen={previewFullscreenOpen}
               onSelectItem={onSelectBuilding}
               onOpenFullscreen={onOpenFullscreen}
+              onCloseFullscreen={onCloseFullscreen}
             />
           ) : (
             <Preview2DCanvasShell
@@ -2981,7 +2983,7 @@ export default function PreviewPanel({
         </div>
 
       <PreviewGeneratedPlanFullscreen
-        open={previewFullscreenOpen && !showMap}
+        open={previewFullscreenOpen && !showMap && previewMode === "2d"}
         planPreviewUrl={planPreviewUrl}
         fullscreenRef={fullscreenRef}
         fullscreenImageRef={fullscreenImageRef}

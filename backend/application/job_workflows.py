@@ -2400,26 +2400,6 @@ def build_drainage_job_runner(
         # existing surface reaches but proposed surface does not (attribution-only).
         try:
             drainage_summary = manager.project.meta.get("drainage_summary")
-            proposed_run_count = len(safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")))
-            proposed_reached = False
-            if drainage_summary is not None:
-                for run in safe_list(getattr(drainage_summary, "pipe_runs", [])):
-                    if not bool(getattr(run, "reached_target", False)):
-                        continue
-                    path = getattr(run, "path", None)
-                    if isinstance(path, (list, tuple)) and len(path) <= 1:
-                        continue
-                    proposed_reached = True
-                    break
-            else:
-                for run in safe_list(drainage_canonical.get("pipe_runs") or drainage_canonical.get("runs")):
-                    if not safe_bool(run.get("reached_target")):
-                        continue
-                    path = safe_list(run.get("path"))
-                    if len(path) <= 1:
-                        continue
-                    proposed_reached = True
-                    break
             from engines.drainage_engine import DrainageEngine
             existing_surface = None
             try:
@@ -2458,8 +2438,6 @@ def build_drainage_job_runner(
                         proposed_reached_for_attribution = True
                         break
             alt_reached = False
-            alt_closest_target = None
-            alt_distance = None
             alt_engine = DrainageEngine(existing_surface) if existing_surface is not None else None
             if alt_engine is not None and hasattr(alt_engine, "clear_pond_targets"):
                 alt_engine.clear_pond_targets()
@@ -2542,20 +2520,13 @@ def build_drainage_job_runner(
                     end_y = safe_float(end[1], 0.0)
                     if bool(getattr(run, "reached_target", False)):
                         alt_reached = True
-                        alt_closest_target = None
-                        alt_distance = 0.0
                         break
                     for tx, ty, radius in target_cache:
                         dx = end_x - tx
                         dy = end_y - ty
                         dist = (dx * dx + dy * dy) ** 0.5
-                        if alt_distance is None or dist < alt_distance:
-                            alt_distance = dist
-                            alt_closest_target = (tx, ty, radius)
                         if dist <= radius + attribution_buffer:
                             alt_reached = True
-                            alt_distance = dist
-                            alt_closest_target = (tx, ty, radius)
                             break
                     if alt_reached:
                         break

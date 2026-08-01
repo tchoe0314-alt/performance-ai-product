@@ -384,6 +384,39 @@ export function useDashboardSiteAddressAction({
         if (sourceBounds && !activeSiteBoundary) {
           nextSiteInputs.viewport_bounds = sourceBounds;
         }
+        const geocodedProjectInput: ProjectInput = {
+          ...currentInput,
+          input_mode: "user",
+          strict_mode: false,
+          allow_ai_fill_for_blanks: false,
+          meta: {
+            ...(currentInput?.meta ?? {}),
+            site_inputs: { ...nextSiteInputs },
+          },
+          manual_fields:
+            preserveLockedSite && overrideSiteWidth && overrideSiteHeight
+              ? {
+                  ...(currentInput?.manual_fields ?? {}),
+                  lot: { x: 0, y: 0, w: overrideSiteWidth, h: overrideSiteHeight },
+                }
+              : currentInput?.manual_fields,
+        };
+        setCurrentProject((project) =>
+          project
+            ? {
+                ...project,
+                project_input: geocodedProjectInput,
+                updated_at: Date.now() / 1000,
+              }
+            : project,
+        );
+        setSiteAddress(trimmed);
+        setShowSiteBounds(preserveLockedSite ? false : true);
+        setPreviewQuality("standard");
+        setSiteSelectionMode(preserveLockedSite ? false : true);
+        setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
+        setSelectedAddressSuggestion(geocode);
+
         let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
         try {
           onlineFetch = await runQueuedSourceContextLookup({
@@ -484,13 +517,7 @@ export function useDashboardSiteAddressAction({
             ...(currentInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
           },
-          manual_fields:
-            preserveLockedSite && overrideSiteWidth && overrideSiteHeight
-              ? {
-                  ...(currentInput?.manual_fields ?? {}),
-                  lot: { x: 0, y: 0, w: overrideSiteWidth, h: overrideSiteHeight },
-                }
-              : currentInput?.manual_fields,
+          manual_fields: geocodedProjectInput.manual_fields,
         };
         setCurrentProject((project) =>
           project
@@ -538,11 +565,6 @@ export function useDashboardSiteAddressAction({
         } else {
           setSiteScaleLocked(false);
         }
-        setSiteAddress(trimmed);
-        setShowSiteBounds(preserveLockedSite ? false : true);
-        setPreviewQuality("standard");
-        setSiteSelectionMode(preserveLockedSite ? false : true);
-        setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
         autoExistingRunKeyRef.current = "";
         const candidateCount = Number(onlineFetch?.online_existing_conditions_discovery_v1?.candidate_count ?? 0);
         const discoveryStatus = String(onlineFetch?.online_existing_conditions_discovery_v1?.status || onlineFetch?.status || "");
@@ -590,7 +612,6 @@ export function useDashboardSiteAddressAction({
           candidateCount,
           missing: lookupUnavailable ? (providerAbsent ? ["source providers"] : ["provider lookup"]) : [],
         });
-        setSelectedAddressSuggestion(geocode);
       } catch (error) {
         if (!workspaceIsCurrent()) return;
         const message = `Geocode failed: ${panelErrorMessage(error, "Check the address or retry after the backend responds.")}`;

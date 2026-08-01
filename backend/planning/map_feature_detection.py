@@ -507,7 +507,7 @@ def _candidate(
 ) -> Dict[str, Any]:
     source = source_url or source_name or "unavailable"
     return {
-        "candidate_id": f"mfd_{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:12]}",
+        "candidate_id": f"mfd_{hashlib.sha1(seed.encode('utf-8'), usedforsecurity=False).hexdigest()[:12]}",
         "feature_type": feature_type if feature_type in FEATURE_TYPES else "constraint_area",
         "geometry": geometry if geometry not in ("", {}, []) else None,
         "source_type": source_type if source_type in SOURCE_TYPES else "unavailable",

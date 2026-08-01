@@ -5038,7 +5038,6 @@ def _plan_pdf_chat_response(
                     confidence=0.72,
                 )
     summary = _safe_dict(analysis.get("summary"))
-    blockers = [safe_str(item) for item in _safe_list(analysis.get("blockers")) if safe_str(item)]
     wants_pdf_to_cad = (
         "cad" in normalized
         and "pdf" in normalized

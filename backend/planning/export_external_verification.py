@@ -6,6 +6,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from defusedxml import ElementTree as DefusedET
+
 from .common import safe_dict, safe_list, safe_str
 from .dwg_compatibility import DWG_UNSUPPORTED_STATUS
 
@@ -484,8 +486,8 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
     review_only_flags_ok = False
     construction_release_flags_ok = False
     try:
-        root = ET.fromstring(xml_text)
-        ET.fromstring(ET.tostring(root, encoding="unicode"))
+        root = DefusedET.fromstring(xml_text)
+        DefusedET.fromstring(ET.tostring(root, encoding="unicode"))
         pipe_count = len(root.findall(".//Pipe"))
         struct_count = len(root.findall(".//Struct"))
         network = root.find(".//PipeNetwork")
@@ -510,8 +512,8 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
         if report is not None:
             civil3d_status = safe_str(report.attrib.get("civil3d_external_verification_status"), "not_verified")
             landxml_status = safe_str(report.attrib.get("landxml_external_verification_status"), "not_verified")
-    except Exception as exc:
-        failures.append(f"landxml_parse_failed:{safe_str(exc)}")
+    except Exception:
+        failures.append("landxml_parse_failed")
 
     if pipe_count <= 0 and struct_count <= 0:
         failures.append("landxml_pipe_network_empty")

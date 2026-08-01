@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Sequence
 
-from .common import dedupe_keep_order, lower_text, safe_dict, safe_float, safe_list, safe_str
+from .common import dedupe_keep_order, lower_text, safe_dict, safe_list, safe_str
 
 
 WORKFLOW_REVIEW_VERSION = "engineering_generation_review_v1"

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.geometry_core import (
     EngineeringObject,
     Point2D,
     Point3D,
-    Polygon2D,
-    Polyline2D,
     ProjectModel,
     Zone,
     ZoneType,

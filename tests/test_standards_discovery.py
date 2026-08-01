@@ -54,6 +54,17 @@ class StandardsDiscoveryTests(unittest.TestCase):
         self.assertEqual({item["acceptance_status"] for item in result["source_registry"]["sources"]}, {"candidate"})
         self.assertIn("must not apply", result["truth_label"])
 
+    def test_omaha_discovery_includes_official_candidates_without_accepting_them(self) -> None:
+        result = discover_standards_sources(city="Omaha", county="Douglas County", state="NE")
+
+        by_id = {item["source_id"]: item for item in result["sources"]}
+        registry_by_id = {item["source_id"]: item for item in result["source_registry"]["sources"]}
+
+        self.assertEqual(by_id["ne_dot_roadway_drainage_manuals"]["status"], "candidate_source")
+        self.assertTrue(by_id["omaha_public_works_2024_standard_specifications"]["url"].startswith("https://publicworks.cityofomaha.org/"))
+        self.assertEqual(registry_by_id["omaha_public_works_2024_standard_specifications"]["acceptance_status"], "candidate")
+        self.assertEqual(result["source_registry"]["accepted_source_count"], 0)
+
     def test_review_packet_requires_acceptance(self) -> None:
         packet = build_standards_review_packet(city="Austin", state="Texas")
 

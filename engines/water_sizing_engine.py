@@ -389,7 +389,6 @@ def analyze_fire_flow_residual(
     it does not split fire demand across parallel paths.
     """
 
-    engine = WaterSizingEngine()
     clean_segments = [dict(seg) for seg in segments]
     path_names, path_warnings = _shortest_water_path(clean_segments, source_node, hydrant_node)
     warnings: List[str] = list(path_warnings)

@@ -139,10 +139,11 @@ test.describe("hosted load stability", () => {
       label: `auth-burst-${index}`,
       url: `${apiBaseUrl}/api/auth/status`,
       expected: 200,
+      headers: { "x-forwarded-for": "198.51.100.241" },
     }));
     const results: LoadResult[] = [];
     await runPool(tasks, 45, async (task) => {
-      results.push(await timed(task.label, request, task.url, task.expected));
+      results.push(await timed(task.label, request, task.url, task.expected, task.headers));
     });
     const throttled = results.filter((result) => result.status === 429);
     const unexpected = results.filter((result) => ![200, 429].includes(result.status));

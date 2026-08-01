@@ -1159,7 +1159,6 @@ def validate_stormwater_depth(plan_or_meta: Dict[str, Any]) -> Dict[str, Any]:
     catchments = safe_list(drainage.get("catchments") or storm.get("catchments"))
     basins = safe_list(drainage.get("basins") or storm.get("basins"))
     inlet_checks = [safe_dict(item) for item in safe_list(storm.get("inlet_capacity_checks"))]
-    overflow_analysis = safe_dict(drainage.get("overflow_analysis"))
     hgl_rows = [safe_dict(row) for row in safe_list(storm.get("hgl_profile"))]
     egl_rows = [safe_dict(row) for row in safe_list(storm.get("egl_profile"))]
     detention_rows = [safe_dict(row) for row in safe_list(drainage.get("detention_routing"))]

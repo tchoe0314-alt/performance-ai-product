@@ -208,6 +208,10 @@ class AlphaSmokeSoakTests(unittest.TestCase):
         self.assertEqual(captured["authorization"], "Bearer env-runtime-token")
         self.assertEqual(sample["monitoring"]["job_queue"]["queued_count"], 0)
 
+    def test_fetch_runtime_debug_sample_rejects_non_http_urls(self) -> None:
+        with self.assertRaisesRegex(ValueError, "absolute HTTP"):
+            fetch_runtime_debug_sample("file:///etc/passwd", bearer_token="test-token")
+
     def test_smoke_soak_writes_report_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "alpha_report.json"

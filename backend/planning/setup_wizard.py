@@ -167,7 +167,6 @@ def build_setup_wizard_state(
     canonical_site = _safe_dict(meta.get("canonical_site_state"))
     location_context = _safe_dict(meta.get("location_context"))
     map_report = _safe_dict(meta.get("map_feature_detection_report_v1"))
-    existing_package = _safe_dict(meta.get("existing_conditions_package"))
     survey_control = _safe_dict(meta.get("survey_control_package"))
     standards_package = _safe_dict(meta.get("standards_package"))
     standards_registry = _safe_dict(meta.get("standards_source_registry"))

@@ -145,7 +145,6 @@ class LayoutEngineLegacyInferenceTests(unittest.TestCase):
         ]
         multifamily = [action for action in buildings if "RETAIL" not in str(action.get("label") or "").upper()]
         retail = next(action for action in buildings if "RETAIL" in str(action.get("label") or "").upper())
-        mf_center_y = sum(float(action["origin"][1]) + float(action["height"]) / 2.0 for action in multifamily) / len(multifamily)
         retail_center_y = float(retail["origin"][1]) + float(retail["height"]) / 2.0
         multifamily_bands = {
             round(float(action["origin"][1]) + float(action["height"]) / 2.0, 1) for action in multifamily

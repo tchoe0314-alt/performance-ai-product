@@ -1,4 +1,4 @@
-export type QuantityReviewStatusView = "ok" | "review" | "missing_cost" | "untraced" | "stale";
+export type QuantityReviewStatusView = "ok" | "review" | "reference" | "missing_cost" | "untraced" | "stale";
 
 export type QuantityReviewRowView = {
   metric: string;
@@ -11,6 +11,8 @@ export type QuantityReviewRowView = {
   sourceLayer: string;
   method: string;
   confidence: string;
+  costApplicable: boolean;
+  traceRequired: boolean;
   traceComplete: boolean;
   delta: number | null;
   previousQuantity: number | null;
@@ -73,11 +75,12 @@ export function QuantitiesPanel({
           </button>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
         {[
           ["Rows", rows.length.toLocaleString()],
           ["Missing cost", rows.filter((row) => row.missingCost).length.toLocaleString()],
-          ["Untraced", rows.filter((row) => !row.traceComplete).length.toLocaleString()],
+          ["Untraced", rows.filter((row) => row.traceRequired && !row.traceComplete).length.toLocaleString()],
+          ["Reference", rows.filter((row) => row.status === "reference").length.toLocaleString()],
           ["Deltas", rows.filter((row) => row.delta !== null && Math.abs(row.delta) > 0.0001).length.toLocaleString()],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -143,10 +146,18 @@ export function QuantitiesPanel({
                 <td className="px-3 py-3">
                   <p className="font-semibold text-slate-900">{row.costItem}</p>
                   <p className="mt-1 text-slate-600">
-                    {row.unitCost !== null ? `${row.currency} ${row.unitCost.toLocaleString()} / ${row.unit}` : "No unit cost"}
+                    {row.unitCost !== null
+                      ? `${row.currency} ${row.unitCost.toLocaleString()} / ${row.unit}`
+                      : row.costApplicable
+                        ? "No unit cost"
+                        : "Not priced separately"}
                   </p>
                   <p className="mt-1 text-slate-500">
-                    {row.amount !== null ? `${row.currency} ${row.amount.toLocaleString()}` : "Amount pending"}
+                    {row.amount !== null
+                      ? `${row.currency} ${row.amount.toLocaleString()}`
+                      : row.costApplicable
+                        ? "Amount pending"
+                        : "Reference quantity"}
                   </p>
                   <p className="mt-1 break-all text-[11px] text-slate-400">
                     {row.priceSourceItemId || row.priceSource}
@@ -158,13 +169,17 @@ export function QuantitiesPanel({
                       ? "bg-red-50 text-red-600"
                       : row.status === "stale" || row.status === "review"
                         ? "bg-amber-50 text-amber-700"
-                        : "bg-emerald-50 text-emerald-700"
+                        : row.status === "reference"
+                          ? "bg-slate-100 text-slate-600"
+                          : "bg-emerald-50 text-emerald-700"
                   }`}>
                     {statusLabelForQuantityReview(row.status)}
                   </span>
                   <p className="mt-2 text-[11px] text-slate-500">
                     {row.missingCost
                       ? "Needs unit-price book mapping."
+                      : !row.costApplicable
+                        ? "Reference total; not a separate cost line."
                       : row.traceComplete
                         ? "Traceable to canonical model."
                         : "Missing canonical source ID."}

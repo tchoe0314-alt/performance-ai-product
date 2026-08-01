@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Iterable, List, Tuple
+from typing import Any, Dict, FrozenSet, List, Tuple
 
 from .engine_contracts import GOLDEN_SCENARIOS, engine_contracts
 

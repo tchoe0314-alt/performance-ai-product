@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, List, Sequence
 
-from .common import lower_text, safe_dict, safe_list, safe_str
+from .common import lower_text, safe_dict, safe_str
 
 
 FIELD_SOURCE_USER = "user"

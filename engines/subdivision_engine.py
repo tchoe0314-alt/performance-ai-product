@@ -9,7 +9,6 @@ from core.geometry_core import (
     Point2D,
     Point3D,
     Polygon2D,
-    Polyline2D,
     ProjectModel,
     Zone,
     ZoneType,
@@ -195,8 +194,6 @@ class SubdivisionEngine:
         h = y1 - y0
 
         rw = request.road_width
-        lw = request.lot_width
-        ld = request.lot_depth
 
         road_rect = self._spine_road_rect(x0, y0, x1, y1, request.street_frontage_edge, rw)
         road_zone = self._add_road_zone(project, road_rect, f"{request.road_name} 1", request.meta)
@@ -244,11 +241,7 @@ class SubdivisionEngine:
         bbox = parcel_zone.boundary.bbox
         x0, y0 = bbox.min_x, bbox.min_y
         x1, y1 = bbox.max_x, bbox.max_y
-        w = x1 - x0
-        h = y1 - y0
-
         rw = request.road_width
-        lw = request.lot_width
         ld = request.lot_depth
 
         main_road = self._spine_road_rect(x0, y0, x1, y1, request.street_frontage_edge, rw)
@@ -280,9 +273,6 @@ class SubdivisionEngine:
         bbox = parcel_zone.boundary.bbox
         x0, y0 = bbox.min_x, bbox.min_y
         x1, y1 = bbox.max_x, bbox.max_y
-        w = x1 - x0
-        h = y1 - y0
-
         rw = request.road_width
 
         main_road = self._spine_road_rect(x0, y0, x1, y1, request.street_frontage_edge, rw)

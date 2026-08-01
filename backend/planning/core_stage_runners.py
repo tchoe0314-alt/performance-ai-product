@@ -348,7 +348,6 @@ def _collect_rects_by_layer(actions: Sequence[Dict[str, Any]], layers: set[str])
 def _layout_overlap_issues(actions: Sequence[Dict[str, Any]]) -> List[str]:
     building_rects = _collect_rects_by_layer(actions, {"BUILDING"})
     parking_rects = _collect_rects_by_layer(actions, {"PARKING"})
-    road_rects = _collect_rects_by_layer(actions, {"ROAD", "PAVEMENT", "FIRE"})
     issues: List[str] = []
 
     def _check_pairs(rects_a: Sequence[Dict[str, float]], rects_b: Sequence[Dict[str, float]], buffer: float, label: str) -> None:
@@ -769,7 +768,6 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
     road_actions: List[Dict[str, Any]] = []
     has_parking = False
     has_walk = False
-    has_fire = False
 
     def _has_parking_semantics(action: Dict[str, Any]) -> bool:
         label = safe_str(action.get("label")).upper()
@@ -819,8 +817,6 @@ def _synthesize_layout_semantics(actions: Sequence[Dict[str, Any]]) -> List[Dict
             has_parking = True
         elif layer == "WALK":
             has_walk = True
-        elif layer == "FIRE":
-            has_fire = True
 
     for action in safe_list(actions):
         rec = safe_dict(action)

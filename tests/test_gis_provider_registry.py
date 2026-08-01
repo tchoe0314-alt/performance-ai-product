@@ -118,6 +118,7 @@ class GisProviderRegistryTests(unittest.TestCase):
         denver = provider_packs_for_location(address="201 W Colfax Ave, Denver, CO", lat=39.7392, lng=-104.9903)
         phoenix = provider_packs_for_location(address="301 W Jefferson St, Phoenix, AZ", lat=33.4484, lng=-112.0740)
         charlotte = provider_packs_for_location(address="600 E 4th St, Charlotte, NC", lat=35.2271, lng=-80.8431)
+        omaha = provider_packs_for_location(address="1600 Dodge St, Omaha, NE", lat=41.2598, lng=-95.9372)
 
         self.assertEqual(gretna[0]["pack_id"], "gretna_ne_sarpy_county")
         self.assertEqual(austin[0]["pack_id"], "austin_tx_city")
@@ -127,6 +128,7 @@ class GisProviderRegistryTests(unittest.TestCase):
         self.assertEqual(denver[0]["pack_id"], "denver_co_city_county")
         self.assertEqual(phoenix[0]["pack_id"], "phoenix_maricopa_az")
         self.assertEqual(charlotte[0]["pack_id"], "charlotte_mecklenburg_nc")
+        self.assertEqual(omaha[0]["pack_id"], "omaha_douglas_ne")
         self.assertTrue(any(item["source_type"] == "buildings" for item in austin[0]["providers"]))
         self.assertTrue(any(item["source_type"] == "parcels" for item in atlanta[0]["providers"]))
         self.assertTrue(any(item["source_type"] == "buildings" for item in atlanta[0]["known_gaps"]))
@@ -135,6 +137,9 @@ class GisProviderRegistryTests(unittest.TestCase):
         self.assertTrue(any(item["source_type"] == "buildings" for item in denver[0]["providers"]))
         self.assertTrue(any(item["source_type"] == "floodplain" for item in phoenix[0]["providers"]))
         self.assertTrue(any(item["source_type"] == "roads_row" for item in charlotte[0]["known_gaps"]))
+        self.assertTrue(any(item["source_type"] == "terrain_breaklines" for item in omaha[0]["providers"]))
+        self.assertTrue(any(item["source_type"] == "lidar_index" for item in omaha[0]["providers"]))
+        self.assertTrue(any(item["source_type"] == "contours" and not item["queryable"] for item in omaha[0]["providers"]))
 
     def test_new_market_provider_packs_are_review_required_source_traced(self) -> None:
         cases = [
@@ -143,6 +148,7 @@ class GisProviderRegistryTests(unittest.TestCase):
             ("201 W Colfax Ave, Denver, CO", 39.7392, -104.9903, "https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/ArcGIS/rest/services/ODC_PROP_PARCELS_A/FeatureServer"),
             ("301 W Jefferson St, Phoenix, AZ", 33.4484, -112.0740, "https://gis.mcassessor.maricopa.gov/arcgis/rest/services/Parcels/MapServer"),
             ("600 E 4th St, Charlotte, NC", 35.2271, -80.8431, "https://meckgis.mecklenburgcountync.gov/server/rest/services/TaxParcelBoundaries/FeatureServer"),
+            ("1600 Dodge St, Omaha, NE", 41.2598, -95.9372, "https://dcgis.org/server/rest/services/vector/Parcels_public/FeatureServer"),
         ]
 
         for address, lat, lng, expected_url in cases:
@@ -153,7 +159,13 @@ class GisProviderRegistryTests(unittest.TestCase):
 
                 self.assertIn(expected_url, urls)
                 self.assertTrue(all(item["review_required"] and not item["survey_backed"] for item in registry["providers"]))
-                self.assertTrue(all(item["arcgis"]["service_kind"] in {"FeatureServer", "MapServer"} for item in registry["providers"]))
+                self.assertTrue(
+                    all(
+                        item["arcgis"]["service_kind"] in {"FeatureServer", "MapServer"}
+                        for item in registry["providers"]
+                        if item["queryable"]
+                    )
+                )
                 self.assertGreaterEqual(registry["queryable_provider_count"], 2)
 
     def test_non_queryable_vector_tile_source_is_known_but_not_selected(self) -> None:

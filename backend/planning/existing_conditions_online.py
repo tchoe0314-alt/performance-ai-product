@@ -14,7 +14,6 @@ from .gis_provider_registry import (
     providers_for_source_type,
     selected_provider,
     target_market_known_gaps,
-    target_market_provider_records,
 )
 from .imagery_object_detection import fetch_imagery_object_detection
 from .map_feature_detection import build_map_feature_detection_report, location_context_from_geocode
@@ -56,8 +55,8 @@ DISCOVERY_SOURCE_SPECS = {
     },
     "terrain_dem_lidar": {
         "label": "terrain/DEM/LiDAR",
-        "result_keys": ("elevation",),
-        "layer_keys": (),
+        "result_keys": ("elevation", "terrain_breaklines", "lidar_index"),
+        "layer_keys": ("terrain_breaklines", "lidar_coverage"),
     },
     "floodplain_wetlands_environmental": {
         "label": "floodplain/wetlands/environmental constraints",
@@ -156,6 +155,58 @@ def _bbox_geometry(bbox: Dict[str, Any]) -> str:
     return f"{xmin},{ymin},{xmax},{ymax}"
 
 
+def _bbox_bounds(bbox: Dict[str, Any]) -> Tuple[float, float, float, float]:
+    return (
+        safe_float(bbox.get("min_lng") or bbox.get("xmin") or bbox.get("west")),
+        safe_float(bbox.get("min_lat") or bbox.get("ymin") or bbox.get("south")),
+        safe_float(bbox.get("max_lng") or bbox.get("xmax") or bbox.get("east")),
+        safe_float(bbox.get("max_lat") or bbox.get("ymax") or bbox.get("north")),
+    )
+
+
+def _arcgis_geometry_tolerance(bbox: Dict[str, Any], *, preserve_feature_shape: bool) -> float:
+    west, south, east, north = _bbox_bounds(bbox)
+    span = max(abs(east - west), abs(north - south), 0.00001)
+    # Parcel and building outlines keep sub-foot detail at a typical site scale.
+    # Context layers use roughly two-foot detail so a county-scale polygon cannot
+    # inflate one site lookup into tens of megabytes of off-site coordinates.
+    divisor = 2048.0 if preserve_feature_shape else 512.0
+    return max(0.0000001, min(0.00005, span / divisor))
+
+
+def _clip_geojson_features_to_bbox(payload: Dict[str, Any], bbox: Dict[str, Any]) -> Dict[str, Any]:
+    features = safe_list(payload.get("features"))
+    if not features:
+        return payload
+    west, south, east, north = _bbox_bounds(bbox)
+    if west >= east or south >= north:
+        return payload
+    try:
+        from shapely.geometry import box, mapping, shape
+    except ImportError:
+        return payload
+
+    clip_box = box(west, south, east, north)
+    clipped_features: List[Dict[str, Any]] = []
+    for raw_feature in features:
+        feature = safe_dict(raw_feature)
+        geometry = safe_dict(feature.get("geometry"))
+        if not geometry or not geometry.get("coordinates"):
+            clipped_features.append(feature)
+            continue
+        try:
+            clipped = shape(geometry).intersection(clip_box)
+        except Exception:
+            clipped_features.append(feature)
+            continue
+        if clipped.is_empty:
+            continue
+        clipped_feature = dict(feature)
+        clipped_feature["geometry"] = mapping(clipped)
+        clipped_features.append(clipped_feature)
+    return {**payload, "features": clipped_features}
+
+
 def fetch_arcgis_layer_geojson(
     *,
     service_url: str,
@@ -179,6 +230,11 @@ def fetch_arcgis_layer_geojson(
             "provider_id": safe_str(provider_record.get("id")),
             "provider_record": provider_record,
         }
+    preserve_feature_shape = layer_name in {"parcels", "building_footprints"}
+    geometry_tolerance = _arcgis_geometry_tolerance(
+        bbox,
+        preserve_feature_shape=preserve_feature_shape,
+    )
     params = {
         "f": "geojson",
         "where": "1=1",
@@ -189,13 +245,20 @@ def fetch_arcgis_layer_geojson(
         "inSR": 4326,
         "spatialRel": "esriSpatialRelIntersects",
         "outSR": 4326,
+        "maxAllowableOffset": geometry_tolerance,
+        "geometryPrecision": 7,
+        "returnZ": "false",
+        "returnM": "false",
     }
     try:
         response = session.get(_arcgis_query_url(service_url, layer_id), params=params, timeout=15)
         response.raise_for_status()
-        payload = response.json()
+        payload = safe_dict(response.json())
     except Exception as exc:
         return {"success": False, "source_type": source_type, "status": "fetch_failed", "warnings": [safe_str(exc)]}
+    geometry_clipped = not preserve_feature_shape
+    if geometry_clipped:
+        payload = _clip_geojson_features_to_bbox(payload, bbox)
     features = safe_list(safe_dict(payload).get("features"))
     return {
         "success": True,
@@ -205,6 +268,8 @@ def fetch_arcgis_layer_geojson(
         "layer_name": layer_name,
         "feature_count": len(features),
         "geojson": safe_dict(payload),
+        "query_geometry_tolerance": geometry_tolerance,
+        "geometry_clipped_to_query_bbox": geometry_clipped,
         "provider": safe_str(provider_record.get("name") or provider_record.get("id") or source_type),
         "provider_id": safe_str(provider_record.get("id")),
         "provider_record": provider_record,
@@ -379,6 +444,8 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
     layers.setdefault("roads", [])
     layers.setdefault("contours", [])
     layers.setdefault("zoning", [])
+    layers.setdefault("terrain_breaklines", [])
+    layers.setdefault("lidar_coverage", [])
     warnings: List[str] = []
     sources: List[Dict[str, Any]] = []
     for item in imports:
@@ -410,6 +477,8 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
             "easements": "easements",
             "row": "row",
             "contours": "contours",
+            "terrain_breaklines": "terrain_breaklines",
+            "lidar_coverage": "lidar_coverage",
         }
         target = target_map.get(layer_name, "")
         if not target:
@@ -439,16 +508,6 @@ def online_import_to_gis_layers(*imports: Dict[str, Any]) -> Dict[str, Any]:
 
 def _source_url(result: Dict[str, Any]) -> str:
     return safe_str(result.get("source") or result.get("source_url"))
-
-
-def _candidate_count_for_source(*, source_key: str, result: Dict[str, Any], gis_layers: Dict[str, Any], layer_keys: Tuple[str, ...]) -> int:
-    if source_key == "terrain_dem_lidar":
-        return 1 if result.get("success") else 0
-    count = sum(len(safe_list(gis_layers.get(key))) for key in layer_keys)
-    if count:
-        return count
-    geojson_features = safe_list(safe_dict(result.get("geojson")).get("features"))
-    return len(geojson_features)
 
 
 def _source_blockers(*, label: str, result_records: List[Dict[str, Any]], candidate_count: int) -> List[str]:
@@ -576,10 +635,10 @@ def build_online_existing_conditions_discovery_report(
         if key == "imagery_object_detection":
             count = sum(safe_int(result.get("detection_count")) for result in result_records)
         elif key == "terrain_dem_lidar":
-            count = sum(
-                _candidate_count_for_source(source_key=key, result=result, gis_layers=layers, layer_keys=())
-                for result in result_records
-            )
+            count = sum(len(safe_list(layers.get(layer_key))) for layer_key in spec.get("layer_keys", ()))
+            elevation_result = safe_dict(results.get("elevation"))
+            if elevation_result.get("success"):
+                count += 1
         else:
             layer_keys = tuple(spec.get("layer_keys", ()))
             count = sum(len(safe_list(layers.get(layer_key))) for layer_key in layer_keys)
@@ -719,6 +778,46 @@ def build_online_existing_conditions_discovery_report(
     }
 
 
+def _resolve_standards_jurisdiction(
+    *,
+    explicit: Optional[Dict[str, Any]],
+    provider_packs: List[Dict[str, Any]],
+    location_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    resolved = safe_dict(explicit)
+    if any(safe_str(resolved.get(field)) for field in ("city", "county", "state", "utility_provider")):
+        return resolved
+    first_pack = safe_dict(provider_packs[0]) if provider_packs else {}
+    pack_jurisdiction = safe_dict(first_pack.get("jurisdiction"))
+    location_text = " ".join(
+        safe_str(location_context.get(field)).lower()
+        for field in ("address", "matched_address", "normalized_address")
+    )
+    pack_city = safe_str(pack_jurisdiction.get("city")).lower()
+    pack_county = safe_str(pack_jurisdiction.get("county")).lower()
+    jurisdiction_named = bool(
+        (pack_city and pack_city in location_text)
+        or (pack_county and pack_county in location_text)
+    )
+    if jurisdiction_named and any(safe_str(pack_jurisdiction.get(field)) for field in ("city", "county", "state")):
+        return {
+            "city": safe_str(pack_jurisdiction.get("city")),
+            "county": safe_str(pack_jurisdiction.get("county")),
+            "state": safe_str(pack_jurisdiction.get("state")),
+            "utility_provider": safe_str(pack_jurisdiction.get("utility_provider")),
+        }
+    matched = safe_str(location_context.get("matched_address") or location_context.get("normalized_address"))
+    parts = [part.strip() for part in matched.split(",") if part.strip()]
+    if len(parts) >= 3:
+        return {
+            "city": parts[-3] if len(parts) >= 4 else parts[-2],
+            "county": "",
+            "state": parts[-2] if len(parts) >= 4 else parts[-1],
+            "utility_provider": "",
+        }
+    return {}
+
+
 def fetch_online_existing_conditions(
     *,
     address: str = "",
@@ -747,6 +846,7 @@ def fetch_online_existing_conditions(
     include_utilities: bool = True,
     include_contours: bool = True,
     include_elevation: bool = True,
+    include_terrain_context: bool = True,
     include_imagery_detection: bool = True,
     imagery_detection_provider_url: str = "",
     imagery_detection_provider_token: str = "",
@@ -772,6 +872,11 @@ def fetch_online_existing_conditions(
         address=address,
         lat=safe_float(geocode.get("lat")) if geocode.get("success") else None,
         lng=safe_float(geocode.get("lng")) if geocode.get("success") else None,
+    )
+    resolved_standards_jurisdiction = _resolve_standards_jurisdiction(
+        explicit=standards_jurisdiction,
+        provider_packs=provider_packs,
+        location_context=location_context,
     )
     target_records = [provider for pack in provider_packs for provider in safe_list(safe_dict(pack).get("providers"))]
     if target_records:
@@ -801,7 +906,7 @@ def fetch_online_existing_conditions(
             source_results=source_results,
             gis_layers={layer: [] for layer in REQUIRED_GIS_LAYERS},
             location_context=location_context,
-            standards_jurisdiction=standards_jurisdiction,
+            standards_jurisdiction=resolved_standards_jurisdiction,
             provider_registry=registry,
         )
         discovery_report["site_intelligence_summary_v1"] = safe_dict(feature_report.get("site_intelligence_summary_v1"))
@@ -930,13 +1035,18 @@ def fetch_online_existing_conditions(
         source_results["easements"] = easements
         layer_imports.append(easements)
     if include_zoning:
-        if safe_str(zoning_service_url):
+        zoning_provider = selected_provider(registry, "zoning")
+        zoning_arcgis = safe_dict(zoning_provider.get("arcgis"))
+        zoning_url = safe_str(zoning_arcgis.get("service_url") or zoning_service_url)
+        zoning_layer = int(zoning_arcgis.get("layer_id", zoning_layer_id) or 0)
+        if zoning_url:
             zoning = fetch_arcgis_layer_geojson(
-                service_url=zoning_service_url,
-                layer_id=zoning_layer_id,
+                service_url=zoning_url,
+                layer_id=zoning_layer,
                 bbox=working_bbox,
                 source_type="configured_zoning_arcgis",
                 layer_name="zoning",
+                provider=zoning_provider,
                 session=session,
             )
         else:
@@ -1001,6 +1111,35 @@ def fetch_online_existing_conditions(
             contours = _missing_configured_source(registry=registry, source_type="contours", result_source_type="configured_contours_arcgis", label="contour")
         source_results["contours"] = contours
         layer_imports.append(contours)
+    if include_terrain_context:
+        for provider_source_type, result_key, layer_name in (
+            ("terrain_breaklines", "terrain_breaklines", "terrain_breaklines"),
+            ("lidar_index", "lidar_index", "lidar_coverage"),
+        ):
+            terrain_results: List[Dict[str, Any]] = []
+            for terrain_provider in providers_for_source_type(registry, provider_source_type):
+                terrain_arcgis = safe_dict(terrain_provider.get("arcgis"))
+                terrain_url = safe_str(terrain_arcgis.get("service_url"))
+                if not terrain_url:
+                    continue
+                terrain_result = fetch_arcgis_layer_geojson(
+                    service_url=terrain_url,
+                    layer_id=int(terrain_arcgis.get("layer_id") or 0),
+                    bbox=working_bbox,
+                    source_type=f"configured_{provider_source_type}_arcgis",
+                    layer_name=layer_name,
+                    provider=terrain_provider,
+                    session=session,
+                )
+                terrain_results.append(terrain_result)
+            if terrain_results:
+                aggregated_terrain = _aggregate_layer_results(
+                    source_type=f"configured_{provider_source_type}_arcgis",
+                    layer_name=layer_name,
+                    results=terrain_results,
+                )
+                source_results[result_key] = aggregated_terrain
+                layer_imports.append(aggregated_terrain)
 
     online_layers = online_import_to_gis_layers(*layer_imports)
     imagery_detection = fetch_imagery_object_detection(
@@ -1029,6 +1168,9 @@ def fetch_online_existing_conditions(
             "units": elevation.get("units"),
         } if elevation.get("success") else {},
         "approved_for_production": False,
+        "terrain_breakline_count": len(safe_list(safe_dict(online_layers.get("gis_layers")).get("terrain_breaklines"))),
+        "lidar_coverage_count": len(safe_list(safe_dict(online_layers.get("gis_layers")).get("lidar_coverage"))),
+        "surface_ready": False,
         "truth_label": "Public DEM context only; production grading still needs survey/control or approved DEM source.",
     }
     canonical = {
@@ -1054,7 +1196,7 @@ def fetch_online_existing_conditions(
         source_results=source_results,
         gis_layers=online_layers.get("gis_layers"),
         location_context=location_context,
-        standards_jurisdiction=standards_jurisdiction,
+        standards_jurisdiction=resolved_standards_jurisdiction,
         provider_registry=registry,
     )
     discovery_report["site_intelligence_summary_v1"] = safe_dict(feature_report.get("site_intelligence_summary_v1"))

@@ -826,10 +826,6 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     total_area_sf = 0.0
     for index, segment in enumerate(segments, start=1):
         name = _segment_name(segment, index)
-        length = max(
-            1.0,
-            safe_float(segment.get("length_ft"), 0.0),
-        )
         flow = max(0.0, safe_float(segment.get("flow_cfs"), safe_float(segment.get("governing_flow_cfs"), 0.0)))
         capacity = max(0.0, safe_float(segment.get("capacity_cfs"), 0.0))
         ratio = safe_float(segment.get("capacity_ratio"), flow / capacity if capacity > 0.0 else 0.0)
@@ -1667,8 +1663,6 @@ def build_grading_detail_controls(
         name = safe_str(getattr(elem, "name", ""), "") or f"{kind.upper()}-{index}"
         slope_x = safe_float(getattr(elem, "slope_x", 0.0), 0.0)
         slope_y = safe_float(getattr(elem, "slope_y", 0.0), 0.0)
-        width = max(0.0, safe_float(getattr(elem, "width", 0.0), 0.0))
-        depth = max(0.0, safe_float(getattr(elem, "depth", 0.0), 0.0))
         cross_slope = max(abs(slope_x), abs(slope_y), 0.0)
         if kind in {"road", "drive", "roadway"}:
             road_crowns.append(

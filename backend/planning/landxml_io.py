@@ -4,6 +4,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from defusedxml import ElementTree as DefusedET
+
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .export_package_report import build_export_package_report_v1
 
@@ -40,9 +42,14 @@ def _canonical_id(rec: Dict[str, Any], fallback: str) -> str:
 
 def import_landxml(path: Path) -> Dict[str, Any]:
     try:
-        root = ET.parse(path).getroot()
-    except Exception as exc:
-        return {"success": False, "source": str(path), "source_type": "landxml", "warnings": [safe_str(exc)]}
+        root = DefusedET.parse(path).getroot()
+    except Exception:
+        return {
+            "success": False,
+            "source": str(path),
+            "source_type": "landxml",
+            "warnings": ["LandXML parsing failed or unsafe XML constructs were rejected."],
+        }
 
     point_lookup: Dict[str, Dict[str, Any]] = {}
     points: List[Dict[str, Any]] = []

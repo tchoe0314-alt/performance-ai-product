@@ -13,6 +13,8 @@ from backend.application.auth_workflows import (
 )
 from backend.application.health_workflows import health_response
 from backend.application.memory_logging import (
+    current_rss_mb,
+    peak_rss_mb,
     record_process_shutdown,
     record_process_start,
     runtime_monitoring_snapshot,
@@ -35,6 +37,13 @@ class FakeAuthStore:
 
 
 class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
+    def test_runtime_memory_reports_current_and_peak_separately(self):
+        current = current_rss_mb()
+        peak = peak_rss_mb()
+
+        self.assertGreater(current, 0.0)
+        self.assertGreaterEqual(peak, current)
+
     def test_health_response(self):
         data = health_response(
             app_name="Civora AI",

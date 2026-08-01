@@ -12,10 +12,23 @@ from .common import safe_dict, safe_int, safe_list, safe_str
 
 
 GIS_PROVIDER_REGISTRY_VERSION = "local_gis_provider_registry_v1"
-GIS_SOURCE_TYPES = ("parcels", "buildings", "roads_row", "utilities", "contours", "elevation", "floodplain", "wetlands", "zoning")
+GIS_SOURCE_TYPES = (
+    "parcels",
+    "buildings",
+    "roads_row",
+    "utilities",
+    "contours",
+    "elevation",
+    "terrain_breaklines",
+    "lidar_index",
+    "floodplain",
+    "wetlands",
+    "zoning",
+)
 JURISDICTION_LEVELS = ("jurisdiction", "county", "city", "state", "federal", "utility")
 DEFAULT_STALE_AFTER_DAYS = 90
 SARPY_COUNTY_BBOX = {"west": -96.3426, "south": 40.9837, "east": -95.8407, "north": 41.2048}
+DOUGLAS_COUNTY_BBOX = {"west": -96.32, "south": 41.19, "east": -95.80, "north": 41.40}
 AUSTIN_BBOX = {"west": -97.94, "south": 30.05, "east": -97.56, "north": 30.52}
 FULTON_COUNTY_BBOX = {"west": -84.85, "south": 33.50, "east": -84.05, "north": 34.25}
 DALLAS_BBOX = {"west": -97.04, "south": 32.55, "east": -96.52, "north": 33.03}
@@ -81,6 +94,10 @@ def normalize_source_type(value: str) -> str:
         "existing_utilities": "utilities",
         "utility": "utilities",
         "contour": "contours",
+        "breaklines": "terrain_breaklines",
+        "terrain_breakline": "terrain_breaklines",
+        "lidar": "lidar_index",
+        "lidar_tiles": "lidar_index",
         "fema": "floodplain",
         "flood": "floodplain",
         "wetland": "wetlands",
@@ -409,6 +426,137 @@ def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any 
             }
         ]
         packs.append(_pack_record("gretna_ne_sarpy_county", "Gretna/Sarpy County, NE provider pack", sarpy, providers, gaps))
+    address_in_douglas = _address_mentions(text, "omaha", "douglas county") and (" ne" in text or "nebraska" in text)
+    if _point_in_bbox(lat, lng, DOUGLAS_COUNTY_BBOX) or address_in_douglas:
+        douglas = {
+            "level": "county",
+            "city": "Omaha",
+            "county": "Douglas County",
+            "state": "NE",
+            "target_market": "omaha_douglas_ne",
+        }
+        providers = [
+            build_arcgis_provider_record(
+                source_type="parcels",
+                service_url="https://dcgis.org/server/rest/services/vector/Parcels_public/FeatureServer",
+                layer_id=0,
+                name="Douglas County public parcels",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                notes="Douglas County public parcel polygons; candidate context only, not a boundary survey.",
+            ),
+            build_arcgis_provider_record(
+                source_type="buildings",
+                service_url="https://dcgis.org/server/rest/services/Hosted/2022_Building_Footprints/FeatureServer",
+                layer_id=0,
+                name="Douglas County 2022 building footprints",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                notes="County building-footprint context; verify current conditions and source vintage before use.",
+            ),
+            build_arcgis_provider_record(
+                source_type="roads_row",
+                service_url="https://dcgis.org/server/rest/services/vector/Street_Centerlines/FeatureServer",
+                layer_id=0,
+                name="Douglas County street centerlines",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                notes="Street centerline context only; not right-of-way or survey control.",
+            ),
+            build_arcgis_provider_record(
+                source_type="utilities",
+                service_url="https://dcgis.org/server/rest/services/Sewer/Sewer_Network_Public/FeatureServer",
+                layer_id=1,
+                name="Douglas County public sewer lines",
+                jurisdiction=douglas,
+                jurisdiction_level="utility",
+                notes="Public sewer network context only; verify owner records, locates, inverts, and field conditions.",
+            ),
+            build_arcgis_provider_record(
+                source_type="utilities",
+                service_url="https://dcgis.org/server/rest/services/Sewer/Sewer_Network_Public/FeatureServer",
+                layer_id=0,
+                name="Douglas County public sewer nodes",
+                jurisdiction=douglas,
+                jurisdiction_level="utility",
+                notes="Public sewer node context only; rims, inverts, and connectivity require source and field review.",
+            ),
+            build_arcgis_provider_record(
+                source_type="utilities",
+                service_url="https://dcgis.org/server/rest/services/Hosted/Waterlines_%28source%29_view/FeatureServer",
+                layer_id=0,
+                name="Douglas County public waterlines",
+                jurisdiction=douglas,
+                jurisdiction_level="utility",
+                notes="Public waterline context only; verify utility-owner records, material, pressure, and locates.",
+            ),
+            build_arcgis_provider_record(
+                source_type="wetlands",
+                service_url="https://dcgis.org/server/rest/services/Hosted/Wetlands/FeatureServer",
+                layer_id=0,
+                name="Douglas County wetlands",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                notes="County wetlands context; delineation and agency confirmation remain separate requirements.",
+            ),
+            build_arcgis_provider_record(
+                source_type="zoning",
+                service_url="https://dcgis.org/server/rest/services/Hosted/Douglas_County_Zoning_view/FeatureServer",
+                layer_id=0,
+                name="Douglas County zoning",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                notes="Zoning context requires current jurisdiction review and does not establish entitlement.",
+            ),
+            build_arcgis_provider_record(
+                source_type="terrain_breaklines",
+                service_url="https://dcgis.org/server/rest/services/Hosted/Breaklines/FeatureServer",
+                layer_id=0,
+                name="Douglas County 2022 terrain breaklines",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                notes="Terrain breakline context only; not a survey surface, datum, or grading control source.",
+            ),
+            build_arcgis_provider_record(
+                source_type="lidar_index",
+                service_url="https://dcgis.org/server/rest/services/Hosted/Douglas_County_NE_LiDAR_Tiles_view/FeatureServer",
+                layer_id=4,
+                name="Douglas County 2022 LiDAR tile index",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                notes="LiDAR coverage index only; it does not import point-cloud elevations or create a terrain surface.",
+            ),
+            build_known_provider_record(
+                source_type="contours",
+                service_url="https://dcgis.org/server/rest/services/Hosted/2022_Contours/VectorTileServer",
+                name="Douglas County 2022 contour vector tiles",
+                jurisdiction=douglas,
+                jurisdiction_level="county",
+                provider_kind="vector_tile",
+                notes="Official contour tiles are known, but the VectorTileServer is not queryable for candidate geometry.",
+            ),
+        ]
+        gaps = [
+            _gap(
+                "contours",
+                "contours",
+                "Douglas County contours are published as official vector tiles, not a queryable FeatureServer/MapServer layer for candidate extraction.",
+                status="known_source_not_queryable",
+                source_url="https://dcgis.org/server/rest/services/Hosted/2022_Contours/VectorTileServer",
+            ),
+            _gap(
+                "easements",
+                "easements",
+                "No verified queryable Douglas County easement layer is configured; title records and recorded documents remain required.",
+            ),
+            _gap(
+                "utilities",
+                "complete utility inventory",
+                "The pack includes public sewer and water context only; electric, gas, telecom, owner records, and field locates remain separate inputs.",
+                status="partial_provider_coverage",
+            ),
+        ]
+        packs.append(_pack_record("omaha_douglas_ne", "Omaha/Douglas County, NE provider pack", douglas, providers, gaps))
     address_in_austin = "austin" in text and (" tx" in text or "texas" in text)
     if _point_in_bbox(lat, lng, AUSTIN_BBOX) or address_in_austin:
         austin = {"level": "city", "city": "Austin", "county": "Travis County", "state": "TX", "target_market": "austin_tx"}
@@ -640,6 +788,7 @@ def providers_for_source_type(registry: Dict[str, Any], source_type: str) -> Lis
 
 def selected_provider(registry: Dict[str, Any], source_type: str) -> Dict[str, Any]:
     providers = providers_for_source_type(registry, source_type)
+    providers.sort(key=lambda item: safe_str(item.get("jurisdiction_level")) == "federal")
     return providers[0] if providers else {}
 
 

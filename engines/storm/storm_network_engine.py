@@ -49,15 +49,13 @@ from .storm_types import (
     StormPipe,
     StormPipeType,
     StormPoint,
-    summarize_storm_network,
 )
 
 try:
-    from engines.routing_engine import RoutingEngine, RoutingRequest, RouteSystemType
+    from engines.routing_engine import RoutingEngine, RoutingRequest
 except Exception:  # pragma: no cover
     RoutingEngine = None
     RoutingRequest = None
-    RouteSystemType = None
 
 
 # =============================================================================
@@ -227,7 +225,6 @@ class StormNetworkEngine:
         network.nodes = list(node_lookup.values())
         network.warnings.extend(warnings)
 
-        summary = summarize_storm_network(network)
         explain = self._build_explain(network, selected_target, warnings, implied_target_used=implied_target_used)
         optimize_hooks = self._build_optimize_hooks(network)
         conflict_hooks = self._build_conflict_hooks(network)

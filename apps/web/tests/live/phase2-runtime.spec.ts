@@ -2,123 +2,99 @@ import { expect, test } from "@playwright/test";
 
 const email = process.env.CIVORA_EMAIL || "";
 const password = process.env.CIVORA_PASSWORD || "";
-const tokenKey = "civora-ai-token";
-const apiBase =
+const TOKEN_KEY = "civora-ai-token";
+const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
+const apiBase = (
   process.env.PLAYWRIGHT_API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://api.civoraai.com";
+  "https://api.civoraai.com"
+).replace(/\/+$/, "");
 
 test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
+  test.setTimeout(180_000);
   test.skip(!baseURL, "PLAYWRIGHT_BASE_URL is required.");
   test.skip(!email || !password, "CIVORA_EMAIL and CIVORA_PASSWORD are required.");
 
-  const loginResponse = await request.post(
-    `${apiBase.replace(/\/+$/, "")}/api/auth/login`,
-    { data: { email, password } },
-  );
-  expect(loginResponse.ok()).toBeTruthy();
+  const loginResponse = await request.post(`${apiBase}/api/auth/login`, {
+    data: { email, password },
+  });
+  expect(loginResponse.status(), "login should succeed before the setup flow").toBe(200);
   const loginPayload = (await loginResponse.json()) as { token?: string };
-  const token = String(loginPayload?.token || "");
+  const token = String(loginPayload.token || "");
   expect(token).toBeTruthy();
 
   await page.addInitScript(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
+    ([tokenKey, restoreKey, value]) => {
+      window.localStorage.setItem(tokenKey, value);
+      window.sessionStorage.setItem(restoreKey, "1");
     },
-    [tokenKey, token] as const,
+    [TOKEN_KEY, SESSION_RESTORE_KEY, token] as const,
   );
 
-  await page.goto(`${baseURL}/?debugPreview=1`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(1500);
+  await page.goto(`/?debugPreview=1&seedDemo=0&scenario=phase2-${Date.now()}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
-  const signInHeading = page.getByRole("heading", { name: "Sign In" });
-  if (await signInHeading.isVisible().catch(() => false)) {
-    const emailInput = page.getByPlaceholder("you@example.com");
-    const passwordInput = page.getByPlaceholder("At least 8 characters");
-    await emailInput.fill(email);
-    await passwordInput.fill(password);
-    await page.getByRole("button", { name: "Sign In" }).nth(1).click();
-    await page.waitForLoadState("networkidle").catch(() => null);
-    await page.waitForTimeout(1500);
+  await page.getByTestId("header-projects-button").click();
+  await expect(page.getByTestId("projects-drawer")).toBeVisible();
+  await page.getByRole("button", { name: /New Project/i }).filter({ visible: true }).first().click();
+
+  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+  if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
+  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await expect(page.getByTestId("workspace-right-panel")).toContainText(/Address \/ Location|Site Boundary/i);
+
+  const addressSection = page.getByTestId("setup-address-truth");
+  if (!(await addressSection.evaluate((node) => node.hasAttribute("open")))) {
+    await addressSection.locator("summary").click();
   }
+  await addressSection.getByLabel("Type project address").fill("20525 Margo St, Gretna, NE");
 
-  const navSiteButton = page.getByRole("navigation").getByRole("button", { name: "Site" });
-  const mainSiteButton = page.getByRole("main").getByRole("button", { name: "Site", exact: true });
-  if (await navSiteButton.isVisible().catch(() => false)) {
-    await navSiteButton.click();
-  } else if (await mainSiteButton.isVisible().catch(() => false)) {
-    await mainSiteButton.click();
+  const siteSection = page.getByTestId("setup-site-box-controls");
+  if (!(await siteSection.evaluate((node) => node.hasAttribute("open")))) {
+    await siteSection.locator("summary").click();
   }
-  await page.waitForTimeout(500);
+  await page.getByLabel("Site width in feet").fill("1000");
+  await page.getByLabel("Site depth in feet").fill("1000");
+  await addressSection.getByTestId("create-centered-site-button").click();
 
-  const addressInput = page.getByPlaceholder("123 Main St, City, State");
-  await addressInput.fill("20525 Margo St Gretna NE");
-  await page.getByRole("button", { name: "Save address" }).click();
-  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 60_000 });
+  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  const refreshedAddressSection = page.getByTestId("setup-address-truth");
+  const refreshedSiteSection = page.getByTestId("setup-site-box-controls");
+  await expect(refreshedSiteSection).toContainText("1000 ft x 1000 ft");
+  await expect(refreshedAddressSection).toContainText(/Applied|Local/i);
 
-  const alignmentRow = page.getByText("Alignment:", { exact: false }).locator("..");
-  const lockButton = alignmentRow.getByRole("button", { name: /Lock Site/i });
-  await expect(lockButton).toBeVisible();
+  await refreshedSiteSection.getByRole("button", { name: "Change Boundary" }).click();
+  await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+  await refreshedSiteSection.getByRole("button", { name: "Lock Boundary" }).click();
+  await expect(page.getByTestId("site-status")).toContainText("Site Locked");
 
-  const fitButton = page.getByRole("button", { name: "Fit to Site" });
-  await expect(fitButton).toBeVisible();
-  const centerButton = page.getByRole("button", { name: "Use Map Center" });
-  await expect(centerButton).toBeVisible();
-
-  const rotationSection = page.getByText("Site rotation");
-  if (await rotationSection.isVisible().catch(() => false)) {
-    await rotationSection.scrollIntoViewIfNeeded();
+  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  const surveySection = page.getByTestId("setup-survey-terrain-card");
+  await expect(surveySection).toBeVisible({ timeout: 15_000 });
+  if (!(await surveySection.evaluate((node) => node.hasAttribute("open")))) {
+    await surveySection.locator("summary").first().click();
   }
-
-  // Rotate site via slider
-  const rotationSlider = page.locator('input[type="range"]').first();
-  if (await rotationSlider.isVisible().catch(() => false)) {
-    await rotationSlider.evaluate((el) => {
-      const input = el as HTMLInputElement;
-      input.value = "12";
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-  }
-
-  // Lock site
-  await lockButton.click({ force: true });
-  const unlockButton = alignmentRow.getByRole("button", { name: /Unlock Site/i });
-  await expect(unlockButton).toBeVisible({ timeout: 10_000 });
-
-  // Unlock again and confirm toggle
-  await unlockButton.click({ force: true });
-  await expect(alignmentRow).toContainText("Unlocked");
-
-  // Continue with image upload
-  const uploadButton = page.getByRole("button", { name: /Upload site image/i });
-  const [chooser] = await Promise.all([
-    page.waitForEvent("filechooser"),
-    uploadButton.click(),
-  ]);
-  await chooser.setFiles(
-    "/Users/tommychoe/Documents/Playground/Civora AI/.venv/lib/python3.9/site-packages/matplotlib/mpl-data/images/matplotlib_large.png",
+  await surveySection.locator('input[accept="image/*"]').setInputFiles({
+    name: "phase2-site.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(page.getByTestId("image-upload-status")).toContainText(
+    /Uploading image|Detecting site features|Detection complete|No detections found|Image uploaded|Detection failed/i,
+    { timeout: 60_000 },
   );
 
-  await page.waitForTimeout(2000);
-  const statusLine = page.getByText(
-    /Uploading image|Detecting site features|Detection complete|No detections found|Image uploaded|Image upload failed/i,
+  await page.getByRole("button", { name: /^Generate$/ }).filter({ visible: true }).first().click();
+  await expect(page.getByTestId("generate-main-action")).toBeVisible();
+  await page.getByTestId("generate-main-action").click();
+  await expect(page.getByTestId("generate-flow-summary")).toContainText(
+    /Ran:|Needs input|Started|review|queued/i,
+    { timeout: 60_000 },
   );
-  await expect(statusLine.first()).toBeVisible();
-
-  // Missing-info gating: try generate roads while unlocked
-  const alignmentText = alignmentRow.getByText(/Alignment:/);
-  await expect(alignmentText).toContainText("Unlocked");
-  const chatButton = page.getByRole("button", { name: "Chat" });
-  if (await chatButton.isVisible().catch(() => false)) {
-    await chatButton.click();
-  }
-  const generateRoads = page.getByRole("button", { name: /Generate Roads/i });
-  if (await generateRoads.isVisible().catch(() => false)) {
-    await generateRoads.click();
-    const lockPrompt = page.getByText(/lock the site alignment/i);
-    await expect(lockPrompt).toBeVisible();
-  }
-
-  await page.screenshot({ path: "/tmp/phase2-runtime.png", fullPage: true });
 });

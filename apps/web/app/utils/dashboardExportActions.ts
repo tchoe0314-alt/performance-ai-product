@@ -156,6 +156,8 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
         source_stage: row.sourceStage,
         source_layer: row.sourceLayer,
         method: row.method,
+        cost_applicable: row.costApplicable,
+        trace_required: row.traceRequired,
         trace_complete: row.traceComplete,
         cost_item: row.costItem,
         unit_cost: row.unitCost,

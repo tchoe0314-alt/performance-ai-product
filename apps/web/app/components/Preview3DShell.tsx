@@ -1,10 +1,13 @@
 "use client";
 
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 
 import type { Preview3DItem } from "../types";
+import { loadPreview3DCanvas } from "./preview3DLoader";
 
-const Preview3DCanvas = lazy(() => import("./Preview3DCanvas"));
+const Preview3DCanvas = lazy(loadPreview3DCanvas);
 
 type Preview3DShellProps = {
   items: Preview3DItem[];
@@ -14,8 +17,10 @@ type Preview3DShellProps = {
   hasTerrainSource: boolean;
   hasGradingSurface: boolean;
   usingAnnotation3D: boolean;
+  fullscreenOpen: boolean;
   onSelectItem: (id: string | null) => void;
   onOpenFullscreen: () => void;
+  onCloseFullscreen: () => void;
 };
 
 export function Preview3DShell({
@@ -26,9 +31,20 @@ export function Preview3DShell({
   hasTerrainSource,
   hasGradingSurface,
   usingAnnotation3D,
+  fullscreenOpen,
   onSelectItem,
   onOpenFullscreen,
+  onCloseFullscreen,
 }: Preview3DShellProps) {
+  useEffect(() => {
+    if (!fullscreenOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fullscreenOpen]);
+
   const hasReviewContourSurface = items.some(
     (item) => item.terrainSample && /review contour/i.test(String(item.source || "")),
   );
@@ -43,8 +59,15 @@ export function Preview3DShell({
     );
   }
 
-  return (
-    <div className="relative min-w-0">
+  const shell = (
+    <div
+      className={
+        fullscreenOpen
+          ? "fixed inset-0 z-[500] min-w-0 overflow-hidden bg-slate-950"
+          : "relative min-w-0"
+      }
+      data-testid={fullscreenOpen ? "civil-3d-fullscreen" : undefined}
+    >
       <Suspense
         fallback={
           <div
@@ -58,6 +81,7 @@ export function Preview3DShell({
         <Preview3DCanvas
           items={items}
           interactive={allowEdits}
+          fullscreen={fullscreenOpen}
           previewQuality={previewQuality}
           selectedItemId={selectedItemId}
           hasTerrainSource={hasTerrainSource}
@@ -71,14 +95,26 @@ export function Preview3DShell({
           Approximate 3D
         </div>
       ) : null}
-      <div className="absolute right-4 top-4 z-[120] flex max-w-[min(260px,calc(100%-2rem))] flex-col items-end gap-2">
-        <button
-          type="button"
-          onClick={onOpenFullscreen}
-          className="rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
-        >
-          Open Fullscreen
-        </button>
+      <div className="absolute right-4 top-4 z-[160] flex max-w-[min(260px,calc(100%-2rem))] flex-col items-end gap-2">
+        {fullscreenOpen ? (
+          <button
+            type="button"
+            onClick={onCloseFullscreen}
+            aria-label="Close Fullscreen"
+            title="Close Fullscreen"
+            className="grid size-10 place-items-center rounded-full border border-white/40 bg-slate-900/80 text-white shadow-sm transition hover:bg-slate-900"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenFullscreen}
+            className="rounded-full border border-white/40 bg-slate-900/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm transition hover:bg-slate-900"
+          >
+            Open Fullscreen
+          </button>
+        )}
         {!hasGradingSurface && !hasReviewContourSurface ? (
           <div className="pointer-events-none rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
             Flat preview surface
@@ -87,4 +123,8 @@ export function Preview3DShell({
       </div>
     </div>
   );
+
+  return fullscreenOpen && typeof document !== "undefined"
+    ? createPortal(shell, document.body)
+    : shell;
 }

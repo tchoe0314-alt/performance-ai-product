@@ -1,4 +1,3 @@
-import math
 import unittest
 
 from backend.planning.grading_math import repair_ada_profile, summarize_drainage_aware_repair

@@ -26,7 +26,7 @@ Design intent
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 from enum import Enum
 
 from core.config import (
@@ -40,14 +40,12 @@ from core.config import (
 from core.constraint_engine import (
     BaseConstraint,
     ConstraintEvaluationSummary,
-    ConstraintIssue,
     ConstraintResult,
     ConstraintSeverity,
     DuplicateObjectAnchorConstraint,
     MaxSpanConstraint,
     MinObjectSpacingConstraint,
     ObjectOverlapConstraint,
-    ZoneContainmentConstraint,
     ZoneOverlapConstraint,
     evaluate_constraints,
 )

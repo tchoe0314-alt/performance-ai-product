@@ -38,44 +38,23 @@ from core.config import (
     APP_NAME,
     APP_VERSION,
     CELL_SIZE,
-    SURFACE_PADDING,
     TEXT_HEIGHT_SMALL,
     DEFAULT_LOT_X,
     DEFAULT_LOT_Y,
     DEFAULT_LOT_WIDTH,
     DEFAULT_LOT_HEIGHT,
     DEFAULT_SETBACK,
-    DEFAULT_PAD_WIDTH,
-    DEFAULT_PAD_DEPTH,
     DEFAULT_PAD_ELEV,
-    DEFAULT_PARK_START_ELEV,
-    DEFAULT_PARK_SLOPE_Y,
-    DEFAULT_ROAD_START_ELEV,
-    DEFAULT_ROAD_SLOPE_X,
-    POND_RADIUS,
     PIPE_INTENSITY_IN_HR,
     PIPE_MANNINGS_N,
-    PIPE_MAX_INLETS,
     PIPE_MIN_COVER_FT,
     PIPE_MIN_SLOPE,
     PIPE_RUNOFF_C,
     MIN_SLOPE,
 )
 
-from core.constraint_engine import (
-    DuplicateObjectAnchorConstraint,
-    MaxSpanConstraint,
-    ObjectOverlapConstraint,
-    ZoneOverlapConstraint,
-    evaluate_constraints,
-    validate_drainage_summary,
-    validate_expanded_site_plan,
-    validate_site_layout,
-)
 
 from core.geometry_core import (
-    EngineeringDomain,
-    EngineeringObject,
     Point3D,
     ProjectModel,
     ZoneType,
@@ -86,34 +65,17 @@ from core.civil_design import civil_design_readiness, construction_readiness, st
 from core.project_manager import (
     ConflictRecord,
     ConflictSeverity,
-    DependencyState,
     ProjectManager,
 )
 
-from engines.autofix_engine import autofix_site_layout
 from engines.detention_engine import concept_detention_size
-from engines.drainage_engine import DrainageEngine, HydraulicInputs
-from engines.error_check_engine import run_checks, run_plan_checks
+from engines.drainage_engine import DrainageEngine
 from engines.explain_engine import explain_plan
-from engines.grading_engine import GradingEngine, GradeElement, GradingRequest
-from engines.hydrology_engine import RationalArea, compute_rational_method
+from engines.grading_engine import GradingEngine, GradeElement
 from engines.pipe_engine import PipeEngine
 from engines.quantity_engine import compute_plan_quantities
-from engines.sanitary_engine import SanitaryEngine, SanitaryFixture, SanitaryPipeSegment, SanitarySizingRequest
-from engines.storm.hydraulic_engine import analyze_storm_hydraulics
-from engines.storm.storm_network_engine import build_storm_network
-from engines.storm.storm_types import (
-    HydraulicAnalysisRequest,
-    StormBasin,
-    StormCatchment,
-    StormInlet,
-    StormNetworkRequest,
-    StormNode,
-    StormNodeType,
-    StormPoint,
-)
-from engines.surface_engine import SurfaceEngine, GridSurface
-from engines.utility_engine import UtilityEngine, UtilityNodeSpec, UtilityRequest
+from engines.surface_engine import GridSurface
+from engines.utility_engine import UtilityEngine
 from engines.cost_engine import build_cost_package_status, compute_cost_estimate
 
 from geometry.layout_engine import expand_plan
@@ -130,7 +92,6 @@ from backend.planning.common import (
     _call_with_compatible_kwargs,
     _install_rect_obstacle_compatibility,
     blocker_explanations,
-    clamp,
     canonical_stage_output,
     dedupe_keep_order,
     lower_text,
@@ -144,49 +105,28 @@ from backend.planning.common import (
     safe_str,
 )
 from backend.planning.field_contract import (
-    FIELD_SOURCE_INFER,
-    is_field_wrapper,
-    field_source,
-    is_user_set,
-    is_inferable,
-    is_omitted,
-    resolve_field,
-    make_field,
-    preserve_field_states,
-    field_state,
     field_path_is_omitted,
-    field_path_source,
-    field_path_is_inferred,
-    field_path_is_user_locked,
     omission_flags_from_parsed,
-    filter_actions_by_field_intent,
-    wrap_fields_for_execution,
     unwrap_fields_for_execution,
 )
 from backend.planning.runtime import (
-    PLANNER_STAGE_ORDER,
     PlanQualityReport,
     PlannerExecutionContext,
-    QualityIssue,
     RoutingDecision,
     PlannerStageResult,
-    declared_stage_dependencies,
     sanitize_action,
     sanitize_plan,
     collect_plan_stats,
-    normalize_parsed_payload,
     triple_check_parsed_payload,
     choose_routing_path,
     _bootstrap_manager,
     _register_default_dependencies,
-    _mark_dependency_state,
     _lot_area,
     _compute_hydrology_metrics,
     _planner_score_from_manager,
 )
 from backend.planning.export_validation import (
     drainage_export_validation as _drainage_export_validation,
-    drainage_surface_alignment as _drainage_surface_alignment,
     grading_export_validation as _grading_export_validation,
     primary_engineered_basins as _primary_engineered_basins,
     storm_export_validation as _storm_export_validation,
@@ -2899,8 +2839,6 @@ def _enrich_utility_summary_with_coordination(
 
 
 def _filter_placeholder_engineering_actions(project: ProjectModel, actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    drainage = safe_dict(project.meta.get("drainage_canonical"))
-    storm = safe_dict(project.meta.get("storm_pipe_summary"))
     grading = safe_dict(project.meta.get("grading_summary"))
     grading_export_ready = bool(_grading_export_validation(project, grading_override=grading).get("ready"))
     drainage_export_ready = bool(_drainage_export_validation(project).get("ready"))
@@ -3263,7 +3201,7 @@ def _project_model_base_actions(project: ProjectModel) -> List[Dict[str, Any]]:
 
     def _stable_source_id(prefix: str, *parts: Any) -> str:
         payload = json.dumps(parts, sort_keys=True, default=str)
-        return f"{prefix}_{hashlib.sha1(payload.encode('utf-8')).hexdigest()[:10]}"
+        return f"{prefix}_{hashlib.sha1(payload.encode('utf-8'), usedforsecurity=False).hexdigest()[:10]}"
 
     zones = getattr(project, "zones", {}) or {}
     if isinstance(zones, dict):
@@ -6070,7 +6008,6 @@ def _detect_coordination_conflicts(project: ProjectModel, manager: ProjectManage
                     _point_inside_buffered_rect(path[0], rect)
                     or _point_inside_buffered_rect(path[-1], rect)
                 )
-                interior_points = path[1:-1]
                 role = safe_str(segment.get("segment_role")).lower()
                 if (
                     endpoint_inside
@@ -7608,7 +7545,6 @@ def _apply_conflict_resolution(
     base_snapshot = _snapshot_coordination_state(project, manager)
     base_full_snapshot = _full_coordination_state_snapshot(project, manager)
     pre_all = _detect_coordination_conflicts(project, manager)
-    pre_related = _matching_conflicts(pre_all, conflict)
     protected_zones = _expanded_obstacle_rectangles(project)
     best_snapshot: Optional[Dict[str, Any]] = None
     best_full_snapshot: Optional[Dict[str, Any]] = None
@@ -9502,7 +9438,6 @@ def _run_conflict_resolution_stage(ctx: PlannerExecutionContext, hydrology: Dict
         solve_conflict_cluster_group=_solve_conflict_cluster_group,
         refresh_conflict_resolved_state=_refresh_conflict_resolved_state,
         coordination_metric_inc=_coordination_metric_inc,
-        restore_coordination_state=_restore_coordination_state,
         restore_full_coordination_state=_restore_full_coordination_state,
         conflict_cluster_id=_conflict_cluster_id,
         post_reroute_validations=_post_reroute_validations,

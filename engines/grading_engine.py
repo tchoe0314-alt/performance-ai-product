@@ -30,7 +30,7 @@ Design intent
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.geometry_core import EngineeringDomain, EngineeringObject, Point3D, ProjectModel, ZoneType, rect_zone
 from .surface_engine import GridSurface

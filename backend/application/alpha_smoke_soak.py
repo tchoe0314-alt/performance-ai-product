@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from backend.application.memory_logging import runtime_monitoring_snapshot, runtime_process_monitoring_snapshot
@@ -160,6 +161,9 @@ def fetch_runtime_debug_sample(base_url: str, *, timeout_seconds: float = 10.0, 
     normalized = safe_str(base_url).rstrip("/")
     if not normalized:
         raise ValueError("base_url is required for runtime debug sampling.")
+    parsed_url = urlparse(normalized)
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        raise ValueError("base_url must be an absolute HTTP(S) URL for runtime debug sampling.")
     token = _configured_runtime_audit_token(bearer_token)
     if not token:
         raise RuntimeError(

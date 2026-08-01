@@ -1183,11 +1183,17 @@ class JobQueueService:
                     if previous_metadata.get("runtime_phase_checkpoint") and not result_metadata.get("runtime_phase_checkpoint"):
                         result_metadata["runtime_phase_checkpoint"] = previous_metadata.get("runtime_phase_checkpoint")
                         result_payload["metadata"] = result_metadata
-                        result = result_payload
                     if previous_result.get("job_progress") and not result_payload.get("job_progress"):
                         result_payload["job_progress"] = previous_result.get("job_progress")
-                        result = result_payload
-                    self._update_job_state(job_id, status="completed", result=result, error=None)
+                    final_progress = dict(result_payload.get("job_progress") or {})
+                    result_payload.update(
+                        _job_progress_payload(
+                            "Completed",
+                            str(final_progress.get("detail") or "The job completed successfully."),
+                            100,
+                        )
+                    )
+                    self._update_job_state(job_id, status="completed", result=result_payload, error=None)
             except JobCancelledError:
                 current = self._get_job_for_worker(job_id)
                 cancelled_result = dict((current or {}).get("result") or {})
