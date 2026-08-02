@@ -105,6 +105,36 @@ class VisionDetectionLearningTests(unittest.TestCase):
         self.assertTrue(frame["georeference_ready"])
         self.assertEqual(result, {"type": "Point", "coordinates": [-95.5, 40.75]})
 
+    def test_frame_georeferences_nested_geometry_without_collapsing_it(self) -> None:
+        frame = build_imagery_frame_v2(
+            {"bbox": {"west": -96, "south": 40, "east": -95, "north": 41}},
+            source_url="https://imagery.example/image.png",
+            provider="fixture",
+            image_width=100,
+            image_height=100,
+        )
+
+        line = georeference_pixel_geometry(
+            {"type": "LineString", "coordinates": [[25, -10], [75, 110]]},
+            frame,
+        )
+        polygon = georeference_pixel_geometry(
+            {
+                "type": "Polygon",
+                "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]],
+            },
+            frame,
+        )
+
+        self.assertEqual(
+            line,
+            {"type": "LineString", "coordinates": [[-95.75, 41.0], [-95.25, 40.0]]},
+        )
+        self.assertEqual(len(polygon["coordinates"]), 1)
+        self.assertEqual(len(polygon["coordinates"][0]), 5)
+        self.assertEqual(polygon["coordinates"][0][0], [-95.9, 40.9])
+        self.assertEqual(polygon["coordinates"][0][-1], [-95.9, 40.9])
+
     def test_detection_report_preserves_pixel_and_geographic_geometry(self) -> None:
         meta = _vision_meta()
         report = meta["map_feature_detection_report_v1"]["civora_vision_detection_report_v2"]

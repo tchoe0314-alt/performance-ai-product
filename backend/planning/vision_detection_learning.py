@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
+import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -197,13 +198,25 @@ def build_imagery_frame_v2(
 def _pixel_point_to_wgs84(point: Any, frame: Dict[str, Any]) -> Optional[List[float]]:
     if not isinstance(point, (list, tuple)) or len(point) < 2:
         return None
+    # A coordinate collection can also have length >= 2. Reject nested values
+    # here so LineString and Polygon arrays recurse instead of collapsing into
+    # one bogus point at the image origin.
+    if any(isinstance(value, (list, tuple, dict, set)) or isinstance(value, bool) for value in point[:2]):
+        return None
+    try:
+        x = float(point[0])
+        y = float(point[1])
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(x) or not math.isfinite(y):
+        return None
     bounds = _bbox(frame.get("bbox_wgs84"))
     width = safe_float(frame.get("image_width_px"))
     height = safe_float(frame.get("image_height_px"))
     if not bounds or width <= 0 or height <= 0:
         return None
-    x = safe_float(point[0])
-    y = safe_float(point[1])
+    x = min(max(x, 0.0), width)
+    y = min(max(y, 0.0), height)
     lng = bounds["west"] + (x / width) * (bounds["east"] - bounds["west"])
     lat = bounds["north"] - (y / height) * (bounds["north"] - bounds["south"])
     return [round(lng, 9), round(lat, 9)]
