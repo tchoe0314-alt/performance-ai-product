@@ -1,8 +1,13 @@
 import { useState, type RefObject } from "react";
 
 import type {
+  BuildingPlacement,
+  CandidateReviewCorrection,
+  CandidateReviewDecision,
   CandidateReviewInbox,
   CandidateReviewItem,
+  CivoraVisionQualityReport,
+  CivoraVisionTrainingDataset,
   MapAnalysis,
   OnlineExistingConditionsSource,
   PlanPdfAnalysis,
@@ -79,9 +84,17 @@ export type DataSourcesPanelProps = {
   candidateReviewItems: CandidateReviewItem[];
   candidateDecisionInFlight: {
     candidateId: string;
-    action: "accept" | "reject" | "pending";
+    action: CandidateReviewDecision;
   } | null;
-  onCandidateDecision: (candidateId: string, decision: "accept" | "reject" | "pending") => void;
+  onCandidateDecision: (
+    candidateId: string,
+    decision: CandidateReviewDecision,
+    correction?: CandidateReviewCorrection,
+  ) => void;
+  visionTrainingDataset?: CivoraVisionTrainingDataset;
+  visionQualityReport?: CivoraVisionQualityReport;
+  onExportVisionLearning: () => void;
+  selectedCorrectionObject?: BuildingPlacement | null;
   siteAddress: string;
   selectedAddressSuggestion: AddressSuggestion | null;
   addressSuggestions: AddressSuggestion[];
@@ -186,6 +199,10 @@ export function DataSourcesPanel({
   candidateReviewItems,
   candidateDecisionInFlight,
   onCandidateDecision,
+  visionTrainingDataset,
+  visionQualityReport,
+  onExportVisionLearning,
+  selectedCorrectionObject,
   siteAddress,
   selectedAddressSuggestion,
   addressSuggestions,
@@ -259,7 +276,11 @@ export function DataSourcesPanel({
           candidateCounts={candidateReviewCounts}
           candidateItems={candidateReviewItems}
           candidateDecisionInFlight={candidateDecisionInFlight}
-          onCandidateDecision={(candidateId, decision) => onCandidateDecision(candidateId, decision)}
+          onCandidateDecision={(candidateId, decision, correction) => onCandidateDecision(candidateId, decision, correction)}
+          visionTrainingDataset={visionTrainingDataset}
+          visionQualityReport={visionQualityReport}
+          onExportVisionLearning={onExportVisionLearning}
+          selectedCorrectionObject={selectedCorrectionObject}
         />
       </details>
       <details className="rounded-2xl border border-slate-200 bg-white p-4">

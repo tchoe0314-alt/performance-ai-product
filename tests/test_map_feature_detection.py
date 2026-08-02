@@ -165,6 +165,10 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertTrue(by_source["image_detected_candidate"]["needs_user_confirmation"])
         self.assertTrue(by_source["image_detected_candidate"]["review_required"])
         self.assertEqual(report["imagery_object_detection_report_v1"]["detection_count"], 1)
+        self.assertEqual(
+            len([candidate for candidate in report["feature_candidates"] if candidate["source_type"] == "image_detected_candidate"]),
+            1,
+        )
 
     def test_imagery_object_detection_report_adds_visual_building_road_and_tree_candidates(self) -> None:
         report = build_map_feature_detection_report(

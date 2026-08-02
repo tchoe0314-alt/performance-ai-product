@@ -69,7 +69,11 @@ type UseDashboardDataSourcesPanelPropsInput = {
   candidateReviewCounts: NonNullable<CandidateReviewInbox["counts"]>;
   candidateReviewItems: CandidateReviewItem[];
   candidateDecisionInFlight: DataSourcesPanelProps["candidateDecisionInFlight"];
-  onCandidateDecision: (candidateId: string, decision: "accept" | "reject" | "pending") => Promise<void>;
+  onCandidateDecision: DataSourcesPanelProps["onCandidateDecision"];
+  visionTrainingDataset: DataSourcesPanelProps["visionTrainingDataset"];
+  visionQualityReport: DataSourcesPanelProps["visionQualityReport"];
+  onExportVisionLearning: DataSourcesPanelProps["onExportVisionLearning"];
+  selectedCorrectionObject?: BuildingPlacement | null;
   siteAddress: string;
   selectedAddressSuggestion: AddressSuggestion | null;
   addressSuggestions: AddressSuggestion[];
@@ -165,6 +169,10 @@ export function useDashboardDataSourcesPanelProps({
   candidateReviewItems,
   candidateDecisionInFlight,
   onCandidateDecision,
+  visionTrainingDataset,
+  visionQualityReport,
+  onExportVisionLearning,
+  selectedCorrectionObject,
   siteAddress,
   selectedAddressSuggestion,
   addressSuggestions,
@@ -271,7 +279,11 @@ export function useDashboardDataSourcesPanelProps({
     candidateReviewCounts,
     candidateReviewItems,
     candidateDecisionInFlight,
-    onCandidateDecision: (candidateId, decision) => void onCandidateDecision(candidateId, decision),
+    onCandidateDecision: (candidateId, decision, correction) => void onCandidateDecision(candidateId, decision, correction),
+    visionTrainingDataset,
+    visionQualityReport,
+    onExportVisionLearning,
+    selectedCorrectionObject,
     siteAddress,
     selectedAddressSuggestion,
     addressSuggestions,
@@ -378,6 +390,7 @@ export function useDashboardDataSourcesPanelProps({
     onDrainageSourceOverrideChange,
     onExportPlanPdf,
     onExportPlanPdfJson,
+    onExportVisionLearning,
     onFitToSite,
     onGenerateSystem,
     onOpenPanel,
@@ -420,6 +433,7 @@ export function useDashboardDataSourcesPanelProps({
     planPdfUploadMessage,
     planPdfUploadState,
     selectedAddressSuggestion,
+    selectedCorrectionObject,
     selectedPlanPdfElement,
     siteAddress,
     siteRotationDeg,
@@ -434,5 +448,7 @@ export function useDashboardDataSourcesPanelProps({
     sourceHubMetrics,
     uploadedImageApiUrl,
     uploadedImagePreviewUrl,
+    visionQualityReport,
+    visionTrainingDataset,
   ]);
 }

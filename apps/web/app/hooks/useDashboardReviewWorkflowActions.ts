@@ -1,10 +1,18 @@
 import { useCallback, useRef, useState } from "react";
 
-import type { BuildingPlacement, PlanResponse, ProjectRecord, SiteInputs } from "../types";
+import type {
+  BuildingPlacement,
+  CandidateReviewCorrection,
+  CandidateReviewDecision,
+  PlanResponse,
+  ProjectRecord,
+  SiteInputs,
+} from "../types";
 import { buildAcceptedCandidatePlacements } from "../utils/projectInputRestore";
 import {
   runDashboardCandidateReviewDecision,
   runDashboardDesignAlternativesAction,
+  exportDashboardVisionLearningManifest,
 } from "../utils/dashboardReviewWorkflowActions";
 import type { SidePanelKey, WorkspaceMode } from "../utils/workspaceShell";
 
@@ -37,11 +45,15 @@ export function useDashboardReviewWorkflowActions({
 }: DashboardReviewWorkflowActionsOptions) {
   const [candidateDecisionInFlight, setCandidateDecisionInFlight] = useState<{
     candidateId: string;
-    action: "accept" | "reject" | "pending";
+    action: CandidateReviewDecision;
   } | null>(null);
   const candidateDecisionLockRef = useRef(false);
   const handleCandidateReviewDecision = useCallback(
-    async (candidateId: string, action: "accept" | "reject" | "pending") => {
+    async (
+      candidateId: string,
+      action: CandidateReviewDecision,
+      correction?: CandidateReviewCorrection,
+    ) => {
       if (candidateDecisionLockRef.current) return;
       candidateDecisionLockRef.current = true;
       setCandidateDecisionInFlight({ candidateId, action });
@@ -55,6 +67,7 @@ export function useDashboardReviewWorkflowActions({
           setCurrentProject,
           setStatusMessage,
           token,
+          correction,
         });
         if (updatedProject?.project_input) {
           const updatedSiteInputs = (updatedProject.project_input.meta?.site_inputs ?? {}) as SiteInputs;
@@ -85,6 +98,15 @@ export function useDashboardReviewWorkflowActions({
       token,
     ],
   );
+
+  const handleExportVisionLearning = useCallback(async () => {
+    await exportDashboardVisionLearningManifest({
+      currentProjectId,
+      projectId,
+      setStatusMessage,
+      token,
+    });
+  }, [currentProjectId, projectId, setStatusMessage, token]);
 
   const handleDesignAlternativesAction = useCallback(
     async (action: "generate" | "compare" | "choose" | "merge" | "revise", optionNumber?: number) => {
@@ -118,6 +140,7 @@ export function useDashboardReviewWorkflowActions({
   return {
     candidateDecisionInFlight,
     handleCandidateReviewDecision,
+    handleExportVisionLearning,
     handleDesignAlternativesAction,
   };
 }

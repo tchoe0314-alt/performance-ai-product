@@ -1,10 +1,16 @@
 import { useState } from "react";
 
-import type { CandidateReviewItem, OnlineExistingConditionsSource } from "../types";
+import type {
+  BuildingPlacement,
+  CandidateReviewCorrection,
+  CandidateReviewDecision,
+  CandidateReviewItem,
+  CivoraVisionQualityReport,
+  CivoraVisionTrainingDataset,
+  OnlineExistingConditionsSource,
+} from "../types";
 import { sourceStatusLabel } from "../utils/dashboardDataTypes";
 import type { CapabilityExposure } from "../utils/dashboardTypes";
-
-type CandidateReviewDecision = "accept" | "reject" | "pending";
 
 const DATA_CAPABILITY_KEYS = new Set([
   "existing_conditions_package",
@@ -15,6 +21,61 @@ const DATA_CAPABILITY_KEYS = new Set([
   "candidate_standards_review",
 ]);
 
+const VISION_FEATURE_OPTIONS = [
+  ["building_footprint", "Building"],
+  ["road_or_drive", "Road / driveway"],
+  ["parking_area", "Parking"],
+  ["sidewalk_or_path", "Sidewalk / path"],
+  ["water/pond/basin", "Water / basin"],
+  ["vegetation/tree_area", "Vegetation / trees"],
+  ["utility", "Visible utility object"],
+  ["constraint_area", "Constraint / other"],
+] as const;
+
+function sourceRecord(candidate: CandidateReviewItem) {
+  return candidate.source_record && typeof candidate.source_record === "object"
+    ? candidate.source_record
+    : {};
+}
+
+function isVisionCandidate(candidate: CandidateReviewItem) {
+  const source = sourceRecord(candidate);
+  return (
+    String(source.source_type ?? "") === "image_detected_candidate" ||
+    Boolean((source.properties as Record<string, unknown> | undefined)?.vision_detection_id)
+  );
+}
+
+function correctionGeometryFromObject(item: BuildingPlacement | null | undefined): Record<string, unknown> | null {
+  if (!item || item.type === "site" || item.locked || item.placed === false) return null;
+  const source = String(item.source ?? "");
+  if (item.generated || ["generated", "inferred", "detected_from_image", "detected_from_gis"].includes(source)) {
+    return null;
+  }
+  const points = Array.isArray(item.geometry) && item.geometry.length
+    ? item.geometry.map(([x, y]) => [Number(x), Number(y)])
+    : item.geometryType === "point"
+      ? [[Number(item.x ?? 0) + item.w / 2, Number(item.y ?? 0) + item.d / 2]]
+      : [
+          [Number(item.x ?? 0), Number(item.y ?? 0)],
+          [Number(item.x ?? 0) + item.w, Number(item.y ?? 0)],
+          [Number(item.x ?? 0) + item.w, Number(item.y ?? 0) + item.d],
+          [Number(item.x ?? 0), Number(item.y ?? 0) + item.d],
+        ];
+  if (!points.length || points.some((point) => point.some((value) => !Number.isFinite(value)))) return null;
+  if (item.geometryType === "point") {
+    return { type: "Point", coordinates: points[0] };
+  }
+  if (item.geometryType === "polyline") {
+    return points.length >= 2 ? { type: "LineString", coordinates: points } : null;
+  }
+  if (points.length < 3) return null;
+  const closed = points[0][0] === points.at(-1)?.[0] && points[0][1] === points.at(-1)?.[1]
+    ? points
+    : [...points, points[0]];
+  return { type: "Polygon", coordinates: [closed] };
+}
+
 export function SourceDataReviewPanel({
   capabilityRows,
   onlineDiscoveryStatus,
@@ -24,6 +85,10 @@ export function SourceDataReviewPanel({
   candidateItems,
   candidateDecisionInFlight,
   onCandidateDecision,
+  visionTrainingDataset,
+  visionQualityReport,
+  onExportVisionLearning,
+  selectedCorrectionObject,
 }: {
   capabilityRows: CapabilityExposure[];
   onlineDiscoveryStatus: string;
@@ -39,12 +104,25 @@ export function SourceDataReviewPanel({
     candidateId: string;
     action: CandidateReviewDecision;
   } | null;
-  onCandidateDecision: (candidateId: string, decision: CandidateReviewDecision) => void;
+  onCandidateDecision: (
+    candidateId: string,
+    decision: CandidateReviewDecision,
+    correction?: CandidateReviewCorrection,
+  ) => void;
+  visionTrainingDataset?: CivoraVisionTrainingDataset;
+  visionQualityReport?: CivoraVisionQualityReport;
+  onExportVisionLearning: () => void;
+  selectedCorrectionObject?: BuildingPlacement | null;
 }) {
   const dataCapabilityRows = capabilityRows.filter((item) => DATA_CAPABILITY_KEYS.has(item.key));
   const [visibleCandidateCount, setVisibleCandidateCount] = useState(8);
+  const [candidateTypeCorrections, setCandidateTypeCorrections] = useState<Record<string, string>>({});
   const visibleCandidates = candidateItems.slice(0, visibleCandidateCount);
   const hiddenCandidateCount = Math.max(0, candidateItems.length - visibleCandidates.length);
+  const visionCandidateCount = candidateItems.filter(isVisionCandidate).length;
+  const reviewedVisionCount = Number(visionTrainingDataset?.reviewed_example_count ?? 0);
+  const trainableVisionCount = Number(visionTrainingDataset?.training_eligible_example_count ?? 0);
+  const selectedCorrectionGeometry = correctionGeometryFromObject(selectedCorrectionObject);
 
   return (
     <>
@@ -124,12 +202,51 @@ export function SourceDataReviewPanel({
             </div>
           ))}
         </div>
+        {visionCandidateCount ? (
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-3" data-testid="vision-learning-summary">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-800">Civora Vision feedback</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {visionCandidateCount} visual candidate{visionCandidateCount === 1 ? "" : "s"}; {reviewedVisionCount} reviewed; {trainableVisionCount} rights-cleared for training.
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {visionQualityReport?.quality_claim_allowed
+                    ? `Measured precision ${Math.round(Number(visionQualityReport.precision ?? 0) * 100)}% and recall ${Math.round(Number(visionQualityReport.recall ?? 0) * 100)}%.`
+                    : "Accuracy is not claimed until a rights-cleared ground-truth set is attached."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onExportVisionLearning}
+                className="shrink-0 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
+              >
+                Export feedback
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="mt-3 space-y-2">
           {candidateItems.length ? (
             visibleCandidates.map((candidate) => {
               const status = candidate.status === "accepted" || candidate.status === "rejected" ? candidate.status : "pending";
               const candidateBusy = candidateDecisionInFlight?.candidateId === candidate.candidate_id;
               const anyCandidateBusy = Boolean(candidateDecisionInFlight);
+              const source = sourceRecord(candidate);
+              const sourceProperties =
+                source.properties && typeof source.properties === "object"
+                  ? (source.properties as Record<string, unknown>)
+                  : {};
+              const visionCandidate = isVisionCandidate(candidate);
+              const originalFeatureType = String(source.feature_type ?? "");
+              const selectedFeatureType =
+                candidateTypeCorrections[candidate.candidate_id] ??
+                candidate.corrected_feature_type ??
+                originalFeatureType;
+              const sourceRights =
+                sourceProperties.source_rights && typeof sourceProperties.source_rights === "object"
+                  ? (sourceProperties.source_rights as Record<string, unknown>)
+                  : {};
               return (
                 <div
                   key={candidate.candidate_id}
@@ -173,6 +290,75 @@ export function SourceDataReviewPanel({
                     </p>
                   </div>
                   <p className="mt-2 text-xs font-medium text-slate-500">{candidate.blocker_review_reason || "Review reason not recorded."}</p>
+                  {visionCandidate ? (
+                    <div className="mt-3 rounded-lg border border-sky-200 bg-white p-2.5" data-testid="vision-candidate-correction">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-semibold text-sky-800">Civora Vision detection</p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {sourceRights.training_use_allowed === true
+                              ? "Source rights permit training after review."
+                              : "Feedback is saved, but training waits for source-rights clearance."}
+                          </p>
+                        </div>
+                        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
+                          <select
+                            aria-label={`Correct detected type for ${candidate.label || candidate.candidate_id}`}
+                            value={selectedFeatureType}
+                            onChange={(event) =>
+                              setCandidateTypeCorrections((current) => ({
+                                ...current,
+                                [candidate.candidate_id]: event.target.value,
+                              }))
+                            }
+                            disabled={anyCandidateBusy}
+                            className="min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs font-medium text-slate-700"
+                          >
+                            {VISION_FEATURE_OPTIONS.map(([value, label]) => (
+                              <option key={value} value={value}>{label}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onCandidateDecision(candidate.candidate_id, "correct", {
+                                correctedFeatureType: selectedFeatureType,
+                                reason: `Corrected visual detection from ${originalFeatureType || "unknown"} to ${selectedFeatureType}.`,
+                              })
+                            }
+                            disabled={anyCandidateBusy || !selectedFeatureType || selectedFeatureType === originalFeatureType}
+                            className="shrink-0 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-[11px] font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {candidateBusy && candidateDecisionInFlight?.action === "correct" ? "Saving..." : "Save type"}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-sky-100 pt-2">
+                        <p className="min-w-0 flex-1 text-[11px] text-slate-500">
+                          {selectedCorrectionGeometry && selectedCorrectionObject
+                            ? `Selected outline: ${selectedCorrectionObject.label}. Project-local geometry will be saved; training waits for map registration.`
+                            : "Select an editable user-drawn outline in Draw to replace this detection's geometry."}
+                        </p>
+                        <button
+                          type="button"
+                          data-testid="vision-use-selected-outline"
+                          onClick={() => {
+                            if (!selectedCorrectionGeometry || !selectedCorrectionObject) return;
+                            onCandidateDecision(candidate.candidate_id, "correct", {
+                              correctedFeatureType: selectedFeatureType || originalFeatureType,
+                              correctedGeometry: selectedCorrectionGeometry,
+                              correctionCoordinateSpace: "project_local",
+                              reason: `Replaced visual detection geometry with user-drawn outline ${selectedCorrectionObject.label}.`,
+                            });
+                          }}
+                          disabled={anyCandidateBusy || !selectedCorrectionGeometry}
+                          className="shrink-0 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-[11px] font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Use selected outline
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     <button
                       type="button"

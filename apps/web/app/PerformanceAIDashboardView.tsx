@@ -28,6 +28,8 @@ import type {
   PreviewRequestPayload,
   SiteInputs,
   CandidateReviewInbox,
+  CivoraVisionQualityReport,
+  CivoraVisionTrainingDataset,
   DesignAlternativesV1,
   ReviewIssueTrackerV1,
   SourceConfidenceMap,
@@ -1025,6 +1027,14 @@ function PerformanceAIDashboardView({
   const drainageReviewIssueItems = reviewIssueCollections.drainageItems;
   const candidateReviewItems = candidateReviewInbox.candidates ?? [];
   const candidateReviewCounts = candidateReviewInbox.counts ?? { accepted: 0, rejected: 0, pending: 0 };
+  const visionTrainingDataset = (
+    siteInputs?.civora_vision_training_dataset_v1 ??
+    currentPlanMeta.civora_vision_training_dataset_v1
+  ) as CivoraVisionTrainingDataset | undefined;
+  const visionQualityReport = (
+    siteInputs?.civora_vision_quality_report_v1 ??
+    currentPlanMeta.civora_vision_quality_report_v1
+  ) as CivoraVisionQualityReport | undefined;
   const sourceConfidenceMap = useMemo<SourceConfidenceMap>(
     () =>
       buildSourceConfidenceMap({
@@ -1055,7 +1065,7 @@ function PerformanceAIDashboardView({
     () => buildCadEntityPreview(currentPlanMeta, sourceConfidenceByObjectId),
     [currentPlanMeta, sourceConfidenceByObjectId],
   );
-  const { candidateDecisionInFlight, handleCandidateReviewDecision, handleDesignAlternativesAction } =
+  const { candidateDecisionInFlight, handleCandidateReviewDecision, handleExportVisionLearning, handleDesignAlternativesAction } =
     useDashboardReviewWorkflowActions({
       currentProjectId: currentProject?.project_id,
       designAlternativeCount: designAlternativeItems.length,
@@ -5191,6 +5201,10 @@ function PerformanceAIDashboardView({
     candidateReviewItems,
     candidateDecisionInFlight,
     onCandidateDecision: handleCandidateReviewDecision,
+    visionTrainingDataset,
+    visionQualityReport,
+    onExportVisionLearning: handleExportVisionLearning,
+    selectedCorrectionObject: selectedBuilding,
     siteAddress,
     selectedAddressSuggestion,
     addressSuggestions,

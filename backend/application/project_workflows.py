@@ -34,6 +34,11 @@ from backend.planning.source_confidence_map import (
     build_source_confidence_map,
 )
 from backend.planning.smart_fix import build_smart_fix_recommendations
+from backend.planning.vision_detection_learning import (
+    DATASET_VERSION as VISION_DATASET_VERSION,
+    QUALITY_VERSION as VISION_QUALITY_VERSION,
+    build_vision_learning_package,
+)
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.job_workflows import JobQueueProtocol
 
@@ -1032,6 +1037,16 @@ def _project_candidate_review_meta(record: Dict[str, Any]) -> Dict[str, Any]:
             or final_meta.get("candidate_review_rejected_v1")
             or []
         ),
+        VISION_DATASET_VERSION: (
+            site_inputs.get(VISION_DATASET_VERSION)
+            or final_meta.get(VISION_DATASET_VERSION)
+            or {}
+        ),
+        VISION_QUALITY_VERSION: (
+            site_inputs.get(VISION_QUALITY_VERSION)
+            or final_meta.get(VISION_QUALITY_VERSION)
+            or {}
+        ),
     }
 
 
@@ -1070,6 +1085,30 @@ def get_project_candidate_review_inbox(
         "project_id": project_id,
         "candidate_review_inbox_v1": inbox,
         "truth_label": inbox.get("truth_label"),
+    }
+
+
+def get_project_vision_learning_package(
+    *,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: str,
+) -> Dict[str, Any]:
+    record = _candidate_review_record(
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    meta = _project_candidate_review_meta(record)
+    package = build_vision_learning_package(
+        meta,
+        project_input=safe_dict(record.get("project_input")),
+    )
+    return {
+        **package,
+        "project_id": project_id,
     }
 
 
@@ -1216,6 +1255,9 @@ def review_project_candidates(
     action: str,
     reason: str = "",
     reviewer_id: str = "",
+    corrected_feature_type: str = "",
+    corrected_geometry: Any = None,
+    correction_coordinate_space: str = "",
 ) -> Dict[str, Any]:
     record = _candidate_review_record(
         project_store=project_store,
@@ -1234,6 +1276,9 @@ def review_project_candidates(
             action=action,
             reviewer_id=reviewer_id or user_id,
             reason=reason,
+            corrected_feature_type=corrected_feature_type,
+            corrected_geometry=corrected_geometry,
+            correction_coordinate_space=correction_coordinate_space,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1243,6 +1288,9 @@ def review_project_candidates(
         project_input=dict(record.get("project_input") or {}),
     )
     project_input = deepcopy(safe_dict(record.get("project_input")))
+    vision_package = build_vision_learning_package(updated_meta, project_input=project_input)
+    updated_meta[VISION_DATASET_VERSION] = vision_package[VISION_DATASET_VERSION]
+    updated_meta[VISION_QUALITY_VERSION] = vision_package[VISION_QUALITY_VERSION]
     input_meta = deepcopy(safe_dict(project_input.get("meta")))
     site_inputs = deepcopy(safe_dict(input_meta.get("site_inputs")))
     for key in (
@@ -1251,6 +1299,8 @@ def review_project_candidates(
         "candidate_review_accepted_drafts_v1",
         "candidate_review_rejected_v1",
         "source_confidence_map_v1",
+        VISION_DATASET_VERSION,
+        VISION_QUALITY_VERSION,
     ):
         if key in updated_meta:
             site_inputs[key] = deepcopy(updated_meta[key])
@@ -1271,6 +1321,8 @@ def review_project_candidates(
             "candidate_review_accepted_drafts_v1",
             "candidate_review_rejected_v1",
             "source_confidence_map_v1",
+            VISION_DATASET_VERSION,
+            VISION_QUALITY_VERSION,
         )
         if key in updated_meta
     }
@@ -1305,6 +1357,8 @@ def review_project_candidates(
         "rejected_candidates": decision["rejected_candidates"],
         "audit_trail": decision["audit_trail"],
         "truth_label": decision["truth_label"],
+        VISION_DATASET_VERSION: vision_package[VISION_DATASET_VERSION],
+        VISION_QUALITY_VERSION: vision_package[VISION_QUALITY_VERSION],
     }
 
 

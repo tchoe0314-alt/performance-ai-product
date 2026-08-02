@@ -5,6 +5,12 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from .common import safe_dict, safe_float, safe_list, safe_str
+from .vision_detection_learning import (
+    DETECTION_VERSION,
+    build_imagery_frame_v2,
+    build_vision_detection_report_v2,
+    sanitize_source_url,
+)
 
 
 REPORT_VERSION = "imagery_object_detection_report_v1"
@@ -20,6 +26,9 @@ def build_imagery_object_detection_report(
     message: str = "",
     missing: Optional[List[str]] = None,
     warnings: Optional[List[str]] = None,
+    imagery_frame: Optional[Dict[str, Any]] = None,
+    detector_metadata: Optional[Dict[str, Any]] = None,
+    vision_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     normalized = [_normalize_detection(item, index, provider=provider, source_url=source_url, source_image=source_image) for index, item in enumerate(safe_list(detections))]
     normalized = [item for item in normalized if item]
@@ -29,16 +38,35 @@ def build_imagery_object_detection_report(
         missing_items.append("imagery_object_detection_provider")
     if state in {"source_missing", "not_configured"} and "imagery_source_or_tile_access" not in missing_items:
         missing_items.append("imagery_source_or_tile_access")
+    frame = safe_dict(imagery_frame)
+    if not frame and (source_image or source_url):
+        frame = build_imagery_frame_v2(
+            {},
+            source_url=source_image or source_url,
+            provider=provider,
+            image_width=safe_dict(detector_metadata).get("image_width"),
+            image_height=safe_dict(detector_metadata).get("image_height"),
+        )
+    vision = safe_dict(vision_report) or build_vision_detection_report_v2(
+        detections=normalized,
+        imagery_frame=frame,
+        provider=provider,
+        detector_metadata=detector_metadata,
+    )
+    vision_detections = safe_list(vision.get("detections"))
+    if vision_detections:
+        normalized = vision_detections
     return {
         "version": REPORT_VERSION,
         "status": state,
         "provider": safe_str(provider, "unconfigured"),
-        "source_url": safe_str(source_url),
-        "source_image": safe_str(source_image),
+        "source_url": sanitize_source_url(source_url),
+        "source_image": sanitize_source_url(source_image),
         "detection_count": len(normalized),
         "detections": normalized,
         "missing": missing_items,
         "warnings": [safe_str(item) for item in safe_list(warnings) if safe_str(item)],
+        DETECTION_VERSION: vision,
         "message": safe_str(message) or _message_for_status(state, len(normalized)),
         "review_required": True,
         "survey_control_satisfied": False,
@@ -120,6 +148,9 @@ def fetch_imagery_object_detection(
         message=safe_str(data.get("message")),
         missing=safe_list(data.get("missing")),
         warnings=safe_list(data.get("warnings")),
+        imagery_frame=safe_dict(data.get("imagery_frame")),
+        detector_metadata=safe_dict(data.get("detector_metadata")),
+        vision_report=safe_dict(data.get(DETECTION_VERSION)),
     )
 
 
@@ -143,10 +174,13 @@ def _normalize_detection(
         "geometry": geometry,
         "bbox": rec.get("bbox") or rec.get("bounds"),
         "confidence": round(confidence, 3),
-        "source_url": safe_str(rec.get("source_url") or rec.get("image_url") or source_url),
-        "source_image": safe_str(rec.get("source_image") or rec.get("image_path") or source_image),
+        "source_url": sanitize_source_url(rec.get("source_url") or rec.get("image_url") or source_url),
+        "source_image": sanitize_source_url(rec.get("source_image") or rec.get("image_path") or source_image),
         "provider": safe_str(rec.get("provider") or rec.get("source") or provider, "imagery_object_detection"),
         "properties": safe_dict(rec.get("properties")),
+        "pixel_geometry": rec.get("pixel_geometry"),
+        "geo_geometry": rec.get("geo_geometry"),
+        "imagery_frame_id": safe_str(rec.get("imagery_frame_id")),
         "review_required": True,
         "accepted": False,
     }

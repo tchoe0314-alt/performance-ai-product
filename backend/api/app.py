@@ -103,6 +103,7 @@ from backend.application.project_workflows import (
     get_project_detail as application_get_project_detail,
     get_project_result as application_get_project_result,
     get_project_source_confidence_map as application_get_project_source_confidence_map,
+    get_project_vision_learning_package as application_get_project_vision_learning_package,
     list_projects as application_list_projects,
     merge_project_metadata as application_merge_project_metadata,
     result_from_payload as application_result_from_payload,
@@ -377,6 +378,9 @@ class CandidateReviewPayload(BaseModel):
     candidate_ids: List[str] = Field(default_factory=list)
     action: str
     reason: str = ""
+    corrected_feature_type: str = ""
+    corrected_geometry: Optional[Dict[str, Any]] = None
+    correction_coordinate_space: str = ""
 
 
 class DesignAlternativesPayload(BaseModel):
@@ -2234,6 +2238,15 @@ def get_project_candidate_review_inbox(project_id: str, current_user: Dict[str, 
     )
 
 
+@app.get("/api/projects/{project_id}/vision-learning")
+def get_project_vision_learning_package(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return application_get_project_vision_learning_package(
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+    )
+
+
 @app.get("/api/projects/{project_id}/source-confidence")
 def get_project_source_confidence_map(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     return application_get_project_source_confidence_map(
@@ -2285,6 +2298,9 @@ def review_project_candidates(
         action=payload.action,
         reason=payload.reason,
         reviewer_id=str(current_user.get("user_id") or current_user.get("email") or ""),
+        corrected_feature_type=payload.corrected_feature_type,
+        corrected_geometry=payload.corrected_geometry,
+        correction_coordinate_space=payload.correction_coordinate_space,
     )
 
 

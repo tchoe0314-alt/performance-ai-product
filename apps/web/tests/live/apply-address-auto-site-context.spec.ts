@@ -1,7 +1,45 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
+
+async function clickExposedSurface(surface: Locator, xRatio: number, yRatio: number) {
+  await surface.scrollIntoViewIfNeeded();
+  const point = await surface.evaluate(
+    (element, ratios) => {
+      const rect = element.getBoundingClientRect();
+      const clamp = (value: number) => Math.max(0.08, Math.min(0.92, value));
+      const candidates: Array<{ x: number; y: number; distance: number }> = [];
+      for (const xOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24]) {
+        for (const yOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24]) {
+          const nextXRatio = clamp(ratios.xRatio + xOffset);
+          const nextYRatio = clamp(ratios.yRatio + yOffset);
+          const x = rect.left + rect.width * nextXRatio;
+          const y = rect.top + rect.height * nextYRatio;
+          const hit = document.elementFromPoint(x, y);
+          const blocked = hit?.closest?.(
+            '[data-object-overlay],button,input,select,textarea,aside,header,[data-testid="cad-precision-tools"],[data-testid="workspace-right-panel"]',
+          );
+          if ((hit === element || element.contains(hit)) && !blocked) {
+            candidates.push({
+              x,
+              y,
+              distance: Math.abs(nextXRatio - ratios.xRatio) + Math.abs(nextYRatio - ratios.yRatio),
+            });
+          }
+        }
+      }
+      candidates.sort((a, b) => a.distance - b.distance);
+      return candidates[0] ?? {
+        x: rect.left + rect.width * clamp(ratios.xRatio),
+        y: rect.top + rect.height * clamp(ratios.yRatio),
+      };
+    },
+    { xRatio, yRatio },
+  );
+  await surface.page().mouse.click(point.x, point.y);
+}
 
 function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejected"> = {}) {
   const candidates = [
@@ -22,6 +60,27 @@ function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejec
       provider: "Test Roads",
       confidence: 0.88,
       object_count: 1,
+    },
+    {
+      candidate_id: "image-building-1",
+      candidate_type: "building_footprint",
+      label: "Detected imagery building footprint",
+      source: "Civora Vision",
+      provider: "Civora Vision",
+      confidence: 0.62,
+      object_count: 1,
+      source_record: {
+        candidate_id: "image-building-1",
+        feature_type: "building_footprint",
+        source_type: "image_detected_candidate",
+        source_name: "Civora Vision",
+        source_feature_id: "vision-detection-1",
+        properties: {
+          vision_detection_id: "vision-detection-1",
+          imagery_frame_id: "frame-1",
+          source_rights: { training_use_allowed: true },
+        },
+      },
     },
   ].map((candidate) => ({
     ...candidate,
@@ -46,6 +105,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   let savedProjectInput: Record<string, unknown> | null = null;
   let fetchOnlineCalled = false;
   let fetchOnlineRequest: Record<string, unknown> | null = null;
+  let lastVisionCorrectionPayload: Record<string, unknown> | null = null;
   const candidateStatuses: Record<string, "pending" | "accepted" | "rejected"> = {};
   let markOnlineFetchStarted: () => void = () => undefined;
   let releaseOnlineFetch: () => void = () => undefined;
@@ -167,11 +227,21 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await page.route("**/api/projects/*/candidate-review", async (route) => {
     const payload = route.request().postDataJSON() as {
       candidate_ids?: string[];
-      action?: "accept" | "reject" | "pending";
+      action?: "accept" | "reject" | "pending" | "correct";
+      corrected_feature_type?: string;
+      corrected_geometry?: Record<string, unknown>;
+      correction_coordinate_space?: string;
     };
+    if ((payload.candidate_ids ?? []).includes("image-building-1")) {
+      lastVisionCorrectionPayload = payload as Record<string, unknown>;
+    }
     for (const candidateId of payload.candidate_ids ?? []) {
       candidateStatuses[candidateId] =
-        payload.action === "accept" ? "accepted" : payload.action === "reject" ? "rejected" : "pending";
+        payload.action === "accept" || payload.action === "correct"
+          ? "accepted"
+          : payload.action === "reject"
+            ? "rejected"
+            : "pending";
     }
     if (delayNextCandidateDecision) {
       delayNextCandidateDecision = false;
@@ -233,6 +303,52 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           has_result: false,
         },
         candidate_review_inbox_v1: candidateInbox(candidateStatuses),
+        civora_vision_training_dataset_v1: {
+          version: "civora_vision_training_dataset_v1",
+          example_count: 1,
+          reviewed_example_count: candidateStatuses["image-building-1"] === "accepted" ? 1 : 0,
+          training_eligible_example_count:
+            candidateStatuses["image-building-1"] === "accepted" && payload.correction_coordinate_space !== "project_local" ? 1 : 0,
+          counts: {
+            accepted: 0,
+            rejected: 0,
+            corrected: candidateStatuses["image-building-1"] === "accepted" ? 1 : 0,
+            pending: candidateStatuses["image-building-1"] === "accepted" ? 0 : 1,
+          },
+          contains_image_bytes: false,
+        },
+        civora_vision_quality_report_v1: {
+          version: "civora_vision_quality_report_v1",
+          evaluation_status: "ground_truth_not_attached",
+          precision: null,
+          recall: null,
+          quality_claim_allowed: false,
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/*/vision-learning", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        project_id: "pw-project",
+        civora_vision_training_dataset_v1: {
+          version: "civora_vision_training_dataset_v1",
+          example_count: 1,
+          reviewed_example_count: 1,
+          training_eligible_example_count: 1,
+          contains_image_bytes: false,
+        },
+        civora_vision_quality_report_v1: {
+          version: "civora_vision_quality_report_v1",
+          evaluation_status: "ground_truth_not_attached",
+          precision: null,
+          recall: null,
+          quality_claim_allowed: false,
+        },
       }),
     });
   });
@@ -358,6 +474,21 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await onlineFetchStarted;
   await page.getByRole("button", { name: "Draw" }).first().click();
   await expect(page.getByTestId("object-manager-panel")).toBeVisible();
+  const cadTools = page.getByTestId("draw-cad-tools-section");
+  const drawingSurface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
+  await page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first().click();
+  await clickExposedSurface(drawingSurface, 0.2, 0.25);
+  await clickExposedSurface(drawingSurface, 0.72, 0.28);
+  await clickExposedSurface(drawingSurface, 0.68, 0.78);
+  await clickExposedSurface(drawingSurface, 0.24, 0.75);
+  await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+  await cadTools.getByTestId("cad-tool-area").filter({ visible: true }).first().click();
+  await clickExposedSurface(drawingSurface, 0.25, 0.52);
+  await clickExposedSurface(drawingSurface, 0.38, 0.47);
+  await clickExposedSurface(drawingSurface, 0.44, 0.62);
+  await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
+  await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
+  await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Area/ }).first()).toBeVisible();
   releaseOnlineFetch();
   await expect
     .poll(() => JSON.stringify(savedProjectInput), { timeout: 30_000 })
@@ -430,7 +561,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
       .toBeCloseTo(-96.8, 3);
     await expect(page.getByTestId("local-site-bounds-overlay")).toHaveCount(0);
   } else {
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Local site coordinates");
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Local (site coordinates|drawing scale|review canvas site extent)/i);
     await expect(page.getByTestId("preview-inner-map-toggle")).toBeDisabled();
     await expect(page.getByTestId("local-site-bounds-overlay")).toBeVisible();
   }
@@ -471,21 +602,48 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await page.getByTestId("review-found-context").click();
   const detectedItems = page.getByTestId("detected-items-review");
   await expect(detectedItems).toBeVisible();
-  await expect(detectedItems).toContainText("Detected Items · 2 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 3 To Review");
   const buildingCandidate = detectedItems.locator('[data-candidate-id="building-1"]');
   await buildingCandidate.getByRole("button", { name: "Accept" }).click();
   await candidateDecisionStarted;
   await expect(buildingCandidate.getByRole("button", { name: "Saving..." })).toBeVisible();
   await expect(detectedItems.getByRole("button", { name: "Reject" }).first()).toBeDisabled();
   releaseCandidateDecision();
-  await expect(detectedItems).toContainText("Detected Items · 1 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 2 To Review");
   await expect(buildingCandidate).toContainText(/accepted/i);
   await expect(buildingCandidate.getByRole("button", { name: "Accept" })).toBeDisabled();
   const roadCandidate = detectedItems.locator('[data-candidate-id="road-1"]');
   await roadCandidate.getByRole("button", { name: "Reject" }).click();
-  await expect(detectedItems).toContainText("Detected Items · 0 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 1 To Review");
   await expect(detectedItems).toContainText("Accepted");
   await expect(detectedItems).toContainText("Rejected");
+  const visionCandidate = detectedItems.locator('[data-candidate-id="image-building-1"]');
+  await expect(visionCandidate.getByTestId("vision-candidate-correction")).toBeVisible();
+  await visionCandidate
+    .getByLabel("Correct detected type for Detected imagery building footprint")
+    .selectOption("parking_area");
+  await expect(visionCandidate).toContainText(/Selected outline: Custom Area/i);
+  await visionCandidate.getByRole("button", { name: "Use selected outline" }).click();
+  await expect(detectedItems).toContainText("Detected Items · 0 To Review");
+  await expect(visionCandidate).toContainText(/accepted/i);
+  await expect.poll(() => lastVisionCorrectionPayload?.correction_coordinate_space).toBe("project_local");
+  await expect.poll(() => (lastVisionCorrectionPayload?.corrected_geometry as { type?: string } | undefined)?.type).toBe("Polygon");
+  await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("1 reviewed");
+  await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("0 rights-cleared");
+  await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("Accuracy is not claimed");
+  const learningDownload = page.waitForEvent("download");
+  await detectedItems.getByRole("button", { name: "Export feedback" }).click();
+  const downloadedManifest = await learningDownload;
+  await expect(downloadedManifest.suggestedFilename()).toBe("pw-project_civora_vision_learning.json");
+  const downloadedManifestPath = await downloadedManifest.path();
+  expect(downloadedManifestPath).toBeTruthy();
+  const manifestText = await readFile(downloadedManifestPath!, "utf8");
+  const manifest = JSON.parse(manifestText) as Record<string, unknown>;
+  const exportedDataset = manifest.civora_vision_training_dataset_v1 as Record<string, unknown>;
+  const exportedQuality = manifest.civora_vision_quality_report_v1 as Record<string, unknown>;
+  expect(exportedDataset.contains_image_bytes).toBe(false);
+  expect(exportedQuality.precision).toBeNull();
+  expect(manifestText).not.toContain("access_token");
 
   await page.getByRole("button", { name: "Draw" }).first().click();
   await expect(page.getByTestId("object-manager-panel")).toContainText("Test Buildings");

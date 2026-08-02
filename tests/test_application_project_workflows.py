@@ -11,13 +11,16 @@ from backend.application.project_workflows import (
     delete_project_record,
     get_project_detail,
     get_project_result,
+    get_project_vision_learning_package,
     list_projects,
     merge_project_metadata,
     project_version_snapshot,
     result_from_payload,
+    review_project_candidates,
     save_project_record,
     save_project_workflow_update,
 )
+from backend.planning.vision_detection_learning import build_imagery_frame_v2, build_vision_detection_report_v2
 
 
 class FakeProjectStore:
@@ -92,6 +95,88 @@ class SequentialProjectStore(FakeProjectStore):
 
 
 class ApplicationProjectWorkflowsTest(unittest.TestCase):
+    def test_candidate_correction_persists_vision_learning_manifest(self):
+        frame = build_imagery_frame_v2(
+            {
+                "bbox": {"west": -96, "south": 40, "east": -95, "north": 41},
+                "source_rights": {"training_use_allowed": True, "storage_allowed": True, "license": "fixture"},
+            },
+            source_url="https://imagery.example/site.png?access_token=secret",
+            provider="fixture",
+            image_width=100,
+            image_height=100,
+        )
+        vision = build_vision_detection_report_v2(
+            detections=[{"detection_id": "det-1", "kind": "building", "bbox": [10, 10, 20, 20], "confidence": 0.8}],
+            imagery_frame=frame,
+            provider="fixture",
+        )
+        candidate = {
+            "candidate_id": "candidate-1",
+            "feature_type": "building_footprint",
+            "geometry": vision["detections"][0]["geo_geometry"],
+            "source_type": "image_detected_candidate",
+            "source_name": "fixture",
+            "source_url": frame["source_url"],
+            "source_feature_id": "det-1",
+            "confidence": 0.8,
+            "acceptance_status": "pending",
+            "review_required": True,
+            "properties": {"vision_detection_id": "det-1", "imagery_frame_id": frame["frame_id"]},
+        }
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Vision Project",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": {
+                    "meta": {
+                        "site_inputs": {
+                            "map_feature_detection_report_v1": {
+                                "feature_candidates": [candidate],
+                                "civora_vision_detection_report_v2": vision,
+                                "imagery_object_detection_report_v1": {
+                                    "civora_vision_detection_report_v2": vision,
+                                },
+                            }
+                        }
+                    }
+                },
+                "latest_result": {},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+
+        response = review_project_candidates(
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            candidate_ids=["candidate-1"],
+            action="correct",
+            corrected_feature_type="parking_area",
+            reviewer_id="u1",
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(response["accepted_drafts"][0]["object_type"], "parking")
+        dataset = response["civora_vision_training_dataset_v1"]
+        self.assertEqual(dataset["reviewed_example_count"], 1)
+        self.assertEqual(dataset["training_eligible_example_count"], 1)
+        saved_site_inputs = store.saved_payload["project_input"]["meta"]["site_inputs"]
+        self.assertEqual(saved_site_inputs["civora_vision_training_dataset_v1"]["counts"]["corrected"], 1)
+
+        exported = get_project_vision_learning_package(
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+        )
+        self.assertEqual(exported["civora_vision_training_dataset_v1"]["reviewed_example_count"], 1)
+        self.assertFalse(exported["civora_vision_quality_report_v1"]["quality_claim_allowed"])
+
     def test_result_from_payload_prefers_saved_project_result(self):
         store = FakeProjectStore(
             {

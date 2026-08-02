@@ -1,8 +1,11 @@
+import importlib
 import unittest
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
 from backend.api.app import (
+    CandidateReviewPayload,
     OrchestratePayload,
     QueueOrchestratePayload,
     SaveProjectPayload,
@@ -13,6 +16,7 @@ from backend.api.app import (
     _queue_request_payload_with_project,
     _run_orchestration,
     normalize_unit_price_book,
+    review_project_candidates,
     unit_price_book_from_csv,
     validate_unit_price_book,
 )
@@ -20,6 +24,31 @@ from backend.planning.runtime import sanitize_plan
 
 
 class ApiEngineeringGuardsTest(unittest.TestCase):
+    def test_candidate_review_route_forwards_vision_correction_fields(self) -> None:
+        corrected_geometry = {
+            "type": "Polygon",
+            "coordinates": [[[10, 10], [20, 10], [20, 20], [10, 10]]],
+        }
+        api_module = importlib.import_module("backend.api.app")
+        with patch.object(api_module, "application_review_project_candidates") as workflow:
+            workflow.return_value = {"success": True}
+            result = review_project_candidates(
+                "project-1",
+                CandidateReviewPayload(
+                    candidate_ids=["candidate-1"],
+                    action="correct",
+                    corrected_feature_type="parking_area",
+                    corrected_geometry=corrected_geometry,
+                    correction_coordinate_space="project_local",
+                ),
+                {"user_id": "reviewer-1", "email": "reviewer@example.test"},
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(workflow.call_args.kwargs["corrected_feature_type"], "parking_area")
+        self.assertEqual(workflow.call_args.kwargs["corrected_geometry"], corrected_geometry)
+        self.assertEqual(workflow.call_args.kwargs["correction_coordinate_space"], "project_local")
+
     def test_queue_request_payload_uses_nested_project_id_when_outer_missing(self) -> None:
         project_id, request_payload = _queue_request_payload_with_project(
             QueueOrchestratePayload(

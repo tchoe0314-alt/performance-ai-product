@@ -1,4 +1,5 @@
 import os
+import json
 import unittest
 from io import BytesIO
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from PIL import Image, ImageDraw
 
 from backend.scripts.imagery_detection_gateway import (
     build_mapbox_static_image_url,
+    gateway_health_status,
     normalize_generic_response,
     normalize_roboflow_response,
     run_detection_gateway,
@@ -82,6 +84,28 @@ class _RoboflowSession:
 
 
 class ImageryDetectionGatewayTests(unittest.TestCase):
+    @patch.dict(
+        os.environ,
+        {
+            "CIVORA_GATEWAY_DETECTOR_KIND": "civora",
+            "CIVORA_GATEWAY_MODEL_NAME": "civora-vision",
+            "CIVORA_GATEWAY_MODEL_VERSION": "v2-test",
+            "CIVORA_GATEWAY_SOURCE_LICENSE": "unconfirmed",
+            "CIVORA_GATEWAY_TRAINING_USE_ALLOWED": "false",
+        },
+        clear=False,
+    )
+    def test_health_reports_contract_model_and_source_rights_posture(self) -> None:
+        status = gateway_health_status()
+
+        self.assertEqual(status["detector_kind"], "civora")
+        self.assertEqual(status["provider"], "civora_heuristic")
+        self.assertEqual(status["imagery_frame_version"], "civora_imagery_frame_v2")
+        self.assertEqual(status["detection_contract_version"], "civora_vision_detection_report_v2")
+        self.assertEqual(status["model_name"], "civora-vision")
+        self.assertEqual(status["model_version"], "v2-test")
+        self.assertFalse(status["source_rights"]["training_use_allowed"])
+
     def test_mapbox_static_url_uses_active_site_boundary_bbox(self) -> None:
         url = build_mapbox_static_image_url(
             {"active_site_boundary": {"west": -96.2, "south": 41.1, "east": -96.1, "north": 41.2}},
@@ -141,6 +165,44 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
         self.assertEqual(result["detections"][0]["kind"], "building")
         self.assertIn("api.mapbox.com", session.calls[0]["json"]["image_url"])
         self.assertEqual(session.calls[0]["headers"]["Authorization"], "Bearer detector-token")
+
+    def test_gateway_redacts_source_credentials_and_does_not_trust_public_rights_claims(self) -> None:
+        session = _GenericSession()
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "generic",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+                "CIVORA_GATEWAY_GENERIC_DETECTOR_URL": "https://detector.example/detect",
+                "CIVORA_GATEWAY_GENERIC_DETECTOR_TOKEN": "detector-secret",
+                "CIVORA_GATEWAY_TRAINING_USE_ALLOWED": "false",
+                "CIVORA_GATEWAY_SOURCE_STORAGE_ALLOWED": "false",
+                "CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS": "false",
+            },
+            clear=False,
+        ):
+            result = run_detection_gateway(
+                {
+                    "image_url": "https://imagery.example/source.png?access_token=source-secret",
+                    "bbox": {"west": -96.2, "south": 41.1, "east": -96.1, "north": 41.2},
+                    "source_rights": {
+                        "license": "self-asserted",
+                        "training_use_allowed": True,
+                        "storage_allowed": True,
+                    },
+                },
+                session=session,
+            )
+
+        serialized = json.dumps(result)
+        frame = result["civora_vision_detection_report_v2"]["imagery_frame"]
+        self.assertNotIn("source-secret", serialized)
+        self.assertNotIn("detector-secret", serialized)
+        self.assertEqual(result["source_url"], "https://imagery.example/source.png")
+        self.assertEqual(result["detections"][0]["source_url"], "https://imagery.example/source.png")
+        self.assertFalse(frame["source_rights"]["training_use_allowed"])
+        self.assertFalse(frame["source_rights"]["storage_allowed"])
+        self.assertFalse(frame["source_rights"]["request_attestation_trusted"])
 
     def test_gateway_calls_roboflow_detector(self) -> None:
         session = _RoboflowSession()

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 from .imagery_object_detection import build_imagery_object_detection_report
+from .vision_detection_learning import DETECTION_VERSION, resolve_detection_source_conflicts, sanitize_source_url
 
 
 REPORT_VERSION = "map_feature_detection_report_v1"
@@ -302,15 +303,35 @@ def build_map_feature_detection_report(
             )
         )
 
-    combined_image_detections = safe_list(image_detections)
+    combined_image_detections: List[Dict[str, Any]] = []
+    seen_image_detections: set[str] = set()
+
+    def add_image_detection(value: Any) -> None:
+        rec = safe_dict(value)
+        if not rec:
+            return
+        identity_geometry = rec.get("bbox") or rec.get("pixel_geometry") or rec.get("geometry")
+        identity = hashlib.sha1(
+            repr((safe_str(rec.get("kind") or rec.get("feature_type") or rec.get("type")), identity_geometry)).encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
+        if identity in seen_image_detections:
+            return
+        seen_image_detections.add(identity)
+        combined_image_detections.append(rec)
+
+    vision_frame = safe_dict(safe_dict(imagery_report.get(DETECTION_VERSION)).get("imagery_frame"))
     for detection in safe_list(imagery_report.get("detections")):
         rec = safe_dict(detection)
         if not rec:
             continue
-        combined_image_detections.append(
+        add_image_detection(
             {
+                "detection_id": rec.get("detection_id"),
                 "kind": rec.get("kind") or rec.get("feature_type"),
-                "geometry": rec.get("geometry"),
+                "geometry": rec.get("geo_geometry") or rec.get("geometry"),
+                "pixel_geometry": rec.get("pixel_geometry") or rec.get("geometry"),
+                "geo_geometry": rec.get("geo_geometry"),
                 "bbox": rec.get("bbox"),
                 "confidence": rec.get("confidence"),
                 "source_url": rec.get("source_url"),
@@ -318,8 +339,11 @@ def build_map_feature_detection_report(
                 "source": rec.get("provider"),
                 "image_path": rec.get("source_image"),
                 "properties": rec.get("properties"),
+                "imagery_frame_id": rec.get("imagery_frame_id"),
             }
         )
+    for detection in safe_list(image_detections):
+        add_image_detection(detection)
 
     for idx, detection in enumerate(combined_image_detections):
         rec = safe_dict(detection)
@@ -328,22 +352,35 @@ def build_map_feature_detection_report(
         if not feature_type:
             continue
         confidence = min(max(safe_float(rec.get("confidence"), 0.35), 0.05), 0.7)
+        detection_id = safe_str(rec.get("detection_id") or rec.get("id"), f"imagery-{idx + 1}")
+        detection_properties = {
+            **safe_dict(rec.get("properties")),
+            "vision_detection_id": detection_id,
+            "imagery_frame_id": safe_str(rec.get("imagery_frame_id")),
+            "pixel_geometry": rec.get("pixel_geometry"),
+            "geo_geometry": rec.get("geo_geometry"),
+            "source_rights": safe_dict(vision_frame.get("source_rights")),
+        }
         add_candidate(
             _candidate(
                 feature_type=feature_type,
                 source_type="image_detected_candidate",
-                geometry=rec.get("geometry") or rec.get("bbox"),
+                geometry=rec.get("geo_geometry") or rec.get("geometry") or rec.get("bbox"),
                 confidence=confidence,
                 source_url=safe_str(rec.get("source_url") or rec.get("image_url")),
                 source_name=safe_str(rec.get("evidence_source") or rec.get("source") or rec.get("image_path"), "uploaded_map_snapshot"),
-                    blockers=["Imagery/object detection is approximate visual context and must be reviewed before it can affect project objects."],
+                blockers=["Imagery/object detection is approximate visual context and must be reviewed before it can affect project objects."],
                 review_required=True,
                 acceptance_status="pending",
-                seed=f"image:{idx}:{kind}:{rec.get('bbox')}:{rec.get('geometry')}",
+                seed=f"image:{detection_id}:{kind}:{rec.get('bbox')}:{rec.get('geometry')}",
+                source_feature_id=detection_id,
+                properties=detection_properties,
             )
         )
 
     _ = inferred_candidates
+    conflict_resolution = resolve_detection_source_conflicts(candidates)
+    candidates = safe_list(conflict_resolution.get("candidates"))
 
     if not candidates:
         blockers.append(
@@ -409,6 +446,8 @@ def build_map_feature_detection_report(
         "outside_site_candidates": outside_site_candidates,
         "outside_site_candidate_count": len(outside_site_candidates),
         "imagery_object_detection_report_v1": imagery_report or build_imagery_object_detection_report(status="not_configured"),
+        DETECTION_VERSION: safe_dict(imagery_report.get(DETECTION_VERSION)),
+        "source_conflict_resolution_v1": conflict_resolution,
         "blockers": blockers,
         "trusted_canonical_object_count": 0,
         "construction_release_allowed": False,
@@ -553,7 +592,7 @@ def _candidate(
         "feature_type": feature_type if feature_type in FEATURE_TYPES else "constraint_area",
         "geometry": geometry if geometry not in ("", {}, []) else None,
         "source_type": source_type if source_type in SOURCE_TYPES else "unavailable",
-        "source_url": source_url,
+        "source_url": sanitize_source_url(source_url),
         "source_name": source_name,
         "confidence": round(min(max(safe_float(confidence), 0.0), 1.0), 3),
         "review_required": bool(review_required),

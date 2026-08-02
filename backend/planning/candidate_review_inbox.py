@@ -3,11 +3,13 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import date
 import hashlib
+import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .cad_entity_model import plan_pdf_elements_to_cad_entities
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .map_feature_detection import accept_feature_candidate_as_draft_object
+from .vision_detection_learning import TRAINABLE_FEATURE_TYPES
 
 
 INBOX_VERSION = "candidate_review_inbox_v1"
@@ -15,6 +17,14 @@ INBOX_VERSION = "candidate_review_inbox_v1"
 ACCEPTED_STATUSES = {"accepted", "draft_review_required"}
 REJECTED_STATUSES = {"rejected", "unaccepted_rejected"}
 PENDING_STATUSES = {"", "pending", "candidate", "unaccepted", "review_required"}
+
+AREA_CORRECTION_TYPES = {
+    "building_footprint",
+    "parking_area",
+    "water/pond/basin",
+    "vegetation/tree_area",
+    "constraint_area",
+}
 
 MAP_KIND_BY_FEATURE_TYPE = {
     "parcel_or_site_boundary": "parcel_site_boundary",
@@ -83,6 +93,81 @@ def _confidence(value: Any) -> Any:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return round(max(0.0, min(1.0, safe_float(value))), 3)
     return safe_str(value) or "unknown"
+
+
+def _validated_correction_geometry(
+    value: Any,
+    *,
+    coordinate_space: str,
+    feature_type: str,
+) -> Dict[str, Any]:
+    geometry = deepcopy(safe_dict(value))
+    geometry_type = safe_str(geometry.get("type"))
+    if geometry_type not in {"Point", "LineString", "Polygon"}:
+        raise ValueError("corrected_geometry must be Point, LineString, or Polygon GeoJSON.")
+    if coordinate_space not in {"image_pixels", "EPSG:4326", "project_local"}:
+        raise ValueError("correction_coordinate_space must be image_pixels, EPSG:4326, or project_local.")
+    coordinates = geometry.get("coordinates")
+    if geometry_type == "Point":
+        point_groups = [[coordinates]]
+    elif geometry_type == "LineString":
+        point_groups = [coordinates]
+    else:
+        point_groups = coordinates
+    if not isinstance(point_groups, list) or not point_groups:
+        raise ValueError("corrected_geometry coordinates are missing.")
+    normalized_groups: List[List[List[float]]] = []
+    for group in point_groups:
+        if not isinstance(group, list):
+            raise ValueError("corrected_geometry coordinates are invalid.")
+        normalized_points: List[List[float]] = []
+        for point in group:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                raise ValueError("corrected_geometry points must contain x/y coordinates.")
+            x = safe_float(point[0], float("nan"))
+            y = safe_float(point[1], float("nan"))
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError("corrected_geometry coordinates must be finite numbers.")
+            if coordinate_space == "EPSG:4326" and not (-180 <= x <= 180 and -90 <= y <= 90):
+                raise ValueError("EPSG:4326 correction coordinates must be valid longitude/latitude values.")
+            if coordinate_space == "image_pixels" and (x < 0 or y < 0):
+                raise ValueError("Image-pixel correction coordinates cannot be negative.")
+            normalized_points.append([x, y])
+        normalized_groups.append(normalized_points)
+    points = normalized_groups[0]
+    if geometry_type == "Point" and len(points) != 1:
+        raise ValueError("Point correction geometry must contain exactly one point.")
+    if geometry_type == "LineString" and len(points) < 2:
+        raise ValueError("LineString correction geometry needs at least two points.")
+    if geometry_type == "Polygon":
+        if len(points) < 3:
+            raise ValueError("Polygon correction geometry needs at least three unique points.")
+        if points[0] != points[-1]:
+            points.append(list(points[0]))
+        if len({(point[0], point[1]) for point in points[:-1]}) < 3:
+            raise ValueError("Polygon correction geometry needs at least three unique points.")
+        signed_area = sum(
+            points[index][0] * points[index + 1][1] - points[index + 1][0] * points[index][1]
+            for index in range(len(points) - 1)
+        ) / 2
+        if abs(signed_area) <= 1e-9:
+            raise ValueError("Polygon correction geometry cannot have zero area.")
+        try:
+            from shapely.geometry import shape
+
+            if not shape({"type": "Polygon", "coordinates": normalized_groups}).is_valid:
+                raise ValueError("Polygon correction geometry is self-intersecting or otherwise invalid.")
+        except ImportError:
+            pass
+    if feature_type in AREA_CORRECTION_TYPES and geometry_type != "Polygon":
+        raise ValueError(f"{feature_type} corrections require Polygon geometry.")
+    if geometry_type == "Point":
+        normalized_coordinates: Any = points[0]
+    elif geometry_type == "LineString":
+        normalized_coordinates = points
+    else:
+        normalized_coordinates = normalized_groups
+    return {"type": geometry_type, "coordinates": normalized_coordinates}
 
 
 def _candidate(
@@ -459,8 +544,17 @@ def build_candidate_review_inbox(meta: Dict[str, Any]) -> Dict[str, Any]:
     return _inbox_with_decisions(inbox, decisions) if decisions else inbox
 
 
-def _decision_audit(candidate: Dict[str, Any], *, action: str, reviewer_id: str, reason: str = "") -> Dict[str, Any]:
-    return {
+def _decision_audit(
+    candidate: Dict[str, Any],
+    *,
+    action: str,
+    reviewer_id: str,
+    reason: str = "",
+    corrected_feature_type: str = "",
+    corrected_geometry: Any = None,
+    correction_coordinate_space: str = "",
+) -> Dict[str, Any]:
+    record = {
         "action": action,
         "candidate_id": safe_str(candidate.get("candidate_id")),
         "candidate_type": safe_str(candidate.get("candidate_type")),
@@ -471,8 +565,17 @@ def _decision_audit(candidate: Dict[str, Any], *, action: str, reviewer_id: str,
             "accept": "draft_review_required",
             "reject": "rejected",
             "pending": "pending",
+            "correct": "draft_review_required",
+            "reclassify": "draft_review_required",
+            "redraw": "draft_review_required",
         }.get(action, "pending"),
     }
+    if corrected_feature_type:
+        record["corrected_feature_type"] = corrected_feature_type
+    if corrected_geometry not in (None, {}, []):
+        record["corrected_geometry"] = deepcopy(corrected_geometry)
+        record["correction_coordinate_space"] = safe_str(correction_coordinate_space, "project_local")
+    return record
 
 
 def apply_candidate_review_decision(
@@ -482,6 +585,9 @@ def apply_candidate_review_decision(
     action: str,
     reviewer_id: str = "",
     reason: str = "",
+    corrected_feature_type: str = "",
+    corrected_geometry: Any = None,
+    correction_coordinate_space: str = "",
 ) -> Dict[str, Any]:
     # Candidate decisions only mutate the review-state slice. Keeping source
     # reports and geometry records by reference avoids cloning an entire site
@@ -493,8 +599,17 @@ def apply_candidate_review_decision(
     if not requested:
         raise ValueError("At least one candidate_id is required.")
     normalized_action = safe_str(action).lower()
-    if normalized_action not in {"accept", "reject", "pending"}:
-        raise ValueError("action must be accept, reject, or pending.")
+    if normalized_action not in {"accept", "reject", "pending", "correct", "reclassify", "redraw"}:
+        raise ValueError("action must be accept, reject, pending, correct, reclassify, or redraw.")
+    corrected_type = safe_str(corrected_feature_type)
+    if corrected_type and corrected_type not in TRAINABLE_FEATURE_TYPES:
+        raise ValueError(f"Unsupported corrected_feature_type: {corrected_type}")
+    if normalized_action == "reclassify" and not corrected_type:
+        raise ValueError("reclassify requires corrected_feature_type.")
+    if normalized_action == "redraw" and corrected_geometry in (None, {}, []):
+        raise ValueError("redraw requires corrected_geometry.")
+    if normalized_action == "correct" and not corrected_type and corrected_geometry in (None, {}, []):
+        raise ValueError("correct requires a corrected feature type or geometry.")
     reviewer = safe_str(reviewer_id, "user")
     found: List[Dict[str, Any]] = []
     missing = sorted(requested)
@@ -510,10 +625,43 @@ def apply_candidate_review_decision(
     accepted_drafts = safe_list(updated_meta.get("candidate_review_accepted_drafts_v1"))
     rejected = safe_list(updated_meta.get("candidate_review_rejected_v1"))
     for candidate in found:
-        audit = _decision_audit(candidate, action=normalized_action, reviewer_id=reviewer, reason=reason)
+        normalized_correction_space = safe_str(correction_coordinate_space, "project_local")
+        normalized_correction_geometry = corrected_geometry
+        if corrected_geometry not in (None, {}, []):
+            source_feature_type = safe_str(safe_dict(candidate.get("source_record")).get("feature_type"))
+            normalized_correction_geometry = _validated_correction_geometry(
+                corrected_geometry,
+                coordinate_space=normalized_correction_space,
+                feature_type=corrected_type or source_feature_type,
+            )
+        audit = _decision_audit(
+            candidate,
+            action=normalized_action,
+            reviewer_id=reviewer,
+            reason=reason,
+            corrected_feature_type=corrected_type,
+            corrected_geometry=normalized_correction_geometry,
+            correction_coordinate_space=normalized_correction_space,
+        )
         decisions.append(audit)
-        if normalized_action == "accept":
-            draft = _accepted_draft_from_candidate(candidate, accepted_by=reviewer)
+        if normalized_action in {"accept", "correct", "reclassify", "redraw"}:
+            corrected_candidate = deepcopy(candidate)
+            corrected_source = deepcopy(safe_dict(corrected_candidate.get("source_record")))
+            if corrected_type:
+                corrected_source["feature_type"] = corrected_type
+                corrected_candidate["corrected_feature_type"] = corrected_type
+            if normalized_correction_geometry not in (None, {}, []):
+                corrected_source["geometry"] = deepcopy(normalized_correction_geometry)
+                corrected_candidate["corrected_geometry"] = deepcopy(normalized_correction_geometry)
+                corrected_candidate["correction_coordinate_space"] = normalized_correction_space
+            corrected_candidate["source_record"] = corrected_source
+            draft = _accepted_draft_from_candidate(corrected_candidate, accepted_by=reviewer)
+            if normalized_action != "accept":
+                draft["vision_correction_action"] = normalized_action
+                draft["original_candidate_type"] = safe_str(candidate.get("candidate_type"))
+                draft["corrected_feature_type"] = corrected_type
+                if normalized_correction_geometry not in (None, {}, []):
+                    draft["correction_coordinate_space"] = normalized_correction_space
             accepted_drafts = [item for item in accepted_drafts if safe_str(safe_dict(item).get("source_candidate_id")) != safe_str(candidate.get("candidate_id"))]
             accepted_drafts.append(draft)
             rejected = [
@@ -558,7 +706,7 @@ def apply_candidate_review_decision(
         "audit_trail": decisions,
         "accepted_drafts": accepted_drafts,
         "rejected_candidates": rejected,
-        "truth_label": "Candidate decisions changed review evidence only; construction release remains blocked until external professional approval and required source evidence exist.",
+        "truth_label": "Candidate decisions and corrections changed review evidence only. Vision corrections become training examples only when imagery rights and coordinate registration permit it.",
     }
 
 
@@ -603,8 +751,19 @@ def _inbox_with_decisions(inbox: Dict[str, Any], decisions: List[Any]) -> Dict[s
         latest = latest_by_id.get(safe_str(rec.get("candidate_id")))
         if latest:
             action = safe_str(latest.get("action"))
-            rec["status"] = {"accept": "accepted", "reject": "rejected", "pending": "pending"}.get(action, rec.get("status"))
+            rec["status"] = {
+                "accept": "accepted",
+                "correct": "accepted",
+                "reclassify": "accepted",
+                "redraw": "accepted",
+                "reject": "rejected",
+                "pending": "pending",
+            }.get(action, rec.get("status"))
             rec["accepted_as"] = "project_draft_review_required_evidence" if rec["status"] == "accepted" else ""
+            rec["corrected_feature_type"] = safe_str(latest.get("corrected_feature_type"))
+            if latest.get("corrected_geometry") not in (None, {}, []):
+                rec["corrected_geometry"] = deepcopy(latest.get("corrected_geometry"))
+                rec["correction_coordinate_space"] = safe_str(latest.get("correction_coordinate_space"))
             rec["blocker_review_reason"] = safe_str(latest.get("reason")) or rec.get("blocker_review_reason")
             rec["audit_trail"] = [dict(safe_dict(item)) for item in safe_list(rec.get("audit_trail"))] + [dict(latest)]
         counts[_status(rec.get("status"))] = counts.get(_status(rec.get("status")), 0) + 1

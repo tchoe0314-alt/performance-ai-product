@@ -42,7 +42,17 @@ CIVORA_GATEWAY_MAPBOX_TOKEN=your_mapbox_token
 CIVORA_GATEWAY_MAPBOX_STYLE=mapbox/satellite-v9
 CIVORA_GATEWAY_IMAGE_SIZE=1024x1024
 CIVORA_GATEWAY_CIVORA_MAX_SIZE=768
+CIVORA_GATEWAY_MODEL_NAME=civora-heuristic
+CIVORA_GATEWAY_MODEL_VERSION=heuristic-v1
+CIVORA_GATEWAY_SOURCE_LICENSE=unconfirmed
+CIVORA_GATEWAY_SOURCE_ATTRIBUTION=
+CIVORA_GATEWAY_SOURCE_RIGHTS_URL=
+CIVORA_GATEWAY_TRAINING_USE_ALLOWED=false
+CIVORA_GATEWAY_SOURCE_STORAGE_ALLOWED=false
+CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS=false
 ```
+
+The rights flags default to `false`. Do not enable training or source-image storage merely because an image can be fetched. Confirm the provider license and record the supporting rights URL first. `CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS` should remain `false` for a public gateway; otherwise an untrusted request could claim rights it does not have.
 
 After Railway deploys it, copy the public gateway URL, for example:
 
@@ -95,5 +105,9 @@ After both services are deployed:
 4. Confirm Auto Site Context shows an `Imagery scan` row.
 5. Confirm detected items are candidates, not automatically trusted objects.
 6. Accept/reject candidates from source review/Object Manager.
+7. Correct a visual candidate's type, or select a user-drawn outline and save it as the corrected geometry.
+8. Export the Civora Vision feedback manifest and confirm it contains review labels/provenance but no source image bytes or access tokens.
+
+The feedback manifest does not claim model accuracy. Precision/recall are reported only after a separate rights-cleared ground-truth set is evaluated. The current geometric score is explicitly class-aware bounding-box IoU.
 
 If imagery scan says not configured, check `CIVORA_IMAGERY_DETECTION_URL` on the main backend and `CIVORA_GATEWAY_MAPBOX_TOKEN` on the gateway service.

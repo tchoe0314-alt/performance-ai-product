@@ -7,8 +7,37 @@ from urllib.parse import urlencode
 
 import requests
 
+from backend.planning.vision_detection_learning import (
+    DETECTION_VERSION,
+    FRAME_VERSION,
+    build_imagery_frame_v2,
+    build_vision_detection_report_v2,
+    sanitize_source_url,
+)
+
 
 MAPBOX_STATIC_URL = "https://api.mapbox.com/styles/v1/{style}/static/{bbox}/{size}"
+
+
+def gateway_health_status() -> Dict[str, Any]:
+    detector_kind = os.getenv("CIVORA_GATEWAY_DETECTOR_KIND", "generic").strip().lower() or "generic"
+    provider = "civora_heuristic" if detector_kind == "civora" else detector_kind
+    return {
+        "success": True,
+        "detector_kind": detector_kind,
+        "provider": provider,
+        "imagery_frame_version": FRAME_VERSION,
+        "detection_contract_version": DETECTION_VERSION,
+        "model_name": os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
+        "model_version": os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
+        or ("heuristic-v1" if provider == "civora_heuristic" else "unversioned"),
+        "source_rights": {
+            "license": os.getenv("CIVORA_GATEWAY_SOURCE_LICENSE") or "unconfirmed",
+            "training_use_allowed": _env_true("CIVORA_GATEWAY_TRAINING_USE_ALLOWED"),
+            "storage_allowed": _env_true("CIVORA_GATEWAY_SOURCE_STORAGE_ALLOWED"),
+            "request_attestation_trusted": _env_true("CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS"),
+        },
+    }
 
 
 def build_mapbox_static_image_url(
@@ -117,12 +146,67 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
     else:
         response = _call_generic_detector(payload=payload, image_url=image_url, session=session)
         detections = normalize_generic_response(response, source_url=image_url, provider=provider)
+    image_width, image_height = _image_dimensions(payload, detections)
+    requested_source_rights = _dict(payload.get("source_rights"))
+    trust_request_source_rights = _env_true("CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS")
+    trusted_request_source_rights = requested_source_rights if trust_request_source_rights else {}
+    source_rights = {
+        "license": str(
+            trusted_request_source_rights.get("license")
+            or os.getenv("CIVORA_GATEWAY_SOURCE_LICENSE")
+            or "unconfirmed"
+        ),
+        "attribution": str(
+            trusted_request_source_rights.get("attribution")
+            or os.getenv("CIVORA_GATEWAY_SOURCE_ATTRIBUTION")
+            or ""
+        ),
+        "training_use_allowed": _env_true("CIVORA_GATEWAY_TRAINING_USE_ALLOWED")
+        or trusted_request_source_rights.get("training_use_allowed") is True,
+        "storage_allowed": _env_true("CIVORA_GATEWAY_SOURCE_STORAGE_ALLOWED")
+        or trusted_request_source_rights.get("storage_allowed") is True,
+        "rights_source": str(
+            trusted_request_source_rights.get("rights_source")
+            or os.getenv("CIVORA_GATEWAY_SOURCE_RIGHTS_URL")
+            or ""
+        ),
+        "request_attestation_trusted": trust_request_source_rights,
+    }
+    imagery_frame = build_imagery_frame_v2(
+        payload,
+        source_url=image_url,
+        provider=provider,
+        image_width=image_width,
+        image_height=image_height,
+        source_rights=source_rights,
+    )
+    detector_metadata = {
+        "provider": provider,
+        "model_name": os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
+        "model_version": os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
+        or ("heuristic-v1" if provider == "civora_heuristic" else "unversioned"),
+        "detector_kind": os.getenv("CIVORA_GATEWAY_DETECTOR_KIND") or provider,
+        "inference_parameters": {
+            "requested_candidate_types": _list(payload.get("candidate_types")),
+            "image_size": os.getenv("CIVORA_GATEWAY_IMAGE_SIZE", "1024x1024"),
+            "civora_max_size": os.getenv("CIVORA_GATEWAY_CIVORA_MAX_SIZE", "768"),
+        },
+    }
+    vision_report = build_vision_detection_report_v2(
+        detections=detections,
+        imagery_frame=imagery_frame,
+        provider=provider,
+        detector_metadata=detector_metadata,
+    )
     return _gateway_response(
         status="detected" if detections else "ready_empty",
         provider=provider,
-        source_url=image_url,
-        detections=detections,
+        source_url=sanitize_source_url(image_url),
+        detections=_list(vision_report.get("detections")),
         warnings=[] if detections else ["Detector returned no usable visual candidates."],
+        imagery_frame=imagery_frame,
+        detector_metadata=detector_metadata,
+        vision_report=vision_report,
     )
 
 
@@ -136,7 +220,7 @@ def create_app() -> Any:
 
     @app.get("/health")
     def health() -> Dict[str, Any]:
-        return {"success": True, "provider": os.getenv("CIVORA_GATEWAY_DETECTOR_KIND", "generic")}
+        return gateway_health_status()
 
     @app.post("/detect")
     def detect(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -292,6 +376,9 @@ def _gateway_response(
     detections: List[Dict[str, Any]],
     missing: Optional[List[str]] = None,
     warnings: Optional[List[str]] = None,
+    imagery_frame: Optional[Dict[str, Any]] = None,
+    detector_metadata: Optional[Dict[str, Any]] = None,
+    vision_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "status": status,
@@ -301,9 +388,35 @@ def _gateway_response(
         "detections": detections,
         "missing": missing or [],
         "warnings": warnings or [],
+        "imagery_frame": _dict(imagery_frame),
+        "detector_metadata": _dict(detector_metadata),
+        "civora_vision_detection_report_v2": _dict(vision_report),
         "review_required": True,
         "truth_label": "Gateway detections are visual review candidates only, not survey/control or engineering evidence.",
     }
+
+
+def _image_dimensions(payload: Dict[str, Any], detections: List[Dict[str, Any]]) -> tuple[int, int]:
+    width = int(float(payload.get("image_width") or 0))
+    height = int(float(payload.get("image_height") or 0))
+    for detection in detections:
+        props = _dict(detection.get("properties"))
+        width = width or int(float(props.get("image_width") or 0))
+        height = height or int(float(props.get("image_height") or 0))
+        if width and height:
+            return width, height
+    size = str(os.getenv("CIVORA_GATEWAY_IMAGE_SIZE") or "1024x1024").lower().split("x", 1)
+    if len(size) == 2:
+        try:
+            width = width or int(size[0])
+            height = height or int(size[1])
+        except ValueError:
+            pass
+    return width, height
+
+
+def _env_true(key: str) -> bool:
+    return str(os.getenv(key) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalize_kind(value: str) -> str:

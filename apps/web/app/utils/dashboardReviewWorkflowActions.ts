@@ -1,6 +1,10 @@
-import { postJson } from "../../lib/api";
+import { getJson, postJson } from "../../lib/api";
 import type {
+  CandidateReviewCorrection,
+  CandidateReviewDecision,
   CandidateReviewInbox,
+  CivoraVisionQualityReport,
+  CivoraVisionTrainingDataset,
   DesignAlternativesV1,
   PlanResponse,
   ProjectRecord,
@@ -8,7 +12,6 @@ import type {
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 
-type CandidateReviewDecision = "accept" | "reject" | "pending";
 type DesignAlternativesAction = "generate" | "compare" | "choose" | "merge" | "revise";
 
 function patchPlanMeta(
@@ -39,6 +42,7 @@ export async function runDashboardCandidateReviewDecision({
   setCurrentProject,
   setStatusMessage,
   token,
+  correction,
 }: {
   action: CandidateReviewDecision;
   candidateId: string;
@@ -48,18 +52,32 @@ export async function runDashboardCandidateReviewDecision({
   setCurrentProject: StateSetter<ProjectRecord | null>;
   setStatusMessage: StateSetter<string>;
   token: string | null;
+  correction?: CandidateReviewCorrection;
 }) {
   const activeProjectId = projectId || currentProjectId;
+  const correctionAction = action === "correct" || action === "reclassify" || action === "redraw";
   if (!token || !activeProjectId) {
     setStatusMessage("Save or load a project before reviewing candidates.");
     return null;
   }
   try {
-    setStatusMessage(`${action === "accept" ? "Accepting" : action === "reject" ? "Rejecting" : "Keeping"} candidate...`);
+    setStatusMessage(
+      `${
+        action === "accept"
+          ? "Accepting"
+          : action === "reject"
+            ? "Rejecting"
+            : correctionAction
+              ? "Correcting"
+              : "Keeping"
+      } candidate...`,
+    );
     const data = await postJson<{
       success: boolean;
       project?: ProjectRecord;
       candidate_review_inbox_v1?: CandidateReviewInbox;
+      civora_vision_training_dataset_v1?: CivoraVisionTrainingDataset;
+      civora_vision_quality_report_v1?: CivoraVisionQualityReport;
       truth_label?: string;
     }>(
       `/api/projects/${activeProjectId}/candidate-review`,
@@ -67,11 +85,16 @@ export async function runDashboardCandidateReviewDecision({
         candidate_ids: [candidateId],
         action,
         reason:
-          action === "accept"
+          correction?.reason ?? (action === "accept"
             ? "Accepted from Candidate Review Inbox as draft/review-required project evidence."
             : action === "reject"
               ? "Rejected from Candidate Review Inbox."
-              : "Kept pending from Candidate Review Inbox.",
+              : correctionAction
+                ? "Corrected from Candidate Review Inbox and retained as draft/review-required evidence."
+                : "Kept pending from Candidate Review Inbox."),
+        corrected_feature_type: correction?.correctedFeatureType ?? "",
+        corrected_geometry: correction?.correctedGeometry,
+        correction_coordinate_space: correction?.correctionCoordinateSpace ?? "",
       },
       { token },
     );
@@ -86,6 +109,12 @@ export async function runDashboardCandidateReviewDecision({
                   site_inputs: {
                     ...(data.project.project_input?.meta?.site_inputs ?? {}),
                     candidate_review_inbox_v1: data.candidate_review_inbox_v1,
+                    ...(data.civora_vision_training_dataset_v1
+                      ? { civora_vision_training_dataset_v1: data.civora_vision_training_dataset_v1 }
+                      : {}),
+                    ...(data.civora_vision_quality_report_v1
+                      ? { civora_vision_quality_report_v1: data.civora_vision_quality_report_v1 }
+                      : {}),
                   },
                 },
               }
@@ -101,6 +130,12 @@ export async function runDashboardCandidateReviewDecision({
     if (data.candidate_review_inbox_v1) {
       patchPlanMeta(setBackendResult, {
         candidate_review_inbox_v1: data.candidate_review_inbox_v1,
+        ...(data.civora_vision_training_dataset_v1
+          ? { civora_vision_training_dataset_v1: data.civora_vision_training_dataset_v1 }
+          : {}),
+        ...(data.civora_vision_quality_report_v1
+          ? { civora_vision_quality_report_v1: data.civora_vision_quality_report_v1 }
+          : {}),
       });
     }
     setStatusMessage(
@@ -108,12 +143,52 @@ export async function runDashboardCandidateReviewDecision({
         ? "Candidate accepted as draft/review-required evidence."
         : action === "reject"
           ? "Candidate rejected and preserved in the audit trail."
-          : "Candidate kept pending.",
+          : correctionAction
+            ? "Detection correction saved as draft evidence and learning feedback."
+            : "Candidate kept pending.",
     );
     return updatedProject;
   } catch (error) {
     setStatusMessage(error instanceof Error ? error.message : "Candidate review update failed.");
     return null;
+  }
+}
+
+export async function exportDashboardVisionLearningManifest({
+  currentProjectId,
+  projectId,
+  setStatusMessage,
+  token,
+}: {
+  currentProjectId?: string;
+  projectId: string;
+  setStatusMessage: StateSetter<string>;
+  token: string | null;
+}) {
+  const activeProjectId = projectId || currentProjectId;
+  if (!token || !activeProjectId) {
+    setStatusMessage("Save or load a project before exporting Civora Vision learning data.");
+    return false;
+  }
+  try {
+    const data = await getJson<Record<string, unknown>>(
+      `/api/projects/${activeProjectId}/vision-learning`,
+      { token },
+    );
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${activeProjectId}_civora_vision_learning.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    setStatusMessage("Civora Vision learning manifest exported. Source image bytes are not included.");
+    return true;
+  } catch (error) {
+    setStatusMessage(error instanceof Error ? error.message : "Civora Vision learning export failed.");
+    return false;
   }
 }
 
