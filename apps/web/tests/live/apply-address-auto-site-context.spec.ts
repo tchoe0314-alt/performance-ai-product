@@ -82,6 +82,15 @@ function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejec
         },
       },
     },
+    ...Array.from({ length: 30 }, (_, index) => ({
+      candidate_id: `parcel-extra-${index + 1}`,
+      candidate_type: "parcel_site_boundary",
+      label: `Additional parcel candidate ${index + 1}`,
+      source: "Test Parcels",
+      provider: "Test Parcels",
+      confidence: 0.75,
+      object_count: 1,
+    })),
   ].map((candidate) => ({
     ...candidate,
     status: statuses[candidate.candidate_id] ?? "pending",
@@ -609,20 +618,27 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await page.getByTestId("review-found-context").click();
   const detectedItems = page.getByTestId("detected-items-review");
   await expect(detectedItems).toBeVisible();
-  await expect(detectedItems).toContainText("Detected Items · 3 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 33 To Review");
+  await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-12 of 33");
+  await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(12);
+  await detectedItems.getByRole("tab", { name: "Vision 1" }).click();
+  await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(1);
+  await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-1 of 1");
+  await detectedItems.getByRole("tab", { name: "All" }).click();
+  await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(12);
   const buildingCandidate = detectedItems.locator('[data-candidate-id="building-1"]');
   await buildingCandidate.getByRole("button", { name: "Accept" }).click();
   await candidateDecisionStarted;
   await expect(buildingCandidate.getByRole("button", { name: "Saving..." })).toBeVisible();
   await expect(detectedItems.getByRole("button", { name: "Reject" }).first()).toBeDisabled();
   releaseCandidateDecision();
-  await expect(detectedItems).toContainText("Detected Items · 2 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 32 To Review");
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   await expect(buildingCandidate).toContainText(/accepted/i);
   await expect(buildingCandidate.getByRole("button", { name: "Accept" })).toBeDisabled();
   const roadCandidate = detectedItems.locator('[data-candidate-id="road-1"]');
   await roadCandidate.getByRole("button", { name: "Reject" }).click();
-  await expect(detectedItems).toContainText("Detected Items · 1 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 31 To Review");
   await expect(detectedItems).toContainText("Accepted");
   await expect(detectedItems).toContainText("Rejected");
   const visionCandidate = detectedItems.locator('[data-candidate-id="image-building-1"]');
@@ -632,7 +648,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
     .selectOption("parking_area");
   await expect(visionCandidate).toContainText(/Selected outline: Custom Area/i);
   await visionCandidate.getByRole("button", { name: "Use selected outline" }).click();
-  await expect(detectedItems).toContainText("Detected Items · 0 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 30 To Review");
   await expect(visionCandidate).toContainText(/accepted/i);
   await expect.poll(() => lastVisionCorrectionPayload?.correction_coordinate_space).toBe("project_local");
   await expect.poll(() => (lastVisionCorrectionPayload?.corrected_geometry as { type?: string } | undefined)?.type).toBe("Polygon");

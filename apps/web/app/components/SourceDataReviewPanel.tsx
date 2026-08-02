@@ -32,6 +32,9 @@ const VISION_FEATURE_OPTIONS = [
   ["constraint_area", "Constraint / other"],
 ] as const;
 
+const CANDIDATE_PAGE_SIZE = 12;
+type CandidateView = "pending" | "vision" | "reviewed" | "all";
+
 function sourceRecord(candidate: CandidateReviewItem) {
   return candidate.source_record && typeof candidate.source_record === "object"
     ? candidate.source_record
@@ -115,11 +118,22 @@ export function SourceDataReviewPanel({
   selectedCorrectionObject?: BuildingPlacement | null;
 }) {
   const dataCapabilityRows = capabilityRows.filter((item) => DATA_CAPABILITY_KEYS.has(item.key));
-  const [visibleCandidateCount, setVisibleCandidateCount] = useState(8);
+  const [candidateView, setCandidateView] = useState<CandidateView>("pending");
+  const [candidatePage, setCandidatePage] = useState(0);
   const [candidateTypeCorrections, setCandidateTypeCorrections] = useState<Record<string, string>>({});
-  const visibleCandidates = candidateItems.slice(0, visibleCandidateCount);
-  const hiddenCandidateCount = Math.max(0, candidateItems.length - visibleCandidates.length);
   const visionCandidateCount = candidateItems.filter(isVisionCandidate).length;
+  const filteredCandidates = candidateItems.filter((candidate) => {
+    const status = String(candidate.status || "pending").toLowerCase();
+    if (candidateView === "vision") return isVisionCandidate(candidate);
+    if (candidateView === "reviewed") return status === "accepted" || status === "rejected";
+    if (candidateView === "pending") return status !== "accepted" && status !== "rejected";
+    return true;
+  });
+  const candidatePageCount = Math.max(1, Math.ceil(filteredCandidates.length / CANDIDATE_PAGE_SIZE));
+  const activeCandidatePage = Math.min(candidatePage, candidatePageCount - 1);
+  const candidatePageStart = activeCandidatePage * CANDIDATE_PAGE_SIZE;
+  const visibleCandidates = filteredCandidates.slice(candidatePageStart, candidatePageStart + CANDIDATE_PAGE_SIZE);
+  const candidatePageEnd = candidatePageStart + visibleCandidates.length;
   const visionInferenceCounts = candidateItems.filter(isVisionCandidate).reduce(
     (counts, candidate) => {
       const source = sourceRecord(candidate);
@@ -249,8 +263,36 @@ export function SourceDataReviewPanel({
             </div>
           </div>
         ) : null}
+        {candidateItems.length ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2" role="tablist" aria-label="Detected item views">
+            {([
+              ["pending", "Pending"],
+              ["vision", `Vision ${visionCandidateCount}`],
+              ["reviewed", "Reviewed"],
+              ["all", "All"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={candidateView === value}
+                onClick={() => {
+                  setCandidateView(value);
+                  setCandidatePage(0);
+                }}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                  candidateView === value
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="mt-3 space-y-2">
-          {candidateItems.length ? (
+          {visibleCandidates.length ? (
             visibleCandidates.map((candidate) => {
               const status = candidate.status === "accepted" || candidate.status === "rejected" ? candidate.status : "pending";
               const candidateBusy = candidateDecisionInFlight?.candidateId === candidate.candidate_id;
@@ -411,21 +453,40 @@ export function SourceDataReviewPanel({
                 </div>
               );
             })
+          ) : candidateItems.length ? (
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+              No detected items match this view.
+            </p>
           ) : (
             <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
               No source candidates have been discovered or imported yet.
             </p>
           )}
         </div>
-        {hiddenCandidateCount ? (
-          <button
-            type="button"
-            onClick={() => setVisibleCandidateCount((current) => Math.min(candidateItems.length, current + 20))}
-            className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-            data-testid="show-more-detected-items"
-          >
-            Show {Math.min(20, hiddenCandidateCount)} more detected item{Math.min(20, hiddenCandidateCount) === 1 ? "" : "s"}
-          </button>
+        {filteredCandidates.length ? (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <p className="text-xs font-medium text-slate-500" data-testid="detected-items-page-summary">
+              Showing {candidatePageStart + 1}-{candidatePageEnd} of {filteredCandidates.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCandidatePage((current) => Math.max(0, current - 1))}
+                disabled={activeCandidatePage === 0}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setCandidatePage((current) => Math.min(candidatePageCount - 1, current + 1))}
+                disabled={activeCandidatePage >= candidatePageCount - 1}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         ) : null}
       </div>
     </>
