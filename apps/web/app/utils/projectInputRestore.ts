@@ -89,10 +89,12 @@ const acceptedDraftGeometry = ({
   geometry,
   lot,
   viewportBounds,
+  coordinateSpace,
 }: {
   geometry: Record<string, unknown>;
   lot: { w?: number; h?: number };
   viewportBounds: SiteInputs["viewport_bounds"];
+  coordinateSpace?: unknown;
 }) => {
   const coordinates = geoJsonCoordinatePairs(geometry);
   if (!coordinates.length) return null;
@@ -113,25 +115,37 @@ const acceptedDraftGeometry = ({
     Number.isFinite(lotHeight) &&
     lotWidth > 0 &&
     lotHeight > 0;
-  const localCoordinateSpace = ["local", "site", "feet", "ft"].includes(
-    String(geometry.coordinate_space ?? geometry.units ?? "").trim().toLowerCase(),
+  const localCoordinateSpace = ["project_local", "local", "site", "feet", "ft"].includes(
+    String(coordinateSpace ?? geometry.coordinate_space ?? geometry.units ?? "").trim().toLowerCase(),
   );
-  if (!canProject && !localCoordinateSpace) return null;
-  const points = canProject
-    ? coordinates.map(
+  const geographicCoordinates = coordinates.every(
+    ([x, y]) => x >= -180 && x <= 180 && y >= -90 && y <= 90,
+  );
+  if (!localCoordinateSpace && (!canProject || !geographicCoordinates)) return null;
+  const points = localCoordinateSpace
+    ? coordinates
+    : coordinates.map(
         ([lng, lat]) =>
           [
             ((lng - west) / (east - west)) * lotWidth,
             ((north - lat) / (north - south)) * lotHeight,
           ] as [number, number],
-      )
-    : coordinates;
+      );
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
+  if (Number.isFinite(lotWidth) && Number.isFinite(lotHeight) && lotWidth > 0 && lotHeight > 0) {
+    const intersectsSite = maxX >= 0 && minX <= lotWidth && maxY >= 0 && minY <= lotHeight;
+    const boundedNearSite =
+      minX >= -lotWidth * 2 &&
+      maxX <= lotWidth * 3 &&
+      minY >= -lotHeight * 2 &&
+      maxY <= lotHeight * 3;
+    if (!intersectsSite || !boundedNearSite) return null;
+  }
   const geometryType = String(geometry.type ?? "").toLowerCase();
   return {
     points,
@@ -169,6 +183,7 @@ export const buildAcceptedCandidatePlacements = ({
               geometry: record.geometry as Record<string, unknown>,
               lot,
               viewportBounds: siteInputs.viewport_bounds,
+              coordinateSpace: record.correction_coordinate_space ?? record.coordinate_space,
             })
           : null;
       const sourceCandidateId = String(record.source_candidate_id ?? record.candidate_id ?? `accepted-${index + 1}`);

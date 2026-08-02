@@ -261,32 +261,64 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
       meta?: { site_inputs?: Record<string, unknown> };
     };
     projectInput.meta = projectInput.meta ?? {};
+    const acceptedDrafts: Array<Record<string, unknown>> = [];
+    if (candidateStatuses["building-1"] === "accepted") {
+      acceptedDrafts.push({
+        object_id: "draft_building-1",
+        object_type: "building",
+        source_candidate_id: "building-1",
+        source_type: "official_gis",
+        source_name: "Test Buildings",
+        confidence: 0.88,
+        geometry: {
+          type: "Polygon",
+          coordinates: [[
+            [-96.8002, 32.8002],
+            [-96.7998, 32.8002],
+            [-96.7998, 32.7998],
+            [-96.8002, 32.7998],
+            [-96.8002, 32.8002],
+          ]],
+        },
+      });
+    }
+    if (candidateStatuses["image-building-1"] === "accepted") {
+      acceptedDrafts.push(
+        {
+          object_id: "draft_image-building-1",
+          object_type: payload.corrected_feature_type ?? "building",
+          source_candidate_id: "image-building-1",
+          source_type: "image_detected_candidate",
+          source_name: "Corrected Civora Vision outline",
+          confidence: 0.62,
+          correction_coordinate_space: payload.correction_coordinate_space,
+          geometry: payload.corrected_geometry,
+        },
+        {
+          object_id: "draft_unregistered-outlier",
+          object_type: "building",
+          source_candidate_id: "unregistered-outlier",
+          source_type: "image_detected_candidate",
+          source_name: "Unregistered outlier",
+          confidence: 0.4,
+          coordinate_space: "image_pixel",
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [3_767_084, -1_663_977],
+              [7_442_416, -1_663_977],
+              [7_442_416, -5_806_141],
+              [3_767_084, -5_806_141],
+              [3_767_084, -1_663_977],
+            ]],
+          },
+        },
+      );
+    }
     projectInput.meta.site_inputs = {
       ...(projectInput.meta.site_inputs ?? {}),
       candidate_review_inbox_v1: candidateInbox(candidateStatuses),
-      candidate_review_accepted_drafts_v1:
-        candidateStatuses["building-1"] === "accepted"
-          ? [
-              {
-                object_id: "draft_building-1",
-                object_type: "building",
-                source_candidate_id: "building-1",
-                source_type: "official_gis",
-                source_name: "Test Buildings",
-                confidence: 0.88,
-                geometry: {
-                  type: "Polygon",
-                  coordinates: [[
-                    [-96.8002, 32.8002],
-                    [-96.7998, 32.8002],
-                    [-96.7998, 32.7998],
-                    [-96.8002, 32.7998],
-                    [-96.8002, 32.8002],
-                  ]],
-                },
-              },
-            ]
-          : [],
+      candidate_review_accepted_drafts_v1: acceptedDrafts,
     };
     savedProjectInput = projectInput as Record<string, unknown>;
     const responseProjectInput = JSON.parse(JSON.stringify(projectInput)) as {
@@ -653,6 +685,24 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect.poll(() => lastVisionCorrectionPayload?.correction_coordinate_space).toBe("project_local");
   await expect.poll(() => (lastVisionCorrectionPayload?.corrected_geometry as { type?: string } | undefined)?.type).toBe("Polygon");
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+  const correctedVisionOverlay = page.locator('[data-object-overlay][data-cad-object-id="draft_image-building-1"]');
+  await expect(correctedVisionOverlay).toBeVisible();
+  const correctedVisionBounds = await correctedVisionOverlay.evaluate((element) => {
+    const style = (element as HTMLElement).style;
+    return {
+      left: Number.parseFloat(style.left),
+      top: Number.parseFloat(style.top),
+      width: Number.parseFloat(style.width),
+      height: Number.parseFloat(style.height),
+    };
+  });
+  for (const value of Object.values(correctedVisionBounds)) {
+    expect(Number.isFinite(value)).toBeTruthy();
+    expect(Math.abs(value)).toBeLessThanOrEqual(100);
+  }
+  await expect(page.locator('[data-object-overlay][data-cad-object-id="draft_unregistered-outlier"]')).toHaveCount(0);
+  await page.waitForTimeout(1_000);
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("1 reviewed");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("0 rights-cleared");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("Accuracy is not claimed");
