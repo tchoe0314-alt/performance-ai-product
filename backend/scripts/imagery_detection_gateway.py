@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import ipaddress
+import secrets
 import tempfile
+import threading
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import requests
 
@@ -14,22 +17,63 @@ from backend.planning.vision_detection_learning import (
     build_vision_detection_report_v2,
     sanitize_source_url,
 )
+from vision.model_runtime import LearnedVisionRuntime, VisionModelRuntimeError, runtime_from_environment
 
 
 MAPBOX_STATIC_URL = "https://api.mapbox.com/styles/v1/{style}/static/{bbox}/{size}"
+LEARNED_DETECTOR_KINDS = {"civora_model", "civora_learned", "onnx"}
+HYBRID_DETECTOR_KINDS = {"civora_hybrid", "hybrid"}
+HEURISTIC_DETECTOR_KINDS = {"civora", "civora_heuristic", "local"}
+_RUNTIME_CACHE: Dict[tuple[str, str, str], LearnedVisionRuntime] = {}
+_RUNTIME_CACHE_LOCK = threading.Lock()
 
 
 def gateway_health_status() -> Dict[str, Any]:
     detector_kind = os.getenv("CIVORA_GATEWAY_DETECTOR_KIND", "generic").strip().lower() or "generic"
-    provider = "civora_heuristic" if detector_kind == "civora" else detector_kind
+    provider = "civora_heuristic" if detector_kind in HEURISTIC_DETECTOR_KINDS else detector_kind
+    runtime_status: Dict[str, Any] = {}
+    fallback_allowed = _env_true("CIVORA_GATEWAY_ALLOW_HEURISTIC_FALLBACK")
+    if detector_kind in LEARNED_DETECTOR_KINDS | HYBRID_DETECTOR_KINDS:
+        try:
+            runtime_status = _get_learned_runtime().health(load_session=True)
+        except Exception as exc:
+            runtime_status = {
+                "ready": False,
+                "provider": "civora_learned",
+                "capability_level": "model_unavailable",
+                "error": str(exc),
+            }
+        if runtime_status.get("ready") is True:
+            provider = "civora_learned"
+        elif detector_kind in HYBRID_DETECTOR_KINDS and fallback_allowed:
+            provider = "civora_heuristic"
+    success = bool(
+        runtime_status.get("ready") is True
+        or detector_kind not in LEARNED_DETECTOR_KINDS | HYBRID_DETECTOR_KINDS
+        or (detector_kind in HYBRID_DETECTOR_KINDS and fallback_allowed)
+    )
+    capability_level = (
+        "learned_model_review_candidates"
+        if runtime_status.get("ready") is True
+        else "heuristic_visual_candidates"
+        if provider == "civora_heuristic"
+        else "external_model_review_candidates"
+        if detector_kind in {"generic", "roboflow"}
+        else "model_unavailable"
+    )
     return {
-        "success": True,
+        "success": success,
         "detector_kind": detector_kind,
         "provider": provider,
+        "capability_level": capability_level,
+        "learned_model_ready": runtime_status.get("ready") is True,
+        "heuristic_fallback_allowed": fallback_allowed,
+        "detect_auth_required": bool(str(os.getenv("CIVORA_GATEWAY_BEARER_TOKEN") or "").strip()),
+        "model_runtime": runtime_status,
         "imagery_frame_version": FRAME_VERSION,
         "detection_contract_version": DETECTION_VERSION,
-        "model_name": os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
-        "model_version": os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
+        "model_name": runtime_status.get("model_name") or os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
+        "model_version": runtime_status.get("model_version") or os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
         or ("heuristic-v1" if provider == "civora_heuristic" else "unversioned"),
         "source_rights": {
             "license": os.getenv("CIVORA_GATEWAY_SOURCE_LICENSE") or "unconfirmed",
@@ -137,9 +181,43 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
             missing=["source_image_or_static_imagery"],
             warnings=["No imagery source URL could be created for detection."],
         )
-    if provider in {"civora", "civora_heuristic", "local"}:
+    runtime_metadata: Dict[str, Any] = {}
+    detection_warnings: List[str] = []
+    if provider in HEURISTIC_DETECTOR_KINDS:
         detections = _call_civora_detector(image_url=image_url, session=session)
         provider = "civora_heuristic"
+        runtime_metadata = {
+            "capability_level": "heuristic_visual_candidates",
+            "learned_model_used": False,
+            "fallback_used": False,
+        }
+    elif provider in LEARNED_DETECTOR_KINDS:
+        detections, runtime_metadata = _call_civora_learned_detector(
+            image_url=image_url,
+            session=session,
+            requested_kinds=_list(payload.get("candidate_types")),
+        )
+        provider = "civora_learned"
+    elif provider in HYBRID_DETECTOR_KINDS:
+        try:
+            detections, runtime_metadata = _call_civora_learned_detector(
+                image_url=image_url,
+                session=session,
+                requested_kinds=_list(payload.get("candidate_types")),
+            )
+            provider = "civora_learned"
+        except Exception as exc:
+            if not _env_true("CIVORA_GATEWAY_ALLOW_HEURISTIC_FALLBACK"):
+                raise
+            detections = _call_civora_detector(image_url=image_url, session=session)
+            provider = "civora_heuristic"
+            runtime_metadata = {
+                "capability_level": "heuristic_visual_candidates",
+                "learned_model_used": False,
+                "fallback_used": True,
+                "fallback_reason": str(exc),
+            }
+            detection_warnings.append("Learned model was unavailable; explicit heuristic fallback produced these candidates.")
     elif provider == "roboflow":
         response = _call_roboflow(image_url=image_url, session=session)
         detections = normalize_roboflow_response(response, source_url=image_url, provider="roboflow")
@@ -182,10 +260,17 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
     )
     detector_metadata = {
         "provider": provider,
-        "model_name": os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
-        "model_version": os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
+        "model_name": runtime_metadata.get("model_name") or os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
+        "model_version": runtime_metadata.get("model_version") or os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
         or ("heuristic-v1" if provider == "civora_heuristic" else "unversioned"),
+        "model_sha256": runtime_metadata.get("model_sha256") or "",
         "detector_kind": os.getenv("CIVORA_GATEWAY_DETECTOR_KIND") or provider,
+        "capability_level": runtime_metadata.get("capability_level") or (
+            "external_model_review_candidates" if provider not in {"civora_heuristic"} else "heuristic_visual_candidates"
+        ),
+        "learned_model_used": runtime_metadata.get("learned_model_used") is True,
+        "fallback_used": runtime_metadata.get("fallback_used") is True,
+        "fallback_reason": runtime_metadata.get("fallback_reason") or "",
         "inference_parameters": {
             "requested_candidate_types": _list(payload.get("candidate_types")),
             "image_size": os.getenv("CIVORA_GATEWAY_IMAGE_SIZE", "1024x1024"),
@@ -203,7 +288,7 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
         provider=provider,
         source_url=sanitize_source_url(image_url),
         detections=_list(vision_report.get("detections")),
-        warnings=[] if detections else ["Detector returned no usable visual candidates."],
+        warnings=detection_warnings + ([] if detections else ["Detector returned no usable visual candidates."]),
         imagery_frame=imagery_frame,
         detector_metadata=detector_metadata,
         vision_report=vision_report,
@@ -212,18 +297,28 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
 
 def create_app() -> Any:
     try:
-        from fastapi import FastAPI
+        from fastapi import FastAPI, Header, HTTPException
+        from fastapi.responses import JSONResponse
     except Exception as exc:  # pragma: no cover - import-time deployment guard
         raise RuntimeError("FastAPI is required to run the imagery detection gateway.") from exc
 
     app = FastAPI(title="Civora Imagery Detection Gateway", version="1.0")
 
     @app.get("/health")
-    def health() -> Dict[str, Any]:
-        return gateway_health_status()
+    def health() -> Any:
+        status = gateway_health_status()
+        if status.get("success") is not True:
+            return JSONResponse(status_code=503, content=status)
+        return status
 
     @app.post("/detect")
-    def detect(payload: Dict[str, Any]) -> Dict[str, Any]:
+    def detect(payload: Dict[str, Any], authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+        expected_token = str(os.getenv("CIVORA_GATEWAY_BEARER_TOKEN") or "").strip()
+        supplied_token = ""
+        if authorization and authorization.lower().startswith("bearer "):
+            supplied_token = authorization[7:].strip()
+        if expected_token and not secrets.compare_digest(supplied_token, expected_token):
+            raise HTTPException(status_code=401, detail="Imagery detection gateway authentication required.")
         try:
             return run_detection_gateway(payload)
         except Exception as exc:
@@ -258,13 +353,8 @@ def _call_civora_detector(*, image_url: str, session: Any) -> List[Dict[str, Any
         from vision.feature_detection_engine import FeatureDetectionEngine
     except Exception as exc:  # pragma: no cover - import guard
         raise RuntimeError("Civora detector could not import FeatureDetectionEngine.") from exc
-    response = session.get(image_url, timeout=60)
-    response.raise_for_status()
-    content = getattr(response, "content", b"")
-    if not content:
-        raise ValueError("Source image response was empty.")
+    content, content_type = _fetch_image(image_url=image_url, session=session)
     suffix = ".jpg"
-    content_type = str(getattr(response, "headers", {}).get("content-type", "")).lower()
     if "png" in content_type:
         suffix = ".png"
     elif "webp" in content_type:
@@ -303,6 +393,119 @@ def _call_civora_detector(*, image_url: str, session: Any) -> List[Dict[str, Any
             }
         )
     return _filter_civora_detections(detections)
+
+
+def _call_civora_learned_detector(
+    *,
+    image_url: str,
+    session: Any,
+    requested_kinds: Optional[List[Any]] = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    runtime = _get_learned_runtime()
+    health = runtime.health(load_session=True)
+    if health.get("ready") is not True:
+        raise VisionModelRuntimeError(str(health.get("error") or "Learned vision model is unavailable."))
+    content, _ = _fetch_image(image_url=image_url, session=session)
+    result = runtime.detect(content, requested_kinds=[str(item) for item in requested_kinds or []])
+    detections = []
+    for detection in result.detections:
+        rec = dict(detection)
+        rec["source_url"] = image_url
+        rec["provider"] = "civora_learned"
+        detections.append(rec)
+    return detections, {
+        "capability_level": "learned_model_review_candidates",
+        "learned_model_used": True,
+        "fallback_used": False,
+        "model_name": result.model_name,
+        "model_version": result.model_version,
+        "model_sha256": result.model_sha256,
+    }
+
+
+def _fetch_image(*, image_url: str, session: Any) -> tuple[bytes, str]:
+    _validate_image_url(image_url)
+    try:
+        response = session.get(image_url, timeout=60, stream=True)
+    except TypeError:
+        response = session.get(image_url, timeout=60)
+    response.raise_for_status()
+    final_url = str(getattr(response, "url", "") or image_url)
+    _validate_image_url(final_url)
+    maximum_bytes = max(1024, int(float(os.getenv("CIVORA_GATEWAY_MAX_IMAGE_BYTES") or 15 * 1024 * 1024)))
+    content_length = str(getattr(response, "headers", {}).get("content-length", "")).strip()
+    if content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError:
+            declared_length = 0
+        if declared_length > maximum_bytes:
+            raise ValueError("Source image exceeds the configured imagery gateway size limit.")
+    if hasattr(response, "iter_content"):
+        chunks: List[bytes] = []
+        byte_count = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            byte_count += len(chunk)
+            if byte_count > maximum_bytes:
+                raise ValueError("Source image exceeds the configured imagery gateway size limit.")
+            chunks.append(chunk)
+        content = b"".join(chunks)
+    else:
+        content = getattr(response, "content", b"")
+    if not content:
+        raise ValueError("Source image response was empty.")
+    if len(content) > maximum_bytes:
+        raise ValueError("Source image exceeds the configured imagery gateway size limit.")
+    content_type = str(getattr(response, "headers", {}).get("content-type", "")).lower()
+    if content_type and not content_type.startswith("image/") and not _env_true("CIVORA_GATEWAY_ALLOW_UNKNOWN_IMAGE_CONTENT_TYPE"):
+        raise ValueError("Source URL did not return an image content type.")
+    return content, content_type
+
+
+def _validate_image_url(value: str) -> None:
+    parsed = urlsplit(str(value or "").strip())
+    allow_insecure = _env_true("CIVORA_GATEWAY_ALLOW_INSECURE_IMAGE_URLS")
+    if parsed.scheme not in ({"http", "https"} if allow_insecure else {"https"}):
+        raise ValueError("Source image URL must use HTTPS.")
+    hostname = str(parsed.hostname or "").strip().lower()
+    if not hostname:
+        raise ValueError("Source image URL is missing a host.")
+    if hostname == "localhost" or hostname.endswith(".localhost") or hostname.endswith(".local"):
+        if not _env_true("CIVORA_GATEWAY_ALLOW_PRIVATE_IMAGE_URLS"):
+            raise ValueError("Private or non-routable source image addresses are not allowed.")
+    allowlist = [item.strip().lower().lstrip(".") for item in str(os.getenv("CIVORA_GATEWAY_IMAGE_HOST_ALLOWLIST") or "").split(",") if item.strip()]
+    if allowlist and not any(hostname == item or hostname.endswith(f".{item}") for item in allowlist):
+        raise ValueError("Source image host is not in the configured gateway allowlist.")
+    try:
+        address = ipaddress.ip_address(hostname.strip("[]"))
+    except ValueError:
+        address = None
+    if address is not None and (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    ) and not _env_true("CIVORA_GATEWAY_ALLOW_PRIVATE_IMAGE_URLS"):
+        raise ValueError("Private or non-routable source image addresses are not allowed.")
+
+
+def _get_learned_runtime() -> LearnedVisionRuntime:
+    key = (
+        str(os.getenv("CIVORA_GATEWAY_MODEL_MANIFEST") or ""),
+        str(os.getenv("CIVORA_GATEWAY_MODEL_PATH") or ""),
+        str(os.getenv("CIVORA_GATEWAY_REQUIRE_PROMOTED_MODEL") or "true"),
+    )
+    with _RUNTIME_CACHE_LOCK:
+        runtime = _RUNTIME_CACHE.get(key)
+        if runtime is None:
+            runtime = runtime_from_environment()
+            _RUNTIME_CACHE.clear()
+            _RUNTIME_CACHE[key] = runtime
+        return runtime
 
 
 def _filter_civora_detections(detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

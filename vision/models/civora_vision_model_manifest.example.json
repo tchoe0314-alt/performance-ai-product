@@ -1,0 +1,70 @@
+{
+  "version": "civora_vision_model_manifest_v1",
+  "model_name": "civora-aerial-segmentation",
+  "model_version": "replace-with-version",
+  "format": "onnx",
+  "adapter": "civora_semantic_v1",
+  "artifact": {
+    "weights_path": "civora-aerial-segmentation.onnx",
+    "weights_sha256": "replace-with-lowercase-sha256"
+  },
+  "classes": {
+    "0": "background",
+    "1": "building",
+    "2": "road",
+    "3": "parking",
+    "4": "driveway",
+    "5": "sidewalk",
+    "6": "tree",
+    "7": "basin",
+    "8": "utility",
+    "9": "open_space"
+  },
+  "input": {
+    "name": "images",
+    "width": 1024,
+    "height": 1024,
+    "layout": "NCHW",
+    "normalization": {
+      "scale": 0.00392156862745098,
+      "mean": [0, 0, 0],
+      "std": [1, 1, 1]
+    }
+  },
+  "outputs": {
+    "logits": "logits",
+    "background_class_id": 0
+  },
+  "thresholds": {
+    "confidence": 0.45,
+    "nms_iou": 0.5,
+    "mask": 0.5,
+    "minimum_component_pixels": 24,
+    "max_detections": 200
+  },
+  "inference": {
+    "tile_mode": "auto",
+    "tile_overlap": 0.2
+  },
+  "provenance": {
+    "dataset_fingerprint": "replace-with-rights-cleared-dataset-fingerprint",
+    "training_code_revision": "replace-with-git-revision",
+    "model_license": "replace-with-model-license"
+  },
+  "evaluation": {
+    "evaluation_status": "measured_against_ground_truth",
+    "precision": 0,
+    "recall": 0,
+    "f1": 0,
+    "mean_matched_iou": 0,
+    "ground_truth_count": 0,
+    "per_class": {}
+  },
+  "promotion": {
+    "status": "candidate_blocked",
+    "approved_by": "",
+    "approved_at": "",
+    "blockers": ["example_manifest_is_not_a_deployable_model"]
+  },
+  "truth_label": "Visual review candidates only; not survey/control or engineering evidence."
+}

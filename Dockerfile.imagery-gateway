@@ -10,14 +10,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements_backend.txt .
-RUN pip install -r requirements_backend.txt
+COPY requirements_backend.txt requirements_imagery_gateway.txt ./
+RUN pip install -r requirements_imagery_gateway.txt
 
 COPY backend ./backend
 COPY vision ./vision
 
 ENV PYTHONPATH=/app
-ENV CIVORA_GATEWAY_DETECTOR_KIND=civora
+ENV CIVORA_GATEWAY_DETECTOR_KIND=civora_model
+ENV CIVORA_GATEWAY_REQUIRE_PROMOTED_MODEL=true
+ENV CIVORA_GATEWAY_ALLOW_HEURISTIC_FALLBACK=false
 ENV CIVORA_GATEWAY_MAPBOX_STYLE=mapbox/satellite-v9
 ENV CIVORA_GATEWAY_IMAGE_SIZE=1024x1024
 ENV CIVORA_GATEWAY_CIVORA_MAX_SIZE=768

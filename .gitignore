@@ -30,3 +30,9 @@ isolated_err.txt
 debug_trace.txt
 reports/benchmarks/*_local.json
 reports/benchmarks/golden_load_benchmark_report.json
+
+# Rights-cleared vision source assets and generated model weights stay outside git.
+private/vision/
+*.onnx
+*.pt
+*.pth

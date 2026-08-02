@@ -13,6 +13,7 @@ from backend.scripts.imagery_detection_gateway import (
     normalize_roboflow_response,
     run_detection_gateway,
 )
+from vision.model_runtime import RuntimeDetectionResult, VisionModelRuntimeError
 
 
 class _Response:
@@ -81,6 +82,47 @@ class _RoboflowSession:
                 ]
             }
         )
+
+
+class _LearnedRuntime:
+    def health(self, *, load_session=True):
+        return {
+            "ready": True,
+            "model_name": "civora-semantic",
+            "model_version": "v3",
+            "model_sha256": "f" * 64,
+        }
+
+    def detect(self, image_bytes, *, requested_kinds=None):
+        return RuntimeDetectionResult(
+            detections=[
+                {
+                    "detection_id": "learned-1",
+                    "kind": "building",
+                    "bbox": [10, 20, 30, 40],
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[10, 20], [40, 20], [38, 60], [10, 20]]],
+                    },
+                    "confidence": 0.91,
+                    "provider": "civora_learned",
+                    "properties": {"geometry_fidelity": "semantic_segmentation"},
+                }
+            ],
+            image_width=256,
+            image_height=256,
+            model_name="civora-semantic",
+            model_version="v3",
+            model_sha256="f" * 64,
+        )
+
+
+class _StreamingImageSession:
+    def get(self, url, timeout=None, stream=False):
+        response = _Response({}, headers={"content-type": "image/png"})
+        response.url = url
+        response.iter_content = lambda chunk_size: iter((b"a" * 800, b"b" * 800))
+        return response
 
 
 class ImageryDetectionGatewayTests(unittest.TestCase):
@@ -249,6 +291,107 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
                 for item in result["detections"]
             )
         )
+
+    def test_gateway_runs_promoted_learned_model_and_reports_exact_runtime(self) -> None:
+        session = _CivoraImageSession()
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "civora_model",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+            },
+            clear=False,
+        ), patch("backend.scripts.imagery_detection_gateway._get_learned_runtime", return_value=_LearnedRuntime()):
+            result = run_detection_gateway(
+                {"image_url": "https://imagery.example/source.png", "candidate_types": ["building"]},
+                session=session,
+            )
+
+        self.assertEqual(result["provider"], "civora_learned")
+        self.assertEqual(result["status"], "detected")
+        self.assertTrue(result["detector_metadata"]["learned_model_used"])
+        self.assertFalse(result["detector_metadata"]["fallback_used"])
+        self.assertEqual(result["detector_metadata"]["model_sha256"], "f" * 64)
+        self.assertEqual(result["detections"][0]["properties"]["geometry_fidelity"], "semantic_segmentation")
+
+    def test_hybrid_uses_heuristic_only_when_fallback_is_explicit(self) -> None:
+        session = _CivoraImageSession()
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "civora_hybrid",
+                "CIVORA_GATEWAY_ALLOW_HEURISTIC_FALLBACK": "true",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+            },
+            clear=False,
+        ), patch(
+            "backend.scripts.imagery_detection_gateway._get_learned_runtime",
+            side_effect=VisionModelRuntimeError("weights unavailable"),
+        ):
+            result = run_detection_gateway({"image_url": "https://imagery.example/source.png"}, session=session)
+
+        self.assertEqual(result["provider"], "civora_heuristic")
+        self.assertTrue(result["detector_metadata"]["fallback_used"])
+        self.assertFalse(result["detector_metadata"]["learned_model_used"])
+        self.assertTrue(any("fallback" in warning.lower() for warning in result["warnings"]))
+
+    def test_learned_health_is_not_green_when_model_runtime_is_missing(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"CIVORA_GATEWAY_DETECTOR_KIND": "civora_model"},
+            clear=False,
+        ), patch(
+            "backend.scripts.imagery_detection_gateway._get_learned_runtime",
+            side_effect=VisionModelRuntimeError("manifest missing"),
+        ):
+            status = gateway_health_status()
+
+        self.assertFalse(status["success"])
+        self.assertFalse(status["learned_model_ready"])
+        self.assertEqual(status["capability_level"], "model_unavailable")
+
+    def test_gateway_rejects_private_source_image_address(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "civora_heuristic",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+                "CIVORA_GATEWAY_ALLOW_PRIVATE_IMAGE_URLS": "false",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "Private or non-routable"):
+                run_detection_gateway(
+                    {"image_url": "https://127.0.0.1/private.png"},
+                    session=_CivoraImageSession(),
+                )
+
+    def test_hosted_gateway_bearer_token_is_enforced(self) -> None:
+        from fastapi.testclient import TestClient
+        from backend.scripts.imagery_detection_gateway import create_app
+
+        with patch.dict(os.environ, {"CIVORA_GATEWAY_BEARER_TOKEN": "gateway-secret"}, clear=False):
+            client = TestClient(create_app())
+            response = client.post("/detect", json={})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("gateway-secret", response.text)
+
+    def test_streaming_image_download_stops_at_configured_limit(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "civora_heuristic",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+                "CIVORA_GATEWAY_MAX_IMAGE_BYTES": "1024",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "size limit"):
+                run_detection_gateway(
+                    {"image_url": "https://imagery.example/oversized.png"},
+                    session=_StreamingImageSession(),
+                )
 
 
 if __name__ == "__main__":

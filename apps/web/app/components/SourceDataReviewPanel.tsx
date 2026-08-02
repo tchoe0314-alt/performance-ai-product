@@ -120,6 +120,21 @@ export function SourceDataReviewPanel({
   const visibleCandidates = candidateItems.slice(0, visibleCandidateCount);
   const hiddenCandidateCount = Math.max(0, candidateItems.length - visibleCandidates.length);
   const visionCandidateCount = candidateItems.filter(isVisionCandidate).length;
+  const visionInferenceCounts = candidateItems.filter(isVisionCandidate).reduce(
+    (counts, candidate) => {
+      const source = sourceRecord(candidate);
+      const properties = source.properties && typeof source.properties === "object"
+        ? (source.properties as Record<string, unknown>)
+        : {};
+      const provider = String(candidate.provider || source.provider || source.source_name || properties.provider || "").toLowerCase();
+      const modelName = String(properties.model_name || "").trim();
+      if (provider.includes("heuristic")) counts.heuristic += 1;
+      else if (provider.includes("learned") || modelName) counts.learned += 1;
+      else counts.external += 1;
+      return counts;
+    },
+    { learned: 0, heuristic: 0, external: 0 },
+  );
   const reviewedVisionCount = Number(visionTrainingDataset?.reviewed_example_count ?? 0);
   const trainableVisionCount = Number(visionTrainingDataset?.training_eligible_example_count ?? 0);
   const selectedCorrectionGeometry = correctionGeometryFromObject(selectedCorrectionObject);
@@ -209,6 +224,14 @@ export function SourceDataReviewPanel({
                 <p className="text-xs font-semibold text-slate-800">Civora Vision feedback</p>
                 <p className="mt-1 text-xs text-slate-600">
                   {visionCandidateCount} visual candidate{visionCandidateCount === 1 ? "" : "s"}; {reviewedVisionCount} reviewed; {trainableVisionCount} rights-cleared for training.
+                </p>
+                <p className="mt-1 text-[11px] font-medium text-slate-600" data-testid="vision-inference-source-summary">
+                  {[
+                    visionInferenceCounts.learned ? `${visionInferenceCounts.learned} learned-model` : "",
+                    visionInferenceCounts.heuristic ? `${visionInferenceCounts.heuristic} heuristic estimate` : "",
+                    visionInferenceCounts.external ? `${visionInferenceCounts.external} external/other` : "",
+                  ].filter(Boolean).join("; ")}
+                  {visionInferenceCounts.heuristic ? ". Heuristic estimates are not learned inference." : "."}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
                   {visionQualityReport?.quality_claim_allowed

@@ -631,6 +631,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("1 reviewed");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("0 rights-cleared");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("Accuracy is not claimed");
+  await expect(detectedItems.getByTestId("vision-inference-source-summary")).toContainText("external/other");
   const learningDownload = page.waitForEvent("download");
   await detectedItems.getByRole("button", { name: "Export feedback" }).click();
   const downloadedManifest = await learningDownload;
